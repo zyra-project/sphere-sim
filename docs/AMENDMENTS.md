@@ -125,3 +125,87 @@ capturing it from a white-field frame against a reference card.
 The same applies, with the same treatment in code, to: `α_spec`, `g_R,G,B`,
 `wp_i`, `E_amb_chroma`, `ρ_room`, `w_width`, `mask_lo`, `mask_hi`, `h_eye`, and
 `fov_eye`.
+
+---
+
+## A-05 — §4.3: the stated unlit polar area is not reachable from §4.3's own boundary latitudes
+
+**Status:** OPEN. Not blocking; no gate depends on it. Reported by the forward model.
+
+**The tension.** §4.3 makes three quantitative claims in one paragraph:
+
+1. Coverage reaches latitude **80.4°** along a projector's own meridian.
+2. Coverage reaches only **76.3°** in the seam directions, so the unlit region is
+   four-lobed and scalloped rather than a circular cap.
+3. The unlit region is "roughly **1.4–2.8%** of the sphere by area, per pole".
+
+Claims 1 and 2 are reproduced exactly by `packages/sim` — to four decimal places,
+from the general vector limb test rather than from the closed form, and asserted
+in `coverage.test.ts`. But those two latitudes **bound** the area, and the bound
+excludes the stated range.
+
+The unlit region is contained in the circular cap above the seam-direction limit
+and contains the circular cap above the meridian limit. A cap above latitude `L`
+is `(1 − sin L)/2` of the sphere, so at d = 5.18 m:
+
+| Bound | Latitude | Area fraction |
+| --- | --- | --- |
+| Cap above the meridian limit (strict lower bound) | 80.403° | **0.700%** |
+| **The actual scalloped region** | — | **0.893%** |
+| Cap above the seam limit (strict upper bound) | 76.363° | **1.410%** |
+
+Integrating `(1 − sin λ_b(ψ))` over longitude gives **0.893%**, comfortably inside
+its own bounds and comfortably outside the stated 1.4–2.8%. Across the whole
+`d_proj` prior of §2 the figure moves from 0.959% (d = 5.0 m) to 0.565%
+(d = 6.5 m) — the range narrows and *falls* as `d` grows, never approaching 1.4%.
+
+**Where the stated numbers appear to come from.** 1.4% is the seam-direction
+circular cap to three significant figures — that is, the strict *upper* bound
+quoted as the lower end of the range. 2.8% is exactly twice it, which is the
+two-pole total, quoted as a per-pole figure. Both readings are consistent with
+the range having been assembled from cap approximations rather than integrated,
+and with a factor-of-two bookkeeping slip on "per pole".
+
+**Proposed amendment.** Replace "roughly 1.4–2.8% of the sphere by area, per
+pole" in §4.3 with the integrated figure and its provenance: "**0.89% of the
+sphere per pole at d = 5.18 m** (0.57–0.96% across the `d_proj` prior), bounded
+below by the 0.70% cap at 80.4° and above by the 1.41% cap at 76.3° — the gap
+between those two bounds is the scalloping." The qualitative claim in §4.3, which
+is the one that matters, is unaffected and is confirmed.
+
+**What the code does meanwhile.** `unlitPolarAreaFraction` integrates the true
+boundary. `coverage.test.ts` asserts the computed value, asserts that it lies
+strictly between the two bounding caps (the mathematical content of "scalloped,
+not circular"), and asserts that the seam cap equals the spec's 1.4% — pinning
+the provenance of the stated number rather than silently disagreeing with it.
+
+---
+
+## A-06 — §2: which quadrants a 2-projector install uses is unspecified, and it matters
+
+**Status:** OPEN. Low risk, easy fix. Reported by the forward model.
+
+§2 gives the nominal azimuths as 0°, 90°, 180°, 270° counterclockwise from P1,
+and says "2- and 3-projector installs are supported; quadrants go dark. Simulator
+must handle N=2,3,4." It does not say *which* quadrants go dark.
+
+For N=3 the question is uninteresting — any three of the four are equivalent up
+to a rotation. For N=2 it decides the coverage field:
+
+| Arrangement | Unlit fraction of the sphere |
+| --- | --- |
+| Antipodal (0°, 180°) | **16.7%** |
+| Adjacent (0°, 90°) | **33.8%** |
+
+The antipodal figure has a closed form — two caps of angular radius
+`acos(R/d) = 80.4°` centred on opposite points miss exactly the band within 9.6°
+of the great circle equidistant from both, whose area fraction is
+`sin(9.6°) = 0.167`. The adjacent arrangement leaves twice as much dark and is
+not an installation anybody would build.
+
+**Proposed amendment.** Add one clause to §2: a 2-projector install uses opposed
+mounts, i.e. azimuths 0° and 180°.
+
+**What the code does meanwhile.** `nominalRig` defaults to slots {0, 2} for N=2
+and {0, 1, 2} for N=3, exposes a `slots` override for sites that did something
+else, and `scene.test.ts` asserts both the default and the coverage consequence.
