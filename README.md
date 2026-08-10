@@ -18,6 +18,7 @@ build on any import across that line.
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Package layout, the phase gate, the Phase 1 loop decomposition |
 | [`docs/AMENDMENTS.md`](docs/AMENDMENTS.md) | Ambiguities found while implementing the spec. Proposed, never silently applied |
 | [`packages/calibration/README.md`](packages/calibration/README.md) | The boundary object, and why it contains no code |
+| [`packages/bench/README.md`](packages/bench/README.md) | The scorer: how a solve is graded, how the gauge is removed, and how to read `bench-results.json` |
 
 ## The honesty structure
 

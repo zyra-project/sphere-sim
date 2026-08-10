@@ -1,0 +1,713 @@
+/**
+ * The simulated camera rig: render what a camera in the room photographs while
+ * each structured-light pattern is displayed, then hand the frames to the
+ * solver's decoder.
+ *
+ * ## Why images and not correspondences
+ *
+ * The bench could compute the correspondence `(camera pixel -> projector pixel)`
+ * analytically and pass it straight to `solve()`. It must not. A correspondence
+ * handed over that way is a statement in the bench's own arithmetic, and a
+ * solver scored against it is being asked whether it can invert the scorer.
+ * Rendering the patterns through `packages/sim`'s physics and making the solver
+ * READ them puts the decoder, the modulation thresholds, the phase estimator and
+ * the whole photometric path between the two models, which is where the honest
+ * failure modes live. Every rejected pixel in `DecodeStats` is a pixel a real
+ * capture would also have lost.
+ *
+ * ## What is modelled, and what is not
+ *
+ * Modelled: the projector's frustum, lens shift and distortion (via
+ * `packages/sim`); the sphere; `cos(incidence)` and the inverse-square falloff
+ * that PARAMETERS.md §3.3 shows is an 18% swing across one footprint; the
+ * surface reflectance of §1; ambient irradiance per §5; the projector's black
+ * floor per §3.2; photon shot noise and sensor read noise; ADC quantization and
+ * saturation; camera lens distortion per conventions.ts §C; and handheld motion
+ * against a rolling shutter.
+ *
+ * Not modelled, and each omission is a place a real capture is harder than this
+ * one: projector depth of field (PARAMETERS.md §9 and §3.3 — focus is worst
+ * exactly at the blend regions), inter-reflection off the room, the guard rail
+ * and its shadow, and the projector's own pixel structure. The bench therefore
+ * reports an optimistic decode. That is worth saying out loud in a document that
+ * exists to be audited.
+ *
+ * ## One projector at a time
+ *
+ * Not a simplification — the capture protocol. `decode.ts` explains it:
+ * PARAMETERS.md §4.2 puts overlap multiplicity at 2 in the seams, and two
+ * projectors patterning at once would make the seam, the one region the whole
+ * exercise exists to align, the one region that cannot be decoded.
+ *
+ * ## The blend ramp and the polar mask are OFF during capture
+ *
+ * Both are content compositing (conventions.ts §B, §M), and a calibration
+ * pattern is not content. Ramping the pattern would attenuate exactly the seam
+ * the solve most needs, and masking it would delete the polar overlap
+ * PARAMETERS.md §1's note is about. A real operator running Grid Alignment
+ * displays the pattern over the projector's whole raster for the same reason.
+ */
+
+import type { ChannelTriplet, RigCalibration } from '../../calibration/src/index.ts';
+import type { RgbImage } from '../../sim/src/equirect.ts';
+import { createImage } from '../../sim/src/equirect.ts';
+import { raySphereIntersect } from '../../sim/src/geometry.ts';
+import type { PreparedProjector, PreparedRig } from '../../sim/src/optics.ts';
+import { prepareRig, worldToPixel } from '../../sim/src/optics.ts';
+import type {
+  Correspondence,
+  DecodeOptions,
+  DecodeStats,
+  GraySequence,
+  LinearImage,
+  PatternCapture,
+  PhaseSequence,
+} from '../../solver/src/index.ts';
+import { decodeCapture } from '../../solver/src/index.ts';
+import type { FrameClock, HandheldMotion, MotionState, SimulatedCamera } from './camera.ts';
+import { canonicalRayTable, makeMotionState, poseAt, rotationOf, rowTimeSec } from './camera.ts';
+import type { FrameSpec, PatternPlan } from './patterns.ts';
+import {
+  LUMINANCE_WEIGHTS,
+  compileFrame,
+  emittedRadianceForTarget,
+  planFrames,
+  strideFor,
+} from './patterns.ts';
+import type { BenchRng } from './random.ts';
+import { makeBenchRng } from './random.ts';
+
+// ---------------------------------------------------------------------------
+// Sensor
+// ---------------------------------------------------------------------------
+
+/**
+ * A photon-counting sensor, expressed in the radiance units of conventions.ts
+ * §P so the decoder's thresholds keep their documented meaning.
+ *
+ * Shot noise is not optional and is not Gaussian-with-a-fixed-sigma. The photon
+ * count in a pixel is Poisson, so its variance equals its mean: bright pixels
+ * are noisier in absolute terms and quieter in relative ones. That is exactly
+ * the structure a structured-light decode cares about, because the phase
+ * estimate's uncertainty scales as `sigma_I / B` — noise over fringe amplitude —
+ * and both terms move together with the surface's `cos(incidence)`. Modelling
+ * the noise as a constant sigma would make grazing incidence look better than it
+ * is and normal incidence look worse.
+ *
+ * `electronsPerUnitRadiance` folds the exposure and the sensor's conversion gain
+ * into one number, which is what makes the buffers stay in §P units instead of
+ * in ADU. It is the electron count a pixel collects from radiance 1.0 — one
+ * projector's full output at the centre of its own footprint. 6000 e- is a
+ * plausible full-well for a phone pixel exposed near the top of its range, and
+ * it puts the noise at 0.9% of signal on a mid-grey fringe, which is the figure
+ * the solver's own sensitivity table is quoted against.
+ *
+ * PARAMETERS.md gives no sensor figures at all — there is no §5 entry for a
+ * camera — so all four numbers are class ASSUME in the spec's sense and are
+ * echoed into `bench-results.json` rather than buried here.
+ */
+export interface SensorModel {
+  electronsPerUnitRadiance: number;
+  readNoiseElectrons: number;
+  /** ADC bits over `[0, saturationRadiance]`, or null for no quantization. */
+  quantizationBits: number | null;
+  /** Radiance at which the pixel clips. */
+  saturationRadiance: number;
+}
+
+export const DEFAULT_SENSOR: SensorModel = {
+  electronsPerUnitRadiance: 6000,
+  readNoiseElectrons: 3,
+  quantizationBits: 12,
+  saturationRadiance: 1.4,
+};
+
+// ---------------------------------------------------------------------------
+// Conditions
+// ---------------------------------------------------------------------------
+
+/**
+ * The degradation conditions, each independently switchable.
+ *
+ * Experiment 1 needs them separable, so nothing here is bundled: a scenario can
+ * turn on ambient without noise, noise without motion, or motion without a
+ * rolling shutter. The three that PARAMETERS.md speaks to carry their section:
+ * `ambient` is §5's `E_amb`, `reflectance` is §1's `rho_R,G,B`, `roomAlbedo` is
+ * §5's `rho_room`. The sensor and the motion have no section, and that is
+ * recorded rather than hidden.
+ */
+export interface CaptureConditions {
+  /** `E_amb`, relative irradiance on the sphere. §5 nominal 0.04, range 0.01-0.15. */
+  ambient: number;
+  /** §1 `rho_R,G,B`. */
+  reflectance: ChannelTriplet;
+  /** §5 `rho_room`. Only used to shade the pixels that miss the sphere. */
+  roomAlbedo: number;
+  /** null renders a noiseless sensor — useful as a canary, not as a claim. */
+  sensor: SensorModel | null;
+  /** null holds the camera perfectly still; see camera.ts on why that matters. */
+  handheld: HandheldMotion | null;
+  clock: FrameClock;
+  /**
+   * PARAMETERS.md §4.3's usability threshold. Below `cos(incidence) = 0.2` the
+   * spec says resolution smear exceeds 5x and the image becomes streaks; a
+   * streaked fringe carries no phase. Points below it receive ambient only, so
+   * the decoder rejects them on modulation exactly as it would in the room.
+   */
+  minIncidenceCos: number;
+}
+
+export interface CaptureOptions {
+  plan: PatternPlan;
+  conditions: CaptureConditions;
+  /** Everything random in the capture derives from this. */
+  seed: number;
+  decode: Partial<DecodeOptions>;
+  /** Render this (camera, projector) pair's Gray plane into `preview`. */
+  previewPair: { camera: number; projector: number } | null;
+  previewFrame: number;
+}
+
+export interface PairStats {
+  camera: number;
+  projector: number;
+  considered: number;
+  accepted: number;
+}
+
+export interface CaptureResult {
+  correspondences: Correspondence[];
+  stats: DecodeStats;
+  perPair: PairStats[];
+  framesRendered: number;
+  /** Camera pixels traced through the geometry. The bench's dominant cost. */
+  pixelsTraced: number;
+  /** One frame as an image, for the artifact PNG. Null unless requested. */
+  preview: RgbImage | null;
+  /** Per-camera motion excursion over the whole sequence, metres and degrees. */
+  motionExcursion: { camera: number; translationMm: number; rotationDeg: number }[];
+}
+
+// ---------------------------------------------------------------------------
+// Geometry pass
+// ---------------------------------------------------------------------------
+
+/**
+ * What one camera sees of one projector, at one instant.
+ *
+ * Typed arrays rather than an array of records: this is the hottest structure in
+ * the bench and, under handheld motion, it is rebuilt for every frame.
+ */
+interface Geometry {
+  width: number;
+  height: number;
+  /** 1 where this projector's light reaches the surface point behind the pixel. */
+  lit: Uint8Array;
+  /** Projector raster coordinate, continuous. */
+  u: Float32Array;
+  v: Float32Array;
+  /** `cos(incidence) * inverse-square falloff` — the whole geometric factor. */
+  k: Float32Array;
+  /** 1 where the camera ray hit the sphere at all (lit or not). */
+  onSphere: Uint8Array;
+}
+
+function makeGeometry(width: number, height: number): Geometry {
+  const n = width * height;
+  return {
+    width,
+    height,
+    lit: new Uint8Array(n),
+    u: new Float32Array(n),
+    v: new Float32Array(n),
+    k: new Float32Array(n),
+    onSphere: new Uint8Array(n),
+  };
+}
+
+/**
+ * Trace one camera against one projector, filling `geom`.
+ *
+ * `poseForRow` is asked once per row, which is exactly the granularity a
+ * rolling shutter has: a row is read at one instant. For a global shutter or a
+ * static camera the callback returns the same pose for every row and the whole
+ * frame is coherent.
+ *
+ * The geometric factor `k` is `cos(incidence)` times `(d-R)^2 / dist^2`,
+ * matching `packages/sim`'s `lambertianShading` term for term — PARAMETERS.md's
+ * Radiometry convention normalizes a projector's output to the centre of its own
+ * footprint, which sits at `d - R`, so that is the reference distance and not
+ * `d`.
+ */
+function traceGeometry(
+  geom: Geometry,
+  canonical: Float64Array,
+  poseForRow: (row: number) => { rotation: readonly number[]; ox: number; oy: number; oz: number },
+  proj: PreparedProjector,
+  radiusM: number,
+  minIncidenceCos: number,
+): number {
+  const { width, height } = geom;
+  const refDist = proj.distanceM - radiusM;
+  const refDistSq = refDist * refDist;
+  const invR = 1 / radiusM;
+  let traced = 0;
+
+  for (let y = 0; y < height; y++) {
+    const pose = poseForRow(y);
+    const m = pose.rotation;
+    const origin = { x: pose.ox, y: pose.oy, z: pose.oz };
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      const c = 3 * i;
+      const cx = canonical[c];
+      const cy = canonical[c + 1];
+      const cz = canonical[c + 2];
+      const dx = m[0] * cx + m[1] * cy + m[2] * cz;
+      const dy = m[3] * cx + m[4] * cy + m[5] * cz;
+      const dz = m[6] * cx + m[7] * cy + m[8] * cz;
+      const len = Math.hypot(dx, dy, dz);
+      const dir = { x: dx / len, y: dy / len, z: dz / len };
+      traced++;
+
+      const hit = raySphereIntersect(origin, dir, radiusM);
+      if (hit === null) {
+        geom.onSphere[i] = 0;
+        geom.lit[i] = 0;
+        continue;
+      }
+      geom.onSphere[i] = 1;
+
+      const p = hit.point;
+      const nx = p.x * invR;
+      const ny = p.y * invR;
+      const nz = p.z * invR;
+      const lx = proj.lens.x - p.x;
+      const ly = proj.lens.y - p.y;
+      const lz = proj.lens.z - p.z;
+      const dist = Math.hypot(lx, ly, lz);
+      const cos = (nx * lx + ny * ly + nz * lz) / dist;
+      if (cos < minIncidenceCos) {
+        geom.lit[i] = 0;
+        continue;
+      }
+      const px = worldToPixel(proj, p);
+      if (px === null) {
+        geom.lit[i] = 0;
+        continue;
+      }
+      geom.lit[i] = 1;
+      geom.u[i] = px.u;
+      geom.v[i] = px.v;
+      geom.k[i] = cos * (refDistSq / (dist * dist));
+    }
+  }
+  return traced;
+}
+
+// ---------------------------------------------------------------------------
+// Photometry
+// ---------------------------------------------------------------------------
+
+/**
+ * The scalar luminance response of the surface to one projector.
+ *
+ * Collapses PARAMETERS.md §1's per-channel reflectance, §3.2's per-channel gain
+ * and black floor, §5's ambient and the Rec.709 weights into two numbers plus a
+ * clamp. See `patterns.ts` for why the per-channel GAMMA is absent: the pattern
+ * is specified in linear radiance, so the transfer inverts exactly and gamma
+ * cancels. The black floor does not cancel, and it is the term that sets the
+ * modulation floor the decoder rejects on.
+ */
+interface LuminanceResponse {
+  /** Surface luminance with the projector emitting nothing at all. */
+  ambientLum: number;
+  /** Emitted luminance for a target linear radiance. */
+  emit(target: number): number;
+}
+
+function luminanceResponse(
+  transfer: RigCalibration['projectors'][number]['transfer'],
+  reflectance: ChannelTriplet,
+  ambient: number,
+): LuminanceResponse {
+  const w = LUMINANCE_WEIGHTS;
+  const wr = w.r * reflectance.r;
+  const wg = w.g * reflectance.g;
+  const wb = w.b * reflectance.b;
+  return {
+    ambientLum: ambient * (wr + wg + wb),
+    emit(target: number): number {
+      const e = emittedRadianceForTarget(target, transfer);
+      return wr * e.r + wg * e.g + wb * e.b;
+    },
+  };
+}
+
+/**
+ * Photon shot noise, read noise, saturation, quantization — in that order,
+ * which is the order a sensor does them in.
+ *
+ * Returned as a closure with the sensor's constants already resolved. This runs
+ * once per pixel per frame — thirty million times in a default scenario — and
+ * the difference between reading four properties off an object each time and
+ * reading four captured locals is not a micro-optimisation at that count, it is
+ * most of the scenario's wall clock.
+ *
+ * Noise is applied to EVERY pixel, including the ones that miss the sphere.
+ * Suppressing it there would be tempting — those pixels carry no pattern, so
+ * their noise cannot inform anything — and it would also quietly delete a real
+ * failure mode. A background pixel's modulation is zero plus noise, and across
+ * the nine hundred thousand background pixels of one scenario a couple will
+ * exceed the decoder's `minModulation` by chance and emit a correspondence with
+ * a meaningless projector coordinate. Whether the robust loss absorbs those is
+ * a genuine question about the solver, and it is one this bench should be able
+ * to ask.
+ */
+function makeSensor(sensor: SensorModel | null, rng: BenchRng): (value: number) => number {
+  if (sensor === null) return (value: number): number => value;
+  const invElectrons = 1 / sensor.electronsPerUnitRadiance;
+  const readVar = sensor.readNoiseElectrons * invElectrons * (sensor.readNoiseElectrons * invElectrons);
+  const saturation = sensor.saturationRadiance;
+  const step =
+    sensor.quantizationBits === null
+      ? 0
+      : saturation / (Math.pow(2, sensor.quantizationBits) - 1);
+  return (value: number): number => {
+    // var(L) = var(N)/g^2 = N/g^2 = L/g with N Poisson, so the shot variance in
+    // radiance units is the signal divided by the electrons-per-unit gain.
+    const signal = value > 0 ? value : 0;
+    let out = value + rng.gaussian() * Math.sqrt(signal * invElectrons + readVar);
+    if (out < 0) out = 0;
+    else if (out > saturation) out = saturation;
+    if (step > 0) out = Math.round(out / step) * step;
+    return out;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Capture
+// ---------------------------------------------------------------------------
+
+interface RenderedSequence {
+  capture: PatternCapture;
+  framesRendered: number;
+  pixelsTraced: number;
+  preview: RgbImage | null;
+}
+
+function renderPair(
+  prepared: PreparedRig,
+  cameras: readonly SimulatedCamera[],
+  canonicals: readonly Float64Array[],
+  motionStates: readonly MotionState[],
+  cameraIndex: number,
+  projectorIndex: number,
+  opts: CaptureOptions,
+  wantPreview: boolean,
+): RenderedSequence {
+  const cam = cameras[cameraIndex];
+  const proj = prepared.projectors[projectorIndex];
+  const width = cam.intrinsics.resX;
+  const height = cam.intrinsics.resY;
+  const canonical = canonicals[cameraIndex];
+  const cond = opts.conditions;
+
+  const response = luminanceResponse(proj.cal.transfer, cond.reflectance, cond.ambient);
+  const background = response.ambientLum * cond.roomAlbedo;
+  const specs = planFrames(opts.plan);
+  const geom = makeGeometry(width, height);
+
+  // Noise is drawn from a stream owned by this (camera, projector) pair, walked
+  // in a fixed (frame, pixel) order. Pairs are therefore independent of each
+  // other and of how many pairs came first, so a scenario that changes its
+  // camera count does not reshuffle the noise of the cameras it kept.
+  const rng = makeBenchRng(
+    (opts.seed ^ (cameraIndex * 0x9e3779b1) ^ (projectorIndex * 0x85ebca77)) >>> 0,
+  );
+
+  const stateless = cond.handheld === null;
+  let pixelsTraced = 0;
+  let geometryValid = false;
+
+  const poseProviderFor = (frameIndex: number): ((row: number) => {
+    rotation: readonly number[];
+    ox: number;
+    oy: number;
+    oz: number;
+  }) => {
+    if (stateless) {
+      const rot = rotationOf(cam.pose);
+      const p = cam.pose.position;
+      const fixed = { rotation: rot, ox: p.x, oy: p.y, oz: p.z };
+      return () => fixed;
+    }
+    return (row: number) => {
+      const t = rowTimeSec(cond.clock, frameIndex, row, height);
+      const pose = poseAt(cam.pose, cond.handheld, motionStates[cameraIndex], t);
+      return {
+        rotation: rotationOf(pose),
+        ox: pose.position.x,
+        oy: pose.position.y,
+        oz: pose.position.z,
+      };
+    };
+  };
+
+  const frames: LinearImage[] = [];
+  let preview: RgbImage | null = null;
+  const noisy = makeSensor(cond.sensor, rng);
+  const ambientLum = response.ambientLum;
+  const resX = proj.cal.intrinsics.resX;
+  const resY = proj.cal.intrinsics.resY;
+  // A Gray plane, a white frame and a black frame each ask for one of only two
+  // target radiances, so their emitted luminance is a constant that can be
+  // hoisted out of the pixel loop. Twenty-six of a thirty-four frame sequence
+  // are of that kind; only the eight phase frames vary per pixel.
+  const emitOn = response.emit(1);
+  const emitOff = response.emit(0);
+
+  for (let f = 0; f < specs.length; f++) {
+    if (!stateless || !geometryValid) {
+      pixelsTraced += traceGeometry(
+        geom,
+        canonical,
+        poseProviderFor(f),
+        proj,
+        prepared.radiusM,
+        cond.minIncidenceCos,
+      );
+      geometryValid = true;
+    }
+    const spec = specs[f];
+    const frame = compileFrame(spec, opts.plan, resX, resY);
+    const data = new Float32Array(width * height);
+    const n = data.length;
+
+    if (frame.axis === null) {
+      // White and black frames: one target across the whole raster, so the
+      // emitted luminance is a constant and the loop is a blit plus noise.
+      const emitted = frame.at(0) >= 0.5 ? emitOn : emitOff;
+      for (let i = 0; i < n; i++) {
+        const value =
+          geom.lit[i] === 1
+            ? ambientLum + emitted * geom.k[i]
+            : geom.onSphere[i] === 1
+              ? ambientLum
+              : background;
+        data[i] = noisy(value);
+      }
+    } else {
+      const coord = frame.axis === 'u' ? geom.u : geom.v;
+      const binary = spec.kind === 'gray' || spec.kind === 'grayInverse';
+      for (let i = 0; i < n; i++) {
+        let value: number;
+        if (geom.lit[i] === 1) {
+          const target = frame.at(coord[i]);
+          // A Gray plane's target is exactly 0 or 1, so its emitted luminance
+          // is one of two hoisted constants. The phase frames genuinely vary.
+          const emitted = binary ? (target >= 0.5 ? emitOn : emitOff) : response.emit(target);
+          value = ambientLum + emitted * geom.k[i];
+        } else if (geom.onSphere[i] === 1) {
+          value = ambientLum;
+        } else {
+          value = background;
+        }
+        data[i] = noisy(value);
+      }
+    }
+
+    frames.push({ width, height, channels: 1, data });
+    if (wantPreview && f === opts.previewFrame) {
+      preview = createImage(width, height);
+      for (let i = 0; i < n; i++) {
+        preview.data[3 * i] = data[i];
+        preview.data[3 * i + 1] = data[i];
+        preview.data[3 * i + 2] = data[i];
+      }
+    }
+  }
+
+  // Reassemble the flat frame list into the structure decode.ts expects. The
+  // order here must match planFrames exactly; it is one function's output being
+  // read back by one function, and the test asserts a round trip.
+  let cursor = 0;
+  const take = (): LinearImage => frames[cursor++];
+  const white = opts.plan.includeWhiteBlack ? take() : null;
+  const black = opts.plan.includeWhiteBlack ? take() : null;
+  const gray: GraySequence[] = [];
+  for (const axis of ['u', 'v'] as const) {
+    const patterns: LinearImage[] = [];
+    const inverses: LinearImage[] = [];
+    for (let j = 0; j < opts.plan.grayBits; j++) {
+      patterns.push(take());
+      inverses.push(take());
+    }
+    gray.push({
+      axis,
+      bits: opts.plan.grayBits,
+      stridePx: strideFor(
+        axis === 'u' ? proj.cal.intrinsics.resX : proj.cal.intrinsics.resY,
+        opts.plan.grayBits,
+      ),
+      patterns,
+      inverses,
+    });
+  }
+  const phase: PhaseSequence[] = [];
+  for (const axis of ['u', 'v'] as const) {
+    const stepFrames: LinearImage[] = [];
+    for (let n = 0; n < opts.plan.phaseSteps; n++) stepFrames.push(take());
+    const stride = strideFor(
+      axis === 'u' ? proj.cal.intrinsics.resX : proj.cal.intrinsics.resY,
+      opts.plan.grayBits,
+    );
+    phase.push({
+      axis,
+      steps: opts.plan.phaseSteps,
+      periodPx: stride * opts.plan.phasePeriodStrides,
+      frames: stepFrames,
+    });
+  }
+
+  return {
+    capture: {
+      camera: cameraIndex,
+      projector: projectorIndex,
+      projectorRes: { x: proj.cal.intrinsics.resX, y: proj.cal.intrinsics.resY },
+      white,
+      black,
+      gray,
+      phase,
+    },
+    framesRendered: specs.length,
+    pixelsTraced,
+    preview,
+  };
+}
+
+/**
+ * Render and decode every (camera, projector) pair.
+ *
+ * Rendered and decoded one pair at a time rather than all at once. A 34-frame
+ * sequence at 320x240 is 10 MB of float buffers; twelve of them alive at once
+ * would be 125 MB, and a thorough preset at 640x480 would be half a gigabyte
+ * for no reason. Streaming changes nothing about the computation — the
+ * correspondences handed to `solve()` are the same objects `decodeAll` would
+ * have produced from the same captures, in the same order — it only decides how
+ * long the frames live.
+ */
+export function captureAndDecode(
+  rig: RigCalibration,
+  cameras: readonly SimulatedCamera[],
+  opts: CaptureOptions,
+): CaptureResult {
+  const prepared = prepareRig(rig);
+  const canonicals = cameras.map((c) => canonicalRayTable(c.intrinsics));
+  const motionSeed = makeBenchRng((opts.seed ^ 0x5bf03635) >>> 0);
+  const motionStates = cameras.map(() => makeMotionState(motionSeed));
+
+  const correspondences: Correspondence[] = [];
+  const perPair: PairStats[] = [];
+  let framesRendered = 0;
+  let pixelsTraced = 0;
+  let preview: RgbImage | null = null;
+  const stats: DecodeStats = {
+    considered: 0,
+    accepted: 0,
+    rejectedLowModulation: 0,
+    rejectedGrayAmbiguous: 0,
+    rejectedPhaseWeak: 0,
+    rejectedDisagreement: 0,
+    rejectedOutOfRange: 0,
+    rejectedMissingAxis: 0,
+  };
+
+  for (let c = 0; c < cameras.length; c++) {
+    for (let p = 0; p < prepared.projectors.length; p++) {
+      const wantPreview =
+        opts.previewPair !== null && opts.previewPair.camera === c && opts.previewPair.projector === p;
+      const rendered = renderPair(
+        prepared,
+        cameras,
+        canonicals,
+        motionStates,
+        c,
+        p,
+        opts,
+        wantPreview,
+      );
+      framesRendered += rendered.framesRendered;
+      pixelsTraced += rendered.pixelsTraced;
+      if (rendered.preview !== null) preview = rendered.preview;
+
+      const decoded = decodeCapture(rendered.capture, opts.decode);
+      for (const corr of decoded.correspondences) correspondences.push(corr);
+      perPair.push({
+        camera: c,
+        projector: p,
+        considered: decoded.stats.considered,
+        accepted: decoded.correspondences.length,
+      });
+      stats.considered += decoded.stats.considered;
+      stats.accepted += decoded.stats.accepted;
+      stats.rejectedLowModulation += decoded.stats.rejectedLowModulation;
+      stats.rejectedGrayAmbiguous += decoded.stats.rejectedGrayAmbiguous;
+      stats.rejectedPhaseWeak += decoded.stats.rejectedPhaseWeak;
+      stats.rejectedDisagreement += decoded.stats.rejectedDisagreement;
+      stats.rejectedOutOfRange += decoded.stats.rejectedOutOfRange;
+      stats.rejectedMissingAxis += decoded.stats.rejectedMissingAxis;
+    }
+  }
+
+  // How far the camera actually moved over the sequence, reported rather than
+  // assumed: a rolling-shutter condition whose motion turned out to be
+  // negligible would otherwise look like a rolling-shutter condition that did
+  // not matter.
+  const frameCount = planFrames(opts.plan).length;
+  const totalSec =
+    ((frameCount - 1) * opts.conditions.clock.frameIntervalMs +
+      (opts.conditions.clock.rollingShutter ? opts.conditions.clock.readoutMs : 0)) /
+    1000;
+  const motionExcursion = cameras.map((cam, i) => {
+    let maxT = 0;
+    let maxR = 0;
+    const steps = 200;
+    for (let s = 0; s <= steps; s++) {
+      const t = (totalSec * s) / steps;
+      const pose = poseAt(cam.pose, opts.conditions.handheld, motionStates[i], t);
+      maxT = Math.max(
+        maxT,
+        Math.hypot(
+          pose.position.x - cam.pose.position.x,
+          pose.position.y - cam.pose.position.y,
+          pose.position.z - cam.pose.position.z,
+        ),
+      );
+      maxR = Math.max(
+        maxR,
+        Math.hypot(
+          pose.yawDeg - cam.pose.yawDeg,
+          pose.pitchDeg - cam.pose.pitchDeg,
+          pose.rollDeg - cam.pose.rollDeg,
+        ),
+      );
+    }
+    return { camera: i, translationMm: maxT * 1000, rotationDeg: maxR };
+  });
+
+  return {
+    correspondences,
+    stats,
+    perPair,
+    framesRendered,
+    pixelsTraced,
+    preview,
+    motionExcursion,
+  };
+}
+
+/** Frame specs for a plan, re-exported so a caller can name a preview frame. */
+export function frameSpecsFor(plan: PatternPlan): FrameSpec[] {
+  return planFrames(plan);
+}
