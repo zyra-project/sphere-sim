@@ -126,6 +126,7 @@ import {
   DEFAULT_ROBUST_OPTIONS,
   lossAndWeight,
   rejectOutliers,
+  robustScaleFromNorms,
   type RobustOptions,
 } from './robust.ts';
 
@@ -161,6 +162,34 @@ export interface FloorReference {
   heightM: number;
   /** One-sigma uncertainty of the measurement, metres. */
   sigmaM: number;
+}
+
+/**
+ * A Gaussian prior on one free parameter, in that parameter's own units.
+ *
+ * This is the honest middle ground between `free` and held, and PARAMETERS.md
+ * asks for it by name: §2 says to treat `d_proj` as `SOLVE` "with a wide prior
+ * (5.0-6.5 m)", and §3.1 classes `fov_h` as `SOLVE` while classing the throw
+ * ratio it is derived from as `CFG` — read from a spec sheet. Holding such a
+ * parameter contradicts its class and destroys any site that disagrees with the
+ * nominal; freeing it entirely throws away a real measurement and lets decode
+ * noise slide along a degenerate valley. A prior states what is known and how
+ * well, and lets the data overrule it when the data actually can.
+ *
+ * The residual is `(value - mean) / sigma`, added to the objective exactly like
+ * a floor reference, so a prior competes with the correspondences on the same
+ * standardised footing. Priors are reported in `BundleReport.priorResiduals` so
+ * a prior that is doing all the work is visible rather than implied.
+ */
+export interface ParameterPrior {
+  /** Parameter slot, from `slotProjector` / `slotCamera` / `layout.slotCenterHeight`. */
+  slot: number;
+  /** Prior mean, in the parameter's own units. */
+  mean: number;
+  /** One-sigma width. Must be positive; a zero-width prior is a hold, not a prior. */
+  sigma: number;
+  /** Human-readable, for the diagnostics. */
+  name: string;
 }
 
 export interface BundleFreeFlags {
@@ -263,6 +292,11 @@ export interface BundleOptions {
   maxEvaluations: number;
   /** Rejection passes after the first fit. 0 = fit once and report. */
   rejectionPasses: number;
+  /**
+   * Re-estimate a per-camera variance component between passes. See
+   * `estimateVarianceComponents`.
+   */
+  varianceComponents: boolean;
 }
 
 export const DEFAULT_BUNDLE_OPTIONS: BundleOptions = {
@@ -279,6 +313,7 @@ export const DEFAULT_BUNDLE_OPTIONS: BundleOptions = {
   gradTol: 1e-9,
   maxEvaluations: 2000,
   rejectionPasses: 1,
+  varianceComponents: true,
 };
 
 // ---------------------------------------------------------------------------
@@ -299,6 +334,13 @@ export interface ParamLayout {
   /** Human-readable name per reduced column. Used by the rank diagnostics. */
   names: string[];
 }
+
+/** Re-exported so callers can build a prior without importing project.ts. */
+export {
+  PROJ_FOV as PROJ_SLOT_FOV,
+  PROJ_SHIFT_H as PROJ_SLOT_SHIFT_H,
+  PROJ_SHIFT_V as PROJ_SLOT_SHIFT_V,
+} from './project.ts';
 
 export function slotProjector(p: number, i: number): number {
   return p * PROJ_PARAM_COUNT + i;
@@ -584,6 +626,7 @@ function blockIndices(layout: ParamLayout, base: number, count: number): BlockIn
 export interface BundleProblem {
   correspondences: readonly Correspondence[];
   floor: readonly FloorReference[];
+  priors: readonly ParameterPrior[];
   layout: ParamLayout;
   opts: BundleOptions;
   /** Rejected by an earlier pass, or unusable. Never re-enters the fit. */
@@ -593,6 +636,15 @@ export interface BundleProblem {
   /** Cached ideal normalized camera coordinates, 2 per correspondence. */
   normalized: Float64Array;
   normalizedValid: boolean;
+  /**
+   * Per-camera variance component: how much larger the residuals of that
+   * camera's correspondences actually are than the decode said they would be.
+   *
+   * One entry per camera, all 1 until `runBundle` estimates them between LM
+   * passes. See `estimateVarianceComponents` for what it is for and why it is
+   * floored at 1.
+   */
+  cameraScale: Float64Array;
 }
 
 export function buildProblem(
@@ -600,6 +652,7 @@ export function buildProblem(
   correspondences: readonly Correspondence[],
   floor: readonly FloorReference[],
   opts: BundleOptions,
+  priors: readonly ParameterPrior[] = [],
 ): BundleProblem {
   const layout = buildLayout(state, opts);
   const projBlocks: BlockIndex[] = [];
@@ -628,6 +681,7 @@ export function buildProblem(
   return {
     correspondences,
     floor,
+    priors: priors.filter((p) => p.sigma > 0 && layout.freeMap[p.slot] >= 0),
     layout,
     opts,
     excluded: new Array(correspondences.length).fill(false),
@@ -635,6 +689,7 @@ export function buildProblem(
     camBlocks,
     normalized,
     normalizedValid: !opts.free.cameraFocal,
+    cameraScale: new Float64Array(layout.nCameras).fill(1),
   };
 }
 
@@ -757,8 +812,9 @@ export function evaluate(
 
     const du = u - corr.projU;
     const dv = v - corr.projV;
-    const wu = 1 / corr.sigmaU;
-    const wv = 1 / corr.sigmaV;
+    const cs = problem.cameraScale[corr.camera];
+    const wu = 1 / (corr.sigmaU * cs);
+    const wv = 1 / (corr.sigmaV * cs);
     const su = du * wu;
     const sv = dv * wv;
     const s = Math.hypot(su, sv);
@@ -840,6 +896,18 @@ export function evaluate(
         jtj[cols[a] * n + cols[b]] += vals[a] * vals[b];
       }
     }
+  }
+
+  // --- parameter priors: what the documentation knows, and how well ---
+  for (const pr of problem.priors) {
+    const col = layout.freeMap[pr.slot];
+    if (col < 0) continue;
+    const w = 1 / pr.sigma;
+    const r = (readSlot(state, layout, pr.slot) - pr.mean) * w;
+    cost += r * r;
+    if (!wantJacobian || !jtj || !jtr) continue;
+    jtr[col] += w * r;
+    jtj[col * n + col] += w * w;
   }
 
   return { cost, norms, raw, usable, jtj, jtr, contributing };
@@ -1171,6 +1239,21 @@ export interface BundleReport {
   gaugeFreeAxes: boolean[];
   /** Rank deficiency reported by the last linear solve, after damping. */
   lastDeficiency: number;
+  /**
+   * Every prior, and how far the solution ended up from it in units of the
+   * prior's own sigma. A prior sitting at 0.1 sigma did nothing; one at 3 sigma
+   * is fighting the data and the reader deserves to know before quoting the
+   * answer.
+   */
+  priorResiduals: { name: string; sigmas: number }[];
+  /**
+   * Per camera, how many times worse its residuals turned out to be than its
+   * decode claimed. 1.0 means the decode's own uncertainty was right. Anything
+   * much above 1 is unmodelled error — on this bench, almost always inter-frame
+   * camera motion — and it is reported because a solver that silently reweights
+   * its own input owes the reader that number.
+   */
+  cameraResidualScale: number[];
 }
 
 /**
@@ -1401,6 +1484,11 @@ function finishReport(
     perProjectorRmsPx.push(perCount[p] > 0 ? Math.sqrt(perSum[p] / perCount[p]) : 0);
   }
 
+  const priorResiduals = problem.priors.map((pr) => ({
+    name: pr.name,
+    sigmas: (readSlot(state, layout, pr.slot) - pr.mean) / pr.sigma,
+  }));
+
   return {
     state,
     iterations,
@@ -1415,7 +1503,67 @@ function finishReport(
     gaugeConstraints,
     gaugeFreeAxes,
     lastDeficiency,
+    priorResiduals,
+    cameraResidualScale: Array.from(problem.cameraScale),
   };
+}
+
+/**
+ * Per-camera variance components: how much worse each camera's correspondences
+ * really are than its decode claimed.
+ *
+ * `decode.ts` estimates a correspondence's sigma from the photon and read noise
+ * it can see inside one frame set. That is a genuine lower bound and nothing
+ * more. A handheld capture adds an error the decoder is structurally blind to:
+ * a 34-frame sequence at 20 fps takes 1.7 seconds, the lens moves a few
+ * millimetres over that, and every frame-to-frame comparison the decode makes —
+ * Gray bit against complement, phase step against phase step — is then reading a
+ * slightly different scene. Measured against the simulator's ground truth, that
+ * pushes the median decode error from 0.23 to 4.50 projector pixels while the
+ * reported sigma barely moves.
+ *
+ * The residuals see it even though the decoder cannot, so the fit measures it:
+ * the robust scale of each camera's own standardised residuals is how many times
+ * worse that camera turned out to be. Scaling by it makes the weights reflect
+ * what the data actually is, which is the entire content of a variance-component
+ * estimate.
+ *
+ * Two deliberate constraints.
+ *
+ * **Floored at 1.** A camera is never allowed to claim it is BETTER than its
+ * decode said. The unmodelled terms — motion, model error, fringe-order slips —
+ * can only add variance, so a scale below 1 is a small-sample artefact, and
+ * believing it would hand that camera weight it has not earned.
+ *
+ * **Per camera, not per correspondence and not per (camera, projector) pair.**
+ * The cause is a camera that moved, so the camera is the group the physics
+ * names. Going finer would fit the group structure to the residuals themselves —
+ * with a pair-level scale, a projector seen by one camera could have that pair
+ * down-weighted until its pose was determined by nothing.
+ */
+export function estimateVarianceComponents(
+  problem: BundleProblem,
+  norms: Float64Array,
+  usable: readonly boolean[],
+): Float64Array {
+  const nCameras = problem.layout.nCameras;
+  const out = new Float64Array(nCameras).fill(1);
+  const buckets: number[][] = [];
+  for (let c = 0; c < nCameras; c++) buckets.push([]);
+  for (let i = 0; i < norms.length; i++) {
+    if (problem.excluded[i] || !usable[i]) continue;
+    const cam = problem.correspondences[i].camera;
+    if (cam >= 0 && cam < nCameras) buckets[cam].push(norms[i]);
+  }
+  for (let c = 0; c < nCameras; c++) {
+    // A camera with a handful of surviving correspondences has no estimable
+    // scale; leaving it at 1 keeps its stated sigma rather than inventing one.
+    if (buckets[c].length < 64) continue;
+    // The residuals here are already multiplied by the CURRENT scale, so the
+    // update is multiplicative: a camera sitting at 1.0 is where it should be.
+    out[c] = Math.max(1, problem.cameraScale[c] * robustScaleFromNorms(buckets[c]));
+  }
+  return out;
 }
 
 /**
@@ -1438,6 +1586,7 @@ export function runBundle(
    * nominal rig. Omit to report in whatever frame the initialisation was in.
    */
   gaugeReference?: BundleState,
+  priors: readonly ParameterPrior[] = [],
 ): BundleReport {
   const opts: BundleOptions = {
     ...DEFAULT_BUNDLE_OPTIONS,
@@ -1446,7 +1595,7 @@ export function runBundle(
     gauge: { ...DEFAULT_GAUGE_OPTIONS, ...(options.gauge ?? {}) },
     loss: { ...DEFAULT_ROBUST_OPTIONS, ...(options.loss ?? {}) },
   };
-  const problem = buildProblem(initial, correspondences, floor, opts);
+  const problem = buildProblem(initial, correspondences, floor, opts, priors);
 
   let report = levenbergMarquardt(initial, problem);
   let totalIterations = report.iterations;
@@ -1456,14 +1605,33 @@ export function runBundle(
     // A correspondence whose ray no longer meets the sphere is not an outlier
     // to be scored, it is unusable; fold it into the exclusion set directly.
     const priorExcluded = problem.excluded.map((e, i) => e || !ev.usable[i]);
-    const rej = rejectOutliers(ev.norms, opts.loss, priorExcluded);
+
+    // Variance components first, rejection second, and the order matters: the
+    // rejection threshold is stated in standardised units, so it means one thing
+    // when a camera's sigma is right and another when it is three times too
+    // small. Re-estimating between complete LM runs rather than inside one keeps
+    // each run minimising a fixed objective, which is the same reason the
+    // rejection lives here.
+    let scaleChanged = false;
+    if (opts.varianceComponents) {
+      const next = estimateVarianceComponents(problem, ev.norms, ev.usable);
+      for (let c = 0; c < next.length; c++) {
+        if (Math.abs(next[c] - problem.cameraScale[c]) > 1e-3 * problem.cameraScale[c]) {
+          scaleChanged = true;
+        }
+        problem.cameraScale[c] = next[c];
+      }
+    }
+
+    const rejEv = scaleChanged ? evaluate(report.state, problem, false) : ev;
+    const rej = rejectOutliers(rejEv.norms, opts.loss, priorExcluded);
     let changed = false;
     for (let i = 0; i < problem.excluded.length; i++) {
       const next = !rej.keep[i];
       if (next !== problem.excluded[i]) changed = true;
       problem.excluded[i] = next;
     }
-    if (!changed) break;
+    if (!changed && !scaleChanged) break;
     report = levenbergMarquardt(report.state, problem);
     totalIterations += report.iterations;
   }

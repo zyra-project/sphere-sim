@@ -287,3 +287,98 @@ test('the phase estimator is unbiased on a clean synthetic sinusoid', () => {
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// The pooled noise model
+// ---------------------------------------------------------------------------
+
+/**
+ * The defect this replaced, stated as a test.
+ *
+ * With the recommended four phase steps, fitting `A + B*cos(phi - 2*pi*n/N)`
+ * leaves exactly one residual degree of freedom, so a per-pixel noise estimate
+ * is `sigma * |z|` for a standard normal `z`. Two pixels of identical quality
+ * therefore report sigmas an order of magnitude apart, and the bundle — which
+ * weights by `1/sigma^2` — believes it. Pooling over the frame removes the draw
+ * and keeps the part of the variation that is real.
+ */
+test('the pooled sigma is stable across identical pixels; the per-pixel one is not', () => {
+  const scene = makeScene(23, SMALL);
+  const capture = renderCapture(scene.truth, 0, 0, { noiseSigma: 0.01, seed: 4242 });
+
+  const pooled = decodeCapture(capture, { noiseSigma: 0.01 });
+  const perPixel = decodeCapture(capture, { noiseSigma: 0.01, noiseBins: 0 });
+
+  // Same pixels accepted either way: only the reported uncertainty changes.
+  assert.equal(pooled.correspondences.length, perPixel.correspondences.length);
+  for (let i = 0; i < pooled.correspondences.length; i++) {
+    assert.equal(pooled.correspondences[i].projU, perPixel.correspondences[i].projU);
+    assert.equal(pooled.correspondences[i].projV, perPixel.correspondences[i].projV);
+  }
+
+  const spread = (cs: readonly { sigmaU: number }[]): number => {
+    const s = cs.map((c) => c.sigmaU).sort((a, b) => a - b);
+    return s[Math.floor(s.length * 0.95)] / s[Math.floor(s.length * 0.05)];
+  };
+  const pooledSpread = spread(pooled.correspondences);
+  const perPixelSpread = spread(perPixel.correspondences);
+  assert.ok(
+    perPixelSpread > pooledSpread * 3,
+    `per-pixel spread ${perPixelSpread.toFixed(1)} should dwarf pooled ${pooledSpread.toFixed(1)}`,
+  );
+});
+
+test('the pooled sigma tracks the actual decode error across its own range', () => {
+  // The property that makes a sigma usable as a weight is not that it is small
+  // but that it is PROPORTIONAL to the error it predicts. Sorted into quintiles
+  // of its own value, the ratio of actual error to predicted sigma must stay put
+  // — the per-pixel estimator's ratio swings by an order of magnitude because it
+  // is sorting on its own noise.
+  const scene = makeScene(24, SMALL);
+  const clean = decodeCapture(renderCapture(scene.truth, 0, 0, { noiseSigma: 0 }));
+  const ref = new Map<string, number>();
+  for (const c of clean.correspondences) ref.set(`${c.camU},${c.camV}`, c.projU);
+
+  const ratios = (bins: number): number[] => {
+    const decoded = decodeCapture(
+      renderCapture(scene.truth, 0, 0, { noiseSigma: 0.01, seed: 77 }),
+      { noiseSigma: 0.01, noiseBins: bins },
+    );
+    const rows: { sigma: number; err: number }[] = [];
+    for (const c of decoded.correspondences) {
+      const t = ref.get(`${c.camU},${c.camV}`);
+      if (t === undefined) continue;
+      rows.push({ sigma: c.sigmaU, err: Math.abs(c.projU - t) });
+    }
+    rows.sort((a, b) => a.sigma - b.sigma);
+    const out: number[] = [];
+    for (let q = 0; q < 5; q++) {
+      const lo = Math.floor((q * rows.length) / 5);
+      const hi = Math.floor(((q + 1) * rows.length) / 5);
+      const slice = rows.slice(lo, hi);
+      const errs = slice.map((r) => r.err).sort((a, b) => a - b);
+      const sigs = slice.map((r) => r.sigma).sort((a, b) => a - b);
+      out.push(errs[Math.floor(errs.length / 2)] / sigs[Math.floor(sigs.length / 2)]);
+    }
+    return out;
+  };
+
+  const swing = (r: number[]): number => Math.max(...r) / Math.min(...r);
+  const pooledSwing = swing(ratios(16));
+  const perPixelSwing = swing(ratios(0));
+  assert.ok(pooledSwing < 2.0, `pooled ratio swings ${pooledSwing.toFixed(2)} across its quintiles`);
+  assert.ok(
+    perPixelSwing > pooledSwing * 2,
+    `per-pixel swing ${perPixelSwing.toFixed(1)} should be far worse than pooled ${pooledSwing.toFixed(2)}`,
+  );
+});
+
+test('a noiseless capture still reports a finite, floored sigma', () => {
+  const scene = makeScene(25, SMALL);
+  const decoded = decodeCapture(renderCapture(scene.truth, 0, 0, { noiseSigma: 0 }));
+  assert.ok(decoded.correspondences.length > 200);
+  for (const c of decoded.correspondences) {
+    assert.ok(Number.isFinite(c.sigmaU) && c.sigmaU > 0, `sigmaU ${c.sigmaU}`);
+    assert.ok(c.sigmaU >= DEFAULT_DECODE_OPTIONS.minSigmaPx, `sigmaU ${c.sigmaU} below the floor`);
+  }
+});

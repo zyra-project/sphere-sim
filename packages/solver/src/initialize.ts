@@ -69,6 +69,7 @@ import {
   type BundleOptions,
   type BundleState,
   type FloorReference,
+  type ParameterPrior,
   cloneState,
   runBundle,
 } from './bundle.ts';
@@ -540,6 +541,12 @@ export function bootstrap(
   floor: readonly FloorReference[],
   options: Partial<InitOptions> = {},
   bundleOptions: Partial<BundleOptions> = {},
+  /**
+   * Carried through every rung so the ladder optimises the same objective the
+   * full solve will. A bootstrap that ignored the priors would hand the
+   * optimiser a state fitted to a different problem.
+   */
+  priors: readonly ParameterPrior[] = [],
 ): BootstrapReport {
   const opts: InitOptions = { ...DEFAULT_INIT_OPTIONS, ...options };
   const base: BundleOptions = {
@@ -599,7 +606,7 @@ export function bootstrap(
       },
       maxIterations: opts.stageIterations,
       rejectionPasses: 0,
-    });
+    }, undefined, priors);
 
     const coverage = report.used / Math.max(1, sweepSample.length);
     const score = coverage > 0 ? report.rmsResidualPx / coverage : Number.POSITIVE_INFINITY;
@@ -701,7 +708,7 @@ export function bootstrap(
       },
       maxIterations: opts.stageIterations,
       rejectionPasses: 0,
-    });
+    }, undefined, priors);
     const plausible = settled.state.projectors.every((m) =>
       plausibleProjector(m, settled.state.radiusM),
     );

@@ -384,7 +384,7 @@ function main(): void {
   // `progress/data/best/` still hold the PREVIOUS best, so the page's
   // before/after pair compares this round against the one it is trying to beat.
   // Refreshing after would compare a winning round against itself.
-  refreshProgressPage(resultsFile, options.historyPath);
+  refreshProgressPage(resultsFile, options.historyPath, outDir);
 
   // The best round's results are kept under a stable name so the before/after
   // pair can always be rebuilt from it — and, because the record carries the
@@ -418,11 +418,16 @@ function main(): void {
  * history are on disk before this runs; the page is a view of them and can
  * always be rebuilt with `node packages/bench/src/progress.ts`.
  */
-function refreshProgressPage(resultsFile: string, historyPath: string): void {
+function refreshProgressPage(resultsFile: string, historyPath: string, outDir: string): void {
   try {
     const paths = defaultPaths(REPO_ROOT);
     paths.resultsFile = resultsFile;
     paths.roundsFile = historyPath;
+    // The previous best lives beside this round's output, not at the default
+    // location, so a run with `--out-dir` compares against its own history
+    // rather than against whatever the repository happens to hold.
+    paths.previousResultsFile = path.join(outDir, 'best-results.json');
+    paths.previousImageDir = path.join(outDir, 'best');
     const written = writeProgressPage(paths);
     process.stdout.write(
       `progress: ${path.relative(REPO_ROOT, written.file)} (${(written.bytes / 1024 / 1024).toFixed(2)} MB)\n`,

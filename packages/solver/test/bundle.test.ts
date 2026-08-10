@@ -398,3 +398,134 @@ test('the solver passes through everything it did not observe', () => {
   }
   assert.equal(res.calibration.schema, 'sphere-sim/rig-calibration@2');
 });
+
+// ---------------------------------------------------------------------------
+// Parameter priors
+// ---------------------------------------------------------------------------
+
+test('a prior is inert when it is wide and decisive when it is tight', () => {
+  // The point of a prior is that it competes with the data on a stated footing.
+  // A prior far wider than the data's own precision must not move the answer at
+  // all; one far tighter must dominate it. Anything in between is a weighting,
+  // and the reported residual says which regime the solve landed in.
+  const scene = makeScene(31);
+  const corrs = generateCorrespondences(scene.truth, { noisePx: 0.05, seed: 5, sigmaPx: 0.05 });
+  const floor = floorAtEveryLens(scene);
+  // A deliberately WRONG prior mean, so a prior that bites is unmistakable.
+  const wrongFovDeg = scene.nominal.projectors[0].intrinsics.fovHDeg + 5;
+  const nominal = {
+    ...scene.nominal,
+    projectors: scene.nominal.projectors.map((p) => ({
+      ...p,
+      intrinsics: { ...p.intrinsics, fovHDeg: wrongFovDeg },
+    })),
+  };
+
+  const free = solveFromCorrespondences(nominal, scene.cameraInputs, corrs, floor, {
+    priors: { fovHDegSigma: 0 },
+  });
+  const wide = solveFromCorrespondences(nominal, scene.cameraInputs, corrs, floor, {
+    priors: { fovHDegSigma: 50 },
+  });
+  const tight = solveFromCorrespondences(nominal, scene.cameraInputs, corrs, floor, {
+    priors: { fovHDegSigma: 1e-4 },
+  });
+
+  const fov = (r: typeof free): number => r.calibration.projectors[0].intrinsics.fovHDeg;
+  const truth = scene.truth.projectors[0].fovHDeg;
+
+  assert.equal(free.extra.priorResiduals.length, 0, 'sigma 0 registers no prior');
+  assert.ok(
+    Math.abs(fov(wide) - fov(free)) < 1e-3,
+    `a 50 deg prior moved fovH by ${Math.abs(fov(wide) - fov(free))} deg`,
+  );
+  assert.ok(
+    Math.abs(fov(tight) - wrongFovDeg) < 1e-3,
+    `a 1e-4 deg prior should pin fovH at its mean, got ${fov(tight)} vs ${wrongFovDeg}`,
+  );
+  // The free fit should be the one that finds the truth; the pinned one should
+  // not. That is the trade the prior width is buying or selling.
+  assert.ok(Math.abs(fov(free) - truth) < Math.abs(fov(tight) - truth));
+});
+
+test('prior residuals report how hard the prior is fighting the data', () => {
+  const scene = makeScene(32);
+  const corrs = generateCorrespondences(scene.truth, { noisePx: 0.05, seed: 6, sigmaPx: 0.05 });
+  const offsetDeg = 2;
+  const nominal = {
+    ...scene.nominal,
+    projectors: scene.nominal.projectors.map((p) => ({
+      ...p,
+      intrinsics: { ...p.intrinsics, fovHDeg: p.intrinsics.fovHDeg + offsetDeg },
+    })),
+  };
+  const res = solveFromCorrespondences(nominal, scene.cameraInputs, corrs, floorAtEveryLens(scene), {
+    priors: { fovHDegSigma: 0.5 },
+  });
+  assert.equal(res.extra.priorResiduals.length, scene.truth.projectors.length);
+  for (let i = 0; i < res.extra.priorResiduals.length; i++) {
+    const r = res.extra.priorResiduals[i];
+    assert.match(r.name, /fovH$/);
+    const recovered = res.calibration.projectors[i].intrinsics.fovHDeg;
+    const mean = nominal.projectors[i].intrinsics.fovHDeg;
+    assert.ok(
+      Math.abs(r.sigmas - (recovered - mean) / 0.5) < 1e-6,
+      'the reported residual is the actual offset in sigmas',
+    );
+    // The data is strong enough here to overrule a half-degree prior on a
+    // two-degree error, which is the whole reason it is a prior and not a hold.
+    assert.ok(Math.abs(r.sigmas) > 1, `prior residual ${r.sigmas} sigma — the prior won`);
+  }
+});
+
+test('a shift prior closes the lens-shift/pointing near-degeneracy', () => {
+  // Documented in docs/AMENDMENTS.md A-12 and measured on the bench corpus: at a
+  // 33 degree field a lens shift of 0.01 is worth 0.17 degrees of yaw, and the
+  // two are separated only by a second-order term. Here the mechanism is pinned
+  // rather than the policy: a tight shift prior must move the recovered ROTATION,
+  // not merely the shift, because that is the coupling the amendment is about.
+  const scene = makeScene(33);
+  const corrs = generateCorrespondences(scene.truth, { noisePx: 0.2, seed: 8, sigmaPx: 0.05 });
+  const floor = floorAtEveryLens(scene);
+  const free = solveFromCorrespondences(scene.nominal, scene.cameraInputs, corrs, floor);
+  const pinned = solveFromCorrespondences(scene.nominal, scene.cameraInputs, corrs, floor, {
+    priors: { shiftSigma: 1e-5 },
+  });
+  let moved = 0;
+  for (let i = 0; i < free.calibration.projectors.length; i++) {
+    const a = free.calibration.projectors[i].pose;
+    const b = pinned.calibration.projectors[i].pose;
+    moved = Math.max(moved, Math.abs(a.pitchDeg - b.pitchDeg), Math.abs(a.yawDeg - b.yawDeg));
+  }
+  assert.ok(moved > 1e-3, `pinning the shift moved pointing by only ${moved} deg`);
+  for (const p of pinned.calibration.projectors) {
+    assert.ok(Math.abs(p.intrinsics.shiftH) < 1e-3, `shiftH ${p.intrinsics.shiftH} not pinned`);
+    assert.ok(Math.abs(p.intrinsics.shiftV) < 1e-3, `shiftV ${p.intrinsics.shiftV} not pinned`);
+  }
+});
+
+test('a camera whose correspondences are worse than they claim is down-weighted', () => {
+  // Variance components measure what the decode cannot see. Here camera 1's
+  // correspondences carry a deliberate extra error while still reporting the
+  // same sigma as everyone else — which is exactly what inter-frame motion does
+  // to a handheld capture. The fit must notice from the residuals alone.
+  const scene = makeScene(34, { cameraCount: 3 });
+  const corrs = generateCorrespondences(scene.truth, { noisePx: 0.02, seed: 12, sigmaPx: 0.02 });
+  const spoiled = corrs.map((c) =>
+    c.camera === 1 ? { ...c, projU: c.projU + 1.5, projV: c.projV - 1.5 } : c,
+  );
+  const floor = floorAtEveryLens(scene);
+
+  const on = solveFromCorrespondences(scene.nominal, scene.cameraInputs, spoiled, floor);
+  const off = solveFromCorrespondences(scene.nominal, scene.cameraInputs, spoiled, floor, {
+    bundle: { varianceComponents: false },
+  });
+
+  const scales = on.extra.cameraResidualScale;
+  assert.equal(scales.length, 3);
+  assert.ok(scales[1] > 2 * Math.max(scales[0], scales[2]), `scales ${scales.join(', ')}`);
+  // Floored at 1: a camera is never allowed to claim it beat its own decode.
+  for (const s of scales) assert.ok(s >= 1, `scale ${s} below the floor`);
+  // With the components off nothing is measured, so every camera reports 1.
+  for (const s of off.extra.cameraResidualScale) assert.equal(s, 1);
+});

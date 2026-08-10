@@ -6,6 +6,8 @@
 ```
 node packages/bench/src/cli.ts --scenarios 6 --seed 1234 --out bench-results.json
 node packages/bench/src/loop.ts                 # one Phase 1 round, fresh seed
+node packages/bench/src/progress.ts             # rebuild progress/index.html alone
+node packages/bench/src/reference.ts --check    # recompute the static reference and DIFF it
 node tools/assert-deterministic.ts a.json b.json
 ```
 
@@ -52,7 +54,76 @@ projection of the same surface point.
 | `run.ts` | One scenario end to end |
 | `attribute.ts` | Naming the largest contributor to a failing gate, by measurement |
 | `results.ts` | The `bench-results.json` schema |
+| `progress.ts` | `progress/index.html` — the live report. Refreshed by every round |
+| `reference.ts` | The static coverage reference. Rendered ONCE, by hand, never by a round |
 | `cli.ts` / `loop.ts` | Entry points |
+
+---
+
+## The progress page
+
+`progress/index.html`, rebuilt from `bench-results.json` plus the PNGs the round
+just wrote. Both entry points refresh it — `cli.ts` after it writes its results
+file, `loop.ts` after it writes the round — and both wrap the call, because a
+page failure must not lose a hundred-second run. `--no-progress` suppresses it.
+
+Self-contained by construction: inline CSS, inline SVG, every PNG embedded as a
+`data:` URI, and **no JavaScript at all**. Plots are generated as SVG from the
+data rather than drawn by a charting library in the browser, so there is nothing
+to fail to initialise and nothing that renders differently on a second visit.
+`test/progress.test.ts` asserts that every `src` and `href` in the output is
+either an in-page anchor or a `data:` URI — a report that quietly needs the
+internet is a report that will be blank in the room where it matters.
+
+The order of the visuals is the project owner's and reflects diagnostic value:
+residual scatter first, then the equirectangular error map, the grid alignment
+room view, the before/after pair, the round-over-round sparklines, and the static
+reference last because it never changes.
+
+### The residual scatter draws every point
+
+One `<circle>` per correspondence — 113 000 of them on a default round — and not
+one subsampled. Two things follow. A single `<path>` would be a tenth the size
+and composite its own overlaps away, so twenty thousand points and two thousand
+would paint the same flat grey; separate elements at low alpha accumulate, and
+the density gradient is half of what a reader is looking at. And points outside
+the axis range are clamped to the frame rather than dropped, because an outlier
+silently removed is the one thing a residual plot must never do.
+
+Beside each panel are three statistics, because "does this look structured" is a
+question a scalar RMS cannot answer and an eye should not have to:
+
+| Statistic | What it separates |
+| --- | --- |
+| **anisotropy** — ratio of the principal standard deviations, against the raster aspect ratio | `patterns.ts` picks one Gray-plane count and uses it on both axes, so the `u` stride is `resX/2^b` against `resY/2^b` for `v`. A decode-limited residual is wider in `u` by exactly 1.78, and that is the apparatus, not the model. |
+| **radial structure** — variance of the radial component explained by a 12-bin radial profile, as a z against the value independent noise gives by chance | docs/ARCHITECTURE.md G3 and G4: "residuals radially structured, growing with image radius" is distortion or focal length. conventions.ts §C warns that a distortion applied in the wrong direction looks exactly like this. |
+| **axis alignment** — fraction of residuals within 10° of the `u` or `v` axis after standardising each axis | The decode quantises the two axes independently, so its own residual falls on an axis-aligned cross. Standardising first means this cannot be confused with the anisotropy above. |
+
+The `clean` scenario is printed beside every other panel as the apparatus
+reference: zero injected misalignment, no ambient, no noise, a static camera, an
+RMS of 9e-5 projector pixels. Whatever structure survives *there* is the bench's
+own floor and is not a solver defect.
+
+### The static reference is a separate command, on purpose
+
+`node packages/bench/src/reference.ts` computes the coverage and
+incidence-cosine fields once and writes `progress/reference/coverage-reference.json`.
+It is the only generated artifact in `progress/` that git tracks, and no bench
+round touches it.
+
+That separation is the whole point. The reference exists to check two
+counterintuitive claims — PARAMETERS.md §4.2's "overlap multiplicity never
+exceeds 2", correcting a rev 1 error that claimed 3- and 4-way overlap toward the
+poles, and §4.3's four-lobed scalloped unlit polar region. If the file
+regenerated itself every round it would always agree with whatever the forward
+model currently believes, and the check would be worth nothing. `--check`
+recomputes and diffs without writing, and belongs in CI.
+
+The page derives the pass/fail claims from the same arrays it plots, and
+`test/progress.test.ts` recovers the four-lobed claim by parsing the boundary
+curve back out of the rendered SVG and counting its minima — a test that compared
+a caption would pass on a page whose plot had gone wrong. It also breaks the
+reference deliberately, twice, and checks that the checks fail.
 
 ---
 
@@ -377,6 +448,56 @@ three clamps); it is the property `decode.ts` asks for and the reason it asks.
 What does *not* drop out is the black floor, which sets the modulation floor the
 decoder rejects on. `test/units.test.ts` checks the closed form against
 `packages/sim`'s own forward transfer rather than against the bench's algebra.
+
+**`six-cameras` is not comparable to `nominal`, and the corpus cannot answer the
+question its own name asks.** `nominal` sets `handheld = null` — a tripod — and
+leaves ambient at §5's 0.04. `six-cameras` turns handheld motion ON and puts
+ambient at 0.12. So the two differ in three things at once, and reading the gap
+between them as the price of three extra photographs is wrong by most of its
+size. Worse, `six-cameras` does not share a seed with `two-cameras` either, so
+the three members of the intended camera-count series are three different rigs
+photographed by three different camera sets under three different noise draws.
+The `pairWith` mechanism that makes `fov-held` a real paired comparison exists
+and is simply not used here.
+
+Measured properly — same rig, same seed, only the camera count varied — the
+series is flat, not monotone, and there is no defect to find:
+
+| cameras | position error, handheld | position error, tripod |
+| --- | --- | --- |
+| 2 | 398.8 mm | 30.0 mm |
+| 3 | 270.9 mm | 17.2 mm |
+| 4 | 371.2 mm | 31.1 mm |
+| 6 | 346.0 mm | 30.4 mm |
+
+The handheld column is scattered because those scenarios are bias-limited, not
+noise-limited: the extra photographs buy nothing because every camera's decode
+carries its own coherent motion bias and averaging biases does not remove them.
+The tripod column is flat because three cameras already saturate what this
+geometry determines. Not changed here: renumbering or re-seeding an archetype
+breaks the cross-commit comparison the corpus order exists to protect, and the
+honest fix — give `six-cameras` `pairWith: 'two-cameras'` and match its
+degradations to `nominal` for the count series — is a corpus change that belongs
+to whoever owns the scenario list.
+
+**Handheld motion costs twenty times more decode error than every other modelled
+degradation put together.** Decoded correspondences checked against
+`packages/sim`'s own forward projection of the same surface point, on the
+`six-cameras` capture:
+
+| condition | median decode error | p95 |
+| --- | --- | --- |
+| as configured (handheld, rolling shutter, ambient 0.12, sensor noise) | **4.50 px** | 10.5 px |
+| the same with the motion switched off | **0.23 px** | 0.67 px |
+
+1.7 s of capture at 20 fps, 2 mm/s of drift and 0.05°/s of angular drift is
+about 3.4 mm and 0.085° of camera motion across the sequence — a few projector
+pixels on the sphere, exactly as measured. It is a bias rather than noise: it is
+coherent within a (camera, projector) pair, and it differs between the `u` and
+`v` sequences because they are photographed at different points in the frame
+plan. Every scenario from index 4 onward inherits it, which is why the corpus
+splits so cleanly into four scenarios that recover to tens of millimetres and
+eight that recover to hundreds.
 
 **The pattern's Gray-plane count has to be derived from the camera, not chosen.**
 A 1920-pixel projector with 7 Gray planes has a 15-pixel stride; a 320-pixel

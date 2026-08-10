@@ -41,10 +41,15 @@ import {
   DEFAULT_BUNDLE_OPTIONS,
   DEFAULT_FREE_FLAGS,
   DEFAULT_GAUGE_OPTIONS,
+  PROJ_SLOT_FOV,
+  PROJ_SLOT_SHIFT_H,
+  PROJ_SLOT_SHIFT_V,
   type BundleOptions,
   type BundleState,
   type FloorReference,
+  type ParameterPrior,
   runBundle,
+  slotProjector,
 } from './bundle.ts';
 import { DEFAULT_INIT_OPTIONS, bootstrap, type InitOptions } from './initialize.ts';
 import { DEFAULT_ROBUST_OPTIONS } from './robust.ts';
@@ -67,6 +72,7 @@ export type {
   BundleState,
   BundleReport,
   FloorReference,
+  ParameterPrior,
 } from './bundle.ts';
 export type { InitOptions, BootstrapReport } from './initialize.ts';
 export type { RobustOptions, LossKind } from './robust.ts';
@@ -88,10 +94,73 @@ export interface SolverCameraInput {
   rollDeg: number;
 }
 
+/**
+ * How tightly the documented nominals constrain the parameters PARAMETERS.md
+ * classes SOLVE but derives from something it classes CFG.
+ *
+ * The mechanism exists because PARAMETERS.md asks for it by name — §2 says to
+ * treat `d_proj` as `SOLVE` "with a wide prior (5.0-6.5 m)", and §3.1 classes
+ * `fov_h` as SOLVE while classing the throw ratio it is derived from as CFG,
+ * "read from a hardware spec sheet, known per install". A site that has read its
+ * own spec sheet should pass `fovHDeg` to `nominalRig` and a small sigma here.
+ *
+ * **Every default is 0, i.e. off, and that is a measured decision rather than
+ * caution.** The field-of-view/distance valley is real: with `fovHDeg` held, the
+ * scenarios whose decode carries a motion bias improve by a factor of three to
+ * eight. But a prior does not reproduce that, at any width. Swept over
+ * 0.5, 1, 2, 3 and 4 degrees on the twelve-scenario corpus, the worst-case pose
+ * position error moved from 639.6 mm to 622.1 mm — under 3% — and the median
+ * barely at all.
+ *
+ * The reason is that the failure along the valley is BIAS, not variance. With
+ * ten thousand correspondences the formal one-sigma on `fovHDeg` is about
+ * 0.15 degrees, while the recovered field is 2.5 to 4.9 degrees away from truth:
+ * a twenty-sigma error. A prior at any width a spec sheet could justify is two
+ * orders of magnitude weaker than the (wrong) data and is simply outvoted.
+ * Holding the field works only because it is an infinitely tight prior at a
+ * value that happens to be closer to truth than the fit is — and holding it
+ * would encode one side of §2's unresolved `d_proj` conflict, which costs
+ * `long-throw` a factor of 1.6 (501 mm -> 794 mm) when the site really is at the
+ * floor plan's end of that conflict.
+ *
+ * So the honest statement is: this degeneracy is not closed by regularisation.
+ * It is closed by knowing the lens, which is what PARAMETERS.md §8 item 2 asks
+ * the ground-truth visit to write down. See docs/AMENDMENTS.md A-13.
+ */
+export interface SolvePriorOptions {
+  /** One-sigma prior on each projector's `fovHDeg`, degrees. 0 = no prior. */
+  fovHDegSigma: number;
+  /**
+   * One-sigma prior on each projector's lens shift, in §I's units (a fraction
+   * of the half-image). 0 = no prior, which is the default and is deliberate.
+   *
+   * Lens shift is the OTHER near-degeneracy in this geometry and it is the one
+   * that decides the pose-rotation gate. At a 33-degree field a shift of 0.01 —
+   * ten pixels of principal point on a 1920 raster — is worth 0.17 degrees of
+   * yaw, and the two are separated only by the second-order difference between
+   * translating a principal point and rotating a lens. Measured on this corpus:
+   * holding `shiftH`/`shiftV` at §3.1's nominal of zero drops the worst rotation
+   * error from 6.29 degrees to 0.30 and the pitch component with it.
+   *
+   * It is off by default because PARAMETERS.md gives lens shift a nominal (0)
+   * and a class (SOLVE) but no uncertainty, and any sigma chosen here would be
+   * invented — and would then be the number that decides whether §7's rotation
+   * gate passes. That is a decision for the spec, not for the solver. Filed as
+   * docs/AMENDMENTS.md A-12 with the measurement.
+   */
+  shiftSigma: number;
+}
+
+export const DEFAULT_PRIOR_OPTIONS: SolvePriorOptions = {
+  fovHDegSigma: 0,
+  shiftSigma: 0,
+};
+
 export interface SolveOptions {
   decode: Partial<DecodeOptions>;
   init: Partial<InitOptions>;
   bundle: Partial<BundleOptions>;
+  priors: Partial<SolvePriorOptions>;
   /** Propagated to the bootstrap RANSAC. Every run with the same seed is identical. */
   seed: number;
 }
@@ -131,6 +200,20 @@ export interface SolverExtraDiagnostics {
   gaugeFreeAxes: boolean[];
   /** True when `h_center` was actually solved rather than held at its nominal. */
   centerHeightObserved: boolean;
+  /**
+   * Each parameter prior and how far the solution sits from it, in units of that
+   * prior's own sigma. Reported so a prior doing the work of the data is
+   * visible: a residual near zero means the prior decided the parameter, and a
+   * residual past two sigma means the data overruled it.
+   */
+  priorResiduals: { name: string; sigmas: number }[];
+  /**
+   * Per camera, how many times worse its residuals were than its decode claimed.
+   * 1.0 means the decode's uncertainty model was right for that camera; 3 means
+   * two thirds of its error is something the decoder cannot see from inside one
+   * frame set, which in a handheld capture is the camera having moved.
+   */
+  cameraResidualScale: number[];
   /**
    * Recovered camera poses.
    *
@@ -260,8 +343,10 @@ export function solve(input: SolveInput): SolverResult {
     decode: input.options?.decode ?? {},
     init: input.options?.init ?? {},
     bundle: input.options?.bundle ?? {},
+    priors: input.options?.priors ?? {},
     seed: input.options?.seed ?? DEFAULT_INIT_OPTIONS.seed,
   };
+  const priorOpts: SolvePriorOptions = { ...DEFAULT_PRIOR_OPTIONS, ...opts.priors };
 
   let correspondences: readonly Correspondence[];
   let decodeStats: DecodeStats;
@@ -300,12 +385,44 @@ export function solve(input: SolveInput): SolverResult {
     loss: { ...DEFAULT_ROBUST_OPTIONS, ...(opts.bundle.loss ?? {}) },
   };
 
+  // Centred on the NOMINAL field of view, never on the bootstrap's own estimate.
+  // A prior centred on an estimate derived from the same data is not a prior, it
+  // is the fit talking to itself, and it would suppress the valley without
+  // adding a single bit of outside information.
+  const priors: ParameterPrior[] = [];
+  for (let i = 0; i < nominalState.projectors.length; i++) {
+    const p = nominalState.projectors[i];
+    if (priorOpts.fovHDegSigma > 0) {
+      priors.push({
+        slot: slotProjector(i, PROJ_SLOT_FOV),
+        mean: p.fovHDeg,
+        sigma: priorOpts.fovHDegSigma,
+        name: `${p.id}.fovH`,
+      });
+    }
+    if (priorOpts.shiftSigma > 0) {
+      priors.push({
+        slot: slotProjector(i, PROJ_SLOT_SHIFT_H),
+        mean: p.shiftH,
+        sigma: priorOpts.shiftSigma,
+        name: `${p.id}.shiftH`,
+      });
+      priors.push({
+        slot: slotProjector(i, PROJ_SLOT_SHIFT_V),
+        mean: p.shiftV,
+        sigma: priorOpts.shiftSigma,
+        name: `${p.id}.shiftV`,
+      });
+    }
+  }
+
   const boot = bootstrap(
     nominalState,
     correspondences,
     floor,
     { ...opts.init, seed: opts.seed },
     bundleOptions,
+    priors,
   );
 
   // The nominal is the gauge anchor: PARAMETERS.md §2 describes the rig's
@@ -318,6 +435,7 @@ export function solve(input: SolveInput): SolverResult {
     floor,
     bundleOptions,
     nominalState,
+    priors,
   );
 
   const diagnostics: SolveDiagnostics = {
@@ -342,6 +460,8 @@ export function solve(input: SolveInput): SolverResult {
       gaugeConstraints: report.gaugeConstraints,
       gaugeFreeAxes: report.gaugeFreeAxes,
       centerHeightObserved,
+      priorResiduals: report.priorResiduals,
+      cameraResidualScale: report.cameraResidualScale,
       cameras: report.state.cameras,
     },
   };

@@ -20,3 +20,4 @@ progress/index.html
 # and never regenerated, and it is the correctness check for PARAMETERS.md §4.2
 # and §4.3. Keeping it in history means a change to it shows up in a diff.
 !progress/reference/
+bench-before.json

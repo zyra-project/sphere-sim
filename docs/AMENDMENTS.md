@@ -38,6 +38,8 @@ Entries here address one of two documents, and the rule differs:
 | A-09 | PARAMETERS.md §7 | OPEN |
 | A-10 | PARAMETERS.md §7 / §2 | OPEN |
 | A-11 | PARAMETERS.md §7 / §8 | OPEN |
+| A-12 | PARAMETERS.md §3.1 / §7 / §8 | OPEN |
+| A-13 | PARAMETERS.md §3.1 / §8 | OPEN |
 
 ---
 
@@ -467,3 +469,274 @@ horizontal and vertical components and names the dominant direction, so a
 tape-measure-limited failure reads as "vertical (height/h_center)" rather than
 as a solver defect. `scenarios[].inputs.floorSigmaM` records the assumed tape
 accuracy in every results file.
+
+---
+
+## A-12 — §3.1: lens shift has a nominal and a class but no uncertainty, and that omission decides the §7 rotation gate
+
+**Status:** OPEN. Blocking for the pose-rotation gate. Reported by the solver.
+
+**The tension.** §3.1 gives `shift_v, shift_h` a nominal of 0, a class of
+`SOLVE`, and one note: "Non-zero for ceiling mounts." No range, no tolerance.
+§7 then sets pose rotation recovery at ≤ 0.05°.
+
+Those two clauses interact, because at this geometry lens shift and pointing are
+very nearly the same parameter. The arithmetic is elementary. With
+`fov_h` ≈ 33.5° on a 1920-wide raster the focal length is
+`(1920/2)/tan(16.73°)` = **3195 px/rad**, and §I makes lens shift a fraction of
+the half-image, so `shiftH = 0.01` moves the principal point 9.6 px — worth
+`9.6/3195` = **0.172° of yaw**. The only thing that tells a shifted lens from a
+rotated one is the second-order difference between translating a principal point
+and rotating the whole frustum across a 33° field, which is a small effect
+sitting on top of a large one.
+
+The normal equations agree. At the solution, in the diagonally-scaled metric,
+the condition number runs `3×10⁷` to `1×10⁸` and the three smallest
+eigendirections are dominated by per-projector pointing coupled to shift:
+
+| Scenario | Smallest-eigendirection energy |
+| --- | --- |
+| `nominal` | yaw 61.8%, pitch 25.5%, `fovH` 4.0%, shift 4.0% |
+| `six-cameras` | pitch 64.3%, `shiftV` 14.9%, yaw 11.6%, `fovH` 3.7% |
+| `two-cameras` | pitch 52.8%, yaw 40.9%, shift 5.5% |
+
+That is the same signature the bench's own attribution reports from the other
+side: `pose_rotation` is 63% pitch.
+
+**The measurement.** Holding `shiftH`/`shiftV` at §3.1's own nominal of zero, on
+the twelve-scenario corpus at seed 1234:
+
+| | shift free | shift held at 0 |
+| --- | --- | --- |
+| Worst pose rotation error | **6.29°** | **0.30°** |
+| `handheld` rotation error | 3.55° | 0.16° |
+| Worst pose position error | 505.8 mm | **1286.6 mm** |
+
+So the rotation gate is a factor of twenty away from passing, and which side of
+that factor the solver lands on is decided entirely by what uncertainty the
+document assigns to a parameter for which it assigns none. (The position column
+is the other half of the story and is A-13's: with shift no longer available to
+absorb the error, it moves into the field-of-view/distance valley instead.)
+
+**Proposed amendment.** Give `shift_h`, `shift_v` a plausible range in §3.1, in
+the same spirit as §2's `±1–2°` mount tolerance — the natural statement is that
+a rig built to §2 (lens at the equator, aimed at the centre, no ceiling mount)
+has zero shift to within some stated fraction, and that a ceiling mount is a
+different configuration whose shift is read from the projector rather than
+solved. And add one line to §8 item 2: **read the lens shift setting off the
+projector's own menu**. It is a number the projector displays, it costs nothing
+to write down, and it is currently the least-constrained parameter in the whole
+geometric fit.
+
+**What the code does meanwhile.** `packages/solver` keeps `shiftH`/`shiftV`
+free, per §3.1's `SOLVE` class. `SolvePriorOptions.shiftSigma` supplies a
+documented Gaussian prior on them and is **0 (off) by default**, so nothing in
+the shipped behaviour depends on a number this document does not state. A test
+pins the mechanism — a tight shift prior must move the recovered *pointing*,
+which is the coupling this entry is about — rather than pinning a policy.
+
+---
+
+## A-13 — §3.1 / §8: `fov_h` should be initialised from the throw ratio, not from `d_proj`, and the difference is the largest single term in the pose error
+
+**Status:** OPEN. Blocking for the pose-position gate. Reported by the solver.
+
+**The tension.** §3.1 classes `fov_h` as `SOLVE` and derives it from `T`, class
+`CFG` — "read from a hardware spec sheet". §2 declines to settle `d_proj` and
+tells the solver to treat it as `SOLVE` with a wide 5.0–6.5 m prior. Nothing
+says which of the two an implementation should use to build the nominal field of
+view, and the answer changes the recovered geometry by a factor of eight.
+
+The sphere subtends about 19° from a long-throw lens, so `d` and `fov_h` trade
+against each other almost exactly: what an image determines well is the ratio,
+and what separates them is the ~0.79 m depth swing of §3.3, some 15% of
+`d_proj`. AMENDMENTS-adjacent evidence already in `packages/bench/README.md`
+shows two calibrations a quarter of a metre apart fitting the same photographs
+to within 0.4% of the same residual RMS.
+
+**What we measured this round, and it changes the recommended remedy.**
+
+1. **A prior on `fov_h` does not close the valley, at any width.** Swept at
+   one-sigma widths of 0.5, 1, 2, 3 and 4 degrees over the twelve-scenario
+   corpus, the worst-case pose position error moved from **639.6 mm to
+   622.1 mm** — under 3% — and the median barely at all.
+
+2. **The reason is that the failure is bias, not variance.** The formal
+   one-sigma on `fov_h` from the normal equations, with the residual scale taken
+   from the fit itself, is about **0.15°**, while the recovered field lands
+   **2.5–4.9°** from truth on the scenarios that carry a decode bias. That is a
+   twenty-sigma error. A prior at any width `T`'s spec sheet could justify
+   (1–2% of `T`, i.e. 0.3–0.7°) is two orders of magnitude weaker than the wrong
+   data it would have to argue with, and is simply outvoted.
+
+3. **Holding `fov_h` does work, and that is the point.** On the same corpus:
+   `handheld` 639.6 → 71.8 mm, `six-cameras` 346.2 → 166.6, `three-projectors`
+   270.2 → 60.6, `no-floor-reference` 391.2 → 133.5. It is an infinitely tight
+   prior at a value nearer the truth than the fit is.
+
+4. **But holding it at a value derived from `d_proj` is not available.** The
+   `long-throw` scenario is a site whose real geometry is the floor plan's
+   6.14 m while its config carries the alignment manual's 5.18 m. A field of
+   view derived from 5.18 m is 33.46°; from 6.14 m it is 28.37°. Holding the
+   first costs that scenario **500.7 → 793.8 mm**. Encoding one side of a
+   conflict §2 explicitly refuses to settle is exactly the failure mode §2 is
+   warning about.
+
+The way out is the one §3.1 already implies and never states: **`fov_h` comes
+from the lens, not from the distance.** A throw ratio read off a spec sheet is
+independent of where the projector ended up standing, so it breaks the
+degeneracy with outside information rather than with an assumption.
+
+**Proposed amendment.** Two lines.
+
+(a) In §3.1, say that `fov_h`'s nominal is derived from `T` and **must not** be
+derived from `d_proj`, and give `T` a stated tolerance — a zoom lens's throw
+ratio is a range, so the tolerance has to cover the zoom setting as well as the
+sheet.
+
+(b) In §8 item 2, add the zoom setting to what gets recorded: "Projector make
+and model → throw ratio, native resolution, lens shift range" already asks for
+the sheet; it needs "and the zoom setting as deployed", because otherwise the
+recorded throw ratio is a range and the derived field is only as good as the
+widest end of it.
+
+**What the code does meanwhile.** `packages/solver`'s `nominalRig` derives
+`fov_h` from `radiusM / distanceM` per A-01 when no field of view is passed, and
+documents that a caller holding the spec sheet should pass `fovHDeg` instead.
+`packages/bench` does **not** pass it: `run.ts` builds the solver's nominal at
+`d_proj`'s documented 5.18 m, so the bench is currently modelling a site that has
+not read its own spec sheet. That is a defensible thing to measure and it is not
+being changed unilaterally — but every pose-position number in
+`bench-results.json` is conditional on it, and the gap between the two readings
+is a factor of eight. `SolvePriorOptions.fovHDegSigma` implements the prior and
+is 0 (off) by default, because measurement 1 above says a prior of any honest
+width is theatre.
+
+---
+
+## A-12 — §7 / §8: the pose gate is a tape-measure gate, not a solver gate
+
+**Status:** OPEN. **This is the most consequential entry in this file.** It says the
+headline geometric gate cannot be met by improving the solver, at any camera
+resolution, with the measurement instrument §8 prescribes.
+
+**Method.** One scenario (`nominal` archetype, seed 424242), one knob moved at a
+time, everything else — rig, injected misalignment, seed, patterns — held fixed.
+
+### Step 1: is it the field-of-view degeneracy?
+
+No. Holding `fovHDeg` makes recovery **five times worse**, and by an identical
+amount at both camera resolutions, so it is a fixed bias rather than noise:
+
+| variant | position | rotation | residual |
+| --- | --- | --- | --- |
+| 320×240, fov free | 27.952 mm | 0.0624° | 0.1336 px |
+| 320×240, **fov held** | **141.240 mm** | 0.1298° | 0.1359 px |
+| 1280×960, fov free | 4.861 mm | 0.0498° | 0.0657 px |
+| 1280×960, **fov held** | **141.341 mm** | 0.1278° | 0.0700 px |
+
+The cause is a divergence between the two `nominalRig` builders: `sim` constructs
+`fovH` = 34.0918°, `solver` constructs 33.4610°. Holding the field of view pins it
+0.63° from truth and the pose absorbs the error. **The earlier `fov-held`
+result that appeared to show a 2.7× improvement was two-camera geometry so poorly
+conditioned that a wrong-but-frozen parameter beat a wildly-free one.** It does
+not generalise, and it should not have been reported as a headline. See A-13.
+
+### Step 2: is it the sensor?
+
+Partly, and only up to about 640×480:
+
+| camera | position | rotation | residual | correspondences |
+| --- | --- | --- | --- | --- |
+| 320×240 | 27.952 mm | 0.0624° | 0.1336 px | 9 911 |
+| 640×480 | 6.559 mm | 0.0503° | 0.0703 px | 47 639 |
+| 1280×960 | 4.861 mm | 0.0498° | 0.0657 px | 168 148 |
+| 2560×1920 | 4.423 mm | 0.0483° | 0.0701 px | 761 776 |
+
+The gain saturates hard — 4.3× for the first doubling-of-doubling, then 1.35×,
+then 1.10× — and the residual floors at ~0.070 px from 640×480 onward.
+
+It is **precision, not count**. Rendering at 1280×960 while throttling the
+correspondence cap back to the 320×240 baseline gives **4.993 mm from 13 357
+correspondences**, statistically the same as 4.861 mm from 168 148. Twelve times
+fewer points on a finer sensor is as good. Keeping more points on a coarse sensor
+would not have helped.
+
+### Step 3: what does the curve asymptote to?
+
+The floor-reference tape measure. Removing each noise source separately, at
+640×480:
+
+| case | position | rotation | residual | `h_center` |
+| --- | --- | --- | --- | --- |
+| baseline: tape σ = 3 mm, sensor noise on | 6.559 mm | 0.0503° | 0.0703 px | 1.32 mm |
+| tape σ = 0.05 mm, sensor noise on | 5.029 mm | **0.0041°** | 0.0703 px | 0.01 mm |
+| tape σ = 3 mm, **no** sensor noise | 4.375 mm | 0.0483° | 0.0000 px | 1.34 mm |
+| **neither** | **0.073 mm** | **0.0008°** | 0.0000 px | 0.02 mm |
+
+The two terms are independent and add in quadrature:
+`√(5.029² + 4.375²)` = 6.66 mm against 6.559 observed.
+
+Three conclusions follow, and the third is the important one.
+
+1. **The solver is not the problem.** With both noise sources removed it recovers
+   pose to **0.073 mm and 0.0008°** — 27× inside the position gate and 60× inside
+   the rotation gate. There is no solver defect here to optimise away.
+2. **The rotation gate is almost purely a tape-measure gate.** Tape σ alone moves
+   rotation from 0.0041° to 0.0503°, i.e. from comfortably passing to failing, and
+   sensor noise barely touches it (0.0483° with a *noiseless* camera).
+3. **The asymptotic position floor as camera resolution → ∞ is the tape term,
+   ≈ 4.4 mm.** Predicted 4.375 mm from the ablation; measured 4.423 mm at
+   2560×1920. §7's gate is 2 mm. **No camera and no solver reaches it while floor
+   references carry 3 mm of error.**
+
+### Proposed amendment
+
+Two options, and they are not exclusive.
+
+- **§8 item 1: replace the tape measure with a laser distance meter.** §8 currently
+  says "Tape measure: floor to sphere center; floor to each projector lens". A
+  hand-held laser measure is ±1 mm over this range and costs about the same as
+  lunch. Substituting σ = 1 mm for σ = 3 mm moves the asymptotic floor from
+  ≈4.4 mm to ≈1.5 mm, which brings §7's 2 mm gate inside reach. This is the
+  single cheapest change available to the project.
+- **§7: state the pose gate as a budget with its terms named** — solver,
+  sensor, and reference-measurement — rather than a single number. As written,
+  the gate reads as a claim about alignment software; the measurement shows it is
+  mostly a claim about the instrument used on the visit.
+
+**What the code does meanwhile.** `floorSigmaM` is already a scenario parameter,
+defaulting to the 3 mm that a tape measure justifies. Nothing is tuned. The
+ablation above is reproducible from `packages/bench` and becomes Experiment 1's
+first figure.
+
+---
+
+## A-13 — the two `nominalRig` builders disagree, and it silently poisoned a result
+
+**Status:** OPEN. Reported by the independence critic and confirmed by measurement.
+
+`packages/sim` and `packages/solver` each construct the PARAMETERS.md nominal rig
+independently, which is the design working as intended. They disagree:
+
+| quantity | `sim` | `solver` |
+| --- | --- | --- |
+| `fovH` at nominal | 34.0918° | 33.4610° |
+| projector azimuths at N=3 | 0°, 90°, 180° | 0°, 120°, −120° |
+
+The `fovH` gap traces to a `marginFrac` default of 0.02 in
+`sim/src/optics.ts` — 2% of headroom around the silhouette that A-01 discusses in
+prose but never fixes as a number. The azimuth gap is §2 being silent about N=3,
+the same ambiguity A-06 records for N=2.
+
+Neither is a boundary violation: independent construction from the same prose is
+exactly what the architecture asks for, and the disagreement being *visible* is
+the mechanism working. But an undeclared 0.63° divergence sitting in the one seam
+the design exists to keep clean is not harmless — it is what made "hold the field
+of view" look like a fix when it is a 5× regression (A-12, step 1).
+
+**Proposed amendment.** Fix `marginFrac` in §3.1 as an explicit documented
+constant rather than leaving it to each implementation, and settle the N=3
+azimuths in §2. Then add a test asserting both builders agree to a stated
+tolerance — comparing *outputs* of two independent implementations is a
+legitimate cross-check and does not couple them.

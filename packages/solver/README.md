@@ -153,7 +153,83 @@ procedure works in.
   is class CFG in PARAMETERS.md §3.1 — derived from a throw ratio read off a spec
   sheet — so passing a good nominal and holding it is usually the right call, and
   the bootstrap holds it regardless.
+- **A prior on the field of view does not close that valley, and the reason is
+  measurable.** Swept at one-sigma widths of 0.5, 1, 2, 3 and 4 degrees over the
+  bench's twelve-scenario corpus, the worst-case pose position error moved from
+  639.6 mm to 622.1 mm — under 3%. The formal one-sigma on `fovHDeg` from the
+  normal equations, with the residual scale taken from the fit itself, is about
+  0.15 degrees, while the recovered field lands 2.5 to 4.9 degrees from truth on
+  the scenarios carrying a decode bias. That is a twenty-sigma error: the failure
+  along the valley is BIAS, and any prior a spec sheet could justify is two
+  orders of magnitude weaker than the wrong data it has to argue with. HOLDING
+  the field does help — by a factor of three to eight on those scenarios —
+  because it is an infinitely tight prior at a value nearer the truth than the
+  fit; it also costs the `long-throw` case a factor of 1.6, because that site
+  really is at the far end of PARAMETERS.md §2's unresolved `d_proj` conflict and
+  the nominal field derived from the near end is 4.85 degrees wrong. See
+  docs/AMENDMENTS.md A-13. `SolvePriorOptions.fovHDegSigma` exists for a site
+  that has read its own spec sheet; it is 0 by default.
+- **Lens shift is nearly degenerate with pointing, and it is what decides the
+  rotation gate.** The smallest eigendirections of the normal equations at the
+  solution are 53-64% pitch, 41% yaw and 15% `shiftV`, at a condition number of
+  3e7 to 1e8 in the diagonally-scaled metric. The arithmetic is elementary: at a
+  33-degree field on a 1920-wide raster the focal length is 3195 px/rad, so a
+  `shiftH` of 0.01 — ten pixels of principal point — is worth 0.172 degrees of
+  yaw, and the only thing separating them is the second-order difference between
+  translating a principal point and rotating a lens. Pinning `shiftH`/`shiftV` at
+  PARAMETERS.md §3.1's nominal of zero drops the worst pose-rotation error on the
+  corpus from 6.29 degrees to 0.30. It is NOT pinned by default, because §3.1
+  gives lens shift a nominal and a class but no uncertainty, and whichever sigma
+  gets chosen is then the number that decides whether §7's 0.05-degree gate is
+  reachable. Filed as docs/AMENDMENTS.md A-12; the mechanism is
+  `SolvePriorOptions.shiftSigma`, default 0.
+- **The per-correspondence sigma used to be a one-degree-of-freedom draw.** With
+  the recommended four phase steps, fitting `A + B*cos(phi - 2*pi*n/N)` leaves
+  `N - 3 = 1` residual degree of freedom, so the old per-pixel noise estimate was
+  `sigma * |z|` for a standard normal `z`. Measured against ground truth on the
+  bench corpus, the reported sigma spread a factor of thirty across its own
+  deciles while the actual decode error spread a factor of two, and the rank
+  correlation between the two was 0.05-0.20. Since the bundle weights by
+  `1/sigma^2` and the outlier pass thresholds on `|r|/sigma`, that meant lucky
+  pixels were given a thousand times their share of the normal equations and
+  seventeen to twenty-one per cent of perfectly good correspondences were thrown
+  away at random. `decode.ts` now pools the noise estimate over the whole frame,
+  binned by each pixel's own DC level so the shot-noise dependence survives. On
+  the scenarios whose errors are noise-limited rather than bias-limited the pose
+  position error fell by a factor of 2.5 to 3.6 and the estimator became
+  statistically consistent — the ratio of the observed residual variance to the
+  variance the decode claims is now 1.02 on `nominal`, against 11 to 375 on the
+  scenarios that carry an inter-frame motion bias. `DecodeOptions.noiseBins: 0`
+  restores the old behaviour for comparison.
 - **`p1`, `p2` are off by default**, per PARAMETERS.md §3.1.
 - **Sparse camera coverage is the fragile case.** Two cameras under heavy ambient
   and sensor noise is close to the edge of what the bootstrap handles; three is
   comfortable. Experiment 1 exists to measure exactly this.
+- **A per-camera variance component is the part of that which the fit CAN
+  measure.** The residuals see the motion even though the decoder cannot, so
+  `runBundle` estimates, between passes, how many times worse each camera's
+  standardised residuals actually are and rescales that camera's weights —
+  floored at 1, because unmodelled error can only add variance and a camera is
+  never allowed to claim it beat its own decode. It is reported as
+  `cameraResidualScale`, which is the diagnostic worth reading first on a bad
+  scenario: 1.0 means the decode's uncertainty model was right for that camera,
+  and 3 means two thirds of its error is something no per-pixel formula could
+  have seen. On the bench corpus it moves the MEDIAN pose position error (270 ->
+  236 mm at seed 1234, 232 -> 153 mm at seed 428948602) and leaves the worst case
+  alone, which is what a reweighting can be expected to do: it helps when cameras
+  differ from each other and does nothing when they all moved about the same.
+- **Handheld motion is a decode BIAS, and no weighting removes it.** A 34-frame
+  sequence at 20 fps takes 1.7 s, over which the modelled handheld drift moves
+  the lens about 3.4 mm and turns it about 0.085 degrees. Measured against the
+  simulator's own forward projection, the median decode error on the `six-cameras`
+  capture is 4.50 projector pixels with the motion on and 0.23 with it off — a
+  twentyfold difference, and the largest single term in the whole corpus. It is
+  not noise: it is coherent within a (camera, projector) pair and it differs
+  between the u and v sequences because they are photographed at different points
+  in the sequence. Re-weighting cannot help, and the measurements say so: an
+  ORACLE weighting, with every correspondence's sigma set to its true error,
+  makes the affected scenarios worse rather than better, while an oracle
+  REJECTION that keeps only the correspondences whose true error is under a pixel
+  improves them by 20-40%. What the solver would need is a time-aware decode that
+  models the camera pose per frame; nothing available to the current decoder
+  senses the bias from inside one frame set.

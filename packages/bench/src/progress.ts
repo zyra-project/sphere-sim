@@ -809,15 +809,18 @@ const MAP_H = 180;
 function errorMapPanel(s: ScenarioJson, image: string | null): string {
   const inputs = inputsOf(s);
   const meridians = projectorMeridiansDeg(inputs);
-  const seams: number[] = [];
-  for (const m of meridians) {
-    for (const d of [45, -45]) {
-      let lon = m + d;
-      while (lon > 180) lon -= 360;
-      while (lon <= -180) lon += 360;
-      if (!seams.some((x) => Math.abs(x - lon) < 1)) seams.push(lon);
-    }
-  }
+  // A seam is one direction, not two: halfway between two ADJACENT projectors.
+  // Drawing 45 degrees either side of every meridian would put two lines a
+  // degree apart wherever the two mounts are not exactly 90 degrees off, which
+  // is every real rig and every perturbed one here.
+  const sorted = [...meridians].sort((a, b) => a - b);
+  const seams: number[] = sorted.map((lon, i) => {
+    const next = i + 1 < sorted.length ? sorted[i + 1] : sorted[0] + 360;
+    let mid = (lon + next) / 2;
+    while (mid > 180) mid -= 360;
+    while (mid <= -180) mid += 360;
+    return mid;
+  });
   const colatitude = inputs.maskInterpretation === 'colatitude';
   const maskOnset = colatitude ? 20 : 60;
   const maskFull = colatitude ? 30 : 70;
@@ -985,10 +988,12 @@ function beforeAfterSection(
   images: ImageStore,
   previous: PreviousRound | null,
 ): string {
+  let matched = 0;
   const rows = results.scenarios.map((s) => {
     const grid = s.metrics.find((m) => m.id === 'grid_displacement');
     const baseline = s.baseline?.metrics.find((m) => m.id === 'grid_displacement');
     const prevScenario = previous?.results.scenarios.find((p) => p.id === s.id && p.seed === s.seed);
+    if (prevScenario !== undefined) matched++;
     const prevGrid = prevScenario?.metrics.find((m) => m.id === 'grid_displacement');
 
     const left =
@@ -1019,9 +1024,16 @@ function beforeAfterSection(
          <code>loop.ts</code> has recorded a best round it copies that round's renders to
          <code>progress/data/best/</code>, and this section becomes previous-best against current with the seeds
          matched scenario by scenario.</p>`
-      : `<p class="note">Left is the previous best round (${esc(previous.label)}), right is this round. Pairs are
-         matched on scenario id <em>and</em> seed, so a scenario whose seed changed between rounds shows this round's
-         documented-calibration render instead of a comparison that would be between two different rigs.</p>`;
+      : `<p class="note">Left is the previous best round (${esc(previous.label)}), right is this round, matched on
+         scenario id <em>and</em> seed — ${matched} of ${results.scenarios.length} scenario(s) matched. A scenario
+         that did not match shows this round's documented-calibration render instead, because a pair drawn from two
+         different seeds is a pair of two different rigs and comparing them says nothing about the build.
+         <br/><br/>Seeds are <em>meant</em> to differ between rounds: docs/ARCHITECTURE.md regenerates the corpus every
+         round so a builder cannot overfit to it. The consequence is that "previous best versus current, same seed,
+         same camera" is only obtainable by <strong>replaying</strong> the best round against the current code —
+         <code>node packages/bench/src/loop.ts --replay N</code> with N the best round's number, or
+         <code>--seed ${previous.results.run.seed}</code> — which is precisely the comparison this section is for. On an ordinary round
+         the pair below falls back to documented-versus-recovered, which is the honest same-seed pair available.</p>`;
 
   return `<section id="before-after">
     <h2>4 · Before and after, same seed, same camera</h2>
@@ -1061,12 +1073,21 @@ function sparkline(
   if (values.length === 0) {
     return `<div class="spark"><h4>${esc(label)}</h4><div class="muted small">no finite values yet</div></div>`;
   }
-  const lo = 0;
+  // The axis starts at zero for a magnitude, and below it when a series can go
+  // negative — the off-sphere excess is a difference against an analytic floor
+  // and a rig can beat it, so clamping at zero would draw that point on the
+  // frame and hide the sign.
+  const lo = Math.min(0, ...values) * 1.15;
   const hi = Math.max(...values) * 1.15 || 1;
   const n = Math.max(1, medians.length);
   const toX = (i: number): number =>
     padL + (n === 1 ? (w - padL - padR) / 2 : (i / (n - 1)) * (w - padL - padR));
-  const toY = (v: number): number => padT + (1 - (v - lo) / (hi - lo)) * (h - padT - padB);
+  const toY = (v: number): number =>
+    padT + (1 - (v - lo) / (hi - lo || 1)) * (h - padT - padB);
+  const zeroLine =
+    lo < 0
+      ? `<line class="axis" x1="${c(padL)}" y1="${c(toY(0))}" x2="${c(w - padR)}" y2="${c(toY(0))}"/>`
+      : '';
 
   const line = (series: number[], cls: string): string => {
     const pts = series
@@ -1091,6 +1112,7 @@ function sparkline(
   return `<div class="spark">
       <h4>${esc(label)} <span class="muted">${esc(unit)}</span></h4>
       <svg class="plot" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(label)} over rounds">
+        ${zeroLine}
         ${gateLine}
         ${line(p95, 'spark-p95')}
         ${line(medians, 'spark-median')}
@@ -1310,13 +1332,18 @@ function referencePolar(ref: CoverageReference, checks: ReferenceChecks): string
     spokes.push(`<line class="seam" x1="${cxy}" y1="${cxy}" x2="${c(x)}" y2="${c(y)}"/>`);
   }
 
+  // The REGION is filled, not just outlined. A curve alone invites the reader to
+  // check whether it is round; a filled shape shows what is actually being
+  // claimed — a permanently dark patch around each pole with four corners
+  // reaching down the seam directions.
   return `<svg class="plot" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="polar view of the unlit region boundary">
       ${rings.join('')}
       ${spokes.join('')}
+      <path class="unlit-region" d="${path} Z"/>
       <circle class="bound-cap" cx="${cxy}" cy="${cxy}" r="${c(rOf(ref.analytic.meridianLimitDeg))}" fill="none"/>
       <circle class="bound-cap" cx="${cxy}" cy="${cxy}" r="${c(rOf(ref.analytic.seamLimitDeg))}" fill="none"/>
       <path class="boundary" d="${path} Z"/>
-      <text class="tick" x="4" y="14">north pole at centre, ${latMin}°N at the rim</text>
+      <text class="tick" x="4" y="14">north pole at centre, ${latMin}°N at the rim (azimuthal equidistant)</text>
     </svg>`;
 }
 
@@ -1386,16 +1413,18 @@ function referenceSection(ref: CoverageReference | null, checks: ReferenceChecks
     <h2>6 · Static reference — coverage and incidence <span class="tag">rendered once, ${esc(ref.generatedAt.slice(0, 10))}, commit <code>${esc(ref.gitCommit.slice(0, 8))}</code></span></h2>
     <div class="callout">
       <h3>What you should see, and what would be a bug</h3>
-      <p><strong>Overlap multiplicity of at most 2, everywhere.</strong> Two colours in the left map and no third.
+      <p><strong>Overlap multiplicity of at most 2, everywhere.</strong> Exactly three colours in the multiplicity
+        map — unlit, one-way on each projector's own meridian, two-way in the seams — and no fourth.
         Three- or four-way overlap anywhere — especially toward the poles — is a bug: PARAMETERS.md §4.2 exists
         precisely to correct rev 1's claim that overlap climbs to 4 near the poles. Any point within
         ${ref.analytic.meridianLimitDeg.toFixed(1)}° of three lenses spaced 90° apart would need to be within that
         angle of two antipodal directions at once, and the poles sit exactly 90° from every lens.</p>
-      <p><strong>A four-lobed, scalloped unlit polar region.</strong> The polar plot's boundary must dip in the four
-        seam directions and rise on the four projector meridians, running between
-        ${ref.analytic.seamLimitDeg.toFixed(2)}° and ${ref.analytic.meridianLimitDeg.toFixed(2)}°. A circular cap —
-        a boundary curve lying on either dashed circle — is a bug: it means coverage is being tested with a
-        rotationally symmetric approximation instead of against each lens in turn.</p>
+      <p><strong>A four-lobed, scalloped unlit polar region.</strong> The filled polar plot must reach furthest from
+        the pole in the four seam directions and least far on the four projector meridians — boundary latitude
+        running between ${ref.analytic.seamLimitDeg.toFixed(2)}° and ${ref.analytic.meridianLimitDeg.toFixed(2)}° —
+        and the unrolled curve beside it must show four minima, one per seam. A circular cap, meaning a region that
+        fills one of the two dashed circles exactly, is a bug: it means coverage is being tested with a rotationally
+        symmetric approximation instead of against each lens in turn.</p>
       <p class="muted"><strong>This file is not refreshed by a bench round.</strong> Rebuilding it is
         <code>node packages/bench/src/reference.ts</code>, a deliberate act;
         <code>node packages/bench/src/reference.ts --check</code> recomputes and diffs without writing, which is the
@@ -1414,10 +1443,15 @@ function referenceSection(ref: CoverageReference | null, checks: ReferenceChecks
         0→1, grey where nothing reaches. The horizontals are the polar mask onset (${ref.rig.maskLoDeg}°S) and full
         mask (${ref.rig.maskHiDeg}°S) — PARAMETERS.md §4.4 reads the config's <code>bottommask 60,70</code> as
         latitudes, and the onset matching the seam-direction usable limit is the evidence for that reading.</figcaption></figure>
-      <figure>${referencePolar(ref, checks)}<figcaption><strong>The unlit polar region.</strong> Boundary latitude
-        around the north pole, against the two circles that bound it: the ${ref.analytic.meridianLimitDeg.toFixed(2)}°
-        cap it must contain and the ${ref.analytic.seamLimitDeg.toFixed(2)}° cap that must contain it. Solid spokes
-        are projector meridians, dotted are the seams the lobes sit on.</figcaption></figure>
+      <figure>${referencePolar(ref, checks)}<figcaption><strong>The unlit polar region</strong>, filled, looking down
+        on the north pole, against the two circles that bound it: the ${ref.analytic.meridianLimitDeg.toFixed(2)}° cap
+        it must contain and the ${ref.analytic.seamLimitDeg.toFixed(2)}° cap that must contain it. Solid spokes are
+        projector meridians, dotted are the seams the corners reach down. <strong>It should look like a square.</strong>
+        §4.1's own coverage test is <code>cos(lat)·cos(lon−φ) &gt; R/d</code>, so the boundary's polar trace is
+        <code>r = asin((R/d)/cos θ)</code>, and with R/d = ${(ref.rig.radiusM / ref.rig.distanceM).toFixed(4)} the
+        arcsine is within a percent of its argument across the whole range — leaving <code>r ∝ 1/cos θ</code>, and
+        <code>r·cos(θ−φ) = a</code> is the polar equation of a straight line. Four projectors, four lines, one square
+        with its corners in the seam directions. A circle instead of a square is the bug.</figcaption></figure>
       <figure>${referenceProfile(ref)}<figcaption><strong>The same curve, unrolled.</strong> Four minima at
         ${checks.lobeLongitudesDeg.map((l) => `${l.toFixed(0)}°`).join(', ')}, scallop depth
         ${checks.scallopDepthDeg.toFixed(2)}°. Unlit area ${pct(checks.unlitFractionNorth, 3)} of the sphere per pole,
@@ -1751,6 +1785,9 @@ function headerSection(results: BenchResults, generatedAt: string, rounds: Round
   const failing = results.gates.gates.filter((g) => !g.pass);
   const scenariosWithErrors = results.scenarios.filter((s) => s.error !== null);
   const round = rounds === null || rounds.rounds.length === 0 ? null : rounds.rounds[rounds.rounds.length - 1];
+  const provisionalCount = new Set(
+    results.scenarios.flatMap((s) => s.metrics.filter((m) => m.provisional).map((m) => m.id)),
+  ).size;
 
   const meta: [string, string][] = [
     ['seed', String(results.run.seed)],
@@ -1775,8 +1812,12 @@ function headerSection(results: BenchResults, generatedAt: string, rounds: Round
       </div>
     </div>
     <p class="lede">Phase 1 is geometry and it is optimised in a loop. Phase 2 is photometry and it is built but not
-      optimised, because optimising against constants nobody has measured produces confident nonsense. Every number
-      below is geometric; the PROVISIONAL block is empty and says so.</p>
+      optimised, because optimising against constants nobody has measured produces confident nonsense.
+      ${
+        provisionalCount === 0
+          ? 'Every number below is geometric, and the <a href="#provisional">PROVISIONAL block</a> is empty and says so.'
+          : `${provisionalCount} metric(s) rest on unmeasured constants and are quarantined in the <a href="#provisional">PROVISIONAL block</a>; nothing else on this page depends on one.`
+      }</p>
     ${scenariosWithErrors.length === 0 ? '' : `<div class="banner-error">${scenariosWithErrors.length} scenario(s) errored: ${scenariosWithErrors.map((s) => `<code>${esc(s.id)}</code> ${esc(s.error ?? '')}`).join('; ')}</div>`}
     <table class="meta-table">${meta
       .map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`)
@@ -2004,7 +2045,11 @@ table.kv td { padding: 3px 0; vertical-align: top; }
 .tag { font-size: 12px; font-weight: 400; color: var(--muted); }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin: 16px 0; }
 .panel .meta { font-size: 12.5px; color: var(--muted); margin-top: 0; }
-.proj { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 12px; }
+/* A default round draws about 113 000 circles: every residual, in two views,
+   none subsampled. content-visibility lets the browser skip the ones nobody is
+   looking at, which keeps scrolling smooth without dropping a single point. */
+.proj { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 12px;
+  content-visibility: auto; contain-intrinsic-size: auto 300px; }
 .proj-body { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
 .plots { display: flex; flex-wrap: wrap; gap: 8px; }
 .stats { min-width: 300px; flex: 1 1 300px; }
@@ -2033,6 +2078,7 @@ svg.plot .map-label { font-size: 9px; fill: #ffffff; }
 svg.plot .mask-label { fill: #ff5a4d; }
 svg.plot .gap-rect { fill: var(--unlit); }
 svg.plot .boundary { fill: none; stroke: var(--accent); stroke-width: 1.8; }
+svg.plot .unlit-region { fill: var(--unlit); stroke: none; }
 svg.plot .bound-cap { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
 svg.plot .gate-line { stroke: var(--gate); stroke-width: 1.2; stroke-dasharray: 4 3; }
 svg.plot .box { fill: var(--box); opacity: 0.75; }

@@ -731,6 +731,12 @@ function scenarioJson(r: ScenarioResult): ScenarioJson {
           gaugeConstraints: r.solver.extra.gaugeConstraints,
           gaugeFreeAxes: r.solver.extra.gaugeFreeAxes,
           centerHeightObserved: r.solver.extra.centerHeightObserved,
+          // Empty when no parameter prior was declared, which is the default.
+          // Reported unconditionally so a reader can tell "no prior" from "a
+          // prior that happened to sit at zero sigmas" — those are different
+          // claims about where the answer came from.
+          priorResiduals: r.solver.extra.priorResiduals,
+          cameraResidualScale: r.solver.extra.cameraResidualScale,
           residuals: residualColumns(r.solver.diagnostics.residuals),
         };
 

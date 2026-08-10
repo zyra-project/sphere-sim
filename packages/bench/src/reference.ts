@@ -369,6 +369,16 @@ export function analyseCoverageReference(ref: CoverageReference): ReferenceCheck
   }
   const scallopDepthDeg = boundaryMaxDeg - boundaryMinDeg;
 
+  // The extremum of a sampled curve can only be located to the sample spacing,
+  // and the boundary is locally quadratic at both a meridian and a seam, so the
+  // depth error is proportional to (step/2)^2. The coefficient is measured: a
+  // 2-degree grid whose samples straddle a seam by 1 degree misses the seam
+  // minimum by 0.236 degrees. Stated as a tolerance rather than pinned to the
+  // default grid, so the same check stays honest at any density — at the
+  // default 1-degree step it is 0.125 degrees, and a real limb error is degrees.
+  const lonStepDeg = ref.boundary.lonDeg.length > 0 ? 360 / ref.boundary.lonDeg.length : 1;
+  const boundaryTolDeg = 0.05 + 0.3 * (lonStepDeg / 2) * (lonStepDeg / 2);
+
   const unlit = ref.analytic.unlitFractionNorth;
   const capMeridian = ref.analytic.capAboveMeridianLimit;
   const capSeam = ref.analytic.capAboveSeamLimit;
@@ -408,10 +418,10 @@ export function analyseCoverageReference(ref: CoverageReference): ReferenceCheck
     {
       id: 'boundary-matches-closed-form',
       claim: `The computed boundary reproduces §4.3's own latitudes: ${ref.analytic.meridianLimitDeg.toFixed(2)}° on a meridian, ${ref.analytic.seamLimitDeg.toFixed(2)}° in a seam.`,
-      observed: `computed max ${boundaryMaxDeg.toFixed(3)}° (closed form ${ref.analytic.meridianLimitDeg.toFixed(3)}°), computed min ${boundaryMinDeg.toFixed(3)}° (closed form ${ref.analytic.seamLimitDeg.toFixed(3)}°)`,
+      observed: `computed max ${boundaryMaxDeg.toFixed(3)}° (closed form ${ref.analytic.meridianLimitDeg.toFixed(3)}°), computed min ${boundaryMinDeg.toFixed(3)}° (closed form ${ref.analytic.seamLimitDeg.toFixed(3)}°), tolerance ${boundaryTolDeg.toFixed(3)}° at a ${lonStepDeg.toFixed(2)}° longitude step`,
       pass:
-        Math.abs(boundaryMaxDeg - ref.analytic.meridianLimitDeg) < 0.05 &&
-        Math.abs(boundaryMinDeg - ref.analytic.seamLimitDeg) < 0.05,
+        Math.abs(boundaryMaxDeg - ref.analytic.meridianLimitDeg) < boundaryTolDeg &&
+        Math.abs(boundaryMinDeg - ref.analytic.seamLimitDeg) < boundaryTolDeg,
       failureMeans:
         'The bisection walks the general vector limb test and the closed form comes from §4.1. They agreeing is what says the general renderer and the spec arithmetic describe the same rig.',
     },
