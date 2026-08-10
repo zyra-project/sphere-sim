@@ -52,7 +52,17 @@ Positive \`roll\` rotates the projected image clockwise as seen from the lens
 looking out along the optical axis.
 
 A projector at azimuth \`phi\` aimed at the sphere centre therefore has
-\`yaw = phi + 180\` and \`pitch = -elevation_of_center_from_lens\`.
+\`yaw = phi + 180\` and \`pitch = elevation_of_center_from_lens\`, where elevation
+is signed and measured from the lens's own horizontal. A lens mounted above the
+sphere centre looks down, so both its elevation and its pitch are negative.
+
+(Revision note: this clause previously read \`pitch = -elevation\`, which
+contradicted the definition two paragraphs above. Both models had independently
+implemented \`pitch = asin(axis.z)\` from the definition and ignored the worked
+consequence, so nothing was built against the wrong sign — but it was vacuous
+only because PARAMETERS.md §1 and §2 put lens and equator at the same 2.1844 m,
+and it would have bitten the moment a lens sat at any other height. See
+docs/AMENDMENTS.md A-07.)
 
 ## §I — Interior orientation
 
@@ -94,6 +104,40 @@ Consequences each side must handle on its own:
 - The solver goes world -> pixel, so it applies this map directly.
 - Distortion is applied about the principal point INCLUDING lens shift, not
   about the raster centre.
+
+## §C — The observing camera
+
+The solver's input is camera images, so the two sides must agree on how a camera
+maps the world to a pixel — and until this section existed, nothing governed that
+agreement. It is stated here for the same reason as everything else in this file:
+so each side can implement it independently.
+
+A camera has a pose (§R, identical conventions and identical canonical frame as a
+projector: optical axis \`+X\`, right \`-Y\`, up \`+Z\`) and intrinsics
+\`{resX, resY, fx, fy, cx, cy, k1, k2, p1, p2}\` in pixels.
+
+Imaging follows §I and §D exactly, with two differences from a projector:
+
+- Focal lengths are given directly as \`fx\`, \`fy\` rather than derived from a
+  field of view, because a camera is calibrated rather than specified.
+- The principal point \`cx\`, \`cy\` is given directly in pixels rather than
+  derived from a lens shift.
+
+Everything else is shared with §I and §D: pixel origin top-left, \`v\` increasing
+down, pixel centres at half-integer coordinates, distortion defined in the
+IDEAL -> DISTORTED direction and applied about \`(cx, cy)\`.
+
+A camera therefore runs §D in the direction OPPOSITE to a projector's. A
+projector takes a pixel and emits a ray, so it must invert §D. A camera receives
+a ray and records a pixel, so for the purpose of *rendering* an image the
+simulator must invert §D as well, while the solver applies it forward when
+predicting where a known surface point lands. Getting this backwards produces a
+distortion error that is symmetric in image radius and therefore easy to mistake
+for a focal-length error — check the residual scatter's radial signature.
+
+Nothing about the camera is part of the recovered calibration: it is measurement
+apparatus, not a property of the installation. It does not appear in
+\`RigCalibration\`.
 
 ## §V — Viewports and the shared framebuffer
 

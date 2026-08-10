@@ -1,0 +1,400 @@
+/**
+ * Camera pixel -> ray -> sphere surface. The solver's own derivation.
+ *
+ * Two things live here, and they are separate on purpose:
+ *
+ *  1. A pinhole camera with radial and tangential distortion. conventions.ts
+ *     says nothing about the *camera* — it is not part of the boundary object —
+ *     so the model is the solver's to define. It deliberately reuses the §I/§D
+ *     algebra of the projector (normalized y up, pixel v down, Brown-Conrady in
+ *     the ideal -> distorted direction) so that this package contains exactly
+ *     one set of imaging conventions rather than two subtly different ones.
+ *     The camera differs from the projector in one respect only: its interior
+ *     orientation is given directly as (fx, fy, cx, cy) rather than through a
+ *     field of view and a lens shift, because that is the form an operator's
+ *     checkerboard calibration produces.
+ *
+ *     The distortion matters. PARAMETERS.md's experiment plan asks explicitly
+ *     whether a phone suffices for a real calibration, and a phone's wide lens
+ *     carries several percent of radial distortion at the frame edge. Modelling
+ *     it as zero would put a systematic curve into the residual field, which is
+ *     precisely the "structure means the model is wrong" signal the progress
+ *     page is built to surface — and it would be our own fault, not the rig's.
+ *
+ *  2. Ray-sphere intersection against the sphere of known radius R
+ *     (PARAMETERS.md §1, class DOC, 0.8636 m) centred at the world origin
+ *     (conventions.ts §W).
+ *
+ * The camera goes pixel -> ray, which is the direction §D does NOT define, so
+ * this file inverts the distortion map. That inversion is the solver's own and
+ * is used only on the camera side; the projector residual path never inverts
+ * anything. See project.ts.
+ */
+
+import {
+  type Vec3,
+  vAdd,
+  vDot,
+  vNorm,
+  vNormalize,
+  vScale,
+  vSub,
+} from './linalg.ts';
+import {
+  frameAxes,
+  rotationMatrix,
+  rotationWithDerivatives,
+  undistortNormalized,
+  type FrameAxes,
+  type RotationWithDerivatives,
+} from './project.ts';
+import { mat3MulVec } from './linalg.ts';
+
+/**
+ * Interior orientation of the observing camera, in pixels.
+ *
+ * `focalScale` is not here: it is a free parameter of the bundle and lives on
+ * `CameraModel`, so that a solve with the focal held fixed and a solve with it
+ * free share the same intrinsics record.
+ */
+export interface CameraIntrinsics {
+  resX: number;
+  resY: number;
+  fx: number;
+  fy: number;
+  cx: number;
+  cy: number;
+  k1: number;
+  k2: number;
+  p1: number;
+  p2: number;
+}
+
+export interface CameraModel {
+  position: Vec3;
+  yawDeg: number;
+  pitchDeg: number;
+  rollDeg: number;
+  intrinsics: CameraIntrinsics;
+  /**
+   * Multiplies fx and fy. Free parameter when `freeCameraFocal` is on, 1
+   * otherwise. A single scale rather than independent fx and fy because a
+   * calibrated camera's aspect ratio is far better determined than its absolute
+   * focal length, and freeing both invites the focal to trade against the
+   * camera's distance from the sphere.
+   */
+  focalScale: number;
+}
+
+/** Free-parameter ordering for one camera. `const` bindings, not an enum (see project.ts). */
+export const CAM_PX = 0;
+export const CAM_PY = 1;
+export const CAM_PZ = 2;
+export const CAM_YAW = 3;
+export const CAM_PITCH = 4;
+export const CAM_ROLL = 5;
+export const CAM_FOCAL = 6;
+export const CAM_PARAM_COUNT = 7;
+
+export const CAM_PARAM_NAMES: readonly string[] = [
+  'px',
+  'py',
+  'pz',
+  'yawDeg',
+  'pitchDeg',
+  'rollDeg',
+  'focalScale',
+];
+
+/**
+ * Camera pixel -> ideal normalized coordinates.
+ *
+ * Inverts the pixel mapping (`u = cx + fx*xd`, `v = cy - fy*yd`, §D) and then
+ * the Brown-Conrady map by Newton iteration.
+ *
+ * These are a pure function of the pixel and the *fixed* intrinsics scaled by
+ * `focalScale`, so for a solve with the focal held they can be computed once per
+ * correspondence and cached — which is what decode-time caching in bundle.ts
+ * relies on.
+ */
+export function cameraPixelToNormalized(
+  cam: CameraModel,
+  u: number,
+  v: number,
+): { x: number; y: number } {
+  const k = cam.intrinsics;
+  const fx = k.fx * cam.focalScale;
+  const fy = k.fy * cam.focalScale;
+  const xd = (u - k.cx) / fx;
+  const yd = (k.cy - v) / fy;
+  return undistortNormalized(xd, yd, k.k1, k.k2, k.p1, k.p2);
+}
+
+export interface CameraRay {
+  origin: Vec3;
+  /** Unit direction, world frame. */
+  dir: Vec3;
+  /** Unnormalised direction, kept because the derivative of `normalize` needs its length. */
+  raw: Vec3;
+  rawLength: number;
+}
+
+/**
+ * Ideal normalized coordinates -> world ray.
+ *
+ * §I inverted: a normalized point (x, y) corresponds to the direction
+ * `axis + x*right + y*up` in the camera's frame. In the canonical frame of §R
+ * (axis +X, right -Y, up +Z) that is the constant vector `(1, -x, y)`, so the
+ * world direction is simply `R * (1, -x, y)`. Writing it that way rather than
+ * as a sum of three world axes makes the derivative below one matrix-vector
+ * product instead of three.
+ */
+export function rayFromNormalized(cam: CameraModel, x: number, y: number): CameraRay {
+  const r = rotationMatrix(cam.yawDeg, cam.pitchDeg, cam.rollDeg);
+  const raw = mat3MulVec(r, { x: 1, y: -x, z: y });
+  const len = vNorm(raw);
+  return { origin: cam.position, dir: vScale(raw, 1 / len), raw, rawLength: len };
+}
+
+export function cameraPixelToRay(cam: CameraModel, u: number, v: number): CameraRay {
+  const n = cameraPixelToNormalized(cam, u, v);
+  return rayFromNormalized(cam, n.x, n.y);
+}
+
+export interface SphereHit {
+  hit: boolean;
+  /** Distance along the unit ray to the near intersection. */
+  t: number;
+  point: Vec3;
+  /** Outward unit normal at the hit. */
+  normal: Vec3;
+  /**
+   * Cosine of the angle between the incoming ray and the inward normal. Falls to
+   * zero at the limb. PARAMETERS.md §4.1 uses the same quantity for the
+   * projector side; here it is the *camera's* obliquity, which is what makes a
+   * decoded fringe smeared and its correspondence uncertain.
+   */
+  cosIncidence: number;
+}
+
+const MISS: SphereHit = {
+  hit: false,
+  t: NaN,
+  point: { x: 0, y: 0, z: 0 },
+  normal: { x: 0, y: 0, z: 0 },
+  cosIncidence: 0,
+};
+
+/**
+ * Near intersection of a unit ray with the sphere of radius `radius` centred at
+ * the world origin (conventions.ts §W puts the sphere centre at the origin, so
+ * there is no centre term).
+ *
+ * Solving `|o + t d|^2 = R^2` gives `t^2 + 2 b t + c = 0` with `b = o.d` and
+ * `c = |o|^2 - R^2`, whose textbook discriminant is `b^2 - c`. That form is
+ * badly conditioned for exactly the situation we are in: the camera sits several
+ * times the radius away, so `b^2` and `c` are both large and nearly equal, and
+ * their difference — the small number that decides whether the ray grazes or
+ * misses — is computed by cancelling most of the significant digits away.
+ *
+ * The stable rearrangement replaces the difference with a quantity that never
+ * gets large. Writing `m = o - b d` for the component of the origin
+ * perpendicular to the ray, the discriminant is exactly `R^2 - |m|^2`: the
+ * squared radius minus the squared miss distance, both O(R^2), no cancellation
+ * against the camera's distance at all. The near root is then `-b - sqrt(disc)`,
+ * a large number minus a number bounded by `R`, which is also cancellation-free
+ * for any camera outside the sphere.
+ */
+export function intersectSphere(origin: Vec3, dir: Vec3, radius: number): SphereHit {
+  const b = vDot(origin, dir);
+  const mx = origin.x - b * dir.x;
+  const my = origin.y - b * dir.y;
+  const mz = origin.z - b * dir.z;
+  const disc = radius * radius - (mx * mx + my * my + mz * mz);
+  if (disc < 0) return MISS;
+  const sq = Math.sqrt(disc);
+  const near = -b - sq;
+  const far = -b + sq;
+  // `near` is the entry point for a camera outside the sphere; if it is behind
+  // the origin the camera is inside and the exit point is the visible one.
+  const t = near > 0 ? near : far;
+  if (!(t > 0)) return MISS;
+
+  const point = vAdd(origin, vScale(dir, t));
+  const normal = vScale(point, 1 / radius);
+  return { hit: true, t, point, normal, cosIncidence: -vDot(dir, normal) };
+}
+
+export interface SphereHitJacobian {
+  hit: SphereHit;
+  /**
+   * d(point)/d(camera params), 3 x CAM_PARAM_COUNT row-major. The focal column
+   * is left at zero here and filled by finite differences in bundle.ts — see the
+   * note on `freeCameraFocal` there.
+   */
+  dPoint: Float64Array;
+}
+
+/**
+ * Analytic derivative of the surface point with respect to the camera's six
+ * pose degrees of freedom.
+ *
+ * The point is `X = o + t d`, and both `d` and `t` move when the camera moves:
+ *
+ *   - Rotation moves the direction only. With `w = R * (1, -x, y)` and
+ *     `d = w/|w|`, the derivative of the normalisation is the projector
+ *     `(I - d d^T)/|w|` applied to `dw/dtheta = (dR/dtheta) * (1, -x, y)`.
+ *   - Translation moves the origin only.
+ *   - `t` moves in response to both, and its derivative comes from
+ *     differentiating the quadratic in place rather than from re-deriving the
+ *     root: from `t^2 + 2 b t + c = 0`,
+ *
+ *         dt = -(t * db + o . do) / (t + b)
+ *
+ *     with `db = do . d + o . dd` and `dc = 2 o . do`. The denominator `t + b`
+ *     is `-sqrt(disc)` at the near root, so it vanishes only exactly at the limb
+ *     where the ray is tangent — the same place the decode already rejects for
+ *     lack of modulation. It is guarded anyway.
+ */
+export function intersectSphereJacobian(
+  cam: CameraModel,
+  x: number,
+  y: number,
+  radius: number,
+  /** Precomputed rotation and derivatives; see the note on `projectPointJacobian`. */
+  precomputedRotation?: RotationWithDerivatives,
+  out?: Float64Array,
+): SphereHitJacobian {
+  const dPoint = out ?? new Float64Array(3 * CAM_PARAM_COUNT);
+  dPoint.fill(0);
+  const rot =
+    precomputedRotation ?? rotationWithDerivatives(cam.yawDeg, cam.pitchDeg, cam.rollDeg);
+  const canonical = { x: 1, y: -x, z: y };
+  const raw = mat3MulVec(rot.r, canonical);
+  const len = vNorm(raw);
+  const dir = vScale(raw, 1 / len);
+  const origin = cam.position;
+
+  const hit = intersectSphere(origin, dir, radius);
+  if (!hit.hit) return { hit, dPoint };
+
+  const t = hit.t;
+  const b = vDot(origin, dir);
+  let denom = t + b;
+  if (Math.abs(denom) < 1e-12) denom = denom >= 0 ? 1e-12 : -1e-12;
+
+  // --- translation: do = e_i, dd = 0 ---
+  for (let i = 0; i < 3; i++) {
+    const eo = { x: i === 0 ? 1 : 0, y: i === 1 ? 1 : 0, z: i === 2 ? 1 : 0 };
+    const db = vDot(eo, dir);
+    const dt = -(t * db + vDot(origin, eo)) / denom;
+    dPoint[0 * CAM_PARAM_COUNT + i] = eo.x + dir.x * dt;
+    dPoint[1 * CAM_PARAM_COUNT + i] = eo.y + dir.y * dt;
+    dPoint[2 * CAM_PARAM_COUNT + i] = eo.z + dir.z * dt;
+  }
+
+  // --- rotation: do = 0, dd from the normalised direction ---
+  const rotSlot = (dR: Float64Array, slot: number): void => {
+    const dw = mat3MulVec(dR, canonical);
+    // (I - d d^T) dw / |w|
+    const proj = vDot(dir, dw);
+    const dd = {
+      x: (dw.x - dir.x * proj) / len,
+      y: (dw.y - dir.y * proj) / len,
+      z: (dw.z - dir.z * proj) / len,
+    };
+    const db = vDot(origin, dd);
+    const dt = -(t * db) / denom;
+    dPoint[0 * CAM_PARAM_COUNT + slot] = t * dd.x + dir.x * dt;
+    dPoint[1 * CAM_PARAM_COUNT + slot] = t * dd.y + dir.y * dt;
+    dPoint[2 * CAM_PARAM_COUNT + slot] = t * dd.z + dir.z * dt;
+  };
+  rotSlot(rot.dYaw, CAM_YAW);
+  rotSlot(rot.dPitch, CAM_PITCH);
+  rotSlot(rot.dRoll, CAM_ROLL);
+
+  return { hit, dPoint };
+}
+
+/** The camera's frame axes, for callers that want to reason about where it looks. */
+export function cameraAxes(cam: CameraModel): FrameAxes {
+  return frameAxes(rotationMatrix(cam.yawDeg, cam.pitchDeg, cam.rollDeg));
+}
+
+/**
+ * Coarse cone fit to a bundle of ray directions, used by the bootstrap as a
+ * distance sanity check.
+ *
+ * A sphere of radius R seen from distance d subtends a half-angle
+ * `asin(R/d)`, so if the rays that produced valid correspondences really did
+ * cover the visible cap, the widest of them recovers d. They usually do not
+ * cover it — one projector lights well under half the sphere and the camera
+ * sees part of that — so the half-angle this returns is a LOWER bound and the
+ * implied distance an UPPER bound.
+ *
+ * That asymmetry is why initialize.ts uses it only in one direction: to pull a
+ * camera in when its nominal distance is impossible given what it evidently
+ * saw, never to push one out. Anything stronger would be reading a measurement
+ * out of a bound.
+ */
+export function fitRayCone(dirs: readonly Vec3[]): { axis: Vec3; halfAngleRad: number } {
+  if (dirs.length === 0) return { axis: { x: 1, y: 0, z: 0 }, halfAngleRad: 0 };
+  let sx = 0;
+  let sy = 0;
+  let sz = 0;
+  for (const d of dirs) {
+    sx += d.x;
+    sy += d.y;
+    sz += d.z;
+  }
+  const axis = vNormalize({ x: sx, y: sy, z: sz });
+  let maxAngle = 0;
+  for (const d of dirs) {
+    const c = Math.min(1, Math.max(-1, vDot(axis, d)));
+    const ang = Math.acos(c);
+    if (ang > maxAngle) maxAngle = ang;
+  }
+  return { axis, halfAngleRad: maxAngle };
+}
+
+/** `d = R / sin(halfAngle)`, the distance implied by an observed angular radius. */
+export function distanceFromAngularRadius(radius: number, halfAngleRad: number): number {
+  const s = Math.sin(halfAngleRad);
+  if (!(s > 1e-9)) return Infinity;
+  return radius / s;
+}
+
+/** Convenience for the bootstrap: world point on the sphere from a camera pixel. */
+export function cameraPixelToSurface(
+  cam: CameraModel,
+  u: number,
+  v: number,
+  radius: number,
+): SphereHit {
+  const ray = cameraPixelToRay(cam, u, v);
+  return intersectSphere(ray.origin, ray.dir, radius);
+}
+
+/** Latitude/longitude of a surface point, conventions.ts §S. Degrees. */
+export function latLonOf(p: Vec3): { latDeg: number; lonDeg: number } {
+  const r = vNorm(p);
+  if (r === 0) return { latDeg: 0, lonDeg: 0 };
+  return {
+    latDeg: (Math.asin(Math.min(1, Math.max(-1, p.z / r))) * 180) / Math.PI,
+    lonDeg: (Math.atan2(p.y, p.x) * 180) / Math.PI,
+  };
+}
+
+/** Surface point from latitude/longitude, conventions.ts §S. Degrees in, metres out. */
+export function surfacePoint(latDeg: number, lonDeg: number, radius: number): Vec3 {
+  const la = (latDeg * Math.PI) / 180;
+  const lo = (lonDeg * Math.PI) / 180;
+  return {
+    x: radius * Math.cos(la) * Math.cos(lo),
+    y: radius * Math.cos(la) * Math.sin(lo),
+    z: radius * Math.sin(la),
+  };
+}
+
+/** Re-exported so callers do not need linalg for the common vector ops. */
+export { vAdd, vSub, vScale, vDot, vNorm, vNormalize };

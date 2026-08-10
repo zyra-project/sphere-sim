@@ -1,4 +1,4 @@
-# Proposed amendments to PARAMETERS.md
+# Proposed amendments to PARAMETERS.md and conventions.ts
 
 PARAMETERS.md is authoritative. Nothing in this file has been applied to it, and
 no constant has been silently changed anywhere in the code. Each entry records a
@@ -7,7 +7,35 @@ new evidence — with the reasoning, so the author can accept, reject, or refine
 
 Status values: `OPEN` (awaiting a decision), `ACCEPTED` (author approved; the
 edit still needs making in PARAMETERS.md), `REJECTED` (author declined; the code
-keeps following the current spec text).
+keeps following the current spec text), `APPLIED` (see below — our own documents
+only).
+
+## Two different targets, two different rules
+
+Entries here address one of two documents, and the rule differs:
+
+- **`docs/PARAMETERS.md` — the spec. Never edited by us.** It is authoritative,
+  its conflicts are deliberate, and it wins over anything found online. Entries
+  targeting it stay `OPEN` until the author decides. Nothing is applied, and no
+  constant is silently changed anywhere in the code.
+- **`packages/calibration/src/conventions.ts` — our own contract.** We wrote it,
+  so a self-contradiction in it is our bug to fix, and leaving it broken would
+  mean the two models are implementing an ambiguous target. Entries targeting it
+  can go to `APPLIED`, with the change recorded here and a revision note left in
+  the file. Fixing prose in the contract is not the same as sharing code across
+  the boundary: both sides still implement it independently.
+
+| Entry | Target | Status |
+| --- | --- | --- |
+| A-01 | PARAMETERS.md §3.1 / §4.3 / §7 | OPEN |
+| A-02 | PARAMETERS.md §4.4 / §4.5 | OPEN |
+| A-03 | PARAMETERS.md §7 | OPEN |
+| A-04 | PARAMETERS.md §1 | OPEN |
+| A-05 | PARAMETERS.md §4.3 | OPEN |
+| A-06 | PARAMETERS.md §2 | OPEN |
+| A-07 | conventions.ts §R | **APPLIED** |
+| A-08 | conventions.ts (new §C) | **APPLIED** |
+| A-09 | PARAMETERS.md §7 | OPEN |
 
 ---
 
@@ -209,3 +237,121 @@ mounts, i.e. azimuths 0° and 180°.
 **What the code does meanwhile.** `nominalRig` defaults to slots {0, 2} for N=2
 and {0, 1, 2} for N=3, exposes a `slots` override for sites that did something
 else, and `scene.test.ts` asserts both the default and the coverage consequence.
+
+---
+
+## A-07 — conventions.ts §R: the `pitch = -elevation` clause contradicts the rest of §R
+
+**Status:** APPLIED to `conventions.ts` §R. This is our own contract document,
+not PARAMETERS.md, so a self-contradiction in it is our bug to fix rather than a
+question for the author. The clause now reads `pitch = elevation_of_center_from_lens`
+with a revision note in the file. Both models had already implemented
+`pitch = asin(axis.z)` from the definition and ignored the worked consequence, so
+no code changed — but leaving the contract ambiguous would have meant both sides
+aiming at a moving target.
+
+**The tension.** §R defines the rotation as `R = Rz(yaw) * Ry(-pitch) * Rx(roll)`
+applied to a canonical frame whose optical axis is `+X`, and states — twice, once
+in §R and again on `ProjectorPose.pitchDeg` in the boundary types — that
+**positive `pitch` raises the optical axis toward `+Z`**. Expanding the product
+confirms it: the optical axis is column 0 of `R`, whose `z` component is
+`sin(pitch)`.
+
+§R then adds a worked consequence:
+
+> A projector at azimuth `phi` aimed at the sphere centre therefore has
+> `yaw = phi + 180` and `pitch = -elevation_of_center_from_lens`.
+
+The `yaw` half checks out. The `pitch` half does not. A lens mounted **above**
+the sphere centre must look **down**, so its optical axis has a negative `z`
+component, so `pitch = asin(axis.z)` is **negative**. The elevation of the centre
+as seen from that lens is also negative. So `-elevation` is **positive**, and the
+two halves of §R disagree by a sign.
+
+**Why it has not bitten yet.** PARAMETERS.md §1 and §2 both put the lens and the
+sphere centre at 2.1844 m, so the nominal elevation is zero and the clause is
+vacuous. It is exercised only when a lens sits at a different height from the
+equator — which is to say, only under injected misalignment, or at any real site
+where the projectors are not exactly at 7 ft 2 in. That is the worst possible
+place for a latent sign error, because it appears exactly when the bench starts
+scoring recovery.
+
+**Proposed amendment.** Either delete the clause, or restate it as
+`pitch = elevation_of_center_from_lens` — the sign that agrees with the
+definition. Recommend restating rather than deleting: a worked consequence is
+useful precisely because it is a cross-check.
+
+**What the code does meanwhile.** `packages/solver/src/project.ts` implements the
+definitional clauses only. `aimEuler` inverts the rotation directly —
+`pitch = asin(axis.z)`, `yaw = atan2(axis.y, axis.x)` — so it is self-consistent
+with `rotationMatrix` regardless of how the disputed sentence is read, and the
+disputed clause is never evaluated. If `packages/sim` reads it the other way when
+building nominal poses, the disagreement shows up as a pitch error of twice the
+lens-to-equator elevation and nothing else, which is a distinctive enough
+signature to diagnose from the residual scatter.
+
+---
+
+## A-08 — conventions.ts: the observing camera is not specified at all
+
+**Status:** APPLIED. `conventions.ts` gains a §C specifying the camera model —
+pose per §R, intrinsics as `fx, fy, cx, cy, k1, k2, p1, p2`, imaging per §I and
+§D, with focal and principal point given directly rather than derived from a
+field of view and a lens shift. §C also states explicitly that a camera runs §D
+in the opposite direction to a projector, and notes that getting that backwards
+produces a radially symmetric residual easily mistaken for a focal-length error.
+The camera is measurement apparatus, not a property of the installation, so it
+stays out of `RigCalibration`.
+
+**Status:** OPEN. Not a defect in the boundary object; a gap the bench must close.
+
+`RigCalibration` describes the rig. It says nothing about the camera that
+photographs it, because the camera is metrology rather than deployment. But the
+solver's input is camera images, so A and B must agree on a camera model as
+surely as they agree on §I and §D, and there is no clause governing that
+agreement.
+
+`packages/solver/src/sphere.ts` defines one: the same §R pose convention, the same
+§I normalized-coordinate convention (`y` up, `v` down), and the same §D
+Brown-Conrady direction, with interior orientation given directly as
+`(fx, fy, cx, cy)` rather than through a field of view and a lens shift, because
+that is the form a checkerboard calibration produces. That choice is documented
+in the module and exported as `CameraIntrinsics`.
+
+**Proposed amendment.** Add a §C to conventions.ts fixing the camera model, so the
+agreement is normative rather than incidental. Until then, whichever side
+generates simulated camera images must adopt `CameraIntrinsics` as written, and a
+disagreement here will look exactly like a geometry bug.
+
+---
+
+## A-09 — §7: the pose-recovery gate cannot be scored in absolute world coordinates
+
+**Status:** OPEN. Affects how the bench must compute a gate, not what the gate is.
+
+§7 sets pose recovery at ≤ 2 mm position and ≤ 0.05° rotation against synthetic
+ground truth. Position and scale are genuinely observable — conventions.ts §W puts
+the world origin at the sphere centre and PARAMETERS.md §1 fixes the radius, which
+pins both. **Global rotation is not.** Rotate every projector and every camera
+about the sphere centre by the same rotation and every structured-light
+correspondence is unchanged, because the sphere is rotationally symmetric and no
+pattern references its texture. §W's "`+X` toward the canonical prime meridian" is
+defined by where the imagery is painted, which no projected Gray code can see.
+
+So three rotational degrees of freedom are unobservable to **any** solver, and a
+bench that compares recovered orientations to ground truth in raw world
+coordinates is measuring the gauge rather than the calibration.
+
+**Proposed amendment.** State in §7 that pose recovery is scored **after** aligning
+the recovered rig to ground truth by the global rotation that best matches them —
+the standard free-network treatment. Note that position error should be measured
+after the same alignment, since a global rotation displaces positions too.
+
+**What the code does meanwhile.** `packages/solver` fixes the gauge explicitly
+(minimal inner constraints during the solve, then re-expression in the
+PARAMETERS.md §2 nominal frame), reports which axes were gauge-fixed rather than
+measured in `SolveDiagnostics`-adjacent output, and its own tests score recovery
+both raw and gauge-aligned so the size of the gauge stays visible. With one floor
+reference the tilt gauge also contaminates `h_center`; with three or more —
+§8 item 1's "floor to each projector lens" — tilt becomes observable and it does
+not.
