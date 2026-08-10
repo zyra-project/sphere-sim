@@ -194,6 +194,59 @@ export interface GridPatternOptions {
 }
 
 /**
+ * The graticule as a CONTINUOUS function of position — line coverage in [0, 1]
+ * at one point on the sphere, before any colour is applied.
+ *
+ * Factored out of {@link gridAlignmentPattern} rather than duplicated, because
+ * `metrics/grid.ts` needs to evaluate the same pattern at arbitrary sub-texel
+ * positions. The grid-displacement gate of PARAMETERS.md §7 is 1.0 mm on a
+ * sphere whose projector pixels are ~1.3 mm across, so the metric cannot afford
+ * to inherit the resolution of whatever texture the raster happened to be
+ * baked into: it evaluates the pattern analytically and lets the PROJECTOR
+ * raster be the only quantization in the chain. One definition, two consumers,
+ * so the number the metric reports is a property of the pattern an operator
+ * actually sees.
+ *
+ * Line width is in DEGREES rather than pixels for two reasons. It makes the
+ * pattern independent of the texture resolution, and — more importantly — a line
+ * of constant angular width has a constant width on the SPHERE, so a measured
+ * displacement in millimetres of arc means the same thing everywhere. A
+ * constant-pixel-width line in an equirectangular map narrows as `cos(lat)` in
+ * the direction that matters, right where the poles need the most care.
+ *
+ * Meridian lines are measured against angular distance along the parallel
+ * (`delta_lon * cos(lat)`), for the same reason: otherwise every meridian fans
+ * out into a wedge as it approaches the pole and the pattern turns into a solid
+ * disc there.
+ */
+export function graticuleCoverage(
+  latDeg: number,
+  lonDeg: number,
+  spacingDeg: number,
+  lineWidthDeg: number,
+  emphasizeAxes: boolean,
+  featherFrac = DEFAULT_FEATHER_FRAC,
+): number {
+  const half = lineWidthDeg / 2;
+  const cosLat = Math.max(1e-6, Math.cos((latDeg * Math.PI) / 180));
+  const dLat = distanceToNearestMultiple(latDeg, spacingDeg);
+  const dLon = distanceToNearestMultiple(wrapDeg180(lonDeg), spacingDeg) * cosLat;
+
+  let coverage = Math.max(
+    lineCoverage(dLat, half, featherFrac),
+    lineCoverage(dLon, half, featherFrac),
+  );
+  if (emphasizeAxes) {
+    coverage = Math.max(
+      coverage,
+      lineCoverage(Math.abs(latDeg), half * 2, featherFrac),
+      lineCoverage(Math.abs(wrapDeg180(lonDeg)) * cosLat, half * 2, featherFrac),
+    );
+  }
+  return coverage;
+}
+
+/**
  * The lat/lon graticule an operator sees during SOS Grid Alignment.
  *
  * The whole point of this pattern is that misregistration between two projectors
@@ -201,18 +254,7 @@ export interface GridPatternOptions {
  * §1's note describes ("vertical grid lines diverge or crisscross in the overlap
  * regions near the poles") and which the grid-displacement gate in §7 quantifies.
  *
- * Line width is specified in DEGREES rather than pixels for two reasons. It
- * makes the pattern independent of the texture resolution, and — more
- * importantly — a line of constant angular width has a constant width on the
- * SPHERE, so a measured displacement in millimetres of arc means the same thing
- * everywhere. A constant-pixel-width line in an equirectangular map narrows as
- * `cos(lat)` in the direction that matters, right where the poles need the most
- * care.
- *
- * Meridian lines are drawn against angular distance measured along the parallel
- * (`delta_lon * cos(lat)`), for the same reason: otherwise every meridian fans
- * out into a wedge as it approaches the pole and the pattern turns into a solid
- * disc there.
+ * Rasterizes {@link graticuleCoverage} at cell centres and applies colour.
  */
 export function gridAlignmentPattern(options: GridPatternOptions): EquirectImage {
   const {
@@ -227,29 +269,13 @@ export function gridAlignmentPattern(options: GridPatternOptions): EquirectImage
   } = options;
 
   const img = createImage(width, height);
-  const half = lineWidthDeg / 2;
 
   for (let y = 0; y < height; y++) {
     const lat = 90 - ((y + 0.5) / height) * 180;
-    const cosLat = Math.max(1e-6, Math.cos((lat * Math.PI) / 180));
-
-    // Distance in degrees to the nearest parallel of the graticule.
-    const dLat = distanceToNearestMultiple(lat, spacingDeg);
 
     for (let x = 0; x < width; x++) {
       const lon = -180 + ((x + 0.5) / width) * 360;
-      // Along-parallel angular distance to the nearest meridian.
-      const dLon = distanceToNearestMultiple(lon, spacingDeg) * cosLat;
-
-      let coverage = Math.max(lineCoverage(dLat, half), lineCoverage(dLon, half));
-
-      if (emphasizeAxes) {
-        const axis = Math.max(
-          lineCoverage(Math.abs(lat), half * 2),
-          lineCoverage(Math.abs(wrapDeg180(lon)) * cosLat, half * 2),
-        );
-        coverage = Math.max(coverage, axis);
-      }
+      const coverage = graticuleCoverage(lat, lon, spacingDeg, lineWidthDeg, emphasizeAxes);
 
       let tint: ChannelTriplet = lineColor;
       if (quadrantTint && quadrantTint.length > 0) {
@@ -278,15 +304,32 @@ function distanceToNearestMultiple(value: number, step: number): number {
 }
 
 /**
- * Antialiased line coverage: 1 inside the line, 0 outside, with a smooth
- * transition one tenth of the half-width wide.
+ * How much of the half-width is edge ramp rather than plateau. 0.2 gives a
+ * crisp line with a narrow antialiasing skirt, 1.0 gives a triangular profile
+ * with no plateau at all.
+ */
+export const DEFAULT_FEATHER_FRAC = 0.2;
+
+/**
+ * Antialiased line coverage: 1 inside the line, 0 outside, with a linear ramp
+ * `featherFrac` of the half-width wide.
  *
  * A hard edge here would alias badly once the pattern is resampled onto a
  * projector raster and then onto a camera, and the resulting shimmer would be
  * indistinguishable from the registration error the pattern exists to measure.
+ *
+ * The ramp is exactly LINEAR, which `metrics/grid.ts` depends on: its line
+ * localiser finds each edge's half-height crossing, and a symmetric blur kernel
+ * leaves the half-height point of a linear ramp exactly where it was. That is
+ * what makes sub-pixel localisation unbiased as the incidence angle — and
+ * therefore the size of the blur — changes across the sphere.
  */
-function lineCoverage(distanceDeg: number, halfWidthDeg: number): number {
-  const feather = Math.max(1e-6, halfWidthDeg * 0.2);
+function lineCoverage(
+  distanceDeg: number,
+  halfWidthDeg: number,
+  featherFrac = DEFAULT_FEATHER_FRAC,
+): number {
+  const feather = Math.max(1e-6, halfWidthDeg * featherFrac);
   const t = (halfWidthDeg - distanceDeg) / feather;
   return clamp(t, 0, 1);
 }

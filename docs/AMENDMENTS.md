@@ -36,6 +36,8 @@ Entries here address one of two documents, and the rule differs:
 | A-07 | conventions.ts §R | **APPLIED** |
 | A-08 | conventions.ts (new §C) | **APPLIED** |
 | A-09 | PARAMETERS.md §7 | OPEN |
+| A-10 | PARAMETERS.md §7 / §2 | OPEN |
+| A-11 | PARAMETERS.md §7 / §8 | OPEN |
 
 ---
 
@@ -355,3 +357,113 @@ both raw and gauge-aligned so the size of the gauge stays visible. With one floo
 reference the tilt gauge also contaminates `h_center`; with three or more —
 §8 item 1's "floor to each projector lens" — tilt becomes observable and it does
 not.
+
+---
+
+## A-10 — §7's unlit-within-the-mask gate cannot be met by the 2- and 3-projector installs §2 says are supported
+
+**Status:** OPEN. Blocking for a gate with no tolerance. Reported by the bench.
+
+**The tension.** Two clauses, both unqualified.
+
+- §2 lists `N_proj` as class `CFG` and says: "2- and 3-projector installs are
+  supported; quadrants go dark. Simulator must handle N=2,3,4."
+- §7 makes "unlit fraction *within the mask boundary*" a **hard** requirement of
+  **0%**, computed inside `mask_lo` rather than over the full sphere.
+
+"Quadrants go dark" and "0% unlit inside the mask" are the same statement about
+different regions, and for N < 4 the dark quadrant reaches inside the mask
+boundary. Measured by `packages/bench` on the nominal geometry at
+`d_proj` = 5.18 m, with the mask read as latitude per §4.4:
+
+| Install | Unlit fraction of the masked domain | §7 gate |
+| --- | --- | --- |
+| 4 projectors | **0%** | 0% — PASS |
+| 3 projectors (slots 0, 1, 2) | **5.92%** | 0% — FAIL |
+| 2 projectors, antipodal (A-06) | **12.78%** | 0% — FAIL |
+
+The failure is not a solver defect, an alignment defect, or a modelling choice:
+it is what "a quadrant goes dark" means. A three-projector install has one
+90-degree wedge of longitude lit by only its two neighbours' skirts, and the
+part of that wedge above the mask onset receives nothing at all. No calibration
+moves it.
+
+**Proposed amendment.** Qualify the gate by projector count. Either state it as
+"0% within the mask boundary **and within the azimuthal coverage of the
+installed projectors**", or give per-`N` figures and make the requirement "no
+worse than the geometric minimum for the installed `N`". The second is more
+useful, because it still catches a *misaimed* four-projector rig — which is what
+the gate is for — while not condemning a correctly built three-projector one.
+
+**What the code does meanwhile.** The bench reports the gate for every scenario
+and lets it fail, rather than suppressing it for N < 4. Suppressing it would
+hide a real property of the install; the results file carries the projector
+count next to the number so a reader can see which is which.
+
+---
+
+## A-11 — §7's pose-recovery gate is finer than the measurement §8 prescribes to enable it
+
+**Status:** OPEN. Affects how the pose gate should be stated. Reported by the bench.
+
+**The tension.**
+
+- §7 sets pose recovery at **≤ 2 mm position and ≤ 0.05° rotation** against
+  synthetic ground truth.
+- §8 item 1 prescribes the measurements that make the vertical half of that
+  observable: "Tape measure: floor to sphere center; floor to each projector
+  lens; sphere center to each projector lens."
+
+A-09 established that global rotation about the sphere centre is unobservable to
+any solver and must be removed before scoring. What A-09 does not say is that
+*two* of those three rotational degrees of freedom stop being gauge and start
+being **measurements** the moment three or more floor references exist — and a
+measurement is only as good as the tape.
+
+Measured by `packages/bench` on its `clean` scenario: zero injected misalignment,
+no ambient, no sensor noise, a static camera, four floor references at a 3 mm
+one-sigma tape-measure error, converging to an RMS reprojection residual of
+**1×10⁻⁴ projector pixels**. The recovered rig still carries:
+
+| Component | Error |
+| --- | --- |
+| Horizontal position | **0.02 mm** |
+| Vertical position | **5.0 mm** |
+| Rotation, all four projectors | **0.060°** |
+| `h_center` | **3.1 mm** |
+
+The entire residual is one global tilt about a horizontal axis. Its size is
+predicted exactly by the reference noise: 3 mm of height error at a 5.18 m
+radius is `atan(0.003 / 5.18)` = **0.033°**, and the recovered tilt is that,
+within the draw. Two thirds of §7's whole rotation budget, and two and a half
+times its position budget, are spent by the tape measure before the solver does
+anything.
+
+**Why it does not show up as a visible defect.** Grid-line displacement — the
+metric tied to what §7 says an operator actually judges — is invariant to a
+global rotation, and on the same scenario it reads **0.065 mm** against a 1.0 mm
+gate. So the rig that fails §7's pose gate passes §7's grid gate by a factor of
+fifteen. Both numbers are correct; they are measuring different things.
+
+**Proposed amendment.** Either:
+
+(a) state the pose gate **relative to the reference measurements** — "≤ 2 mm and
+≤ 0.05° *after removing the global rotation the floor references do not
+determine*", which is A-09's alignment extended by one axis and makes the gate a
+statement about the solver rather than about the tape; or
+
+(b) tighten §8 item 1 — a 1 mm reference (a laser distance meter rather than a
+tape) puts the induced tilt at 0.011° and the gate becomes achievable as
+written; or
+
+(c) state plainly that the pose gate presumes reference measurements at a stated
+accuracy, and give that accuracy.
+
+Recommend (b) and (c) together: the measurement is cheap to improve and the
+presumption should be written down either way.
+
+**What the code does meanwhile.** The bench reports pose error decomposed into
+horizontal and vertical components and names the dominant direction, so a
+tape-measure-limited failure reads as "vertical (height/h_center)" rather than
+as a solver defect. `scenarios[].inputs.floorSigmaM` records the assumed tape
+accuracy in every results file.
