@@ -494,6 +494,140 @@ function withTransfers(
 }
 
 // ---------------------------------------------------------------------------
+// The field, as a primitive an experiment can point anywhere
+// ---------------------------------------------------------------------------
+
+/** Everything the metrics see at one surface point. See {@link makeFieldSampler}. */
+export interface FieldSample {
+  /** Reflected radiance, relative linear, per channel — what a camera would see. */
+  rgb: ChannelTriplet;
+  /** {@link relativeLuminance} of `rgb`, since every caller wants it. */
+  luminance: number;
+  /** How many projectors physically reach the point. */
+  contributors: number;
+  /** How many the CONTENT calibration believes reach it. */
+  contentContributors: number;
+  /**
+   * Sum of the normalized blend weights the projectors ACTUALLY applied here.
+   *
+   * Exactly 1 wherever the content calibration equals the physical one and the point
+   * is lit and unmasked, because conventions.ts §B normalizes the weights to sum to
+   * one at the point the compositor evaluated them at. It departs from 1 only when
+   * the two calibrations disagree — each projector evaluated its ramp at a slightly
+   * different place — so `weightSum - 1` is the misregistration artifact in the one
+   * form that has nothing else in it: no incidence falloff, no inverse square, no
+   * transfer curve. Experiment 2 uses it to explain a luminance reading rather than
+   * to replace one.
+   */
+  weightSum: number;
+  /** Best `cos(incidence)` over the projectors that reach the point, 0 if none do. */
+  bestIncidenceCos: number;
+  /**
+   * `cos(incidence)` averaged over the contributing projectors, weighted by how much
+   * light each of them actually delivers here (`weight * cos * inverse-square`).
+   *
+   * PARAMETERS.md §4.3 makes `cos(incidence)` the measure of whether a region is
+   * usable at all — below 0.2 "resolution smear exceeds 5x and the image becomes
+   * streaks" — and states the usable limit per direction as though each point were
+   * served by its best projector. In a blend region it is not: a projector fading in
+   * from its own footprint edge is arriving at the limb, where its cosine is near
+   * zero, and whatever share of the signal the blend hands it is delivered at that
+   * cosine. So the quantity §4.3 is really about is this one, and it is strictly
+   * below {@link bestIncidenceCos} wherever a blend is handing light to a projector
+   * that is worse-placed than its neighbour. The gap between the two is how much
+   * sharpness the blend is spending, and it is a function of the ramp width — which
+   * is exactly the trade Experiment 2 has to price.
+   *
+   * Weighted by delivered irradiance rather than by blend weight alone, because a
+   * projector carrying half the signal at `cos = 0.02` is contributing half the
+   * SMEAR and almost none of the LIGHT, and only the second of those is visible in a
+   * luminance metric. `NaN` where nothing reaches.
+   */
+  incidenceCosWeighted: number;
+  /** Polar mask attenuation, 1 = unmasked. */
+  mask: number;
+}
+
+export interface FieldSamplerOptions {
+  /** What the compositor believes. Defaults to `rig` — the perfectly aligned case. */
+  contentRig?: RigCalibration;
+  /** Defaults to {@link fullShading}, as {@link computePhotometricMetrics} does. */
+  shading?: ShadingModel;
+  /** Where the viewer stands, or `null` (the default) to observe every point head-on. */
+  viewFrom?: Vec3 | null;
+  /**
+   * Flat content level, LINEAR — PARAMETERS.md §8 item 13's mid-gray by default. A
+   * number is taken as the same level in all three channels.
+   */
+  level?: number | ChannelTriplet;
+}
+
+/**
+ * The field the §7 photometric metrics are computed on, exposed as a function of a
+ * surface point.
+ *
+ * Every metric in this module measures the same quantity — the radiance leaving one
+ * point of the sphere, given a physical rig, a content calibration, a flat field and
+ * a shading model — and then reduces it in a different way. An experiment that wants
+ * to look at that field somewhere the metrics do not look (Experiment 2 needs the
+ * WHOLE overlap, not the six degrees either side of the hand-over) has two options:
+ * re-derive the field in its own package, or call the same code the gates call. The
+ * second is the only one that can be trusted, because a re-derivation that drifts
+ * from this one would produce an experiment about the drift.
+ *
+ * Read-only and stateless: the returned closure holds two prepared rigs and answers
+ * questions. It cannot change a metric, and nothing in this module's own numbers
+ * depends on it.
+ */
+export function makeFieldSampler(
+  rig: RigCalibration,
+  scene: Scene,
+  opts: FieldSamplerOptions = {},
+): (point: Vec3) => FieldSample {
+  const level = opts.level ?? 0.5;
+  const target: ChannelTriplet =
+    typeof level === 'number' ? { r: level, g: level, b: level } : level;
+  const ctx: FieldContext = {
+    physical: prepareRig(rig),
+    content: prepareRig(opts.contentRig ?? rig),
+    scene,
+    shading: opts.shading ?? fullShading(),
+    maskInterpretation: scene.maskInterpretation,
+    transfers: rig.projectors.map((p) => p.transfer),
+    target,
+    viewFrom: opts.viewFrom ?? null,
+  };
+
+  return (point: Vec3): FieldSample => {
+    const ev = evaluatePoint(point, ctx);
+    const rgb = shadeAt(ev, ctx);
+    let weightSum = 0;
+    let bestIncidenceCos = 0;
+    let irradiance = 0;
+    let irradianceTimesCos = 0;
+    for (const c of ev.contributions) {
+      weightSum += c.weight;
+      if (c.incidenceCos > bestIncidenceCos) bestIncidenceCos = c.incidenceCos;
+      const cos = c.incidenceCos > 0 ? c.incidenceCos : 0;
+      const falloff = (c.referenceDistanceM * c.referenceDistanceM) / (c.distanceM * c.distanceM);
+      const delivered = c.weight * cos * falloff;
+      irradiance += delivered;
+      irradianceTimesCos += delivered * cos;
+    }
+    return {
+      rgb,
+      luminance: relativeLuminance(rgb),
+      contributors: ev.contributions.length,
+      contentContributors: ev.contentContributors,
+      weightSum,
+      bestIncidenceCos,
+      incidenceCosWeighted: irradiance > 0 ? irradianceTimesCos / irradiance : NaN,
+      mask: ev.mask,
+    };
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Seams
 // ---------------------------------------------------------------------------
 

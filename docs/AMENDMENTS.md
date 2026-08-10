@@ -1155,3 +1155,84 @@ choice is named in every photometric metric's note and in the metric set's
 provenance block, so no ΔE leaves the package without it attached. A real DLP with
 a white segment in its colour wheel is materially different, and swapping the
 matrix is a one-argument change.
+
+---
+
+## A-23 — reading the primary alignment manual: three confirmations, one `DOC`-vs-`DOC` conflict, and two facts the spec does not carry
+
+**Status:** OPEN. Raised after fetching
+`https://sos.noaa.gov/support/sos/manuals/alignment/all/`, which PARAMETERS.md
+cites in §Sources but which had not been read directly — every earlier entry in
+this register worked from PARAMETERS.md's summary of it.
+
+PARAMETERS.md remains authoritative. Nothing below has been applied.
+
+### Confirmed verbatim — no change needed
+
+- **`d_proj`, alignment-manual reading.** "The projectors are located about 17
+  feet away from the center of the sphere." Exactly as §2 records, including the
+  hedge "about". The §2 conflict with the floor plan stands unresolved.
+- **Projector azimuths.** "mounted approximately 90 degrees apart from each
+  other" — §2's 0/90/180/270 with its ±1–2° mount tolerance.
+- **`h_center` is measured to the equator.** "Measure the height (in inches) from
+  the ground to the sphere's equator", and, if vertical lines diverge or
+  cross-hatch, "consider adding or subtracting 1 inch from this measurement and
+  then re-entering it into the SOS configuration file." §1's note paraphrases
+  this accurately, and "equator" and "centre" are the same height for a sphere.
+- **No published tolerance.** §7's "NOAA publishes no numeric alignment
+  tolerance — the documented standard is that an experienced operator judges the
+  image continuous" is exactly right. The manual's success criteria are "the red
+  ball does not overshoot the sphere on any side", grid lines "line up exactly",
+  and vertices "in alignment". All visual, all unquantified.
+- **Three stages, in order.** Step 7 Red Ball, Step 8 Grid Alignment, Step 9
+  Vertex Tweaking — the structure §3.1 describes when it says solving `k1, k2`
+  is "what collapses their three stages into one".
+- **No throw ratio, lens, projector model, or resolution anywhere in the
+  manual.** This matters: A-18 nominates §8 item 2 ("Projector make and model →
+  throw ratio") as the highest-value item on the ground-truth checklist, worth
+  88–97% of the pose error. Confirmed that no document supplies it, so the visit
+  genuinely has to read the label off the projector.
+
+### The conflict: sphere diameter, `DOC` against `DOC`
+
+The manual says **"6 foot diameter sphere"**. PARAMETERS.md §1 gives
+`D_sphere` = **1.7272 m (68 in)**, class `DOC`. Those differ by four inches.
+
+**PARAMETERS.md is right, and its own §4.3 proves it.** The coverage limits in
+§4.3 are a function of `R/d`, so they pin the radius:
+
+| Diameter | `R` | Meridian limit | Seam limit |
+| --- | --- | --- | --- |
+| **68 in (PARAMETERS.md)** | 0.8636 m | **80.4029°** | **76.3627°** |
+| 72 in (manual's "6 foot") | 0.9144 m | 79.8326° | 75.5435° |
+| §4.3 states | — | **80.4°** | **76.3°** |
+
+§4.3's figures reproduce the 68-inch sphere to four significant figures and miss
+the 72-inch one by 0.57° and 0.82°. `packages/sim` independently reproduces
+80.4029° and 76.3627° by bisection on the general vector limb test, so the whole
+geometric model is consistent with 68 in and only 68 in.
+
+The manual's "6 foot" is best read as colloquial rounding of a 5 ft 8 in sphere —
+the same register as "about 17 feet".
+
+**Proposed amendment.** Add one line to §1 noting that the alignment manual says
+"6 foot" and that 68 in is nevertheless correct, with §4.3's arithmetic as the
+reason. A `DOC` value contradicted by a `DOC` source should say so in the row,
+even when the resolution is clear, because the next reader will hit the same
+sentence and have to redo this.
+
+### Two facts the spec does not carry, both worth adding
+
+1. **Twenty minutes of projector warm-up is prescribed.** "It is recommended that
+   the projectors are on for about 20 minutes before starting alignment."
+   §9 lists "Lamp warm-up drift and long-term aging" as *not modelled* and treats
+   it as a minor omission. The manual makes warm-up a procedural precondition,
+   which means the drift is large enough that NOAA tells operators to wait it
+   out. That promotes it from an omission to a documented, quantified-in-time
+   effect, and it belongs in §8's capture checklist as a precondition on every
+   photometric frame — the 35-frame sequence is worthless if it starts cold.
+2. **The procedure takes 1–2 hours for a first-time user, 15 minutes to 1 hour
+   for an experienced operator.** PARAMETERS.md carries no baseline for what the
+   current process costs. This is the number any claim about the solver's value
+   has to beat, and it should be recorded in the spec rather than inferred, so
+   that a future comparison is against a cited figure instead of a recollection.

@@ -1,0 +1,396 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 804" width="1280" height="804" role="img" aria-label="Experiment 1, figure 1 — solver recovery against camera count">
+<style>
+  text { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; fill: #1a1a1a; }
+  .h1 { font-size: 17px; font-weight: 650; }
+  .h2 { font-size: 12px; fill: #5a5a5a; }
+  .ttl { font-size: 13px; font-weight: 600; }
+  .sub { font-size: 10.5px; fill: #5a5a5a; }
+  .tick { font-size: 10px; fill: #5a5a5a; }
+  .axlbl { font-size: 11px; fill: #1a1a1a; }
+  .leg { font-size: 11.5px; }
+  .cap { font-size: 11px; fill: #5a5a5a; }
+  .foot { font-size: 10px; fill: #5a5a5a; }
+  .gatelbl { font-size: 10px; fill: #b3261e; }
+  .mid { text-anchor: middle; }
+  .end { text-anchor: end; }
+  .grid { stroke: #e3e3e3; stroke-width: 1; }
+  .ax { stroke: #333333; stroke-width: 1; }
+  .gate { stroke: #b3261e; stroke-width: 1.2; stroke-dasharray: 6 3; }
+</style>
+<rect x="0" y="0" width="1280" height="804" fill="#ffffff"/>
+<text x="14" y="30" class="h1">Experiment 1, figure 1 — solver recovery against camera count</text>
+<text x="14" y="50" class="h2">1 to 8 camera positions, 5 seeds each. Held: 320x240 camera, 4 projectors at PARAMETERS.md §2 nominal, 4 floor references at sigma = 3 mm, E_amb = 0.04, fov_h free.</text>
+<line x1="14" y1="76" x2="36" y2="76" stroke="#1f5fa9" stroke-width="2.5"/>
+<circle cx="25" cy="76" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<text x="42" y="80" class="leg">tripod (static camera, global shutter)</text>
+<line x1="291.20000000000005" y1="76" x2="313.20000000000005" y2="76" stroke="#c2521a" stroke-width="2.5"/>
+<circle cx="302.20000000000005" cy="76" r="3.4" fill="#ffffff" stroke="#c2521a" stroke-width="2"/>
+<text x="319.20000000000005" y="80" class="leg">handheld (motion + rolling shutter)</text>
+<text x="20" y="120" class="ttl">Pose position error</text>
+<line x1="72" y1="326.00" x2="412" y2="326.00" class="grid"/>
+<text x="66" y="329.50" class="tick end">1.00</text>
+<line x1="72" y1="300.00" x2="412" y2="300.00" class="grid"/>
+<text x="66" y="303.50" class="tick end">10.0</text>
+<line x1="72" y1="274.00" x2="412" y2="274.00" class="grid"/>
+<text x="66" y="277.50" class="tick end">100</text>
+<line x1="72" y1="248.00" x2="412" y2="248.00" class="grid"/>
+<text x="66" y="251.50" class="tick end">1000</text>
+<line x1="72" y1="222.00" x2="412" y2="222.00" class="grid"/>
+<text x="66" y="225.50" class="tick end">10000</text>
+<line x1="72" y1="196.00" x2="412" y2="196.00" class="grid"/>
+<text x="66" y="199.50" class="tick end">100000</text>
+<line x1="72" y1="170.00" x2="412" y2="170.00" class="grid"/>
+<text x="66" y="173.50" class="tick end">1000000</text>
+<line x1="72" y1="144.00" x2="412" y2="144.00" class="grid"/>
+<text x="66" y="147.50" class="tick end">10000000</text>
+<line x1="107.79" y1="326" x2="107.79" y2="330" class="ax"/>
+<text x="107.79" y="342" class="tick mid">1</text>
+<line x1="197.26" y1="326" x2="197.26" y2="330" class="ax"/>
+<text x="197.26" y="342" class="tick mid">2</text>
+<line x1="286.74" y1="326" x2="286.74" y2="330" class="ax"/>
+<text x="286.74" y="342" class="tick mid">3</text>
+<line x1="376.21" y1="326" x2="376.21" y2="330" class="ax"/>
+<text x="376.21" y="342" class="tick mid">4</text>
+<line x1="465.68" y1="326" x2="465.68" y2="330" class="ax"/>
+<text x="465.68" y="342" class="tick mid">5</text>
+<line x1="555.16" y1="326" x2="555.16" y2="330" class="ax"/>
+<text x="555.16" y="342" class="tick mid">6</text>
+<line x1="644.63" y1="326" x2="644.63" y2="330" class="ax"/>
+<text x="644.63" y="342" class="tick mid">7</text>
+<line x1="734.11" y1="326" x2="734.11" y2="330" class="ax"/>
+<text x="734.11" y="342" class="tick mid">8</text>
+<line x1="72" y1="326" x2="412" y2="326" class="ax"/>
+<line x1="72" y1="326" x2="72" y2="144" class="ax"/>
+<line x1="72" y1="318.17" x2="412" y2="318.17" class="gate"/>
+<text x="408" y="314.17" class="gatelbl end">PARAMETERS.md §7: 2 mm</text>
+<line x1="107.79" y1="239.86" x2="107.79" y2="162.30" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="197.26" y1="293.74" x2="197.26" y2="282.71" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="286.74" y1="302.40" x2="286.74" y2="285.28" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="376.21" y1="291.04" x2="376.21" y2="282.20" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<path d="M107.79,215.69 L197.26,283.84 L286.74,289.68 L376.21,287.29" fill="none" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="107.79" cy="215.69" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="107.79" cy="162.30" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="107.79" cy="224.77" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="107.79" cy="239.86" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="107.79" cy="196.12" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="197.26" cy="293.74" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="197.26" cy="282.71" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="197.26" cy="283.84" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="197.26" cy="286.40" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="197.26" cy="283.22" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="286.74" cy="302.40" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="286.74" cy="289.42" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="286.74" cy="289.68" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="286.74" cy="294.69" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="286.74" cy="285.28" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="376.21" cy="291.04" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="376.21" cy="282.20" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="376.21" cy="287.29" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="107.79" cy="215.69" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="197.26" cy="283.84" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="286.74" cy="289.68" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="376.21" cy="287.29" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<text x="242.0" y="378" class="axlbl mid">camera positions (photographs of the sphere)</text>
+<text transform="translate(24,235.0) rotate(-90)" class="axlbl mid">worst projector, mm (log)</text>
+<text x="440" y="120" class="ttl">Pose rotation error</text>
+<line x1="492" y1="326.00" x2="832" y2="326.00" class="grid"/>
+<text x="486" y="329.50" class="tick end">0.010</text>
+<line x1="492" y1="307.74" x2="832" y2="307.74" class="grid"/>
+<text x="486" y="311.24" class="tick end">0.020</text>
+<line x1="492" y1="283.60" x2="832" y2="283.60" class="grid"/>
+<text x="486" y="287.10" class="tick end">0.050</text>
+<line x1="492" y1="265.33" x2="832" y2="265.33" class="grid"/>
+<text x="486" y="268.83" class="tick end">0.100</text>
+<line x1="492" y1="247.07" x2="832" y2="247.07" class="grid"/>
+<text x="486" y="250.57" class="tick end">0.200</text>
+<line x1="492" y1="222.93" x2="832" y2="222.93" class="grid"/>
+<text x="486" y="226.43" class="tick end">0.500</text>
+<line x1="492" y1="204.67" x2="832" y2="204.67" class="grid"/>
+<text x="486" y="208.17" class="tick end">1.00</text>
+<line x1="492" y1="186.40" x2="832" y2="186.40" class="grid"/>
+<text x="486" y="189.90" class="tick end">2.00</text>
+<line x1="492" y1="162.26" x2="832" y2="162.26" class="grid"/>
+<text x="486" y="165.76" class="tick end">5.00</text>
+<line x1="492" y1="144.00" x2="832" y2="144.00" class="grid"/>
+<text x="486" y="147.50" class="tick end">10.0</text>
+<line x1="527.79" y1="326" x2="527.79" y2="330" class="ax"/>
+<text x="527.79" y="342" class="tick mid">1</text>
+<line x1="617.26" y1="326" x2="617.26" y2="330" class="ax"/>
+<text x="617.26" y="342" class="tick mid">2</text>
+<line x1="706.74" y1="326" x2="706.74" y2="330" class="ax"/>
+<text x="706.74" y="342" class="tick mid">3</text>
+<line x1="796.21" y1="326" x2="796.21" y2="330" class="ax"/>
+<text x="796.21" y="342" class="tick mid">4</text>
+<line x1="885.68" y1="326" x2="885.68" y2="330" class="ax"/>
+<text x="885.68" y="342" class="tick mid">5</text>
+<line x1="975.16" y1="326" x2="975.16" y2="330" class="ax"/>
+<text x="975.16" y="342" class="tick mid">6</text>
+<line x1="1064.63" y1="326" x2="1064.63" y2="330" class="ax"/>
+<text x="1064.63" y="342" class="tick mid">7</text>
+<line x1="1154.11" y1="326" x2="1154.11" y2="330" class="ax"/>
+<text x="1154.11" y="342" class="tick mid">8</text>
+<line x1="492" y1="326" x2="832" y2="326" class="ax"/>
+<line x1="492" y1="326" x2="492" y2="144" class="ax"/>
+<line x1="492" y1="283.60" x2="832" y2="283.60" class="gate"/>
+<text x="828" y="279.60" class="gatelbl end">PARAMETERS.md §7: 0.05 deg</text>
+<line x1="527.79" y1="213.50" x2="527.79" y2="173.28" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="617.26" y1="295.00" x2="617.26" y2="278.94" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="706.74" y1="300.44" x2="706.74" y2="288.93" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="796.21" y1="296.80" x2="796.21" y2="275.55" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<path d="M527.79,180.91 L617.26,288.48 L706.74,292.23 L796.21,286.59" fill="none" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="527.79" cy="180.91" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="527.79" cy="199.37" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="527.79" cy="173.28" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="527.79" cy="213.50" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="527.79" cy="174.35" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="617.26" cy="293.85" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="617.26" cy="295.00" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="617.26" cy="278.94" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="617.26" cy="283.40" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="617.26" cy="288.48" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="706.74" cy="300.44" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="706.74" cy="292.23" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="706.74" cy="288.93" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="706.74" cy="299.02" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="706.74" cy="291.95" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="796.21" cy="286.59" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="796.21" cy="275.55" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="796.21" cy="296.80" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="527.79" cy="180.91" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="617.26" cy="288.48" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="706.74" cy="292.23" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="796.21" cy="286.59" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<text x="662.0" y="378" class="axlbl mid">camera positions (photographs of the sphere)</text>
+<text transform="translate(444,235.0) rotate(-90)" class="axlbl mid">worst projector, deg (log)</text>
+<text x="860" y="120" class="ttl">Grid-line displacement</text>
+<line x1="912" y1="326.00" x2="1252" y2="326.00" class="grid"/>
+<text x="906" y="329.50" class="tick end">0.100</text>
+<line x1="912" y1="307.74" x2="1252" y2="307.74" class="grid"/>
+<text x="906" y="311.24" class="tick end">0.200</text>
+<line x1="912" y1="283.60" x2="1252" y2="283.60" class="grid"/>
+<text x="906" y="287.10" class="tick end">0.500</text>
+<line x1="912" y1="265.33" x2="1252" y2="265.33" class="grid"/>
+<text x="906" y="268.83" class="tick end">1.00</text>
+<line x1="912" y1="247.07" x2="1252" y2="247.07" class="grid"/>
+<text x="906" y="250.57" class="tick end">2.00</text>
+<line x1="912" y1="222.93" x2="1252" y2="222.93" class="grid"/>
+<text x="906" y="226.43" class="tick end">5.00</text>
+<line x1="912" y1="204.67" x2="1252" y2="204.67" class="grid"/>
+<text x="906" y="208.17" class="tick end">10.0</text>
+<line x1="912" y1="186.40" x2="1252" y2="186.40" class="grid"/>
+<text x="906" y="189.90" class="tick end">20.0</text>
+<line x1="912" y1="162.26" x2="1252" y2="162.26" class="grid"/>
+<text x="906" y="165.76" class="tick end">50.0</text>
+<line x1="912" y1="144.00" x2="1252" y2="144.00" class="grid"/>
+<text x="906" y="147.50" class="tick end">100</text>
+<line x1="947.79" y1="326" x2="947.79" y2="330" class="ax"/>
+<text x="947.79" y="342" class="tick mid">1</text>
+<line x1="1037.26" y1="326" x2="1037.26" y2="330" class="ax"/>
+<text x="1037.26" y="342" class="tick mid">2</text>
+<line x1="1126.74" y1="326" x2="1126.74" y2="330" class="ax"/>
+<text x="1126.74" y="342" class="tick mid">3</text>
+<line x1="1216.21" y1="326" x2="1216.21" y2="330" class="ax"/>
+<text x="1216.21" y="342" class="tick mid">4</text>
+<line x1="1305.68" y1="326" x2="1305.68" y2="330" class="ax"/>
+<text x="1305.68" y="342" class="tick mid">5</text>
+<line x1="1395.16" y1="326" x2="1395.16" y2="330" class="ax"/>
+<text x="1395.16" y="342" class="tick mid">6</text>
+<line x1="1484.63" y1="326" x2="1484.63" y2="330" class="ax"/>
+<text x="1484.63" y="342" class="tick mid">7</text>
+<line x1="1574.11" y1="326" x2="1574.11" y2="330" class="ax"/>
+<text x="1574.11" y="342" class="tick mid">8</text>
+<line x1="912" y1="326" x2="1252" y2="326" class="ax"/>
+<line x1="912" y1="326" x2="912" y2="144" class="ax"/>
+<line x1="912" y1="265.33" x2="1252" y2="265.33" class="gate"/>
+<text x="1248" y="261.33" class="gatelbl end">PARAMETERS.md §7: 1 mm on sphere surface</text>
+<line x1="947.79" y1="290.31" x2="947.79" y2="157.24" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="1037.26" y1="306.68" x2="1037.26" y2="280.60" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="1126.74" y1="318.58" x2="1126.74" y2="293.55" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="1216.21" y1="316.45" x2="1216.21" y2="313.69" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<path d="M947.79,288.07 L1037.26,293.36 L1126.74,309.31 L1216.21,315.90" fill="none" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="947.79" cy="290.15" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="947.79" cy="287.54" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="947.79" cy="290.31" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="947.79" cy="157.24" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="947.79" cy="288.07" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1037.26" cy="306.68" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1037.26" cy="282.43" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1037.26" cy="303.05" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1037.26" cy="280.60" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1037.26" cy="293.36" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1126.74" cy="318.58" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1126.74" cy="300.44" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1126.74" cy="309.31" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1126.74" cy="309.76" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1126.74" cy="293.55" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1216.21" cy="315.90" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1216.21" cy="313.69" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1216.21" cy="316.45" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="947.79" cy="288.07" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="1037.26" cy="293.36" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="1126.74" cy="309.31" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="1216.21" cy="315.90" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<text x="1082.0" y="378" class="axlbl mid">camera positions (photographs of the sphere)</text>
+<text transform="translate(864,235.0) rotate(-90)" class="axlbl mid">mm on sphere surface (log)</text>
+<text x="20" y="420" class="ttl">Pose position error</text>
+<text x="20" y="435" class="sub">2 cameras and up — same data, legible scale</text>
+<line x1="72" y1="626.00" x2="412" y2="626.00" class="grid"/>
+<text x="66" y="629.50" class="tick end">1.00</text>
+<line x1="72" y1="598.61" x2="412" y2="598.61" class="grid"/>
+<text x="66" y="602.11" class="tick end">2.00</text>
+<line x1="72" y1="562.39" x2="412" y2="562.39" class="grid"/>
+<text x="66" y="565.89" class="tick end">5.00</text>
+<line x1="72" y1="535.00" x2="412" y2="535.00" class="grid"/>
+<text x="66" y="538.50" class="tick end">10.0</text>
+<line x1="72" y1="507.61" x2="412" y2="507.61" class="grid"/>
+<text x="66" y="511.11" class="tick end">20.0</text>
+<line x1="72" y1="471.39" x2="412" y2="471.39" class="grid"/>
+<text x="66" y="474.89" class="tick end">50.0</text>
+<line x1="72" y1="444.00" x2="412" y2="444.00" class="grid"/>
+<text x="66" y="447.50" class="tick end">100</text>
+<line x1="120.57" y1="626" x2="120.57" y2="630" class="ax"/>
+<text x="120.57" y="642" class="tick mid">2</text>
+<line x1="242.00" y1="626" x2="242.00" y2="630" class="ax"/>
+<text x="242.00" y="642" class="tick mid">3</text>
+<line x1="363.43" y1="626" x2="363.43" y2="630" class="ax"/>
+<text x="363.43" y="642" class="tick mid">4</text>
+<line x1="484.86" y1="626" x2="484.86" y2="630" class="ax"/>
+<text x="484.86" y="642" class="tick mid">5</text>
+<line x1="606.29" y1="626" x2="606.29" y2="630" class="ax"/>
+<text x="606.29" y="642" class="tick mid">6</text>
+<line x1="727.71" y1="626" x2="727.71" y2="630" class="ax"/>
+<text x="727.71" y="642" class="tick mid">7</text>
+<line x1="849.14" y1="626" x2="849.14" y2="630" class="ax"/>
+<text x="849.14" y="642" class="tick mid">8</text>
+<line x1="72" y1="626" x2="412" y2="626" class="ax"/>
+<line x1="72" y1="626" x2="72" y2="444" class="ax"/>
+<line x1="72" y1="598.61" x2="412" y2="598.61" class="gate"/>
+<text x="408" y="594.61" class="gatelbl end">PARAMETERS.md §7: 2 mm</text>
+<line x1="120.57" y1="513.10" x2="120.57" y2="474.48" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="242.00" y1="543.40" x2="242.00" y2="483.47" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="363.43" y1="503.63" x2="363.43" y2="472.72" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<path d="M120.57,478.46 L242.00,498.89 L363.43,490.52" fill="none" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="120.57" cy="513.10" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="120.57" cy="474.48" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="120.57" cy="478.46" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="120.57" cy="487.40" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="120.57" cy="476.29" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="242.00" cy="543.40" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="242.00" cy="497.98" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="242.00" cy="498.89" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="242.00" cy="516.42" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="242.00" cy="483.47" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="363.43" cy="503.63" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="363.43" cy="472.72" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="363.43" cy="490.52" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="120.57" cy="478.46" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="242.00" cy="498.89" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="363.43" cy="490.52" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<text x="242.0" y="678" class="axlbl mid">camera positions (photographs of the sphere)</text>
+<text transform="translate(24,535.0) rotate(-90)" class="axlbl mid">worst projector, mm (log)</text>
+<text x="440" y="420" class="ttl">Pose rotation error</text>
+<text x="440" y="435" class="sub">2 cameras and up — same data, legible scale</text>
+<line x1="492" y1="626.00" x2="832" y2="626.00" class="grid"/>
+<text x="486" y="629.50" class="tick end">0.010</text>
+<line x1="492" y1="571.21" x2="832" y2="571.21" class="grid"/>
+<text x="486" y="574.71" class="tick end">0.020</text>
+<line x1="492" y1="498.79" x2="832" y2="498.79" class="grid"/>
+<text x="486" y="502.29" class="tick end">0.050</text>
+<line x1="492" y1="444.00" x2="832" y2="444.00" class="grid"/>
+<text x="486" y="447.50" class="tick end">0.100</text>
+<line x1="540.57" y1="626" x2="540.57" y2="630" class="ax"/>
+<text x="540.57" y="642" class="tick mid">2</text>
+<line x1="662.00" y1="626" x2="662.00" y2="630" class="ax"/>
+<text x="662.00" y="642" class="tick mid">3</text>
+<line x1="783.43" y1="626" x2="783.43" y2="630" class="ax"/>
+<text x="783.43" y="642" class="tick mid">4</text>
+<line x1="904.86" y1="626" x2="904.86" y2="630" class="ax"/>
+<text x="904.86" y="642" class="tick mid">5</text>
+<line x1="1026.29" y1="626" x2="1026.29" y2="630" class="ax"/>
+<text x="1026.29" y="642" class="tick mid">6</text>
+<line x1="1147.71" y1="626" x2="1147.71" y2="630" class="ax"/>
+<text x="1147.71" y="642" class="tick mid">7</text>
+<line x1="1269.14" y1="626" x2="1269.14" y2="630" class="ax"/>
+<text x="1269.14" y="642" class="tick mid">8</text>
+<line x1="492" y1="626" x2="832" y2="626" class="ax"/>
+<line x1="492" y1="626" x2="492" y2="444" class="ax"/>
+<line x1="492" y1="498.79" x2="832" y2="498.79" class="gate"/>
+<text x="828" y="494.79" class="gatelbl end">PARAMETERS.md §7: 0.05 deg</text>
+<line x1="540.57" y1="533.01" x2="540.57" y2="484.81" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="662.00" y1="549.31" x2="662.00" y2="514.80" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="783.43" y1="538.39" x2="783.43" y2="474.65" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<path d="M540.57,513.43 L662.00,524.69 L783.43,507.77" fill="none" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="540.57" cy="529.56" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="540.57" cy="533.01" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="540.57" cy="484.81" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="540.57" cy="498.20" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="540.57" cy="513.43" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="662.00" cy="549.31" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="662.00" cy="524.69" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="662.00" cy="514.80" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="662.00" cy="545.05" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="662.00" cy="523.85" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="783.43" cy="507.77" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="783.43" cy="474.65" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="783.43" cy="538.39" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="540.57" cy="513.43" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="662.00" cy="524.69" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="783.43" cy="507.77" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<text x="662.0" y="678" class="axlbl mid">camera positions (photographs of the sphere)</text>
+<text transform="translate(444,535.0) rotate(-90)" class="axlbl mid">worst projector, deg (log)</text>
+<text x="860" y="420" class="ttl">Grid-line displacement</text>
+<text x="860" y="435" class="sub">2 cameras and up — same data, legible scale</text>
+<line x1="912" y1="626.00" x2="1252" y2="626.00" class="grid"/>
+<text x="906" y="629.50" class="tick end">0.100</text>
+<line x1="912" y1="571.21" x2="1252" y2="571.21" class="grid"/>
+<text x="906" y="574.71" class="tick end">0.200</text>
+<line x1="912" y1="498.79" x2="1252" y2="498.79" class="grid"/>
+<text x="906" y="502.29" class="tick end">0.500</text>
+<line x1="912" y1="444.00" x2="1252" y2="444.00" class="grid"/>
+<text x="906" y="447.50" class="tick end">1.00</text>
+<line x1="960.57" y1="626" x2="960.57" y2="630" class="ax"/>
+<text x="960.57" y="642" class="tick mid">2</text>
+<line x1="1082.00" y1="626" x2="1082.00" y2="630" class="ax"/>
+<text x="1082.00" y="642" class="tick mid">3</text>
+<line x1="1203.43" y1="626" x2="1203.43" y2="630" class="ax"/>
+<text x="1203.43" y="642" class="tick mid">4</text>
+<line x1="1324.86" y1="626" x2="1324.86" y2="630" class="ax"/>
+<text x="1324.86" y="642" class="tick mid">5</text>
+<line x1="1446.29" y1="626" x2="1446.29" y2="630" class="ax"/>
+<text x="1446.29" y="642" class="tick mid">6</text>
+<line x1="1567.71" y1="626" x2="1567.71" y2="630" class="ax"/>
+<text x="1567.71" y="642" class="tick mid">7</text>
+<line x1="1689.14" y1="626" x2="1689.14" y2="630" class="ax"/>
+<text x="1689.14" y="642" class="tick mid">8</text>
+<line x1="912" y1="626" x2="1252" y2="626" class="ax"/>
+<line x1="912" y1="626" x2="912" y2="444" class="ax"/>
+<line x1="912" y1="444.00" x2="1252" y2="444.00" class="gate"/>
+<text x="1248" y="440.00" class="gatelbl end">PARAMETERS.md §7: 1 mm on sphere surface</text>
+<line x1="960.57" y1="568.05" x2="960.57" y2="489.79" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="1082.00" y1="603.74" x2="1082.00" y2="528.66" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="1203.43" y1="597.35" x2="1203.43" y2="589.08" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<path d="M960.57,528.08 L1082.00,575.92 L1203.43,595.69" fill="none" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="960.57" cy="568.05" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="960.57" cy="495.29" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="960.57" cy="557.15" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="960.57" cy="489.79" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="960.57" cy="528.08" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1082.00" cy="603.74" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1082.00" cy="549.32" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1082.00" cy="575.92" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1082.00" cy="577.29" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1082.00" cy="528.66" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1203.43" cy="595.69" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1203.43" cy="589.08" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1203.43" cy="597.35" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="960.57" cy="528.08" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="1082.00" cy="575.92" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="1203.43" cy="595.69" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<text x="1082.0" y="678" class="axlbl mid">camera positions (photographs of the sphere)</text>
+<text transform="translate(864,535.0) rotate(-90)" class="axlbl mid">mm on sphere surface (log)</text>
+<text x="14" y="716" class="cap">Open circle = median over seeds. Small dots = every individual seed. Vertical bar = observed range. Red dashed = PARAMETERS.md §7 gate.</text>
+<text x="14" y="732" class="cap">The two conditions differ in the camera motion and the shutter and in nothing else — same rig, same seeds, same ambient, same sensor.</text>
+<text x="14" y="748" class="cap">Top row: all counts including one camera, which cannot constrain the rig and misses by kilometres. Bottom row: the same data from two cameras up.</text>
+<text x="14" y="764" class="cap">Note the third column against the first: at one camera the grid gate PASSES while the pose error is six orders of magnitude out. The recovered rig</text>
+<text x="14" y="780" class="cap">is internally self-consistent, so every projector is wrong in a way that agrees with every other projector and their grid lines still coincide.</text>
+</svg>

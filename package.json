@@ -14,6 +14,7 @@
     "bench": "node packages/bench/src/cli.ts",
     "gate": "node packages/bench/src/gate.ts",
     "experiments": "node packages/experiments/src/cli.ts",
+    "experiment1": "node packages/experiments/src/experiment1/cli.ts",
     "loop": "node packages/bench/src/loop.ts",
     "build:web": "tsc -p tsconfig.web.json",
     "harness": "node packages/harness/serve.ts",

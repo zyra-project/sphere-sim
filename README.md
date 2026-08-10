@@ -19,6 +19,8 @@ build on any import across that line.
 | [`docs/AMENDMENTS.md`](docs/AMENDMENTS.md) | Ambiguities found while implementing the spec. Proposed, never silently applied |
 | [`packages/calibration/README.md`](packages/calibration/README.md) | The boundary object, and why it contains no code |
 | [`packages/bench/README.md`](packages/bench/README.md) | The scorer: how a solve is graded, how the gauge is removed, and how to read `bench-results.json` |
+| [`packages/experiments/README.md`](packages/experiments/README.md) | The measurements. Each runs once and is not iterated |
+| [`docs/EXPERIMENT-1.md`](docs/EXPERIMENT-1.md) | **How many photographs a calibration needs, and whether a phone suffices.** Measured |
 
 ## The honesty structure
 
@@ -41,7 +43,9 @@ npm run ci                 # boundary lint, typecheck, tests
 npm run bench              # headless deterministic bench -> bench-results.json + PNGs
 npm run gate               # judge bench-results.json against §7; exits non-zero on an
                            # unwaived gate failure. See gate-waivers.json.
-npm run experiments        # the three experiments, each run once
+npm run experiments        # experiments 2 and 3, each run once
+npm run experiment1        # experiment 1: camera count, resolution, floor reference,
+                           # and each degradation on its own. ~2 h; --list prints the budget
 npm run harness            # interactive WebGL harness
 ```
 
