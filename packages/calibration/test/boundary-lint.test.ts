@@ -132,6 +132,42 @@ test('R1: a shared third package is the same violation with an extra hop', () =>
   assert.match(r.out, /how the boundary erodes/);
 });
 
+test('R1: a BARE specifier across the boundary fails too', () => {
+  // The lint originally checked relative paths only. That is correct today and
+  // silently wrong the moment anyone adds workspaces or a tsconfig path alias —
+  // and a boundary rule that goes quiet is worse than no rule, because the
+  // "0 violations" line keeps being printed.
+  const r = runLint({
+    'packages/sim/src/geometry.ts': 'export const q = 1;\n',
+    'packages/solver/src/bundle.ts': "import { q } from '@sphere/sim';\nexport const z = q;\n",
+  });
+  assert.equal(r.code, 1, 'bare specifiers must not be a loophole');
+  assert.match(r.out, /R1/);
+});
+
+test('R1: a bare deep import across the boundary fails too', () => {
+  const r = runLint({
+    'packages/solver/src/project.ts': 'export const q = 1;\n',
+    'packages/sim/src/optics.ts': "import { q } from '@sphere/solver/project.ts';\nexport const z = q;\n",
+  });
+  assert.equal(r.code, 1);
+  assert.match(r.out, /R1/);
+});
+
+test('R1: an unrecognised @sphere package is refused rather than ignored', () => {
+  const r = runLint({
+    'packages/sim/src/optics.ts': "import { q } from '@sphere/geometry-utils';\nexport const z = q;\n",
+  });
+  assert.equal(r.code, 1, 'an unknown name in our own scope must not be waved through');
+});
+
+test('bare imports of third-party and node builtins are still fine', () => {
+  const r = runLint({
+    'packages/sim/src/png.ts': "import zlib from 'node:zlib';\nimport ts from 'typescript';\nexport const z = [zlib, ts];\n",
+  });
+  assert.equal(r.code, 0, `only @sphere packages are the lint's business: ${r.out}`);
+});
+
 test('R3: calibration importing sim fails the build', () => {
   const r = runLint({
     'packages/sim/src/geometry.ts': 'export const q = 1;\n',

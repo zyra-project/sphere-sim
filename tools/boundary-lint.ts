@@ -95,6 +95,62 @@ function lineOf(sf: ts.SourceFile, pos: number): number {
   return sf.getLineAndCharacterOfPosition(pos).line + 1;
 }
 
+/**
+ * Every package directory, mapped from the bare specifiers that could name it.
+ *
+ * Relative-path checking alone is too narrow, and the failure mode is silent.
+ * Today the repo has no workspaces and no tsconfig `paths`, so `packages/sim`
+ * can only be reached as `../../sim/src/...` — but every source header in the
+ * repo already calls these packages `@sphere/sim`, `@sphere/solver` and
+ * `@sphere/calibration`. The day someone adds a `workspaces` field or a path
+ * alias, `import { ... } from '@sphere/sim'` starts resolving, R1 stops
+ * matching, and the lint keeps cheerfully printing `0 violations` while the
+ * boundary is gone. For a rule whose failure mode is "every score in the
+ * project becomes circular", going quiet is the one behaviour it must never
+ * have. So bare specifiers are resolved too, and an unknown `@sphere/*` scope
+ * is an error rather than a shrug.
+ */
+function knownPackages(): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!fs.existsSync(PKG)) return map;
+  for (const entry of fs.readdirSync(PKG, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    map.set(`@sphere/${entry.name}`, entry.name);
+    map.set(entry.name, entry.name);
+    // Honour an explicit package name if one is ever declared.
+    const manifest = path.join(PKG, entry.name, 'package.json');
+    if (fs.existsSync(manifest)) {
+      try {
+        const name = JSON.parse(fs.readFileSync(manifest, 'utf8')).name;
+        if (typeof name === 'string' && name.length > 0) map.set(name, entry.name);
+      } catch {
+        // A malformed manifest is not this rule's problem; the conventional
+        // names above still cover it.
+      }
+    }
+  }
+  return map;
+}
+
+const PACKAGE_BY_SPECIFIER = knownPackages();
+
+/** The package a specifier points at, whether written relative or bare. */
+function resolveTargetPackage(fromFile: string, spec: string): string | null {
+  if (spec.startsWith('.') || spec.startsWith('/')) {
+    return packageOf(path.resolve(path.dirname(fromFile), spec));
+  }
+  // Bare: match the longest known package name that the specifier starts with,
+  // so `@sphere/sim` and `@sphere/sim/optics.ts` both resolve.
+  for (const [name, dir] of PACKAGE_BY_SPECIFIER) {
+    if (spec === name || spec.startsWith(`${name}/`)) return dir;
+  }
+  if (spec.startsWith('@sphere/')) {
+    // An unrecognised name in our own scope. Refuse to guess.
+    return '__unknown_sphere_package__';
+  }
+  return null;
+}
+
 const ARITHMETIC = new Set<ts.SyntaxKind>([
   ts.SyntaxKind.PlusToken,
   ts.SyntaxKind.MinusToken,
@@ -169,9 +225,7 @@ for (const file of files) {
   if (pkg === 'calibration' && inSrc) checkNoMath(sf, file);
 
   for (const spec of moduleSpecifiers(sf)) {
-    if (!spec.text.startsWith('.') && !spec.text.startsWith('/')) continue;
-    const target = path.resolve(path.dirname(file), spec.text);
-    const targetPkg = packageOf(target);
+    const targetPkg = resolveTargetPackage(file, spec.text);
     if (targetPkg === null || pkg === null || targetPkg === pkg) continue;
 
     const line = lineOf(sf, spec.pos);
