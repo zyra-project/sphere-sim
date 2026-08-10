@@ -122,6 +122,16 @@ test('R2: negative literals are constants, not arithmetic', () => {
   assert.equal(r.code, 0, `negative constants must be allowed, got: ${r.out}`);
 });
 
+test('R1: a shared third package is the same violation with an extra hop', () => {
+  const r = runLint({
+    'packages/util/src/prng.ts': 'export const seed = 1;\n',
+    'packages/sim/src/scene.ts': "import { seed } from '../../util/src/prng.ts';\nexport const s = seed;\n",
+  });
+  assert.equal(r.code, 1, 'sim and solver may import calibration and nothing else');
+  assert.match(r.out, /R1/);
+  assert.match(r.out, /how the boundary erodes/);
+});
+
 test('R3: calibration importing sim fails the build', () => {
   const r = runLint({
     'packages/sim/src/geometry.ts': 'export const q = 1;\n',

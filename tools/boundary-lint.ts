@@ -175,14 +175,20 @@ for (const file of files) {
     if (targetPkg === null || pkg === null || targetPkg === pkg) continue;
 
     const line = lineOf(sf, spec.pos);
-    const crosses =
-      (pkg === 'sim' && targetPkg === 'solver') || (pkg === 'solver' && targetPkg === 'sim');
-    if (crosses) {
+    // sim and solver may reach exactly one package: calibration. Naming solver
+    // directly is the obvious violation; a shared "utils" package is the
+    // non-obvious one, and it is the same violation with an extra hop, so the
+    // rule is stated as an allowlist rather than a denylist.
+    if ((pkg === 'sim' || pkg === 'solver') && targetPkg !== 'calibration') {
+      const direct =
+        (pkg === 'sim' && targetPkg === 'solver') || (pkg === 'solver' && targetPkg === 'sim');
       violations.push({
         rule: 'R1',
         file,
         line,
-        message: `packages/${pkg} imports packages/${targetPkg} ('${spec.text}'). The forward and inverse models share no geometry, no projection math, no distortion model. Only @sphere/calibration crosses. Duplicate the code instead — the duplication is the point.`,
+        message: direct
+          ? `packages/${pkg} imports packages/${targetPkg} ('${spec.text}'). The forward and inverse models share no geometry, no projection math, no distortion model. Duplicate the code instead — the duplication is the point.`
+          : `packages/${pkg} imports packages/${targetPkg} ('${spec.text}'). sim and solver may import packages/calibration and nothing else. A shared helper package is how the boundary erodes: today it holds a PRNG, next month it holds a distortion model, and every recovery score becomes circular.`,
       });
     }
     if (pkg === 'calibration' && (targetPkg === 'sim' || targetPkg === 'solver')) {
