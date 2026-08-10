@@ -1,0 +1,26 @@
+{
+  "name": "sphere-sim",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Physically-based simulator of a projected spherical display, plus a deliberately independent alignment solver.",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint:boundary": "node tools/boundary-lint.ts",
+    "test": "node --test --experimental-test-isolation=none \"packages/**/test/**/*.test.ts\"",
+    "bench": "node packages/bench/src/cli.ts",
+    "experiments": "node packages/experiments/src/cli.ts",
+    "loop": "node packages/bench/src/loop.ts",
+    "build:web": "tsc -p tsconfig.web.json",
+    "harness": "node packages/harness/serve.ts",
+    "progress": "node packages/bench/src/progress.ts",
+    "ci": "npm run lint:boundary && npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "22.15.3"
+  }
+}

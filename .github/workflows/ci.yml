@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+          cache: npm
+      - run: npm ci
+
+      # The boundary rule runs FIRST and fails the build on its own.
+      # A/B isolation is not a lint warning to be triaged later: if the forward
+      # model and the inverse model ever share geometry code, every score this
+      # repo produces is circular. See packages/sim/README.md.
+      - name: Boundary isolation (A/B share no math)
+        run: npm run lint:boundary
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Headless bench (deterministic, seeded)
+        run: npm run bench -- --scenarios 6 --seed 1234 --out bench-results.json
+
+      - name: Determinism check (same seed, byte-identical output)
+        run: |
+          npm run bench -- --scenarios 6 --seed 1234 --out bench-results-2.json
+          node tools/assert-deterministic.ts bench-results.json bench-results-2.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-results
+          path: |
+            bench-results.json
+            progress/
