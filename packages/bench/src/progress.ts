@@ -181,6 +181,20 @@ export interface ResidualStats {
   meanRadialPx: number;
   /** Largest per-quadrant mean residual, in standard errors. G3's signature. */
   quadrantZ: number;
+  /**
+   * Fraction of residuals pointing within 10 degrees of the `u` or `v` raster
+   * axis, after standardising each axis separately.
+   *
+   * The decode quantises `u` and `v` independently, so a decode-limited residual
+   * lands on an axis-aligned lattice and the cloud grows arms along the two
+   * raster axes. Standardising per axis first removes the anisotropy, so this
+   * measures the CROSS rather than the stretch — two different apparatus
+   * signatures that the same ellipse would confound.
+   */
+  axisAlignedFraction: number;
+  /** `2/9`: what an isotropic cloud gives for four ±10° sectors. */
+  axisAlignedExpected: number;
+  axisAlignedZ: number;
   bins: ResidualBin[];
   centreU: number;
   centreV: number;
@@ -363,6 +377,31 @@ export function analyseResiduals(
     if (zq > quadrantZ) quadrantZ = zq;
   }
 
+  // Axis alignment, measured after standardising each raster axis on its own so
+  // the anisotropy above cannot masquerade as a cross.
+  const sdU = Math.sqrt(sxx);
+  const sdV = Math.sqrt(syy);
+  let aligned = 0;
+  if (sdU > 0 && sdV > 0) {
+    for (let i = 0; i < n; i++) {
+      const a = (p.du[i] - mdu) / sdU;
+      const b = (p.dv[i] - mdv) / sdV;
+      if (a === 0 && b === 0) {
+        aligned++;
+        continue;
+      }
+      const ang = Math.abs((Math.atan2(b, a) * 180) / Math.PI);
+      if (Math.min(ang, Math.abs(ang - 90), Math.abs(ang - 180)) <= 10) aligned++;
+    }
+  }
+  const axisAlignedFraction = n > 0 ? aligned / n : NaN;
+  const axisAlignedExpected = 2 / 9;
+  const axisAlignedZ =
+    n > 0
+      ? (axisAlignedFraction - axisAlignedExpected) /
+        Math.sqrt((axisAlignedExpected * (1 - axisAlignedExpected)) / n)
+      : NaN;
+
   const verdict: ResidualStats['verdict'] = z >= 10 ? 'structured' : z >= 3 ? 'weak' : 'noise';
 
   return {
@@ -382,6 +421,9 @@ export function analyseResiduals(
     radialStructureZ: z,
     meanRadialPx: meanRadial,
     quadrantZ,
+    axisAlignedFraction,
+    axisAlignedExpected,
+    axisAlignedZ,
     bins,
     centreU,
     centreV,
@@ -617,6 +659,16 @@ function radiusPanel(p: ProjectorPoints, stats: ResidualStats, lim: number, alph
     ticks.join(''),
     `<line class="axis" x1="${c(box.x)}" y1="${c(toY(0))}" x2="${c(box.x + box.w)}" y2="${c(toY(0))}"/>`,
     scatterPoints(radius, radial, toX, toY, box, alpha),
+    // Standard error of each bin's mean, drawn. The outermost bins hold the
+    // fewest correspondences — the sphere's limb does not fill the raster
+    // corners — and a profile that plunges in a bin of forty points is a
+    // different claim from one that plunges in a bin of four hundred.
+    stats.bins
+      .map((b) => {
+        const se = b.count > 0 ? b.sd / Math.sqrt(b.count) : 0;
+        return `<line class="profile-err" x1="${c(toX(b.rMid))}" y1="${c(toY(b.mean - se))}" x2="${c(toX(b.rMid))}" y2="${c(toY(b.mean + se))}"/>`;
+      })
+      .join(''),
     `<path class="profile" d="${profile}"/>`,
     stats.bins
       .map((b) => `<circle class="profile-dot" cx="${c(toX(b.rMid))}" cy="${c(toY(b.mean))}" r="2.2"/>`)
@@ -651,6 +703,11 @@ function statBlock(stats: ResidualStats, cleanRef: ResidualStats | null): string
       `z = ${num(stats.radialStructureZ, 1)}; mean radial ${num(stats.meanRadialPx, 4)} px`,
     ],
     ['quadrant bias', `z = ${num(stats.quadrantZ, 1)}`, 'worst raster quadrant mean, in standard errors'],
+    [
+      'axis alignment',
+      `${pct(stats.axisAlignedFraction)} within 10° of u or v (isotropic ${pct(stats.axisAlignedExpected)}, z = ${num(stats.axisAlignedZ, 1)})`,
+      'the decode quantises u and v separately, so its own residual lies on an axis-aligned cross',
+    ],
   ];
   const cleanLine =
     cleanRef === null
@@ -728,11 +785,16 @@ function residualSection(results: BenchResults): string {
       <strong>structure</strong>, which means the model is wrong, or is <strong>random</strong>, which means the sensor
       is noisy. docs/ARCHITECTURE.md G3 and G4 name the two structured signatures: radial growth with image radius is
       distortion or focal length, a quadrant pattern is the bundle.</p>
-    <p class="lede muted">The dashed circle on each scatter has the same area as the solid one-sigma ellipse, so the
-      gap between them is the anisotropy. A ratio near the raster aspect (1.78 here) is the decode, not the model:
-      <code>patterns.ts</code> picks one Gray-plane count and uses it on both axes, so the <code>u</code> stride is
-      1920/2<sup>b</sup> and the <code>v</code> stride is 1080/2<sup>b</sup>, and a decode-limited residual is wider in
-      <code>u</code> by exactly that ratio.</p>
+    <p class="lede muted">Two apparatus signatures have to be subtracted by eye before anything is blamed on the
+      model, and both are visible on <code>s00-clean</code>, whose residual is 9×10<sup>-5</sup> px — a rig with
+      nothing wrong with it. <strong>The stretch:</strong> the dashed circle on each scatter has the same area as the
+      solid one-sigma ellipse, so the gap between them is the anisotropy, and a ratio near the raster aspect (1.78) is
+      the decode — <code>patterns.ts</code> picks one Gray-plane count and uses it on both axes, so the <code>u</code>
+      stride is 1920/2<sup>b</sup> against 1080/2<sup>b</sup> for <code>v</code>. <strong>The cross:</strong> the
+      decode quantises the two axes independently, so its own residual falls on an axis-aligned lattice and the cloud
+      grows arms along <code>u</code> and <code>v</code>; the axis-alignment statistic measures that after
+      standardising each axis, so it cannot be confused with the stretch. Neither is a defect. Radial structure and
+      quadrant bias are.</p>
     ${blocks.join('')}
   </section>`;
 }
@@ -1963,6 +2025,7 @@ svg.plot .ellipse { fill: none; stroke: var(--ellipse); stroke-width: 1.2; }
 svg.plot .ref-circle { fill: none; stroke: var(--ellipse); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.75; }
 svg.plot .profile { fill: none; stroke: var(--profile); stroke-width: 1.6; }
 svg.plot .profile-dot { fill: var(--profile); }
+svg.plot .profile-err { stroke: var(--profile); stroke-width: 1.4; opacity: 0.65; }
 svg.plot .meridian { stroke: #ffffff; stroke-width: 1.2; opacity: 0.85; }
 svg.plot .seam { stroke: #ffffff; stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.7; }
 svg.plot .mask { stroke: #ff5a4d; stroke-width: 1.1; stroke-dasharray: 5 3; }

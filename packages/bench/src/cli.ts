@@ -35,6 +35,7 @@ import {
   attributePoseFailure,
   canAttribute,
 } from './attribute.ts';
+import { defaultPaths, writeProgressPage } from './progress.ts';
 import type { BenchResults, EnvBlock } from './results.ts';
 import { assembleResults, buildGates, stringifyResults } from './results.ts';
 import type { ScenarioResult } from './run.ts';
@@ -54,6 +55,8 @@ export interface CliOptions {
   baseline: boolean;
   attribute: boolean;
   quiet: boolean;
+  /** Refresh `progress/index.html` from this run. Entry point only. */
+  progress?: boolean;
 }
 
 export function parseArgs(argv: readonly string[]): CliOptions {
@@ -66,6 +69,7 @@ export function parseArgs(argv: readonly string[]): CliOptions {
   let baseline = true;
   let attribute = true;
   let quiet = false;
+  let progress = true;
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -108,6 +112,9 @@ export function parseArgs(argv: readonly string[]): CliOptions {
       case '--quiet':
         quiet = true;
         break;
+      case '--no-progress':
+        progress = false;
+        break;
       case '--help':
       case '-h':
         printHelp();
@@ -129,6 +136,7 @@ export function parseArgs(argv: readonly string[]): CliOptions {
     baseline,
     attribute: attribute && preset.attributeFailures,
     quiet,
+    progress,
   };
 }
 
@@ -148,6 +156,7 @@ function printHelp(): void {
       '  --no-artifacts      Skip the PNGs.',
       '  --no-baseline       Skip the documented-calibration baseline metrics.',
       '  --no-attribution    Skip the counterfactual attribution of failing gates.',
+      '  --no-progress       Do not refresh progress/index.html from this run.',
       '  --quiet             Only print the verdict line.',
       '',
     ].join('\n'),
@@ -341,6 +350,23 @@ function main(): void {
   fs.writeFileSync(outPath, stringifyResults(results));
   process.stdout.write(formatSummary(results));
   process.stdout.write(`written: ${path.relative(REPO_ROOT, outPath)}\n`);
+
+  // The progress page is a view of the file just written, so it is refreshed
+  // from that file rather than from whatever `bench-results.json` happens to
+  // hold. Wrapped, because a page failure must not lose a 100-second run: the
+  // results are already on disk and `progress.ts` can rebuild the page alone.
+  if (options.progress !== false) {
+    try {
+      const paths = defaultPaths(REPO_ROOT);
+      paths.resultsFile = outPath;
+      const written = writeProgressPage(paths);
+      process.stdout.write(`progress: ${path.relative(REPO_ROOT, written.file)}\n`);
+    } catch (e) {
+      process.stdout.write(
+        `progress: page NOT refreshed (${e instanceof Error ? e.message : String(e)})\n`,
+      );
+    }
+  }
   process.exitCode = 0;
 }
 

@@ -46,6 +46,7 @@ import type { CliOptions } from './cli.ts';
 import { formatSummary, runBench } from './cli.ts';
 import type { BenchResults, Dispersion } from './results.ts';
 import { stringifyResults } from './results.ts';
+import { defaultPaths, writeProgressPage } from './progress.ts';
 import { deriveSeed } from './random.ts';
 import { PRESETS } from './scenarios.ts';
 import type { BenchPreset } from './scenarios.ts';
@@ -375,21 +376,62 @@ function main(): void {
   const resultsFile = path.join(outDir, path.basename(outcome.record.resultsPath));
   fs.writeFileSync(resultsFile, stringifyResults(outcome.results));
 
-  // The best round's results are kept under a stable name so the before/after
-  // pair can always be rebuilt from it — and, because the record carries the
-  // seed, so can every scenario in it, camera placement included.
-  if (outcome.record.best) {
-    fs.writeFileSync(path.join(outDir, 'best-results.json'), stringifyResults(outcome.results));
-  }
-
   fs.mkdirSync(path.dirname(options.historyPath), { recursive: true });
   fs.writeFileSync(options.historyPath, `${JSON.stringify(outcome.history, null, 2)}\n`);
+
+  // The progress page is refreshed BEFORE the best-round bookkeeping below, and
+  // the order is the whole point: at this moment `best-results.json` and
+  // `progress/data/best/` still hold the PREVIOUS best, so the page's
+  // before/after pair compares this round against the one it is trying to beat.
+  // Refreshing after would compare a winning round against itself.
+  refreshProgressPage(resultsFile, options.historyPath);
+
+  // The best round's results are kept under a stable name so the before/after
+  // pair can always be rebuilt from it — and, because the record carries the
+  // seed, so can every scenario in it, camera placement included. Its renders
+  // are COPIED rather than referenced: `progress/data` is overwritten in place
+  // every round, so a pair built from those paths would be this round twice.
+  if (outcome.record.best) {
+    fs.writeFileSync(path.join(outDir, 'best-results.json'), stringifyResults(outcome.results));
+    const bestDir = path.join(outDir, 'best');
+    fs.mkdirSync(bestDir, { recursive: true });
+    for (const scenario of outcome.results.scenarios) {
+      for (const rel of Object.values(scenario.artifacts ?? {})) {
+        if (rel === '') continue;
+        const from = path.join(REPO_ROOT, rel);
+        if (fs.existsSync(from)) fs.copyFileSync(from, path.join(bestDir, path.basename(rel)));
+      }
+    }
+  }
 
   process.stdout.write(formatSummary(outcome.results));
   process.stdout.write(outcome.summary);
   process.stdout.write(
     `history: ${path.relative(REPO_ROOT, options.historyPath)}   results: ${path.relative(REPO_ROOT, resultsFile)}\n`,
   );
+}
+
+/**
+ * Rebuild `progress/index.html` from the round that just finished.
+ *
+ * Wrapped so a page failure cannot lose a round. The results file and the
+ * history are on disk before this runs; the page is a view of them and can
+ * always be rebuilt with `node packages/bench/src/progress.ts`.
+ */
+function refreshProgressPage(resultsFile: string, historyPath: string): void {
+  try {
+    const paths = defaultPaths(REPO_ROOT);
+    paths.resultsFile = resultsFile;
+    paths.roundsFile = historyPath;
+    const written = writeProgressPage(paths);
+    process.stdout.write(
+      `progress: ${path.relative(REPO_ROOT, written.file)} (${(written.bytes / 1024 / 1024).toFixed(2)} MB)\n`,
+    );
+  } catch (e) {
+    process.stdout.write(
+      `progress: page NOT refreshed (${e instanceof Error ? e.message : String(e)}). The round itself is written.\n`,
+    );
+  }
 }
 
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

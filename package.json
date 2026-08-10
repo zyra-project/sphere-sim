@@ -17,6 +17,8 @@
     "build:web": "tsc -p tsconfig.web.json",
     "harness": "node packages/harness/serve.ts",
     "progress": "node packages/bench/src/progress.ts",
+    "progress:reference": "node packages/bench/src/reference.ts",
+    "progress:reference:check": "node packages/bench/src/reference.ts --check",
     "ci": "npm run lint:boundary && npm run typecheck && npm test"
   },
   "devDependencies": {

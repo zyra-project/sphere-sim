@@ -122,6 +122,34 @@ export interface DecodeOptions {
   noiseSigma: number;
   /** Floor on reported sigma, projector pixels. */
   minSigmaPx: number;
+  /**
+   * How many signal-level bins the pooled intensity-noise estimate uses.
+   * 0 falls back to estimating the noise from each pixel's own phase residual.
+   *
+   * The fallback is what this decoder used to do and it is statistically
+   * indefensible with four phase steps. Fitting `A + B*cos(phi - 2*pi*n/N)` to
+   * N samples leaves `N - 3` residual degrees of freedom, so at the recommended
+   * N = 4 the per-pixel noise estimate is `sigma * |z|` for a standard normal
+   * `z`: an unbiased-in-square estimate with a 100% relative standard error and
+   * mass arbitrarily close to zero. The bundle then weights by `1/sigma^2`, so a
+   * pixel that draws `|z| = 0.03` is handed a thousand times the weight it has
+   * earned, and the outlier pass — which compares `|r|/sigma` against a
+   * threshold — preferentially discards the pixels whose sigma came out
+   * smallest, which is to say at random. Measured on this bench's corpus, the
+   * per-pixel estimate spread a factor of thirty across its own deciles while
+   * the actual decode error spread a factor of two, and the rank correlation
+   * between the two was 0.05-0.20.
+   *
+   * The noise level is a property of the sensor and of the pixel's own signal
+   * level, not of one pixel's luck, so it is pooled: bin every usable pixel by
+   * its fitted DC level, take the median absolute residual in each bin, and
+   * convert with the half-normal median (`sigma = median / 0.6745`). Binning by
+   * DC rather than pooling one global number keeps the part of the variation
+   * that is real — photon shot noise makes variance track signal — while
+   * throwing away the part that is a one-degree-of-freedom draw. Sixteen bins
+   * over tens of thousands of pixels leaves thousands of samples per bin.
+   */
+  noiseBins: number;
   /** Take every Nth camera pixel in each axis. */
   pixelStride: number;
   /** 0 = keep everything. Otherwise decimate deterministically to this count. */
@@ -147,6 +175,7 @@ export const DEFAULT_DECODE_OPTIONS: DecodeOptions = {
   // and an unbounded 1/sigma weight lets one lucky pixel dominate the normal
   // equations.
   minSigmaPx: 0.01,
+  noiseBins: 16,
   pixelStride: 1,
   maxCorrespondences: 0,
 };
@@ -369,6 +398,124 @@ interface PhaseFit {
 }
 
 /**
+ * Pooled intensity noise as a function of a pixel's own DC level.
+ *
+ * See `DecodeOptions.noiseBins` for why this exists. `levels` is ascending and
+ * the two arrays are parallel; `noiseAt` interpolates between them and clamps
+ * outside the observed range, because extrapolating a noise model past the
+ * signal levels that produced it is how a confident number gets invented.
+ */
+export interface PhaseNoiseModel {
+  levels: Float64Array;
+  sigmas: Float64Array;
+}
+
+/** median(|N(0, sigma)|) = 0.6745 * sigma. */
+const HALF_NORMAL_MEDIAN = 0.674489750196082;
+
+/** Fewer than this many pixels in a bin and the bin's median is not worth having. */
+const MIN_SAMPLES_PER_BIN = 64;
+
+export function noiseAt(model: PhaseNoiseModel, dc: number): number {
+  const n = model.levels.length;
+  if (n === 0) return NaN;
+  if (n === 1 || dc <= model.levels[0]) return model.sigmas[0];
+  if (dc >= model.levels[n - 1]) return model.sigmas[n - 1];
+  let hi = 1;
+  while (hi < n - 1 && model.levels[hi] < dc) hi++;
+  const lo = hi - 1;
+  const span = model.levels[hi] - model.levels[lo];
+  const t = span > 0 ? (dc - model.levels[lo]) / span : 0;
+  return model.sigmas[lo] + t * (model.sigmas[hi] - model.sigmas[lo]);
+}
+
+/** One pixel's DC level and the magnitude of what the N-step fit left over. */
+function phaseResidualAt(
+  seq: PhaseSequence,
+  pixel: number,
+  channel: DecodeChannel,
+): { dc: number; residual: number } {
+  const n = seq.steps;
+  let sum = 0;
+  let sc = 0;
+  let ss = 0;
+  for (let i = 0; i < n; i++) {
+    const v = scalarAt(seq.frames[i], pixel, channel);
+    const e = (2 * Math.PI * i) / n;
+    sum += v;
+    sc += v * Math.cos(e);
+    ss += v * Math.sin(e);
+  }
+  const a = sum / n;
+  const bc = (2 / n) * sc;
+  const bs = (2 / n) * ss;
+  let ss2 = 0;
+  for (let i = 0; i < n; i++) {
+    const v = scalarAt(seq.frames[i], pixel, channel);
+    const e = (2 * Math.PI * i) / n;
+    const model = a + bc * Math.cos(e) + bs * Math.sin(e);
+    ss2 += (v - model) * (v - model);
+  }
+  return { dc: a, residual: Math.sqrt(ss2) };
+}
+
+/**
+ * Estimate the intensity noise by pooling every usable pixel of the capture.
+ *
+ * The population pooled over is exactly the population the decode will run on —
+ * pixels that clear `minModulation` — and not every pixel in the frame. An
+ * off-sphere pixel carries read noise and nothing else, and letting it into the
+ * low-signal bins would tell the decoder that its worst, most oblique
+ * correspondences are its most certain ones.
+ *
+ * Returns null when there is not enough data to beat the per-pixel estimate,
+ * in which case the caller falls back to it rather than to a made-up constant.
+ */
+export function estimatePhaseNoise(
+  capture: PatternCapture,
+  white: Float64Array,
+  black: Float64Array,
+  opts: DecodeOptions,
+): PhaseNoiseModel | null {
+  const bins = Math.floor(opts.noiseBins);
+  if (bins <= 0 || capture.phase.length === 0) return null;
+  if (capture.phase[0].steps <= 3) return null;
+
+  const samples: { dc: number; residual: number }[] = [];
+  for (const seq of capture.phase) {
+    for (let i = 0; i < white.length; i++) {
+      if (!(white[i] - black[i] >= opts.minModulation)) continue;
+      const s = phaseResidualAt(seq, i, opts.channel);
+      if (!Number.isFinite(s.dc) || !Number.isFinite(s.residual)) continue;
+      samples.push(s);
+    }
+  }
+  if (samples.length < MIN_SAMPLES_PER_BIN) return null;
+
+  const usable = Math.max(1, Math.min(bins, Math.floor(samples.length / MIN_SAMPLES_PER_BIN)));
+  // Sorting by DC and cutting into equal-count bins rather than equal-width
+  // ones: the DC histogram of a sphere lit by one projector is heavily skewed,
+  // and equal-width bins would put nearly every pixel in one of them.
+  samples.sort((a, b) => (a.dc === b.dc ? a.residual - b.residual : a.dc - b.dc));
+
+  const levels = new Float64Array(usable);
+  const sigmas = new Float64Array(usable);
+  for (let b = 0; b < usable; b++) {
+    const lo = Math.floor((b * samples.length) / usable);
+    const hi = Math.floor(((b + 1) * samples.length) / usable);
+    const slice = samples.slice(lo, hi);
+    const res = Float64Array.from(slice, (s) => s.residual);
+    res.sort();
+    levels[b] = slice[Math.floor(slice.length / 2)].dc;
+    sigmas[b] = Math.max(
+      res[Math.floor(res.length / 2)] / HALF_NORMAL_MEDIAN,
+      opts.noiseSigma * 1e-3,
+    );
+  }
+  return { levels, sigmas };
+}
+
+/**
  * N-step phase estimate at one pixel, with its uncertainty.
  *
  * The model is `I_n = A + B*cos(phi - 2*pi*n/N)`. Projecting onto cos and sin of
@@ -377,22 +524,29 @@ interface PhaseFit {
  * reason N-step phase shifting is written this way rather than as a general
  * least-squares fit.
  *
- * The uncertainty is the textbook `sigma_phi = sqrt(2/N) * sigma_I / B`, and
- * `sigma_I` is estimated from the fit's own residual whenever there are enough
- * frames to have residual left (N > 3 leaves N-3 degrees of freedom). Measuring
- * the noise instead of assuming it matters here: PARAMETERS.md gives no sensor
- * noise figure at all, so an assumed constant would be one more unmeasured
- * number propagating into the weights of the bundle adjustment.
+ * The uncertainty is the textbook `sigma_phi = sqrt(2/N) * sigma_I / B`.
+ * Measuring `sigma_I` instead of assuming it matters here: PARAMETERS.md gives
+ * no sensor noise figure at all, so an assumed constant would be one more
+ * unmeasured number propagating into the weights of the bundle adjustment.
  *
- * Note what falls out for free. At grazing incidence one camera pixel covers a
- * long, foreshortened strip of sphere, the fringe is averaged along it, and B
- * collapses. So `sigma_phi` grows exactly where the geometry is genuinely least
- * certain, with no explicit obliquity term anywhere in this function.
+ * WHERE the measurement comes from is the part that took a round to get right.
+ * `sigma_I` is now read off the capture's pooled noise model (see
+ * `DecodeOptions.noiseBins`), at this pixel's own DC level. It used to be
+ * estimated from this pixel's own residual alone, which at the recommended four
+ * phase steps is one degree of freedom — an estimate that is `sigma * |z|` for a
+ * standard normal `z` and therefore worthless as a weight. `noiseBins: 0`
+ * restores the old behaviour for anyone who wants to reproduce it.
+ *
+ * Note what falls out for free either way. At grazing incidence one camera pixel
+ * covers a long, foreshortened strip of sphere, the fringe is averaged along it,
+ * and B collapses. So `sigma_phi` grows exactly where the geometry is genuinely
+ * least certain, with no explicit obliquity term anywhere in this function.
  */
 function decodePhaseAt(
   seq: PhaseSequence,
   pixel: number,
   opts: DecodeOptions,
+  noise: PhaseNoiseModel | null,
 ): PhaseFit {
   const n = seq.steps;
   let sum = 0;
@@ -413,7 +567,9 @@ function decodePhaseAt(
   if (phase < 0) phase += 2 * Math.PI;
 
   let sigmaI = opts.noiseSigma;
-  if (n > 3) {
+  if (noise !== null) {
+    sigmaI = noiseAt(noise, a);
+  } else if (n > 3) {
     let ss2 = 0;
     for (let i = 0; i < n; i++) {
       const v = scalarAt(seq.frames[i], pixel, opts.channel);
@@ -421,10 +577,12 @@ function decodePhaseAt(
       const model = a + bc * Math.cos(e) + bs * Math.sin(e);
       ss2 += (v - model) * (v - model);
     }
-    // Floor at the assumed noise so a noiseless synthetic capture reports a
-    // small-but-finite sigma rather than zero, which would be an infinite weight.
-    sigmaI = Math.max(Math.sqrt(ss2 / (n - 3)), opts.noiseSigma * 1e-3);
+    sigmaI = Math.sqrt(ss2 / (n - 3));
   }
+  // Floor at a fraction of the assumed noise so a noiseless synthetic capture
+  // reports a small-but-finite sigma rather than zero, which would be an
+  // infinite weight.
+  sigmaI = Math.max(sigmaI, opts.noiseSigma * 1e-3);
 
   const sigmaPhase =
     amplitude > 0 ? Math.sqrt(2 / n) * (sigmaI / amplitude) : Number.POSITIVE_INFINITY;
@@ -450,6 +608,7 @@ function decodeAxis(
   modulation: number,
   res: number,
   opts: DecodeOptions,
+  noise: PhaseNoiseModel | null,
 ): AxisResult {
   const gray = capture.gray.find((g) => g.axis === axis) ?? null;
   const phase = capture.phase.find((p) => p.axis === axis) ?? null;
@@ -477,7 +636,7 @@ function decodeAxis(
     };
   }
 
-  const fit = decodePhaseAt(phase, pixel, opts);
+  const fit = decodePhaseAt(phase, pixel, opts, noise);
   if (!(fit.amplitude >= opts.minPhaseModulation * modulation)) return FAIL('phase');
 
   const frac = (fit.phase / (2 * Math.PI)) * phase.periodPx;
@@ -521,6 +680,10 @@ export function decodeCapture(
   const opts: DecodeOptions = { ...DEFAULT_DECODE_OPTIONS, ...options };
   const stats = emptyStats();
   const ref = referencePlanes(capture, opts);
+  // Built once per capture, before the pixel loop: the noise level is a
+  // property of the sensor and the signal, so estimating it per pixel throws
+  // away the tens of thousands of samples that make it estimable at all.
+  const noise = estimatePhaseNoise(capture, ref.white, ref.black, opts);
   const out: Correspondence[] = [];
   const stride = Math.max(1, Math.floor(opts.pixelStride));
 
@@ -535,8 +698,8 @@ export function decodeCapture(
         continue;
       }
 
-      const ru = decodeAxis(capture, 'u', pixel, modulation, capture.projectorRes.x, opts);
-      const rv = decodeAxis(capture, 'v', pixel, modulation, capture.projectorRes.y, opts);
+      const ru = decodeAxis(capture, 'u', pixel, modulation, capture.projectorRes.x, opts, noise);
+      const rv = decodeAxis(capture, 'v', pixel, modulation, capture.projectorRes.y, opts, noise);
       if (!ru.ok || !rv.ok) {
         const reason = !ru.ok ? ru.reason : rv.reason;
         if (reason === 'gray') stats.rejectedGrayAmbiguous++;
