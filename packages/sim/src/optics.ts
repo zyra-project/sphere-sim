@@ -310,7 +310,7 @@ export function worldToPixelUnbounded(proj: PreparedProjector, worldPoint: Vec3)
  * built its nominal with no margin at all. Nothing in PARAMETERS.md pins the
  * number, so both were defensible and the two nominal rigs quietly differed by
  * 0.63 degrees of field — which is what made "hold the field of view" look like
- * a fix when it is a 5x regression (docs/AMENDMENTS.md A-12 step 1, A-13). The
+ * a fix when it is a 5x regression (docs/AMENDMENTS.md A-16 step 1, A-17). The
  * value now lives in conventions.ts §N.1 as
  * `NOMINAL_SILHOUETTE_MARGIN_FRAC`, which is a literal in the boundary object;
  * this module still does its own arithmetic with it, and so does the solver.

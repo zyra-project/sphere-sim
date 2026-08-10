@@ -66,6 +66,14 @@ Mechanically enforced where possible: every metric carries a `provisional` flag,
 the report renders provisional metrics in a visually distinct block, and the
 loop runner refuses to score a round on a provisional metric.
 
+That last clause was aspirational until `loop.ts:assertScorable` implemented it.
+It now throws — naming the metric and this paragraph — rather than letting a
+number that rests on an unmeasured constant decide whether a round improved. The
+flag is carried on the gate as well as on the metric, so the CI gate step
+(`packages/bench/src/gate.ts`) can apply the same rule to a build: a provisional
+gate is reported and never judged, because failing a build on one would encode a
+guess as a requirement.
+
 ## Phase 1 loop decomposition
 
 The owner left the decomposition to me. The unit is *the smallest thing that can
@@ -97,6 +105,33 @@ The loop runs until the numbers stop moving or the owner stops it. "Stop moving"
 is defined rather than eyeballed: a round is *non-improving* when no gate-facing
 metric's round-over-round change exceeds its own run-to-run dispersion across
 seeds. Three consecutive non-improving rounds ends Phase 1.
+
+### How a round is ranked, and the one rule that matters
+
+A round is ranked on a **vector** — one component per scored geometric gate,
+each divided by its own limit so millimetres, degrees and a bare fraction share
+a unit without anybody choosing a weight. `packages/bench/src/loop.ts`'s
+`TRACKED` is the list; **pose recovery is in it**.
+
+That is not a detail. The loop ranked on median grid displacement alone until
+the bench's own counterfactual attribution showed the metric is blind to pose:
+substituting the *true* projector positions into a recovered calibration makes
+grid displacement **worse** (61.18 mm against 1.058 mm as recovered), because
+the recovered rig is internally self-consistent — every projector is wrong in a
+way that agrees with every other projector, so their copies of a grid line still
+land on top of each other. A 59 mm pose error cost that ranking nothing.
+
+The comparison rule, stated once and implemented in `betterThan`:
+
+> Round A is better than round B when **no** tracked metric is worse by more
+> than the scatter of the two rounds, **and at least one** is better by more
+> than that scatter. Anything else is `mixed`, `worse` or `flat`, and only
+> `better` displaces the incumbent best.
+
+There is deliberately no trade-off arithmetic. A weight is an editorial
+judgement about which failure matters and the loop is not entitled to make it —
+§7 sets five limits and does not rank them. **A round that regresses pose
+recovery is never recorded as an improvement**, whatever else it moved.
 
 ## The three experiments are not the loop
 

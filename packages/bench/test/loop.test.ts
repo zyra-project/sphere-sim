@@ -16,7 +16,15 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { classifyMovement, loadHistory, roundScore, runRound, seedForRound } from '../src/loop.ts';
+import {
+  assertScorable,
+  betterThan,
+  classifyMovement,
+  loadHistory,
+  rankRound,
+  runRound,
+  seedForRound,
+} from '../src/loop.ts';
 import type { RoundSeries } from '../src/loop.ts';
 import { PRESETS } from '../src/scenarios.ts';
 import type { BenchPreset } from '../src/scenarios.ts';
@@ -46,7 +54,14 @@ test('round seeds are fresh between rounds and reproducible within one', () => {
 function series(values: Record<string, [number, number]>): Record<string, RoundSeries> {
   const out: Record<string, RoundSeries> = {};
   for (const [k, [median, dispersionValue]] of Object.entries(values)) {
-    out[k] = { median, p95: median, max: median, dispersion: dispersionValue };
+    out[k] = {
+      median,
+      p95: median,
+      max: median,
+      dispersion: dispersionValue,
+      gateMax: 1,
+      gateFraction: median,
+    };
   }
   return out;
 }
@@ -80,11 +95,127 @@ test('the first round is flat against nothing rather than improving against noth
   assert.equal(improving, false);
 });
 
-test('roundScore ranks on the one scored gate a solver can actually move', () => {
-  const make = (median: number): BenchResults =>
-    ({ aggregate: { gridDisplacementMm: { median } } }) as unknown as BenchResults;
-  assert.ok(roundScore(make(0.4)) < roundScore(make(0.9)));
-  assert.equal(roundScore({ aggregate: {} } as unknown as BenchResults), Number.POSITIVE_INFINITY);
+/**
+ * The defect these four tests exist for.
+ *
+ * The loop used to rank rounds on the median grid displacement alone, and the
+ * bench's own counterfactual attribution proves that metric is blind to pose
+ * error: substituting the TRUE projector positions into a recovered calibration
+ * makes grid displacement WORSE (61.18 mm against 1.058 mm as recovered),
+ * because the recovered rig is internally self-consistent. So a round could
+ * wreck pose recovery by tens of millimetres, nudge the seams, and be recorded
+ * as an improvement and as the new best.
+ */
+test('a round that regresses pose is never recorded as an improvement', () => {
+  const previous = series({
+    gridDisplacementMm: [1.0, 0.05],
+    poseMaxPositionMmAligned: [20, 1],
+    poseMaxRotationDegAligned: [0.05, 0.001],
+    centerHeightErrorMm: [3, 0.1],
+    offSphereFluxExcess: [0.001, 0.0001],
+  });
+  // Seams much better, pose much worse: the exact trade the old scalar ranking
+  // could not see.
+  const current = series({
+    gridDisplacementMm: [0.4, 0.05],
+    poseMaxPositionMmAligned: [79, 1],
+    poseMaxRotationDegAligned: [0.05, 0.001],
+    centerHeightErrorMm: [3, 0.1],
+    offSphereFluxExcess: [0.001, 0.0001],
+  });
+  const { movement, improving, improved, regressed } = classifyMovement(current, previous);
+  assert.equal(movement.gridDisplacementMm, 'improved');
+  assert.equal(movement.poseMaxPositionMmAligned, 'regressed');
+  assert.deepEqual(improved, ['gridDisplacementMm']);
+  assert.deepEqual(regressed, ['poseMaxPositionMmAligned']);
+  assert.equal(improving, false, 'a round that regressed pose was recorded as improving');
+
+  // ...and it does not take the crown either.
+  const comparison = betterThan(current, previous);
+  assert.equal(comparison.verdict, 'mixed');
+  assert.match(comparison.why, /regressed pose position/);
+});
+
+test('the comparison rule: better means better on something and worse on nothing', () => {
+  const base = series({
+    gridDisplacementMm: [1.0, 0.05],
+    poseMaxPositionMmAligned: [20, 1],
+    poseMaxRotationDegAligned: [0.05, 0.001],
+    centerHeightErrorMm: [3, 0.1],
+    offSphereFluxExcess: [0.001, 0.0001],
+  });
+  const move = (key: string, to: number): Record<string, RoundSeries> => ({
+    ...base,
+    [key]: { ...base[key], median: to },
+  });
+
+  assert.equal(betterThan(move('poseMaxPositionMmAligned', 4), base).verdict, 'better');
+  assert.equal(betterThan(move('poseMaxPositionMmAligned', 40), base).verdict, 'worse');
+  assert.equal(betterThan(base, base).verdict, 'flat');
+  assert.equal(betterThan(base, null).verdict, 'better', 'the first round is the best by default');
+
+  // A metric that stops being measurable has not improved.
+  const lost = { ...base, gridDisplacementMm: { ...base.gridDisplacementMm, median: NaN } };
+  assert.equal(betterThan(lost, base).verdict, 'worse');
+  assert.equal(classifyMovement(lost, base).movement.gridDisplacementMm, 'lost');
+});
+
+test('the ranking vector covers every scored geometric gate, in gate units', () => {
+  const results = {
+    aggregate: {
+      gridDisplacementMm: { median: 0.5, p95: 1, max: 2, iqr: 0.2 },
+      poseMaxPositionMmAligned: { median: 4, p95: 8, max: 9, iqr: 1 },
+      poseMaxRotationDegAligned: { median: 0.1, p95: 0.2, max: 0.3, iqr: 0.02 },
+      centerHeightErrorMm: { median: 5, p95: 6, max: 7, iqr: 0.5 },
+      offSphereFluxExcess: { median: 0.002, p95: 0.003, max: 0.004, iqr: 0.001 },
+    },
+    gates: {
+      gates: [
+        { id: 'grid_displacement', max: 1.0, provisional: false },
+        { id: 'pose_position', max: 2.0, provisional: false },
+        { id: 'pose_rotation', max: 0.05, provisional: false },
+        { id: 'h_center_recovery', max: 10.0, provisional: false },
+        { id: 'off_sphere_flux_excess', max: 0.01, provisional: false },
+      ],
+    },
+  } as unknown as BenchResults;
+
+  const ranked = rankRound(results);
+  // Five components, each in units of its own gate — which is what lets one
+  // vector hold millimetres, degrees and a bare fraction without a weight.
+  assert.equal(Object.keys(ranked).length, 5);
+  assert.equal(ranked.gridDisplacementMm.gateFraction, 0.5);
+  assert.equal(ranked.poseMaxPositionMmAligned.gateFraction, 2);
+  assert.equal(ranked.poseMaxRotationDegAligned.gateFraction, 2);
+  assert.equal(ranked.centerHeightErrorMm.gateFraction, 0.5);
+  assert.equal(ranked.offSphereFluxExcess.gateFraction, 0.2);
+  assert.equal(ranked.poseMaxPositionMmAligned.dispersion, 0.5, 'the deadband is half the IQR');
+});
+
+test('the loop refuses to score a round on a provisional metric', () => {
+  // docs/ARCHITECTURE.md has claimed this for months and nothing implemented it.
+  const results = {
+    aggregate: { gridDisplacementMm: { median: 0.5, p95: 1, max: 2, iqr: 0.2 } },
+    gates: {
+      gates: [
+        { id: 'grid_displacement', max: 1.0, provisional: true },
+        { id: 'pose_position', max: 2.0, provisional: false },
+        { id: 'pose_rotation', max: 0.05, provisional: false },
+        { id: 'h_center_recovery', max: 10.0, provisional: false },
+        { id: 'off_sphere_flux_excess', max: 0.01, provisional: false },
+      ],
+    },
+  } as unknown as BenchResults;
+  assert.throws(() => assertScorable(results), /PROVISIONAL/);
+  assert.throws(() => rankRound(results), /grid displacement/);
+
+  // A ranked metric whose gate the run did not produce is refused too: a
+  // ranking that silently drops a component is how the pose blindness happened.
+  const missing = {
+    aggregate: {},
+    gates: { gates: [{ id: 'grid_displacement', max: 1.0, provisional: false }] },
+  } as unknown as BenchResults;
+  assert.throws(() => assertScorable(missing), /did not produce/);
 });
 
 test('a round appends to the history and a replay of it reproduces the same seed', { timeout: 600_000 }, () => {

@@ -69,6 +69,7 @@ export * from './grid.ts';
 export * from './flux.ts';
 export * from './unlit.ts';
 export * from './coverage-stats.ts';
+export * from './photometric.ts';
 
 export interface GeometricMetricOptions {
   /**

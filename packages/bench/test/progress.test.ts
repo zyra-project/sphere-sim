@@ -192,6 +192,7 @@ function gate(overrides: Partial<GateSummary> & { id: string }): GateSummary {
     distribution: dispersion([0.42, 0.5]),
     scenariosNotMeasurable: [],
     dependsOnRecovery: true,
+    provisional: false,
     attribution: null,
     ...overrides,
   };
@@ -247,6 +248,7 @@ function results(overrides: Partial<BenchResults> = {}): BenchResults {
         }),
       ],
       unscored: [{ id: 'registration_error', reason: 'no §7 gate on registration error itself' }],
+      waivers: [],
     },
     aggregate: {
       gridDisplacementMm: dispersion([0.42, 4.2]),
@@ -592,9 +594,22 @@ test('the trend section says so when there is no history to trend', () => {
   const withRounds = renderProgressPage(
     input({
       rounds: {
-        schema: 'sphere-sim/rounds@1',
+        schema: 'sphere-sim/rounds@2',
         rootSeed: 1,
-        best: { round: 0, seed: 5, score: 0.4 },
+        best: {
+          round: 0,
+          seed: 5,
+          series: {
+            gridDisplacementMm: {
+              median: 0.9,
+              p95: 4,
+              max: 5,
+              dispersion: 0.2,
+              gateMax: 1,
+              gateFraction: 0.9,
+            },
+          },
+        },
         rounds: [
           {
             round: 0,
@@ -606,11 +621,25 @@ test('the trend section says so when there is no history to trend', () => {
             pass: false,
             gates: [],
             series: {
-              gridDisplacementMm: { median: 0.9, p95: 4, max: 5, dispersion: 0.2 },
+              gridDisplacementMm: {
+                median: 0.9,
+                p95: 4,
+                max: 5,
+                dispersion: 0.2,
+                gateMax: 1,
+                gateFraction: 0.9,
+              },
             },
             movement: { gridDisplacementMm: 'flat' },
+            regressed: [],
             improving: false,
             consecutiveNonImproving: 1,
+            comparison: {
+              verdict: 'better',
+              improved: [],
+              regressed: [],
+              why: 'first round on record: nothing to compare against, so it is the best by default.',
+            },
             resultsPath: 'progress/data/round-000.json',
             best: true,
           },

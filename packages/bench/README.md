@@ -5,11 +5,15 @@
 
 ```
 node packages/bench/src/cli.ts --scenarios 6 --seed 1234 --out bench-results.json
+node packages/bench/src/gate.ts bench-results.json   # judge it; exits non-zero on an unwaived failure
 node packages/bench/src/loop.ts                 # one Phase 1 round, fresh seed
 node packages/bench/src/progress.ts             # rebuild progress/index.html alone
 node packages/bench/src/reference.ts --check    # recompute the static reference and DIFF it
 node tools/assert-deterministic.ts a.json b.json
 ```
+
+The bench **measures**; `gate.ts` **judges**. CI runs the first twice (the second
+time to check determinism) with `--allow-failure`, and the second once, without.
 
 This is the only package that imports **both** `packages/sim` and
 `packages/solver`. docs/ARCHITECTURE.md explains why that is fine and necessary:
@@ -56,7 +60,58 @@ projection of the same surface point.
 | `results.ts` | The `bench-results.json` schema |
 | `progress.ts` | `progress/index.html` — the live report. Refreshed by every round |
 | `reference.ts` | The static coverage reference. Rendered ONCE, by hand, never by a round |
-| `cli.ts` / `loop.ts` | Entry points |
+| `waivers.ts` | `gate-waivers.json` and `docs/AMENDMENTS.md`: which failures the project has already explained, and until when |
+| `cli.ts` / `gate.ts` / `loop.ts` | Entry points: measure, judge, iterate |
+
+---
+
+## Failing the build — and the escape hatch, which is the dangerous part
+
+`cli.ts` used to end with `process.exitCode = 0`, unconditionally, one line
+after printing `VERDICT: FAIL`. A build whose pose recovery missed §7's 2 mm
+gate by 253x was green, and no CI step could have noticed. The quality bar could
+not report failure.
+
+It can now. `gate.ts` reads a results file and exits **1** when any scored,
+non-provisional gate fails without cover. `--allow-failure` reports without
+failing and says so in the log; the CI gate step does not use it.
+
+The hard part is not the exit code, it is the exemption. §7's pose gates cannot
+be met today for reasons the project has already measured and written down
+(docs/AMENDMENTS.md A-18: `fov_h` has no stated provenance, and holding it at
+truth removes 88–97% of the position error; A-12: lens shift has a class and no
+uncertainty; underneath both, a 3 mm tape measure is worth 0.033° of tilt
+against a 0.05° budget). A CI that is red forever teaches everyone to ignore CI,
+and then the exit code is worthless again.
+
+So `gate-waivers.json` lets a gate fail without failing the build, on terms:
+
+| The waiver must | or the build fails |
+| --- | --- |
+| cite exactly one entry in `docs/AMENDMENTS.md`, by id **and** title fragment | citation unresolvable |
+| cite an entry that is still `OPEN` | the decision has been made |
+| carry an expiry date that has not passed | expired |
+| state a **ceiling** — the largest failure the amendment accounts for | measured worse than the amendment explains |
+| name the archetypes it covers, or `null` for all | a scenario the amendment does not discuss started failing |
+
+A waived gate is reported as **WAIVED**, never as PASS, with the citation
+printed, on the console and on the progress page. `gates.pass` in
+`bench-results.json` stays the raw measurement — the waiver decides whether the
+*build* fails, not whether the bench passed. Nothing about a waiver changes a
+metric, a gate limit or a scenario.
+
+Two things it deliberately does not do. It does not waive `grid_displacement`:
+that gate fails today on the handheld and two-camera archetypes, no amendment
+says it is unreachable, and it is Phase 1's work rather than a decision pending
+with the author — so CI is red until it is fixed or an argument is written down.
+And it does not judge a **provisional** gate at all, in either direction: a
+metric resting on a constant nobody has measured is reported, marked, and
+decides nothing (docs/ARCHITECTURE.md's phase gate).
+
+The audit rows in `bench-results.json` (`gates.waivers`) are clock-free on
+purpose — the expiry *date* is recorded, the expiry *judgement* is not — so two
+runs with the same seed stay byte-identical and the determinism check keeps
+meaning what it says.
 
 ---
 

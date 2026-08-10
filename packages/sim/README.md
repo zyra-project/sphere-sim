@@ -37,9 +37,11 @@ CI enforces this. `npm run lint:boundary` fails the build on any import between
 | --- | --- |
 | `geometry.ts` | World/sphere frames, ray-sphere intersection, pose composition |
 | `optics.ts` | Projector frustum, lens shift, distortion inversion (pixel → ray) |
-| `coverage.ts` | Coverage field, overlap multiplicity, polar mask, blend weights |
-| `photometry.ts` | Per-channel transfer, blend ramp, black floor, ambient |
-| `color.ts` | Linear RGB → XYZ → Lab, ΔE2000 |
+| `coverage.ts` | Coverage field, overlap multiplicity, polar mask, blend-region geometry |
+| `blend.ts` | conventions.ts §B: the four ramp shapes, `rampGamma` on the weight, normalization |
+| `photometry.ts` | Per-channel transfer (§P), the twelve gammas/floors/gains, black-floor closed forms |
+| `color.ts` | Linear RGB → XYZ → Lab, ΔE2000, the Planckian locus and ambient tint |
+| `shading.ts` | `ShadingModel`, Lambertian (`lambertian-v1`) and full GGX (`full-v1`) |
 | `render.ts` | Deterministic CPU ray tracer: room view, projector views, equirect maps |
 | `metrics/` | Geometric and photometric metrics, each scored against its gate |
 | `scene.ts` | Rig construction from parameters, misalignment injection |

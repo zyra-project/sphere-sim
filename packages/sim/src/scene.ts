@@ -131,7 +131,7 @@ export function nominalBlend(overrides: Partial<BlendCalibration> = {}): BlendCa
  * N=3 takes the first three, which is what "quadrants go dark" reads most
  * naturally as: one projector is simply absent from an otherwise standard rig.
  *
- * Recorded as docs/AMENDMENTS.md A-06 (N=2) and A-14 (N=3). The table itself is
+ * Recorded as docs/AMENDMENTS.md A-06 (N=2) and A-19 (N=3). The table itself is
  * now pinned in conventions.ts §N.2 as `NOMINAL_SLOTS_BY_COUNT`, because
  * `packages/solver` read the same silent spec as equal 120-degree spacing and
  * nothing was declaring which reading the project had taken. Reading a literal

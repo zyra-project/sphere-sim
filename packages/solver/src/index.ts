@@ -537,7 +537,7 @@ export interface NominalRigOptions {
  * defensible readings of the same silent prose, and the result was two nominal
  * rigs 0.63 degrees of field apart with nothing declaring it — which is what
  * made "hold the field of view" look like a fix when it is a 5x regression
- * (docs/AMENDMENTS.md A-12 step 1, A-13).
+ * (docs/AMENDMENTS.md A-16 step 1, A-17).
  *
  * The headroom is now conventions.ts §N.1, a literal in the boundary object.
  * This function still derives its own frustum from it, `packages/sim` still

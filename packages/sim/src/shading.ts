@@ -151,10 +151,19 @@ export function lambertianShading(): ShadingModel {
  */
 export interface SpecularParams {
   /**
-   * §1 `ρ_spec`, nominal 0.03. The fraction of incident light the coating reflects
-   * specularly rather than passing to the diffuse substrate. At 0 this model
-   * reproduces {@link lambertianShading} to the last bit, which is what §1's
-   * "set to 0 to test sensitivity" asks for and what `test/shading.test.ts` pins.
+   * §1 `ρ_spec`, nominal 0.03: the fraction of incident light the coating reflects
+   * specularly rather than passing to the diffuse substrate underneath.
+   *
+   * Used directly as the microfacet Fresnel reflectance at normal incidence, `F0`,
+   * which is what "specular lobe weight" means for a dielectric — and it is a small
+   * corroboration of an otherwise unmeasured number that §1's assumed 0.03 sits
+   * right next to the textbook `F0` of 0.04 for a clear coat at n = 1.5. Using it as
+   * `F0` is also what keeps the energy books straight: the lobe's albedo is then
+   * `ρ_spec`, which is exactly the amount taken off the diffuse term.
+   *
+   * At 0 this model reproduces {@link lambertianShading} to the last bit, which is
+   * what §1's "set to 0 to test sensitivity" asks for and what
+   * `test/shading.test.ts` pins.
    */
   weight?: number;
   /**
@@ -167,14 +176,6 @@ export interface SpecularParams {
    * recorded rather than resolved.
    */
   alpha?: number;
-  /**
-   * Fresnel reflectance at normal incidence. 0.04 is the standard dielectric value
-   * and is ACHROMATIC, which is the physically important part: a dielectric coating
-   * reflects all three channels equally, so the hot spot desaturates whatever is
-   * under it rather than tinting it. PARAMETERS.md gives no value; 0.04 is the
-   * textbook figure for a clear coat and is class ASSUME like everything else here.
-   */
-  f0?: number;
 }
 
 /**
@@ -190,10 +191,12 @@ export interface SpecularParams {
  *
  * The specular lobe of §1, which the simple model omits: "Matte paint still has a
  * low-gloss lobe, producing a hot spot toward each projector." At the nominal
- * `ρ_spec` = 0.03 and `α_spec` = 0.4 the lobe adds about 0.2% at the centre of each
- * projector's footprint and less everywhere else — dim, exactly as §1 says, but not
- * zero against a 2% seam gate, and it is brightest at the sub-projector point and
- * dimmest in the seams, so it works in the same direction as the incidence falloff.
+ * `ρ_spec` = 0.03 and `α_spec` = 0.4 the lobe peaks at `ρ_spec / (4·α²)` = 4.7% of
+ * the incident irradiance where the lens, the normal and the viewer line up, against
+ * a diffuse term of 87%. So the hot spot is worth about +2% and everything away from
+ * it about -3%: dim, exactly as §1 says, but the same order as §7's 2% seam gate.
+ * It is brightest at each projector's sub-projector point and dimmest in the seams,
+ * so it deepens the incidence falloff rather than fighting it.
  *
  * ## Energy bookkeeping, and why there is a `pi`
  *
@@ -206,9 +209,22 @@ export interface SpecularParams {
  * which is invisible on screen at `ρ_spec` = 0.03 and would quietly become a 0.6%
  * error in the seam metric.
  *
- * The two lobes share incident energy rather than stacking: diffuse is weighted by
- * `1 - ρ_spec`. So a rig with a glossier coat is not a brighter rig, it is one that
- * has moved light from the diffuse hemisphere into a narrow lobe.
+ * The two lobes share incident energy rather than stacking: the specular lobe uses
+ * `ρ_spec` as its normal-incidence Fresnel reflectance, so its albedo IS `ρ_spec`,
+ * and the diffuse term is weighted by `1 - ρ_spec`. A glossier coat is therefore not
+ * a brighter surface, it is one that has moved light out of the diffuse hemisphere
+ * into a narrow lobe. Getting that pairing wrong — a lobe whose albedo is `ρ_spec`
+ * times a separate Fresnel term, set against a diffuse term reduced by the full
+ * `ρ_spec` — silently loses 3% of the light everywhere. That is larger than §7's
+ * entire seam gate, and because it is uniform, nothing in the metric set would
+ * flag it.
+ *
+ * The single-scattering GGX lobe used here does lose a few percent of its own energy
+ * at α = 0.4 (light that would have bounced twice between microfacets is dropped),
+ * so the lobe's true albedo is slightly under `ρ_spec`. At a lobe weight of 0.03
+ * that is a few parts in ten thousand of the total, well below anything §7 gates,
+ * and adding a multiple-scattering compensation would be inventing physics for a
+ * constant PARAMETERS.md calls a pure guess.
  *
  * ## Ambient
  *
@@ -223,18 +239,25 @@ export interface SpecularParams {
 export function fullShading(params: SpecularParams = {}): ShadingModel {
   const weight = clamp(params.weight ?? 0.03, 0, 1);
   const alpha = Math.max(1e-4, params.alpha ?? 0.4);
-  const f0 = params.f0 ?? 0.04;
   const kd = 1 - weight;
   const a2 = alpha * alpha;
 
   return {
     name: `full-v1(rho_spec=${weight},alpha_spec=${alpha})`,
     shade(input: ShadeInput): ChannelTriplet {
-      // A uniform hemisphere reflects at the surface's total albedo, diffuse lobe
-      // plus specular lobe. With weight = 0 this is exactly `ambient * reflectance`.
-      let r = input.ambient.r * (kd * input.reflectance.r + weight);
-      let g = input.ambient.g * (kd * input.reflectance.g + weight);
-      let b = input.ambient.b * (kd * input.reflectance.b + weight);
+      // Two accumulators. The diffuse one is the TOTAL IRRADIANCE and is accumulated
+      // in exactly the order `lambertian-v1` accumulates it, including starting from
+      // ambient, so that at `rho_spec = 0` this model reproduces the older one to
+      // the last bit rather than to within rounding. PARAMETERS.md §1 says of
+      // `rho_spec`: "Set to 0 to test sensitivity" — and a sensitivity test whose
+      // zero case differs in the sixteenth digit is a sensitivity test with a floor
+      // under it.
+      let dr = input.ambient.r;
+      let dg = input.ambient.g;
+      let db = input.ambient.b;
+      let sr = 0;
+      let sg = 0;
+      let sb = 0;
 
       const nDotV = dot(input.normal, input.viewDir);
 
@@ -246,18 +269,26 @@ export function fullShading(params: SpecularParams = {}): ShadingModel {
         // incidence cosine, and inverse-square falloff against the footprint centre.
         const k = nDotL * falloff;
         const e = emittedRadianceRgb(c.signal, c.transfer);
+        dr += e.r * k;
+        dg += e.g * k;
+        db += e.b * k;
 
-        let spec = 0;
         if (weight > 0 && nDotV > 0) {
-          spec = weight * Math.PI * ggxBrdf(input.normal, c.toLens, input.viewDir, nDotL, nDotV, a2, f0);
+          const spec =
+            Math.PI * ggxBrdf(input.normal, c.toLens, input.viewDir, nDotL, nDotV, a2, weight);
+          sr += e.r * k * spec;
+          sg += e.g * k * spec;
+          sb += e.b * k * spec;
         }
-
-        r += e.r * k * (kd * input.reflectance.r + spec);
-        g += e.g * k * (kd * input.reflectance.g + spec);
-        b += e.b * k * (kd * input.reflectance.b + spec);
       }
 
-      return { r, g, b };
+      // A uniform hemisphere reflects at the lobe's own albedo, so ambient picks up
+      // `weight` on the specular side with no direction and no roughness in it.
+      return {
+        r: dr * (kd * input.reflectance.r) + sr + input.ambient.r * weight,
+        g: dg * (kd * input.reflectance.g) + sg + input.ambient.g * weight,
+        b: db * (kd * input.reflectance.b) + sb + input.ambient.b * weight,
+      };
     },
   };
 }
@@ -273,7 +304,10 @@ export function fullShading(params: SpecularParams = {}): ShadingModel {
  * check both halves.
  *
  * Achromatic: a dielectric clear coat has the same `F0` in all three channels, so
- * the lobe carries no colour of its own.
+ * the lobe carries no colour of its own and the hot spot DESATURATES whatever is
+ * under it rather than tinting it. That matters for §7's chromaticity gates —
+ * PARAMETERS.md §1 gives one `ρ_spec`, not three, and reading it as one number per
+ * channel would invent a chromatic term the spec does not have.
  */
 function ggxBrdf(
   normal: Vec3,

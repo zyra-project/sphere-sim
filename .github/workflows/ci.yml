@@ -29,13 +29,33 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # The bench MEASURES. It does not judge, which is why both runs carry
+      # --allow-failure: a failing gate must not stop the determinism check from
+      # running, and a step that both measures and judges makes it ambiguous
+      # which of the two went wrong when it goes red.
       - name: Headless bench (deterministic, seeded)
-        run: npm run bench -- --scenarios 6 --seed 1234 --out bench-results.json
+        run: npm run bench -- --scenarios 6 --seed 1234 --out bench-results.json --allow-failure
 
       - name: Determinism check (same seed, byte-identical output)
         run: |
-          npm run bench -- --scenarios 6 --seed 1234 --out bench-results-2.json
+          npm run bench -- --scenarios 6 --seed 1234 --out bench-results-2.json --allow-failure
           node tools/assert-deterministic.ts bench-results.json bench-results-2.json
+
+      # ...and this step JUDGES. It is the only step allowed to fail on a
+      # number, and it has no escape hatch on purpose.
+      #
+      # A gate fails the build unless gate-waivers.json covers it with a waiver
+      # that is still in force: cites exactly one OPEN entry in
+      # docs/AMENDMENTS.md, has not expired, and covers a failure no larger and
+      # no wider than the one that entry accounts for. A waived gate is reported
+      # as WAIVED with its citation, never as PASS, and the measured number goes
+      # into bench-results.json unchanged. See packages/bench/src/waivers.ts.
+      #
+      # Before this step existed, cli.ts set `process.exitCode = 0` one line
+      # after printing `VERDICT: FAIL`, so a build whose pose recovery missed §7
+      # by 253x was green.
+      - name: Gates (PARAMETERS.md §7, with waivers from gate-waivers.json)
+        run: npm run gate -- bench-results.json
 
       - uses: actions/upload-artifact@v4
         if: always()

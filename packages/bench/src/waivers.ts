@@ -12,7 +12,8 @@
  *    report failure is not a quality bar.
  * 2. Some of §7's gates cannot be met, for reasons that are nothing to do with
  *    the code and are already measured and written down. docs/AMENDMENTS.md
- *    A-12 ("the pose gate is a tape-measure gate") shows the solver recovers
+ *    A-16 ("the pose gate is a tape-measure gate", now superseded by A-18)
+ *    showed the solver recovers
  *    pose to 0.073 mm with the sensor and reference noise removed, and that the
  *    3 mm tape measure PARAMETERS.md §8 prescribes puts a ~4.4 mm floor under a
  *    2 mm gate. No camera and no solver reaches it. A CI that is red forever
@@ -34,7 +35,8 @@
  *   - **amendment resolved** — the entry it cites is no longer `OPEN`. Somebody
  *     decided; the gate must now be restated or met, and the waiver removed.
  *   - **amendment missing or ambiguous** — the citation does not resolve to
- *     exactly one entry. (A-12 and A-13 are each used twice in AMENDMENTS.md, so
+ *     exactly one entry. (AMENDMENTS.md has carried duplicate ids more than
+ *     once — A-12 and A-13 before they were renumbered, A-16 and A-17 now — so
  *     a citation carries a title fragment as well as an id.)
  *   - **ceiling exceeded** — the amendment accounts for a failure of a stated
  *     size, and the measurement is bigger than that. This is what keeps the
@@ -64,7 +66,7 @@ export interface GateWaiver {
   amendment: string;
   /**
    * A fragment of the amendment's heading, matched case-insensitively. Required
-   * because AMENDMENTS.md reuses A-12 and A-13 for two entries each, and a
+   * because AMENDMENTS.md has repeatedly carried two entries under one id, and a
    * citation that resolves to two different arguments cites neither.
    */
   amendmentTitle: string;
@@ -126,7 +128,9 @@ export function parseAmendments(markdown: string): AmendmentEntry[] {
       continue;
     }
     if (current !== null && current.status === 'UNKNOWN') {
-      const status = /^\*\*Status:\*\*\s*([A-Za-z]+)/.exec(lines[i]);
+      // `**Status:** OPEN.` and `**Status:** **SUPERSEDED by A-18.**` are both
+      // in the file, so the emphasis markers are optional on the value.
+      const status = /^\*\*Status:\*\*\s*\*{0,2}([A-Za-z]+)/.exec(lines[i]);
       if (status) current.status = status[1].toUpperCase();
     }
   }

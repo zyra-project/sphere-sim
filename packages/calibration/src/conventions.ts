@@ -24,7 +24,7 @@ export const CONVENTIONS_VERSION = 'sphere-sim/conventions@3';
  * It exists because PARAMETERS.md §3.1 and docs/AMENDMENTS.md A-01 describe the
  * construction ("inscribe the silhouette in the minor dimension") without ever
  * pinning the headroom, and two independent implementations then picked 2% and
- * 0%. That undeclared 0.63-degree gap is docs/AMENDMENTS.md A-13 and A-14.
+ * 0%. That undeclared 0.63-degree gap is docs/AMENDMENTS.md A-17 and A-19.
  */
 export const NOMINAL_SILHOUETTE_MARGIN_FRAC = 0.02;
 
@@ -37,7 +37,7 @@ export const NOMINAL_AZIMUTH_SLOTS_DEG: readonly number[] = [0, 90, 180, 270];
  *
  * §2 says "2- and 3-projector installs are supported; quadrants go dark" and
  * never says WHICH quadrants. docs/AMENDMENTS.md A-06 settled N=2 (opposed
- * mounts) and A-14 settles N=3 the same way: a subset of the four 90-degree
+ * mounts) and A-19 settles N=3 the same way: a subset of the four 90-degree
  * slots, because "a quadrant goes dark" removes a projector from a standard
  * layout rather than respacing the ones that remain.
  */
@@ -200,7 +200,7 @@ last bit and coverage develops a ragged fringe. The headroom is therefore
 the minor dimension's half-angle covers \`(1 + 0.02)\` times the tangent of the
 silhouette's angular radius \`asin(R / d_proj)\`. At 1920x1080, R = 0.8636 m and
 d_proj = 5.18 m that is \`fovH = 34.0918\` degrees, against 33.4610 at zero
-margin. The gap is 0.63 degrees and it is the whole of docs/AMENDMENTS.md A-13.
+margin. The gap is 0.63 degrees and it is the whole of docs/AMENDMENTS.md A-17.
 
 The margin is a property of the NOMINAL construction only. It is not a claim
 about any real projector, and a caller holding a spec sheet passes the measured
@@ -226,7 +226,7 @@ Projector \`i\` keeps slot \`i\`'s viewport (§V) whichever slots are occupied.
 
 Both readings are the *implementations'* choice recorded as a contract, not a
 statement about the spec: PARAMETERS.md remains silent, and
-docs/AMENDMENTS.md A-14 asks the author to settle both upstream.
+docs/AMENDMENTS.md A-19 asks the author to settle both upstream.
 
 ## §B — Blend ramp
 

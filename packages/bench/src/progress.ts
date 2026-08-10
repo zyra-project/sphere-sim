@@ -41,7 +41,7 @@ import { viridis } from '../../sim/src/png.ts';
 import type { MetricResult } from '../../sim/src/metrics/index.ts';
 import type { BenchResults, Dispersion, GateSummary, ScenarioJson } from './results.ts';
 import type { RoundHistory } from './loop.ts';
-import { TRACKED } from './loop.ts';
+import { ROUNDS_SCHEMA, TRACKED } from './loop.ts';
 import type { CoverageReference, ReferenceChecks } from './reference.ts';
 import { REFERENCE_RELATIVE_PATH, analyseCoverageReference, loadCoverageReference } from './reference.ts';
 
@@ -1046,14 +1046,6 @@ function beforeAfterSection(
 // 5. Metric sparklines over rounds
 // ---------------------------------------------------------------------------
 
-const TRACKED_GATE: Record<string, string> = {
-  gridDisplacementMm: 'grid_displacement',
-  poseMaxPositionMmAligned: 'pose_position',
-  poseMaxRotationDegAligned: 'pose_rotation',
-  centerHeightErrorMm: 'h_center_recovery',
-  offSphereFluxExcess: 'off_sphere_flux_excess',
-};
-
 function sparkline(
   label: string,
   unit: string,
@@ -1126,8 +1118,11 @@ function sparkline(
 }
 
 function trendSection(results: BenchResults, rounds: RoundHistory | null): string {
+  // The gate id comes from TRACKED itself. It used to be a second copy of the
+  // key -> gate mapping living here, which is one more place to forget when the
+  // ranking vector changes.
   const gateFor = (key: string): number | null => {
-    const id = TRACKED_GATE[key];
+    const id = TRACKED.find((t) => t.key === key)?.gateId;
     const gate = results.gates.gates.find((g) => g.id === id);
     return gate === undefined ? null : gate.max;
   };
@@ -1540,17 +1535,38 @@ function attributionBlock(gate: GateSummary): string {
 }
 
 function gateSection(results: BenchResults): string {
+  // A waiver never turns a FAIL into a PASS on this page. It adds a second pill
+  // and a citation, because "this gate fails and the project knows why, and the
+  // decision is pending with the author" is a different sentence from either
+  // "pass" or "fail" and a reader must not have to guess which they are looking
+  // at. Expiry is judged by `packages/bench/src/gate.ts`, which owns the exit
+  // code; the page reports what the waiver says.
+  const waiverFor = (id: string): (typeof results.gates.waivers)[number] | undefined =>
+    (results.gates.waivers ?? []).find((w) => w.gate === id && w.gateFailed);
+
   const rows = results.gates.gates
     .map((g) => {
       const notMeasurable =
         g.scenariosNotMeasurable.length === 0
           ? ''
           : `<div class="muted small">not measurable on ${g.scenariosNotMeasurable.map((x) => `<code>${esc(x)}</code>`).join(', ')} — the metric had nothing to measure there, which is a different sentence from a failure and is counted separately.</div>`;
+      const w = waiverFor(g.id);
+      const waived =
+        w === undefined
+          ? ''
+          : `<div class="muted small"><span class="pill waived">WAIVED</span> against
+              <code>${esc(w.amendment)}</code> (${esc(w.amendmentTitle)}), status
+              <strong>${esc(w.amendmentStatus)}</strong>, expires ${esc(w.expires)}${
+                w.ceiling === null ? '' : `, covered up to ${num(w.ceiling, 4)} ${esc(g.unit)}`
+              }${w.scenarios === null ? '' : `, archetypes ${w.scenarios.map((x) => `<code>${esc(x)}</code>`).join(', ')}`}.
+              The number above is unchanged; the waiver records why it is what it is and where the decision
+              is pending. See <code>gate-waivers.json</code>. ${esc(w.reason)}</div>`;
       return `<tr class="${g.pass ? 'row-pass' : 'row-fail'}">
         <td>
-          <div class="gate-id"><code>${esc(g.id)}</code> ${g.pass ? '<span class="pill pass">PASS</span>' : '<span class="pill fail">FAIL</span>'}</div>
+          <div class="gate-id"><code>${esc(g.id)}</code> ${g.pass ? '<span class="pill pass">PASS</span>' : '<span class="pill fail">FAIL</span>'}${g.provisional ? ' <span class="pill provisional">PROVISIONAL</span>' : ''}</div>
           <div class="small">${esc(g.metric)}</div>
           <div class="muted small">${esc(g.klass)} · ${esc(g.basis)}</div>
+          ${waived}
           ${g.dependsOnRecovery ? '' : '<div class="muted small">Property of where the lenses physically point. No solver can move this one.</div>'}
           ${notMeasurable}
         </td>
@@ -2042,6 +2058,7 @@ table.kv td { padding: 3px 0; vertical-align: top; }
 .pill.fail { background: color-mix(in srgb, var(--fail) 18%, transparent); color: var(--fail); }
 .pill.pending { background: var(--grid); color: var(--muted); }
 .pill.provisional { background: var(--provisional); color: var(--warn); border: 1px solid var(--provisional-line); }
+.pill.waived { background: var(--provisional); color: var(--warn); border: 1px dashed var(--provisional-line); }
 .tag { font-size: 12px; font-weight: 400; color: var(--muted); }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin: 16px 0; }
 .panel .meta { font-size: 12.5px; color: var(--muted); margin-top: 0; }
@@ -2214,7 +2231,7 @@ export function loadProgressInput(paths: ProgressPaths): ProgressInput {
   return {
     results,
     images: imageStoreFromDisk(paths.repoRoot),
-    rounds: rounds !== null && rounds.schema === 'sphere-sim/rounds@1' ? rounds : null,
+    rounds: rounds !== null && rounds.schema === ROUNDS_SCHEMA ? rounds : null,
     reference,
     previous,
     experiments,

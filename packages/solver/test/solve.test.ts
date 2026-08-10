@@ -186,7 +186,7 @@ test('the nominal rig follows §2 and §3.4', () => {
   // conventions.ts §N.1 pins, which is applied to the TANGENT of the
   // silhouette's angular radius. This used to assert zero headroom, which is
   // what put this builder 0.63 degrees away from the forward model's for a whole
-  // round (docs/AMENDMENTS.md A-13, A-14).
+  // round (docs/AMENDMENTS.md A-17, A-19).
   const halfV = Math.atan(Math.tan((rig.projectors[0].intrinsics.fovHDeg * Math.PI) / 360) * (1080 / 1920));
   const expectedHalfV = Math.atan(
     Math.tan(Math.asin(0.8636 / 5.18)) * (1 + NOMINAL_SILHOUETTE_MARGIN_FRAC),
@@ -201,7 +201,7 @@ test('§N.2: a 3-projector install drops a quadrant rather than respacing the re
   // PARAMETERS.md §2 is silent about which quadrants go dark, and this builder
   // used to space them equally at 0/120/240 while `packages/sim` dropped a
   // quadrant at 0/90/180. conventions.ts §N.2 settles it; docs/AMENDMENTS.md
-  // A-14 asks the author to settle it upstream.
+  // A-19 asks the author to settle it upstream.
   const azimuths = (n: number): number[] =>
     nominalRig({ projectorCount: n }).projectors.map(
       (p) => Math.round((Math.atan2(p.pose.position.y, p.pose.position.x) * 180) / Math.PI),

@@ -359,6 +359,35 @@ export function formatSummary(results: BenchResults): string {
   return lines.join('\n');
 }
 
+/**
+ * Print the verdict and decide the exit code.
+ *
+ * This function is the whole of defect 2. What was here before was
+ * `process.exitCode = 0`, unconditional, one line after `VERDICT: FAIL` had
+ * already been printed — so `npm run bench` was green on a build whose pose
+ * recovery missed §7 by 253x, and no CI step could have noticed.
+ *
+ * The judgement is `gate.ts`'s, made against the file that was just written, so
+ * a developer running the bench locally and CI running it in a separate step
+ * reach the same answer by the same code path. `--allow-failure` reports and
+ * exits 0; it prints that it did, because an escape hatch nobody can see in the
+ * log is an escape hatch that becomes permanent.
+ */
+export function reportGates(outPath: string, allowFailure: boolean): number {
+  let judged;
+  try {
+    judged = judge({ ...defaultGateOptions(REPO_ROOT), resultsFile: outPath, allowFailure });
+  } catch (e) {
+    process.stdout.write(
+      `\nGATES: NOT JUDGED — ${e instanceof Error ? e.message : String(e)}\n` +
+        'A results file that cannot be judged is a failure, not a pass.\n',
+    );
+    return 2;
+  }
+  process.stdout.write(judged.text);
+  return judged.evaluation.ok || allowFailure ? 0 : 1;
+}
+
 function main(): void {
   const options = parseArgs(process.argv.slice(2));
   if (!options.quiet) {
@@ -392,7 +421,7 @@ function main(): void {
       );
     }
   }
-  process.exitCode = 0;
+  process.exitCode = reportGates(outPath, options.allowFailure === true);
 }
 
 // Run only when invoked directly, so tests and loop.ts can import this module.

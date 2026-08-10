@@ -1,0 +1,47 @@
+{
+  "schema": "sphere-sim/gate-waivers@1",
+  "notes": [
+    "A waiver lets a gate fail without failing the build, and it is not a tuning knob. The measured number is reported unchanged; the waiver records that the project already knows why, in writing, and where the decision is pending. Read packages/bench/src/waivers.ts for the rules.",
+    "Every waiver cites an entry in docs/AMENDMENTS.md and expires. It stops covering the failure the moment the entry stops being OPEN, the date passes, the measurement exceeds the stated ceiling, or a scenario the amendment does not discuss starts failing. Each of those fails CI.",
+    "The citation carries a title fragment as well as an id because AMENDMENTS.md has repeatedly carried two entries under one id (A-12 and A-13 before they were renumbered; A-16 and A-17 at the time of writing). packages/bench/src/waivers.ts refuses a citation that resolves to more or fewer than one entry.",
+    "There is deliberately NO waiver for grid_displacement. It is the one scored geometric gate that is a function of the recovered calibration and that no amendment says is unreachable; it fails today, on the handheld and two-camera archetypes, and that failure is Phase 1's work rather than a decision pending with the author. CI is red until it is fixed or an argument is written down."
+  ],
+  "waivers": [
+    {
+      "gate": "pose_position",
+      "amendment": "A-18",
+      "amendmentTitle": "the pose gate is a LENS-KNOWLEDGE gate",
+      "reason": "PARAMETERS.md §3.1 does not say whether a nominal field of view is built from the throw ratio (class CFG, off a spec sheet) or from d_proj (class SOLVE, and §2 refuses to settle which of two conflicting values it is). A-18 measures what that omission costs: holding fov_h at truth removes 88-97% of the position error for 0.3-3.5% of residual RMS, and the nominal archetype then recovers to 2.03 mm and 0.0334 deg WITH the 3 mm tape still in place — inside the gate. So the gate is reachable and the failure is a decision pending with the author, not a solver defect. A-18 asks §3.1 to state that fov_h comes from the lens and §8 item 2 to record the zoom setting as deployed. This waiver replaces one that cited A-16, which A-18 superseded: A-16 read the ~2-4.4 mm tape floor as the ceiling, and the waiver failed the build the moment its citation stopped being OPEN. That is the mechanism working, and it is recorded here rather than quietly edited away.",
+      "expires": "2027-02-01",
+      "ceiling": 640.0,
+      "ceilingBasis": "A-13 measures the worst-case pose position error over the twelve-scenario corpus at seed 1234 as 639.6 mm with the field of view free, which is the largest failure the register accounts for. A measurement above it is a new failure, not this one. It is a wide ceiling and it should come DOWN as A-18's remedy lands; a ceiling that only ever rises is a ratchet, and a ratchet is the thing this file exists to prevent.",
+      "scenarios": null,
+      "openedAt": "2026-08-10",
+      "openedBy": "quality-bar repair, defect 2"
+    },
+    {
+      "gate": "pose_rotation",
+      "amendment": "A-12",
+      "amendmentTitle": "lens shift has a nominal and a class but no uncertainty",
+      "reason": "PARAMETERS.md §3.1 gives shift_h/shift_v a nominal and a class and no uncertainty, and at this geometry lens shift and pointing are very nearly the same parameter — 0.01 of shift is 0.172 deg of yaw. Which side of a factor of twenty the rotation gate lands on is decided entirely by an uncertainty the document does not state. A-12 asks for a plausible range in §3.1 and one line in §8 item 2 (read the shift off the projector's own menu). Beneath that sits the reference measurement: 3 mm of tape error at 5.18 m is atan(0.003/5.18) = 0.033 deg, two thirds of the whole 0.05 deg budget, before the solver does anything (A-11, and A-16's step 3 which A-18 confirms as the floor even while correcting its headline).",
+      "expires": "2027-02-01",
+      "ceiling": 6.3,
+      "ceilingBasis": "A-12 measures the worst pose rotation error over the twelve-scenario corpus at seed 1234 as 6.29 deg with shift free (0.30 deg with shift held at §3.1's own nominal of zero). 6.3 is that measurement, rounded up in the last digit.",
+      "scenarios": null,
+      "openedAt": "2026-08-10",
+      "openedBy": "quality-bar repair, defect 2"
+    },
+    {
+      "gate": "unlit_in_mask",
+      "amendment": "A-10",
+      "amendmentTitle": "unlit-within-the-mask gate cannot be met by the 2- and 3-projector installs",
+      "reason": "PARAMETERS.md §2 says 2- and 3-projector installs are supported and quadrants go dark; §7 makes unlit-fraction-within-the-mask a hard 0% requirement. Those are the same statement about overlapping regions, and for N < 4 the dark quadrant reaches inside the mask boundary. No calibration moves it — a three-projector install has one 90-degree wedge lit only by its neighbours' skirts. A-10 proposes qualifying the gate by projector count. The gate is still reported and still fails for a four-projector rig, which is what it is for: this waiver covers only the two archetypes that are dark by construction.",
+      "expires": "2027-02-01",
+      "ceiling": 0.13,
+      "ceilingBasis": "A-10's own measurement on the nominal geometry at d_proj = 5.18 m: 5.92% unlit for three projectors, 12.78% for the antipodal pair, 0% for four. 0.13 is the antipodal figure with the last digit rounded up; anything above it is a rig that is dark for some other reason.",
+      "scenarios": ["three-projectors", "two-projectors"],
+      "openedAt": "2026-08-10",
+      "openedBy": "quality-bar repair, defect 2"
+    }
+  ]
+}

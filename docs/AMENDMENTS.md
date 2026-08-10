@@ -25,33 +25,45 @@ Entries here address one of two documents, and the rule differs:
   the file. Fixing prose in the contract is not the same as sharing code across
   the boundary: both sides still implement it independently.
 
-| Entry | Target | Status |
-| --- | --- | --- |
-| A-01 | PARAMETERS.md §3.1 / §4.3 / §7 | OPEN |
-| A-02 | PARAMETERS.md §4.4 / §4.5 | OPEN |
-| A-03 | PARAMETERS.md §7 | OPEN |
-| A-04 | PARAMETERS.md §1 | OPEN |
-| A-05 | PARAMETERS.md §4.3 | OPEN |
-| A-06 | PARAMETERS.md §2 | OPEN |
-| A-07 | conventions.ts §R | **APPLIED** |
-| A-08 | conventions.ts (new §C) | **APPLIED** |
-| A-09 | PARAMETERS.md §7 | OPEN |
-| A-10 | PARAMETERS.md §7 / §2 | OPEN |
-| A-11 | PARAMETERS.md §7 / §8 | OPEN |
-| A-12 | PARAMETERS.md §3.1 / §7 / §8 | OPEN |
-| A-13 | PARAMETERS.md §3.1 / §8 | OPEN |
-| A-14 | PARAMETERS.md §2 / §3.1 | OPEN |
-| A-15 | conventions.ts (new §N) | **APPLIED** |
+| Entry | Target | Subject | Status |
+| --- | --- | --- | --- |
+| A-01 | PARAMETERS.md §3.1 / §4.3 / §7 | §3.1 / §4.3 / §7: which raster dimension does the sphere di... | OPEN |
+| A-02 | PARAMETERS.md §4.5 / §4.4 | §4.5 / §4.4: bottommask units are inferred, and the inferen... | OPEN |
+| A-03 | PARAMETERS.md §7 | §7: the off-sphere flux gate has no stated aspect-ratio dep... | OPEN |
+| A-04 | PARAMETERS.md §1 | §1: ρ_R,G,B has no stated plausible range, but the sensitiv... | OPEN |
+| A-05 | PARAMETERS.md §4.3 | §4.3: the stated unlit polar area is not reachable from §4.... | OPEN |
+| A-06 | PARAMETERS.md §2 | §2: which quadrants a 2-projector install uses is unspecifi... | OPEN |
+| A-07 | conventions.ts | conventions.ts §R: the pitch = -elevation clause contradict... | **APPLIED** |
+| A-08 | conventions.ts | conventions.ts: the observing camera is not specified at all | **APPLIED** |
+| A-09 | PARAMETERS.md §7 | §7: the pose-recovery gate cannot be scored in absolute wor... | OPEN |
+| A-10 | PARAMETERS.md §7 | §7's unlit-within-the-mask gate cannot be met by the 2- and... | OPEN |
+| A-11 | PARAMETERS.md §7 | §7's pose-recovery gate is finer than the measurement §8 pr... | OPEN |
+| A-12 | PARAMETERS.md §3.1 | §3.1: lens shift has a nominal and a class but no uncertain... | OPEN |
+| A-13 | PARAMETERS.md §3.1 / §8 | §3.1 / §8: fov_h should be initialised from the throw ratio... | OPEN |
+| A-14 | PARAMETERS.md §4.5 | §4.5's worked continuity value is the one for f = 0.04, not... | OPEN |
+| A-15 | PARAMETERS.md §7 | §7's seam gates are worded as *discontinuities*, but §3.2's... | OPEN |
+| A-16 | PARAMETERS.md §7 / §8 | §7 / §8: the pose gate is a tape-measure gate, not a solver... | **SUPERSEDED** |
+| A-17 | PARAMETERS.md | the two nominalRig builders disagree, and it silently poiso... | OPEN |
+| A-18 | PARAMETERS.md | correcting A-16: the pose gate is a LENS-KNOWLEDGE gate, an... | OPEN |
+| A-19 | PARAMETERS.md §2 / §3.1 | §2 / §3.1: the nominal rig has two numbers the spec never s... | OPEN |
+| A-20 | conventions.ts | conventions.ts: the nominal rig construction was not specif... | **APPLIED** |
+| A-21 | PARAMETERS.md §7 | §7's black-uplift gate of 1.20 is unsatisfiable under the r... | OPEN |
+| A-22 | PARAMETERS.md | the projector's primaries are not stated anywhere, and both... | OPEN |
 
-**A note on the numbering.** A-12 and A-13 are each used TWICE in this file, for
-different entries — the lens-shift entry and the tape-measure ablation both say
-A-12, and the `fov_h` initialisation entry and the two-builders entry both say
-A-13. The duplication is not fixed here because the ids are cited from code
-comments, from `packages/bench/README.md`, and from `gate-waivers.json`, and
-silently renumbering would break every citation. Anything that cites an
-amendment mechanically must therefore disambiguate by TITLE as well as by id:
-`packages/bench/src/waivers.ts` resolves a citation to exactly one heading and
-refuses to run on an ambiguous one.
+**A note on citing these entries mechanically.** `gate-waivers.json` cites an
+entry by id AND by a fragment of its title, and `packages/bench/src/waivers.ts`
+refuses a citation that resolves to anything other than exactly one heading. The
+belt and braces are not decoration: A-12 and A-13 were each used for two
+different entries until the duplicates were renumbered to A-16 and A-17, and a
+waiver that had cited "A-12" alone would have silently changed which argument it
+rested on when the renumbering happened. The tool also reads the `**Status:**`
+line, so an entry that becomes `ACCEPTED`, `REJECTED`, `APPLIED` or `SUPERSEDED`
+stops covering the gate that cites it — which is the point. A-16 is the worked
+example: it was superseded by A-18 four hours after `gate-waivers.json` first
+cited it, and the citation failed the build rather than continuing to rest on a
+conclusion the register had withdrawn.
+
+---
 
 ---
 
@@ -626,6 +638,116 @@ width is theatre.
 
 ---
 
+## A-14 — §4.5's worked continuity value is the one for `f` = 0.04, not the "generous f = 0.05" the sentence claims
+
+**Status:** OPEN. Not blocking; the conclusion §4.5 draws is unaffected. Reported by the forward model.
+
+**The tension.** §4.5 rejects ambient light as an explanation for the blend gamma
+of 0.8 with this arithmetic:
+
+> Including an additive floor `f`, continuity requires `V^γ = (1−2f)/(2(1−f))`;
+> at γ=2.2 and a generous f=0.05 this gives V=0.716 against 0.730 with no floor
+> at all. A 2% shift.
+
+Evaluating §4.5's own formula at §4.5's own `f` = 0.05 gives **0.71202**, not
+0.716. The stated 0.716 is what the formula gives at **`f` = 0.04** — which is
+exactly §5's nominal `E_amb`. So the sentence's "generous f = 0.05" and its
+quoted result do not correspond, and the quoted result is the *nominal* ambient
+rather than a generous one.
+
+| `f` | `V` | Shift from 0.72974 |
+| --- | --- | --- |
+| 0 | 0.72974 | — |
+| 0.04 (§5 nominal `E_amb`) | **0.71576** | 1.92% |
+| 0.05 ("generous", per §4.5) | **0.71202** | 2.40% |
+
+**Why it does not matter, and why it is recorded anyway.** Both readings give a
+shift of about 2%, and §4.5's conclusion needs only that the shift is far too
+small to move 0.4545 to 0.8 — a 76% change. The conclusion stands under either
+number. But §4.5 is the passage that *rejects* a hypothesis, and a rejection
+whose arithmetic does not reproduce is the kind that gets re-litigated by the
+next person to read it.
+
+**Proposed amendment.** Either change "a generous f=0.05" to "f = 0.04, §5's
+nominal ambient" and keep 0.716, or keep f = 0.05 and change the value to 0.712.
+Recommend the first: tying the figure to §5's own nominal makes the paragraph a
+cross-reference rather than a free parameter.
+
+**What the code does meanwhile.** `packages/sim/src/blend.ts`
+`continuityEncodedValue` implements the formula as stated and takes `f` as an
+argument. `test/blend.test.ts` asserts BOTH values to nine digits, asserts that
+the f = 0.04 case is the spec's quoted 0.716, and asserts the conclusion — that
+either shift is about 2% and 0.8 is nowhere near either — so the discrepancy
+cannot drift in either direction without a test failing.
+
+---
+
+## A-15 — §7's seam gates are worded as *discontinuities*, but §3.2's headline artifact is not one
+
+**Status:** OPEN. **Blocking for what the seam gates actually certify.** Reported by the forward model.
+
+**The tension.** Two clauses that appear to be about the same artifact are about
+different ones.
+
+- §7 gates "Seam luminance **discontinuity** ≤ 2% of local mean" and "Seam
+  chromaticity **discontinuity** ΔE2000 ≤ 1.0", with the luminance gate's basis
+  given as "Weber fraction for a **step** in a smooth field".
+- §3.2's worked example — the passage rev 2 exists for — produces a 6% blue
+  deficit that "reads as a **yellow band**".
+
+A band is not a step. In this rig's geometry the difference is not a quibble: at
+the equator the two-projector overlap spans **71° of longitude**, and a
+per-channel gamma divergence produces a deficit that rises smoothly from zero at
+one edge of that overlap to its maximum in the middle and back to zero at the
+other. There is no discontinuity anywhere in it. Any estimator that measures a
+step — which is what §7 asks for, and what the underlying field's own 2:1
+incidence falloff *forces*, since a naive max-minus-min reports 47% on a perfect
+rig — is blind to it by construction.
+
+**The measurement.** `packages/sim` on the nominal rig, with §3.2's own worked
+divergence applied (every projector's blue channel at γ = 2.4, compositor still
+encoding at 2.2), all four §7 gates PROVISIONAL:
+
+| Metric | Channel-matched nominal | §3.2's worked divergence |
+| --- | --- | --- |
+| Seam luminance discontinuity | 0.00137 | 0.00138 |
+| Seam chromaticity discontinuity | 0.028 | **0.029** |
+| Luminance shift from divergence | 0 | 0.0072 |
+| Chromaticity shift from divergence | 0 | **3.88** |
+
+So the rig carrying §3.2's artifact **passes every scored gate in §7**, and the
+seam-chromaticity gate — the one rev 2 added specifically for this artifact —
+moves by 0.001 ΔE2000 when the artifact is switched on.
+
+**Proposed amendment.** Split the seam gates in two, because they are two
+different measurements with two different psychophysical bases:
+
+(a) a **discontinuity** gate, as written, at 2% and ΔE2000 1.0, which is a
+Weber-fraction argument about a step and catches misregistration, a hard mask
+edge, and a gain mismatch between neighbours; and
+
+(b) a **band** gate over the whole overlap region, whose basis is not Weber's
+fraction but the eye's sensitivity to a low-spatial-frequency chromatic
+gradient — a different and considerably *looser* threshold in luminance and a
+comparably tight one in chroma. §3.2's claim that "the eye is more sensitive to a
+chromatic edge than a luminance one" is the right instinct; the gate that follows
+from it has to be stated over a region rather than at a point.
+
+Setting a number for (b) needs the §8 visit: it is a psychophysical threshold for
+a gradient of unknown size on a surface of unknown gloss under lighting of
+unknown colour, and inventing one now would be exactly the failure mode the phase
+gate exists to prevent.
+
+**What the code does meanwhile.** `packages/sim/src/metrics/photometric.ts`
+implements (a) as the two SCORED gates §7 states, with a documented
+trend-subtraction estimator and a per-track CONTROL that measures the estimator's
+own noise floor on the same field. It implements (b) as two UNSCORED readings —
+the field rendered twice, once with the rig's real thirty-six transfer terms and
+once with every channel forced to agree — reported beside the §7 gate for scale
+but never allowed to decide a verdict, because §7 sets no gate on them.
+
+---
+
 ## A-16 — §7 / §8: the pose gate is a tape-measure gate, not a solver gate — **SUPERSEDED, see A-18**
 
 **Status:** **SUPERSEDED by A-18.** Its measurements are reproducible and its
@@ -769,88 +891,7 @@ The remaining divergence — `sim` reads `d_proj` as a horizontal radius, `solve
 as the 3D distance §2's wording gives — is pinned there too, at its closed form
 `d - sqrt(d^2 - z^2)`: 39 um at this corpus's height scatter, 3.9 mm at a 0.2 m
 ceiling mount, which is ABOVE the §7 pose gate and is the sentence to put in
-front of whoever adds a ceiling-mount scenario. See A-14 and A-15.
-
----
-
-## A-14 — §2 / §3.1: the nominal rig has two numbers the spec never states, and both implementations had to guess
-
-**Status:** OPEN. Reported by the independence critic, confirmed by measurement,
-and worked around in `conventions.ts` (see A-15) until the author decides.
-
-This is the spec-facing half of A-13. A-13 records the *symptom* — two
-`nominalRig` builders 0.63 degrees apart — and this entry states what
-PARAMETERS.md would have to say for the symptom to be impossible.
-
-**1. §3.1 does not say how much room to leave around the silhouette.** A-01
-established that the sphere's silhouette is inscribed in the raster's MINOR
-dimension. It does not say whether the inscription is exact. Exact inscription
-puts the limb on the raster edge, where §4.1's limb test and the raster-bounds
-test disagree in the last bit and coverage develops a ragged fringe, so
-`packages/sim` left 2% of headroom and `packages/solver` left none. Both are
-honest readings. The gap is 0.63 degrees of horizontal field at the §2 nominal
-(34.0918 against 33.4610), which is four times the zoom repeatability the corpus
-injects, and holding the field of view at the wrong one of them is a 5x
-regression in recovered pose (A-12, step 1).
-
-*Proposed amendment.* State the headroom in §3.1 as a number, in the same
-sentence that states the inscription. Any value in the region of a couple of
-percent works; what matters is that it is stated once rather than chosen twice.
-
-**2. §2 does not say which quadrants go dark at N=3.** §2 gives four slots at
-0/90/180/270 and says "2- and 3-projector installs are supported; quadrants go
-dark". A-06 already records that this is undecided for N=2 and that the answer
-changes the coverage field by a factor of two. A-06 then dismisses N=3 as
-uninteresting — "any three of the four are equivalent up to a rotation" — and
-that is true of the COVERAGE FIELD and false of everything else. Three
-projectors at 0/90/180 and three at 0/120/240 are not related by a rotation:
-one drops a quadrant from a standard rig, the other respaces the surviving
-mounts. `packages/sim` built the first, `packages/solver` built the second, and
-the disagreement is 30 degrees of azimuth handed to a bootstrap that has no way
-to know about it.
-
-*Proposed amendment.* Add one clause to §2 covering both cases: the installed
-projectors occupy a subset of the four nominal slots, and the remaining mounts
-are not respaced. That is one sentence and it settles A-06 as well.
-
-**Why this is filed even though the code now agrees.** Independent construction
-from the same prose is the architecture working; the divergence being VISIBLE is
-the mechanism working. What was wrong was that it was undeclared for a whole
-round, and the reason it could be undeclared is that the document is silent.
-Pinning the values in our own contract (A-15) removes the divergence without
-removing the question, and the question belongs to the author.
-
----
-
-## A-15 — conventions.ts: the nominal rig construction was not specified at all
-
-**Status:** APPLIED. `conventions.ts` gains a §N specifying the two quantities
-A-14 asks PARAMETERS.md to state: the silhouette headroom
-(`NOMINAL_SILHOUETTE_MARGIN_FRAC = 0.02`) and the azimuth slots an install of N
-projectors occupies (`NOMINAL_SLOTS_BY_COUNT`, N=3 -> {0,1,2}, N=2 -> {0,2}).
-Both are literals — the package holds no mathematics — and both sides still
-build their own rigs from them. `CONVENTIONS_VERSION` moves to
-`sphere-sim/conventions@3`.
-
-Per this file's own rule, `conventions.ts` is our contract rather than the spec,
-so an ambiguity in it that both sides are implementing independently is our bug
-to fix. Leaving it unstated meant the two models were aiming at a moving target
-in the one seam the design exists to keep clean.
-
-**What changed in the code.** `packages/solver`'s `nominalRig` previously built
-`fovV = 2*asin(R/d)` exactly and spaced N projectors at 360/N. It now applies
-§N.1's headroom to the tangent of the silhouette's angular radius and takes
-§N.2's slots. `packages/sim` previously carried the 2% as a local default in
-`optics.ts` and the slot table as a local rule in `scene.ts`; both now read the
-boundary object's literal. Neither side calls the other, and neither side gained
-a line of the other's arithmetic.
-
-**What it costs.** Every pose number in `bench-results.json` moves, because the
-solver's initialisation moves: the nominal field of view it starts from is now
-0.63 degrees closer to the rig the forward model actually built. That is a
-change in the measurement apparatus and it is recorded here rather than
-presented as an improvement.
-
+front of whoever adds a ceiling-mount scenario. See A-19 and A-20.
 
 ---
 
@@ -938,3 +979,179 @@ and model → throw ratio, native resolution, lens shift range"** — which is f
 already on the checklist, and worth 88–97% of the pose error. The laser measure
 remains worth having, but it buys the last few millimetres, not the first five
 hundred. Sequence accordingly.
+
+---
+
+## A-19 — §2 / §3.1: the nominal rig has two numbers the spec never states, and both implementations had to guess
+
+**Status:** OPEN. Reported by the independence critic, confirmed by measurement,
+and worked around in `conventions.ts` (see A-20) until the author decides.
+
+This is the spec-facing half of A-13. A-13 records the *symptom* — two
+`nominalRig` builders 0.63 degrees apart — and this entry states what
+PARAMETERS.md would have to say for the symptom to be impossible.
+
+**1. §3.1 does not say how much room to leave around the silhouette.** A-01
+established that the sphere's silhouette is inscribed in the raster's MINOR
+dimension. It does not say whether the inscription is exact. Exact inscription
+puts the limb on the raster edge, where §4.1's limb test and the raster-bounds
+test disagree in the last bit and coverage develops a ragged fringe, so
+`packages/sim` left 2% of headroom and `packages/solver` left none. Both are
+honest readings. The gap is 0.63 degrees of horizontal field at the §2 nominal
+(34.0918 against 33.4610), which is four times the zoom repeatability the corpus
+injects, and holding the field of view at the wrong one of them is a 5x
+regression in recovered pose (A-12, step 1).
+
+*Proposed amendment.* State the headroom in §3.1 as a number, in the same
+sentence that states the inscription. Any value in the region of a couple of
+percent works; what matters is that it is stated once rather than chosen twice.
+
+**2. §2 does not say which quadrants go dark at N=3.** §2 gives four slots at
+0/90/180/270 and says "2- and 3-projector installs are supported; quadrants go
+dark". A-06 already records that this is undecided for N=2 and that the answer
+changes the coverage field by a factor of two. A-06 then dismisses N=3 as
+uninteresting — "any three of the four are equivalent up to a rotation" — and
+that is true of the COVERAGE FIELD and false of everything else. Three
+projectors at 0/90/180 and three at 0/120/240 are not related by a rotation:
+one drops a quadrant from a standard rig, the other respaces the surviving
+mounts. `packages/sim` built the first, `packages/solver` built the second, and
+the disagreement is 30 degrees of azimuth handed to a bootstrap that has no way
+to know about it.
+
+*Proposed amendment.* Add one clause to §2 covering both cases: the installed
+projectors occupy a subset of the four nominal slots, and the remaining mounts
+are not respaced. That is one sentence and it settles A-06 as well.
+
+**Why this is filed even though the code now agrees.** Independent construction
+from the same prose is the architecture working; the divergence being VISIBLE is
+the mechanism working. What was wrong was that it was undeclared for a whole
+round, and the reason it could be undeclared is that the document is silent.
+Pinning the values in our own contract (A-20) removes the divergence without
+removing the question, and the question belongs to the author.
+
+---
+
+## A-20 — conventions.ts: the nominal rig construction was not specified at all
+
+**Status:** APPLIED. `conventions.ts` gains a §N specifying the two quantities
+A-19 asks PARAMETERS.md to state: the silhouette headroom
+(`NOMINAL_SILHOUETTE_MARGIN_FRAC = 0.02`) and the azimuth slots an install of N
+projectors occupies (`NOMINAL_SLOTS_BY_COUNT`, N=3 -> {0,1,2}, N=2 -> {0,2}).
+Both are literals — the package holds no mathematics — and both sides still
+build their own rigs from them. `CONVENTIONS_VERSION` moves to
+`sphere-sim/conventions@3`.
+
+Per this file's own rule, `conventions.ts` is our contract rather than the spec,
+so an ambiguity in it that both sides are implementing independently is our bug
+to fix. Leaving it unstated meant the two models were aiming at a moving target
+in the one seam the design exists to keep clean.
+
+**What changed in the code.** `packages/solver`'s `nominalRig` previously built
+`fovV = 2*asin(R/d)` exactly and spaced N projectors at 360/N. It now applies
+§N.1's headroom to the tangent of the silhouette's angular radius and takes
+§N.2's slots. `packages/sim` previously carried the 2% as a local default in
+`optics.ts` and the slot table as a local rule in `scene.ts`; both now read the
+boundary object's literal. Neither side calls the other, and neither side gained
+a line of the other's arithmetic.
+
+**What it costs.** Every pose number in `bench-results.json` moves, because the
+solver's initialisation moves: the nominal field of view it starts from is now
+0.63 degrees closer to the rig the forward model actually built. That is a
+change in the measurement apparatus and it is recorded here rather than
+presented as an improvement.
+
+---
+
+## A-21 — §7's black-uplift gate of 1.20 is unsatisfiable under the reading §8 prescribes the measurement for
+
+**Status:** OPEN. Blocking for what the black-uplift gate certifies. Reported by the forward model.
+
+**The tension.**
+
+- §7 gates "Black uplift ratio, overlap ÷ single ≤ 1.20", basis "Below where an
+  overlap band reads as a visible rectangle in dark content."
+- §8 items 8 and 9 prescribe the measurement: "Full black, projectors **on**" and
+  "Full black, projectors **off**", and calls them "the highest-value pair in the
+  list: their difference is the black-floor term that drives every overlap
+  artifact."
+
+Their *difference* is the projector contribution with ambient removed. But in
+dark content each projector emits `gain × blackFloor` regardless of blend weight,
+so `n` projectors deliver `n` times what one delivers, and the ratio is **exactly
+`n`** — 2.00 against a gate of 1.20 — for any black floor, any gain, and any
+geometry where the two contributions are comparable. As a gate it is a constant
+equal to the projector count, and no calibration, no blend and no measurement can
+move it.
+
+Including ambient makes it finite and informative. Measured by `packages/sim` on
+the nominal rig, all values PROVISIONAL:
+
+| Reading | `E_amb` = 0.04 (§5 nominal) | `E_amb` = 0.01 (§5 floor) |
+| --- | --- | --- |
+| Observed ratio, ambient included | **1.016** | **1.060** |
+| Ambient removed (§8 frames 8 − 9) | 1.9995 | 1.9995 |
+
+So whether the gate passes is decided almost entirely by `E_amb` — class ASSUME,
+plausible range 0.01–0.15, a factor of fifteen — and hardly at all by the twelve
+black floors the gate appears to be about.
+
+**A second finding, which is a property of the sphere and not of the projectors.**
+The observed ratio is far below 1.20 even at the dark end, and part of the reason
+is geometric rather than photometric: on a sphere the overlap sits exactly where
+*both* projectors are at their most oblique. At the equatorial seam each
+contributes at `cos(incidence)` = 0.61 against 1.0 at its own sub-projector point,
+so the doubled black floor arrives attenuated by the same factor that dims
+everything else there. The "visible rectangle" of §7's basis is a flat-screen
+artifact; on a silhouette-masked sphere each projector's footprint edge *is* the
+limb, where `cos(incidence)` → 0, so the black floor cannot produce a hard edge on
+the sphere at all. It can and does produce one on the floor around it, which
+`render.ts` already models.
+
+**Proposed amendment.** State which reading the gate is against. Recommend the
+ambient-inclusive one, since visibility is contrast against a surround and the
+surround has the room in it — and then say so explicitly, because a gate that
+depends on `E_amb` should not look like a gate on the projectors. Add to §7's
+basis column that the figure presumes an ambient level, and name it.
+
+**What the code does meanwhile.** The observed (ambient-inclusive) ratio is the
+SCORED metric; the ambient-removed ratio is reported beside it as an explicitly
+unscored companion whose note says it is exactly the projector count by
+construction. Both are computed against the strongest single contributor **at the
+same point**, not against a mean over the single-projector region — comparing
+region means would compare the seam against a sub-projector point and report a
+factor-of-two geometry difference as a photometric one.
+
+---
+
+## A-22 — the projector's primaries are not stated anywhere, and both ΔE2000 gates depend on them
+
+**Status:** OPEN. Low risk today, unbounded risk after the §8 visit. Reported by the forward model.
+
+**The gap.** §3.2 gives per-channel gammas, black floors and gains, and a white
+point in kelvin. §7 gates two metrics in ΔE2000. Converting linear RGB to CIE XYZ
+— the first step of any ΔE — requires the **chromaticity of each primary**, and
+that appears nowhere in PARAMETERS.md. §9 lists "spectral rendering — RGB only, so
+metamerism between projector primaries and ambient light is approximated, not
+simulated" as a known omission; this is the other half of the same hole, and
+unlike the metamerism it changes a gated number directly.
+
+`wp_i` does not close it. A white point constrains where R + G + B lands, not
+where R lands. Two projectors with identical white points and different primaries
+give different ΔE2000 for the same seam, and the difference is largest for
+saturated content — which is most SOS content, since the datasets are false-colour.
+
+**Proposed amendment.** Add a row to §3.2 for the primaries' CIE 1931 `xy`
+coordinates, class `CFG` (a projector's datasheet states them) falling back to
+`ASSUME`, and add one line to §8 item 2: record the projector's **colour gamut**
+from its spec sheet alongside the throw ratio and native resolution. It is one
+more number off a page somebody is already reading, and until it exists every
+ΔE2000 in the project is conditional on a substitution nobody has agreed to.
+
+**What the code does meanwhile.** `packages/sim/src/color.ts` takes the RGB→XYZ
+matrix as a parameter and defaults to Rec.709/sRGB at D65, documented at the top
+of the module as class ASSUME with the reasoning: it is the only primary set the
+cited documents imply, since SOS content is authored as ordinary RGB imagery. The
+choice is named in every photometric metric's note and in the metric set's
+provenance block, so no ΔE leaves the package without it attached. A real DLP with
+a white segment in its colour wheel is materially different, and swapping the
+matrix is a one-argument change.

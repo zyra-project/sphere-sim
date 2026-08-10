@@ -39,6 +39,8 @@ classification drives how the work is sequenced:
 npm install                # one dev dependency: typescript. zero runtime deps
 npm run ci                 # boundary lint, typecheck, tests
 npm run bench              # headless deterministic bench -> bench-results.json + PNGs
+npm run gate               # judge bench-results.json against §7; exits non-zero on an
+                           # unwaived gate failure. See gate-waivers.json.
 npm run experiments        # the three experiments, each run once
 npm run harness            # interactive WebGL harness
 ```

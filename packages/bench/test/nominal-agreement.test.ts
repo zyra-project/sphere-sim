@@ -21,8 +21,8 @@
  * both were honest readings of silent prose. The damage was that the divergence
  * was UNDECLARED: it made "hold the field of view" look like a fix when it is a
  * five-fold regression, because holding it pinned the field 0.63 degrees from
- * truth and the pose absorbed the error. See docs/AMENDMENTS.md A-12 step 1,
- * A-13, and A-14.
+ * truth and the pose absorbed the error. See docs/AMENDMENTS.md A-16 step 1,
+ * A-17, and A-19.
  *
  * conventions.ts §N now pins both quantities as literals in the boundary object,
  * and both sides derive their own frustum and their own azimuths from them.
@@ -82,7 +82,7 @@ function divergenceNote(what: string, a: number, b: number): string {
     '\n' +
     'This is NOT a solver defect and NOT a simulator defect. It means the two\n' +
     'independent implementations of "the rig PARAMETERS.md describes" have\n' +
-    'drifted apart, which is exactly the failure docs/AMENDMENTS.md A-13\n' +
+    'drifted apart, which is exactly the failure docs/AMENDMENTS.md A-17\n' +
     'records: the bench then perturbs one rig and initialises the solver from a\n' +
     'different one, every pose number in bench-results.json silently acquires\n' +
     'the gap as a bias, and any experiment that HOLDS the diverged parameter\n' +
@@ -137,11 +137,11 @@ test('the pinned margin is the thing they agree on, not a coincidence', () => {
     );
   }
   // And the margin is what separates it from the zero-margin construction the
-  // solver used to build: 0.63 degrees, the gap A-13 measured.
+  // solver used to build: 0.63 degrees, the gap A-17 measured.
   const zeroMargin = (2 * Math.atan(Math.tan(Math.asin(r / d)) * (1920 / 1080)) * 180) / Math.PI;
   assert.ok(
     Math.abs(expectedFovH - zeroMargin - 0.6308) < 0.001,
-    `the pinned margin should be worth the 0.63 deg A-13 measured, got ${expectedFovH - zeroMargin}`,
+    `the pinned margin should be worth the 0.63 deg A-17 measured, got ${expectedFovH - zeroMargin}`,
   );
 });
 
