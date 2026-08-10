@@ -16,12 +16,19 @@
  * assertion. See packages/sim/README.md.
  */
 
-import type { BlendCalibration, RampShape } from '../../calibration/src/index.ts';
+import type { BlendCalibration } from '../../calibration/src/index.ts';
 import type { Vec3 } from './vec.ts';
 import { DEG2RAD, RAD2DEG, clamp, dot, sub } from './vec.ts';
 import { latLonToWorld } from './geometry.ts';
 import type { PreparedProjector, PreparedRig } from './optics.ts';
 import { worldToPixel } from './optics.ts';
+import { normalizeWeights, rampWeight } from './blend.ts';
+
+// conventions.ts §B's ramp algebra lives in `blend.ts`, which knows nothing about
+// the sphere. This module decides WHERE each projector's blend region is and how
+// far across it a point sits; `blend.ts` turns that into a weight. Re-exported
+// because `rampValue` is part of this module's published surface.
+export { rampValue } from './blend.ts';
 
 /**
  * Is this surface point lit by this projector?
@@ -192,34 +199,6 @@ export function polarMask(
 }
 
 /**
- * The four unnormalized ramp shapes of conventions.ts §B, evaluated at `t` in
- * [0, 1] where `t = 0` is the outer edge (this projector contributes nothing)
- * and `t = 1` the inner edge (it contributes fully).
- *
- * The gaussian is the only one that needs its endpoints forced: `exp(-4.5*(1-t)^2)`
- * is 0.0111 at t = 0, not 0, so §B specifies it normalized to hit exactly 0 and
- * 1. Skipping that renormalization leaves each projector emitting about 1% of
- * full signal past its own footprint edge, which is invisible in a bright scene
- * and reads as a rectangular halo in a dark one.
- */
-export function rampValue(shape: RampShape, t: number): number {
-  const x = clamp(t, 0, 1);
-  switch (shape) {
-    case 'linear':
-      return x;
-    case 'cosine':
-      return 0.5 - 0.5 * Math.cos(Math.PI * x);
-    case 'smoothstep':
-      return x * x * (3 - 2 * x);
-    case 'gaussian': {
-      const g0 = Math.exp(-4.5);
-      const g = Math.exp(-4.5 * (1 - x) * (1 - x));
-      return (g - g0) / (1 - g0);
-    }
-  }
-}
-
-/**
  * Blend weights per projector, conventions.ts §B, normalized to sum to one
  * wherever at least one projector contributes.
  *
@@ -283,7 +262,6 @@ export function coverageAndWeights(
   const blend = rig.blend;
   const width = blend.widthDeg > 0 ? blend.widthDeg : 1e-9;
 
-  let sum = 0;
   for (let i = 0; i < n; i++) {
     const p = rig.projectors[i];
     if (!isIlluminatedAt(point, p)) continue;
@@ -301,12 +279,10 @@ export function coverageAndWeights(
     const thetaMaxDeg = Math.acos(p.limbCos) * RAD2DEG;
 
     const t = (thetaMaxDeg - thetaDeg) / width;
-    const w = Math.pow(rampValue(blend.rampShape, t), blend.rampGamma);
-    weights[i] = w;
-    sum += w;
+    weights[i] = rampWeight(blend.rampShape, t, blend.rampGamma);
   }
 
-  if (sum > 0) for (let i = 0; i < n; i++) weights[i] /= sum;
+  normalizeWeights(weights);
   return { weights, lit };
 }
 

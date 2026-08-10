@@ -12,9 +12,43 @@
  * verbatim. It contains no executable mathematics.
  */
 
-export const CONVENTIONS_VERSION = 'sphere-sim/conventions@2';
+export const CONVENTIONS_VERSION = 'sphere-sim/conventions@3';
 
-export const CONVENTIONS_MD = `# RigCalibration conventions (${'conventions@2'})
+/**
+ * Headroom around the sphere's silhouette in the raster's MINOR dimension, as a
+ * fraction of the silhouette's own angular half-extent. conventions.ts §N.
+ *
+ * A literal, not a derivation: this package holds no mathematics. Both sides
+ * read this number and each builds its own frustum from it.
+ *
+ * It exists because PARAMETERS.md §3.1 and docs/AMENDMENTS.md A-01 describe the
+ * construction ("inscribe the silhouette in the minor dimension") without ever
+ * pinning the headroom, and two independent implementations then picked 2% and
+ * 0%. That undeclared 0.63-degree gap is docs/AMENDMENTS.md A-13 and A-14.
+ */
+export const NOMINAL_SILHOUETTE_MARGIN_FRAC = 0.02;
+
+/** The four nominal azimuth slots, degrees. PARAMETERS.md §2. conventions.ts §N. */
+export const NOMINAL_AZIMUTH_SLOTS_DEG: readonly number[] = [0, 90, 180, 270];
+
+/**
+ * Which of the four §2 slots an install of N projectors occupies, by default.
+ * conventions.ts §N. Literal table, indexed by projector count.
+ *
+ * §2 says "2- and 3-projector installs are supported; quadrants go dark" and
+ * never says WHICH quadrants. docs/AMENDMENTS.md A-06 settled N=2 (opposed
+ * mounts) and A-14 settles N=3 the same way: a subset of the four 90-degree
+ * slots, because "a quadrant goes dark" removes a projector from a standard
+ * layout rather than respacing the ones that remain.
+ */
+export const NOMINAL_SLOTS_BY_COUNT: Readonly<Record<number, readonly number[]>> = {
+  1: [0],
+  2: [0, 2],
+  3: [0, 1, 2],
+  4: [0, 1, 2, 3],
+};
+
+export const CONVENTIONS_MD = `# RigCalibration conventions (${'conventions@3'})
 
 Both the forward model and the solver must satisfy every clause here, each with
 its own independent implementation. Nothing in this file may be imported as
@@ -147,6 +181,52 @@ the framebuffer with its ORIGIN AT BOTTOM-LEFT, matching the SOS
 \`projectorInfo(viewport)\` values \`{0,0,0.5,0.5 ...}\`. A projector's own raster
 is \`resX by resY\`; the framebuffer is the union of the viewports, so four
 1920x1080 projectors imply a 3840x2160 X screen.
+
+## §N — Nominal rig construction
+
+Both sides build "the rig PARAMETERS.md describes" — the forward model to have
+something to perturb, the solver to have something to start from. They build it
+from the same prose, independently, and they are *expected* to agree. Two
+quantities in that construction are not stated anywhere in PARAMETERS.md, so
+each implementation had to choose, and the choices silently diverged. They are
+fixed here, as values, and each side still derives everything else on its own.
+
+**§N.1 — Silhouette margin.** PARAMETERS.md §3.1 and docs/AMENDMENTS.md A-01
+put the sphere's silhouette inscribed in the raster's MINOR dimension. A
+silhouette inscribed with *zero* headroom puts the limb exactly on the raster
+edge, where the limb test of §4.1 and the raster-bounds test disagree in the
+last bit and coverage develops a ragged fringe. The headroom is therefore
+**2% — \`marginFrac = 0.02\`**, exported as \`NOMINAL_SILHOUETTE_MARGIN_FRAC\`:
+the minor dimension's half-angle covers \`(1 + 0.02)\` times the tangent of the
+silhouette's angular radius \`asin(R / d_proj)\`. At 1920x1080, R = 0.8636 m and
+d_proj = 5.18 m that is \`fovH = 34.0918\` degrees, against 33.4610 at zero
+margin. The gap is 0.63 degrees and it is the whole of docs/AMENDMENTS.md A-13.
+
+The margin is a property of the NOMINAL construction only. It is not a claim
+about any real projector, and a caller holding a spec sheet passes the measured
+field of view instead — PARAMETERS.md §3.1 classes \`T\` as CFG for exactly that
+reason.
+
+**§N.2 — Which slots go dark.** PARAMETERS.md §2 gives four azimuth slots,
+\`0, 90, 180, 270\` degrees counterclockwise from P1, and says "2- and
+3-projector installs are supported; quadrants go dark". It does not say which.
+The reading taken here is the one §2's own sentence carries: a projector is
+ABSENT from an otherwise standard four-slot rig, so the installed projectors
+occupy a SUBSET of the four 90-degree slots and the ones that remain are not
+respaced. So N=4 uses slots {0,1,2,3}, N=3 uses **{0, 1, 2}** — azimuths
+0, 90, 180 — and N=2 uses **{0, 2}** — azimuths 0, 180, the opposed pair, which
+is the only 2-projector arrangement that covers the sphere (docs/AMENDMENTS.md
+A-06). \`NOMINAL_SLOTS_BY_COUNT\` states the table.
+
+The rejected reading is equal spacing: 0, 120, 240 for N=3. It is a defensible
+sentence in isolation and it is what one of the two implementations did, but it
+respaces surviving mounts, it contradicts "quadrants go dark", and it puts a
+30-degree azimuth error into a bootstrap that has no way to know about it.
+Projector \`i\` keeps slot \`i\`'s viewport (§V) whichever slots are occupied.
+
+Both readings are the *implementations'* choice recorded as a contract, not a
+statement about the spec: PARAMETERS.md remains silent, and
+docs/AMENDMENTS.md A-14 asks the author to settle both upstream.
 
 ## §B — Blend ramp
 

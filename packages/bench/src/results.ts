@@ -40,6 +40,7 @@ import { CONVENTIONS_VERSION } from '../../calibration/src/conventions.ts';
 import { GATES } from '../../calibration/src/parameters.ts';
 import type { ScenarioResult } from './run.ts';
 import type { BenchPreset, Scenario } from './scenarios.ts';
+import type { WaiverAudit } from './waivers.ts';
 
 export const RESULTS_SCHEMA = 'sphere-sim/bench-results@1';
 
@@ -339,15 +340,36 @@ export interface GateSummary {
    * reader believe otherwise would misdirect the loop.
    */
   dependsOnRecovery: boolean;
+  /**
+   * True when the metric behind this gate depends on a constant nobody has
+   * measured. docs/ARCHITECTURE.md's phase gate: a provisional metric is
+   * reported, marked, and never allowed to decide anything — not a build
+   * (`waivers.ts`) and not a round (`loop.ts`). Every geometric metric sets it
+   * false and means it; the field exists so Phase 2 cannot arrive without one.
+   */
+  provisional: boolean;
   attribution: GateAttribution | null;
 }
 
 export interface GatesBlock {
-  /** True when every scored gate passed on every scenario that scored it. */
+  /**
+   * True when every scored gate passed on every scenario that scored it.
+   *
+   * The RAW measurement, unchanged by any waiver. A waived gate still reads
+   * `pass: false` here and still pulls this down — `gate-waivers.json` decides
+   * whether the BUILD fails, not whether the bench passed. Anything else would
+   * be tuning the report to the exit code.
+   */
   pass: boolean;
   gates: GateSummary[];
   /** Gates reported but excluded from the verdict, with the reason. */
   unscored: { id: string; reason: string }[];
+  /**
+   * Every waiver in `gate-waivers.json`, with the status of the amendment it
+   * cites as parsed out of docs/AMENDMENTS.md. Clock-free on purpose: see
+   * `waivers.ts`.
+   */
+  waivers: WaiverAudit[];
 }
 
 /** Gate ids whose metric is a function of the recovered calibration. */
@@ -450,6 +472,11 @@ function buildRecoveryGates(results: readonly ScenarioResult[]): GateSummary[] {
       distribution: dispersion(values),
       scenariosNotMeasurable: [],
       dependsOnRecovery: true,
+      // Pose recovery is a comparison between two rigs the simulator built. No
+      // photometric constant enters it, so it is never provisional — stated
+      // here rather than defaulted, because `loop.ts` and `waivers.ts` both read
+      // this field to decide what is allowed to judge things.
+      provisional: false,
       attribution: null,
     });
   }
@@ -476,6 +503,7 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
     const failed: string[] = [];
     const notMeasurable: string[] = [];
     let scored = 0;
+    let provisional = false;
     let worst: { scenario: string; value: number } | null = null;
     for (const r of results) {
       const m = metricsById(r.metrics).get(gate.id);
@@ -484,6 +512,9 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
         unscored.set(m.id, m.note);
         continue;
       }
+      // ANY scenario marking it provisional makes the gate provisional. A metric
+      // that is a guess on one rig is a guess.
+      provisional = provisional || m.provisional;
       if (m.sampling.count === 0) {
         notMeasurable.push(r.scenario.id);
         continue;
@@ -512,6 +543,7 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
       distribution: dispersion(values),
       scenariosNotMeasurable: notMeasurable,
       dependsOnRecovery: RECOVERY_DEPENDENT.has(gate.id),
+      provisional,
       attribution: null,
     });
   }
@@ -536,10 +568,12 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
     const notMeasurable: string[] = [];
     let worst: { scenario: string; value: number } | null = null;
     let template: MetricResult | null = null;
+    let provisional = false;
     for (const r of results) {
       const m = metricsById(r.metrics).get(id);
       if (m === undefined || m.gate === null) continue;
       template = m;
+      provisional = provisional || m.provisional;
       if (m.sampling.count === 0) {
         notMeasurable.push(r.scenario.id);
         continue;
@@ -565,16 +599,21 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
       distribution: dispersion(values),
       scenariosNotMeasurable: notMeasurable,
       dependsOnRecovery: RECOVERY_DEPENDENT.has(id),
+      provisional,
       attribution: null,
     });
   }
 
   return {
-    pass: gates.every((g) => g.pass),
+    // A provisional gate cannot pull the verdict down: docs/ARCHITECTURE.md's
+    // phase gate says a metric resting on an unmeasured constant is reported and
+    // marked, never scored. Every gate here sets it false today.
+    pass: gates.every((g) => g.pass || g.provisional),
     gates,
     unscored: [...unscored.entries()]
       .sort((a, b) => (a[0] < b[0] ? -1 : 1))
       .map(([id, reason]) => ({ id, reason })),
+    waivers: [],
   };
 }
 

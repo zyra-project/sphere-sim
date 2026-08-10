@@ -11,6 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { solve, bundleStateFromCalibration, nominalRig } from '../src/index.ts';
+import { NOMINAL_SILHOUETTE_MARGIN_FRAC } from '../../calibration/src/conventions.ts';
 import type { BundleState, FloorReference } from '../src/bundle.ts';
 import {
   alignToTruth,
@@ -181,11 +182,39 @@ test('the nominal rig follows §2 and §3.4', () => {
   assert.equal(rig.sphere.centerHeightM, 2.1844);
   assert.equal(rig.sphere.radiusM, 0.8636);
   // AMENDMENTS.md A-01: the silhouette is inscribed in the raster's MINOR
-  // dimension, so the vertical field subtends the sphere.
-  const fovV =
-    (2 * Math.atan(Math.tan((rig.projectors[0].intrinsics.fovHDeg * Math.PI) / 360) * (1080 / 1920)) *
-      180) /
-    Math.PI;
-  const subtended = (2 * Math.asin(0.8636 / 5.18) * 180) / Math.PI;
-  assert.ok(Math.abs(fovV - subtended) < 1e-6, `${fovV} vs ${subtended}`);
+  // dimension, so the vertical field subtends the sphere — plus the headroom
+  // conventions.ts §N.1 pins, which is applied to the TANGENT of the
+  // silhouette's angular radius. This used to assert zero headroom, which is
+  // what put this builder 0.63 degrees away from the forward model's for a whole
+  // round (docs/AMENDMENTS.md A-13, A-14).
+  const halfV = Math.atan(Math.tan((rig.projectors[0].intrinsics.fovHDeg * Math.PI) / 360) * (1080 / 1920));
+  const expectedHalfV = Math.atan(
+    Math.tan(Math.asin(0.8636 / 5.18)) * (1 + NOMINAL_SILHOUETTE_MARGIN_FRAC),
+  );
+  assert.ok(
+    Math.abs(halfV - expectedHalfV) < 1e-12,
+    `${(halfV * 360) / Math.PI} vs ${(expectedHalfV * 360) / Math.PI} deg of vertical field`,
+  );
+});
+
+test('§N.2: a 3-projector install drops a quadrant rather than respacing the rest', () => {
+  // PARAMETERS.md §2 is silent about which quadrants go dark, and this builder
+  // used to space them equally at 0/120/240 while `packages/sim` dropped a
+  // quadrant at 0/90/180. conventions.ts §N.2 settles it; docs/AMENDMENTS.md
+  // A-14 asks the author to settle it upstream.
+  const azimuths = (n: number): number[] =>
+    nominalRig({ projectorCount: n }).projectors.map(
+      (p) => Math.round((Math.atan2(p.pose.position.y, p.pose.position.x) * 180) / Math.PI),
+    );
+  assert.deepEqual(azimuths(4), [0, 90, 180, -90]);
+  assert.deepEqual(azimuths(3), [0, 90, 180]);
+  // A-06: the opposed pair is the only 2-projector arrangement that covers the
+  // sphere.
+  assert.deepEqual(azimuths(2), [0, 180]);
+  // The ids and viewports name the SLOT, so a 3-projector rig keeps P1/P2/P3 in
+  // the quadrants §3.4's config gives them.
+  assert.deepEqual(
+    nominalRig({ projectorCount: 2 }).projectors.map((p) => p.id),
+    ['P1', 'P3'],
+  );
 });

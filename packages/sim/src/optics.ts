@@ -17,6 +17,7 @@ import type {
   RigCalibration,
   Vec3,
 } from '../../calibration/src/index.ts';
+import { NOMINAL_SILHOUETTE_MARGIN_FRAC } from '../../calibration/src/conventions.ts';
 import type { Mat3 } from './vec.ts';
 import { DEG2RAD, RAD2DEG, matTVec, matVec, normalize, sub } from './vec.ts';
 import { projectorRotationMatrix } from './geometry.ts';
@@ -302,6 +303,18 @@ export function worldToPixelUnbounded(proj: PreparedProjector, worldPoint: Vec3)
  * disagree at the last ulp and coverage develops a ragged fringe. A couple of
  * percent of headroom makes the limb test of PARAMETERS.md §4.1 the sole
  * binding constraint, which is what §4.1 intends.
+ *
+ * ## The default is no longer a local decision
+ *
+ * It used to be a `0.02` written here and nowhere else, and `packages/solver`
+ * built its nominal with no margin at all. Nothing in PARAMETERS.md pins the
+ * number, so both were defensible and the two nominal rigs quietly differed by
+ * 0.63 degrees of field — which is what made "hold the field of view" look like
+ * a fix when it is a 5x regression (docs/AMENDMENTS.md A-12 step 1, A-13). The
+ * value now lives in conventions.ts §N.1 as
+ * `NOMINAL_SILHOUETTE_MARGIN_FRAC`, which is a literal in the boundary object;
+ * this module still does its own arithmetic with it, and so does the solver.
+ * `packages/bench/test/nominal-agreement.test.ts` compares the two outputs.
  */
 export interface FrustumSpec {
   resX: number;
@@ -310,7 +323,10 @@ export interface FrustumSpec {
   distanceM: number;
   /** Sphere radius, metres. PARAMETERS.md §1 `R`. */
   radiusM: number;
-  /** Headroom beyond the silhouette in the minor dimension, as a fraction. */
+  /**
+   * Headroom beyond the silhouette in the minor dimension, as a fraction.
+   * Defaults to conventions.ts §N.1's `NOMINAL_SILHOUETTE_MARGIN_FRAC`.
+   */
   marginFrac?: number;
   pixelAspect?: number;
   shiftH?: number;
@@ -323,7 +339,7 @@ export interface FrustumSpec {
 
 export function intrinsicsFromThrow(spec: FrustumSpec): ProjectorIntrinsics {
   const pixelAspect = spec.pixelAspect ?? 1;
-  const margin = spec.marginFrac ?? 0.02;
+  const margin = spec.marginFrac ?? NOMINAL_SILHOUETTE_MARGIN_FRAC;
   const sigma = Math.asin(Math.min(1, spec.radiusM / spec.distanceM));
   // Half-extent the minor dimension must cover, in normalized image units.
   const halfMinor = Math.tan(sigma) * (1 + margin);

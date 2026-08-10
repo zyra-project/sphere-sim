@@ -40,6 +40,18 @@ Entries here address one of two documents, and the rule differs:
 | A-11 | PARAMETERS.md §7 / §8 | OPEN |
 | A-12 | PARAMETERS.md §3.1 / §7 / §8 | OPEN |
 | A-13 | PARAMETERS.md §3.1 / §8 | OPEN |
+| A-14 | PARAMETERS.md §2 / §3.1 | OPEN |
+| A-15 | conventions.ts (new §N) | **APPLIED** |
+
+**A note on the numbering.** A-12 and A-13 are each used TWICE in this file, for
+different entries — the lens-shift entry and the tape-measure ablation both say
+A-12, and the `fov_h` initialisation entry and the two-builders entry both say
+A-13. The duplication is not fixed here because the ids are cited from code
+comments, from `packages/bench/README.md`, and from `gate-waivers.json`, and
+silently renumbering would break every citation. Anything that cites an
+amendment mechanically must therefore disambiguate by TITLE as well as by id:
+`packages/bench/src/waivers.ts` resolves a citation to exactly one heading and
+refuses to run on an ambiguous one.
 
 ---
 
@@ -614,11 +626,13 @@ width is theatre.
 
 ---
 
-## A-12 — §7 / §8: the pose gate is a tape-measure gate, not a solver gate
+## A-16 — §7 / §8: the pose gate is a tape-measure gate, not a solver gate — **SUPERSEDED, see A-18**
 
-**Status:** OPEN. **This is the most consequential entry in this file.** It says the
-headline geometric gate cannot be met by improving the solver, at any camera
-resolution, with the measurement instrument §8 prescribes.
+**Status:** **SUPERSEDED by A-18.** Its measurements are reproducible and its
+floor is real, but its headline conclusion is wrong and its proposed remedy would
+have bought nothing. Retained in full, uncorrected, because a register that
+quietly deletes its mistakes is not a register. Read A-18 before acting on
+anything below.
 
 **Method.** One scenario (`nominal` archetype, seed 424242), one knob moved at a
 time, everything else — rig, injected misalignment, seed, patterns — held fixed.
@@ -712,7 +726,7 @@ first figure.
 
 ---
 
-## A-13 — the two `nominalRig` builders disagree, and it silently poisoned a result
+## A-17 — the two `nominalRig` builders disagree, and it silently poisoned a result
 
 **Status:** OPEN. Reported by the independence critic and confirmed by measurement.
 
@@ -740,3 +754,187 @@ constant rather than leaving it to each implementation, and settle the N=3
 azimuths in §2. Then add a test asserting both builders agree to a stated
 tolerance — comparing *outputs* of two independent implementations is a
 legitimate cross-check and does not couple them.
+
+**What the code does now.** Both quantities are pinned in
+`packages/calibration/src/conventions.ts` §N as literals — the boundary object
+holds no mathematics, so it states the value and each side derives its own
+frustum and its own azimuths from it. `packages/sim/src/optics.ts` reads
+`NOMINAL_SILHOUETTE_MARGIN_FRAC` for its default headroom; `packages/solver`'s
+`nominalRig` applies the same headroom to the tangent of the silhouette's
+angular radius and places its projectors in §2's slots rather than at 360/N.
+`packages/bench/test/nominal-agreement.test.ts` compares the two OUTPUTS at
+three rasters, four distances and N = 2, 3, 4, and its failure message says what
+a divergence means and why the fix is never to make one side call the other.
+The remaining divergence — `sim` reads `d_proj` as a horizontal radius, `solver`
+as the 3D distance §2's wording gives — is pinned there too, at its closed form
+`d - sqrt(d^2 - z^2)`: 39 um at this corpus's height scatter, 3.9 mm at a 0.2 m
+ceiling mount, which is ABOVE the §7 pose gate and is the sentence to put in
+front of whoever adds a ceiling-mount scenario. See A-14 and A-15.
+
+---
+
+## A-14 — §2 / §3.1: the nominal rig has two numbers the spec never states, and both implementations had to guess
+
+**Status:** OPEN. Reported by the independence critic, confirmed by measurement,
+and worked around in `conventions.ts` (see A-15) until the author decides.
+
+This is the spec-facing half of A-13. A-13 records the *symptom* — two
+`nominalRig` builders 0.63 degrees apart — and this entry states what
+PARAMETERS.md would have to say for the symptom to be impossible.
+
+**1. §3.1 does not say how much room to leave around the silhouette.** A-01
+established that the sphere's silhouette is inscribed in the raster's MINOR
+dimension. It does not say whether the inscription is exact. Exact inscription
+puts the limb on the raster edge, where §4.1's limb test and the raster-bounds
+test disagree in the last bit and coverage develops a ragged fringe, so
+`packages/sim` left 2% of headroom and `packages/solver` left none. Both are
+honest readings. The gap is 0.63 degrees of horizontal field at the §2 nominal
+(34.0918 against 33.4610), which is four times the zoom repeatability the corpus
+injects, and holding the field of view at the wrong one of them is a 5x
+regression in recovered pose (A-12, step 1).
+
+*Proposed amendment.* State the headroom in §3.1 as a number, in the same
+sentence that states the inscription. Any value in the region of a couple of
+percent works; what matters is that it is stated once rather than chosen twice.
+
+**2. §2 does not say which quadrants go dark at N=3.** §2 gives four slots at
+0/90/180/270 and says "2- and 3-projector installs are supported; quadrants go
+dark". A-06 already records that this is undecided for N=2 and that the answer
+changes the coverage field by a factor of two. A-06 then dismisses N=3 as
+uninteresting — "any three of the four are equivalent up to a rotation" — and
+that is true of the COVERAGE FIELD and false of everything else. Three
+projectors at 0/90/180 and three at 0/120/240 are not related by a rotation:
+one drops a quadrant from a standard rig, the other respaces the surviving
+mounts. `packages/sim` built the first, `packages/solver` built the second, and
+the disagreement is 30 degrees of azimuth handed to a bootstrap that has no way
+to know about it.
+
+*Proposed amendment.* Add one clause to §2 covering both cases: the installed
+projectors occupy a subset of the four nominal slots, and the remaining mounts
+are not respaced. That is one sentence and it settles A-06 as well.
+
+**Why this is filed even though the code now agrees.** Independent construction
+from the same prose is the architecture working; the divergence being VISIBLE is
+the mechanism working. What was wrong was that it was undeclared for a whole
+round, and the reason it could be undeclared is that the document is silent.
+Pinning the values in our own contract (A-15) removes the divergence without
+removing the question, and the question belongs to the author.
+
+---
+
+## A-15 — conventions.ts: the nominal rig construction was not specified at all
+
+**Status:** APPLIED. `conventions.ts` gains a §N specifying the two quantities
+A-14 asks PARAMETERS.md to state: the silhouette headroom
+(`NOMINAL_SILHOUETTE_MARGIN_FRAC = 0.02`) and the azimuth slots an install of N
+projectors occupies (`NOMINAL_SLOTS_BY_COUNT`, N=3 -> {0,1,2}, N=2 -> {0,2}).
+Both are literals — the package holds no mathematics — and both sides still
+build their own rigs from them. `CONVENTIONS_VERSION` moves to
+`sphere-sim/conventions@3`.
+
+Per this file's own rule, `conventions.ts` is our contract rather than the spec,
+so an ambiguity in it that both sides are implementing independently is our bug
+to fix. Leaving it unstated meant the two models were aiming at a moving target
+in the one seam the design exists to keep clean.
+
+**What changed in the code.** `packages/solver`'s `nominalRig` previously built
+`fovV = 2*asin(R/d)` exactly and spaced N projectors at 360/N. It now applies
+§N.1's headroom to the tangent of the silhouette's angular radius and takes
+§N.2's slots. `packages/sim` previously carried the 2% as a local default in
+`optics.ts` and the slot table as a local rule in `scene.ts`; both now read the
+boundary object's literal. Neither side calls the other, and neither side gained
+a line of the other's arithmetic.
+
+**What it costs.** Every pose number in `bench-results.json` moves, because the
+solver's initialisation moves: the nominal field of view it starts from is now
+0.63 degrees closer to the rig the forward model actually built. That is a
+change in the measurement apparatus and it is recorded here rather than
+presented as an improvement.
+
+
+---
+
+## A-18 — correcting A-16: the pose gate is a LENS-KNOWLEDGE gate, and the tape is only the floor beneath it
+
+**Status:** OPEN. Supersedes A-16. Raised by an independent critic and confirmed
+by a second, independent measurement in A-13.
+
+A-16 concluded that §7's pose gate is bound by the floor-reference tape measure,
+and proposed buying a laser distance meter for §8 item 1. **That conclusion does
+not survive scrutiny, and the remedy would have moved the corpus worst case from
+504 mm to 504 mm.** Three errors, in increasing order of seriousness.
+
+**1. A-16's step 1 held `fovHDeg` at a value it knew to be wrong.** It concluded
+"the field-of-view degeneracy does not explain it" from holding the field of view
+at the *solver's* nominal — which the very same entry (A-17) records as 0.63°
+from truth. Holding a parameter at a known-wrong value measures whether the wrong
+value hurts. It says nothing about whether the parameter is degenerate. The test
+that answers the actual question is to hold it at **truth**, as a diagnostic:
+
+| scenario | fov free | held at solver nominal | **held at TRUTH** |
+| --- | --- | --- | --- |
+| s01-nominal | 17.11 mm | 117.24 mm | **2.03 mm / 0.0334°** |
+| s06-six-cameras | 426.54 mm | 141.06 mm | **11.13 mm** |
+| s09-long-throw | 331.57 mm | 791.15 mm | **13.07 mm** |
+
+One scalar per projector removes **88–97% of the position error** and costs
+0.3–3.5% of residual RMS. Two calibrations 415 mm apart fit the same photographs
+to within 3% of each other — the definition of a degeneracy.
+
+Note the first row: **2.03 mm and 0.0334°, at 320×240, with the 3 mm tape still
+in place.** §7's gate is essentially reachable today if the lens is known. That
+single number refutes A-16's thesis on its own.
+
+**2. A-16 generalised from one archetype.** It measured `nominal` only. Across
+the corpus the effect changes sign: holding fov is 6.9× worse on s01, 3.0×
+*better* on s06, 2.4× worse on s09.
+
+**3. A-16 measured at an operating point the corpus does not use.** Its steps 2
+and 3 ran at 640×480 through 2560×1920; every scenario in the corpus runs at
+320×240. Removing sensor noise at high resolution also removes the excitation of
+the fov valley, so of course the remainder is tape. **A-16 found the floor and
+mistook it for the ceiling.** The tape term is ~2–4.4 mm — real, and right at the
+gate — while the observed worst case is 504 mm, two orders of magnitude above it.
+
+### What is actually happening
+
+A causal chain, each link measured:
+
+1. Handheld motion biases the decode — median error **4.50 px** against **0.23 px**
+   with motion off, and it is a coherent bias within each (camera, projector)
+   pair rather than noise.
+2. That bias drags the recovered `fov_h` **2.5–4.9° from truth**, against a formal
+   one-sigma of 0.15° from the normal equations. A twenty-sigma error.
+3. `fov_h` error becomes radial position error through the subtense relation
+   `Δd/d = Δfov / (2·tan(fov/2))`, predicting the observed radial component to
+   within 5–16% in sign and magnitude on every scenario and both seeds.
+
+Which is why **a prior on `fov_h` does not close the valley at any width**: swept
+at one-sigma widths of 0.5° to 4°, the worst case moved 639.6 → 622.1 mm, under
+3%. A prior a spec sheet could justify (0.3–0.7°) is two orders of magnitude
+weaker than the biased data it would have to argue with, and is simply outvoted.
+
+### Proposed amendment
+
+**`fov_h` comes from the lens, not from the distance — say so in §3.1.** §3.1
+already classes `T` as `CFG`, "read from a hardware spec sheet", and derives
+`fov_h` from it. But §2 also declines to settle `d_proj`, and nothing says which
+of the two an implementation should build the nominal field of view from. The
+answer changes the recovered geometry by a factor of eight.
+
+Deriving `fov_h` from `d_proj` is actively unsafe: the `long-throw` scenario
+models a site whose real geometry is the floor plan's 6.14 m while its config
+carries the alignment manual's 5.18 m. Fov from 5.18 m is 33.46°; from 6.14 m it
+is 28.37°. Holding the first costs that scenario 500.7 → 793.8 mm. That is
+encoding one side of a conflict §2 explicitly refuses to settle.
+
+A throw ratio is a property of the lens and is independent of where the projector
+ended up standing, so it breaks the degeneracy with **outside information** rather
+than with an assumption.
+
+**The §8 consequence, and the correction to A-16's shopping list.** A-16 nominated
+§8 item 1 (the tape measure). The high-value item is **§8 item 2 — "Projector make
+and model → throw ratio, native resolution, lens shift range"** — which is free,
+already on the checklist, and worth 88–97% of the pose error. The laser measure
+remains worth having, but it buys the last few millimetres, not the first five
+hundred. Sequence accordingly.

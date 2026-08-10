@@ -30,6 +30,11 @@ import type {
 } from '../../calibration/src/index.ts';
 import { PARAMETER_TABLE } from '../../calibration/src/parameters.ts';
 import {
+  NOMINAL_AZIMUTH_SLOTS_DEG,
+  NOMINAL_SILHOUETTE_MARGIN_FRAC,
+  NOMINAL_SLOTS_BY_COUNT,
+} from '../../calibration/src/conventions.ts';
+import {
   type Correspondence,
   type DecodeOptions,
   type DecodeStats,
@@ -486,6 +491,12 @@ export interface NominalRigOptions {
   projectorCount: number;
   resX: number;
   resY: number;
+  /**
+   * Which of the four PARAMETERS.md §2 azimuth slots the projectors occupy.
+   * Defaults to conventions.ts §N.2's table. Override for a site that mounted
+   * its lenses somewhere else.
+   */
+  slots?: number[];
   /** Overrides the A-01 derivation below when the projector's spec sheet is known. */
   fovHDeg?: number;
   distanceM?: number;
@@ -514,8 +525,27 @@ export interface NominalRigOptions {
  * off-sphere floor of §7 matches that construction on a 16:10 raster almost
  * exactly.
  *
- * So the default here follows A-01: the vertical field subtends the sphere,
- * `fovV = 2*asin(R/d)`, and the horizontal field follows from the aspect ratio.
+ * So the default here follows A-01: the minor dimension subtends the sphere,
+ * and the horizontal field follows from the aspect ratio.
+ *
+ * ## The headroom, and why it is not zero any more
+ *
+ * A-01 never says how much room to leave around the silhouette, and this
+ * function used to leave none: `fovV = 2*asin(R/d)` exactly. `packages/sim`
+ * left 2%, for a stated reason (a limb sitting exactly on the raster edge makes
+ * the coverage test and the raster test disagree in the last bit). Both are
+ * defensible readings of the same silent prose, and the result was two nominal
+ * rigs 0.63 degrees of field apart with nothing declaring it — which is what
+ * made "hold the field of view" look like a fix when it is a 5x regression
+ * (docs/AMENDMENTS.md A-12 step 1, A-13).
+ *
+ * The headroom is now conventions.ts §N.1, a literal in the boundary object.
+ * This function still derives its own frustum from it, `packages/sim` still
+ * derives its own, and `packages/bench/test/nominal-agreement.test.ts` compares
+ * the two answers. Azimuths likewise: §N.2 pins which of §2's four slots an
+ * install of N projectors occupies, because this function used to space N=3
+ * equally at 0/120/240 while the forward model dropped a quadrant at 0/90/180.
+ *
  * Since `T` is class CFG — "read from a hardware spec sheet", known per install
  * — a caller who has the spec sheet should pass `fovHDeg` and skip the
  * derivation entirely. A wrong nominal costs iterations, not correctness (§10),
@@ -531,9 +561,14 @@ export function nominalRig(options: Partial<NominalRigOptions> = {}): RigCalibra
   const distanceM = options.distanceM ?? PARAMETER_TABLE.d_proj.nominal;
   const projectorHeightM = options.projectorHeightM ?? PARAMETER_TABLE.h_proj.nominal;
 
-  const fovVRad = 2 * Math.asin(Math.min(0.999, radiusM / distanceM));
-  const derivedFovH =
-    (2 * Math.atan(Math.tan(fovVRad / 2) * (resX / resY)) * 180) / Math.PI;
+  // conventions.ts §N.1. The silhouette's angular radius, its tangent grown by
+  // the pinned headroom, then spread to whichever raster dimension is the major
+  // one. Pixels are square here (§3.1 `PAR` = 1), so "minor in angle" and
+  // "minor in pixels" are the same test.
+  const silhouetteRad = Math.asin(Math.min(0.999, radiusM / distanceM));
+  const halfMinorTan = Math.tan(silhouetteRad) * (1 + NOMINAL_SILHOUETTE_MARGIN_FRAC);
+  const halfHorizontalTan = resX <= resY ? halfMinorTan : halfMinorTan * (resX / resY);
+  const derivedFovH = (2 * Math.atan(halfHorizontalTan) * 180) / Math.PI;
   const fovHDeg = options.fovHDeg ?? derivedFovH;
 
   // §W puts the world origin at the sphere centre and the floor at z = -h_center,
@@ -550,9 +585,24 @@ export function nominalRig(options: Partial<NominalRigOptions> = {}): RigCalibra
     { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
   ];
 
+  // conventions.ts §N.2: the installed projectors occupy a SUBSET of §2's four
+  // 90-degree slots. Equal spacing at 360/N would respace the surviving mounts,
+  // which is not what "quadrants go dark" says and is a 30-degree azimuth error
+  // at N=3 that no operator would make.
+  const slots = options.slots ?? [...(NOMINAL_SLOTS_BY_COUNT[projectorCount] ?? [])];
+  if (slots.length !== projectorCount) {
+    throw new Error(
+      `nominalRig: ${projectorCount} projectors need ${projectorCount} of the four ` +
+        `PARAMETERS.md §2 azimuth slots (conventions.ts §N.2); got ${JSON.stringify(slots)}`,
+    );
+  }
+
   const projectors = [];
-  for (let i = 0; i < projectorCount; i++) {
-    const phi = (2 * Math.PI * i) / projectorCount;
+  for (const slot of slots) {
+    if (!Number.isInteger(slot) || slot < 0 || slot > 3) {
+      throw new Error(`nominalRig: slot ${slot} is not one of 0..3 (conventions.ts §N.2)`);
+    }
+    const phi = (NOMINAL_AZIMUTH_SLOTS_DEG[slot] * Math.PI) / 180;
     const position = {
       x: horizontal * Math.cos(phi),
       y: horizontal * Math.sin(phi),
@@ -560,7 +610,7 @@ export function nominalRig(options: Partial<NominalRigOptions> = {}): RigCalibra
     };
     const e = aimEuler(position, { x: 0, y: 0, z: 0 }, 0);
     projectors.push({
-      id: `P${i + 1}`,
+      id: `P${slot + 1}`,
       pose: { position, yawDeg: e.yawDeg, pitchDeg: e.pitchDeg, rollDeg: 0 },
       intrinsics: {
         resX,
@@ -592,7 +642,7 @@ export function nominalRig(options: Partial<NominalRigOptions> = {}): RigCalibra
         },
         whitePointK: PARAMETER_TABLE.wp.nominal,
       },
-      viewport: quadrants[i % 4],
+      viewport: quadrants[slot],
     });
   }
 

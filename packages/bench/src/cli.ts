@@ -35,9 +35,11 @@ import {
   attributePoseFailure,
   canAttribute,
 } from './attribute.ts';
+import { defaultGateOptions, judge } from './gate.ts';
 import { defaultPaths, writeProgressPage } from './progress.ts';
 import type { BenchResults, EnvBlock } from './results.ts';
 import { assembleResults, buildGates, stringifyResults } from './results.ts';
+import { readAmendments, readWaivers, waiverAudit } from './waivers.ts';
 import type { ScenarioResult } from './run.ts';
 import { runScenario } from './run.ts';
 import type { BenchPreset } from './scenarios.ts';
@@ -57,6 +59,12 @@ export interface CliOptions {
   quiet: boolean;
   /** Refresh `progress/index.html` from this run. Entry point only. */
   progress?: boolean;
+  /**
+   * Report a failing gate without failing the process. For exploratory runs —
+   * and for CI's own bench steps, which measure twice and judge once, in a
+   * separate step that does not get an escape hatch.
+   */
+  allowFailure?: boolean;
 }
 
 export function parseArgs(argv: readonly string[]): CliOptions {
@@ -70,6 +78,7 @@ export function parseArgs(argv: readonly string[]): CliOptions {
   let attribute = true;
   let quiet = false;
   let progress = true;
+  let allowFailure = false;
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -115,6 +124,9 @@ export function parseArgs(argv: readonly string[]): CliOptions {
       case '--no-progress':
         progress = false;
         break;
+      case '--allow-failure':
+        allowFailure = true;
+        break;
       case '--help':
       case '-h':
         printHelp();
@@ -137,6 +149,7 @@ export function parseArgs(argv: readonly string[]): CliOptions {
     attribute: attribute && preset.attributeFailures,
     quiet,
     progress,
+    allowFailure,
   };
 }
 
@@ -157,6 +170,7 @@ function printHelp(): void {
       '  --no-baseline       Skip the documented-calibration baseline metrics.',
       '  --no-attribution    Skip the counterfactual attribution of failing gates.',
       '  --no-progress       Do not refresh progress/index.html from this run.',
+      '  --allow-failure     Exit 0 even when a gate fails without a waiver. Exploratory runs only.',
       '  --quiet             Only print the verdict line.',
       '',
     ].join('\n'),
@@ -190,6 +204,12 @@ function gitInfo(): { commit: string; dirty: boolean } {
  */
 export function runBench(options: CliOptions): BenchResults {
   const started = Date.now();
+  // Read before the hundred seconds of rendering, not after: a malformed
+  // gate-waivers.json should stop the run at the point of the typo rather than
+  // throw away a completed corpus.
+  const gateDefaults = defaultGateOptions(REPO_ROOT);
+  const waivers = readWaivers(gateDefaults.waiversFile);
+  const amendments = readAmendments(gateDefaults.amendmentsFile);
   const scenarios = generateScenarios(options.seed, options.scenarios, options.preset);
   const outDir = path.isAbsolute(options.outDir)
     ? options.outDir
@@ -212,6 +232,11 @@ export function runBench(options: CliOptions): BenchResults {
   }
 
   const gates = buildGates(results);
+  // Clock-free: which amendment each waiver cites and whether that entry is
+  // still OPEN, both read off disk. Whether the waiver has EXPIRED is decided at
+  // print time by `gate.ts`, so the results file stays byte-identical between
+  // two runs with the same seed.
+  gates.waivers = waiverAudit(gates, waivers, amendments);
 
   // Every failing gate gets a named contributor. The pose and h_center
   // attributions are decompositions of numbers already computed and cost

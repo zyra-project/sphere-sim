@@ -18,11 +18,22 @@ import type {
   Viewport,
 } from '../../calibration/src/index.ts';
 import type { RampShape } from '../../calibration/src/index.ts';
+import {
+  NOMINAL_AZIMUTH_SLOTS_DEG,
+  NOMINAL_SLOTS_BY_COUNT,
+} from '../../calibration/src/conventions.ts';
 import { aimAtSphereCenter } from './geometry.ts';
 import { intrinsicsFromThrow } from './optics.ts';
+import { nominalTransfer } from './photometry.ts';
 import type { Rng } from './random.ts';
 import { makeRng } from './random.ts';
 import { DEG2RAD } from './vec.ts';
+
+// PARAMETERS.md §3.2's nominal transfer lives with the transfer model in
+// `photometry.ts`, not here: this module builds RIGS, and the twelve gammas,
+// twelve black floors and twelve gains are a property of the projectors' optics.
+// Re-exported because `nominalRig` is where most callers first meet it.
+export { nominalTransfer } from './photometry.ts';
 
 /**
  * The four SOS quadrant viewports, verbatim from PARAMETERS.md §3.4:
@@ -47,8 +58,12 @@ export const SOS_QUADRANT_VIEWPORTS: readonly Viewport[] = [
   { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
 ];
 
-/** Nominal azimuths, PARAMETERS.md §2: counterclockwise from P1. */
-export const NOMINAL_AZIMUTHS_DEG: readonly number[] = [0, 90, 180, 270];
+/**
+ * Nominal azimuths, PARAMETERS.md §2: counterclockwise from P1. Restated from
+ * conventions.ts §N.2's `NOMINAL_AZIMUTH_SLOTS_DEG` so this module keeps its own
+ * name for them; the values are the boundary object's.
+ */
+export const NOMINAL_AZIMUTHS_DEG: readonly number[] = NOMINAL_AZIMUTH_SLOTS_DEG;
 
 export interface NominalRigParams {
   /** Sphere radius, metres. PARAMETERS.md §1, nominal 0.8636. */
@@ -85,16 +100,6 @@ export interface NominalRigParams {
   transfer?: Partial<ProjectorTransfer>;
 }
 
-/** PARAMETERS.md §3.2 nominals: gamma 2.2, black floor 1/800, unit gain, 6500 K. */
-export function nominalTransfer(overrides: Partial<ProjectorTransfer> = {}): ProjectorTransfer {
-  return {
-    gamma: overrides.gamma ?? { r: 2.2, g: 2.2, b: 2.2 },
-    blackFloor: overrides.blackFloor ?? { r: 1 / 800, g: 1 / 800, b: 1 / 800 },
-    gain: overrides.gain ?? { r: 1, g: 1, b: 1 },
-    whitePointK: overrides.whitePointK ?? 6500,
-  };
-}
-
 /**
  * PARAMETERS.md §4.5 nominals. `rampGamma` 0.8 is the one DOC-class value in
  * here, straight from the SOS config; the shape and width are ASSUME.
@@ -126,11 +131,17 @@ export function nominalBlend(overrides: Partial<BlendCalibration> = {}): BlendCa
  * N=3 takes the first three, which is what "quadrants go dark" reads most
  * naturally as: one projector is simply absent from an otherwise standard rig.
  *
- * Recorded as docs/AMENDMENTS.md A-06. Override with `slots` to model a site
- * that did something else.
+ * Recorded as docs/AMENDMENTS.md A-06 (N=2) and A-14 (N=3). The table itself is
+ * now pinned in conventions.ts §N.2 as `NOMINAL_SLOTS_BY_COUNT`, because
+ * `packages/solver` read the same silent spec as equal 120-degree spacing and
+ * nothing was declaring which reading the project had taken. Reading a literal
+ * from the boundary object is not sharing math: the slot list is a value, and
+ * each side still places, aims and views its own projectors from it. Override
+ * with `slots` to model a site that did something else.
  */
 export function defaultSlotsFor(count: number): number[] {
-  if (count === 2) return [0, 2];
+  const pinned = NOMINAL_SLOTS_BY_COUNT[count];
+  if (pinned !== undefined) return [...pinned];
   return Array.from({ length: count }, (_, i) => i);
 }
 
