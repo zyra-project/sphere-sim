@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="300" viewBox="0 0 620 300" role="img" aria-label="Camera frame showing one projector's white rectangle overspilling the sphere onto the wall behind, with the four spill margins marked as the measurable quantity.">
+  <style>
+    /* Higher-contrast per theme where the host allows CSS inside SVG. The
+       presentation attributes on each element are the fallback where it does not
+       — the figure degrades to a mid-tone palette legible on either ground,
+       never to black-on-black. */
+    .t { fill: #24292f; } .t-sm { fill: #57606a; }
+    .s-faint { stroke: #57606a; } .f-faint { fill: #57606a; }
+    .fill-surface { fill: #ffffff; fill-opacity: 1; }
+    @media (prefers-color-scheme: dark) {
+      .t { fill: #e6edf3; } .t-sm { fill: #8b949e; }
+      .s-faint { stroke: #8b949e; } .f-faint { fill: #8b949e; }
+      .fill-surface { fill: #0d1117; fill-opacity: 1; }
+      .s-hi { stroke: #3ddbca; } .f-hi { fill: #3ddbca; } .t-hi { fill: #3ddbca; }
+      .s-warn { stroke: #f0b429; } .f-warn { fill: #f0b429; } .t-warn { fill: #f0b429; }
+    }
+  </style>
+
+              <defs>
+                <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M0,1 L9,5 L0,9 z" class="f-hi" fill="#1f9c8f"/>
+                </marker>
+              </defs>
+
+              <!-- camera frame -->
+              <rect x="18" y="30" width="470" height="250" rx="7" fill="none" stroke="currentColor" stroke-width="2"/>
+              <text class="t-sm" font-size="10.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" x="26" y="22">camera frame</text>
+
+              <!-- back wall region -->
+              <rect x="19" y="31" width="468" height="248" rx="6" class="fill-sunk" fill="#8b949e" fill-opacity="0.14"/>
+
+              <!-- projected rectangle: WIDER and TALLER than the sphere -->
+              <rect x="74" y="62" width="358" height="187" class="fill-accent-soft s-hi" fill="#1f9c8f" fill-opacity="0.15" stroke="#1f9c8f" stroke-width="2"/>
+              <text class="t-hi" font-size="12" font-weight="650" fill="#1f9c8f" font-family="ui-sans-serif, system-ui, sans-serif" x="82" y="80">projected white field</text>
+
+              <!-- sphere silhouette -->
+              <circle cx="253" cy="155" r="72" class="fill-surface" fill="#ffffff" fill-opacity="0.04" stroke="currentColor" stroke-width="2"/>
+              <text class="t" font-size="12" fill="#6e7781" font-family="ui-sans-serif, system-ui, sans-serif" x="253" y="159" text-anchor="middle">sphere</text>
+
+              <!-- spill margins -->
+              <line x1="74" y1="268" x2="181" y2="268" class="s-hi" stroke="#1f9c8f" stroke-width="1.6" marker-start="url(#a1)" marker-end="url(#a1)"/>
+              <line x1="325" y1="268" x2="432" y2="268" class="s-hi" stroke="#1f9c8f" stroke-width="1.6" marker-start="url(#a1)" marker-end="url(#a1)"/>
+              <line x1="52" y1="62" x2="52" y2="83" class="s-hi" stroke="#1f9c8f" stroke-width="1.6" marker-start="url(#a1)" marker-end="url(#a1)"/>
+              <line x1="52" y1="227" x2="52" y2="249" class="s-hi" stroke="#1f9c8f" stroke-width="1.6" marker-start="url(#a1)" marker-end="url(#a1)"/>
+              <line x1="181" y1="262" x2="181" y2="274" class="s-hi" stroke="#1f9c8f" stroke-width="1"/>
+              <line x1="325" y1="262" x2="325" y2="274" class="s-hi" stroke="#1f9c8f" stroke-width="1"/>
+
+              <!-- the measurable -->
+              <text class="t-hi" font-size="12" font-weight="650" fill="#1f9c8f" font-family="ui-sans-serif, system-ui, sans-serif" x="253" y="290" text-anchor="middle">the spill is the measurement</text>
+
+              <!-- notes -->
+              <line x1="500" y1="70" x2="500" y2="250" class="s-faint" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 4"/>
+              <text class="t-warn" font-size="12" font-weight="650" fill="#bf8700" font-family="ui-sans-serif, system-ui, sans-serif" x="512" y="78">ONE projector</text>
+              <text class="t" font-size="12" fill="#6e7781" font-family="ui-sans-serif, system-ui, sans-serif" x="512" y="96">at a time —</text>
+              <text class="t" font-size="12" fill="#6e7781" font-family="ui-sans-serif, system-ui, sans-serif" x="512" y="112">all four lit</text>
+              <text class="t" font-size="12" fill="#6e7781" font-family="ui-sans-serif, system-ui, sans-serif" x="512" y="128">hides the edges</text>
+
+              <text class="t-warn" font-size="12" font-weight="650" fill="#bf8700" font-family="ui-sans-serif, system-ui, sans-serif" x="512" y="176">Include the</text>
+              <text class="t-warn" font-size="12" font-weight="650" fill="#bf8700" font-family="ui-sans-serif, system-ui, sans-serif" x="512" y="192">wall behind</text>
+              <text class="t" font-size="12" fill="#6e7781" font-family="ui-sans-serif, system-ui, sans-serif" x="512" y="210">Cropping to</text>
+              <text class="t" font-size="12" fill="#6e7781" font-family="ui-sans-serif, system-ui, sans-serif" x="512" y="226">the sphere</text>
+              <text class="t" font-size="12" fill="#6e7781" font-family="ui-sans-serif, system-ui, sans-serif" x="512" y="242">destroys it</text>
+            </svg>

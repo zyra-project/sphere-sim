@@ -23,6 +23,7 @@ build on any import across that line.
 | [`packages/harness/README.md`](packages/harness/README.md) | The interactive window, and exactly which links of the GPU↔CPU parity chain are verified by execution |
 | [`validation/README.md`](validation/README.md) | Photographs of real installations beside our render. Plausibility only — no metric, no gate, no score |
 | [`docs/EXPERIMENT-1.md`](docs/EXPERIMENT-1.md) | **How many photographs a calibration needs, and whether a phone suffices.** Measured |
+| [`docs/VISIT.md`](docs/VISIT.md) | **The ground-truth visit field card.** What to measure, in cut order, with framing diagrams |
 
 ## The honesty structure
 

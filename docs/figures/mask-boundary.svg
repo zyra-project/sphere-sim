@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="300" viewBox="0 0 620 300" role="img" aria-label="The lower half of the sphere with labelled latitude bands, showing where the mask begins to fade and where it becomes total, photographed from below.">
+  <style>
+    /* Higher-contrast per theme where the host allows CSS inside SVG. The
+       presentation attributes on each element are the fallback where it does not
+       — the figure degrades to a mid-tone palette legible on either ground,
+       never to black-on-black. */
+    .t { fill: #24292f; } .t-sm { fill: #57606a; }
+    .s-faint { stroke: #57606a; } .f-faint { fill: #57606a; }
+    .fill-surface { fill: #ffffff; fill-opacity: 1; }
+    @media (prefers-color-scheme: dark) {
+      .t { fill: #e6edf3; } .t-sm { fill: #8b949e; }
+      .s-faint { stroke: #8b949e; } .f-faint { fill: #8b949e; }
+      .fill-surface { fill: #0d1117; fill-opacity: 1; }
+      .s-hi { stroke: #3ddbca; } .f-hi { fill: #3ddbca; } .t-hi { fill: #3ddbca; }
+      .s-warn { stroke: #f0b429; } .f-warn { fill: #f0b429; } .t-warn { fill: #f0b429; }
+    }
+  </style>
+
+              <defs>
+                <clipPath id="sph2"><circle cx="215" cy="128" r="98"/></clipPath>
+              </defs>
+
+              <rect x="18" y="26" width="392" height="248" rx="6" fill="none" stroke="currentColor" stroke-width="2"/>
+              <text class="t-sm" font-size="10.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" x="26" y="18">camera frame · shoot from below the equator</text>
+
+              <circle cx="215" cy="128" r="98" class="fill-surface" fill="#ffffff" fill-opacity="0.04" stroke="currentColor" stroke-width="2"/>
+              <g clip-path="url(#sph2)">
+                <rect x="117" y="168" width="196" height="24" class="fill-accent-soft" fill="#1f9c8f" fill-opacity="0.15"/>
+                <rect x="117" y="192" width="196" height="40" class="fill-block-soft" fill="#bf8700" fill-opacity="0.15"/>
+                <line x1="117" y1="128" x2="313" y2="128" class="s-faint" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 4"/>
+                <line x1="117" y1="168" x2="313" y2="168" class="s-hi" stroke="#1f9c8f" stroke-width="2"/>
+                <line x1="117" y1="192" x2="313" y2="192" class="s-warn" stroke="#bf8700" stroke-width="2"/>
+              </g>
+              <circle cx="215" cy="128" r="98" fill="none" stroke="currentColor" stroke-width="2"/>
+
+              <text class="t-sm" font-size="10.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" x="330" y="132">0°  equator</text>
+              <text class="t-hi" font-size="12" font-weight="650" fill="#1f9c8f" font-family="ui-sans-serif, system-ui, sans-serif" x="330" y="172">−60°  fade begins?</text>
+              <text class="t-warn" font-size="12" font-weight="650" fill="#bf8700" font-family="ui-sans-serif, system-ui, sans-serif" x="330" y="196">−70°  fully dark?</text>
+              <text class="t-sm" font-size="10.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" x="330" y="226">…or is it −30°?</text>
+
+              <!-- viewer below -->
+              <path d="M215,250 L200,278 L230,278 Z" class="f-faint" fill="#8b949e"/>
+              <text class="t-sm" font-size="10.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" x="215" y="294" text-anchor="middle">camera, low</text>
+
+              <text class="t" font-size="12" fill="#6e7781" font-family="ui-sans-serif, system-ui, sans-serif" x="446" y="60">Project a pattern</text>
+              <text class="t" font-size="12" fill="#6e7781" font-family="ui-sans-serif, system-ui, sans-serif" x="446" y="78">with latitudes</text>
+              <text class="t" font-size="12" fill="#6e7781" font-family="ui-sans-serif, system-ui, sans-serif" x="446" y="96">written on it.</text>
+              <text class="t-warn" font-size="12" font-weight="650" fill="#bf8700" font-family="ui-sans-serif, system-ui, sans-serif" x="446" y="126">Then the boundary</text>
+              <text class="t-warn" font-size="12" font-weight="650" fill="#bf8700" font-family="ui-sans-serif, system-ui, sans-serif" x="446" y="144">is read, not</text>
+              <text class="t-warn" font-size="12" font-weight="650" fill="#bf8700" font-family="ui-sans-serif, system-ui, sans-serif" x="446" y="162">inferred.</text>
+              <text class="t-sm" font-size="10.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" x="446" y="196">bottommask 60,70</text>
+              <text class="t-sm" font-size="10.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" x="446" y="212">— but 60 of what?</text>
+            </svg>
