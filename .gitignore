@@ -21,3 +21,9 @@ progress/index.html
 # and §4.3. Keeping it in history means a change to it shows up in a diff.
 !progress/reference/
 bench-before.json
+
+# The validation page inlines its reference renders, so it runs to ~190 KB and
+# regenerates whenever a photograph is added. The generator is the source of
+# truth; the page is a view. validation/sources.json IS tracked, because the
+# provenance ledger is the part that must be auditable.
+validation/index.html
