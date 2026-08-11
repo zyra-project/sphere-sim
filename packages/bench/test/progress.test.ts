@@ -29,6 +29,7 @@ import assert from 'node:assert/strict';
 
 import {
   EMPTY_IMAGE_STORE,
+  GLOSSARY,
   analyseResiduals,
   renderProgressPage,
 } from '../src/progress.ts';
@@ -276,6 +277,178 @@ function input(overrides: Partial<ProgressInput> = {}): ProgressInput {
     ...overrides,
   };
 }
+
+// ---------------------------------------------------------------------------
+// The plain-language scaffolding
+//
+// A fifth claim, and it is the one a stranger's first thirty seconds rests on:
+// the page explains itself. Every section says what it shows before it shows
+// it, the vocabulary is defined somewhere on the page, and the explanations stay
+// explanations — no spec section numbers, no amendment codes, no file paths, and
+// nothing folded away behind a click.
+// ---------------------------------------------------------------------------
+
+/** Every `<section id="...">` in the page, with its inner HTML. */
+function sections(html: string): { id: string; body: string }[] {
+  const out: { id: string; body: string }[] = [];
+  for (const m of html.matchAll(/<section id="([^"]+)">([\s\S]*?)<\/section>/g)) {
+    out.push({ id: m[1], body: m[2] });
+  }
+  return out;
+}
+
+/** The plain-language blocks, as text: the orientation block and every how-to. */
+function plainBlocks(html: string): { where: string; text: string }[] {
+  const out: { where: string; text: string }[] = [];
+  const orientation = /<div class="orientation" id="orientation">([\s\S]*?)<\/div>\s*<p class="lede"/.exec(
+    html,
+  );
+  if (orientation !== null) out.push({ where: 'orientation', text: orientation[1] });
+  for (const s of sections(html)) {
+    for (const m of s.body.matchAll(/<div class="howto">([\s\S]*?)<\/div>/g)) {
+      out.push({ where: s.id, text: m[1] });
+    }
+  }
+  return out;
+}
+
+test('the page opens with an orientation block a stranger can read', () => {
+  const html = renderProgressPage(input());
+  const start = html.indexOf('<div class="orientation" id="orientation">');
+  assert.ok(start > 0, 'no orientation block on the page');
+  // Before the first number, the first gate and the first section.
+  assert.ok(start < html.indexOf('<main>'), 'the orientation block is not at the top');
+  const block = plainBlocks(html).find((b) => b.where === 'orientation');
+  assert.ok(block !== undefined, 'the orientation block did not parse');
+  const flat = block.text.replace(/\s+/g, ' ');
+
+  // The four things a newcomer cannot proceed without: the physical thing, the
+  // two programs, why they are kept apart, and what this page is.
+  assert.ok(/Science On a Sphere/.test(flat), 'the orientation never names the thing');
+  assert.ok(/four projectors/.test(flat));
+  assert.ok(/one to two hours/.test(flat), 'the manual baseline it is measured against is missing');
+  assert.ok(/simulator/.test(flat) && /solver/.test(flat));
+  assert.ok(/share no code/.test(flat), 'the independence claim is missing');
+  assert.ok(/fails the build/.test(flat), 'nothing says the independence is enforced');
+  assert.ok(/same input always gives the same output/.test(flat), 'determinism is never claimed');
+  assert.ok(/adjusted by hand|by hand/.test(flat), 'nothing rules out a hand-tuned screenshot');
+  // Four paragraphs, not an essay and not a caption.
+  assert.equal([...flat.matchAll(/<p>/g)].length, 4);
+});
+
+test('every section carries a plain-language block under its heading', () => {
+  const html = renderProgressPage(input());
+  const all = sections(html);
+  assert.ok(all.length >= 11, `only ${all.length} sections found`);
+
+  for (const s of all) {
+    const howto = s.body.indexOf('<div class="howto">');
+    assert.ok(howto > 0, `section ${s.id} has no plain-language block`);
+    const heading = s.body.indexOf('</h2>');
+    assert.ok(heading > 0, `section ${s.id} has no heading`);
+    assert.ok(howto > heading, `section ${s.id} explains itself before it is titled`);
+    // It comes FIRST, before any prose or data the reader would have to wade
+    // through to reach it.
+    const between = s.body.slice(heading, howto);
+    for (const tag of ['<p ', '<table', '<div class="panel"', '<div class="grid-cards"', '<pre']) {
+      assert.equal(
+        between.includes(tag),
+        false,
+        `section ${s.id} puts ${tag} above its plain-language block`,
+      );
+    }
+    // Always visible: never behind a click.
+    assert.equal(
+      /<details[\s\S]*<div class="howto">/.test(s.body),
+      false,
+      `section ${s.id} hides its explanation inside a <details>`,
+    );
+    assert.ok(s.body.includes('What this shows'), `section ${s.id} never says what it shows`);
+  }
+
+  // The sections where a reader can be actively misled all say what failure
+  // looks like, not just what success does.
+  for (const id of ['gates', 'residuals', 'error-map', 'grid-view', 'before-after', 'trend', 'reference']) {
+    const s = all.find((x) => x.id === id);
+    assert.ok(s !== undefined, `section ${id} is missing`);
+    assert.ok(s.body.includes('Good looks like'), `section ${id} never says what good looks like`);
+    assert.ok(s.body.includes('Bad looks like'), `section ${id} never says what bad looks like`);
+  }
+});
+
+test('the plain-language blocks stay plain', () => {
+  const html = renderProgressPage(input());
+  const blocks = plainBlocks(html);
+  assert.ok(blocks.length >= 12, `only ${blocks.length} plain-language blocks found`);
+  for (const b of blocks) {
+    // The dense text keeps every section number, amendment code and file path.
+    // These blocks are the way IN to that text and carry none of it.
+    assert.equal(/§/.test(b.text), false, `a spec section number reached the ${b.where} block`);
+    assert.equal(/\bA-\d\d\b/.test(b.text), false, `an amendment code reached the ${b.where} block`);
+    assert.equal(/\.md\b/.test(b.text), false, `a file path reached the ${b.where} block`);
+    assert.equal(/\bG[1-9]\b/.test(b.text), false, `a failure-mode code reached the ${b.where} block`);
+  }
+});
+
+test('the gate states are all four explained where the gates are', () => {
+  const html = renderProgressPage(input());
+  const gates = sections(html).find((s) => s.id === 'gates');
+  assert.ok(gates !== undefined);
+  const howto = /<div class="howto">([\s\S]*?)<\/div>/.exec(gates.body);
+  assert.ok(howto !== null);
+  for (const word of ['PASS', 'FAIL', 'WAIVED', 'ADVISORY']) {
+    assert.ok(howto[1].includes(word), `the gate explanation never mentions ${word}`);
+  }
+  // WAIVED is the one that can be read as "made to go away", so the three things
+  // that stop it being that must be named.
+  assert.ok(/expiry|expires/.test(howto[1]));
+  assert.ok(/ceiling/.test(howto[1]));
+  assert.ok(/amendment/.test(howto[1]));
+});
+
+test('the glossary defines every term the page uses without explaining', () => {
+  const html = renderProgressPage(input());
+  // The list a reader of this page will hit. It is asserted here rather than
+  // read off GLOSSARY, so deleting an entry fails instead of shrinking the test.
+  const required = [
+    'residual',
+    'gauge',
+    'gate',
+    'provisional',
+    'waived',
+    'registration error',
+    'seam',
+    'correspondence',
+    'decode',
+    'archetype',
+    'scenario',
+    'seed',
+    'paired comparison',
+    'structured light',
+    'bundle adjustment',
+    'equirectangular',
+    'incidence angle',
+  ];
+  const defined = new Map(GLOSSARY.map((g) => [g.term, g.definition]));
+  for (const term of required) {
+    const definition = defined.get(term);
+    assert.ok(definition !== undefined, `the glossary does not define "${term}"`);
+    assert.ok(definition.length > 60, `the definition of "${term}" is a stub`);
+    assert.ok(html.includes(`<dt>${term}</dt>`), `"${term}" is defined but never rendered`);
+  }
+
+  // The two counter-intuitive ones carry the reason they are counter-intuitive,
+  // not just a paraphrase of the word.
+  const gauge = defined.get('gauge') ?? '';
+  assert.ok(/identical/.test(gauge), 'the gauge entry never says the photographs come out identical');
+  assert.ok(/rotate/i.test(gauge));
+  const paired = defined.get('paired comparison') ?? '';
+  assert.ok(/once/.test(paired), 'the paired-comparison entry never says the capture happens once');
+  assert.ok(/69/.test(paired) && /182/.test(paired), 'the measured dispersion is missing');
+
+  // And the glossary is reachable from the top of the page.
+  assert.ok(html.includes('<a href="#glossary">glossary</a>'));
+});
 
 // ---------------------------------------------------------------------------
 // 1 + 2. Generates from a fixture; reaches for nothing

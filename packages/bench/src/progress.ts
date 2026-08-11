@@ -31,6 +31,13 @@
  *   that vanishes against either background.
  * - **The static reference is READ, never computed here.** `reference.ts`
  *   explains why that separation is the whole point of it.
+ * - **Explained before it is dense, and never instead of it.** An orientation
+ *   block opens the page, every section carries a plain-language "how to read
+ *   this" box under its heading, and a glossary defines the vocabulary the rest
+ *   of the page uses without pausing. All of it is ADDITIVE: not one number,
+ *   caption, citation or diagnostic was removed, rounded or softened to make
+ *   room, because the reader who needs the scaffolding and the reader who reads
+ *   `bench-results.json` are two different people and the page serves both.
  */
 
 import * as fs from 'node:fs';
@@ -498,6 +505,93 @@ function viridisHex(t: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Plain-language scaffolding
+//
+// Everything in this region is ADDITIVE. It explains the page to a reader who
+// has never seen the project; it removes, rounds and softens nothing. The dense
+// prose beside it is the detail, and these blocks are the way in.
+//
+// Three rules they obey, and the tests enforce all three:
+//
+//  - **Always visible.** Never inside a `<details>`. A reader who needs the
+//    explanation is exactly the reader who will not think to click for it.
+//  - **No spec numbers.** No `§`, no amendment code, no file path. Those belong
+//    in the dense text, which keeps every one of them.
+//  - **Visually distinct.** A tinted panel with a left rule, so an expert can
+//    skip the lot at a glance and go straight to the data.
+// ---------------------------------------------------------------------------
+
+export interface HowToRead {
+  /** Plain words: what the reader is looking at. One or two sentences. */
+  shows: string;
+  /** What the reader should see if the thing is working. */
+  good?: string;
+  /** The failure this is built to reveal, and what it means. */
+  bad?: string;
+  /** One extra labelled line, where a section needs vocabulary of its own. */
+  extra?: { label: string; text: string };
+}
+
+/**
+ * The "how to read this" block that sits under every section heading.
+ *
+ * Same shape every time — the reader learns it once. The `good` and `bad` lines
+ * are omitted only where the section genuinely has no failure mode to describe;
+ * `shows` is never omitted.
+ *
+ * The text is trusted HTML assembled in this module, exactly like `figure`'s
+ * caption: it is written here as a literal, never taken from the results file.
+ */
+function howToRead(h: HowToRead): string {
+  const line = (label: string, text: string): string =>
+    `<p class="howto-line"><span class="howto-label">${label}</span><span class="howto-text">${text}</span></p>`;
+  const parts = [line('What this shows', h.shows)];
+  if (h.good !== undefined) parts.push(line('Good looks like', h.good));
+  if (h.bad !== undefined) parts.push(line('Bad looks like', h.bad));
+  if (h.extra !== undefined) parts.push(line(h.extra.label, h.extra.text));
+  return `<div class="howto">${parts.join('')}</div>`;
+}
+
+/**
+ * The orientation block: four paragraphs for somebody who has never heard of
+ * any of this, before the first number on the page.
+ *
+ * It carries no statistic and therefore never goes stale against a run. It is
+ * the only block on the page that assumes nothing at all.
+ */
+function orientationBlock(): string {
+  return `<div class="orientation" id="orientation">
+    <h2 class="plain-h">Start here — what this is, in four paragraphs</h2>
+    <p><strong>What the thing is.</strong> A sphere hangs in the middle of a room, and four projectors spaced
+      evenly around it throw overlapping pictures onto its surface. Done right, the four pictures join into a
+      single seamless image wrapped all the way around the ball. This is NOAA's Science On a Sphere, and there
+      are a few hundred of them in museums and science centres. Getting the four projectors to agree is a manual
+      job today: a person stands in the room, looks at a test grid on the sphere, nudges a projector, and looks
+      again. It takes one to two hours for someone doing it the first time, it is judged entirely by eye, and no
+      published document says how close is close enough.</p>
+    <p><strong>What this project builds.</strong> Two programs. The <strong>simulator</strong> runs forwards:
+      tell it where the four projectors are and it predicts what the sphere will look like. The
+      <strong>solver</strong> runs backwards: show it photographs of patterns projected onto the sphere and it
+      works out where the projectors must have been to produce those photographs. The pair makes the alignment
+      a measurement instead of an opinion — the solver proposes an answer, and the simulator says what that
+      answer would look like to somebody standing in the room.</p>
+    <p><strong>Why they are written twice.</strong> The two programs share no code, and that is deliberate. If
+      the solver worked backwards through the simulator's own arithmetic, then checking one against the other
+      would only prove that a function can undo itself, and every score on this page would mean nothing. They are
+      kept apart by a rule that fails the build the moment either one so much as imports the other. That is what
+      makes agreement between them worth reporting.</p>
+    <p><strong>What this page is.</strong> The automated report, rebuilt from the most recent run. Every number
+      on it was produced by a fixed sequence started from a recorded random number, so the same input always
+      gives the same output and anybody can run it again and get this page back. Nothing here is a screenshot of
+      something somebody adjusted by hand, and no number was typed in. Where a measurement could not be made, the
+      page says so in place of the number rather than leaving a tidy gap.</p>
+    <p class="orientation-foot">Every section below opens with a tinted box like the ones you are about to see:
+      what it shows, what good looks like, what bad looks like. Words this page uses without stopping to explain
+      them are defined in the <a href="#glossary">glossary</a> at the end.</p>
+  </div>`;
+}
+
+// ---------------------------------------------------------------------------
 // Plot primitives
 // ---------------------------------------------------------------------------
 
@@ -778,6 +872,17 @@ function residualSection(results: BenchResults): string {
 
   return `<section id="residuals">
     <h2>1 · Solver residual scatter, per projector</h2>
+    ${howToRead({
+      shows:
+        'When the solver finishes it has a guess for where every projector is. Take that guess, work out where each measured point <em>should</em> have landed, and subtract where it actually landed. What is left over is called a residual, and every single one of them is drawn here as a dot.',
+      good: 'A formless round blob centred on the middle. That means the leftovers are camera noise, and the answer is already as good as the photographs allow.',
+      bad: 'Any <em>shape</em> at all — a ring, a fan, a smear off to one side, dots drifting further out towards the edges. Shape means the model is missing something real, and which shape it is tells you what. This difference is invisible in an average and obvious in a picture, which is why this plot comes first.',
+      extra: {
+        label: 'Two shapes that are fine',
+        text:
+          'The blob is expected to come out about 1.8 times wider than it is tall, and to grow faint arms along the two directions of the grid. Both are fingerprints of the measuring method rather than faults in the answer, and the dense paragraph below explains why. The numbers printed beside each picture separate the two — a verdict of <em>consistent with noise</em> means nothing beyond those two fingerprints was found.',
+      },
+    })}
     <p class="lede">Every structured-light correspondence, plotted twice: <strong>du against dv</strong>, and the
       <strong>radial component against image radius</strong>. Nothing is subsampled — where there are twelve thousand
       residuals, twelve thousand circles are drawn at low alpha, so density reads as density. The question is not how
@@ -920,6 +1025,12 @@ function colorbar(): string {
 function errorMapSection(results: BenchResults, images: ImageStore): string {
   return `<section id="error-map">
     <h2>2 · Equirectangular registration error map</h2>
+    ${howToRead({
+      shows:
+        "The sphere unrolled flat, like a world map. Colour is how far the projected picture lands from where it was supposed to land, in millimetres measured across the sphere's own surface.",
+      good: 'Even and dark everywhere: the error is small, and it is the same wherever you look.',
+      bad: 'Bright patches — and <em>where</em> they sit is the diagnosis. Bright along the joins between projectors means the projectors disagree with each other. Bright at the top and bottom means the geometry itself has run out there, where the light arrives almost sideways and a single pixel smears into a streak.',
+    })}
     <p class="lede">Where the error is, not how much of it there is. A single RMS cannot distinguish a uniform blur —
       which reads as softness — from a hard displacement concentrated in one seam near a pole, which reads as the
       doubled grid lines PARAMETERS.md §1's note describes, and those two want different remedies. The projector
@@ -964,6 +1075,12 @@ function gridViewSection(results: BenchResults, images: ImageStore): string {
   });
   return `<section id="grid-view">
     <h2>3 · Grid alignment pattern through the full pipeline</h2>
+    ${howToRead({
+      shows:
+        'The same test grid a real operator looks at while aligning a real sphere, put through the whole chain here: content made from the calibration the solver recovered, thrown by the projectors as they physically sit, landing on the sphere, photographed from where a visitor stands.',
+      good: 'Lines that meet across every join. A grid line crossing from one projector into the next stays one continuous line.',
+      bad: 'Lines that kink, double, or drift apart where two projectors meet. That is exactly what an operator sees standing in the room, which makes this the one picture on the page directly comparable with the real procedure.',
+    })}
     <p class="lede">The same 15° graticule an operator sees during SOS Grid Alignment, rendered through the whole
       forward model: content generated against the <em>recovered</em> calibration, projected by the rig that
       physically exists, shaded, and photographed by a viewer camera. Where the two calibrations disagree each
@@ -1037,6 +1154,12 @@ function beforeAfterSection(
 
   return `<section id="before-after">
     <h2>4 · Before and after, same seed, same camera</h2>
+    ${howToRead({
+      shows:
+        'The same scene rendered twice: once with the best calibration the project had before, once with the one it has now. Same random draw of the rig, same camera, same everything except the calibration under test.',
+      good: 'The right-hand picture visibly tidier at the joins than the left-hand one.',
+      bad: 'No visible difference, or a right-hand picture that is worse. Because everything except the thing being tested is held identical, any difference you can see is the change itself and not the luck of the draw.',
+    })}
     ${provenance}
     <div class="grid-cards">${rows.join('')}</div>
   </section>`;
@@ -1117,6 +1240,14 @@ function sparkline(
     </div>`;
 }
 
+/** Both branches of `trendSection` carry the same explanation, so it lives once. */
+const TREND_HOWTO = howToRead({
+  shows:
+    'Whether the numbers are moving. Each small chart is one measurement, plotted across the rounds of work the project has done, against the line it has to get under.',
+  good: 'Lines heading downwards and settling below the threshold line, with the faint line — the bad cases — coming down alongside the solid one.',
+  bad: "Flat lines, or lines heading upwards. And one to watch for: a round that improves the typical case while making the worst case worse counts as a regression here, not progress. The worst case is what a person standing in the room actually sees.",
+});
+
 function trendSection(results: BenchResults, rounds: RoundHistory | null): string {
   // The gate id comes from TRACKED itself. It used to be a second copy of the
   // key -> gate mapping living here, which is one more place to forget when the
@@ -1134,6 +1265,7 @@ function trendSection(results: BenchResults, rounds: RoundHistory | null): strin
     });
     return `<section id="trend">
       <h2>5 · Metric trend over rounds</h2>
+      ${TREND_HOWTO}
       <p class="note">No round history at <code>progress/rounds.json</code> yet, so each sparkline holds a single
         point: this results file. <code>node packages/bench/src/loop.ts</code> runs a Phase 1 round, appends to the
         history with a fresh chained seed, and these become trends. A trend is what the loop is judged on —
@@ -1165,6 +1297,7 @@ function trendSection(results: BenchResults, rounds: RoundHistory | null): strin
 
   return `<section id="trend">
     <h2>5 · Metric trend over rounds</h2>
+    ${TREND_HOWTO}
     <p class="lede">Trend, not just the current value. A metric that moved by less than the round's own scatter across
       seeds did not move: docs/ARCHITECTURE.md defines a non-improving round that way, and three consecutive
       non-improving rounds end Phase 1. This history is at round ${last.round}, ${last.consecutiveNonImproving}
@@ -1383,10 +1516,19 @@ function referenceProfile(ref: CoverageReference): string {
     </svg>`;
 }
 
+/** Both branches of `referenceSection` carry the same explanation, so it lives once. */
+const REFERENCE_HOWTO = howToRead({
+  shows:
+    'A test disguised as a picture. Two things about this rig are fixed by physics however well or badly it is aligned: every point on the sphere is lit by at most two projectors, never three and never four; and the patch at each pole that no projector can reach is a four-lobed scalloped shape, not a circle.',
+  good: 'At most two-way overlap anywhere on the map, and a polar patch with four corners reaching down between the projectors — closer to a square than a circle.',
+  bad: 'Any three-way or four-way overlap, or a round polar cap. Either one is a bug in the simulator rather than a badly aligned rig. These pictures are drawn once and deliberately never regenerated by a run, so they cannot be quietly refreshed into agreeing with a broken build.',
+});
+
 function referenceSection(ref: CoverageReference | null, checks: ReferenceChecks | null): string {
   if (ref === null || checks === null) {
     return `<section id="reference">
       <h2>6 · Static reference — coverage and incidence <span class="tag">rendered once</span></h2>
+      ${REFERENCE_HOWTO}
       <p class="note">No reference on disk. Run <code>node packages/bench/src/reference.ts</code> once to compute it.
         It is deliberately NOT regenerated by a bench round: it is a correctness check dressed as a visual, and a
         check that refreshes itself against the current build can only ever agree with it.</p>
@@ -1406,6 +1548,7 @@ function referenceSection(ref: CoverageReference | null, checks: ReferenceChecks
 
   return `<section id="reference">
     <h2>6 · Static reference — coverage and incidence <span class="tag">rendered once, ${esc(ref.generatedAt.slice(0, 10))}, commit <code>${esc(ref.gitCommit.slice(0, 8))}</code></span></h2>
+    ${REFERENCE_HOWTO}
     <div class="callout">
       <h3>What you should see, and what would be a bug</h3>
       <p><strong>Overlap multiplicity of at most 2, everywhere.</strong> Exactly three colours in the multiplicity
@@ -1563,9 +1706,16 @@ function gateSection(results: BenchResults): string {
               is pending. See <code>gate-waivers.json</code>. ${esc(w.reason)}</div>`;
       return `<tr class="${g.pass ? 'row-pass' : 'row-fail'}">
         <td>
-          <div class="gate-id"><code>${esc(g.id)}</code> ${g.pass ? '<span class="pill pass">PASS</span>' : '<span class="pill fail">FAIL</span>'}${g.provisional ? ' <span class="pill provisional">PROVISIONAL</span>' : ''}</div>
+          <div class="gate-id"><code>${esc(g.id)}</code> ${g.pass ? '<span class="pill pass">PASS</span>' : '<span class="pill fail">FAIL</span>'}${g.provisional ? ' <span class="pill provisional">PROVISIONAL</span>' : ''}${g.advisory ? ' <span class="pill advisory">ADVISORY</span>' : ''}</div>
           <div class="small">${esc(g.metric)}</div>
           <div class="muted small">${esc(g.klass)} · ${esc(g.basis)}</div>
+          ${
+            g.advisory
+              ? `<div class="muted small">The threshold is this project's own, not one PARAMETERS.md §7 publishes.
+                 Reported and tracked because it is diagnostic; never allowed to fail a build, because failing
+                 somebody's build on a number we invented asserts an authority this repo does not have.</div>`
+              : ''
+          }
           ${waived}
           ${g.dependsOnRecovery ? '' : '<div class="muted small">Property of where the lenses physically point. No solver can move this one.</div>'}
           ${notMeasurable}
@@ -1594,6 +1744,22 @@ function gateSection(results: BenchResults): string {
 
   return `<section id="gates">
     <h2>Gates — current values against PARAMETERS.md §7</h2>
+    ${howToRead({
+      shows:
+        'A gate is a pass/fail threshold: a line drawn on a measurement, below which the build is allowed to call itself working. One row per gate, showing the worst value any test case reached and how all the test cases were spread.',
+      good: 'Every row passing, with the dots on its strip sitting well to the left of the marked threshold — passing with room to spare rather than by a hair.',
+      bad: 'A failing row, which names the largest single cause underneath rather than leaving you to guess. Also bad: a row where most dots sit left of the line and one sits far out to the right. One bad case is a real failure, not an outlier to be averaged away, which is why no row here shows an average.',
+      extra: {
+        label: 'The four words',
+        text:
+          '<strong>PASS</strong> — the measurement met the threshold. <strong>FAIL</strong> — it did not. ' +
+          '<strong>WAIVED</strong> — it did not, and the reason is written down: a numbered amendment, an expiry ' +
+          'date, and a ceiling above which the waiver stops applying. So a known failure cannot quietly become ' +
+          'permanent, and a failure bigger than the one that was argued for still breaks the build. The number ' +
+          'itself is never softened. <strong>ADVISORY</strong> — the threshold is one this project invented ' +
+          'rather than one the specification publishes, so it is reported and tracked but never fails a build.',
+      },
+    })}
     <p class="lede">Every gate with its full dispersion, never a bare mean: the corpus is bimodal by construction and
       a mean hides exactly the failure mode docs/ARCHITECTURE.md's G2 describes. Each strip is a log axis with the
       whisker at min–max, the box at p05–p95, the tick at the median, one dot per scenario and the gate marked. For a
@@ -1610,6 +1776,14 @@ function gateSection(results: BenchResults): string {
 // ---------------------------------------------------------------------------
 // PROVISIONAL metrics
 // ---------------------------------------------------------------------------
+
+/** Both branches of `provisionalSection` carry the same explanation. */
+const PROVISIONAL_HOWTO = howToRead({
+  shows:
+    'Numbers about colour and brightness, kept in a box of their own. Nobody has ever measured how these particular projectors handle colour, so every number in here rests on an assumption about the hardware rather than on a reading taken from it.',
+  good: 'Everything in the box computed, tested and displayed — and nothing outside the box depending on any of it. The box being empty is fine too; it means this run produced no such number.',
+  bad: 'One of these numbers quoted as a result. They are fenced off rather than mixed in for exactly that reason: an assumption printed beside a measurement quietly borrows the credibility of the measurement.',
+});
 
 function provisionalSection(results: BenchResults): string {
   const byId = new Map<string, { metric: MetricResult; scenarios: string[]; values: number[] }>();
@@ -1635,6 +1809,7 @@ function provisionalSection(results: BenchResults): string {
   if (byId.size === 0) {
     return `<section id="provisional">
       <h2>PROVISIONAL metrics <span class="tag">none yet — the mechanism is live</span></h2>
+      ${PROVISIONAL_HOWTO}
       <div class="provisional empty">
         ${why}
         <p><strong>This run contains none.</strong> Every metric in it sets <code>provisional: false</code> and means
@@ -1664,6 +1839,7 @@ function provisionalSection(results: BenchResults): string {
 
   return `<section id="provisional">
     <h2>PROVISIONAL metrics <span class="tag">${byId.size} metric(s) — do not quote these</span></h2>
+    ${PROVISIONAL_HOWTO}
     <div class="provisional">${why}<div class="grid-cards">${cards}</div></div>
   </section>`;
 }
@@ -1785,10 +1961,168 @@ function experimentSection(slots: ExperimentSlot[]): string {
     .join('');
   return `<section id="experiments">
     <h2>Experiments — measurements, not loop iterations</h2>
+    ${howToRead({
+      shows:
+        'Measurements, not tuning. Each one asks a single question — how many photographs a calibration needs, whether a softer join hides more error, which unmeasured assumptions actually matter — runs once, and reports what it found.',
+      good: 'A plot and a written finding, including findings that went against what the project expected.',
+      bad: 'A measurement that has been run again and again until it says something better. That is why each of these runs once and is not repeated: an experiment iterated until it flatters the build has stopped being a measurement and become an advertisement.',
+    })}
     <p class="lede">Each runs <strong>once</strong>, produces a plot and a written finding, and is not iterated to
       improve its result. Iterating an experiment until it says something better is how a measurement becomes an
       advertisement.</p>
     <div class="grid-cards">${cards}</div>
+  </section>`;
+}
+
+// ---------------------------------------------------------------------------
+// Glossary
+//
+// Every word the rest of the page uses without stopping to explain it. The list
+// is exported so `test/progress.test.ts` can assert coverage: a page that uses a
+// term and does not define it is the failure this block exists to prevent, and
+// that is a test's job rather than a proofreader's.
+//
+// Two entries are longer than the others on purpose. `gauge` and `paired
+// comparison` are both counter-intuitive, both load-bearing for reading the
+// numbers on this page, and both routinely got wrong — a short definition of
+// either would be worse than none.
+// ---------------------------------------------------------------------------
+
+export interface GlossaryEntry {
+  term: string;
+  /** Trusted HTML, written here as a literal. Plain words, no spec numbers. */
+  definition: string;
+}
+
+export const GLOSSARY: readonly GlossaryEntry[] = [
+  {
+    term: 'residual',
+    definition:
+      'What is left over. Once the solver has settled on an answer, it predicts where each measured point should have appeared and subtracts where that point actually appeared. The difference is the residual: the part of the photographs the answer does not explain.',
+  },
+  {
+    term: 'gauge',
+    definition:
+      'The part of the answer photographs cannot possibly contain. Take the whole rig — every projector and every camera together — and rotate all of it about the centre of the sphere. Every photograph comes out identical, pixel for pixel, because nothing in the pictures depends on which way the whole arrangement faces. So that rotation cannot be recovered from photographs by <em>any</em> method at all, ours included. It is removed before a recovered rig is compared with the truth. Comparing without removing it first would measure our own arbitrary choice of which way the room points, and report that as an error made by the solver.',
+  },
+  {
+    term: 'gate',
+    definition:
+      'A pass/fail threshold on a measurement. Four verdicts appear on this page: passed, failed, waived (failed, with the reason written down in a numbered amendment that carries an expiry date and a ceiling), and advisory (a threshold this project invented rather than one the specification publishes, so it is reported but never fails a build).',
+  },
+  {
+    term: 'provisional',
+    definition:
+      'A number that depends on a constant nobody has measured yet. It is computed, tested and shown — and marked, so it can never be mistaken for a result or quoted as one.',
+  },
+  {
+    term: 'waived',
+    definition:
+      'A gate that fails, where the failure is understood and the reasoning is on the record: a numbered amendment, an expiry date, and a ceiling above which the waiver no longer covers it. The measured number is not softened, hidden or rounded — the waiver records why it is what it is, and a failure worse than the one that was argued for still breaks the build.',
+  },
+  {
+    term: 'registration error',
+    definition:
+      'How far the projected picture lands from where it was supposed to land, measured in millimetres along the surface of the sphere, at every point where two projectors both reach.',
+  },
+  {
+    term: 'seam',
+    definition:
+      'The band where two neighbouring projectors both light the sphere and their two pictures have to agree. Four projectors make four seams, and misalignment shows up there first.',
+  },
+  {
+    term: 'correspondence',
+    definition:
+      'One matched pair of points: <em>this</em> pixel of that projector lit up <em>that</em> pixel of this camera. A single capture yields tens of thousands of them, and they are the entire raw material the solver works from.',
+  },
+  {
+    term: 'decode',
+    definition:
+      'Reading the correspondences back out of the photographs. Each projector shows a sequence of striped patterns — one "Gray plane" per frame, each with stripes half the width of the last — so every spot on the sphere receives its own on/off sequence, like a short barcode played out in time. Decoding turns that sequence back into "you are pixel such-and-such of projector three".',
+  },
+  {
+    term: 'structured light',
+    definition:
+      'The technique behind the whole capture: project patterns you already know, photograph them, and work backwards from what the camera saw. It needs nothing more exotic than a camera, which is the point — the method has to work in a museum, not only in a lab.',
+  },
+  {
+    term: 'archetype',
+    definition:
+      'A named kind of test case: a spotless rig, a normally lit room, a handheld phone, an installation with only three projectors. The archetype says what is being stressed.',
+  },
+  {
+    term: 'scenario',
+    definition:
+      'One concrete test case: an archetype plus a specific random draw of the imperfections in the rig. Scenarios are the things that actually get scored, and the page names each one.',
+  },
+  {
+    term: 'seed',
+    definition:
+      'The number every random draw starts from. Same seed, same rig, same noise, same answer — which is what makes every comparison on this page repeatable, and what stops a good result from being a lucky one.',
+  },
+  {
+    term: 'paired comparison',
+    definition:
+      'The way a change is tested here. Photograph the scene once, then solve it twice with exactly one setting different. Both answers see identical photographs, so any difference between them is that setting and nothing else. The alternative — running the whole thing twice and comparing the two runs — lets the random draw of the scene swamp the effect you are trying to see: on this project that draw alone moves each score by 69 to 182 per cent of its own value, which is why an unpaired comparison cannot resolve even a change of two times.',
+  },
+  {
+    term: 'bundle adjustment',
+    definition:
+      'The arithmetic that turns tens of thousands of correspondences into one answer: nudge the position, aim and lens of every projector together, over and over, until the disagreement with the photographs is as small as it can be made. "Bundle" because the whole bundle of light rays is adjusted at once rather than one camera at a time.',
+  },
+  {
+    term: 'equirectangular',
+    definition:
+      'The sphere unrolled onto a rectangle — longitude across, latitude up — the same layout as a classroom world map. Honest in the middle, badly stretched at the top and bottom, and convenient because a whole sphere fits in one picture.',
+  },
+  {
+    term: 'provenance class',
+    definition:
+      'The shorthand printed under each gate saying where its threshold came from. <strong>DOC</strong> — published in the manufacturer or operator documentation. <strong>CFG</strong> — read off a specification sheet or the configuration file of a site. <strong>SOLVE</strong> — not assumed at all; the solver works it out. <strong>ASSUME</strong> — nobody has published it and nobody has measured it, so this project chose a value; this is where the bar could be confidently wrong. <strong>MEAS</strong> — waiting on a measurement at a real installation. <strong>DERIVED</strong> — calculated from the others rather than chosen.',
+  },
+  {
+    term: 'overlap multiplicity',
+    definition:
+      'How many projectors light a given point on the sphere: none, one, or two. Never three or four on a rig like this one — checking that is half of what the static reference exists for.',
+  },
+  {
+    term: 'polar mask',
+    definition:
+      'Software that fades the picture out towards the bottom of the sphere, where the light arrives so slanted that a pixel would land as a streak. The sphere hangs from a mount that already hides the top, so only the bottom needs masking.',
+  },
+  {
+    term: 'off-sphere flux',
+    definition:
+      'The share of the light from a projector that misses the sphere altogether and lands on the room behind it. It can never be zero, because a rectangular picture cannot exactly fill a round outline; what gets scored is the excess above the amount the shape alone forces.',
+  },
+  {
+    term: 'phase 1 and phase 2',
+    definition:
+      'The two halves of the work, kept apart on purpose. Phase 1 is geometry — where the projectors are and where the picture lands — and it is worked on now, because the simulator knows the true answer and can mark its own homework. Phase 2 is brightness and colour, which is built and tested but deliberately not tuned, because tuning against constants nobody has measured produces confident nonsense.',
+  },
+  {
+    term: 'round',
+    definition:
+      'One pass of the improvement loop: change something in the solver, generate a fresh set of test cases with new random draws so the change cannot be quietly fitted to the old ones, score everything, and record the result whether it helped or not.',
+  },
+  {
+    term: 'incidence angle',
+    definition:
+      'How slanted the light arrives at the surface. Head on, a projector pixel lands as a small square. Out near the edge of what that projector can reach, the same pixel smears into a long streak — which is why parts of the sphere can be lit and still be unusable.',
+  },
+];
+
+function glossarySection(): string {
+  const rows = GLOSSARY.map(
+    (g) => `<dt>${esc(g.term)}</dt><dd>${g.definition}</dd>`,
+  ).join('');
+  return `<section id="glossary">
+    <h2>Glossary</h2>
+    ${howToRead({
+      shows:
+        'Plain definitions for the words this page uses without stopping to explain them. Two of them — gauge and paired comparison — are counter-intuitive rather than merely unfamiliar, so they get a longer entry.',
+    })}
+    <dl class="glossary">${rows}</dl>
   </section>`;
 }
 
@@ -1827,6 +2161,7 @@ function headerSection(results: BenchResults, generatedAt: string, rounds: Round
         ${failing.length === 0 ? '' : `<span class="which">${failing.map((g) => esc(g.id)).join(' · ')}</span>`}
       </div>
     </div>
+    ${orientationBlock()}
     <p class="lede">Phase 1 is geometry and it is optimised in a loop. Phase 2 is photometry and it is built but not
       optimised, because optimising against constants nobody has measured produces confident nonsense.
       ${
@@ -1839,6 +2174,7 @@ function headerSection(results: BenchResults, generatedAt: string, rounds: Round
       .map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`)
       .join('')}</table>
     <nav>
+      <a href="#orientation">start here</a>
       <a href="#gates">gates</a>
       <a href="#residuals">1 · residuals</a>
       <a href="#error-map">2 · error map</a>
@@ -1849,6 +2185,7 @@ function headerSection(results: BenchResults, generatedAt: string, rounds: Round
       <a href="#provisional">provisional</a>
       <a href="#experiments">experiments</a>
       <a href="#capture">capture</a>
+      <a href="#glossary">glossary</a>
       <a href="#notes">notes</a>
     </nav>
   </header>`;
@@ -1882,6 +2219,12 @@ function captureSection(results: BenchResults, images: ImageStore): string {
     .join('');
   return `<section id="capture">
     <h2>The capture each solve was given</h2>
+    ${howToRead({
+      shows:
+        'What the solver was actually handed. The projectors display a sequence of striped patterns, a camera photographs each one, and those photographs are the only input the solver ever gets — it is never given the answer in any other form. One frame from each test case is shown here, with the conditions it was taken under.',
+      good: 'Frames that look like real photographs of a room — dim, grainy, taken from a distance, sometimes shaky — and the solver still recovering the rig from them.',
+      bad: 'A capture too clean to be real. A solver only ever handed perfect pictures has been graded on an exam it wrote itself, and its scores would say nothing about a room with the lights on and somebody holding a phone.',
+    })}
     <p class="lede">The solver is scored on images, never on correspondences. Every number above came out of a
       rendered structured-light sequence that the solver's own decoder read back, so every rejected pixel is a pixel a
       real capture would also have lost.</p>
@@ -1892,6 +2235,11 @@ function captureSection(results: BenchResults, images: ImageStore): string {
 function notesSection(results: BenchResults, reference: CoverageReference | null): string {
   return `<section id="notes">
     <h2>Notes carried from the results file</h2>
+    ${howToRead({
+      shows:
+        'Anything the run itself wanted on the record, followed by the exact commands that rebuild everything above. Nothing here is written by hand for the report; the notes come out of the run.',
+      good: 'The commands below, pasted into a fresh copy of the project, producing this same page with the same numbers on it.',
+    })}
     <ul class="notes">${results.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
     <h3>How to rebuild what is on this page</h3>
     <pre>node packages/bench/src/cli.ts --scenarios 6 --seed 1234 --out bench-results.json   # results + PNGs
@@ -1984,6 +2332,7 @@ ${referenceSection(input.reference, checks)}
 ${provisionalSection(input.results)}
 ${experimentSection(slots)}
 ${captureSection(input.results, input.images)}
+${glossarySection()}
 ${notesSection(input.results, input.reference)}
 </main>
 </body>
@@ -1999,6 +2348,9 @@ const CSS = `
   --dot: #2b5fd9; --ellipse: #b3261e; --profile: #b3261e; --gate: #b3261e;
   --unlit: #b8bcc4; --mult1: #3b6ea5; --mult2: #f0b429; --box: #cfe0ff; --provisional: #fff4d6;
   --provisional-line: #d9a800;
+  /* The plain-language blocks. A tint of the accent over the panel, so it holds
+     its contrast in both themes without a second colour to keep in step. */
+  --plain-bg: #f1f5fe;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -2007,6 +2359,7 @@ const CSS = `
     --dot: #7aa2ff; --ellipse: #ff8f85; --profile: #ff8f85; --gate: #ff6b5e;
     --unlit: #444a55; --mult1: #4a7fbf; --mult2: #d9a300; --box: #2a3550; --provisional: #2e2712;
     --provisional-line: #b98f00;
+    --plain-bg: #1d232f;
   }
 }
 * { box-sizing: border-box; }
@@ -2059,6 +2412,8 @@ table.kv td { padding: 3px 0; vertical-align: top; }
 .pill.pending { background: var(--grid); color: var(--muted); }
 .pill.provisional { background: var(--provisional); color: var(--warn); border: 1px solid var(--provisional-line); }
 .pill.waived { background: var(--provisional); color: var(--warn); border: 1px dashed var(--provisional-line); }
+.pill.advisory { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent);
+  border: 1px solid var(--accent); }
 .tag { font-size: 12px; font-weight: 400; color: var(--muted); }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin: 16px 0; }
 .panel .meta { font-size: 12.5px; color: var(--muted); margin-top: 0; }
@@ -2136,6 +2491,32 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .bar { flex: 1 1 auto; background: var(--line); height: 8px; border-radius: 4px; overflow: hidden; }
 .bar > span { display: block; height: 100%; background: var(--accent); }
 .bar-value { flex: 0 0 70px; text-align: right; }
+/* Plain-language scaffolding. Tinted and left-ruled so it reads as a different
+   kind of thing from the data, and an expert can skip all of it at a glance. */
+.orientation { background: var(--plain-bg); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: 0 8px 8px 0; padding: 14px 20px 16px;
+  margin: 18px 0 6px; max-width: 84ch; }
+.orientation h2.plain-h { font-size: 17px; margin: 0 0 10px; padding: 0; border-bottom: none;
+  letter-spacing: 0.01em; }
+.orientation p { margin: 0 0 10px; }
+.orientation p:last-child { margin-bottom: 0; }
+.orientation-foot { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 9px; }
+.howto { background: var(--plain-bg); border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0;
+  padding: 9px 14px; margin: 10px 0 16px; max-width: 88ch; font-size: 13.5px; }
+.howto-line { display: grid; grid-template-columns: 128px 1fr; gap: 12px; align-items: baseline; margin: 5px 0; }
+.howto-label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--accent); }
+@media (max-width: 640px) {
+  .howto-line { grid-template-columns: 1fr; gap: 1px; }
+}
+dl.glossary { display: grid; grid-template-columns: minmax(140px, 200px) 1fr; gap: 4px 20px;
+  margin: 12px 0; max-width: 100ch; }
+dl.glossary dt { font-weight: 700; }
+dl.glossary dd { margin: 0 0 12px; }
+@media (max-width: 640px) {
+  dl.glossary { grid-template-columns: 1fr; gap: 0; }
+  dl.glossary dt { margin-top: 10px; }
+}
 .callout { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--accent);
   border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 12px 0; }
 .callout h3 { margin-top: 0; }
