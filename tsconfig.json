@@ -19,7 +19,8 @@
   "include": [
     "packages/*/src/**/*.ts",
     "packages/*/test/**/*.ts",
-    "tools/**/*.ts"
+    "tools/**/*.ts",
+    "packages/harness/serve.ts"
   ],
   "exclude": ["node_modules", "**/dist/**"]
 }

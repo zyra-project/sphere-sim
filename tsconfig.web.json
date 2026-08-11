@@ -16,7 +16,9 @@
   },
   "include": [
     "packages/calibration/src/**/*.ts",
-    "packages/sim/src/**/*.ts"
+    "packages/sim/src/**/*.ts",
+    "packages/harness/src/**/*.ts",
+    "packages/harness/web/**/*.ts"
   ],
   "exclude": ["node_modules", "**/test/**"]
 }
