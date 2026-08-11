@@ -201,6 +201,29 @@ procedure works in.
   variance the decode claims is now 1.02 on `nominal`, against 11 to 375 on the
   scenarios that carry an inter-frame motion bias. `DecodeOptions.noiseBins: 0`
   restores the old behaviour for comparison.
+- **Residual coherence within a (camera, projector) pair is detectable, and
+  inflating that pair's sigma does nothing about it.** `pairCoherence` bins a
+  pair's residuals over the projector raster, standardises each axis by that
+  pair's own robust scale, and compares each cell's mean against what independent
+  noise allows. It separates the two regimes cleanly: on the bench corpus it
+  fires on 0 to 1 of 12 pairs under a tripod (largest inflation 1.25x) and on 9
+  of 12 under handheld motion (a typical pair inflated 5x to 8x, several at the
+  8x cap), and it is blind by
+  construction to both apparatus signatures the progress page subtracts — the
+  1920/1080 raster-aspect anisotropy of the decode, which per-axis
+  standardisation removes, and the axis-aligned quantisation cross, which is
+  zero-mean inside any cell. Measured PAIRED on five fresh seeds and seven
+  archetypes, 35 cells: **grid displacement 1.00x median, pose position 1.00x
+  median.** Inert. It is off by default and kept because it is the apparatus for
+  the next attempt, not because it earns its place today. See docs/PHASE-1.md for
+  why a per-pair weighting cannot work here and what shape the fix has to be.
+- **`tieProjectorFov` solves one field of view for the whole rig.** PARAMETERS.md
+  §3.1 derives `fov_h` from the throw ratio `T` and classes `T` as CFG, one spec
+  sheet per install — so a site running four of one model has one field of view,
+  not four. Paired on the same 35 cells it is worth **1.51x median on pose
+  position (28 helped, 4 hurt)** and **0.99x on grid displacement (15 / 16)**. It
+  is off by default because §3.1 does not say whether an install's projectors
+  share `T`; filed as docs/AMENDMENTS.md A-33 with the numbers.
 - **`p1`, `p2` are off by default**, per PARAMETERS.md §3.1.
 - **Sparse camera coverage is the fragile case.** Two cameras under heavy ambient
   and sensor noise is close to the edge of what the bootstrap handles; three is

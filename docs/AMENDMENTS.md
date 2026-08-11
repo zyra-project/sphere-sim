@@ -56,6 +56,8 @@ Entries here address one of two documents, and the rule differs:
 | A-27 | PARAMETERS.md §3.2 | wp_i is a derived quantity and should be marked as one | OPEN |
 | A-28 | PARAMETERS.md §10 | §10's fourth-ranked risk is inert against every §7 gate, an... | OPEN |
 | A-29 | PARAMETERS.md §7 / §8 | the black-uplift gates cannot be planned one constant at a ... | OPEN |
+| A-32 | PARAMETERS.md §7 | §7's grid gate is 2.2x MORE sensitive to a COMMON-MODE fiel... | OPEN |
+| A-33 | PARAMETERS.md §3.1 / §2 | §3.1 does not say whether one install's projectors share on... | OPEN |
 
 **A note on citing these entries mechanically.** `gate-waivers.json` cites an
 entry by id AND by a fragment of its title, and `packages/bench/src/waivers.ts`
@@ -1528,3 +1530,145 @@ flags as the dangerous one.
 **Proposed amendment.** Add plausible ranges to §2 and §3.1 for `roll`, `k1` and
 `k2` — ideally from the same source as A-18's recommendation, i.e. the projector's
 own spec sheet and lens data, which bounds `k1`/`k2` far better than we can guess.
+
+---
+
+## A-32 — §7's grid gate is 2.2x MORE sensitive to a COMMON-MODE field-of-view error than to a differential one
+
+**Status:** OPEN. Affects what the seam gate certifies, and it falsified a
+round-2 hypothesis before that hypothesis cost a round. Reported by the forward
+model.
+
+**The belief this corrects.** It is natural to assume that a *seam* metric is a
+*differential* metric — that grid-line displacement measures the disagreement
+between two neighbouring projectors and is therefore blind to anything the four
+projectors get wrong together. Round 2 was scoped on exactly that assumption:
+per-projector `fov_h` error was thought to be partly independent across
+projectors, and a seam metric was thought to measure exactly that independent
+part, so tying the four fields to one shared parameter should have collapsed the
+seam failure.
+
+**The assumption is wrong, and the forward model settles it in one experiment
+with no solver in the loop.** Take the truth rig as its own content rig — which
+scores zero by construction — and perturb only the content rig's fields of view,
+first by a pure common-mode offset `+d` on all four projectors, then by a
+zero-mean differential pattern `(+d, -d, +d, -d)` of the same per-projector size:
+
+| `d` (deg) | common mode, all `+d` | differential, `(+d,-d,+d,-d)` | ratio |
+| --- | --- | --- | --- |
+| 0.05 | 9.51 mm | 4.00 mm | **2.38** |
+| 0.10 | 18.85 mm | 8.01 mm | **2.35** |
+| 0.25 | 46.48 mm | 20.11 mm | **2.31** |
+| 0.50 | 91.62 mm | 40.60 mm | **2.26** |
+
+(`s04-handheld`, seed 110471, against a 0.064 mm baseline. Reproduced on seeds
+220582, 330693, 440704 and 550815 and on the `s01-nominal`, `s06-six-cameras` and
+`s09-long-throw` archetypes: the ratio is **2.0-2.45 everywhere**. At `d` = 2.5
+degrees both columns collapse — the content has moved so far that the line
+localiser stops finding measurable lines at all — so that row is degenerate
+rather than informative and is excluded.)
+
+**Why.** A common-mode field-of-view error is not a gauge freedom. Grid
+displacement is invariant to a global *rotation*, which is why A-09's gauge
+alignment cannot change it, and that invariance does not extend to a common
+scaling of every projector's angular mapping. At a seam the two projectors view
+the same surface point from opposite sides, so the same fractional raster
+scaling displaces their two copies of a line in **opposite directions along the
+surface** and the displacements add. Under the differential pattern the two
+neighbours at a given seam carry `+d` and `-d`, and their displacements partly
+cancel — hence the factor of about two, in the direction opposite to the
+intuition.
+
+**Proposed amendment.** Add one line to §7's basis column for the grid gate: the
+metric is a worst-case *discontinuity*, not a *differential*, and it responds to
+errors that every projector shares — a common field-of-view error above all. It
+is worth stating because the opposite reading is the natural one and because §7's
+other seam gates (A-15, A-24) are genuinely local while this one is not.
+
+**What the code does meanwhile.** `packages/sim/src/metrics/grid.ts` is
+unchanged; the measurement above is a use of it, not a change to it. The
+experiment is `probe/r2fovsplit.ts` and it needs no capture and no solver, which
+is why it was worth running before building anything.
+
+---
+
+## A-33 — §3.1 does not say whether one install's projectors share one throw ratio, and the answer is worth 1.5x in pose position
+
+**Status:** OPEN. Not blocking; a decision the spec can make for free. Reported
+by the solver, measured paired on five fresh seeds.
+
+**The gap.** §3.1 derives `fov_h` from the throw ratio `T` and classes `T` as
+`CFG` — "read from a hardware spec sheet, known per install". A-18 makes that
+sentence the highest-value item on the §8 checklist. What neither says is
+whether the four projectors of one install share a single `T`. A site that buys
+four of one model and sets one zoom has ONE field of view; a site that mixes
+lenses, or sets each zoom by eye, has four.
+
+Both readings are implementable and they are different models. Solving one
+shared `fov_h` costs three degrees of freedom and cannot be right at a site that
+mixes lenses; solving four independent ones cannot be wrong, but spends
+parameters a spec sheet has already paid for.
+
+**The measurement.** Paired, capture once per (seed, scenario) and solve twice
+with only that structural choice moved. Five fresh seeds x seven archetypes = 35
+paired cells. Ratios are four-free / one-shared, so above 1 means the tie helped.
+
+| archetype | pose position | grid displacement |
+| --- | --- | --- |
+| `s01-nominal` (tripod) | 1.02x | 1.07x |
+| `s02-sensor-noise` (tripod) | 1.00x | 0.99x |
+| `s03-high-ambient` (tripod) | 1.51x | 0.96x |
+| `s04-handheld` | **1.40x**, 5 of 5 helped | **0.82x**, 0 of 5 helped |
+| `s06-six-cameras` | **3.21x**, 5 of 5 | **1.60x**, 4 of 5 |
+| `s09-long-throw` | **1.58x**, 5 of 5 | 0.97x |
+| `s10-no-floor-reference` | **7.50x**, 5 of 5 | 1.18x |
+| **all 35 cells** | **1.51x median, 28 helped, 4 hurt** | **0.99x median, 15 helped, 16 hurt** |
+
+So the tie is a large and consistent win on §7's pose-position gate and **inert
+on §7's seam gate** — 0.99x, a dead heat, with a real regression on
+`s04-handheld` (0.82x, four of five cells worse).
+
+**Why the two gates disagree, which is the interesting part.** The recovered
+field-of-view error decomposes into a common-mode part (the mean over
+projectors) and a differential part (their spread). Measured on the same 35
+cells, the differential part is the LARGER of the two on five of the seven
+archetypes:
+
+| archetype | median \|common mode\| | median differential | true differential |
+| --- | --- | --- | --- |
+| `s04-handheld` | 1.643 deg | 1.356 deg | 0.108 deg |
+| `s06-six-cameras` | 0.408 deg | **1.609 deg** | 0.077 deg |
+| `s09-long-throw` | 0.821 deg | 1.118 deg | 0.068 deg |
+| `s10-no-floor-reference` | 0.937 deg | 1.532 deg | 0.068 deg |
+
+Tying removes the differential part, which is why the pose improves. It cannot
+touch the common-mode part, and A-32 measures that the seam gate is **2.2x more
+sensitive to common mode than to differential** — so removing the differential
+error buys the seam gate almost nothing, and on `s04-handheld`, where the common
+mode is the larger term to begin with, forcing the four fields together moves the
+shared value further from truth and the seam gets worse.
+
+**The cost of the tie, stated plainly.** The right-hand column above is the
+per-projector field-of-view spread the bench's own truth generator injects:
+`packages/sim/src/scene.ts` draws `fovHDeg` per projector at sigma = 0.15 deg,
+documented there as "zoom repeatability on a long-throw lens... **Chosen, not
+documented**" — which is A-31's complaint in a different place. So the bench
+asserts the four lenses genuinely differ, and the tie is a modelling error of
+about 0.07-0.13 degrees by construction. That is far smaller than the 1.1-1.6
+degrees of differential error the free fit makes, which is why the tie still
+wins on pose. But it means the measurement above is conditional on a sigma
+nobody has measured.
+
+**Proposed amendment.** One clause in §3.1: state whether an install's
+projectors are assumed to share `T`, and if they are, give the tolerance within
+which they do — the same sentence A-13(a) already asks for, extended from "give
+`T` a tolerance" to "give `T` a tolerance and say whether it is shared". And one
+line in §8 item 2: record the zoom setting **per projector**, not once, because
+that single observation decides which of the two models a site should fit.
+
+**What the code does meanwhile.** `BundleOptions.tieProjectorFov` implements the
+shared reading and is **off by default**, because §3.1 does not license it and
+because the gate the loop is failing — grid displacement — does not improve.
+`packages/solver/test/coherence.test.ts` pins the mechanism (the four recovered
+fields are bit-identical when tied, and the tie is an exact no-op when off)
+rather than pinning a policy. `packages/bench` does not turn it on.

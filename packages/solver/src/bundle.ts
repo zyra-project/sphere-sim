@@ -80,6 +80,7 @@ import {
   mat3Multiply,
   mat3MulVec,
   kabschRotation,
+  median,
   solveSymmetric,
 } from './linalg.ts';
 import {
@@ -297,7 +298,119 @@ export interface BundleOptions {
    * `estimateVarianceComponents`.
    */
   varianceComponents: boolean;
+  /**
+   * Solve ONE horizontal field of view shared by every projector, instead of one
+   * per projector.
+   *
+   * This is a statement about the hardware, not a regularisation trick.
+   * PARAMETERS.md §3.1 derives `fov_h` from the throw ratio `T` and classes `T`
+   * as `CFG` — "read from a hardware spec sheet, known per install". A site runs
+   * four projectors of one model at one zoom setting, so there is one throw
+   * ratio and therefore one field of view; four independent `fov_h` values model
+   * a site that bought four different lenses. Tying them costs three degrees of
+   * freedom and buys nothing when the decode is clean — the four estimates agree
+   * anyway — and matters exactly when the decode carries a bias, because a bias
+   * that differs between projectors otherwise drives the four fields apart, and
+   * a *differential* field-of-view error is what a seam metric sees.
+   *
+   * Off by default: the tie is a claim about the install, and §3.1 does not say
+   * a rig cannot mix lenses. `packages/bench` turns it on per scenario so the
+   * consequence is measured rather than assumed.
+   */
+  tieProjectorFov: boolean;
+  /** Detect residual coherence within a (camera, projector) pair. See `PairCoherenceOptions`. */
+  pairCoherence: PairCoherenceOptions;
 }
+
+/**
+ * Telling a pair whose residuals are BIASED from one whose residuals are NOISY.
+ *
+ * `decode.ts` pools its intensity-noise estimate over tens of thousands of
+ * pixels, which fixed a real defect — the per-pixel estimate was a
+ * one-degree-of-freedom draw and therefore worthless as a weight — and created a
+ * new liability. A pooled sigma is a statement about the SENSOR. It says nothing
+ * about error the decoder is structurally blind to, and under handheld motion
+ * that error dominates: measured against ground truth on this bench, the decode
+ * error of a moving camera is 4-8 projector pixels against 0.2-0.4 static, and
+ * 58-87% of its energy per (camera, projector) pair is a single affine field —
+ * a 3 to 11 pixel translation plus a scale term of order 1%. A confident pooled
+ * sigma hands all of that the weight of independent noise.
+ *
+ * The discriminator is that **bias is coherent within a pair and noise is not**,
+ * and it needs no new capture. Partition a pair's residuals into a grid over the
+ * projector raster and compare each cell's MEAN against what independent noise
+ * of the decode's own stated sigma allows. Under the null a cell of `n` samples
+ * has mean variance `1/n` per axis, so `sum_k n_k * |m_k|^2` has expectation
+ * `2K` for `K` cells and standard deviation `2*sqrt(K)`; anything above that is
+ * variance the decode did not report.
+ *
+ * **Two apparatus signatures must not fire it, and neither can.** The residual
+ * cloud is stretched along `u` by the raster aspect ratio, because `patterns.ts`
+ * counts Gray planes once and spends them on both axes — that is a VARIANCE
+ * property, and standardising each axis by its own decode sigma removes it. The
+ * decode also quantises `u` and `v` independently, so its residual lies on an
+ * axis-aligned lattice — that is zero-mean inside a cell and does not move a
+ * cell mean. A statistic built on cell means is blind to both by construction.
+ *
+ * **The response is a weight, not a subtraction.** A per-pair offset could be
+ * estimated and removed, and that would be a mistake: a genuine projector pose
+ * error also shifts a pair's residual mean, so removing the offset would delete
+ * the evidence for the error the solve exists to find. Inflating the pair's
+ * sigma instead leaves the offset in the objective and only says how much to
+ * believe it.
+ *
+ * **How much to inflate.** Not by the size of the bias — that would be a second
+ * variance component and the per-camera one already carries it. By the LOSS OF
+ * INDEPENDENCE, which is what coherence actually costs: for a field with
+ * intraclass correlation `rho` in clusters of `nbar` samples, the classic design
+ * effect is `1 + (nbar - 1) * rho`, and a pair carrying it is worth `n / deff`
+ * independent observations rather than `n`. Scaling sigma by `sqrt(deff)` is
+ * exactly that correction. It is a no-op when the residuals are incoherent,
+ * which is the tripod case, so a scenario that passes today cannot regress
+ * through this path.
+ */
+export interface PairCoherenceOptions {
+  /**
+   * `off` disables the estimate entirely.
+   *
+   * `raw` uses a pair's own coherence. `specific` first subtracts, cell by cell,
+   * what the OTHER cameras looking at the same projector see there — the part a
+   * projector pose or intrinsics error CANNOT produce, since such an error is a
+   * property of the projector and is common to every camera that photographs it.
+   * `specific` is the conservative reading and `raw` the aggressive one; which
+   * is better is a measurement, so both exist.
+   */
+  mode: 'off' | 'raw' | 'specific';
+  /** Grid cells per axis over the projector raster. */
+  cells: number;
+  /** Fewest samples in a cell for its mean to be worth comparing. */
+  minCell: number;
+  /**
+   * Excess required before any inflation, in standard deviations of the null.
+   *
+   * Soft-thresholded rather than switched: the statistic is reduced by this many
+   * null sigmas and floored at zero, so a marginal detection produces a marginal
+   * inflation instead of a cliff. Without it the estimator's own scatter would
+   * inflate clean pairs by a few per cent for nothing.
+   */
+  significance: number;
+  /**
+   * Ceiling on one pair's sigma multiplier.
+   *
+   * `estimateVarianceComponents` explains the hazard this bounds: a projector
+   * seen by one camera whose pair is driven to zero weight has its parameters
+   * determined by nothing at all, and the damping then decides its pose.
+   */
+  maxScale: number;
+}
+
+export const DEFAULT_PAIR_COHERENCE: PairCoherenceOptions = {
+  mode: 'off',
+  cells: 4,
+  minCell: 24,
+  significance: 3,
+  maxScale: 8,
+};
 
 export const DEFAULT_BUNDLE_OPTIONS: BundleOptions = {
   free: DEFAULT_FREE_FLAGS,
@@ -314,6 +427,8 @@ export const DEFAULT_BUNDLE_OPTIONS: BundleOptions = {
   maxEvaluations: 2000,
   rejectionPasses: 1,
   varianceComponents: true,
+  tieProjectorFov: false,
+  pairCoherence: DEFAULT_PAIR_COHERENCE,
 };
 
 // ---------------------------------------------------------------------------
@@ -328,8 +443,19 @@ export interface ParamLayout {
   slotCenterHeight: number;
   /** Slot -> reduced column index, or -1 when held. */
   freeMap: Int32Array;
-  /** Reduced column index -> slot. */
+  /** Reduced column index -> the slot it is READ from. */
   freeSlots: number[];
+  /**
+   * Reduced column index -> every slot it is WRITTEN to.
+   *
+   * Normally `[freeSlots[i]]`. A tied parameter (see
+   * `BundleOptions.tieProjectorFov`) has several slots on one column: the
+   * Jacobian accumulation already sums every tied slot's derivative into that
+   * column because `freeMap` sends them all there, and this is the other half —
+   * the step has to reach every slot the column stands for, or the state and the
+   * parameter vector drift apart.
+   */
+  columnSlots: number[][];
   n: number;
   /** Human-readable name per reduced column. Used by the rank diagnostics. */
   names: string[];
@@ -357,15 +483,25 @@ export function buildLayout(state: BundleState, opts: BundleOptions): ParamLayou
   const slotCenterHeight = nSlots - 1;
   const freeMap = new Int32Array(nSlots).fill(-1);
   const freeSlots: number[] = [];
+  const columnSlots: number[][] = [];
   const names: string[] = [];
 
   const take = (slot: number, name: string): void => {
     freeMap[slot] = freeSlots.length;
     freeSlots.push(slot);
+    columnSlots.push([slot]);
     names.push(name);
   };
 
+  /** Point `slot` at a column that already exists, so the two move together. */
+  const tieTo = (slot: number, column: number): void => {
+    freeMap[slot] = column;
+    columnSlots[column].push(slot);
+  };
+
   const f = opts.free;
+  // One shared field of view, when the caller says the rig has one lens model.
+  let sharedFovColumn = -1;
   for (let p = 0; p < nProjectors; p++) {
     const id = state.projectors[p].id;
     const anchored =
@@ -383,7 +519,17 @@ export function buildLayout(state: BundleState, opts: BundleOptions): ParamLayou
         take(slotProjector(p, PROJ_ROLL), `${id}.roll`);
       }
     }
-    if (f.projectorFov) take(slotProjector(p, PROJ_FOV), `${id}.fovH`);
+    if (f.projectorFov) {
+      const slot = slotProjector(p, PROJ_FOV);
+      if (!opts.tieProjectorFov) {
+        take(slot, `${id}.fovH`);
+      } else if (sharedFovColumn < 0) {
+        take(slot, 'fovH (shared)');
+        sharedFovColumn = freeSlots.length - 1;
+      } else {
+        tieTo(slot, sharedFovColumn);
+      }
+    }
     if (f.projectorShift) {
       take(slotProjector(p, PROJ_SHIFT_H), `${id}.shiftH`);
       take(slotProjector(p, PROJ_SHIFT_V), `${id}.shiftV`);
@@ -418,6 +564,7 @@ export function buildLayout(state: BundleState, opts: BundleOptions): ParamLayou
     slotCenterHeight,
     freeMap,
     freeSlots,
+    columnSlots,
     n: freeSlots.length,
     names,
   };
@@ -578,9 +725,18 @@ export function packState(s: BundleState, layout: ParamLayout): Float64Array {
   return v;
 }
 
-/** Write a free-parameter vector back into a state. */
+/**
+ * Write a free-parameter vector back into a state.
+ *
+ * Every slot a column stands for is written, not just the one it is read from,
+ * so a tied parameter reaches all of its slots. With no ties `columnSlots[i]` is
+ * `[freeSlots[i]]` and this is the obvious loop.
+ */
 export function unpackState(v: Float64Array, s: BundleState, layout: ParamLayout): void {
-  for (let i = 0; i < layout.n; i++) writeSlot(s, layout, layout.freeSlots[i], v[i]);
+  for (let i = 0; i < layout.n; i++) {
+    const slots = layout.columnSlots[i];
+    for (let k = 0; k < slots.length; k++) writeSlot(s, layout, slots[k], v[i]);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -645,6 +801,17 @@ export interface BundleProblem {
    * floored at 1.
    */
   cameraScale: Float64Array;
+  /**
+   * Per (camera, projector) pair: how much of that pair's residual is coherent
+   * rather than independent, expressed as a sigma multiplier.
+   *
+   * Indexed `camera * nProjectors + projector`, all 1 until `runBundle` estimates
+   * them between LM passes. Multiplies `cameraScale`, which is the layer below
+   * it: the camera term says how much worse this camera is overall, this one says
+   * how much of what is left is structure rather than noise. See
+   * `PairCoherenceOptions`.
+   */
+  pairScale: Float64Array;
 }
 
 export function buildProblem(
@@ -678,10 +845,23 @@ export function buildProblem(
     }
   }
 
+  // One prior per COLUMN, not per slot. Without ties the two are the same thing.
+  // With them, four spec-sheet priors on four slots that are one parameter would
+  // stack into a prior twice as tight as any of them — four readings of the same
+  // spec sheet are not four measurements.
+  const priorColumns = new Set<number>();
+  const livePriors = priors.filter((p) => {
+    if (!(p.sigma > 0)) return false;
+    const col = layout.freeMap[p.slot];
+    if (col < 0 || priorColumns.has(col)) return false;
+    priorColumns.add(col);
+    return true;
+  });
+
   return {
     correspondences,
     floor,
-    priors: priors.filter((p) => p.sigma > 0 && layout.freeMap[p.slot] >= 0),
+    priors: livePriors,
     layout,
     opts,
     excluded: new Array(correspondences.length).fill(false),
@@ -690,6 +870,7 @@ export function buildProblem(
     normalized,
     normalizedValid: !opts.free.cameraFocal,
     cameraScale: new Float64Array(layout.nCameras).fill(1),
+    pairScale: new Float64Array(layout.nCameras * layout.nProjectors).fill(1),
   };
 }
 
@@ -812,7 +993,9 @@ export function evaluate(
 
     const du = u - corr.projU;
     const dv = v - corr.projV;
-    const cs = problem.cameraScale[corr.camera];
+    const cs =
+      problem.cameraScale[corr.camera] *
+      problem.pairScale[corr.camera * layout.nProjectors + corr.projector];
     const wu = 1 / (corr.sigmaU * cs);
     const wv = 1 / (corr.sigmaV * cs);
     const su = du * wu;
@@ -1254,6 +1437,13 @@ export interface BundleReport {
    * its own input owes the reader that number.
    */
   cameraResidualScale: number[];
+  /**
+   * Per (camera, projector) pair, indexed `camera * nProjectors + projector`:
+   * how much its sigma was inflated for residual coherence the decode could not
+   * see. 1.0 means the pair's residuals were consistent with independent noise
+   * of the decode's own stated sigma. See `PairCoherenceOptions`.
+   */
+  pairResidualScale: number[];
 }
 
 /**
@@ -1274,6 +1464,12 @@ export function levenbergMarquardt(
 ): BundleReport {
   const { layout, opts } = problem;
   let state = cloneState(initial);
+  // Put the state on the tie manifold before the first evaluation. Without ties
+  // this reads each free slot and writes the same value straight back — exactly
+  // a no-op. With ties it makes the initial state consistent with the parameter
+  // vector, instead of letting the first accepted step silently equalise four
+  // fields of view and charging the difference to that step.
+  unpackState(packState(state, layout), state, layout);
 
   if (layout.n === 0) {
     const ev = evaluate(state, problem, false);
@@ -1505,6 +1701,7 @@ function finishReport(
     lastDeficiency,
     priorResiduals,
     cameraResidualScale: Array.from(problem.cameraScale),
+    pairResidualScale: Array.from(problem.pairScale),
   };
 }
 
@@ -1567,6 +1764,169 @@ export function estimateVarianceComponents(
 }
 
 /**
+ * Per-pair coherence: how much of a (camera, projector) pair's residual is
+ * structure rather than noise, as a sigma multiplier.
+ *
+ * See `PairCoherenceOptions` for the argument. The arithmetic:
+ *
+ *  1. Standardise each residual per axis by the pair's OWN robust scale on that
+ *     axis. Not by the decode's stated sigma: a sigma that is uniformly too small
+ *     is a VARIANCE error and belongs to `estimateVarianceComponents`, and if it
+ *     reached this statistic the two would charge for the same excess twice. It
+ *     is also what makes the estimate blind to the raster-aspect anisotropy — the
+ *     decode's residual is 1920/1080 wider in `u` than in `v` because
+ *     `patterns.ts` spends one Gray-plane count on both axes, and dividing each
+ *     axis by its own scale removes that whether the decode declared it or not.
+ *  2. Bin by position in the projector raster and take each cell's mean. A cell
+ *     mean is blind to the decode's axis-aligned quantisation lattice, which is
+ *     zero-mean inside any cell.
+ *  3. `S = sum_k n_k |m_k|^2` has expectation `2K` and standard deviation
+ *     `2 sqrt(K)` for `K` cells of independent unit-variance residuals. Soft
+ *     threshold the excess at `significance` null sigmas.
+ *  4. Turn the excess into an intraclass correlation and then into the design
+ *     effect `1 + (nbar - 1) * rho`, and return its square root.
+ *
+ * In `specific` mode step 3 first subtracts, cell by cell, the mean of the OTHER
+ * cameras looking at the same projector, and corrects for that estimate's own
+ * variance. What survives cannot be a property of the projector.
+ */
+export function estimatePairCoherence(
+  state: BundleState,
+  problem: BundleProblem,
+  ev: EvalResult,
+): Float64Array {
+  const { layout, opts, correspondences } = problem;
+  const o = opts.pairCoherence;
+  const nPairs = layout.nCameras * layout.nProjectors;
+  const out = new Float64Array(nPairs).fill(1);
+  if (o.mode === 'off' || nPairs === 0) return out;
+
+  const g = Math.max(1, Math.floor(o.cells));
+  const cellsPerPair = g * g;
+
+  // Pass 1: collect each live correspondence's pair, cell and per-axis residual.
+  const pairOf: number[] = [];
+  const cellOf: number[] = [];
+  const du: number[] = [];
+  const dv: number[] = [];
+  for (let i = 0; i < correspondences.length; i++) {
+    if (problem.excluded[i] || !ev.usable[i]) continue;
+    const corr = correspondences[i];
+    const proj = state.projectors[corr.projector];
+    if (!proj || !(proj.resX > 0) || !(proj.resY > 0)) continue;
+    const a = ev.raw[2 * i];
+    const b = ev.raw[2 * i + 1];
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+    const cu = Math.min(g - 1, Math.max(0, Math.floor((corr.projU / proj.resX) * g)));
+    const cv = Math.min(g - 1, Math.max(0, Math.floor((corr.projV / proj.resY) * g)));
+    pairOf.push(corr.camera * layout.nProjectors + corr.projector);
+    cellOf.push(cv * g + cu);
+    du.push(a);
+    dv.push(b);
+  }
+
+  // Pass 2: each pair's own robust scale per axis. Dividing by this rather than
+  // by the decode's stated sigma is what keeps this statistic about STRUCTURE.
+  // A pair whose sigma is uniformly too small — including too small on one axis
+  // only, which is what the raster-aspect anisotropy looks like — has a variance
+  // problem, and `estimateVarianceComponents` is where variance is priced.
+  const absU: number[][] = [];
+  const absV: number[][] = [];
+  for (let p = 0; p < nPairs; p++) {
+    absU.push([]);
+    absV.push([]);
+  }
+  for (let i = 0; i < pairOf.length; i++) {
+    absU[pairOf[i]].push(Math.abs(du[i]));
+    absV[pairOf[i]].push(Math.abs(dv[i]));
+  }
+  // median(|N(0, s)|) = 0.6745 s.
+  const HALF_NORMAL = 0.674489750196082;
+  const scaleU = new Float64Array(nPairs);
+  const scaleV = new Float64Array(nPairs);
+  for (let p = 0; p < nPairs; p++) {
+    if (absU[p].length < 2 * o.minCell) continue;
+    scaleU[p] = median(absU[p]) / HALF_NORMAL;
+    scaleV[p] = median(absV[p]) / HALF_NORMAL;
+  }
+
+  // Pass 3: cell sums of the doubly-standardised residual, per pair and per
+  // projector. The projector sums are what `specific` mode's consensus reads.
+  //
+  // A known weakness of that consensus, stated because it is the mode that
+  // measured WORSE: each pair contributes in its OWN noise units, so averaging
+  // across cameras mixes scales, and the cameras of one projector overlap only
+  // where their views do — a cell one camera covers well may be empty for its
+  // neighbours, which is why cells with too little consensus are skipped rather
+  // than compared. Both are reasons to distrust `specific`, and the paired
+  // measurement in docs/PHASE-1.md says to.
+  const pairN = new Int32Array(nPairs * cellsPerPair);
+  const pairU = new Float64Array(nPairs * cellsPerPair);
+  const pairV = new Float64Array(nPairs * cellsPerPair);
+  const projN = new Int32Array(layout.nProjectors * cellsPerPair);
+  const projU = new Float64Array(layout.nProjectors * cellsPerPair);
+  const projV = new Float64Array(layout.nProjectors * cellsPerPair);
+  for (let i = 0; i < pairOf.length; i++) {
+    const pair = pairOf[i];
+    if (!(scaleU[pair] > 0) || !(scaleV[pair] > 0)) continue;
+    const zu = du[i] / scaleU[pair];
+    const zv = dv[i] / scaleV[pair];
+    const pi = pair * cellsPerPair + cellOf[i];
+    pairN[pi]++;
+    pairU[pi] += zu;
+    pairV[pi] += zv;
+    const gi = (pair % layout.nProjectors) * cellsPerPair + cellOf[i];
+    projN[gi]++;
+    projU[gi] += zu;
+    projV[gi] += zv;
+  }
+
+  for (let pair = 0; pair < nPairs; pair++) {
+    const projector = pair % layout.nProjectors;
+    let s = 0;
+    let k = 0;
+    let n = 0;
+    for (let cell = 0; cell < cellsPerPair; cell++) {
+      const pi = pair * cellsPerPair + cell;
+      const nk = pairN[pi];
+      if (nk < o.minCell) continue;
+      let mu = pairU[pi] / nk;
+      let mv = pairV[pi] / nk;
+      let extra = 0;
+      if (o.mode === 'specific') {
+        const gi = projector * cellsPerPair + cell;
+        const on = projN[gi] - nk;
+        if (on < o.minCell) continue;
+        mu -= (projU[gi] - pairU[pi]) / on;
+        mv -= (projV[gi] - pairV[pi]) / on;
+        // The consensus is itself an average of `on` noisy samples, so it adds
+        // `1/on` of variance per axis to the difference. Charging the pair for
+        // the estimator's own noise would inflate every pair a little, which is
+        // exactly the failure the significance floor exists to prevent.
+        extra = (2 * nk) / on;
+      }
+      s += nk * (mu * mu + mv * mv) - extra;
+      n += nk;
+      k++;
+    }
+    if (k < 2 || n <= 0) continue;
+    // Expectation 2K, standard deviation 2*sqrt(K), under independence.
+    const excess = s - 2 * k - o.significance * 2 * Math.sqrt(k);
+    if (!(excess > 0)) continue;
+    const tau2 = excess / n;
+    const rho = tau2 / (1 + tau2);
+    const nbar = n / k;
+    const deff = 1 + (nbar - 1) * rho;
+    // Absolute, not multiplicative: the statistic is computed on residuals
+    // divided by the pair's OWN scale, so it does not see the weight the last
+    // pass assigned. `estimateVarianceComponents` is multiplicative for exactly
+    // the opposite reason — its residuals arrive already scaled by it.
+    out[pair] = Math.min(o.maxScale, Math.max(1, Math.sqrt(deff)));
+  }
+  return out;
+}
+
+/**
  * Fit, reject outliers, refit.
  *
  * The rejection happens between complete LM runs rather than inside the loop.
@@ -1594,6 +1954,7 @@ export function runBundle(
     free: { ...DEFAULT_FREE_FLAGS, ...(options.free ?? {}) },
     gauge: { ...DEFAULT_GAUGE_OPTIONS, ...(options.gauge ?? {}) },
     loss: { ...DEFAULT_ROBUST_OPTIONS, ...(options.loss ?? {}) },
+    pairCoherence: { ...DEFAULT_PAIR_COHERENCE, ...(options.pairCoherence ?? {}) },
   };
   const problem = buildProblem(initial, correspondences, floor, opts, priors);
 
@@ -1622,9 +1983,40 @@ export function runBundle(
         problem.cameraScale[c] = next[c];
       }
     }
+    // Pair coherence AFTER the camera term, and measured on residuals already
+    // standardised by it, so the two do not both charge for the same excess.
+    if (opts.pairCoherence.mode !== 'off') {
+      const next = estimatePairCoherence(report.state, problem, ev);
+      for (let k = 0; k < next.length; k++) {
+        if (Math.abs(next[k] - problem.pairScale[k]) > 1e-3 * problem.pairScale[k]) {
+          scaleChanged = true;
+        }
+        problem.pairScale[k] = next[k];
+      }
+    }
 
     const rejEv = scaleChanged ? evaluate(report.state, problem, false) : ev;
-    const rej = rejectOutliers(rejEv.norms, opts.loss, priorExcluded);
+    // Rejection is judged WITHOUT the pair-coherence inflation, and that
+    // separation is not a detail. The two mechanisms answer different questions:
+    // the pair scale asks how much to trust a pair as a whole, the rejection
+    // pass asks whether one correspondence is a gross error — a slipped fringe
+    // order, a misread Gray word. Letting the pair scale into the rejection
+    // statistic makes them fight: inflating a biased pair's sigma shrinks its
+    // standardised residuals, the robust scale falls, the threshold floors at
+    // `rejectFloor`, and the pass stops discarding anything at all. Measured on
+    // s04-handheld, that took rejections from 661 to 69 — the estimator declared
+    // a pair untrustworthy and thereby made the solver keep MORE of it.
+    // Multiplying the norms back by the pair scale undoes it exactly, since both
+    // axes carry the same factor.
+    const rejNorms = Float64Array.from(rejEv.norms);
+    if (opts.pairCoherence.mode !== 'off') {
+      const nProj = problem.layout.nProjectors;
+      for (let i = 0; i < rejNorms.length; i++) {
+        const corr = problem.correspondences[i];
+        rejNorms[i] *= problem.pairScale[corr.camera * nProj + corr.projector];
+      }
+    }
+    const rej = rejectOutliers(rejNorms, opts.loss, priorExcluded);
     let changed = false;
     for (let i = 0; i < problem.excluded.length; i++) {
       const next = !rej.keep[i];

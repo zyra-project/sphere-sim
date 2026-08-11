@@ -220,6 +220,16 @@ export interface SolverExtraDiagnostics {
    */
   cameraResidualScale: number[];
   /**
+   * Per (camera, projector) pair, indexed `camera * nProjectors + projector`:
+   * the extra sigma the fit charged that pair for residual COHERENCE — structure
+   * the decode's own noise model cannot account for, because the decoder is
+   * blind to anything that happens between frames. 1.0 means the pair's
+   * residuals looked like independent noise of the size the decode claimed.
+   * Reported for the same reason as `cameraResidualScale`: a solver that
+   * reweights its own input owes the reader the numbers.
+   */
+  pairResidualScale: number[];
+  /**
    * Recovered camera poses.
    *
    * Not part of `RigCalibration` — the boundary object describes the rig, not
@@ -467,6 +477,7 @@ export function solve(input: SolveInput): SolverResult {
       centerHeightObserved,
       priorResiduals: report.priorResiduals,
       cameraResidualScale: report.cameraResidualScale,
+      pairResidualScale: report.pairResidualScale,
       cameras: report.state.cameras,
     },
   };
