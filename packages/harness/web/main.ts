@@ -411,7 +411,13 @@ function parityBlock(): string {
     <div class="pnote">The GLSL renderer is a SECOND implementation of the simulator's model
       (docs/ARCHITECTURE.md). This is the delta between it and <code>packages/sim</code>'s CPU tracer on
       the same scene, at ${PARITY_W}×${PARITY_H} and ${PARITY_PW}×${PARITY_PH}, read back in
-      ${gl && gl.floatReadback ? 'float' : '8-bit (no EXT_color_buffer_float — tolerance widened to 1/255)'}.
+      ${
+        gl && gl.floatReadback
+          ? 'float'
+          : '8-bit — this device has no EXT_color_buffer_float, so the read-back quantizes at 1/255 and clamps ' +
+            'anything above a relative radiance of 1.0. The tolerance is widened to 1/255 accordingly, and a ' +
+            'scene bright enough to clamp would read as a disagreement that is really the read-back path'
+      }.
       Texture format ${gl ? gl.textureFormat : '?'}. The verdict is taken on the 99.9th percentile because a
       geometric boundary landing between two samples produces a full-amplitude delta at one pixel and that
       is not drift.</div>
