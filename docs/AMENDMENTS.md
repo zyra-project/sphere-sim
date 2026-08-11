@@ -1732,3 +1732,164 @@ every correspondence, so the assumption is visible in the data rather than burie
 in a solver. `packages/bench/src/capture.ts` keeps its per-pair clock restart for
 now: changing the forward model's motion in the same round that measures against
 it would make the measurement uninterpretable.
+
+---
+
+## A-35 — the projector is a BenQ LK935: six §3 values move from ASSUME/inferred to CFG, and one of them is impossible as written
+
+**Status:** OPEN, and the highest-value entry in this file. The owner supplied the
+projector's user manual (BenQ LK935, document LK935_UM_EN, 102 pp). §3.1 classes
+the throw ratio `T` as `CFG` — "read from a hardware spec sheet". This is that
+spec sheet.
+
+Everything below is quoted or derived from the manual, with the derivation shown.
+
+### The measured optical envelope
+
+| Quantity | Manual | Section it settles |
+| --- | --- | --- |
+| Native resolution | **3840 × 2160** | §3.4 — confirms the 7680×4320 X screen exactly |
+| Display system | **1-CHIP DMD** (DLP) | §3.2 — "DLP and LCD leak differently per channel"; it is DLP |
+| Lens | F = 1.809–2.1, **f = 14.3–22.9 mm** | §3.1 |
+| Light source | **Laser** | §3.2, §8 item 17 — see below |
+| Clear focus range | **1.8–6.0 m @ wide, 2.88–9.60 m @ tele** | §3.3 |
+| Lens shift | **±0.6 V vertical, ±0.23 H horizontal** | §3.1, A-12 |
+
+### 1. The throw ratio, and why §3.1's value cannot be right
+
+Derived from the manual's own projection-distance table (three rows checked, all
+identical), and cross-checked against the focal lengths:
+
+| | |
+| --- | --- |
+| Throw ratio | **1.36 : 1 (wide) to 2.18 : 1 (tele)** |
+| Zoom | 1.60× |
+| Focal-length ratio 22.9 / 14.3 | 1.601 — agrees |
+| Horizontal FOV | **40.37° (wide) to 25.84° (tele)** |
+
+**§3.1 gives `T ≈ 3.0:1`. That is beyond the tele end of this lens and is not
+achievable by this projector at any zoom setting.**
+
+And the geometry that A-01 derived independently is squarely inside the envelope.
+To cover a 1.7272 m sphere vertically with a 16:9 raster the image must be
+3.0706 m wide, so:
+
+| `d_proj` | required `T` | `fov_h` | within 1.36–2.18? |
+| --- | --- | --- | --- |
+| 5.18 m (alignment manual) | **1.687** | 33.02° | yes |
+| 6.14 m (floor plan) | **2.000** | 28.08° | yes |
+
+A-01 predicted `T ≈ 1.69` from the sphere's geometry alone, before this manual
+existed. The hardware agrees to three digits. **A-01's reading is confirmed by
+independent evidence and §3.1's 3.0 is refuted.**
+
+Note also that the LK935 covers the sphere across the *whole* of §2's disputed
+`d_proj` range, so the 17 ft / 18–20 ft conflict does not change which lens is
+needed. It changes only the zoom setting.
+
+### 2. What this does and does not do for the degeneracy
+
+**Does:** `fov_h` is now bounded by hardware to **[25.84°, 40.37°]**, class `CFG`.
+That is a hard physical box where the solver previously had an effectively
+unbounded prior.
+
+**Does not:** the zoom is a continuously adjustable manual ring, not a fixed
+lens. Knowing the model gives a *range*, not a value — and because the Red Ball
+procedure sets the zoom until the image matches the sphere, `T` stays coupled to
+`d_proj` exactly as before. **The model number alone does not break the
+fov/distance degeneracy.**
+
+**What would break it**, now stateable precisely rather than vaguely:
+measure the projected image's width on the sphere, or record the zoom ring
+position, at the install. §8 item 2 should say so explicitly.
+
+**What it does license immediately:** all four projectors are the same model in
+one install, bought together, so they share one lens and one throw ratio.
+Round 2 measured that tying `fovHDeg` across projectors is worth **1.51× median
+in pose position** (28 of 32 cells helped, up to 7.50×) and left it off by
+default because whether the projectors share a lens was a question for §3.1.
+**This manual answers that question.**
+
+### 3. §3.3's depth-of-field concern does not survive
+
+§3.3 says focus is worst exactly where the blend regions sit, so "a passing seam
+score in simulation may overstate reality", and §9 lists it as one of the two
+omissions that "matter most".
+
+The depth swing across one footprint is 0.791 m at `d_proj` = 5.18 m and 0.803 m
+at 6.14 m. The LK935's clear focus range is **2.88–9.60 m at tele — a 6.7 m
+span**, and 1.8–6.0 m at wide, a 4.2 m span. The sphere's entire depth swing sits
+comfortably inside either.
+
+**Proposed:** downgrade depth of field in §3.3 and §9 from a leading concern to a
+minor one, citing the clear-focus range. It remains unmodelled, which is now a
+defensible omission rather than a worrying one.
+
+### 4. The light source is a laser, which undermines §3.2's gain rationale
+
+§3.2 justifies per-projector channel gain divergence as lamp aging: "Four lamps
+at different hour counts give four different white points." §8 item 17 asks the
+site for lamp hours, calling it a direct predictor of `g` divergence.
+
+**There are no lamps.** A laser light source's output decays far more slowly and
+far more predictably than a UHP lamp — tens of thousands of hours to half
+brightness against a few thousand — so four LK935s at different hour counts
+should diverge much less than four lamp projectors would.
+
+This does not make `g_R,G,B` measured; it is still `ASSUME`. But the *mechanism*
+§3.2 cites is largely absent, which suggests the assumed divergence is too
+pessimistic, and it demotes §8 item 17 from a predictor to a formality.
+
+**Proposed:** restate §3.2's gain rationale around laser/phosphor ageing and
+unit-to-unit manufacturing spread, and reword §8 item 17.
+
+### 5. What the code does with this
+
+`packages/calibration/src/parameters.ts` gains an explicit `LK935` projector
+profile carrying these values with their `CFG` provenance and this citation.
+The PARAMETERS.md nominals are **not** overwritten — §3.1 still says what it says
+until the author decides. The profile is opt-in and named, so any result computed
+with it is attributable.
+
+### 6. Cross-check against the product page, supplied separately
+
+The owner also supplied BenQ's published specification page. It confirms the
+derivation above and adds one value the manual omits.
+
+| | product page | derived here from the manual's distance table |
+| --- | --- | --- |
+| Throw ratio | 1.36~2.18 | **1.360-2.180** |
+| Zoom | 1.6x | **1.60x** |
+| Lens shift, vertical | -60% ~ +60% | +/-0.6 V |
+| Lens shift, horizontal | -23% ~ +23% | +/-0.23 H |
+
+The throw ratio here was obtained by dividing projection distance by image width
+across three rows of the manual's own table, so the product page is an
+independent confirmation rather than a restatement.
+
+**New from the product page: `Projection Offset (Full-Height) 0%`.** The image is
+centred on the optical axis at neutral shift, with no built-in vertical offset —
+many projectors sit at 100% or more, throwing the entire image above the lens
+axis. This confirms §3.1's nominal of `shift_v = shift_h = 0` is correct for this
+hardware, and pairs it with the mechanical range that §3.1 was missing. Together
+they are the whole of what A-12 asked for.
+
+Also published: keystone adjustment, 3D, +/-30 degrees vertical, horizontal and
+rotation. Not modelled and not needed — SOS uses the Vertex Tweaking stage rather
+than projector keystone, and §3.1's distortion model is Brown-Conrady.
+
+**One conflict, and the manual wins.** The product page gives `f = 8.6 ~ 9.4`
+against the manual's `f = 14.3 ~ 22.9 mm`. Only the manual is self-consistent:
+
+| source | focal ratio | vs stated 1.6x zoom | implied DMD width from each end |
+| --- | --- | --- | --- |
+| manual | 22.9/14.3 = **1.601** | agrees | 10.51 and 10.50 mm — consistent |
+| product page | 9.4/8.6 = **1.093** | disagrees | 6.32 and 4.31 mm — inconsistent |
+
+A 0.47-inch 16:9 DMD is 10.40 mm wide, and a throw ratio of 1.36-2.18 on that
+part implies f = 14.2-22.7 mm. The manual's figure lands on a real component; the
+product page's lands on nothing and contradicts its own zoom ratio.
+
+Nothing in the simulator depends on focal length directly — throw ratio is the
+operative quantity and both sources agree on it — so this conflict is recorded
+for completeness rather than because it blocks anything.
