@@ -70,6 +70,34 @@ export interface CameraIntrinsics {
   p2: number;
 }
 
+/**
+ * How fast the camera was moving, per unit of capture time.
+ *
+ * The unit of time is ONE PATTERN FRAME, because that is the only clock the
+ * decoder can read off its own input: `decode.ts` knows the frame ORDER of a
+ * capture from the pattern contract it defines, and does not know the frame
+ * interval in seconds. A rate expressed per frame needs no such constant, and
+ * the seconds cancel out of every residual anyway — only the ratio between the
+ * epochs of two observations matters.
+ *
+ * Zero everywhere is a camera on a tripod, and is the default state of every
+ * solve. See `BundleFreeFlags.cameraVelocity`.
+ */
+export interface CameraRate {
+  /** Metres per frame. */
+  px: number;
+  py: number;
+  pz: number;
+  /** Degrees per frame, on the same three Euler angles as the pose. */
+  yawDeg: number;
+  pitchDeg: number;
+  rollDeg: number;
+}
+
+export function zeroCameraRate(): CameraRate {
+  return { px: 0, py: 0, pz: 0, yawDeg: 0, pitchDeg: 0, rollDeg: 0 };
+}
+
 export interface CameraModel {
   position: Vec3;
   yawDeg: number;
@@ -84,6 +112,36 @@ export interface CameraModel {
    * camera's distance from the sphere.
    */
   focalScale: number;
+  /**
+   * Rate of change of the pose over the capture, per pattern frame.
+   *
+   * The pose above is then the pose at the reference epoch the bundle chose,
+   * and the camera at time `t` is `pose + velocity * (t - tRef)`. A tripod
+   * capture leaves this at zero and every arithmetic result is identical to a
+   * solver that had no such field — which is asserted rather than assumed, in
+   * `test/time-aware.test.ts`.
+   */
+  velocity: CameraRate;
+}
+
+/** The camera as it was at `t`, given a reference epoch. Pure; allocates. */
+export function cameraAtTime(cam: CameraModel, t: number, tRef: number): CameraModel {
+  const d = t - tRef;
+  if (d === 0) return cam;
+  const v = cam.velocity;
+  return {
+    position: {
+      x: cam.position.x + v.px * d,
+      y: cam.position.y + v.py * d,
+      z: cam.position.z + v.pz * d,
+    },
+    yawDeg: cam.yawDeg + v.yawDeg * d,
+    pitchDeg: cam.pitchDeg + v.pitchDeg * d,
+    rollDeg: cam.rollDeg + v.rollDeg * d,
+    intrinsics: cam.intrinsics,
+    focalScale: cam.focalScale,
+    velocity: cam.velocity,
+  };
 }
 
 /** Free-parameter ordering for one camera. `const` bindings, not an enum (see project.ts). */
@@ -94,7 +152,25 @@ export const CAM_YAW = 3;
 export const CAM_PITCH = 4;
 export const CAM_ROLL = 5;
 export const CAM_FOCAL = 6;
-export const CAM_PARAM_COUNT = 7;
+/**
+ * The six velocity slots, in the same order as the six pose slots.
+ *
+ * They sit after the focal rather than beside their own pose components so
+ * that the first seven indices — and therefore every slot number a caller
+ * built before this existed — are unchanged.
+ */
+export const CAM_VPX = 7;
+export const CAM_VPY = 8;
+export const CAM_VPZ = 9;
+export const CAM_VYAW = 10;
+export const CAM_VPITCH = 11;
+export const CAM_VROLL = 12;
+export const CAM_PARAM_COUNT = 13;
+
+/** Pose slot each velocity slot differentiates. `-1` for the non-velocity slots. */
+export const CAM_VELOCITY_OF: readonly number[] = [
+  -1, -1, -1, -1, -1, -1, -1, CAM_PX, CAM_PY, CAM_PZ, CAM_YAW, CAM_PITCH, CAM_ROLL,
+];
 
 export const CAM_PARAM_NAMES: readonly string[] = [
   'px',
@@ -104,6 +180,12 @@ export const CAM_PARAM_NAMES: readonly string[] = [
   'pitchDeg',
   'rollDeg',
   'focalScale',
+  'vpx',
+  'vpy',
+  'vpz',
+  'vyawDeg',
+  'vpitchDeg',
+  'vrollDeg',
 ];
 
 /**
@@ -264,6 +346,15 @@ export function intersectSphereJacobian(
   /** Precomputed rotation and derivatives; see the note on `projectPointJacobian`. */
   precomputedRotation?: RotationWithDerivatives,
   out?: Float64Array,
+  /**
+   * Elapsed time from the reference epoch to this observation, in pattern
+   * frames. When supplied, the six velocity columns are filled as `dt` times
+   * their own pose column — which is exact, not an approximation, because the
+   * effective pose is affine in the rate: `pose(t) = pose + velocity * dt`.
+   * Omit it (or pass 0) and those columns stay zero, which is what a solve with
+   * the velocity held wants.
+   */
+  dt?: number,
 ): SphereHitJacobian {
   const dPoint = out ?? new Float64Array(3 * CAM_PARAM_COUNT);
   dPoint.fill(0);
@@ -312,6 +403,16 @@ export function intersectSphereJacobian(
   rotSlot(rot.dYaw, CAM_YAW);
   rotSlot(rot.dPitch, CAM_PITCH);
   rotSlot(rot.dRoll, CAM_ROLL);
+
+  // --- velocity: the chain rule on `pose(t) = pose + velocity * dt` ---
+  if (dt !== undefined && dt !== 0) {
+    for (let slot = CAM_VPX; slot <= CAM_VROLL; slot++) {
+      const src = CAM_VELOCITY_OF[slot];
+      dPoint[0 * CAM_PARAM_COUNT + slot] = dt * dPoint[0 * CAM_PARAM_COUNT + src];
+      dPoint[1 * CAM_PARAM_COUNT + slot] = dt * dPoint[1 * CAM_PARAM_COUNT + src];
+      dPoint[2 * CAM_PARAM_COUNT + slot] = dt * dPoint[2 * CAM_PARAM_COUNT + src];
+    }
+  }
 
   return { hit, dPoint };
 }

@@ -58,6 +58,7 @@ Entries here address one of two documents, and the rule differs:
 | A-29 | PARAMETERS.md §7 / §8 | the black-uplift gates cannot be planned one constant at a ... | OPEN |
 | A-32 | PARAMETERS.md §7 | §7's grid gate is 2.2x MORE sensitive to a COMMON-MODE fiel... | OPEN |
 | A-33 | PARAMETERS.md §3.1 / §2 | §3.1 does not say whether one install's projectors share on... | OPEN |
+| A-34 | PARAMETERS.md §8 | §8's capture checklist does not record WHEN each frame was ... | OPEN |
 
 **A note on citing these entries mechanically.** `gate-waivers.json` cites an
 entry by id AND by a fragment of its title, and `packages/bench/src/waivers.ts`
@@ -1672,3 +1673,62 @@ because the gate the loop is failing — grid displacement — does not improve.
 `packages/solver/test/coherence.test.ts` pins the mechanism (the four recovered
 fields are bit-identical when tied, and the tie is an exact no-op when off)
 rather than pinning a policy. `packages/bench` does not turn it on.
+
+---
+
+## A-34 — §8's capture checklist does not record WHEN each frame was taken, and the solver's best available guess is worth 1.4-5.8x on the seam gate
+
+**Status:** OPEN. Actionable for free — every phone RAW carries a timestamp.
+Reported by the solver and the bench, measured paired on five fresh seeds.
+
+**The gap.** §8 lists what a ground-truth visit must capture: 35 frames per
+projector, RAW only, one projector at a time. It says nothing about **when** the
+frames were taken — not the frame interval, not the ordering guarantee between
+one projector's sequence and the next, and not whether the operator paused
+between sequences.
+
+That silence used to be harmless because nothing read it. It is not harmless any
+more. A structured-light correspondence is not one observation: its `u` is
+decoded from one block of frames and its `v` from a block shot later, and under a
+handheld capture the camera has moved in between. Round 3 built a solver that
+models that (`BundleFreeFlags.cameraVelocity`), and it can only do so by
+ASSUMING a clock, because the capture does not carry one.
+
+**The measurement.** Paired, capture once per (seed, scenario), solve twice with
+only the assumed clock moved. Ratios are base/variant, so above 1 means the
+variant helped; `perCapture` assumes every projector's sequence starts from the
+same point of the operator's motion, `sequential` assumes they run back to back.
+
+| assumed clock | grid displacement, all cells | tripod cells |
+| --- | --- | --- |
+| `perCapture` (matches this bench) | **1.38x median, 22 helped / 8 hurt** | 1.00x, all four archetypes still pass |
+| `sequential` (matches a real capture) | **0.30x median, 0 helped / 23 hurt** | 0.23x, three of four archetypes FAIL |
+
+**Getting the clock wrong is three times worse than not modelling time at all.**
+That is the whole content of this amendment: a mechanism that helps by 1.4x when
+told the truth hurts by 3.3x when told a plausible lie, and nothing in the
+documented capture protocol lets the solver tell which it has been told.
+
+**A second consequence, for this repository rather than for the spec.**
+`packages/bench/src/capture.ts` restarts the frame clock at zero for every
+(camera, projector) pair, so the simulated operator repeats the same 1.7 seconds
+of tremor, sway and drift for each projector in turn. A real operator does not:
+their motion continues across the whole session. The bench's choice is what makes
+one trajectory per camera the exactly-correct model, and a real capture would
+need one per (camera, projector) pair. The number in the first row above is
+therefore conditional on a modelling choice nobody wrote down, which is the same
+defect as the one this entry asks §8 to fix, one level in.
+
+**Proposed amendment.** Two lines. In §8, add to the capture checklist: *record
+each frame's timestamp (RAW metadata is sufficient), and record whether the
+projector sequences were shot back to back or with pauses.* And in §8 item 2's
+neighbourhood, state the pattern ORDER as part of the protocol rather than
+leaving it to the pattern generator, because the order is what decides which
+frames a coordinate is attributed to.
+
+**What the code does meanwhile.** `DecodeOptions.frameEpochs` names the clock it
+assumed (`off`, `perCapture`, `sequential`) and reports the resulting epochs on
+every correspondence, so the assumption is visible in the data rather than buried
+in a solver. `packages/bench/src/capture.ts` keeps its per-pair clock restart for
+now: changing the forward model's motion in the same round that measures against
+it would make the measurement uninterpretable.

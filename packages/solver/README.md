@@ -208,7 +208,11 @@ procedure works in.
   noise allows. It separates the two regimes cleanly: on the bench corpus it
   fires on 0 to 1 of 12 pairs under a tripod (largest inflation 1.25x) and on 9
   of 12 under handheld motion (a typical pair inflated 5x to 8x, several at the
-  8x cap), and it is blind by
+  8x cap). **It also fires on heavy tails with no structure present at all** —
+  its scale estimator is `median(|r|)/0.6745`, a Gaussian relation, so i.i.d.
+  Student-t(3) inflates 3 of 12 pairs and a 90/10 Gaussian mixture 7 of 12. So
+  it discriminates kurtosis as readily as coherence, and an outlier-contaminated
+  decode is heavy-tailed. It is blind by
   construction to both apparatus signatures the progress page subtracts — the
   1920/1080 raster-aspect anisotropy of the decode, which per-axis
   standardisation removes, and the axis-aligned quantisation cross, which is
@@ -241,6 +245,49 @@ procedure works in.
   236 mm at seed 1234, 232 -> 153 mm at seed 428948602) and leaves the worst case
   alone, which is what a reweighting can be expected to do: it helps when cameras
   differ from each other and does nothing when they all moved about the same.
+- **A correspondence is not one observation, and modelling it as one is a
+  measurable error.** Its `u` is read from one block of frames and its `v` from
+  a later block — with the recommended plan, the phase-`u` frames are 26-29 of
+  34 and the phase-`v` frames 30-33, so the two coordinates are photographed
+  four frame intervals apart. `decode.ts` now reports both epochs on the
+  correspondence (`timeU`, `timeV`, in pattern frames, read off the capture's
+  own structure), and `BundleFreeFlags.cameraVelocity` lets the bundle solve a
+  rate of change of each camera's pose so that the `u` residual is evaluated at
+  the camera pose of the `u` epoch and the `v` residual at the pose of the `v`
+  epoch. Two epochs per pair is all the data has, so an offset and a rate is the
+  whole of what is identifiable — a richer trajectory would be damping, not
+  modelling. `rotation` frees three parameters per camera and `full` six; the
+  epochs are inert with the rate held, which `test/time-aware.test.ts` asserts
+  bit-for-bit.
+
+  Measured PAIRED on five fresh seeds and ten archetypes, 50 cells: **grid
+  displacement 1.63x median (36 helped, 9 hurt)**, every motion archetype
+  improving (2.0x to 6.0x) and the four tripod archetypes a wash at 1.00x and
+  still inside the 1.0 mm gate. Pose position 1.21x, pose rotation 1.66x. The
+  six-DOF variant is larger (2.22x) and takes `s02-sensor-noise` out of the
+  gate, which is why `rotation` is the default and `full` is not: at 2.6 m a
+  hundredth of a degree of pointing moves the observed point 0.45 mm and a
+  hundredth of a millimetre of translation moves it a hundredth of a
+  millimetre, so the angular rates carry the signal and the translational ones
+  mostly carry variance.
+
+  It also does NOT absorb an injected projector pose error — it recovers one
+  better. Injecting 1.0 deg of yaw and 20 mm of position truth-side and solving
+  both captures, the baseline returns the position at 0.29x and 1.64x on the two
+  handheld seeds while the rate-free solve returns 0.76-0.92x, and the injected
+  POINTING (yaw plus the yaw that lens shift is worth, since A-12 makes those
+  nearly one parameter) goes from 0.82-1.14x to 0.99-1.01x.
+
+  **The clock is an assumption and it is decisive.** `frameEpochs: 'perCapture'`
+  assumes every projector's sequence starts from the same point of the
+  operator's motion, which is what `packages/bench` simulates and NOT what a
+  real back-to-back capture does. Re-attributing the same captures to a
+  `sequential` clock turns the 1.63x into **0.30x, 1 cell helped and 44 hurt** —
+  getting the clock wrong is three times worse than not modelling time at all.
+  Filed as docs/AMENDMENTS.md A-34, which asks §8 to record frame timestamps.
+  See docs/PHASE-1.md for all of it, including why the model that would transfer
+  to a real capture is a rate per (camera, projector) PAIR rather than per
+  camera.
 - **Handheld motion is a decode BIAS, and no weighting removes it.** A 34-frame
   sequence at 20 fps takes 1.7 s, over which the modelled handheld drift moves
   the lens about 3.4 mm and turns it about 0.085 degrees. Measured against the
@@ -255,4 +302,7 @@ procedure works in.
   REJECTION that keeps only the correspondences whose true error is under a pixel
   improves them by 20-40%. What the solver would need is a time-aware decode that
   models the camera pose per frame; nothing available to the current decoder
-  senses the bias from inside one frame set.
+  senses the bias from inside one frame set. **Round 3 built that** — see the
+  bullet above — and the oracle's verdict survives it: modelling WHEN each
+  coordinate was measured is not a weighting, which is why it works where three
+  rounds of weighting did not.

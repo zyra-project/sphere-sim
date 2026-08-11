@@ -52,6 +52,14 @@
  * number of fringes, the unwrap picks a different order, and the
  * Gray-versus-phase cross-check below can never fire. The cross-check is only
  * as good as the incommensurability between the two scales.
+ *
+ * CAPTURE ORDER. The frames are shot in the order they appear in a
+ * `PatternCapture`: the white and black references first if present, then each
+ * Gray sequence in array order with every plane immediately followed by its own
+ * complement, then each phase sequence in array order. That order is normative
+ * for the same reason the patterns are: a decoder that wants to know WHEN a
+ * correspondence was measured — see `Correspondence.timeU` — can only get it
+ * from the structure of its own input.
  * ---------------------------------------------------------------------------
  */
 
@@ -154,6 +162,23 @@ export interface DecodeOptions {
   pixelStride: number;
   /** 0 = keep everything. Otherwise decimate deterministically to this count. */
   maxCorrespondences: number;
+  /**
+   * Whether to report WHEN each axis of a correspondence was measured, and on
+   * what clock. See `Correspondence.timeU`.
+   *
+   *  - `off` reports 0 for both axes, i.e. declines to distinguish them.
+   *  - `perCapture` counts frames from the start of each `PatternCapture`. This
+   *    is right when every (camera, projector) sequence starts from the same
+   *    point of the operator's motion, which is what `packages/bench` models.
+   *  - `sequential` continues the count across captures in the order they are
+   *    handed to `decodeAll`, which is what a real operator does: shoot one
+   *    projector's 34 frames, then the next projector's, drifting throughout.
+   *
+   * Nothing downstream reads these unless `BundleFreeFlags.cameraVelocity` is
+   * on, so this option is inert by itself — a property the tests pin rather
+   * than assert.
+   */
+  frameEpochs: 'off' | 'perCapture' | 'sequential';
 }
 
 export const DEFAULT_DECODE_OPTIONS: DecodeOptions = {
@@ -178,6 +203,7 @@ export const DEFAULT_DECODE_OPTIONS: DecodeOptions = {
   noiseBins: 16,
   pixelStride: 1,
   maxCorrespondences: 0,
+  frameEpochs: 'perCapture',
 };
 
 /** One decoded camera-pixel-to-projector-pixel correspondence. */
@@ -195,6 +221,35 @@ export interface Correspondence {
   sigmaV: number;
   /** Fringe amplitude over the pixel's white-black reference. Diagnostic. */
   modulation: number;
+  /**
+   * WHEN `projU` was measured, in pattern frames on the clock
+   * `DecodeOptions.frameEpochs` selects. `timeV` is the same for `projV`.
+   *
+   * A correspondence is not one observation. Its two coordinates are read from
+   * two disjoint sets of frames, photographed at different times, and under a
+   * handheld capture the camera is not in the same place for both. Reporting
+   * the two epochs is what lets a bundle model that; a solver that ignores them
+   * behaves exactly as it did before they existed.
+   *
+   * **The epoch is the phase sequence's, not the Gray sequence's**, and the
+   * approximation that buys is bounded rather than hoped for. The Gray planes
+   * are photographed earlier and contribute only the integer fringe ORDER, so a
+   * displacement between the Gray frames and the phase frames does not move the
+   * decoded coordinate at all until it reaches half a fringe — and the
+   * cross-check in `decodeAxis` DROPS the correspondence at
+   * `unwrapToleranceFrac` of a period (0.4 of 60 projector pixels, with the
+   * recommended plan) rather than mis-attributing it. The inter-frame bias this
+   * whole mechanism exists for is 3 to 11 pixels, comfortably inside that.
+   *
+   * What is NOT modelled: the N phase frames of one axis are themselves spread
+   * over N frame intervals, and this reports their mean. That is exact for a
+   * pose moving linearly over the window and wrong for hand tremor at 9 Hz,
+   * which completes almost two cycles inside it. Tremor is the smallest of the
+   * three motion components (`packages/bench/src/camera.ts`: 0.4 mm against
+   * 1.5 mm of sway), and it is what the residual keeps.
+   */
+  timeU: number;
+  timeV: number;
 }
 
 export interface DecodeStats {
@@ -664,22 +719,80 @@ function decodeAxis(
 }
 
 // ---------------------------------------------------------------------------
+// Frame epochs
+// ---------------------------------------------------------------------------
+
+export interface CaptureEpochs {
+  /** Mean frame index of the frames that determine the `u` coordinate. */
+  u: number;
+  v: number;
+  /** Frames in this capture, so a caller can continue the count into the next. */
+  frames: number;
+}
+
+/**
+ * When each axis of this capture was photographed, in frames from its own
+ * first frame.
+ *
+ * Read off the capture's own structure using the order the module header makes
+ * normative. The epoch of an axis is the mean frame index of its PHASE
+ * sequence, because the phase is what carries the sub-pixel position; the Gray
+ * planes only choose the fringe order, and a capture with no phase sequence at
+ * all falls back to the mean of its Gray frames because then the Gray planes
+ * are the whole measurement.
+ */
+export function captureEpochs(capture: PatternCapture): CaptureEpochs {
+  let cursor = 0;
+  if (capture.white) cursor++;
+  if (capture.black) cursor++;
+  const gray: { u: number; v: number } = { u: NaN, v: NaN };
+  const phase: { u: number; v: number } = { u: NaN, v: NaN };
+  for (const g of capture.gray) {
+    const n = g.patterns.length + g.inverses.length;
+    if (n > 0) gray[g.axis] = cursor + (n - 1) / 2;
+    cursor += n;
+  }
+  for (const p of capture.phase) {
+    const n = p.frames.length;
+    if (n > 0) phase[p.axis] = cursor + (n - 1) / 2;
+    cursor += n;
+  }
+  const pick = (axis: DecodeAxis): number => {
+    if (Number.isFinite(phase[axis])) return phase[axis];
+    if (Number.isFinite(gray[axis])) return gray[axis];
+    return 0;
+  };
+  return { u: pick('u'), v: pick('v'), frames: cursor };
+}
+
+// ---------------------------------------------------------------------------
 // Capture decode
 // ---------------------------------------------------------------------------
 
 export interface DecodeResult {
   correspondences: Correspondence[];
   stats: DecodeStats;
+  /** Frames in the decoded capture(s), for a caller continuing the epoch count. */
+  frames: number;
 }
 
 /** Decode one camera's view of one projector. */
 export function decodeCapture(
   capture: PatternCapture,
   options: Partial<DecodeOptions> = {},
+  /**
+   * Frames already shot before this capture, added to both epochs. Zero for
+   * `perCapture` timing; the running total for `sequential`.
+   */
+  timeOffset = 0,
 ): DecodeResult {
   const opts: DecodeOptions = { ...DEFAULT_DECODE_OPTIONS, ...options };
   const stats = emptyStats();
   const ref = referencePlanes(capture, opts);
+  const epochs = captureEpochs(capture);
+  const off = opts.frameEpochs === 'off';
+  const timeU = off ? 0 : epochs.u + timeOffset;
+  const timeV = off ? 0 : epochs.v + timeOffset;
   // Built once per capture, before the pixel loop: the noise level is a
   // property of the sensor and the signal, so estimating it per pixel throws
   // away the tens of thousands of samples that make it estimable at all.
@@ -721,12 +834,18 @@ export function decodeCapture(
         sigmaU: ru.sigma,
         sigmaV: rv.sigma,
         modulation: Math.min(ru.modulation, rv.modulation),
+        timeU,
+        timeV,
       });
       stats.accepted++;
     }
   }
 
-  return { correspondences: decimate(out, opts.maxCorrespondences), stats };
+  return {
+    correspondences: decimate(out, opts.maxCorrespondences),
+    stats,
+    frames: epochs.frames,
+  };
 }
 
 /**
@@ -747,15 +866,27 @@ function decimate(items: Correspondence[], max: number): Correspondence[] {
   return kept;
 }
 
-/** Decode every capture, concatenating in input order so the result is deterministic. */
+/**
+ * Decode every capture, concatenating in input order so the result is
+ * deterministic.
+ *
+ * Input order is also the CAPTURE order — the sequences were shot one after
+ * another, one projector at a time — which is what `frameEpochs: 'sequential'`
+ * reads. Under `perCapture` the running offset stays at zero and every capture
+ * is timed from its own first frame.
+ */
 export function decodeAll(
   captures: readonly PatternCapture[],
   options: Partial<DecodeOptions> = {},
 ): DecodeResult {
   const all: Correspondence[] = [];
   const stats = emptyStats();
+  const sequential =
+    (options.frameEpochs ?? DEFAULT_DECODE_OPTIONS.frameEpochs) === 'sequential';
+  let elapsed = 0;
   for (const capture of captures) {
-    const r = decodeCapture(capture, options);
+    const r = decodeCapture(capture, options, sequential ? elapsed : 0);
+    elapsed += r.frames;
     for (const c of r.correspondences) all.push(c);
     stats.considered += r.stats.considered;
     stats.accepted += r.stats.accepted;
@@ -766,5 +897,5 @@ export function decodeAll(
     stats.rejectedOutOfRange += r.stats.rejectedOutOfRange;
     stats.rejectedMissingAxis += r.stats.rejectedMissingAxis;
   }
-  return { correspondences: all, stats };
+  return { correspondences: all, stats, frames: elapsed };
 }

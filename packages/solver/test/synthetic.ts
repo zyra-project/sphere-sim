@@ -44,6 +44,7 @@ import {
 import {
   type CameraIntrinsics,
   type CameraModel,
+  cameraAtTime,
   cameraPixelToNormalized,
   intersectSphere,
   rayFromNormalized,
@@ -242,6 +243,16 @@ export interface CorrespondenceOptions {
    * correspondence a real capture would produce.
    */
   minCosIncidence: number;
+  /**
+   * The epochs, in pattern frames, at which the `u` and `v` coordinates were
+   * photographed. Both zero reproduces a capture with no time in it.
+   *
+   * When the truth cameras carry a `velocity`, the two coordinates are traced
+   * from the camera as it was at ITS OWN epoch — which is what a real capture
+   * does and what a single-pose bundle cannot express.
+   */
+  epochU: number;
+  epochV: number;
 }
 
 export const DEFAULT_CORRESPONDENCE_OPTIONS: CorrespondenceOptions = {
@@ -250,6 +261,8 @@ export const DEFAULT_CORRESPONDENCE_OPTIONS: CorrespondenceOptions = {
   noisePx: 0,
   seed: 7,
   minCosIncidence: 0.2,
+  epochU: 0,
+  epochV: 0,
 };
 
 /**
@@ -274,25 +287,40 @@ export function generateCorrespondences(
 
   for (let c = 0; c < truth.cameras.length; c++) {
     const cam = truth.cameras[c];
+    const camU_ = cameraAtTime(cam, opts.epochU, 0);
+    const camV_ = cameraAtTime(cam, opts.epochV, 0);
+    const same = camU_ === camV_;
     for (let py = 0; py < cam.intrinsics.resY; py += opts.cameraStride) {
       for (let px = 0; px < cam.intrinsics.resX; px += opts.cameraStride) {
         const camU = px + 0.5;
         const camV = py + 0.5;
         const n = cameraPixelToNormalized(cam, camU, camV);
-        const ray = rayFromNormalized(cam, n.x, n.y);
-        const hit = intersectSphere(ray.origin, ray.dir, truth.radiusM);
-        if (!hit.hit) continue;
+        const rayU = rayFromNormalized(camU_, n.x, n.y);
+        const hitU = intersectSphere(rayU.origin, rayU.dir, truth.radiusM);
+        if (!hitU.hit) continue;
+        let hitV = hitU;
+        if (!same) {
+          const rayV = rayFromNormalized(camV_, n.x, n.y);
+          hitV = intersectSphere(rayV.origin, rayV.dir, truth.radiusM);
+          if (!hitV.hit) continue;
+        }
 
         for (let p = 0; p < truth.projectors.length; p++) {
           const proj = truth.projectors[p];
-          const toLens = vNormalize(vSub(proj.position, hit.point));
+          const toLens = vNormalize(vSub(proj.position, hitU.point));
           const cosInc =
-            toLens.x * hit.normal.x + toLens.y * hit.normal.y + toLens.z * hit.normal.z;
+            toLens.x * hitU.normal.x + toLens.y * hitU.normal.y + toLens.z * hitU.normal.z;
           if (cosInc < opts.minCosIncidence) continue;
 
-          const shot = projectPointWithAxes(proj, projAxes[p], hit.point);
+          const shot = projectPointWithAxes(proj, projAxes[p], hitU.point);
           if (!shot.inFront) continue;
           if (shot.u < 0 || shot.u > proj.resX || shot.v < 0 || shot.v > proj.resY) continue;
+          let shotV = shot;
+          if (!same) {
+            shotV = projectPointWithAxes(proj, projAxes[p], hitV.point);
+            if (!shotV.inFront) continue;
+            if (shotV.v < 0 || shotV.v > proj.resY) continue;
+          }
 
           out.push({
             camera: c,
@@ -300,10 +328,12 @@ export function generateCorrespondences(
             camU,
             camV,
             projU: shot.u + (opts.noisePx > 0 ? rng.nextGaussian() * opts.noisePx : 0),
-            projV: shot.v + (opts.noisePx > 0 ? rng.nextGaussian() * opts.noisePx : 0),
+            projV: shotV.v + (opts.noisePx > 0 ? rng.nextGaussian() * opts.noisePx : 0),
             sigmaU: opts.sigmaPx,
             sigmaV: opts.sigmaPx,
             modulation: cosInc,
+            timeU: opts.epochU,
+            timeV: opts.epochV,
           });
         }
       }

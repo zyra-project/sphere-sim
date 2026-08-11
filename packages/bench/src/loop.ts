@@ -92,16 +92,24 @@ const HISTORY_PATH = path.join(REPO_ROOT, 'progress', 'rounds.json');
  * The metrics a round is judged on — the ranking vector.
  *
  * Every one is gate-facing: it has a limit somewhere in PARAMETERS.md §7 or, for
- * `h_center`, in §1's prose, and `gateId` names the gate so the limit is read
- * from the run rather than copied here. `direction` is "lower" for all five, but
- * it is named rather than assumed so that adding a metric where it is not cannot
- * silently invert the verdict.
+ * `h_center` and the camera, in a derivation stated in that gate's own `basis`,
+ * and `gateId` names the gate so the limit is read from the run rather than
+ * copied here. `direction` is "lower" for all six, but it is named rather than
+ * assumed so that adding a metric where it is not cannot silently invert the
+ * verdict.
  *
- * The three recovery entries are the ones a scalar grid-displacement ranking was
+ * The four recovery entries are the ones a scalar grid-displacement ranking was
  * blind to. They stay in the vector even though two of §7's pose gates cannot be
  * met today (docs/AMENDMENTS.md A-18, and `gate-waivers.json`): a gate being
  * unreachable in absolute terms says nothing about whether a round moved it, and
  * "moved it" is the only question this file asks.
+ *
+ * The camera entry is the newest and the one with the least documentary
+ * standing: PARAMETERS.md never mentions the metrology camera, so its limit is
+ * derived from this repository's own measurements rather than read off a spec.
+ * It is in the vector because leaving it out is the more expensive mistake —
+ * for two rounds it was the strongest single predictor of the failing gate and
+ * no round-over-round comparison could see it.
  */
 export interface TrackedMetric {
   key: string;
@@ -139,6 +147,19 @@ export const TRACKED: TrackedMetric[] = [
     label: 'h_center error',
     unit: 'mm',
     gateId: 'h_center_recovery',
+    direction: 'lower',
+  },
+  {
+    // Round 2's critic established this as the term that separates a passing
+    // scenario from a failing one: perfect separation over 30 instances at
+    // three seeds, r = 0.70-0.89 against grid displacement, 20-39 mm/deg. A
+    // quantity that predicts the worst-failing gate that well while being
+    // invisible to the round-ranking rule is the same defect as ranking on
+    // median grid displacement, one level up — so it is in the vector.
+    key: 'cameraMaxRotationDeg',
+    label: 'camera rotation (aligned)',
+    unit: 'deg',
+    gateId: 'camera_pose_rotation',
     direction: 'lower',
   },
   {

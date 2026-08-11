@@ -167,6 +167,72 @@ test('the axis-aligned quantisation cross does not fire it', () => {
   for (const s of scales) assert.equal(s, 1, `quantisation inflated a pair to ${s}`);
 });
 
+/**
+ * The three negative controls above are all GAUSSIAN, and that is the hole
+ * round 2's critic found: the statistic standardises by `median(|r|)/0.6745`,
+ * which is the Gaussian relation between the median absolute deviation and
+ * sigma. Feed it a heavy-tailed but completely INDEPENDENT field and that
+ * estimator sits below the true sigma, the standardised residuals carry
+ * variance above one, and the cell-mean statistic exceeds a null computed for
+ * unit variance — with no structure present at all.
+ *
+ * The two tests below are the controls that were missing. They do not assert
+ * that the estimator returns 1, because it does not: they PIN what it actually
+ * does, so that the failure is a documented property rather than a surprise,
+ * and so that anyone who fixes the scale estimator finds these tests waiting.
+ *
+ * An outlier-contaminated decode is heavy-tailed, so this is the ordinary case.
+ */
+
+/** Student-t with `nu` degrees of freedom, from a Gaussian and a chi-square. */
+function studentT(rng: ReturnType<typeof createRng>, nu: number): number {
+  let chi2 = 0;
+  for (let i = 0; i < nu; i++) {
+    const g = rng.nextGaussian();
+    chi2 += g * g;
+  }
+  return rng.nextGaussian() / Math.sqrt(chi2 / nu);
+}
+
+test('KNOWN DEFECT: i.i.d. Student-t(3) fires the discriminator with no structure', () => {
+  const { scales } = scalesFor(
+    5156,
+    (_c, rng) => ({ du: studentT(rng, 3) * 0.25, dv: studentT(rng, 3) * 0.25 }),
+    { pairCoherence: { ...DEFAULT_BUNDLE_OPTIONS.pairCoherence, mode: 'raw' } },
+  );
+  const fired = scales.filter((s) => s > 1);
+  // Independent samples, drawn one per correspondence, with no per-pair or
+  // per-cell term anywhere: the only thing that distinguishes this field from
+  // the Gaussian control above is its kurtosis.
+  assert.ok(
+    fired.length > 0,
+    'this test exists to record that heavy tails DO fire it; if this now passes ' +
+      'cleanly the scale estimator has been fixed and the note in bundle.ts and ' +
+      'docs/PHASE-1.md should be updated to say so',
+  );
+  assert.ok(
+    Math.max(...scales) < DEFAULT_BUNDLE_OPTIONS.pairCoherence.maxScale,
+    `a pure-noise field reached the cap: ${scales.join(', ')}`,
+  );
+});
+
+test('KNOWN DEFECT: a Gaussian mixture fires it harder than Student-t does', () => {
+  // 90% at sigma 0.2, 10% at sigma 1.5 — a decode with a few per cent of
+  // fringe-order slips, which is what `unwrapToleranceFrac` lets through.
+  const { scales } = scalesFor(
+    5157,
+    (_c, rng) => {
+      const heavy = (): number => (rng.nextFloat() < 0.1 ? 1.5 : 0.2) * rng.nextGaussian();
+      return { du: heavy(), dv: heavy() };
+    },
+    { pairCoherence: { ...DEFAULT_BUNDLE_OPTIONS.pairCoherence, mode: 'raw' } },
+  );
+  assert.ok(
+    scales.filter((s) => s > 1).length > 0,
+    'the mixture control should fire the discriminator; see bundle.ts',
+  );
+});
+
 test('a coherent per-pair offset DOES fire it', () => {
   // What handheld motion actually produces: measured against ground truth on the
   // bench corpus, 58-87% of a moving camera's decode-error energy per pair is a

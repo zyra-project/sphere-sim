@@ -167,6 +167,7 @@ test('the ranking vector covers every scored geometric gate, in gate units', () 
       poseMaxPositionMmAligned: { median: 4, p95: 8, max: 9, iqr: 1 },
       poseMaxRotationDegAligned: { median: 0.1, p95: 0.2, max: 0.3, iqr: 0.02 },
       centerHeightErrorMm: { median: 5, p95: 6, max: 7, iqr: 0.5 },
+      cameraMaxRotationDeg: { median: 0.035, p95: 0.07, max: 0.1, iqr: 0.01 },
       offSphereFluxExcess: { median: 0.002, p95: 0.003, max: 0.004, iqr: 0.001 },
     },
     gates: {
@@ -175,15 +176,16 @@ test('the ranking vector covers every scored geometric gate, in gate units', () 
         { id: 'pose_position', max: 2.0, provisional: false },
         { id: 'pose_rotation', max: 0.05, provisional: false },
         { id: 'h_center_recovery', max: 10.0, provisional: false },
+        { id: 'camera_pose_rotation', max: 0.07, provisional: false },
         { id: 'off_sphere_flux_excess', max: 0.01, provisional: false },
       ],
     },
   } as unknown as BenchResults;
 
   const ranked = rankRound(results);
-  // Five components, each in units of its own gate — which is what lets one
+  // Six components, each in units of its own gate — which is what lets one
   // vector hold millimetres, degrees and a bare fraction without a weight.
-  assert.equal(Object.keys(ranked).length, 5);
+  assert.equal(Object.keys(ranked).length, 6);
   assert.equal(ranked.gridDisplacementMm.gateFraction, 0.5);
   assert.equal(ranked.poseMaxPositionMmAligned.gateFraction, 2);
   assert.equal(ranked.poseMaxRotationDegAligned.gateFraction, 2);
@@ -202,6 +204,7 @@ test('the loop refuses to score a round on a provisional metric', () => {
         { id: 'pose_position', max: 2.0, provisional: false },
         { id: 'pose_rotation', max: 0.05, provisional: false },
         { id: 'h_center_recovery', max: 10.0, provisional: false },
+        { id: 'camera_pose_rotation', max: 0.07, provisional: false },
         { id: 'off_sphere_flux_excess', max: 0.01, provisional: false },
       ],
     },

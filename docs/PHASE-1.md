@@ -601,3 +601,591 @@ error, and the four tripod scenarios must still pass.
 **Add camera pose error to `loop.ts`'s `TRACKED`.** A quantity that predicts the
 worst-failing gate at r = 0.89 and is invisible to the round-ranking rule is the
 same defect as ranking on median grid displacement, one level up.
+
+---
+
+# Round 3 — the time-aware decode
+
+Round 2's critic named the contributor and named the remedy:
+`packages/solver/README.md` had been saying for two rounds that "what the solver
+would need is a time-aware decode that models the camera pose per frame", and
+nobody had built it. This is that, measured.
+
+## What a correspondence actually is
+
+A structured-light capture is a SEQUENCE. With the plan this bench shoots — two
+reference frames, six Gray planes per axis each followed by its complement, four
+phase steps per axis — the 34 frames arrive in this order:
+
+| frames | content | what they determine |
+| --- | --- | --- |
+| 0-1 | white, black | the modulation reference |
+| 2-13 | Gray, `u` axis | the `u` fringe ORDER |
+| 14-25 | Gray, `v` axis | the `v` fringe ORDER |
+| 26-29 | phase, `u` axis | **the `u` coordinate** |
+| 30-33 | phase, `v` axis | **the `v` coordinate** |
+
+So a correspondence's two numbers are read from two disjoint blocks of frames
+**four frame intervals apart** — 200 ms at the bench's 20 fps — and a handheld
+camera is not in the same place for both. One pose per camera cannot express
+that, and the difference has to go somewhere: into the projector parameters,
+jointly, which is exactly the "compensating deformation" the critic's
+substitution table found.
+
+The epoch of an axis is its PHASE block's mean frame, not its Gray block's,
+because the Gray planes contribute only the integer fringe order. That
+approximation is bounded rather than hoped for: a displacement between the Gray
+frames and the phase frames does not move the decoded coordinate at all until it
+reaches half a fringe, and `decodeAxis`'s existing cross-check DROPS the
+correspondence at 0.4 of a period — 24 projector pixels — rather than
+mis-attributing it. The bias this mechanism exists for is 3 to 11 px.
+
+**Two epochs per pair is all there is, so an offset and a rate is the whole of
+what is identifiable.** A per-frame pose would be 6 x 34 x C parameters; a
+cubic spline would be six per camera of pure damping.
+`BundleFreeFlags.cameraVelocity` frees three angular rates per camera
+(`rotation`) or all six (`full`), and `buildLayout` holds them for any camera
+whose observations do not actually spread in time.
+
+## The paired measurement, on fresh seeds
+
+Capture ONCE per (seed, scenario) — five fresh seeds (314159, 271828, 161803,
+141421, 173205) x ten archetypes — then solve the same correspondences several
+ways with one knob moved. Ratios are base/variant, so above 1 means the variant
+helped.
+
+Four variants, 200 solves, log at `experiments/paired/round3-paired.log`,
+analysis at `experiments/paired/round3.py`:
+
+| variant | what moved |
+| --- | --- |
+| `base` | today's build: one camera pose per capture |
+| `time-rot` | three angular rates per camera |
+| `time` | all six rates per camera |
+| `time-seq` | six rates, and the frames attributed to a **sequential** clock — the control |
+
+### `time-rot`, which is what now ships
+
+| metric | all 50 cells | helped / hurt | the 20 tripod cells | helped / hurt |
+| --- | --- | --- | --- | --- |
+| **grid displacement** | **1.63x** | **36 / 9** | 1.00x | 8 / 7 |
+| pose position | 1.21x | 32 / 8 | 1.00x | 6 / 5 |
+| pose rotation | 1.66x | 33 / 8 | 1.00x | 5 / 6 |
+| camera rotation | 1.01x | 23 / 13 | 1.00x | 1 / 5 |
+
+Per archetype, on the gate the loop is failing:
+
+| archetype | grid ratio | helped, of 5 | | archetype | grid ratio | helped |
+| --- | --- | --- | --- | --- | --- | --- |
+| `s00-clean` (tripod) | 1.00x | 0 | | `s04-handheld` | **6.04x** | 5 |
+| `s01-nominal` (tripod) | 0.96x | 2 | | `s05-two-cameras` | **3.20x** | 5 |
+| `s02-sensor-noise` (tripod) | 1.24x | 4 | | `s06-six-cameras` | **2.65x** | 5 |
+| `s03-high-ambient` (tripod) | 0.92x | 2 | | `s09-long-throw` | **5.76x** | 5 |
+| | | | | `s10-no-floor-reference` | **2.02x** | 4 |
+| | | | | `s11-fov-held` | **3.47x** | 4 |
+
+Every motion archetype improves, on four or five of five seeds each. The tripod
+archetypes are a wash — 1.00x median, eight cells helped and seven hurt — which
+is what a mechanism should do when the thing it models is not present.
+
+`s00-clean` is worth its own sentence: the ratio is **1.00x on every seed, and
+pose, rotation and grid agree to every digit printed**. It is the noiseless
+static scenario, the fit finds a rate indistinguishable from zero (the corpus
+reports 0.000 deg for all three of its cameras), and the mechanism becomes an
+identity. A canary that stayed silent.
+
+### `time`, the six-DOF version, is bigger and fails a guard
+
+| metric | all 50 cells | helped / hurt | tripod median |
+| --- | --- | --- | --- |
+| grid displacement | **2.22x** | 33 / 10 | 1.00x, 5 helped / **9 hurt** |
+| pose position | 1.51x | 35 / 7 | 1.00x |
+| pose rotation | 2.88x | 31 / 13 | **0.91x**, 3 / 11 |
+
+It is the better variant on five of the six motion archetypes and it takes
+`s02-sensor-noise` **out of the grid gate** (0.787 -> 1.388 mm worst case at
+seed 314159). Three translational rates per camera buy little because a
+translation moves the observed surface point by its own size while a rotation
+moves it by the camera's DISTANCE times the angle — 0.01 deg of pointing is
+0.45 mm on the sphere at 2.6 m — so the angular rates carry most of the signal
+and the translational ones mostly carry variance. `full` stays available and is
+not the default.
+
+## G1 — it does not absorb an injected pose error
+
+The guard round 2's `raw` coherence mode failed. Capture TWICE from the same
+seed, once with the truth rig as drawn and once with a known error added to one
+projector, and ask whether the difference between the two recovered rigs is the
+difference between the two truths. Injected: **1.0 deg of yaw and 20 mm of x on
+projector 2**. A degree rather than a tenth because §2 puts real mount tolerance
+at 1-2 degrees and because an injection below the scenario's own error measures
+the scenario rather than the guard.
+
+| seed | scenario | mode | pointing recovered | position recovered |
+| --- | --- | --- | --- | --- |
+| 314159 | `s01-nominal` | off / rotation / full | 0.998x / 0.998x / 0.998x | 1.003x / 1.003x / 1.003x |
+| 271828 | `s01-nominal` | off / rotation / full | 1.002x / 1.002x / 1.004x | 1.005x / 1.002x / 0.996x |
+| 314159 | `s04-handheld` | off / rotation / full | **1.138x** / 0.999x / 1.006x | **0.291x** / 0.909x / 0.905x |
+| 271828 | `s04-handheld` | off / rotation / full | **0.820x** / 1.007x / 0.992x | **1.642x** / 0.758x / 0.915x |
+
+**G1 PASSES, and the mechanism improves the guard rather than threatening it.**
+On the tripod nothing moves at all. On handheld, the baseline recovers the
+injected position at 0.29x on one seed and 1.64x on the other; with the rate free
+both land inside 0.76-0.92x, and the injected pointing goes from 0.82-1.14x to
+0.99-1.01x.
+
+"Pointing" rather than "yaw" because of A-12: yaw and lens shift are nearly the
+same parameter here, 0.01 of shift being 0.172 deg of yaw, so an injected yaw
+that comes back partly as shift has been *reallocated inside the projector's own
+degenerate pair*, not absorbed by the camera. That distinction is not decoration
+— it is most of the effect. The baseline returns the 1.0 deg injection as
+**+3.17 deg of yaw and -2.04 deg worth of shift** on seed 314159; the rate-free
+solve returns +1.61 and -0.61. So the mechanism also cuts the yaw/shift
+confusion by a factor of three, which is a second, unlooked-for result on the
+gate A-12 is about.
+
+## G2 — the four tripod scenarios still pass
+
+Absolute values, because a gate is an absolute question. Worst of five seeds,
+against the 1.0 mm gate:
+
+| archetype | base | `time-rot` | `time` (6 DOF) | `time-seq` |
+| --- | --- | --- | --- | --- |
+| `s00-clean` | 0.065 | 0.065 | 0.065 | 0.065 |
+| `s01-nominal` | 0.299 | 0.365 | 0.363 | **3.387 FAIL** |
+| `s02-sensor-noise` | 0.787 | 0.816 | **1.388 FAIL** | **12.504 FAIL** |
+| `s03-high-ambient` | 0.395 | 0.521 | 0.529 | **5.676 FAIL** |
+
+**G2 PASSES for `time-rot`** — all four archetypes, all five seeds, worst case
+0.816 mm against a 1.0 mm gate. It does cost something: the worst tripod cell
+moves from 0.787 to 0.816 mm and `s01`/`s03` lose about 5% of their median. That
+is the price of three parameters per camera fitted to a capture that has no
+motion in it, and it is stated rather than rounded away.
+
+**G2 FAILS for `time`**, which is why `full` is not the default.
+
+One statistical note worth keeping, because it is the whole reason this document
+insists on paired measurement. On `s02-sensor-noise` the UNPAIRED median grid
+displacement gets worse under `time-rot` (0.411 -> 0.597 mm) while **four of the
+five paired cells improve** (0.235->0.217, 0.411->0.269, 0.787->0.633,
+0.756->0.597, 0.319->0.816). The unpaired median moved because the base's spread
+is wider, not because the change hurt.
+
+## The control: a wrong clock is three times worse than no clock
+
+`time-seq` is the same six free rates with the frames attributed to a
+**sequential** clock — pair `k`'s frames counted after the `k-1` pairs before it,
+which is what a real operator's back-to-back capture actually looks like and is
+NOT what `packages/bench/src/capture.ts` simulates (it restarts the frame clock
+at zero for every pair, so the modelled operator repeats the same 1.7 s of
+tremor for each projector).
+
+| | grid displacement, all 50 cells | tripod cells |
+| --- | --- | --- |
+| `time-seq` vs `base` | **0.30x median, 1 helped / 44 hurt** | 0.19x, 0 helped / 15 hurt |
+
+This is the result that says the mechanism is a **time-aware decode** and not six
+free parameters absorbing whatever is nearest. Given the right clock it is worth
+1.63x; given a plausible wrong one it costs 3.3x. Filed as **A-34**: §8's capture
+checklist does not ask the operator to record when the frames were taken, and
+this measures what that omission is worth.
+
+**The confound in that control, stated plainly.** Sequential attribution changes
+two things at once: it mis-times the pairs relative to each other AND it
+multiplies the trajectory's lever arm by about 34, because the epochs now span
+the whole session instead of four frames. The experiment shows the mechanism is
+sensitive to the clock; it does not separate those two causes.
+
+## What this does NOT establish, and it is the load-bearing caveat
+
+The bench replays the same motion for every (camera, projector) pair. That is
+what makes ONE trajectory per camera the exactly-correct model here: every pair's
+`u`-to-`v` displacement is the same displacement, so three parameters fit all of
+them. A real capture is sequential, and then each pair's `u`-to-`v` displacement
+is a fresh draw from the operator's tremor and sway, with only the slow drift in
+common — and over the 200 ms between the two phase blocks the drift is the
+SMALLEST of the three components (0.4 mm against sway's 1.5 mm and tremor's
+0.4 mm RMS, `packages/bench/src/camera.ts`).
+
+So the honest reading of the 1.63x is: **it is the value of modelling
+inter-epoch camera motion when the inter-epoch motion happens to be shared
+across pairs.** The model that would transfer to a real capture is a rate per
+(camera, projector) PAIR, centred within the pair — clock-agnostic by
+construction, since the two epochs of a pair are four frames apart whatever the
+session clock is doing. That costs 3 parameters per pair (36 on a 3-camera
+4-projector rig, against 9 today), and this round's own tripod result is the
+warning attached to it: 18 free parameters fitted to a static capture already
+cost `s02-sensor-noise` a fifth of its gate margin, and 36 would cost more.
+
+Round 4 should build the per-pair rate and measure it against both clocks. It is
+the same mechanism with the tie between pairs cut, and cutting that tie is what
+turns a bench result into a claim about a capture somebody could actually shoot.
+
+## Conditioning, and the parameter count
+
+`rotation` adds **3 parameters per camera** — 9 on the three-camera archetypes,
+18 on `s06-six-cameras` — against a base of 63 free parameters for a
+four-projector three-camera rig. `full` adds 6 per camera.
+
+Measured on the solver's own synthetic scene at the solution, in the
+diagonally-scaled metric with the gauge rows added exactly as the LM step adds
+them (`test/time-aware.test.ts` runs this as an assertion, not a comment): the
+smallest eigenvalue does not collapse and the near-null directions are the same
+ones they were before — `P1.pitch` against `P1.shiftV` at 1.07e-6, and its
+siblings on the other projectors. The rate does not add a null direction; it adds
+a well-conditioned block. `buildLayout` refuses the columns outright for any
+camera whose correspondences do not spread in time, so a decode that reports no
+clock produces a solve that is bit-identical to the one before this round.
+
+## An uncomfortable side-effect: the new predictor stops predicting
+
+Round 2's critic established recovered camera rotation error as the term that
+separates pass from fail. On this corpus, with the baseline, it reproduces:
+r = 0.736 over 50 cells, and the separation is clean (worst camera rotation among
+grid-PASSING cells 0.0585 deg, best among grid-FAILING cells 0.1318 deg).
+
+Under `time-rot` the correlation survives at r = 0.702 but the separation
+tightens to 0.060 / 0.097 deg. Under `time` (6 DOF) it breaks: r = 0.406, and the
+worst camera rotation among PASSING cells is 0.346 deg against 0.079 among
+failing ones — the predictor inverts.
+
+That is not an argument against the mechanism; it is what happens when the
+failure mode a correlation was measuring gets treated. But it IS an argument
+about the loop's instrument, and it is why the entry added to `TRACKED` this
+round is labelled a predictor in its own gate basis rather than a requirement.
+A ranking vector that had been tuned to this correlation would now be ranking on
+a relationship that no longer holds.
+
+## Step 2 — repairing what round 2 shipped as fact
+
+Round 2's critic falsified four claims that were still in the tree as code
+comments and prose. All four are now corrected in place rather than quietly
+deleted.
+
+**(a) "A scenario that passes today cannot regress through this path."**
+`bundle.ts` stated the pair-coherence inflation was structurally a no-op on
+tripods. It is not: the critic measured it firing on `s01-nominal` (1 of 12
+pairs at 1.77x, pose 28.33 -> 30.17 mm) and on `s03-high-ambient` under
+`specific` (grid 0.4015 -> 0.4738 mm). The docstring now says that, names the
+numbers, and says why a false claim of structural safety is worse than the null
+result it was attached to: it tells a reader which checks they can skip.
+
+**(b) The coherence statistic discriminates KURTOSIS, not coherence.** Its scale
+estimator is `median(|r|)/0.6745`, which is the Gaussian relation; on a
+heavy-tailed but completely independent field it underestimates sigma and the
+cell-mean statistic exceeds a null computed for unit variance. All three
+negative controls in `coherence.test.ts` were Gaussian and could not catch it.
+Two heavy-tailed controls are added, and they reproduce the critic's finding on
+this round's own seeds:
+
+| synthetic field, evaluated at truth, zero coherence | pairs fired | max inflation |
+| --- | --- | --- |
+| i.i.d. Gaussian (the shipped control) | 0 / 12 | 1.000 |
+| i.i.d. Student-t(3) | **3 / 12** | **2.172** |
+| Gaussian mixture, 90% sigma=0.2 / 10% sigma=1.5 | **7 / 12** | **3.015** |
+
+The tests are named `KNOWN DEFECT` and assert that the estimator DOES fire, so
+that fixing the scale estimator makes them fail and whoever fixes it finds the
+note. The statistic is not fit to be the sole evidence that a pair is biased,
+and an outlier-contaminated decode is exactly heavy-tailed, so this is the
+ordinary case rather than an adversarial one.
+
+**(c) `raw` mode down-weights a genuine projector pose error by up to 8x.** Now
+documented where the mode is defined, including that inflating by 8x IS removal
+once the cap binds, and that the mode round 2 kept "as apparatus" is the one
+that hides the quantity §7 scores. Both modes stay off; neither is a weighting
+anyone should turn on.
+
+**(d) `pairResidualScale` is now serialised.** It was added to the public
+diagnostics with a comment that "a solver that reweights its own input owes the
+reader the numbers" and then never written to `bench-results.json`. It is in the
+`solver` block of every scenario now, alongside the new `cameraMotion`.
+
+## Step 3 — the loop's own instrument
+
+`recovery.cameras.maxRotationDeg` is now `aggregate.cameraMaxRotationDeg`, a
+gate (`camera_pose_rotation`, DERIVED, 0.07 deg) and an entry in `loop.ts`'s
+`TRACKED`. The limit is the top of the passing side of the critic's separation,
+and its `basis` string says in full that it is a predictor promoted to a gate
+rather than a published tolerance, that PARAMETERS.md says nothing about the
+metrology camera, and that the metric carries a definitional floor of about half
+the camera's own excursion because it is scored against a static truth pose.
+
+The ranking vector is six components now, and `NEVER_REGRESS` is still all of
+them.
+
+## The unpaired corpus, at round 2's own seed
+
+`bench-results.json` is regenerated at **seed 771003, twelve scenarios, default
+preset** — deliberately the seed and the corpus round 2 reported, so the
+comparison below is one code change at one draw rather than two draws. The
+claims of this round are the paired ones above; this table is the build being
+judged against §7.
+
+| scenario | round 2 grid mm | round 3 grid mm | | scenario | round 2 | round 3 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `s00-clean` | 0.039 | **0.039** | | `s05-two-cameras` | 16.47 | **3.399** |
+| `s01-nominal` | 0.187 | 0.253 | | `s06-six-cameras` | 21.32 | **1.477** |
+| `s02-sensor-noise` | 0.726 | 0.708 | | `s07-three-projectors` | 4.97 | **11.888** |
+| `s03-high-ambient` | 0.252 | 0.224 | | `s09-long-throw` | 15.78 | **9.434** |
+| `s04-handheld` | 15.72 | **3.827** | | `s10-no-floor-reference` | 13.57 | **6.711** |
+| | | | | `s11-fov-held` | 16.13 | **3.508** |
+
+Six of the seven motion archetypes improve by 1.7x to 14x. The four tripod
+archetypes move by less than a tenth of a millimetre each — `s01` up 0.066,
+`s02` down 0.018, `s03` down 0.028, `s00` not at all — and all four still pass.
+**`s07-three-projectors` gets 2.4x worse**, and it is now the corpus's worst
+scenario and the gate's worst offender.
+
+The two §7 pose gates both move a long way in:
+
+| gate | round 2 at 771003 | round 3 at 771003 | waiver ceiling |
+| --- | --- | --- | --- |
+| `pose_position` | 772.6 mm — breached its waiver | **397.0 mm** — inside it | 640 mm (A-13) |
+| `pose_rotation` | 8.88 deg — breached its waiver | **3.81 deg** — inside it | 6.3 deg (A-12) |
+
+Round 2 reported both ceilings breached at this seed with the code byte-identical
+to round 1's, and used that to argue the ceilings are pinned to one draw. That
+argument stands; the breach happening not to reproduce is not evidence against
+it.
+
+**VERDICT: FAIL**, with three unwaived gates — `grid_displacement` (7 of 11
+scored scenarios), `h_center_recovery` (2 of 12, both on `s08-two-projectors`
+and `s10-no-floor-reference`, which is A-05/§8's floor-reference question rather
+than this round's), and `camera_pose_rotation`, which is new this round and
+fails 8 of 12 by construction: it is a 0.07 deg limit derived from the passing
+side of a correlation, and the motion archetypes sit at 0.19-0.35 deg.
+
+### The `s07` regression, chased down
+
+`s07-three-projectors` is the one scenario that got worse at 771003, and my
+paired set did not cover it — indices 7 and 8 were left out, which was an
+omission and not a decision. So it was measured after the fact, paired, on the
+same five fresh seeds:
+
+| seed | `base` grid mm | `time-rot` grid mm | ratio |
+| --- | --- | --- | --- |
+| 314159 | 15.048 | 3.341 | 4.50x |
+| 271828 | 9.522 | 2.732 | 3.49x |
+| 161803 | 7.869 | 4.582 | 1.72x |
+| 141421 | 9.510 | 5.283 | 1.80x |
+| 173205 | 9.614 | 8.708 | 1.10x |
+| 771003 (the corpus draw) | 4.97 | 11.888 | **0.42x** |
+
+**Five of six paired cells help, by 1.1x to 4.5x, and the sixth is the one the
+corpus happened to draw.** The corpus cell is a genuine paired comparison — same
+seed, same photons, one knob — so this is not a case of the unpaired instrument
+being noisy about a real effect; it is a real effect that is not uniform, and the
+worst-case-of-twelve statistic landed on the cell where it goes the other way.
+That is the statistic behaving exactly as this document's opening section says it
+does, and it is why the claim above is stated from the paired set.
+
+`s08-two-projectors` was measured at the same time. Its grid displacement is not
+scored (an antipodal pair has no seam to measure), and its rotation numbers are
+dominated by the gauge: `alignGaugeToReference` needs three projectors and
+returns the state untouched with two, so `s08`'s "rotation error" is mostly the
+global rotation nobody can observe. What is comparable is pose position, and it
+improves on **five of five seeds** (133->55, 396->330, 504->244, 329->78,
+502->114 mm).
+
+## What is on by default, and the case against it
+
+`BundleFreeFlags.cameraVelocity` defaults to **`rotation`**, and
+`DecodeOptions.frameEpochs` to **`perCapture`**. That is a change to the shipped
+build, unlike rounds 1 and 2, and the case against it should be read before the
+case for it.
+
+**Against.** The `perCapture` clock is a claim about the capture protocol that
+PARAMETERS.md §8 does not license, in exactly the way round 2 declined to ship
+`tieProjectorFov` because §3.1 does not license one shared throw ratio. It
+happens to be true of this bench and it is NOT true of a real back-to-back
+capture, and the `time-seq` control measures a 3.3x penalty for getting it
+wrong. It costs the tripod archetypes about 5% of their grid margin for nothing.
+And the model's exact-fitness here is an artefact of the bench replaying one
+trajectory per pair.
+
+**For.** It is worth 1.63x on the gate the loop has been failing for three
+rounds, on 36 of 50 paired cells at five fresh seeds, with every motion
+archetype improving; the tripods stay inside their gate; both mandatory guards
+pass, and G1 passes in the direction of making the injected error MORE
+recoverable rather than less; the control that could have falsified it was run
+and it discriminates; the mechanism is inert by construction when the decode
+reports no clock, and bit-identical to the previous build in that case. The
+difference from `tieProjectorFov` is not the strength of the licence — it is
+that round 2's condition for shipping was not met and this round's is.
+
+The honest position is that this default is the best-measured configuration
+against the only instrument the project has, resting on an assumption the
+project has now written down (A-34) and asked the spec to replace with a
+measurement.
+
+## What round 4 should do
+
+**Named contributor: the rate is tied across a camera's (camera, projector)
+pairs, and that tie is what makes it cheap, correct on this bench, and wrong for
+a real capture.**
+
+Build the per-pair rate: three angular rates per (camera, projector) pair,
+centred within the pair. It is clock-agnostic by construction — the two epochs
+of one pair are four frames apart whatever the session clock is doing — so it is
+the version that would survive `frameEpochs: 'sequential'`, and the version an
+operator could actually use. Measure it against BOTH clocks; the current model
+should collapse under `sequential` and the per-pair one should not.
+
+Two things to measure against, both paired and on seeds not used here (314159,
+271828, 161803, 141421, 173205 are spent, as are round 2's and its critic's):
+
+1. **The parameter count is the whole risk.** 3 per pair is 36 on a three-camera
+   four-projector rig against 9 today, and 9 already cost `s02-sensor-noise` a
+   fifth of its gate margin. If the per-pair version cannot hold the four tripod
+   archetypes inside 1.0 mm it is not shippable however much it helps handheld,
+   and the obvious remedy — a shrinkage of each pair's rate toward the camera's
+   mean rate — is a hierarchical model whose one free constant nobody has
+   measured.
+2. **G1 again, and harder.** A per-pair pose difference is much closer to "fit
+   an offset per pair", which is the trap docs/PHASE-1.md's round-2 section
+   names: a genuine projector pose error also shifts a pair's residuals. The
+   injection experiment in this round should be re-run at the same magnitudes,
+   and the `dPointing` column is the one to watch.
+
+And one thing that is now cheap and was not before: **fix the bench's clock.**
+`packages/bench/src/capture.ts` restarting the frame index at zero for every
+pair is a modelling choice nobody wrote down, and this round measured that it is
+worth a factor of three. Fixing it makes the bench harder and makes every
+motion number incomparable with the eleven rounds before it, which is why it did
+not happen in the same round that measured against it.
+## The old path is untouched, verified rather than asserted
+
+The corpus moved this round, so the question "did anything else change?" needs an
+answer that is not a promise. `git worktree add /tmp/head-r2 HEAD`, then the same
+paired driver over the same cached captures at two seeds x
+(`s01-nominal`, `s04-handheld`, `s06-six-cameras`), HEAD's default against the
+new tree's `cameraVelocity: 'off'`:
+
+**Every printed digit is identical** — pose position, pose rotation, grid
+displacement, camera position and rotation error, `h_center`, field-of-view
+bias, residual RMS, correspondences used, correspondences rejected, iteration
+count and stop reason, on all six cells. The single-pose path is arithmetically
+what it was; what moved the corpus is the new default, and nothing else.
+
+`test/time-aware.test.ts` pins the same property from the other side, at unit
+scale and bit-for-bit: a capture decoded with `frameEpochs: 'off'` produces
+identical cost and RMS under the new default flags and under the old ones,
+because `buildLayout` refuses to free a rate no epoch spread can determine.
+
+One cost that is not a number in a table: the test suite went from 143 s to
+356 s. Freeing the rate doubles the ray-sphere intersections per correspondence
+and the solves take more iterations. Nothing about that is hidden, but anyone
+adding to the suite should know the budget changed.
+
+---
+
+# Round 3's critique — the improvement is real, the explanation is not
+
+An independent critic re-ran everything on its own seeds (909091, 505051,
+828283), writing its own paired, injection, clock and conditioning harnesses
+from the public entry points rather than adapting `experiments/paired/`.
+
+## What survived, and it is the first real movement in Phase 1
+
+- **The gain is real and reproduces on seeds the round never saw.** The critic's
+  own bench at seed 909091: grid displacement fails **3 of 8** at worst
+  **4.862 mm**, against 7 of 11 at worst 18.9 mm before the round.
+- Nothing was softened. 461 tests, lint clean, typecheck clean, all re-run.
+- The conditioning claim survives an independent test on the real problem.
+- **Ordering genuinely carries information.** The critic's `flip` control — swap
+  `timeU`/`timeV` on odd pairs only, holding |dt| and the spread fixed —
+  degrades 3 of 4 cells badly. That is a cleaner control than the round's own
+  `time-seq`, which confounds mis-timing with a ~34x lever arm.
+
+## What was falsified
+
+**1. This is not a time-aware decode, and the headline should not say it is.**
+`captureEpochs` returns u = 27.5, v = 31.5 for *every* capture, so `spanFrames`
+is **4 on every camera of every scenario** — in the critic's run, in the
+committed `bench-results.json`, and in all 90 of its paired solves. `dt` is
+therefore a constant and the rate is free, so only the *ratio* of epochs enters
+the residual. Multiplying every `timeU`/`timeV` by ten is a **no-op to eight
+significant figures**:
+
+| cell | as decoded | epochs x10 |
+| --- | --- | --- |
+| 505051 s04-handheld | grid 10.94456662909274 | 10.94456698681346 |
+| 909091 s05-two-cameras | grid 4.862219777956456 | 4.862219777956456 |
+
+What was built is **a differential u-vs-v camera pose, three parameters per
+camera** — which is a correct and useful physical model, because `u` and `v` are
+measured at different times and the camera moved in between. It is simply not a
+trajectory, and the clock it claims to read is a sign convention.
+
+Consequences: the `spanFrames` guard is dead code under the shipped decode; the
+`cameraMotion` diagnostic's claim to measure the same quantity as
+`capture.motionExcursion` is wrong by 5x (0.070 deg fitted against 0.35 deg
+actual); and **A-34 asks for the wrong thing** — it leads with "record each frame's
+timestamp", which this model cannot use, when what it needs is the pattern
+*order*.
+
+One cell is worth keeping in view: at 909091 s04-handheld a **deliberately wrong**
+ordering beats the correct one by 18%. So the parameters are partly acting as a
+nuisance sink, not purely as a physical model.
+
+**2. G1 does not test absorption.** Two defects, both reproduced. The injected
+axis was **radial** — the one direction `attribute.ts` already names as 99% of
+the error energy — so on a tripod cell with no motion to absorb anything, a
+20 mm injection returns 11.9 mm at one seed and +39.3 mm at another. And the
+injection was **10-25x smaller than the scenario's own error** (20 mm into a
+scenario carrying 185-378 mm), which the round's own text warns against. The
+resulting position ratios are sign-random draws, not a measurement. The pointing
+column is real but the **baseline passes on 4 of 6 cells** — a guard nothing
+fails is not a guard.
+
+**3. The new `camera_pose_rotation` gate is unreachable, and its floor is
+misstated by 5-10x.** It scores the recovered pose against the *static* truth
+pose while the true pose at the reference epoch is displaced by the motion. From
+the bench's own motion states at seed 909091, a **perfect** solver scores
+0.08-0.33 deg against a 0.07 deg gate. Recovered values track that floor, not
+the solver (s04: 0.2471 recovered against a 0.2453 floor). It is unwaived, so it
+is permanently red on any corpus with a motion archetype — and it is in
+`TRACKED`, hence `NEVER_REGRESS`, so future rounds will be recorded `mixed` for
+reasons that have nothing to do with the solver.
+
+Also: `progress/rounds.json`, the history file `loop.ts` ranks against, **does
+not exist**. The ranking machinery three rounds have now edited has never
+recorded a round.
+
+**4. `full` was rejected on one cell at one seed** that does not reproduce on the
+critic's three.
+
+**5. A soft A/B concern worth naming.** The default was chosen partly because of
+how `capture.ts` indexes frames. `boundary-lint` passes — it checks imports — but
+the independence rule in substance is about the inverse model not being fitted to
+the forward model's implementation. The round documented this honestly and
+shipped the default anyway. Documenting a violation is not the same as not
+committing one.
+
+## Round 4's named contributor
+
+Not the decode, and not the camera model. **The joint
+projector-position ↔ `fov_h` ↔ `shift_h` deformation in the bundle stage.**
+
+| substituted with truth (s05-two-cameras, seed 909091) | grid, mm |
+| --- | --- |
+| nothing | 4.862 |
+| position | 108.667 |
+| rotation | 134.796 |
+| fov | 93.226 |
+| shift | 124.355 |
+| **all** | **0.073** |
+
+Substituting the whole calibration removes 124% of the excess; substituting any
+*single* group makes the metric **10x to 27x worse**. That is the definitive
+signature of a compensating deformation — the rig is internally self-consistent
+and globally wrong, and the parameters are correlated tightly enough that fixing
+one breaks the balance. The smallest scaled eigenvalue of the gauge-augmented
+normal matrix is 2.8e-7 at condition 2.4e7, dominant column `P3.pitch` against
+`P3.shiftV`.
+
+**And it is bounded below by a decision that is not ours to make.** A-18 and A-12
+own it: until §3.1 says whether `fov_h` comes from the lens or from `d_proj`, and
+gives `shift_h`/`shift_v` an uncertainty, this gate has a floor no camera model
+can move.

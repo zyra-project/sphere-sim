@@ -213,9 +213,25 @@ it was computed on and that scheme's convergence check — straight through from
 | `grid_displacement` | **Counterfactual substitution.** Replace one recovered parameter group with ground truth, recompute the metric, see how much of the excess disappears. The `none` and `all` bookends say how much of the failure is in the calibration at all. |
 | `pose_position`, `pose_rotation` | **Error decomposition.** The metric *is* the recovered pose, so substitution is vacuous. Instead the error is resolved into radial / tangential / vertical (or yaw / pitch / roll) and the dominant direction named. A radial-dominated failure is the field-of-view/distance degeneracy; a vertical one is the floor reference. |
 | `h_center_recovery` | **Observability split.** Failing scenarios partitioned by whether a floor reference existed at all. Without one the solver holds `h_center` at the documented value rather than pretending to solve it, and the failure is PARAMETERS.md §8 item 1 not having been carried out. |
+| `camera_pose_rotation` | **None, deliberately.** `canAttribute` returns false for it. The metric is a property of the metrology, not of the rig, and substituting into it or decomposing it would answer a question about the apparatus; what it is for is predicting `grid_displacement`, and `gates[].basis` says so at length. |
 
 Each attribution carries an `explains` string saying what its
 `explainedFraction` means, because it means a different thing for each method.
+
+### One gate is a predictor rather than a requirement
+
+`camera_pose_rotation` is not in PARAMETERS.md §7 and is not a tolerance anyone
+published. It is here because round 2's critic measured recovered CAMERA
+rotation error separating every passing scenario from every failing one across
+30 instances at three seeds, at r = 0.70-0.89 against grid displacement, and
+because a quantity that predicts the gate the loop is failing while being
+invisible to the round-ranking rule is the same defect as ranking on a scalar.
+Its limit — 0.07 deg — is the top of the passing side of that separation. Read
+its `basis` before quoting it: the metric is scored against a STATIC ground-truth
+camera pose, so under handheld motion it carries a definitional floor of about
+half the camera's own excursion, and docs/PHASE-1.md records that the
+correlation it rests on weakens once the failure mode it was measuring is
+treated.
 
 ### Determinism
 

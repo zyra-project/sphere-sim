@@ -21,6 +21,7 @@ import {
   latLonOf,
   rayFromNormalized,
   surfacePoint,
+  zeroCameraRate,
 } from '../src/sphere.ts';
 import { vNorm, vNormalize } from '../src/linalg.ts';
 import { phoneIntrinsics } from './synthetic.ts';
@@ -35,6 +36,7 @@ function camera(overrides: Partial<CameraModel> = {}): CameraModel {
     rollDeg: -3.4,
     intrinsics: phoneIntrinsics(640, 480),
     focalScale: 1,
+    velocity: zeroCameraRate(),
     ...overrides,
   };
 }

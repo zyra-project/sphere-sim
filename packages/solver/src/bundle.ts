@@ -70,6 +70,52 @@
  * standard treatment for a free-network adjustment. A bench that skips that
  * step is measuring the gauge, not the calibration.
  * ---------------------------------------------------------------------------
+ * TIME-AWARE DECODE — one camera pose per capture is a modelling error.
+ *
+ * A structured-light capture is a sequence, not a photograph. Thirty-four
+ * frames at 20 fps take 1.7 seconds, and a handheld camera is somewhere
+ * slightly different in each of them. The decoder cannot see that from inside
+ * one frame set, so it reports a correspondence as though both of its
+ * coordinates were measured at once — and the bundle, given one pose per
+ * camera, has nowhere to put the difference except into the projector
+ * parameters, which deform jointly until the rig is self-consistent and
+ * globally wrong. That mechanism is measured in docs/PHASE-1.md: recovered
+ * camera ROTATION error separates every passing scenario from every failing one
+ * across 30 instances at three seeds, and five to ten times the true decode bias
+ * ends up absorbed in the free 6-DOF camera pose rather than in the residual.
+ *
+ * **What the correspondence actually is.** Its `u` comes from one set of frames
+ * and its `v` from another, photographed later — `decode.ts` reports both
+ * epochs as `timeU` and `timeV`. So the honest residual evaluates the `u`
+ * component at the camera pose of the `u` epoch and the `v` component at the
+ * pose of the `v` epoch. That is what `evaluate` does when
+ * `free.cameraVelocity` is on, at the cost of a second ray-sphere intersection
+ * per correspondence.
+ *
+ * **Why a RATE and not a pose per frame.** Six degrees of freedom times
+ * thirty-four frames times C cameras is an invitation to fit the noise. It is
+ * also unidentifiable: with the phase frames of each axis shot as one
+ * contiguous block, a capture presents exactly TWO distinct epochs per
+ * (camera, projector) pair, so no trajectory model richer than an offset and a
+ * rate is determined by the data. Six extra parameters per camera is therefore
+ * not a truncation of a larger model — it is the whole of what two epochs can
+ * support, and any higher-order term would be pure damping.
+ *
+ * **The reference epoch is the mean of that camera's own observation times**, so
+ * the reported pose is the mid-capture pose and is as uncorrelated with the rate
+ * as centring can make it. It is NOT the pose at the start of the capture, and a
+ * bench scoring against a static ground-truth pose is comparing against a
+ * quantity that no longer exists once the camera moved: the residual definition
+ * error is bounded by half the excursion, which this bench's motion model puts
+ * at a couple of millimetres and a few hundredths of a degree.
+ *
+ * **What it does not model.** The intra-frame rolling-shutter shear (row `r` is
+ * read later than row 0), which would make the epoch continuous in the camera's
+ * own `v` coordinate and cost the precomputation this implementation depends
+ * on; and hand tremor, which completes nearly two cycles inside one axis's phase
+ * window and is therefore not linear over it. Both are real and both are left
+ * in the residual rather than hidden.
+ * ---------------------------------------------------------------------------
  */
 
 import type { ResidualSample } from '../../calibration/src/index.ts';
@@ -116,12 +162,21 @@ import {
   CAM_PY,
   CAM_PZ,
   CAM_ROLL,
+  CAM_VPITCH,
+  CAM_VPX,
+  CAM_VPY,
+  CAM_VPZ,
+  CAM_VROLL,
+  CAM_VYAW,
   CAM_YAW,
   type CameraModel,
+  type CameraRate,
+  cameraAtTime,
   cameraPixelToNormalized,
   intersectSphere,
   intersectSphereJacobian,
   rayFromNormalized,
+  zeroCameraRate,
 } from './sphere.ts';
 import {
   DEFAULT_ROBUST_OPTIONS,
@@ -208,6 +263,27 @@ export interface BundleFreeFlags {
   cameraPose: boolean;
   /** Off by default: the operator calibrated their camera, so believe them. */
   cameraFocal: boolean;
+  /**
+   * Solve a rate of change of each camera's pose over the capture. See the
+   * TIME-AWARE DECODE section of this file's header for what it models, what it
+   * cannot, and what it costs.
+   *
+   *  - `off` is today's build: one pose per camera per capture.
+   *  - `rotation` frees the three angular rates only, three parameters per
+   *    camera. This is not a truncation for tidiness. At 2.6 m from the sphere
+   *    a hundredth of a degree of pointing moves the observed surface point
+   *    about 0.45 mm, while a hundredth of a millimetre of translation moves it
+   *    a hundredth of a millimetre: the angular rate carries the great majority
+   *    of the observable effect at half the degrees of freedom, and degrees of
+   *    freedom fitted to a static capture are pure overfitting.
+   *  - `full` frees all six.
+   *
+   * Inert without per-axis epochs on the correspondences
+   * (`DecodeOptions.frameEpochs`): a camera whose observations all carry the
+   * same epoch has no rate the data can see, and `buildLayout` holds its slots
+   * rather than handing the damping free parameters to invent.
+   */
+  cameraVelocity: 'off' | 'rotation' | 'full';
   centerHeight: boolean;
 }
 
@@ -219,6 +295,15 @@ export const DEFAULT_FREE_FLAGS: BundleFreeFlags = {
   projectorTangential: false,
   cameraPose: true,
   cameraFocal: false,
+  // `rotation`, not `off` and not `full`, and both halves of that are measured.
+  // See docs/PHASE-1.md round 3: paired on five fresh seeds, three angular rates
+  // per camera are worth 1.4-5.8x on the seam gate across the motion archetypes
+  // while leaving all four tripod archetypes inside the 1.0 mm gate, and adding
+  // the three translational rates as well takes `s02-sensor-noise` OUT of it
+  // (0.756 -> 1.388 mm) for no gain the motion archetypes keep. The default
+  // rests on an assumption about the capture protocol that PARAMETERS.md §8 does
+  // not state — see `DecodeOptions.frameEpochs` and docs/AMENDMENTS.md A-34.
+  cameraVelocity: 'rotation',
   centerHeight: true,
 };
 
@@ -365,20 +450,54 @@ export interface BundleOptions {
  * intraclass correlation `rho` in clusters of `nbar` samples, the classic design
  * effect is `1 + (nbar - 1) * rho`, and a pair carrying it is worth `n / deff`
  * independent observations rather than `n`. Scaling sigma by `sqrt(deff)` is
- * exactly that correction. It is a no-op when the residuals are incoherent,
- * which is the tripod case, so a scenario that passes today cannot regress
- * through this path.
+ * exactly that correction.
+ *
+ * ## Two things this docstring used to claim that are false
+ *
+ * It said the inflation "is a no-op when the residuals are incoherent, which is
+ * the tripod case, so a scenario that passes today cannot regress through this
+ * path". **It is not a guarantee and it is not true.** Round 2's independent
+ * critic ran it on fresh seeds and the mechanism fires on tripods: `s01-nominal`
+ * inflated 1 of 12 pairs by 1.77x and moved pose position from 28.33 to
+ * 30.17 mm; `s03-high-ambient` moved grid displacement from 0.4015 to
+ * 0.4738 mm under `specific`. The gate does not flip, so this was a broken
+ * claim rather than a broken build — which is worse, because a claim of
+ * structural safety is what a reader relies on when deciding what to check.
+ *
+ * It also implied the statistic measures coherence. **It measures excess
+ * kurtosis as readily as coherence**, because the scale it standardises by is
+ * `median(|r|)/0.6745`, which is the Gaussian relation. On a heavy-tailed but
+ * completely independent field that estimator sits below the true sigma, the
+ * standardised residuals have variance above 1, and the cell-mean statistic
+ * exceeds its null with no structure present at all: i.i.d. Student-t(3) fires
+ * 3 of 12 pairs at up to 2.518x, and a 90/10 Gaussian mixture 5 of 12 at up to
+ * 3.517x. `test/coherence.test.ts` now feeds both in, and the estimator is not
+ * fit to be the sole evidence that a pair is biased. An outlier-contaminated
+ * decode is exactly heavy-tailed, so this is the ordinary case rather than an
+ * adversarial one.
  */
 export interface PairCoherenceOptions {
   /**
-   * `off` disables the estimate entirely.
+   * `off` disables the estimate entirely, and is the default.
    *
    * `raw` uses a pair's own coherence. `specific` first subtracts, cell by cell,
    * what the OTHER cameras looking at the same projector see there — the part a
    * projector pose or intrinsics error CANNOT produce, since such an error is a
    * property of the projector and is common to every camera that photographs it.
-   * `specific` is the conservative reading and `raw` the aggressive one; which
-   * is better is a measurement, so both exist.
+   *
+   * **`raw` down-weights a genuine projector pose error, by up to the cap.**
+   * Measured by round 2's critic: inject a 2 px offset on projector 1 only — a
+   * projector-level error, common to every camera that sees it — and `raw`
+   * inflates that projector's pairs by 6.68x and 8.00x, while `specific`
+   * correctly ignores it. Inflating by 8x IS removal by another name once the
+   * cap binds, and what gets removed is the evidence for the quantity §7 scores.
+   * So `raw` is not a conservative default that happens to be inert; it is the
+   * mode that hides projector error, and it is kept only as the apparatus that
+   * measures how much coherence a capture carries. `specific` is the mode whose
+   * blind spot is documented and bounded — and it measured mildly HARMFUL
+   * (0.73x on grid displacement for `s04-handheld`, docs/PHASE-1.md).
+   *
+   * Neither is a weighting anyone should turn on today.
    */
   mode: 'off' | 'raw' | 'specific';
   /** Grid cells per axis over the projector raster. */
@@ -476,7 +595,19 @@ export function slotCamera(layout: { nProjectors: number }, c: number, i: number
   return layout.nProjectors * PROJ_PARAM_COUNT + c * CAM_PARAM_COUNT + i;
 }
 
-export function buildLayout(state: BundleState, opts: BundleOptions): ParamLayout {
+export function buildLayout(
+  state: BundleState,
+  opts: BundleOptions,
+  /**
+   * Per camera, the spread of its correspondences' observation epochs in
+   * frames. A camera whose observations all landed on one epoch has no
+   * observable rate, so its six velocity slots are held even when
+   * `free.cameraVelocity` is on — a free parameter with no observation does not
+   * stay put, it wanders wherever the damping lets it. Omit to hold them all,
+   * which is what a caller with no epochs wants.
+   */
+  cameraTimeSpread?: Float64Array,
+): ParamLayout {
   const nProjectors = state.projectors.length;
   const nCameras = state.cameras.length;
   const nSlots = nProjectors * PROJ_PARAM_COUNT + nCameras * CAM_PARAM_COUNT + 1;
@@ -554,6 +685,16 @@ export function buildLayout(state: BundleState, opts: BundleOptions): ParamLayou
       take(slotCamera(layoutHead, c, CAM_ROLL), `cam${c}.roll`);
     }
     if (f.cameraFocal) take(slotCamera(layoutHead, c, CAM_FOCAL), `cam${c}.focal`);
+    if (f.cameraVelocity !== 'off' && cameraTimeSpread !== undefined && cameraTimeSpread[c] > 0) {
+      if (f.cameraVelocity === 'full') {
+        take(slotCamera(layoutHead, c, CAM_VPX), `cam${c}.vpx`);
+        take(slotCamera(layoutHead, c, CAM_VPY), `cam${c}.vpy`);
+        take(slotCamera(layoutHead, c, CAM_VPZ), `cam${c}.vpz`);
+      }
+      take(slotCamera(layoutHead, c, CAM_VYAW), `cam${c}.vyaw`);
+      take(slotCamera(layoutHead, c, CAM_VPITCH), `cam${c}.vpitch`);
+      take(slotCamera(layoutHead, c, CAM_VROLL), `cam${c}.vroll`);
+    }
   }
   if (f.centerHeight) take(slotCenterHeight, 'h_center');
 
@@ -583,6 +724,7 @@ export function cloneState(s: BundleState): BundleState {
       ...c,
       position: { ...c.position },
       intrinsics: { ...c.intrinsics },
+      velocity: c.velocity ? { ...c.velocity } : zeroCameraRate(),
     })),
   };
 }
@@ -636,6 +778,18 @@ function readSlot(s: BundleState, layout: ParamLayout, slot: number): number {
       return c.pitchDeg;
     case CAM_ROLL:
       return c.rollDeg;
+    case CAM_VPX:
+      return c.velocity.px;
+    case CAM_VPY:
+      return c.velocity.py;
+    case CAM_VPZ:
+      return c.velocity.pz;
+    case CAM_VYAW:
+      return c.velocity.yawDeg;
+    case CAM_VPITCH:
+      return c.velocity.pitchDeg;
+    case CAM_VROLL:
+      return c.velocity.rollDeg;
     default:
       return c.focalScale;
   }
@@ -711,6 +865,24 @@ function writeSlot(s: BundleState, layout: ParamLayout, slot: number, value: num
       return;
     case CAM_ROLL:
       c.rollDeg = value;
+      return;
+    case CAM_VPX:
+      c.velocity.px = value;
+      return;
+    case CAM_VPY:
+      c.velocity.py = value;
+      return;
+    case CAM_VPZ:
+      c.velocity.pz = value;
+      return;
+    case CAM_VYAW:
+      c.velocity.yawDeg = value;
+      return;
+    case CAM_VPITCH:
+      c.velocity.pitchDeg = value;
+      return;
+    case CAM_VROLL:
+      c.velocity.rollDeg = value;
       return;
     default:
       c.focalScale = value;
@@ -812,6 +984,76 @@ export interface BundleProblem {
    * `PairCoherenceOptions`.
    */
   pairScale: Float64Array;
+  /**
+   * Per (camera, projector) pair, indexed as `pairScale` is: when that pair's
+   * `u` and `v` coordinates were photographed, in pattern frames RELATIVE to
+   * the camera's own reference epoch. Both zero when the correspondences carry
+   * no epochs, which is the case a caller who decoded with
+   * `frameEpochs: 'off'` — or who built correspondences by hand — is in.
+   */
+  epochU: Float64Array;
+  epochV: Float64Array;
+  /**
+   * True when the residual is evaluated at two camera poses rather than one.
+   * False reproduces the single-pose arithmetic exactly, including its cost.
+   */
+  timeAware: boolean;
+}
+
+/**
+ * Per (camera, projector) pair, when each axis was photographed, centred on
+ * each camera's own mean observation epoch.
+ *
+ * Centring is what makes the reported pose the mid-capture pose and keeps the
+ * offset as uncorrelated with the rate as the design allows. The spread per
+ * camera comes back with it, because a camera whose epochs do not spread has no
+ * rate to solve and `buildLayout` needs to know that before it hands out
+ * columns.
+ */
+export function epochTable(
+  correspondences: readonly Correspondence[],
+  nCameras: number,
+  nProjectors: number,
+): { epochU: Float64Array; epochV: Float64Array; spread: Float64Array } {
+  const nPairs = nCameras * nProjectors;
+  const sumU = new Float64Array(nPairs);
+  const sumV = new Float64Array(nPairs);
+  const count = new Float64Array(nPairs);
+  for (const c of correspondences) {
+    if (c.camera < 0 || c.camera >= nCameras) continue;
+    if (c.projector < 0 || c.projector >= nProjectors) continue;
+    const p = c.camera * nProjectors + c.projector;
+    sumU[p] += c.timeU ?? 0;
+    sumV[p] += c.timeV ?? 0;
+    count[p]++;
+  }
+  const epochU = new Float64Array(nPairs);
+  const epochV = new Float64Array(nPairs);
+  const spread = new Float64Array(nCameras);
+  for (let cam = 0; cam < nCameras; cam++) {
+    let total = 0;
+    let n = 0;
+    for (let p = 0; p < nProjectors; p++) {
+      const i = cam * nProjectors + p;
+      if (count[i] === 0) continue;
+      total += sumU[i] + sumV[i];
+      n += 2 * count[i];
+    }
+    if (n === 0) continue;
+    const ref = total / n;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let p = 0; p < nProjectors; p++) {
+      const i = cam * nProjectors + p;
+      if (count[i] === 0) continue;
+      epochU[i] = sumU[i] / count[i] - ref;
+      epochV[i] = sumV[i] / count[i] - ref;
+      lo = Math.min(lo, epochU[i], epochV[i]);
+      hi = Math.max(hi, epochU[i], epochV[i]);
+    }
+    spread[cam] = hi > lo ? hi - lo : 0;
+  }
+  return { epochU, epochV, spread };
 }
 
 export function buildProblem(
@@ -821,7 +1063,8 @@ export function buildProblem(
   opts: BundleOptions,
   priors: readonly ParameterPrior[] = [],
 ): BundleProblem {
-  const layout = buildLayout(state, opts);
+  const epochs = epochTable(correspondences, state.cameras.length, state.projectors.length);
+  const layout = buildLayout(state, opts, epochs.spread);
   const projBlocks: BlockIndex[] = [];
   for (let p = 0; p < layout.nProjectors; p++) {
     projBlocks.push(blockIndices(layout, slotProjector(p, 0), PROJ_PARAM_COUNT));
@@ -871,7 +1114,33 @@ export function buildProblem(
     normalizedValid: !opts.free.cameraFocal,
     cameraScale: new Float64Array(layout.nCameras).fill(1),
     pairScale: new Float64Array(layout.nCameras * layout.nProjectors).fill(1),
+    epochU: epochs.epochU,
+    epochV: epochs.epochV,
+    // A state that already carries a rate is time-aware whether or not the rate
+    // is free, or a caller could set one and have it silently ignored.
+    timeAware: anyVelocityFree(layout) || state.cameras.some((c) => rateIsNonZero(c.velocity)),
   };
+}
+
+function anyVelocityFree(layout: ParamLayout): boolean {
+  for (let c = 0; c < layout.nCameras; c++) {
+    for (let slot = CAM_VPX; slot <= CAM_VROLL; slot++) {
+      if (layout.freeMap[slotCamera(layout, c, slot)] >= 0) return true;
+    }
+  }
+  return false;
+}
+
+function rateIsNonZero(v: CameraRate | undefined): boolean {
+  if (v === undefined) return false;
+  return (
+    v.px !== 0 ||
+    v.py !== 0 ||
+    v.pz !== 0 ||
+    v.yawDeg !== 0 ||
+    v.pitchDeg !== 0 ||
+    v.rollDeg !== 0
+  );
 }
 
 /**
@@ -884,6 +1153,64 @@ export function buildProblem(
  * accumulation is over an index list of about eighteen columns — the sparsity is
  * in the loop bounds rather than in a data structure.
  */
+/** One camera, frozen at one epoch, with everything the residual needs. */
+interface EpochCamera {
+  cam: CameraModel;
+  rot: Mat3;
+  rotJ: RotationWithDerivatives | null;
+  /** Frames from the camera's reference epoch. Zero for a single-pose solve. */
+  dt: number;
+}
+
+interface EpochHit {
+  point: Vec3;
+  /** d(point)/d(camera params) at this epoch, or null on a cost-only pass. */
+  dPoint: Float64Array | null;
+}
+
+/**
+ * Where this camera pixel's ray met the sphere, with the camera at one epoch.
+ *
+ * The rotation matrix arrives precomputed. That is not only speed: it is the
+ * same matrix `rayFromNormalized` would have built from the same three angles,
+ * so the single-pose path produces bit-identical arithmetic to the version of
+ * this file that had no epochs in it.
+ */
+function hitAtEpoch(
+  e: EpochCamera,
+  nx: number,
+  ny: number,
+  radiusM: number,
+  wantJacobian: boolean,
+  scratch: Float64Array,
+): EpochHit | null {
+  if (wantJacobian) {
+    const hj = intersectSphereJacobian(e.cam, nx, ny, radiusM, e.rotJ ?? undefined, scratch, e.dt);
+    if (!hj.hit.hit) return null;
+    return { point: hj.hit.point, dPoint: hj.dPoint };
+  }
+  // Math.hypot and the reciprocal-then-multiply, exactly as `rayFromNormalized`
+  // does them. The two differ in the last bit from the obvious spellings, and
+  // the point of this path is that it reproduces the old one exactly.
+  const raw = mat3MulVec(e.rot, { x: 1, y: -nx, z: ny });
+  const len = Math.hypot(raw.x, raw.y, raw.z);
+  const inv = 1 / len;
+  const dir = { x: raw.x * inv, y: raw.y * inv, z: raw.z * inv };
+  const hit = intersectSphere(e.cam.position, dir, radiusM);
+  if (!hit.hit) return null;
+  return { point: hit.point, dPoint: null };
+}
+
+function epochCamera(cam: CameraModel, dt: number, wantJacobian: boolean): EpochCamera {
+  const at = cameraAtTime(cam, dt, 0);
+  return {
+    cam: at,
+    rot: rotationMatrix(at.yawDeg, at.pitchDeg, at.rollDeg),
+    rotJ: wantJacobian ? rotationWithDerivatives(at.yawDeg, at.pitchDeg, at.rollDeg) : null,
+    dt,
+  };
+}
+
 export function evaluate(
   state: BundleState,
   problem: BundleProblem,
@@ -900,6 +1227,13 @@ export function evaluate(
   const dParamScratch = new Float64Array(2 * PROJ_PARAM_COUNT);
   const dWorldScratch = new Float64Array(6);
   const dPointScratch = new Float64Array(3 * CAM_PARAM_COUNT);
+  // A second set, for the epoch at which the `v` coordinate was photographed.
+  // Allocated unconditionally and used only when the solve is time-aware: two
+  // scratch buffers cost nothing, and reusing one would have the second
+  // projection overwrite the first's derivatives.
+  const dParamScratchV = new Float64Array(2 * PROJ_PARAM_COUNT);
+  const dWorldScratchV = new Float64Array(6);
+  const dPointScratchV = new Float64Array(3 * CAM_PARAM_COUNT);
   const maxBlock = PROJ_PARAM_COUNT + CAM_PARAM_COUNT;
   const idx = new Int32Array(maxBlock);
   const ju = new Float64Array(maxBlock);
@@ -923,6 +1257,36 @@ export function evaluate(
     ? state.cameras.map((c) => rotationWithDerivatives(c.yawDeg, c.pitchDeg, c.rollDeg))
     : [];
 
+  // The camera as it was at each epoch. Two per (camera, projector) pair when
+  // the solve is time-aware, one per camera otherwise — which is the same
+  // object in both entries, so the loop below can compare by identity and take
+  // the single-pose path with the single-pose arithmetic and the single-pose
+  // cost.
+  const nProj = layout.nProjectors;
+  const epochCams: EpochCamera[] = [];
+  if (problem.timeAware) {
+    for (let c = 0; c < layout.nCameras; c++) {
+      for (let p = 0; p < nProj; p++) {
+        const pair = c * nProj + p;
+        epochCams.push(epochCamera(state.cameras[c], problem.epochU[pair], wantJacobian));
+        epochCams.push(epochCamera(state.cameras[c], problem.epochV[pair], wantJacobian));
+      }
+    }
+  } else {
+    for (let c = 0; c < layout.nCameras; c++) {
+      epochCams.push({
+        cam: state.cameras[c],
+        rot: rotationMatrix(
+          state.cameras[c].yawDeg,
+          state.cameras[c].pitchDeg,
+          state.cameras[c].rollDeg,
+        ),
+        rotJ: wantJacobian ? camRot[c] : null,
+        dt: 0,
+      });
+    }
+  }
+
   // See `RobustOptions.missPenalty`: a correspondence the current state cannot
   // use is charged a fixed price rather than silently leaving the objective.
   const missCost = lossAndWeight(opts.loss.missPenalty, opts.loss).rho;
@@ -935,6 +1299,9 @@ export function evaluate(
     const corr = correspondences[i];
     const cam = state.cameras[corr.camera];
     const proj = state.projectors[corr.projector];
+    const pairIndex = corr.camera * nProj + corr.projector;
+    const eU = problem.timeAware ? epochCams[2 * pairIndex] : epochCams[corr.camera];
+    const eV = problem.timeAware ? epochCams[2 * pairIndex + 1] : eU;
 
     let nx: number;
     let ny: number;
@@ -947,52 +1314,57 @@ export function evaluate(
       ny = nn.y;
     }
 
-    let hitPoint: Vec3;
-    let dPoint: Float64Array | null = null;
-    if (wantJacobian) {
-      const hj = intersectSphereJacobian(
-        cam,
-        nx,
-        ny,
-        state.radiusM,
-        camRot[corr.camera],
-        dPointScratch,
-      );
-      if (!hj.hit.hit) {
-        cost += missCost;
-        continue;
-      }
-      hitPoint = hj.hit.point;
-      dPoint = hj.dPoint;
-    } else {
-      const ray = rayFromNormalized(cam, nx, ny);
-      const hit = intersectSphere(ray.origin, ray.dir, state.radiusM);
-      if (!hit.hit) {
-        cost += missCost;
-        continue;
-      }
-      hitPoint = hit.point;
+    // The `u` coordinate was read from one set of frames and the `v` from
+    // another, so each is evaluated against the camera as it was when ITS
+    // frames were shot. With one pose the two passes are the same pass and the
+    // second is skipped entirely.
+    const hitU = hitAtEpoch(eU, nx, ny, state.radiusM, wantJacobian, dPointScratch);
+    if (hitU === null) {
+      cost += missCost;
+      continue;
+    }
+    const hitV =
+      eV === eU ? hitU : hitAtEpoch(eV, nx, ny, state.radiusM, wantJacobian, dPointScratchV);
+    if (hitV === null) {
+      cost += missCost;
+      continue;
     }
 
-    const pj = wantJacobian
+    const pjU = wantJacobian
       ? projectPointJacobian(
           proj,
-          hitPoint,
+          hitU.point,
           dParamScratch,
           projRot[corr.projector],
           dWorldScratch,
         )
       : null;
-    const shot = pj ?? projectPointWithAxes(proj, axesByProjector[corr.projector], hitPoint);
-    if (!shot.inFront) {
+    const shotU = pjU ?? projectPointWithAxes(proj, axesByProjector[corr.projector], hitU.point);
+    if (!shotU.inFront) {
       cost += missCost;
       continue;
     }
-    const u = shot.u;
-    const v = shot.v;
+    let pjV = pjU;
+    let shotV = shotU;
+    if (hitV !== hitU) {
+      pjV = wantJacobian
+        ? projectPointJacobian(
+            proj,
+            hitV.point,
+            dParamScratchV,
+            projRot[corr.projector],
+            dWorldScratchV,
+          )
+        : null;
+      shotV = pjV ?? projectPointWithAxes(proj, axesByProjector[corr.projector], hitV.point);
+      if (!shotV.inFront) {
+        cost += missCost;
+        continue;
+      }
+    }
 
-    const du = u - corr.projU;
-    const dv = v - corr.projV;
+    const du = shotU.u - corr.projU;
+    const dv = shotV.v - corr.projV;
     const cs =
       problem.cameraScale[corr.camera] *
       problem.pairScale[corr.camera * layout.nProjectors + corr.projector];
@@ -1011,28 +1383,33 @@ export function evaluate(
     const lw = lossAndWeight(s, opts.loss);
     cost += lw.rho;
 
-    if (!wantJacobian || !jtj || !jtr || !pj || !dPoint) continue;
+    if (!wantJacobian || !jtj || !jtr || !pjU || !pjV || !hitU.dPoint || !hitV.dPoint) continue;
 
-    // Assemble the compacted row pair: projector block, then camera block.
+    // Assemble the compacted row pair: projector block, then camera block. The
+    // `u` row is differentiated at the `u` epoch and the `v` row at the `v`
+    // epoch — same columns, different pass.
     const pb = problem.projBlocks[corr.projector];
     const cb = problem.camBlocks[corr.camera];
     let m = 0;
     for (let k = 0; k < pb.local.length; k++) {
       const l = pb.local[k];
       idx[m] = pb.column[k];
-      ju[m] = pj.dParam[l];
-      jv[m] = pj.dParam[PROJ_PARAM_COUNT + l];
+      ju[m] = pjU.dParam[l];
+      jv[m] = pjV.dParam[PROJ_PARAM_COUNT + l];
       m++;
     }
     for (let k = 0; k < cb.local.length; k++) {
       const l = cb.local[k];
       // d(u,v)/d(camParam) = d(u,v)/d(worldPoint) . d(worldPoint)/d(camParam)
-      const dx = dPoint[0 * CAM_PARAM_COUNT + l];
-      const dy = dPoint[1 * CAM_PARAM_COUNT + l];
-      const dz = dPoint[2 * CAM_PARAM_COUNT + l];
+      const dxu = hitU.dPoint[0 * CAM_PARAM_COUNT + l];
+      const dyu = hitU.dPoint[1 * CAM_PARAM_COUNT + l];
+      const dzu = hitU.dPoint[2 * CAM_PARAM_COUNT + l];
+      const dxv = hitV.dPoint[0 * CAM_PARAM_COUNT + l];
+      const dyv = hitV.dPoint[1 * CAM_PARAM_COUNT + l];
+      const dzv = hitV.dPoint[2 * CAM_PARAM_COUNT + l];
       idx[m] = cb.column[k];
-      ju[m] = pj.dWorld[0] * dx + pj.dWorld[1] * dy + pj.dWorld[2] * dz;
-      jv[m] = pj.dWorld[3] * dx + pj.dWorld[4] * dy + pj.dWorld[5] * dz;
+      ju[m] = pjU.dWorld[0] * dxu + pjU.dWorld[1] * dyu + pjU.dWorld[2] * dzu;
+      jv[m] = pjV.dWorld[3] * dxv + pjV.dWorld[4] * dyv + pjV.dWorld[5] * dzv;
       m++;
     }
 
@@ -1166,6 +1543,28 @@ export function gaugeNullSpace(state: BundleState, problem: BundleProblem): Gaug
     const full = new Float64Array(layout.nSlots);
     const denom = 2 * eps;
 
+    /** The six pose components' displacement under the differenced rotation. */
+    const poseDelta = (
+      position: Vec3,
+      yawDeg: number,
+      pitchDeg: number,
+      rollDeg: number,
+    ): number[] => {
+      const pp = mat3MulVec(rgPos, position);
+      const pn = mat3MulVec(rgNeg, position);
+      const r0 = rotationMatrix(yawDeg, pitchDeg, rollDeg);
+      const ep = eulerFromMatrix(mat3Multiply(rgPos, r0));
+      const en = eulerFromMatrix(mat3Multiply(rgNeg, r0));
+      return [
+        (pp.x - pn.x) / denom,
+        (pp.y - pn.y) / denom,
+        (pp.z - pn.z) / denom,
+        wrapDeg(ep.yawDeg - en.yawDeg) / denom,
+        wrapDeg(ep.pitchDeg - en.pitchDeg) / denom,
+        wrapDeg(ep.rollDeg - en.rollDeg) / denom,
+      ];
+    };
+
     const fillEntity = (
       base: number,
       position: Vec3,
@@ -1179,17 +1578,13 @@ export function gaugeNullSpace(state: BundleState, problem: BundleProblem): Gaug
       pitchSlot: number,
       rollSlot: number,
     ): void => {
-      const pp = mat3MulVec(rgPos, position);
-      const pn = mat3MulVec(rgNeg, position);
-      full[base + pxSlot] = (pp.x - pn.x) / denom;
-      full[base + pySlot] = (pp.y - pn.y) / denom;
-      full[base + pzSlot] = (pp.z - pn.z) / denom;
-      const r0 = rotationMatrix(yawDeg, pitchDeg, rollDeg);
-      const ep = eulerFromMatrix(mat3Multiply(rgPos, r0));
-      const en = eulerFromMatrix(mat3Multiply(rgNeg, r0));
-      full[base + yawSlot] = wrapDeg(ep.yawDeg - en.yawDeg) / denom;
-      full[base + pitchSlot] = wrapDeg(ep.pitchDeg - en.pitchDeg) / denom;
-      full[base + rollSlot] = wrapDeg(ep.rollDeg - en.rollDeg) / denom;
+      const d = poseDelta(position, yawDeg, pitchDeg, rollDeg);
+      full[base + pxSlot] = d[0];
+      full[base + pySlot] = d[1];
+      full[base + pzSlot] = d[2];
+      full[base + yawSlot] = d[3];
+      full[base + pitchSlot] = d[4];
+      full[base + rollSlot] = d[5];
     };
 
     for (let p = 0; p < layout.nProjectors; p++) {
@@ -1210,8 +1605,9 @@ export function gaugeNullSpace(state: BundleState, problem: BundleProblem): Gaug
     }
     for (let c = 0; c < layout.nCameras; c++) {
       const cam = state.cameras[c];
+      const base = slotCamera(layout, c, 0);
       fillEntity(
-        slotCamera(layout, c, 0),
+        base,
         cam.position,
         cam.yawDeg,
         cam.pitchDeg,
@@ -1223,6 +1619,21 @@ export function gaugeNullSpace(state: BundleState, problem: BundleProblem): Gaug
         CAM_PITCH,
         CAM_ROLL,
       );
+      // A global rotation carries the camera's TRAJECTORY with it, so the rate
+      // has null-space components of its own. They are derived rather than
+      // assumed to be zero: rotate the pose one frame ahead as well, and the
+      // rate's displacement is the difference between the two rotated poses.
+      // The components are small — the rate is millimetres against the
+      // position's metres — but a direction that is only nearly null is a
+      // direction the gauge penalty pushes on, and this file's whole argument
+      // for the inner gauge is that it pushes on nothing the data determines.
+      if (rateIsNonZero(cam.velocity) || layout.freeMap[base + CAM_VYAW] >= 0) {
+        const ahead = cameraAtTime(cam, 1, 0);
+        const d0 = poseDelta(cam.position, cam.yawDeg, cam.pitchDeg, cam.rollDeg);
+        const d1 = poseDelta(ahead.position, ahead.yawDeg, ahead.pitchDeg, ahead.rollDeg);
+        const slots = [CAM_VPX, CAM_VPY, CAM_VPZ, CAM_VYAW, CAM_VPITCH, CAM_VROLL];
+        for (let k = 0; k < 6; k++) full[base + slots[k]] = d1[k] - d0[k];
+      }
     }
 
     if (problem.floor.length > 0) {
@@ -1371,6 +1782,11 @@ export function alignGaugeToReference(
     p.rollDeg = e.rollDeg;
   }
   for (const c of out.cameras) {
+    // The trajectory rotates with the camera. Taken as the difference between
+    // the rotated pose one frame ahead and the rotated pose here, so the rate
+    // stays consistent with the poses it interpolates rather than being rotated
+    // by a formula that only holds for the translation triple.
+    const ahead = rateIsNonZero(c.velocity) ? cameraAtTime(c, 1, 0) : null;
     c.position = mat3MulVec(rg, c.position);
     const e = eulerFromMatrix(
       mat3Multiply(rg, rotationMatrix(c.yawDeg, c.pitchDeg, c.rollDeg)),
@@ -1378,6 +1794,20 @@ export function alignGaugeToReference(
     c.yawDeg = e.yawDeg;
     c.pitchDeg = e.pitchDeg;
     c.rollDeg = e.rollDeg;
+    if (ahead !== null) {
+      const p1 = mat3MulVec(rg, ahead.position);
+      const e1 = eulerFromMatrix(
+        mat3Multiply(rg, rotationMatrix(ahead.yawDeg, ahead.pitchDeg, ahead.rollDeg)),
+      );
+      c.velocity = {
+        px: p1.x - c.position.x,
+        py: p1.y - c.position.y,
+        pz: p1.z - c.position.z,
+        yawDeg: wrapDeg(e1.yawDeg - c.yawDeg),
+        pitchDeg: wrapDeg(e1.pitchDeg - c.pitchDeg),
+        rollDeg: wrapDeg(e1.rollDeg - c.rollDeg),
+      };
+    }
   }
 
   if (floor.length > 0) {
@@ -1444,6 +1874,70 @@ export interface BundleReport {
    * of the decode's own stated sigma. See `PairCoherenceOptions`.
    */
   pairResidualScale: number[];
+  /**
+   * Per camera, how far the recovered trajectory says it moved between the
+   * FIRST and LAST epoch its own correspondences carry — millimetres and
+   * degrees, not a rate, because a rate per pattern frame is a number nobody
+   * can picture.
+   *
+   * All zeros when `free.cameraVelocity` is off, which is the default. When it
+   * is on, this is the quantity to compare against the capture's own motion:
+   * `packages/bench` reports what it actually simulated as
+   * `capture.motionExcursion`, and the two are the same measurement made from
+   * opposite ends of the pipeline.
+   */
+  cameraMotion: { translationMm: number; rotationDeg: number; spanFrames: number }[];
+}
+
+/**
+ * The recovered trajectory, expressed over the epochs the data actually spans.
+ *
+ * `spanFrames` is that span, so a reader can tell a camera that moved 3 mm over
+ * four frames from one that moved 3 mm over a hundred.
+ */
+export function cameraMotionReport(
+  state: BundleState,
+  problem: BundleProblem,
+): { translationMm: number; rotationDeg: number; spanFrames: number }[] {
+  const out: { translationMm: number; rotationDeg: number; spanFrames: number }[] = [];
+  const nProj = problem.layout.nProjectors;
+  for (let c = 0; c < problem.layout.nCameras; c++) {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let p = 0; p < nProj; p++) {
+      const i = c * nProj + p;
+      lo = Math.min(lo, problem.epochU[i], problem.epochV[i]);
+      hi = Math.max(hi, problem.epochU[i], problem.epochV[i]);
+    }
+    const span = Number.isFinite(lo) && hi > lo ? hi - lo : 0;
+    const v = state.cameras[c].velocity;
+    if (!rateIsNonZero(v) || span === 0) {
+      out.push({ translationMm: 0, rotationDeg: 0, spanFrames: span });
+      continue;
+    }
+    const a = cameraAtTime(state.cameras[c], lo, 0);
+    const b = cameraAtTime(state.cameras[c], hi, 0);
+    const rel = mat3Multiply(
+      rotationMatrix(b.yawDeg, b.pitchDeg, b.rollDeg),
+      transpose3(rotationMatrix(a.yawDeg, a.pitchDeg, a.rollDeg)),
+    );
+    const w = rotationVector(rel);
+    out.push({
+      translationMm:
+        Math.hypot(
+          b.position.x - a.position.x,
+          b.position.y - a.position.y,
+          b.position.z - a.position.z,
+        ) * 1000,
+      rotationDeg: (Math.hypot(w.x, w.y, w.z) * 180) / Math.PI,
+      spanFrames: span,
+    });
+  }
+  return out;
+}
+
+function transpose3(m: Mat3): Mat3 {
+  return Float64Array.of(m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]);
 }
 
 /**
@@ -1702,6 +2196,7 @@ function finishReport(
     priorResiduals,
     cameraResidualScale: Array.from(problem.cameraScale),
     pairResidualScale: Array.from(problem.pairScale),
+    cameraMotion: cameraMotionReport(state, problem),
   };
 }
 

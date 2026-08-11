@@ -59,6 +59,7 @@ import {
 import { DEFAULT_INIT_OPTIONS, bootstrap, type InitOptions } from './initialize.ts';
 import { DEFAULT_ROBUST_OPTIONS } from './robust.ts';
 import type { CameraIntrinsics, CameraModel } from './sphere.ts';
+import { zeroCameraRate } from './sphere.ts';
 import { aimEuler, type ProjectorModel } from './project.ts';
 
 export type {
@@ -230,6 +231,17 @@ export interface SolverExtraDiagnostics {
    */
   pairResidualScale: number[];
   /**
+   * Per camera, how far the recovered trajectory says the camera moved over the
+   * epochs its own correspondences span — millimetres and degrees.
+   *
+   * All zeros unless `BundleFreeFlags.cameraVelocity` is on, and reported
+   * unconditionally so that "the solver did not model motion" and "the solver
+   * modelled motion and found none" stay distinguishable. `packages/bench`
+   * reports the motion it actually simulated as `capture.motionExcursion`; the
+   * two are the same quantity measured from opposite ends of the pipeline.
+   */
+  cameraMotion: { translationMm: number; rotationDeg: number; spanFrames: number }[];
+  /**
    * Recovered camera poses.
    *
    * Not part of `RigCalibration` — the boundary object describes the rig, not
@@ -285,6 +297,7 @@ export function bundleStateFromCalibration(
     rollDeg: c.rollDeg,
     intrinsics: { ...c.intrinsics },
     focalScale: 1,
+    velocity: zeroCameraRate(),
   }));
   return {
     radiusM: nominal.sphere.radiusM,
@@ -478,6 +491,7 @@ export function solve(input: SolveInput): SolverResult {
       priorResiduals: report.priorResiduals,
       cameraResidualScale: report.cameraResidualScale,
       pairResidualScale: report.pairResidualScale,
+      cameraMotion: report.cameraMotion,
       cameras: report.state.cameras,
     },
   };

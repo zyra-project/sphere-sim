@@ -378,6 +378,7 @@ const RECOVERY_DEPENDENT = new Set<string>([
   'pose_position',
   'pose_rotation',
   'h_center_recovery',
+  'camera_pose_rotation',
 ]);
 
 /**
@@ -428,6 +429,16 @@ export const RECOVERY_GATES: RecoveryGateSpec[] = [
     klass: 'DERIVED',
     basis: 'PARAMETERS.md §7. Scored after removing the unobservable global rotation.',
     value: (r) => r.recovery?.aligned.maxRotationDeg ?? NaN,
+  },
+  {
+    id: 'camera_pose_rotation',
+    metric: 'Recovered CAMERA rotation error, worst camera, after gauge alignment',
+    unit: 'deg',
+    max: 0.07,
+    klass: 'DERIVED',
+    basis:
+      "NOT a §7 gate, and not a tolerance anyone has published: §7 scores the RIG, and the camera is apparatus standing in the room. It is here because it is the best available PREDICTOR of the gate that fails — docs/PHASE-1.md records 30 scenario instances at three independent seeds in which the separation is perfect, every instance under 0.07 deg passing the 1.0 mm grid-displacement gate and every instance over 0.18 deg failing it with grid above 4.9 mm, at Pearson r = 0.70-0.89 and a slope of 20-39 mm/deg. The limit is the top of the passing side of that separation. Two things a reader should hold against it: the metric is scored against a STATIC ground-truth pose, so under handheld motion it carries a definitional floor of roughly half the camera's own excursion (a few hundredths of a degree on this bench's motion model); and a predictor promoted to a gate is a correlation being asked to act like a requirement.",
+    value: (r) => r.recovery?.cameras.maxRotationDeg ?? NaN,
   },
   {
     id: 'h_center_recovery',
@@ -776,6 +787,15 @@ function scenarioJson(r: ScenarioResult): ScenarioJson {
           // claims about where the answer came from.
           priorResiduals: r.solver.extra.priorResiduals,
           cameraResidualScale: r.solver.extra.cameraResidualScale,
+          // Serialised because `bundle.ts` says out loud that "a solver that
+          // reweights its own input owes the reader the numbers", and for one
+          // round it owed them without paying: the field existed on the
+          // diagnostics and stopped here. All ones unless `pairCoherence` is on.
+          pairResidualScale: r.solver.extra.pairResidualScale,
+          // What the solver says each camera did during the capture, against
+          // `capture.motionExcursion` above, which is what the simulator did.
+          // All zeros unless `cameraVelocity` is on.
+          cameraMotion: r.solver.extra.cameraMotion,
           residuals: residualColumns(r.solver.diagnostics.residuals),
         };
 
@@ -857,6 +877,11 @@ export function buildAggregate(results: readonly ScenarioResult[]): Record<strin
     k1Error: pick((r) => r.recovery?.intrinsics.maxK1 ?? NaN),
     k2Error: pick((r) => r.recovery?.intrinsics.maxK2 ?? NaN),
     cameraMaxPositionMm: pick((r) => r.recovery?.cameras.maxPositionMm ?? NaN),
+    // Ranked by `loop.ts`. It was in `scenarios[].recovery.cameras` and nowhere
+    // a round-over-round comparison could see it, which is how a quantity that
+    // predicts the worst-failing gate at r = 0.89 stayed invisible for two
+    // rounds. See `RECOVERY_GATES` for what it is measured against and why.
+    cameraMaxRotationDeg: pick((r) => r.recovery?.cameras.maxRotationDeg ?? NaN),
     solverRmsResidualPx: pick((r) => r.solver?.diagnostics.rmsResidualPx ?? NaN),
     solverIterations: pick((r) => r.solver?.diagnostics.iterations ?? NaN),
     correspondences: pick((r) => r.capture.correspondences.length),
