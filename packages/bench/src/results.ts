@@ -348,6 +348,14 @@ export interface GateSummary {
    * false and means it; the field exists so Phase 2 cannot arrive without one.
    */
   provisional: boolean;
+  /**
+   * True when this project invented the gate and its threshold, rather than
+   * PARAMETERS.md §7 publishing it. Reported and tracked, never build-failing:
+   * failing someone's build on a number we made up asserts authority this repo
+   * does not have. Distinct from `provisional`, which marks an unmeasured
+   * CONSTANT; this marks an unpublished THRESHOLD.
+   */
+  advisory: boolean;
   attribution: GateAttribution | null;
 }
 
@@ -489,6 +497,15 @@ function buildRecoveryGates(results: readonly ScenarioResult[]): GateSummary[] {
       // here rather than defaulted, because `loop.ts` and `waivers.ts` both read
       // this field to decide what is allowed to judge things.
       provisional: false,
+      // camera_pose_rotation is the only gate in this repo that PARAMETERS.md
+      // does not publish. Its own `basis` says so: §7 scores the RIG, and the
+      // camera is apparatus standing in the room. It earned its place as the
+      // best available PREDICTOR of the gate that fails, and it stays reported
+      // and tracked — but a predictor promoted to a requirement is a
+      // correlation being asked to do a job it cannot do, and failing a build
+      // on a threshold this project invented asserts an authority it does not
+      // have. Advisory: judged by a human, never by CI.
+      advisory: spec.id === 'camera_pose_rotation',
       attribution: null,
     });
   }
@@ -556,6 +573,8 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
       scenariosNotMeasurable: notMeasurable,
       dependsOnRecovery: RECOVERY_DEPENDENT.has(gate.id),
       provisional,
+      // From PARAMETERS.md §7. Published thresholds, so never advisory.
+      advisory: false,
       attribution: null,
     });
   }
@@ -612,6 +631,8 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
       scenariosNotMeasurable: notMeasurable,
       dependsOnRecovery: RECOVERY_DEPENDENT.has(id),
       provisional,
+      // From PARAMETERS.md §7. Published thresholds, so never advisory.
+      advisory: false,
       attribution: null,
     });
   }

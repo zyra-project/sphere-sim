@@ -77,6 +77,7 @@ function gate(overrides: Partial<GateSummary> & { id: string }): GateSummary {
     scenariosNotMeasurable: [],
     dependsOnRecovery: true,
     provisional: false,
+    advisory: false,
     attribution: null,
     ...overrides,
   };

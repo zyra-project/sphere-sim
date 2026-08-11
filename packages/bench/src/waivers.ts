@@ -196,7 +196,7 @@ export function resolveCitation(waiver: GateWaiver, amendments: readonly Amendme
   return { waiver, entry: matched.length === 1 ? matched[0] : null, candidates };
 }
 
-export type GateStatus = 'PASS' | 'WAIVED' | 'FAIL' | 'NOT-JUDGED';
+export type GateStatus = 'PASS' | 'WAIVED' | 'FAIL' | 'NOT-JUDGED' | 'ADVISORY';
 
 export interface GateOutcome {
   id: string;
@@ -247,6 +247,27 @@ export function evaluateGates(input: EvaluationInput): Evaluation {
         id: gate.id,
         status: 'NOT-JUDGED',
         why: 'PROVISIONAL — depends on a constant nobody has measured (docs/ARCHITECTURE.md phase gate). Reported, never scored.',
+        waiver,
+        citation: null,
+      });
+      continue;
+    }
+    // ADVISORY: a gate this project invented, with a threshold no document
+    // publishes. It is tracked because it is diagnostic, and it is never allowed
+    // to fail a build, because failing someone's build on a number we made up is
+    // not a quality bar — it is this repo asserting authority it does not have.
+    // Distinct from PROVISIONAL, which is about an unmeasured CONSTANT; this is
+    // about an unpublished THRESHOLD. See the gate's own `basis`.
+    if (gate.advisory) {
+      outcomes.push({
+        id: gate.id,
+        status: gate.pass ? 'PASS' : 'ADVISORY',
+        why: gate.pass
+          ? ''
+          : `ADVISORY — not a PARAMETERS.md §7 gate; the threshold is this project's own. ` +
+            `${gate.scenariosFailed}/${gate.scenariosScored} scenarios over ${gate.max} ${gate.unit}` +
+            `${gate.worst === null ? '' : `, worst ${gate.worst.value} on ${gate.worst.scenario}`}. ` +
+            `Reported and tracked; never fails the build.`,
         waiver,
         citation: null,
       });
