@@ -339,6 +339,12 @@ export interface RunOptions {
   onProgress?: (message: string) => void;
   /** Levels per parameter. Nine unless a caller is smoke-testing. */
   levels?: number;
+  /**
+   * How many constants enter the pairwise interaction design. The published run uses
+   * the default — the six largest main effects plus §10's four, which is what the
+   * finding is about; a test passes 0 to exercise the rest of the path in seconds.
+   */
+  maxInteractionIds?: number;
 }
 
 export function runExperiment3(options: RunOptions = {}): Experiment3Result {
@@ -424,7 +430,7 @@ export function runExperiment3(options: RunOptions = {}): Experiment3Result {
     .sort(byScore)
     .map((p) => p.id);
 
-  const interactions = runInteractions(parameters, log);
+  const interactions = runInteractions(parameters, log, options.maxInteractionIds);
 
   return {
     schema: 'sphere-sim/experiment-3@1',
@@ -496,11 +502,13 @@ function compareWithSection10(
 function runInteractions(
   parameters: readonly ParameterSensitivity[],
   log: (message: string) => void,
+  maxIds?: number,
 ): InteractionResult[] {
   const top = [...parameters].sort((a, b) => b.scoreScored - a.scoreScored).slice(0, 6).map((p) => p.id);
   const section10 = ['gamma_B', 'L_black_B', 'E_amb', 'rho_B'];
   const ids: string[] = [];
   for (const id of [...top, ...section10]) if (!ids.includes(id)) ids.push(id);
+  if (maxIds !== undefined) ids.length = Math.min(ids.length, Math.max(0, maxIds));
 
   const cache = new Map<string, ResponseVector>();
   const at = (assignment: Assignment): ResponseVector => {

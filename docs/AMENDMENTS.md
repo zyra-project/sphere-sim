@@ -49,6 +49,13 @@ Entries here address one of two documents, and the rule differs:
 | A-20 | conventions.ts | conventions.ts: the nominal rig construction was not specif... | **APPLIED** |
 | A-21 | PARAMETERS.md §7 | §7's black-uplift gate of 1.20 is unsatisfiable under the r... | OPEN |
 | A-22 | PARAMETERS.md | the projector's primaries are not stated anywhere, and both... | OPEN |
+| A-23 | PARAMETERS.md §2 / §3.1 / §8 | reading the primary alignment manual: three confirmations, ... | OPEN |
+| A-24 | PARAMETERS.md §7 | §7's two seam gates are not independent, and the chromatic ... | OPEN |
+| A-25 | PARAMETERS.md §4.5 / §8 | §4.5 states the blend's width and shape but not its ANCHOR,... | OPEN |
+| A-26 | PARAMETERS.md §8 | the ramp width is worth 8x and the ramp shape 1.6x, so §8 i... | OPEN |
+| A-27 | PARAMETERS.md §3.2 | wp_i is a derived quantity and should be marked as one | OPEN |
+| A-28 | PARAMETERS.md §10 | §10's fourth-ranked risk is inert against every §7 gate, an... | OPEN |
+| A-29 | PARAMETERS.md §7 / §8 | the black-uplift gates cannot be planned one constant at a ... | OPEN |
 
 **A note on citing these entries mechanically.** `gate-waivers.json` cites an
 entry by id AND by a fragment of its title, and `packages/bench/src/waivers.ts`
@@ -1236,3 +1243,225 @@ sentence and have to redo this.
    current process costs. This is the number any claim about the solver's value
    has to beat, and it should be recorded in the spec rather than inferred, so
    that a future comparison is against a cited figure instead of a recollection.
+
+
+---
+
+## A-24 — §7's two seam gates are not independent, and the chromatic one is the looser
+
+**Status:** OPEN. Blocking for what the pair of seam gates certifies. Reported by
+Experiment 2.
+
+**The tension.** §7 sets two seam gates and gives the second an explicit rationale:
+
+> **Seam chromaticity discontinuity — ΔE2000 ≤ 1.0.** Conservative — ΔE 1.0 is the
+> classic just-noticeable difference under ideal conditions. The eye is more sensitive
+> to a chromatic edge than a luminance one, **so this gate should be at least as tight
+> as the luminance gate, not looser.**
+
+ΔE2000 is not a chroma metric. It contains ΔL', and on a neutral field it is
+*dominated* by it. So a purely photometric artifact — a misregistration, a gain
+mismatch, anything that changes brightness without changing hue — registers on both
+gates, and the arithmetic decides which trips first.
+
+At PARAMETERS.md §8 item 13's mid-gray, L\* ≈ 76 and a 2% luminance step is
+`ΔL* = (116/3)·(Y/Yn)^(1/3)·(ΔY/Y)` ≈ 0.61. ΔE2000's `S_L` at that lightness is 1.384,
+so the step measures **ΔE2000 0.44**. Measured across Experiment 2's whole sweep, the
+ΔE 1.0 contour sits at **2.27× the registration error** of the 2% luminance contour, at
+every width and every ramp shape:
+
+| ramp width | 2% luminance contour | ΔE2000 1.0 contour | ratio |
+| --- | --- | --- | --- |
+| 5 deg | 1.53 mm | 3.47 mm | 2.27 |
+| 20 deg (nominal) | 6.21 mm | 14.10 mm | 2.27 |
+| 40 deg | 12.74 mm | 28.79 mm | 2.26 |
+
+So the gate §7 intends to be the tighter of the two is **2.3x looser** for this class
+of artifact, and it can never bind: any artifact that fails it has already failed the
+luminance gate by a factor of two.
+
+**Proposed amendment.** State the chromaticity gate on a difference that is actually
+chromatic — ΔE2000 with `kL` set high enough to suppress the lightness term, or the
+`a*b*` distance alone — and keep 1.0. Or keep ΔE2000 and set the threshold near 0.44 so
+the two bind together on a neutral artifact. The first is the better reading of §7's
+own sentence, because it makes the two gates measure different things rather than the
+same thing twice at different thresholds.
+
+**What the code does meanwhile.** `packages/sim/src/color.ts` implements full ΔE2000
+including `kL`, `kC`, `kH`, and `metrics/photometric.ts` gates on the default
+`kL = 1` exactly as §7 words it. Experiment 2 reports both contours side by side so the
+2.27 ratio is visible rather than inferred.
+
+---
+
+## A-25 — §4.5 states the blend's width and shape but not its ANCHOR, and the anchor decides where the artifact is
+
+**Status:** OPEN. **Blocking for what the seam gates can see at all.** Reported by
+Experiment 2.
+
+**The gap.** §4.5 gives the blend a shape (`w(θ)`, "cosine ramp", ASSUME, "shape
+unpublished"), a width (`w_width ~ 20 deg`, ASSUME) and an exponent (`γ_blend` 0.8,
+DOC). It does not say **where the blend region is**. Two readings are consistent with
+every word of it and they put the artifact in different places:
+
+- **Footprint-edge anchored** — each projector fades in from its own limb, inward over
+  `w_width`. This is what `packages/sim/src/coverage.ts` implements and what "each
+  projector fades out toward the edge of what it can reach" means.
+- **Bisector anchored** — each projector fades out symmetrically about the seam
+  bisector, over `w_width`.
+
+**Why it is not a detail.** At the equator two adjacent projectors overlap over
+70.8 degrees of longitude. Under the footprint-edge reading at the nominal 20-degree
+width, both raw weights are clamped at 1 across a **31-degree plateau** in the middle
+of that overlap, normalized to 0.5/0.5 — so §7's hand-over, the longitude where the two
+normalized weights are equal, sits in the middle of a region where the weight gradient
+is exactly zero. Displacing a constant produces a constant. **No misregistration of any
+size can produce a step where §7 measures one**, and the artifact instead appears as
+two bands 15-25 degrees away, outside the estimator's entire window. Measured: a 16 mm
+misregistration moves §7's seam luminance from 1.37e-3 to 1.76e-3 — below the
+estimator's own 2.2e-3 control floor — while the field carries a 5.2% band 12 degrees
+wide.
+
+Under the bisector reading the crossfade would sit exactly where §7 looks, where both
+projectors have equal incidence (`cos` 0.61 at the bisector, by symmetry), and both
+gates would be measuring the thing they are named after.
+
+The two readings also differ on sharpness. Footprint-edge anchoring puts the entire
+crossfade in the region §4.3 calls degenerate — the fading-in projector is at its own
+limb, where `cos(incidence)` approaches zero — which is why widening the ramp *reduces*
+the fraction of the sphere lit at below §4.3's `cos` 0.2 (5.41% at 5 degrees to 5.05%
+at 40, against a blend-independent floor of 4.76%).
+
+**Proposed amendment.** Add one clause to §4.5 naming the anchor, and one line to §8
+item 13: the blend characterization frame should cover enough of the overlap to show
+**where** the crossfade sits, not only how wide it is. A photograph of the seam
+bisector alone cannot distinguish the two readings.
+
+**What the code does meanwhile.** `coverage.ts` implements the footprint-edge reading
+and documents it as a choice at the point where it is made. Experiment 2 measures the
+consequence rather than assuming it away, and `docs/EXPERIMENT-2.md` states that its
+whole estimator design follows from this one unstated clause.
+
+---
+
+## A-26 — the ramp width is worth 8x and the ramp shape 1.6x, so §8 item 13 should say which to get right
+
+**Status:** OPEN. Low risk, cheap to act on. Reported by Experiment 2.
+
+§8 item 13 asks one photograph to yield two things: "→ `w(θ)` shape and `w_width`".
+They are not equally valuable.
+
+Measured over Experiment 2's sweep, the registration error a seam absorbs before the
+artifact reaches §7's 2% figure:
+
+| what changes | range | effect on tolerance |
+| --- | --- | --- |
+| `w_width` | 5 to 40 degrees (A-04's inferred range) | **8.3x** |
+| `w(θ)` shape | linear / cosine / smoothstep / gaussian | **1.63x** |
+| `γ_blend` | 0.5 to 1.5 | 1.45x, and 0.8 is already near the optimum |
+
+The shape ordering is gaussian, smoothstep, cosine, linear, and the linear ramp is the
+outlier rather than the others being close: with `γ_blend` = 0.8 applied to the weight,
+a linear ramp has a slope discontinuity where it meets the clamped plateau, and its
+artifact is concentrated into 4.5 degrees of arc instead of spread over 12.
+
+**Proposed amendment.** In §8 item 13, say that the width is the number the frame must
+determine and the shape is a bonus — and that a site's own `blend` config values should
+be read off the machine alongside (§8 item 5 already asks for `gamma` and `bottommask`;
+the blend width belongs in the same list).
+
+**What the code does meanwhile.** Both are configurable on `BlendCalibration` and
+neither has a default that is not PARAMETERS.md's own. Experiment 2 sweeps all four
+shapes at eleven widths rather than picking one.
+
+---
+
+## A-27 — `wp_i` is a derived quantity and should be marked as one
+
+**Status:** OPEN. Low risk. Reported by Experiment 3.
+
+§3.2 lists `wp_i` (white point, 6500 K) as a parameter with a nominal and a class
+`ASSUME`, and in the same row says "Derived from `g`; tracked separately for
+reporting." Both cannot be true of a value a model consumes: the three gains ARE the
+white point, so a stored `whitePointK` that disagrees with them is over-specified, and
+a model that applied both would be applying a colour shift twice.
+
+Experiment 3 swept it across 5500-7500 K and every response moved by **exactly zero**.
+That is the correct behaviour and it is worth recording, because a zero in a
+sensitivity table otherwise looks like a constant that does not matter rather than a
+field that is never read.
+
+**Proposed amendment.** Mark the row `DERIVED` rather than `ASSUME`, or delete it and
+state in prose that the white point is reported from `g_R,G,B`. Either way nobody
+should plan a measurement for it: §8 items 10 and 11 already produce the gains, and the
+white point falls out.
+
+**What the code does meanwhile.** `ProjectorTransfer.whitePointK` exists because the
+boundary object mirrors §3.2's table, and `photometry.ts`'s `whitePointOfTransfer`
+computes the CCT from the gains instead of trusting the field — so a rig whose stored
+value disagrees with its gains can be noticed rather than believed.
+
+---
+
+## A-28 — §10's fourth-ranked risk is inert against every §7 gate, and §10's own sentence explains why
+
+**Status:** OPEN. Affects the §8 measurement priority, not a gate. Reported by
+Experiment 3.
+
+§10 ranks `ρ_R,G,B` fourth of its four highest photometric risks: "narrower range, but
+**scales every photometric result**".
+
+That sentence is true of the radiance field and false of the metric set. All four of
+§7's photometric gates are scale-invariant by construction — the black-uplift ratio is
+overlap ÷ single, the seam gate is a fraction of the local mean, and both ΔE gates
+compare two points on the same surface under the same reflectance. A uniform scale
+factor cancels in every one of them.
+
+Measured: sweeping `ρ_B` across 0.78-0.95 moves the largest affected gate by **0.0004
+of its threshold**, ranking reflectance **15th of the 20 constants swept**. Its range
+is also `inferred` (A-04), so its position carries less evidence than the stated-range
+rows above it either way.
+
+**Proposed amendment.** Either re-rank it in §10, or — better — state what reflectance
+IS load-bearing for and gate that. It sets the absolute brightness a viewer sees, which
+determines the adaptation state every psychophysical threshold in §7 is quoted at, and
+§7 gates nothing about absolute level at all. That is a real gap and reflectance is the
+parameter that would expose it.
+
+**What the code does meanwhile.** Reflectance is a per-channel `Scene` field with
+§1's nominals, it reaches every photometric metric, and Experiment 3 reports its
+near-zero sensitivity beside the reason rather than as a curiosity.
+
+---
+
+## A-29 — the black-uplift gates cannot be planned one constant at a time
+
+**Status:** OPEN. Affects §8's sequencing. Reported by Experiment 3.
+
+Sweeping each ASSUME photometric constant alone across its whole plausible range,
+**no single one takes any §7 photometric gate past its threshold**; the largest
+excursion is the black-uplift chromaticity shift reaching 0.82 against a gate of 2.0.
+
+Sweeping two together does. At `L_black_G` = 1/300 and `E_amb` = 0.01 — both endpoints
+of ranges PARAMETERS.md **states** — the black-uplift ratio reaches **1.125 against the
+1.20 gate** and the black-uplift chromaticity shift **1.846 against 2.0**. Both come
+within 8% of failing, and neither constant alone gets past 41% of its gate.
+
+The interaction is not incidental. The three black floors compound with each other at
+**1.2-1.9x** their own main effects on the chromaticity gate, because that gate depends
+on the *differences* between the three floors rather than on their level — so a single
+scalar black floor cannot stand in for three, and measuring one channel is nearly
+useless. The black floor then compounds with ambient at about **half** the main effect,
+which is A-21's structural point made numerically: the observed ratio is
+`(ambient + n·floor) / (ambient + floor)`, so how visible a leak is depends on the room.
+
+**Proposed amendment.** Describe §8 items 8, 9 and 16 as a single joint measurement
+whose product is the tuple `(L_black_R, L_black_G, L_black_B, E_amb)` rather than as
+three independent frames — and say explicitly that frames 8 and 9 must be read **per
+channel**, not as a neutral level. §8 already calls 8 and 9 "the highest-value pair in
+the list"; this entry says they are one measurement rather than two, and that item 16
+belongs with them.
+
+**What the code does meanwhile.** `metrics/photometric.ts` reports the black-uplift
+ratio with ambient included as the scored metric and with ambient removed beside it,
+and Experiment 3 runs the pairwise design rather than reporting main effects alone.

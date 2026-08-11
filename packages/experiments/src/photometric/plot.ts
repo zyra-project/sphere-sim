@@ -20,7 +20,7 @@
  */
 
 import type { Experiment2Result } from './experiment2.ts';
-import { LUMINANCE_GATE, CHROMA_GATE, REGISTRATION_MM, WIDTHS_DEG } from './experiment2.ts';
+import { CHROMA_GATE, LUMINANCE_GATE } from './experiment2.ts';
 import type { Experiment3Result, ParameterSensitivity } from './experiment3.ts';
 
 const SURFACE = '#fcfcfb';
@@ -39,7 +39,7 @@ const RAMP: readonly string[] = [
   '#2a78d6', '#256abf', '#1c5cab', '#184f95', '#104281', '#0d366b',
 ];
 
-const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+const FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif";
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -66,6 +66,29 @@ function text(x: number, y: number, s: string, o: TextOptions = {}): string {
 
 function r(x: number): number {
   return Math.round(x * 100) / 100;
+}
+
+/**
+ * Break a sentence into lines of at most `maxChars`.
+ *
+ * SVG has no text wrapping, so a caption longer than the figure is a caption that
+ * runs off the edge of it — which is exactly what happened to the first version of
+ * the Experiment 3 header, and what `test/plot.test.ts`'s frame check now catches.
+ */
+function wrap(s: string, maxChars: number): string[] {
+  const words = s.split(' ');
+  const lines: string[] = [];
+  let line = '';
+  for (const word of words) {
+    if (line.length > 0 && line.length + 1 + word.length > maxChars) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = line.length > 0 ? `${line} ${word}` : word;
+    }
+  }
+  if (line.length > 0) lines.push(line);
+  return lines;
 }
 
 /** Log scale helper. */
@@ -95,14 +118,67 @@ const MIN_DECADE = -3.3;
 const MAX_DECADE = 0;
 
 export function renderExperiment2Svg(result: Experiment2Result): string {
+  // The grid comes from the result, never from the module's own constants: a figure
+  // that drew a different grid from the one that was measured would be a figure of
+  // something else.
   const shapes = result.generatedFrom.shapes;
+  const widths = result.generatedFrom.widthsDeg;
+  const errors = result.generatedFrom.registrationMm;
   const panelW = 268;
   const panelH = 230;
   const gapX = 22;
   const left = 62;
-  const top = 108;
   const width = left + shapes.length * panelW + (shapes.length - 1) * gapX + 26;
-  const height = top + panelH + 132;
+
+  // Captions are wrapped to whatever width the panels produced, rather than assuming
+  // a four-panel figure. SVG neither wraps nor clips text, so a caption sized for a
+  // wider figure than the one it lands in is simply gone off the edge.
+  const captionChars = Math.max(40, Math.floor((width - 52) / 6.0));
+  const headerLines: { text: string; size: number; fill: string; weight: number }[] = [];
+  const pushHeader = (s: string, size: number, fill: string, weight = 400): void => {
+    for (const line of wrap(s, Math.floor((captionChars * 11) / size))) {
+      headerLines.push({ text: line, size, fill, weight });
+    }
+  };
+  pushHeader(
+    'PROVISIONAL — every photometric constant behind this figure is class ASSUME and none has been measured.',
+    11,
+    SERIES_2,
+    600,
+  );
+  pushHeader(
+    'Cell colour: peak luminance error the misregistration causes, |Y - Y_calibrated| / Y_calibrated, on a flat mid-gray field.',
+    11,
+    INK_2,
+  );
+  pushHeader(
+    "Contours mark where that reaches §7's seam gates — which gate a STEP, not a band (A-15), so they are a scale and not a verdict.",
+    11,
+    INK_2,
+  );
+
+  const footerLines: { text: string; size: number; fill: string; weight: number }[] = [];
+  const verdict = result.verdict;
+  for (const line of wrap(
+    `Verdict: ${verdict.holds ? 'the hypothesis HOLDS in this model' : 'the hypothesis DOES NOT hold as stated'} — ` +
+      `over w_width's 5-40° range the tolerable registration error rises ` +
+      `${verdict.toleranceGainOverInferredRange.toFixed(2)}×, and stops improving past ` +
+      `${verdict.saturationWidthDeg}°.`,
+    captionChars,
+  )) {
+    footerLines.push({ text: line, size: 11, fill: INK, weight: 600 });
+  }
+  for (const line of wrap(
+    'Same rig, same knob, one axis at a time. The artifact is a point-for-point difference between two renders of ' +
+      'ONE physical rig — with and without a correct calibration — so no window, polynomial or scale enters it.',
+    Math.floor((captionChars * 11) / 10),
+  )) {
+    footerLines.push({ text: line, size: 10, fill: MUTED, weight: 400 });
+  }
+
+  const top = 46 + headerLines.length * 15 + 26;
+  const legendBlock = 88;
+  const height = top + panelH + legendBlock + footerLines.length * 15 + 20;
 
   const parts: string[] = [];
   parts.push(
@@ -118,33 +194,12 @@ export function renderExperiment2Svg(result: Experiment2Result): string {
       weight: 600,
     }),
   );
-  parts.push(
-    text(
-      left - 34,
-      54,
-      'PROVISIONAL — every photometric constant behind this figure is class ASSUME and none has been measured.',
-      { size: 11, fill: SERIES_2, weight: 600 },
-    ),
-  );
-  parts.push(
-    text(
-      left - 34,
-      70,
-      'Cell colour: peak luminance error the misregistration causes, |Y − Y_calibrated| / Y_calibrated, on a flat mid-gray field.',
-      { size: 11, fill: INK_2 },
-    ),
-  );
-  parts.push(
-    text(
-      left - 34,
-      85,
-      'Contours mark where that reaches §7\'s seam gates — which gate a STEP, not a band (A-15), so they are a scale and not a verdict.',
-      { size: 11, fill: INK_2 },
-    ),
-  );
+  headerLines.forEach((line, i) => {
+    parts.push(text(left - 34, 54 + i * 15, line.text, { size: line.size, fill: line.fill, weight: line.weight }));
+  });
 
-  const x = logScale(0.35, 90, 0, panelW - 34);
-  const y = linearScale(WIDTHS_DEG[0] - 3, WIDTHS_DEG[WIDTHS_DEG.length - 1] + 5, panelH - 26, 0);
+  const x = logScale(errors[0] * 0.7, errors[errors.length - 1] * 1.4, 0, panelW - 34);
+  const y = linearScale(widths[0] - 3, widths[widths.length - 1] + 5, panelH - 26, 0);
 
   shapes.forEach((shape, index) => {
     const ox = left + index * (panelW + gapX);
@@ -156,16 +211,14 @@ export function renderExperiment2Svg(result: Experiment2Result): string {
 
     // Cells. Boundaries at geometric / arithmetic midpoints of the sampled grid, so
     // the figure shows exactly where it was sampled and interpolates nothing.
-    for (let i = 0; i < REGISTRATION_MM.length; i++) {
-      const mm = REGISTRATION_MM[i];
-      const x0 = x(i === 0 ? mm / 1.6 : Math.sqrt(mm * REGISTRATION_MM[i - 1]));
-      const x1 = x(
-        i === REGISTRATION_MM.length - 1 ? mm * 1.6 : Math.sqrt(mm * REGISTRATION_MM[i + 1]),
-      );
-      for (let j = 0; j < WIDTHS_DEG.length; j++) {
-        const w = WIDTHS_DEG[j];
-        const y0 = y(j === 0 ? w - 2 : (w + WIDTHS_DEG[j - 1]) / 2);
-        const y1 = y(j === WIDTHS_DEG.length - 1 ? w + 4 : (w + WIDTHS_DEG[j + 1]) / 2);
+    for (let i = 0; i < errors.length; i++) {
+      const mm = errors[i];
+      const x0 = x(i === 0 ? mm / 1.6 : Math.sqrt(mm * errors[i - 1]));
+      const x1 = x(i === errors.length - 1 ? mm * 1.6 : Math.sqrt(mm * errors[i + 1]));
+      for (let j = 0; j < widths.length; j++) {
+        const w = widths[j];
+        const y0 = y(j === 0 ? w - 2 : (w + widths[j - 1]) / 2);
+        const y1 = y(j === widths.length - 1 ? w + 4 : (w + widths[j + 1]) / 2);
         const cell = result.cells.find(
           (c) => c.shape === shape && c.widthDeg === w && c.registrationMm === mm,
         );
@@ -179,7 +232,7 @@ export function renderExperiment2Svg(result: Experiment2Result): string {
 
     // The two gate contours, from the per-width threshold crossings.
     const contour = (key: 'luminanceToleranceMm' | 'chromaToleranceMm', dash: string): string => {
-      const points = WIDTHS_DEG.map((w) => {
+      const points = widths.map((w) => {
         const c = result.contours.find((z) => z.shape === shape && z.widthDeg === w);
         return c === undefined ? null : { w, mm: c[key] };
       })
@@ -205,7 +258,7 @@ export function renderExperiment2Svg(result: Experiment2Result): string {
     );
 
     // Axes.
-    for (const mm of [0.5, 1, 2, 4, 8, 16, 32, 64]) {
+    for (const mm of errors) {
       parts.push(text(x(mm), panelH - 10, String(mm), { size: 9, fill: MUTED, anchor: 'middle', mono: true }));
     }
     parts.push(
@@ -216,7 +269,7 @@ export function renderExperiment2Svg(result: Experiment2Result): string {
       }),
     );
     if (index === 0) {
-      for (const w of [5, 20, 40, 60, 71]) {
+      for (const w of widths.filter((_, k) => k % 2 === 0 || k === widths.length - 1)) {
         parts.push(text(-8, y(w) + 3, String(w), { size: 9, fill: MUTED, anchor: 'end', mono: true }));
       }
       parts.push(
@@ -232,7 +285,7 @@ export function renderExperiment2Svg(result: Experiment2Result): string {
   });
 
   // Scale legend and annotation key.
-  const legendY = top + panelH + 44;
+  const legendY = top + panelH + 40;
   parts.push(text(left - 34, legendY - 8, 'peak luminance error', { size: 10, fill: INK_2 }));
   const swatch = 21;
   RAMP.forEach((hex, i) => {
@@ -259,31 +312,23 @@ export function renderExperiment2Svg(result: Experiment2Result): string {
     `<line x1="${keyX}" y1="${legendY + 23}" x2="${keyX + 26}" y2="${legendY + 23}" stroke="${INK}" stroke-width="2" stroke-dasharray="5 3"/>`,
   );
   parts.push(text(keyX + 32, legendY + 27, `§7 chromaticity gate, ΔE2000 ${CHROMA_GATE.toFixed(1)}`, { size: 10, fill: INK }));
-  parts.push(
-    `<line x1="${keyX + 300}" y1="${legendY + 5}" x2="${keyX + 326}" y2="${legendY + 5}" stroke="${MUTED}" stroke-width="1" stroke-dasharray="2 3"/>`,
-  );
-  parts.push(text(keyX + 332, legendY + 9, '§4.5 nominal width, 20°', { size: 10, fill: INK_2 }));
-  parts.push(text(keyX + 332, legendY + 27, '§7 grid gate, 1.0 mm', { size: 10, fill: INK_2 }));
+  if (width > keyX + 640) {
+    parts.push(
+      `<line x1="${keyX + 300}" y1="${legendY + 5}" x2="${keyX + 326}" y2="${legendY + 5}" stroke="${MUTED}" stroke-width="1" stroke-dasharray="2 3"/>`,
+    );
+    parts.push(text(keyX + 332, legendY + 9, '§4.5 nominal width, 20°', { size: 10, fill: INK_2 }));
+    parts.push(text(keyX + 332, legendY + 27, '§7 grid gate, 1.0 mm', { size: 10, fill: INK_2 }));
+  }
 
-  const verdict = result.verdict;
-  parts.push(
-    text(
-      left - 34,
-      height - 30,
-      `Verdict: ${verdict.holds ? 'the hypothesis HOLDS in this model' : 'the hypothesis DOES NOT hold as stated'} — ` +
-        `over w_width's inferred 5–40° range the tolerable registration error rises ` +
-        `${verdict.toleranceGainOverInferredRange.toFixed(2)}×.`,
-      { size: 11, fill: INK, weight: 600 },
-    ),
-  );
-  parts.push(
-    text(
-      left - 34,
-      height - 14,
-      'Same rig, same seed, one knob. The artifact is a point-for-point difference between two renders of ONE physical rig — with and without a correct calibration — so no window, polynomial or scale enters it.',
-      { size: 10, fill: MUTED },
-    ),
-  );
+  footerLines.forEach((line, i) => {
+    parts.push(
+      text(left - 34, top + panelH + legendBlock + i * 15, line.text, {
+        size: line.size,
+        fill: line.fill,
+        weight: line.weight,
+      }),
+    );
+  });
 
   parts.push('</svg>');
   return parts.join('\n');
@@ -304,11 +349,13 @@ export function renderExperiment3Svg(result: Experiment3Result): string {
   const rowH = 19;
   const barLeft = 232;
   const barW = 300;
-  const width = barLeft + barW + 250;
-  const headerH = 128;
+  // Wide enough for the prose, not merely for the bars: the caption is half the
+  // figure's job and a caption that runs off the frame is not a caption.
+  const captionChars = 128;
+  const width = Math.round(Math.max(barLeft + barW + 250, 26 + captionChars * 6.1));
+  const headerH = 146;
   const groupGap = 62;
-  const height =
-    headerH + stated.length * rowH + groupGap + inferred.length * rowH + 132;
+  const height = headerH + stated.length * rowH + groupGap + inferred.length * rowH + 150;
 
   const allScores = [...stated, ...inferred].map((p) => Math.max(p.scoreScored, p.scoreUnscored));
   const maxScore = Math.max(0.01, ...allScores);
@@ -328,29 +375,30 @@ export function renderExperiment3Svg(result: Experiment3Result): string {
       weight: 600,
     }),
   );
-  parts.push(
-    text(
-      24,
-      52,
-      'PROVISIONAL — every constant here is class ASSUME. A bar is how far a metric moves across the constant\'s plausible range, divided by the metric\'s own gate.',
-      { size: 11, fill: SERIES_2, weight: 600 },
-    ),
-  );
-  parts.push(
-    text(
-      24,
-      70,
-      'A bar of 1.0 means the constant alone can move a §7 metric by the whole width of its gate. Longer than 1.0 means the constant decides the verdict.',
-      { size: 11, fill: INK_2 },
-    ),
-  );
+  let headY = 52;
+  for (const line of wrap(
+    'PROVISIONAL — every constant here is class ASSUME and none has been measured. A bar is how far a metric ' +
+      'moves across the constant\'s plausible range, divided by that metric\'s own gate.',
+    captionChars,
+  )) {
+    parts.push(text(24, headY, line, { size: 11, fill: SERIES_2, weight: 600 }));
+    headY += 15;
+  }
+  for (const line of wrap(
+    'A bar of 1.0 means the constant alone can move a §7 metric by the whole width of its gate. Longer than 1.0 ' +
+      'means the constant decides the verdict on its own.',
+    captionChars,
+  )) {
+    parts.push(text(24, headY, line, { size: 11, fill: INK_2 }));
+    headY += 15;
+  }
 
   // Legend — identity, never colour alone: each bar is also labelled with its value.
-  parts.push(`<rect x="24" y="86" width="10" height="10" fill="${SERIES_1}"/>`);
-  parts.push(text(40, 95, 'the four §7 gates this project SCORES', { size: 10.5, fill: INK_2 }));
-  parts.push(`<rect x="292" y="86" width="10" height="10" fill="${SERIES_2}"/>`);
+  parts.push(`<rect x="24" y="${headY - 1}" width="10" height="10" fill="${SERIES_1}"/>`);
+  parts.push(text(40, headY + 8, 'the four §7 gates this project SCORES', { size: 10.5, fill: INK_2 }));
+  parts.push(`<rect x="292" y="${headY - 1}" width="10" height="10" fill="${SERIES_2}"/>`);
   parts.push(
-    text(308, 95, 'readings §7 sets NO gate on (divergence, ambient-removed uplift)', {
+    text(308, headY + 8, 'readings §7 sets NO gate on (divergence, ambient-removed uplift)', {
       size: 10.5,
       fill: INK_2,
     }),
@@ -427,19 +475,32 @@ export function renderExperiment3Svg(result: Experiment3Result): string {
     'The swing is a statement about our invention. Never merge these into the ranking above.',
   );
 
-  const notes = [
-    `§10 ranks gamma divergence first. On the four SCORED gates it ranks ` +
-      `${result.section10[0].bestRankOverall} of ${result.parameters.length}; on the unscored ` +
-      `divergence reading it is first by an order of magnitude. The gates are what disagree, not the physics.`,
-    'Bars are the largest swing over any single response, one constant moved at a time, everything else at its PARAMETERS.md nominal.',
-  ];
-  notes.forEach((note, i) => {
-    parts.push(text(24, cursor + 44 + i * 16, note, { size: 10, fill: i === 0 ? INK : MUTED }));
-  });
-
   parts.push(
     `<line x1="24" y1="${cursor + 20}" x2="${width - 24}" y2="${cursor + 20}" stroke="${AXIS}" stroke-width="1"/>`,
   );
+  const notes: { text: string; ink: string }[] = [
+    {
+      text:
+        `§10 ranks gamma divergence the single highest photometric risk. On the four SCORED gates it ranks ` +
+        `${result.section10[0].bestRankOverall} of ${result.parameters.length}; on the unscored divergence ` +
+        `reading it is first by an order of magnitude. What disagrees with §10 is the gates, not the physics.`,
+      ink: INK,
+    },
+    {
+      text:
+        'Bars are the largest swing over any single response, one constant moved at a time, everything else at ' +
+        'its PARAMETERS.md nominal. No single constant swept alone crosses any §7 gate anywhere in its range.',
+      ink: MUTED,
+    },
+  ];
+  let noteY = cursor + 42;
+  for (const note of notes) {
+    for (const line of wrap(note.text, captionChars)) {
+      parts.push(text(24, noteY, line, { size: 10, fill: note.ink }));
+      noteY += 14;
+    }
+    noteY += 4;
+  }
 
   parts.push('</svg>');
   return parts.join('\n');
