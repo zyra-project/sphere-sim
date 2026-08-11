@@ -333,6 +333,13 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
       truthRig: world.truthRig,
       recoveredRig: solver.calibration,
       truthCameras: world.cameras.map((c) => c.pose),
+      // Where the cameras actually were at the epoch the solver's reported
+      // poses refer to. Round 3 scored against the static placement and round
+      // 3's critic showed that makes `camera_pose_rotation` unreachable: a
+      // perfect solver scores 0.08-0.33 deg against a 0.07 deg gate on a motion
+      // archetype, because the truth pose has moved and the metric is measuring
+      // that. Both numbers are reported; the gate reads this one.
+      truthCamerasAtEpoch: capture.cameraPoseAtEpoch,
       recoveredCameras: solver.extra.cameras,
       cameraIds: world.cameras.map((c) => c.id),
       gaugeFreeAxes: solver.extra.gaugeFreeAxes,

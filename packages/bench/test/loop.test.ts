@@ -22,6 +22,7 @@ import {
   classifyMovement,
   loadHistory,
   rankRound,
+  recordFromFile,
   runRound,
   seedForRound,
 } from '../src/loop.ts';
@@ -232,6 +233,8 @@ test('a round appends to the history and a replay of it reproduces the same seed
     historyPath,
     outDir: dir,
     quiet: true,
+    record: null,
+    round: null,
   };
 
   const first = runRound(base);
@@ -261,5 +264,69 @@ test('a round appends to the history and a replay of it reproduces the same seed
     first.record.series.gridDisplacementMm.median,
   );
 
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a round can be RECORDED from a bench run that already happened', { timeout: 600_000 }, () => {
+  // The defect this fixes: `progress/rounds.json` did not exist after three
+  // rounds. The ranking machinery was written and edited and never executed,
+  // because a round's corpus is regenerated with `cli.ts` and `runRound` re-runs
+  // it rather than reading it — so nobody paid for the corpus twice and the
+  // history stayed empty. A ranking rule that has never ranked anything is not
+  // a rule.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sphere-record-'));
+  const historyPath = path.join(dir, 'rounds.json');
+  const base = {
+    preset: TINY,
+    scenarios: 1,
+    seed: null,
+    replay: null,
+    historyPath,
+    outDir: dir,
+    quiet: true,
+    record: null,
+    round: null,
+  };
+
+  // Run one round the normal way to get a results file on disk.
+  const ran = runRound(base);
+  const resultsFile = path.join(dir, 'run.json');
+  fs.writeFileSync(resultsFile, JSON.stringify(ran.results));
+
+  // Recording it must produce the same ranking vector as running it did — same
+  // seed, same scenario count, same series — because it is the same run.
+  const recorded = recordFromFile({ ...base, record: resultsFile });
+  assert.equal(recorded.record.seed, ran.record.seed);
+  assert.equal(recorded.record.scenarioCount, ran.record.scenarioCount);
+  assert.deepEqual(recorded.record.series, ran.record.series);
+  assert.equal(recorded.record.round, 0);
+  assert.equal(recorded.record.best, true, 'the first round on record is the best by default');
+
+  // And it lands in the history, which is the whole point.
+  fs.writeFileSync(historyPath, `${JSON.stringify(recorded.history, null, 2)}\n`);
+  const history = loadHistory(historyPath);
+  assert.equal(history.rounds.length, 1);
+  assert.equal(history.best?.round, 0);
+
+  // A second recording of the same file appends round 1 and compares against
+  // round 0 rather than against nothing: identical numbers must read `flat`,
+  // not `better`, or the history would record progress for re-reading a file.
+  const again = recordFromFile({ ...base, record: resultsFile });
+  assert.equal(again.record.round, 1);
+  assert.equal(again.record.comparison.verdict, 'flat');
+  assert.equal(again.record.best, false);
+  assert.equal(again.record.improving, false);
+
+  // An explicit round number is honoured, which is what a history that starts
+  // late needs: Phase 1's first three rounds ran before this file existed, so
+  // recording round 4 as round 0 would make the history disagree with
+  // docs/PHASE-1.md about which round is which.
+  const numbered = recordFromFile({ ...base, record: resultsFile, round: 4 });
+  assert.equal(numbered.record.round, 4);
+
+  assert.throws(
+    () => recordFromFile({ ...base, record: path.join(dir, 'nope.json') }),
+    /no such file/,
+  );
   fs.rmSync(dir, { recursive: true, force: true });
 });

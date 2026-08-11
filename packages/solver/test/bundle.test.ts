@@ -39,6 +39,24 @@ import {
 const GATE_POSITION_M = 0.002;
 const GATE_ROTATION_DEG = 0.05;
 
+/**
+ * Four independent fields of view — the model this fixture's truth actually has.
+ *
+ * `makeScene` jitters each projector's `fovHDeg` INDEPENDENTLY by up to 0.25
+ * degrees, because a rig's four zoom rings are set one at a time by the Red Ball
+ * procedure against four slightly different lens distances. The default solve
+ * ties them (docs/AMENDMENTS.md A-35: one install, one projector model), so on
+ * this fixture the default is a deliberately mis-specified model, and the
+ * exactness tests below would be measuring that mis-specification rather than
+ * the optimiser.
+ *
+ * So the tests that assert EXACT recovery pass this explicitly, and the cost of
+ * the tie on a fixture whose fields genuinely differ is measured in its own test
+ * ('the shared-lens tie costs what the spread costs') rather than being hidden
+ * inside a loosened tolerance somewhere.
+ */
+const FOUR_LENSES = { bundle: { tieProjectorFov: false } };
+
 function floorAtEveryLens(scene: Scene, sigmaM = 0.002): FloorReference[] {
   // PARAMETERS.md §8 item 1: "floor to each projector lens". Four heights, which
   // is what makes the rig's level — and therefore h_center — observable.
@@ -56,7 +74,13 @@ function solvedState(scene: Scene, floor: FloorReference[], noisePx = 0, seed = 
     seed,
     sigmaPx: Math.max(noisePx, 0.02),
   });
-  const res = solveFromCorrespondences(scene.nominal, scene.cameraInputs, corrs, floor);
+  const res = solveFromCorrespondences(
+    scene.nominal,
+    scene.cameraInputs,
+    corrs,
+    floor,
+    FOUR_LENSES,
+  );
   return {
     ...bundleStateFromCalibration(res.calibration, []),
     cameras: res.extra.cameras,
@@ -271,6 +295,7 @@ test('the optimiser converges and says why', () => {
     scene.cameraInputs,
     corrs,
     floorAtEveryLens(scene),
+    FOUR_LENSES,
   );
   assert.equal(res.diagnostics.converged, true);
   assert.ok(
@@ -320,7 +345,13 @@ test('gross outliers are rejected and counted, and do not move the answer', () =
     i % 20 === 0 ? { ...c, projU: c.projU + 30, projV: c.projV - 30 } : c,
   );
   const floor = floorAtEveryLens(scene);
-  const res = solveFromCorrespondences(scene.nominal, scene.cameraInputs, corrupted, floor);
+  const res = solveFromCorrespondences(
+    scene.nominal,
+    scene.cameraInputs,
+    corrupted,
+    floor,
+    FOUR_LENSES,
+  );
 
   assert.ok(
     res.diagnostics.correspondencesRejected >= Math.floor(clean.length / 20) * 0.9,
@@ -461,6 +492,10 @@ test('prior residuals report how hard the prior is fighting the data', () => {
   };
   const res = solveFromCorrespondences(nominal, scene.cameraInputs, corrs, floorAtEveryLens(scene), {
     priors: { fovHDegSigma: 0.5 },
+    // Four priors on four fields. Tied, `buildProblem` keeps ONE of them (four
+    // readings of one spec sheet are not four measurements) and this test's
+    // per-projector assertion would have nothing to check.
+    ...FOUR_LENSES,
   });
   assert.equal(res.extra.priorResiduals.length, scene.truth.projectors.length);
   for (let i = 0; i < res.extra.priorResiduals.length; i++) {
@@ -516,9 +551,9 @@ test('a camera whose correspondences are worse than they claim is down-weighted'
   );
   const floor = floorAtEveryLens(scene);
 
-  const on = solveFromCorrespondences(scene.nominal, scene.cameraInputs, spoiled, floor);
+  const on = solveFromCorrespondences(scene.nominal, scene.cameraInputs, spoiled, floor, FOUR_LENSES);
   const off = solveFromCorrespondences(scene.nominal, scene.cameraInputs, spoiled, floor, {
-    bundle: { varianceComponents: false },
+    bundle: { ...FOUR_LENSES.bundle, varianceComponents: false },
   });
 
   const scales = on.extra.cameraResidualScale;
@@ -528,4 +563,61 @@ test('a camera whose correspondences are worse than they claim is down-weighted'
   for (const s of scales) assert.ok(s >= 1, `scale ${s} below the floor`);
   // With the components off nothing is measured, so every camera reports 1.
   for (const s of off.extra.cameraResidualScale) assert.equal(s, 1);
+});
+
+test('the shared-lens tie costs what the spread costs, and the cost is not hidden', () => {
+  // The tie is ON by default from round 4, licensed by docs/AMENDMENTS.md A-35:
+  // the install runs four projectors of one model, so there is one lens and one
+  // throw ratio. That licence covers the LENS. It does not cover the ZOOM
+  // SETTING, which the Red Ball procedure turns per projector until each image
+  // matches the sphere — and this fixture's truth says so, jittering each
+  // `fovHDeg` independently by up to 0.25 degrees.
+  //
+  // So on a NOISELESS scene, where a correctly-specified model recovers the rig
+  // exactly, the tie leaves a residue. This test measures it rather than
+  // tolerating it: the number is the price of the model, and a round that
+  // shipped the tie owes the reader the number on a case where nothing else is
+  // going wrong.
+  const scene = makeScene(1);
+  const floor = floorAtEveryLens(scene);
+  const corrs = generateCorrespondences(scene.truth, { noisePx: 0, seed: 1, sigmaPx: 0.02 });
+
+  const solved = (options: Record<string, unknown>): ReturnType<typeof scoreRecovery> => {
+    const res = solveFromCorrespondences(scene.nominal, scene.cameraInputs, corrs, floor, options);
+    const state: BundleState = {
+      ...bundleStateFromCalibration(res.calibration, []),
+      cameras: res.extra.cameras,
+    };
+    return scoreRecovery(alignToTruth(state, scene.truth), scene.truth);
+  };
+
+  const free = solved(FOUR_LENSES);
+  const tied = solved({});
+  const spreadDeg =
+    Math.max(...scene.truth.projectors.map((p) => p.fovHDeg)) -
+    Math.min(...scene.truth.projectors.map((p) => p.fovHDeg));
+
+  // The correctly-specified model is exact, which is what makes the comparison
+  // meaningful: everything below is the tie and nothing else.
+  assert.ok(free.maxProjectorPositionM < 1e-6, `free: ${free.maxProjectorPositionM * 1000} mm`);
+  assert.ok(free.maxFovErrorDeg < 1e-6, `free: ${free.maxFovErrorDeg} deg`);
+
+  // Tied, the four fields come back as one, so the recovered field cannot be
+  // closer to every truth than half the spread, and the position error follows
+  // it through the subtense relation of docs/AMENDMENTS.md A-18.
+  assert.ok(
+    tied.maxFovErrorDeg > spreadDeg / 4,
+    `tied fov error ${tied.maxFovErrorDeg} deg against a truth spread of ${spreadDeg}`,
+  );
+  assert.ok(
+    tied.maxProjectorPositionM > 5 * free.maxProjectorPositionM,
+    'the tie should cost something measurable on a fixture whose fields differ',
+  );
+  // And it is bounded: this is a modelling error of a few centimetres on a
+  // noiseless scene, against the hundreds of millimetres of fitting error the
+  // tie removes when the decode carries a bias (docs/PHASE-1.md round 4).
+  assert.ok(
+    tied.maxProjectorPositionM < 0.05,
+    `tied position error ${tied.maxProjectorPositionM * 1000} mm is larger than the modelling error should be`,
+  );
 });

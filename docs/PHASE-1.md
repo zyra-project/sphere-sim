@@ -606,6 +606,21 @@ same defect as ranking on median grid displacement, one level up.
 
 # Round 3 — the time-aware decode
 
+> **CORRECTION, round 4.** The name in this heading is wrong and the mechanism
+> below is not a time-aware decode. Round 3's own critic proved it (see the
+> critique that follows this section) and round 4 accepted it: `captureEpochs`
+> returns the same two epochs for every capture, the epoch separation is one
+> constant, and scaling every epoch by ten is a no-op to eight significant
+> figures. What was built is a **differential u-vs-v camera pose — three
+> parameters per camera** — which is a correct and useful physical model that
+> reads no clock. The section is left as it was written, because a register that
+> edits its own mistakes is not a register; the code, the option
+> (`BundleFreeFlags.cameraEpochPose`), the diagnostic (`cameraEpochOffset`), the
+> test file (`test/epoch-pose.test.ts`), `packages/solver/README.md` and
+> docs/AMENDMENTS.md A-34 all carry the corrected name as of round 4. Read
+> "rate" below as "the difference between the two epoch poses, parameterised per
+> unit of epoch separation".
+
 Round 2's critic named the contributor and named the remedy:
 `packages/solver/README.md` had been saying for two rounds that "what the solver
 would need is a time-aware decode that models the camera pose per frame", and
@@ -1189,3 +1204,641 @@ normal matrix is 2.8e-7 at condition 2.4e7, dominant column `P3.pitch` against
 own it: until §3.1 says whether `fov_h` comes from the lens or from `d_proj`, and
 gives `shift_h`/`shift_v` an uncertainty, this gate has a floor no camera model
 can move.
+
+---
+
+# Round 4 — the projector is known hardware
+
+The first round in Phase 1 whose changes are licensed by a **document about the
+installation** rather than by a measurement of the bench. docs/AMENDMENTS.md
+A-35 records that the owner supplied the projector's user manual and its
+published specification page: the install runs **four BenQ LK935s**, and six
+values §3 had been carrying as inferences are now `CFG`.
+
+Two of them decide something this project had been unable to decide.
+
+- **One install, one model, four projectors bought together — so one lens.**
+  Round 2 built `tieProjectorFov`, measured it at 1.51x median in pose position,
+  and left it OFF because whether an install's projectors share a lens was a
+  question for §3.1 that nobody could answer (A-33). A-35 answers it.
+- **`fov_h` is bounded by the zoom ring to [25.84, 40.37] degrees**, and lens
+  shift by its mechanical travel to +/-0.6 V and +/-0.23 H. Hard limits, not
+  priors.
+
+And one thing A-35 explicitly does NOT do, restated here because it is the easy
+overclaim: **the model number does not break the fov/distance degeneracy.** The
+zoom is a continuous manual ring and the Red Ball procedure turns it until the
+image matches the sphere, so `T` stays coupled to `d_proj` exactly as before.
+What is bounded is the envelope, not the value.
+
+Every claim below is PAIRED — capture once per (seed, scenario), solve with one
+knob moved — on five seeds no round or critique has used (606061, 717273,
+838485, 949596, 525354) across eleven archetypes: **55 cells, 275 solves**. The
+log is `experiments/paired/round4-paired.log`, the analysis
+`experiments/paired/round4.py`. The unpaired corpus at the end judges the build
+against §7 and makes no round-over-round claim of its own.
+
+## Step 1 — the shared lens, and what it is and is not worth
+
+Ratios are base/tied, so above 1 means the tie helped.
+
+| metric | median | helped | hurt | tripod median | tripod h/h |
+| --- | --- | --- | --- | --- | --- |
+| **pose position** | **1.591x** | **39** | 6 | 1.003x | 10 / 5 |
+| **grid displacement** | **1.000x** | 27 | 19 | 1.000x | 7 / 9 |
+| pose rotation | 1.023x | 31 | 14 | 1.000x | 9 / 6 |
+| camera rotation | 1.010x | 31 | 12 | 1.001x | 10 / 4 |
+| camera position | 1.011x | 33 | 12 | 1.005x | 11 / 4 |
+| `h_center` | 1.000x | 20 | 20 | 1.000x | 9 / 6 |
+
+Per archetype, on the two gates that move at all:
+
+| archetype | pose position | helped | grid | helped |
+| --- | --- | --- | --- | --- |
+| `s00-clean` (tripod) | 1.000x | 0 / 5 | 1.000x | 1 / 5 |
+| `s01-nominal` (tripod) | **0.751x** | 2 / 5 | 0.923x | 2 / 5 |
+| `s02-sensor-noise` (tripod) | 1.990x | 4 / 5 | **0.913x** | **0 / 5** |
+| `s03-high-ambient` (tripod) | 1.097x | 4 / 5 | 1.087x | 4 / 5 |
+| `s04-handheld` | 2.015x | 4 / 5 | 1.017x | 4 / 5 |
+| `s05-two-cameras` | **2.499x** | **5 / 5** | **1.191x** | **5 / 5** |
+| `s06-six-cameras` | 2.145x | 5 / 5 | 0.971x | 1 / 5 |
+| `s07-three-projectors` | **2.749x** | **5 / 5** | 0.991x | 2 / 5 |
+| `s09-long-throw` | 2.313x | 5 / 5 | 1.058x | 4 / 5 |
+| `s10-no-floor-reference` | 1.713x | 5 / 5 | **1.224x** | 4 / 5 |
+| `s11-fov-held` | 1.000x | 0 / 5 | 1.000x | 0 / 5 |
+
+`s11-fov-held` is the canary and it is silent: with `fovHDeg` held there is no
+field to tie, and base, tie, box and tie+box agree **to every printed digit** on
+all five seeds.
+
+**Pose position is where it lands.** 1.59x median over 55 cells, 39 helped
+against 6 hurt, and five cells of five helped on every archetype where the field
+of view is free and the capture carries motion, except `s04-handheld` at four of
+five. Round 2 measured 1.51x on seeds this round never saw; the two agree.
+
+**Grid displacement — the gate the loop has been failing for four rounds — does
+not move.** 1.000x median, 27 cells helped and 19 hurt, which is a dead heat.
+Round 2 measured 0.99x. A-32 explains why and the explanation survives
+re-measurement on fresh seeds: the seam metric is 2.2x MORE sensitive to a
+COMMON-MODE field-of-view error than to a differential one, and the tie can only
+remove the differential part.
+
+So this is exactly the case this round was told to report plainly: **a change
+that improves one gate metric substantially and leaves the worst-failing gate
+untouched.** It ships because the hardware says the model is right, not because
+the seam gate moved.
+
+The two remaining §7 gates are not in the paired set and are not silent about
+it: `off_sphere_flux_excess` and `unlit_in_mask` are coverage properties of the
+recovered rig computed by the forward model, they cost a full metric pass per
+cell, and neither has a mechanism that the field of view can reach at this scale.
+The corpus measures both, at both seeds: off-sphere flux excess **passes** (worst
+0.0015 and 0.0019 against a 0.01 limit) and `unlit_in_mask` fails on the 2- and
+3-projector archetypes exactly as A-10 says it must, at 0.128 and 0.130 — the
+same values, the same scenarios, and nothing this round touched.
+
+### What it costs, stated rather than rounded away
+
+**The four tripod archetypes still pass**, worst of five seeds, against the
+1.0 mm gate:
+
+| archetype | base | tied | |
+| --- | --- | --- | --- |
+| `s00-clean` | 0.0627 | 0.0627 | unchanged |
+| `s01-nominal` | 0.5024 | 0.6072 | **worse** |
+| `s02-sensor-noise` | 0.6219 | 0.6814 | **worse** |
+| `s03-high-ambient` | 0.8532 | 0.6367 | better |
+
+`s02-sensor-noise` is worse on five cells of five and its worst case moves
+0.622 to 0.681 mm — about a sixth of the margin it had against the 1.0 mm gate.
+`s01-nominal` loses pose position outright (0.751x median, two of five helped).
+Neither crosses a gate, and both are the price of forcing four fields together
+on a rig whose fields genuinely differ. Taken over all twenty tripod cells the
+WORST one improves — 0.853 to 0.681 mm — because `s03-high-ambient`'s worst case
+falls further than `s01` and `s02` rise. And the tie is three fewer parameters:
+the median solve takes **41 iterations against 58**, which is the conditioning
+improvement showing up as wall clock.
+
+**And they do genuinely differ, which is the part of A-35's licence that does
+not reach.** A-35 licenses one lens MODEL and one throw-ratio RANGE. It does not
+license one zoom SETTING: the Red Ball procedure turns each projector's ring
+until that projector's image matches the sphere, and four lenses at four
+slightly different distances therefore end at four slightly different fields.
+`packages/sim/src/scene.ts` says so with a per-projector sigma of 0.15 degrees
+(A-31: "chosen, not documented") and the solver's own synthetic fixture with
+0.25 degrees. The cost is now pinned by a test rather than left as prose: on a
+NOISELESS synthetic scene where the correctly-specified model recovers the rig
+exactly, the tie leaves **23.7 mm** of position error
+(`packages/solver/test/bundle.test.ts`, "the shared-lens tie costs what the
+spread costs"). That is the modelling error, and it is one to two orders of
+magnitude below the fitting error the tie removes when the decode carries a
+bias. **§8 item 2 should record the zoom setting per projector** — A-33 already
+asks for it, and it is the observation that would replace this trade with a
+measurement.
+
+### What flipping the default did to the test suite, and why it is not tuning
+
+Eight solver tests failed the moment the tie became the default, and every one
+of them is the same test: **assert EXACT recovery on a synthetic fixture whose
+four fields of view differ by construction**. `makeScene` jitters `fovHDeg` per
+projector by up to 0.25 degrees, so a tied solve on that fixture is a
+deliberately mis-specified model and the tests were measuring the
+mis-specification rather than the optimiser.
+
+What was done, in full, because this is exactly the place a round could quietly
+buy itself a green suite:
+
+- **No tolerance was loosened, and no assertion was deleted.** The eight tests
+  now pass `tieProjectorFov: false` explicitly, with a docstring saying that the
+  fixture's truth has four fields and the shipped default has one.
+- **One test was added that measures the cost instead of avoiding it** —
+  `bundle.test.ts`, "the shared-lens tie costs what the spread costs": on a
+  noiseless scene the correctly-specified model recovers the rig to under
+  1e-6 m and the tie leaves 23.7 mm, and the test asserts BOTH, plus an upper
+  bound of 50 mm so the cost cannot grow unnoticed.
+- **The bench corpus was not touched.** It runs with the tie ON, and what it
+  reports below is what the shipped build scores.
+
+One behaviour worth recording rather than hiding: on a NOISELESS fixture with
+the tie mis-specified, the optimiser plateaus against its own model error and
+reports `stopReason: 'lambda'` — a stall — instead of convergence. That is
+`bundle.ts` doing what its own docstring promises ("a solver that calls its own
+failures converged is worse than one that fails loudly"). It does not happen on
+the bench: all twelve scenarios converge at both corpus seeds, and the median
+paired solve now takes 41 iterations against the baseline's 58.
+
+The suite is **470 tests, all passing**, against 461 before the round: six for
+the box, one for the reference-epoch pose, one for the round recorder, and one
+for the tie's cost.
+
+## Step 2 — the hardware envelope as a box, and it is inert
+
+`SolveHardwareOptions.profile` turns the LK935's published envelope into box
+constraints on every free `fovHDeg`, `shiftH` and `shiftV`, enforced by
+projecting each trial LM step onto the feasible set before its cost is
+evaluated. The numbers live in `packages/calibration`'s `PROJECTOR_LK935` with
+the citation attached, and `solve()` reports `boxProjections` and
+`boundsAtLimit` so an inert constraint is visibly inert.
+
+**The result is the first of the two honest possibilities: the constraint never
+fires.** Paired against the same baseline on the same 55 cells:
+
+| metric | median | helped | hurt |
+| --- | --- | --- | --- |
+| every one of the six | **1.000x** | **0** | **0** |
+
+Not "small" — **identical to every printed digit on every metric of every cell**,
+and `boxProjections` is **0 on all 275 solves**, as it is on all 12 scenarios of
+the corpus run. `test/hardware-box.test.ts` pins the same property bit-for-bit
+at unit scale, and pins that the mechanism DOES bind when given a box the state
+starts outside, so this is a measurement rather than a mechanism that quietly
+does nothing.
+
+### The recovered `fov_h` distribution against the envelope
+
+The question the constraint was built to answer, reported either way. 215
+recovered fields per variant — five seeds x eleven archetypes, four projectors
+each except `s07-three-projectors`:
+
+| build | min | p05 | median | p95 | max | outside the envelope |
+| --- | --- | --- | --- | --- | --- | --- |
+| base (four free fields) | 26.735 | 28.689 | 34.051 | 35.081 | 36.084 | **0** |
+| tied | 27.207 | 28.798 | 34.005 | 34.749 | 34.781 | **0** |
+
+against an envelope of **[25.84, 40.37]** and a truth that spans 28.437 to
+34.601 degrees across the corpus.
+
+**The solver has not been exploring physically impossible calibrations.** But
+"inert" is not the same as "miles away", and the margin is not uniform:
+
+| archetype | recovered `fov_h`, base | margin to the tele stop |
+| --- | --- | --- |
+| seven archetypes | 32.06 - 36.08 deg | 6.2 - 8.3 deg |
+| `s04-handheld` | 30.92 - 35.38 deg | 5.08 deg |
+| `s10-no-floor-reference` | 30.77 - 35.38 deg | 4.93 deg |
+| **`s09-long-throw`** | **26.74 - 29.56 deg** | **0.895 deg** |
+
+The one archetype that comes within a degree of a hardware limit is the one
+whose truth sits at the FAR end of §2's unresolved `d_proj` conflict — a site
+whose real geometry is the floor plan's 6.14 m while its config says the
+alignment manual's 5.18 m. That is not a pathology, it is the correct answer for
+that site (its truth field is 28.4 degrees, and 26.7 is 1.7 degrees below it),
+and it is the case where the box would be first to earn its keep. Tying the
+lenses widens that margin to 1.367 degrees, and widens every other archetype's
+too — the tied build's worst approach on the ten remaining archetypes is 7.09
+degrees against the free build's 4.93 — because the tie pulls an outlying field
+back toward the group.
+
+So the finding is: **the compensating deformation round 3's critic named
+deforms the rig INSIDE the space of projectors that exist.** It is not a
+numerical runaway, and nothing about it can be fixed by telling the solver what
+a projector can do.
+
+**The constraint ships anyway, and the argument is not a measurement.** It costs
+one comparison per bounded parameter per trial step, it is a fact about the
+hardware rather than a tuning choice, and a solve that walks out of the envelope
+now stops at the wall and says so in `boundsAtLimit` instead of reporting a
+calibration nobody could install.
+
+### The lens-shift prior, measured and declined
+
+A-12 asked for a lens-shift uncertainty. A-35 supplies the mechanical range and
+a **0% projection offset**, which together say that §3.1's nominal of zero is
+right for this hardware rather than merely conventional — the image is centred
+on the optical axis at neutral shift, and §2 puts the projectors at the same
+2.1844 m as the sphere's equator, which is exactly the level-mount case.
+
+That is a box and a nominal. It is **not** a sigma, and a sigma is what a prior
+needs. The one width available without inventing a number comes from documents:
+A-12's arithmetic makes a shift of 0.01 worth 0.172 degrees of yaw at this
+geometry, so **sigma = 0.058 is the shift worth one degree of pointing**, and §2
+states the mount tolerance as ±1-2 degrees — a prior no tighter than the mount
+tolerance is the loosest defensible one. Measured paired against `tie+box`, so
+the tie is not counted twice:
+
+| metric | median | helped | hurt |
+| --- | --- | --- | --- |
+| pose rotation | 1.009x | **37** | 3 |
+| pose position | 1.001x | 26 | 14 |
+| grid displacement | 1.000x | 20 | 13 |
+| camera rotation | 1.000x | 21 | 9 |
+
+The rotation column is the interesting one and it is the one A-12 predicts: the
+prior moves pose rotation on 37 of 55 cells and hurts 3, which is a real and
+consistent direction — worth **0.9%**. **It is not shipped.**
+`SolvePriorOptions.shiftSigma` stays 0. A prior worth under one percent is not
+worth introducing a constant PARAMETERS.md does not state, and shipping it would
+answer a question the spec is supposed to answer with a number I chose.
+
+## G1, rebuilt — an observable axis, and an injection bigger than the scenario
+
+Round 3's injection guard was falsified by round 3's critic on two counts, and
+both are fixed rather than argued with. The old version injected along the
+**radial** axis — the fov/distance degeneracy, which `attribute.ts` already
+names as 99% of the error energy — at a magnitude **10-25x smaller than the
+scenario's own error**. Both defects point the same way: it was measuring the
+degeneracy, not the guard.
+
+The rebuilt version injects **tangentially**, where a lens displacement slides
+the footprint across the sphere and no other parameter can explain it, at
+**181 mm — 2.0 degrees of azimuth at 5.18 m, the top of the ±1-2 degree mount
+tolerance PARAMETERS.md §2 states.** It prints the scenario's own tangential
+error beside it (0.3 mm on `s01-nominal`, 8-9 mm on `s04-handheld`), so "larger
+than the scenario's own error" is a number in the log rather than a claim in a
+comment: the injection is **20x to 600x** the error it must be visible against.
+And the recovered difference is **projected onto the injected axis and reported
+signed**, because a magnitude ratio cannot tell 1.0x from -1.0x and the round-3
+table had exactly that blind spot.
+
+Two fresh seeds (393939, 646464) x three archetypes x two builds, capture twice
+per cell — once as drawn, once with the injection — and solve both.
+`experiments/paired/round4-injection.log`.
+
+| cell | build | tangential | cross-axis leak | radial (the CONTROL) | pointing |
+| --- | --- | --- | --- | --- | --- |
+| 393939 `s01-nominal` | base | 1.000x | -12.5 mm | 0.680x | 1.000x |
+| | tie+box | 1.000x | **-2.7 mm** | **0.938x** | 1.000x |
+| 393939 `s04-handheld` | base | 0.977x | -214.9 mm | **-0.095x** | 0.996x |
+| | tie+box | 0.973x | **-143.1 mm** | **0.954x** | 1.016x |
+| 393939 `s06-six-cameras` | base | 1.003x | -53.0 mm | 0.923x | 0.994x |
+| | tie+box | 1.005x | **-17.2 mm** | 0.916x | 0.997x |
+| 646464 `s01-nominal` | base | 0.998x | +9.6 mm | 0.975x | 1.000x |
+| | tie+box | 0.998x | **+4.8 mm** | 0.993x | 1.000x |
+| 646464 `s04-handheld` | base | 1.013x | +59.9 mm | 1.421x | 0.988x |
+| | tie+box | 1.009x | **+46.5 mm** | **1.039x** | 0.989x |
+| 646464 `s06-six-cameras` | base | 0.998x | +76.7 mm | 1.428x | 1.009x |
+| | tie+box | 0.999x | **+26.5 mm** | **1.082x** | 1.008x |
+
+**G1 PASSES.** On the observable axis the injection comes back at 0.973x to
+1.013x on every cell of every build: neither the tie nor the box absorbs a
+projector pose error.
+
+The honest caveat, since round 3's critic made exactly this objection about the
+old guard: **the tangential column passes on both builds, so by itself it does
+not discriminate between them.** What it establishes is that neither build eats
+the injection, which is what a guard is for. The two columns that DO
+discriminate are below, and they are the ones the old guard could not produce
+because it injected along the axis that cannot be recovered.
+
+Two things the rebuilt guard shows that the old one could not.
+
+**The cross-axis leakage falls on six cells of six.** A tangential displacement
+of one projector should not move that projector radially, and under the baseline
+it does — by 10 to 215 mm. That is the compensating deformation caught in the
+act, and tying the field of view cuts it on every cell (median 56 mm to 22 mm).
+
+**And the radial column — round 3's axis, kept deliberately as a control — is
+where the difference is dramatic.** The baseline returns a 181 mm radial
+injection at anything between **-0.095x and 1.428x**, including, on one handheld
+cell, with the wrong sign. The tied build returns it at **0.916x to 1.082x on
+all six.** That is the fov/distance valley measured from the other end: with
+four free fields, one projector's radial displacement is absorbed by that
+projector's own `fov_h`; with one shared field, absorbing it would mean moving
+all four fields, and the other three projectors' data forbids it.
+
+This is the mechanism behind the pose-position gain, and it is the first direct
+measurement of it. A-33 explained the same gain as "the tie removes the
+differential component of the fov error", which is true and is not what this
+shows.
+
+## Step 3 — repairing what round 3 shipped as fact
+
+### (a) The `camera_pose_rotation` gate was unreachable, and the METRIC is what changed
+
+The finding: the gate scored the recovered camera pose against the camera's
+**static placement** while `packages/solver` reports the pose at each camera's
+own mean observation epoch — and by that epoch the camera has moved. A perfect
+solver scored 0.08 to 0.33 degrees against a 0.07 degree gate, and the recovered
+values tracked that floor rather than the solver.
+
+Reproduced on this round's own seeds before anything was touched. `floor` is the
+angle between the static placement and the truth pose at the reference epoch —
+the error a perfect solver was charged:
+
+All five columns are medians over the five seeds except `floor, worst`:
+
+| archetype | floor, median | floor, worst | scored at the epoch | scored static |
+| --- | --- | --- | --- | --- |
+| the four tripod archetypes | **0.0000** | **0.0000** | 0.024 - 0.037 | same |
+| `s04-handheld` | 0.157 | 0.254 | **0.110** | 0.205 |
+| `s05-two-cameras` | 0.216 | 0.402 | **0.125** | 0.199 |
+| `s06-six-cameras` | 0.215 | 0.333 | **0.114** | 0.228 |
+| `s07-three-projectors` | 0.202 | 0.257 | 0.233 | 0.258 |
+| `s09-long-throw` | 0.156 | 0.328 | **0.115** | 0.158 |
+| `s10-no-floor-reference` | 0.260 | 0.330 | **0.128** | 0.247 |
+| `s11-fov-held` | 0.216 | 0.402 | **0.107** | 0.193 |
+
+The remedy is the first of the two the critic allowed: **score against the true
+pose AT THE REFERENCE EPOCH.** `packages/bench/src/capture.ts` computes it per
+camera — the mean of the epochs its own correspondences carry, evaluated at the
+mean camera ROW of those correspondences so the rolling-shutter readout is in it
+too, sampled from the same motion states the capture was rendered with. It is
+ground truth the bench holds and the solver never sees, and it is derived from
+the DECODE's public output (`Correspondence.timeU`, `timeV`) rather than from
+any solver-internal convention.
+
+**The threshold was not touched**, and the gate still fails: the corrected
+metric falls by 10% to 50% depending on the archetype, and none of them reaches
+0.07 degrees. What changed is that the failure is now the solver's rather than
+the metric's. The four tripod archetypes pass on 5 seeds of 5 with a floor of
+exactly zero. `recovery.camerasStatic` keeps the old definition in every results
+file so the size of what was removed stays visible, and
+`packages/bench/test/capture.test.ts` pins that the correction is an exact
+no-op when the camera does not move.
+
+### (b) It is a differential u-vs-v camera pose, not a time-aware decode
+
+`captureEpochs` returns u = 27.5 and v = 31.5 for every capture this pipeline
+produces, so the epoch separation is one constant, the parameter is free, and
+only the ratio of the epochs enters the residual. The critic's demonstration —
+multiply every epoch by ten, get the same answer to eight significant figures —
+is a property of the model, not a bug in it. What exists is a correct and useful
+physical model with an overstated name.
+
+Renamed, in the code and in the prose: `BundleFreeFlags.cameraVelocity` ->
+`cameraEpochPose`, `SolverExtraDiagnostics.cameraMotion` -> `cameraEpochOffset`,
+`cameraMotionReport` -> `cameraEpochOffsetReport`, `test/time-aware.test.ts` ->
+`test/epoch-pose.test.ts`, and the TIME-AWARE DECODE section of `bundle.ts` is
+now DIFFERENTIAL u-vs-v CAMERA POSE with the falsification written into it.
+`packages/solver/README.md` and the round-3 section above carry the correction;
+the round-3 section is annotated rather than rewritten, because a register that
+edits its own mistakes is not a register.
+
+Two consequences the critic drew and this round accepted:
+
+- **The `spanFrames` guard is dead code under the shipped decode**, and its
+  docstring now says so: it refuses columns to a camera whose epochs do not
+  spread, and under this decode they always spread by exactly 4.
+- **`cameraEpochOffset` is not comparable with `capture.motionExcursion`** —
+  they differ by about 5x, one being a four-frame displacement and the other a
+  34-frame excursion. `capture.epochDisplacement` is new and IS comparable; both
+  are in `bench-results.json`, and putting them side by side turns the critic's
+  "wrong by 5x" into the model's best evidence. On `s04-handheld` at seed
+  771003, per camera:
+
+  | | camera 0 | camera 1 | camera 2 |
+  | --- | --- | --- | --- |
+  | recovered `cameraEpochOffset` | 0.143 deg | 0.087 deg | 0.132 deg |
+  | **true `epochDisplacement`** | **0.147 deg** | **0.132 deg** | **0.147 deg** |
+  | `motionExcursion` (whole sequence) | 0.349 deg | 0.215 deg | 0.211 deg |
+
+  Against the quantity it actually estimates, the fit is within 3% on two
+  cameras and 34% on the third. Against the excursion it was being compared to,
+  it looked like a 2-to-5x underestimate. The model was right and the
+  comparison was wrong, which is exactly what a naming error costs.
+
+**A-34 asked for the wrong thing and is corrected.** It led with "record each
+frame's timestamp", which this model cannot use. What §8 needs is the pattern
+ORDER — which frames determine `u`, which determine `v`, which came first, and
+whether the projector sequences ran back to back. The 3.3x penalty A-34 measured
+for getting that wrong is unaffected: `perCapture` and `sequential` differ in
+attribution order, not in a clock rate.
+
+### (c) `progress/rounds.json` did not exist
+
+Three rounds edited the ranking machinery and none of it had ever recorded a
+round, because the history is written by `loop.ts` while a round's corpus is
+regenerated by `cli.ts` — and `runRound` re-runs the corpus rather than reading
+one, so nobody was going to pay for twelve scenarios twice. A ranking rule that
+has never ranked anything is not a rule.
+
+`loop.ts --record <results.json> --round N` now folds a finished bench run into
+the history through exactly the path a live round takes: same `rankRound`, same
+`classifyMovement`, same `betterThan`, same file. `recordRound` is the shared
+function and `runRound` is a thin wrapper around it.
+`packages/bench/test/loop.test.ts` asserts that running a round and recording
+the same round produce the same ranking vector, and that recording one file
+twice records the second as `flat` rather than as progress.
+
+**This round is recorded**, as round 4, with its six-component vector:
+
+| tracked metric | median | in gate units |
+| --- | --- | --- |
+| grid displacement | 3.5074 mm | 3.51x |
+| pose position (aligned) | 44.12 mm | 22.06x |
+| pose rotation (aligned) | 0.2686 deg | 5.37x |
+| `h_center` error | 1.2647 mm | 0.13x |
+| camera rotation (aligned) | 0.0987 deg | 1.41x |
+| off-sphere flux excess | 0.0005 | 0.05x |
+
+Every movement reads `flat` and the comparison reads `better`, and both are
+correct for a first record: there is nothing to compare against, so nothing
+cleared its scatter, and the first round on record is the incumbent best by
+default. Round 5 is the first round the rule can actually judge.
+
+The history starts at round 4: rounds 0 to 3 left no results files behind, and
+inventing records for them from the numbers quoted in this document would be
+worse than starting where the machinery began working.
+
+### (d) The injection guard — above.
+
+## The unpaired corpus, at round 2's and round 3's own seed
+
+`bench-results.json` is regenerated at **seed 771003, twelve scenarios, default
+preset** — deliberately the seed rounds 2 and 3 both reported, so the comparison
+is one code change at one draw rather than three draws.
+
+| scenario | round 2 | round 3 | round 4 | | scenario | round 2 | round 3 | round 4 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `s00-clean` | 0.039 | 0.039 | **0.039** | | `s05-two-cameras` | 16.47 | 3.399 | **4.012** |
+| `s01-nominal` | 0.187 | 0.253 | **0.169** | | `s06-six-cameras` | 21.32 | 1.477 | **1.459** |
+| `s02-sensor-noise` | 0.726 | 0.708 | **0.742** | | `s07-three-projectors` | 4.97 | 11.888 | **12.319** |
+| `s03-high-ambient` | 0.252 | 0.224 | **0.256** | | `s09-long-throw` | 15.78 | 9.434 | **12.651** |
+| `s04-handheld` | 15.72 | 3.827 | **4.128** | | `s10-no-floor-reference` | 13.57 | 6.711 | **6.955** |
+| | | | | | `s11-fov-held` | 16.13 | 3.508 | **3.507** |
+
+Grid displacement at this draw is **flat to slightly worse** — the worst
+scenario moves 11.888 to 12.651 mm, and `s09-long-throw` is the mover (9.43 to
+12.65). The paired measurement says the tie is a dead heat on this gate
+(1.000x, 27 cells helped and 19 hurt, and `s09` specifically 1.058x with four of
+five cells helped), so this is the worst-case-of-twelve statistic landing on the
+cell that went the other way — the same thing round 3 reported for `s07`, and
+the reason this document insists the claim comes from the paired set.
+
+The two §7 pose gates:
+
+| gate | round 3 at 771003 | round 4 at 771003 | waiver ceiling |
+| --- | --- | --- | --- |
+| `pose_position` | 397.0 mm | **349.4 mm** | 640 mm (A-18) |
+| `pose_rotation` | 3.81 deg | **3.87 deg** | 6.3 deg (A-12) |
+
+**VERDICT: FAIL**, with three unwaived gates — `grid_displacement` (7 of 11
+scored), `h_center_recovery` (2 of 12, both `s08-two-projectors` and
+`s10-no-floor-reference`, which is §8 item 1's floor-reference question) and
+`camera_pose_rotation` (8 of 12, now measuring the solver rather than the
+metric's own floor).
+
+### And at a seed nothing has ever run on
+
+A second corpus at **480915**, a seed no round, critic or paired set has used
+(`probe/bench-fresh.json`, not committed). It is reported because running only
+the seed a previous round chose invites exactly the question this document
+raised about waiver ceilings.
+
+| | 771003 | 480915 |
+| --- | --- | --- |
+| grid displacement, worst | 12.651 mm (7 of 11 fail) | **8.314 mm** (7 of 11 fail) |
+| pose position, worst | 349.4 mm | **150.4 mm** |
+| pose rotation, worst | 3.87 deg | **6.83 deg — breaches the 6.3 deg waiver** |
+| `unlit_in_mask`, worst | 0.128 | **0.130 — breaches the 0.13 ceiling** |
+| `camera_pose_rotation` | 8 of 12 fail | 8 of 12 fail |
+| box projections | 0 | 0 |
+
+Both breaches are on `s08-two-projectors`, and neither is a solver failure.
+Its rotation number is dominated by the gauge — `alignGaugeToReference` needs
+three projectors and returns the state untouched with two, so most of that
+"rotation error" is the global rotation nobody can observe — and its unlit
+fraction is A-10's finding, that the 2- and 3-projector installs §2 says are
+supported cannot meet §7's unlit gate at all (`s07-three-projectors` sits at
+0.062 at the same seed). What the breaches demonstrate is the third independent
+instance of the defect this document recorded in round 2: **a ceiling set from the worst of twelve
+scenarios at ONE seed is breached by an ordinary draw with nothing changed.**
+The remedy is still the author's call and is still not taken here, because
+re-deriving a ceiling in the round that breaches it is the move
+`gate-waivers.json` exists to prevent.
+
+## The old path is untouched — and the one thing that moved, named
+
+`git worktree add /tmp/head-r3 HEAD`, then the same paired driver over the same
+cached correspondences at two seeds x (`s01-nominal`, `s04-handheld`,
+`s06-six-cameras`), HEAD's default against this tree's `base` variant (tie off,
+no box, no prior). `experiments/paired/round4-head-null.log`.
+
+**The solve is bit-identical on all six cells.** Residual RMS, correspondences
+used, correspondences rejected, iteration count, stop reason, `h_center` error
+and field-of-view bias agree to every printed digit. Nothing about the
+optimiser, the decode or the default free flags changed for a caller who does
+not ask for the new behaviour.
+
+**What moved is the SCORE, on the motion archetypes only, and it is the
+camera-gate repair doing what it was built to do.**
+
+| cell | HEAD | this tree |
+| --- | --- | --- |
+| `s01-nominal`, both seeds | — | **every column identical** (no motion: the epoch pose IS the static pose) |
+| 606061 `s04-handheld` camRot | 0.1278 | 0.1317 |
+| 606061 `s04-handheld` camPos | 6.55 mm | 4.02 mm |
+| 606061 `s04-handheld` pose position | 168.95 mm | 168.93 mm |
+| 606061 `s04-handheld` grid | 5.9773 mm | 5.9788 mm |
+| 717273 `s06-six-cameras` camRot | 0.2278 | 0.0831 |
+
+The gauge consequence is worth stating rather than burying: `alignGauge` fits
+the unobservable global rotation from camera positions as well as projector
+positions, and those camera positions are now the epoch ones. Fitting the gauge
+to one set of poses and scoring against another would leave a millimetre of the
+camera's own motion inside the rig's reported frame, so the two are kept
+consistent — at the cost of moving `pose_position` by 0.02 mm in 169 and
+`pose_rotation` by 0.0023 deg in 0.28 on the motion archetypes, and by nothing
+at all on the tripods.
+
+## What round 5 should do
+
+**Named contributor: one projector's POINTING — its `pitch` and `yaw` together,
+with the lens shift that is nearly the same parameter — which is now the
+weakest direction in the problem and is the one part of the deformation a
+hardware document cannot bound.**
+
+Round 3's critic named the joint `position` / `fov_h` / `shift_h` deformation.
+This round removed one of its three freedoms with outside information — the four
+fields are one field now, and the injection guard shows that is what makes a
+single projector's radial position observable at all.
+
+The remaining direction was re-measured with the tie ON rather than inherited,
+because removing three columns could have moved it. The smallest scaled
+eigendirection of the gauge-augmented normal matrix, on cached corpus captures
+at two of this round's seeds:
+
+| cell | build | smallest scaled eigenvalue | condition | dominant columns |
+| --- | --- | --- | --- | --- |
+| 717273 `s04-handheld` | free | 1.47e-7 | 4.6e7 | `P1.pitch` 47.5%, `P1.yaw` 26.8%, `P1.shiftV` 8.8% |
+| | **tied** | **2.52e-7** | **2.7e7** | `P1.pitch` 31.5%, `P3.pitch` 12.6%, `P1.yaw` 11.4% |
+| 606061 `s01-nominal` | free | 2.56e-7 | 2.7e7 | `P4.pitch` 42.0%, `P4.yaw` 28.4%, `P4.fovH` 5.0% |
+| | **tied** | **3.27e-7** | **2.1e7** | `P4.pitch` 27.1%, `P2.yaw` 21.5%, `P4.yaw` 12.2% |
+
+Two things follow. **The tie improves the conditioning** — the smallest
+eigenvalue rises by 1.3x to 1.7x and the condition number falls by up to 1.7x on
+all four cells measured, which is the same result the iteration count showed.
+And **the near-null direction is a single projector's pointing pair**, with a
+lens-shift share of 4-9% and, once tied, more of the energy spread across
+projectors. That is A-12's sentence measured from the other end: at this
+geometry a shift of 0.01 is worth 0.172 degrees of yaw, so the solver cannot
+tell a shifted lens from a rotated one, and `pitch`/`yaw`/`shift` collapse
+toward one direction the data barely constrains.
+
+This round establishes what will NOT fix it.
+
+- **Not a box.** The LK935's shift travel is ±0.6 V and the recovered shifts sit
+  orders of magnitude inside it — the box was measured this round at exactly
+  inert. A hardware limit cannot separate two parameters that are nearly the
+  same parameter.
+- **Not a prior of any width a document can justify.** Measured here at the
+  loosest defensible sigma: 1.009x on pose rotation. A-13 measured the same
+  thing for `fov_h` and concluded the same way, for the same reason — the
+  failure is bias, and a prior argues with data that is confidently wrong.
+- **Not more cameras.** `s06-six-cameras` carries the largest differential term
+  in the corpus.
+
+What is left is what A-12 has asked for since it was filed: **§3.1 must give
+lens shift an uncertainty, or §8 item 2 must record the shift setting off the
+projector's own menu.** The LK935 displays it. That is one line, and it is worth
+more than any solver change currently available.
+
+**Two mechanisms this round did not build, and neither should be forgotten.**
+
+1. **The per-pair epoch pose.** Round 3 asked round 4 for it: three angular
+   components per (camera, projector) pair instead of per camera, centred within
+   the pair — the version that survives a `sequential` capture and the version a
+   real operator could use. This round spent its budget on A-35's hardware
+   instead, which was the assignment. The request stands, and so does the
+   warning attached to it: 9 free parameters already cost `s02-sensor-noise` a
+   fifth of its grid margin and 36 would cost more.
+2. **The bench's clock.** `packages/bench/src/capture.ts` still restarts the
+   frame index at zero for every pair. A-34 measures that choice as worth a
+   factor of three, and it is still a modelling choice nobody wrote down, two
+   rounds after it was noticed.
+
+**And one thing this round could not settle.** Whether the four projectors of
+this install are at four zoom settings or one is not in A-35, is not in §3.1,
+and decides how much the tie costs. The bench asserts they differ (0.15 degrees,
+"chosen, not documented"); the tie asserts they do not. Both are guesses about
+one observation an operator could make in ten seconds.

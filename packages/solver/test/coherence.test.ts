@@ -30,6 +30,7 @@ import assert from 'node:assert/strict';
 import { createRng } from '../src/linalg.ts';
 import {
   DEFAULT_BUNDLE_OPTIONS,
+  buildLayout,
   buildProblem,
   estimatePairCoherence,
   evaluate,
@@ -69,24 +70,35 @@ test('tieProjectorFov solves ONE field of view, and off it solves four', () => {
     assert.equal(f, fovs[0], `tied fields of view diverged: ${fovs.join(', ')}`);
   }
 
-  const free = runBundle(nominal, corrs, floor, {}, nominal);
+  // Explicitly OFF, not the default: since round 4 the default is ON
+  // (docs/AMENDMENTS.md A-35 — the install is four projectors of one model), and
+  // a test that read the default here would assert nothing the day it changed.
+  const free = runBundle(nominal, corrs, floor, { tieProjectorFov: false }, nominal);
   const freeFovs = free.state.projectors.map((p) => p.fovHDeg);
   const spread = Math.max(...freeFovs) - Math.min(...freeFovs);
   assert.ok(spread > 1e-6, `untied fields of view should differ, spread was ${spread}`);
 });
 
-test('the tie is invisible when it is off', () => {
-  // The layout gained a `columnSlots` indirection and `levenbergMarquardt` gained
-  // a pack/unpack round trip before the first evaluation. Both are meant to be
-  // exact no-ops without a tie, and "meant to be" is not a guarantee.
+test('the tie costs exactly three columns, and off it costs none', () => {
+  // The layout gained a `columnSlots` indirection so that one column can drive
+  // several slots. Structure rather than arithmetic is what to assert here: with
+  // the tie off every column must still stand for exactly one parameter, and
+  // with it on the four `fovH` slots must share one column and the problem must
+  // be three parameters smaller. Anything else and the state and the parameter
+  // vector are drifting apart somewhere the residual cannot see.
   const scene = makeScene(4243);
-  const corrs = generateCorrespondences(scene.truth, { noisePx: 0.05, seed: 12, sigmaPx: 0.05 });
-  const floor = floorAtEveryLens(scene.truth);
   const nominal = bundleStateFromCalibration(scene.nominal, scene.cameraInputs);
-  const a = runBundle(nominal, corrs, floor, {}, nominal);
-  const b = runBundle(nominal, corrs, floor, { tieProjectorFov: false }, nominal);
-  assert.equal(a.cost, b.cost);
-  assert.equal(a.rmsResidualPx, b.rmsResidualPx);
+  const opts = (tie: boolean): BundleOptions => ({
+    ...DEFAULT_BUNDLE_OPTIONS,
+    tieProjectorFov: tie,
+  });
+  const untied = buildLayout(nominal, opts(false));
+  const tied = buildLayout(nominal, opts(true));
+  for (const slots of untied.columnSlots) assert.equal(slots.length, 1);
+  assert.equal(tied.n, untied.n - (nominal.projectors.length - 1));
+  const shared = tied.columnSlots.filter((c) => c.length > 1);
+  assert.equal(shared.length, 1, 'exactly one column should be shared');
+  assert.equal(shared[0].length, nominal.projectors.length);
 });
 
 // ---------------------------------------------------------------------------

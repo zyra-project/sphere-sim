@@ -64,7 +64,13 @@ import type {
   PhaseSequence,
 } from '../../solver/src/index.ts';
 import { decodeCapture } from '../../solver/src/index.ts';
-import type { FrameClock, HandheldMotion, MotionState, SimulatedCamera } from './camera.ts';
+import type {
+  CameraPose,
+  FrameClock,
+  HandheldMotion,
+  MotionState,
+  SimulatedCamera,
+} from './camera.ts';
 import { canonicalRayTable, makeMotionState, poseAt, rotationOf, rowTimeSec } from './camera.ts';
 import type { FrameSpec, PatternPlan } from './patterns.ts';
 import {
@@ -186,6 +192,36 @@ export interface CaptureResult {
   preview: RgbImage | null;
   /** Per-camera motion excursion over the whole sequence, metres and degrees. */
   motionExcursion: { camera: number; translationMm: number; rotationDeg: number }[];
+  /**
+   * Per camera, how far the camera moved BETWEEN THE TWO EPOCHS a
+   * correspondence is read from — the `u` phase block and the `v` phase block,
+   * four frames apart.
+   *
+   * This is the quantity `packages/solver`'s differential u-vs-v camera pose
+   * estimates, and it is five to ten times SMALLER than `motionExcursion`. The
+   * two were treated as the same measurement for a round and they are not:
+   * round 3's critic measured 0.070 deg recovered against 0.35 deg of
+   * excursion and correctly called the comparison wrong by 5x.
+   */
+  epochDisplacement: { camera: number; translationMm: number; rotationDeg: number }[];
+  /**
+   * Per camera, where it ACTUALLY WAS at its own reference epoch — the mean of
+   * the epochs its own correspondences carry.
+   *
+   * The bench holds the motion states, so this is ground truth rather than an
+   * estimate, and it is the pose a recovered camera pose should be scored
+   * against: `packages/solver` centres its reported pose on exactly this epoch.
+   * Scoring against the static placement instead is what made the
+   * `camera_pose_rotation` gate unreachable — see `score.ts`.
+   *
+   * Computed from the DECODE's own reported epochs (`Correspondence.timeU` and
+   * `timeV`), not from any solver-internal convention: the decoder is the thing
+   * that says when it measured what, and both sides read that same public
+   * statement.
+   */
+  cameraPoseAtEpoch: CameraPose[];
+  /** The reference epoch itself, in pattern frames, per camera. */
+  cameraEpochFrame: number[];
 }
 
 // ---------------------------------------------------------------------------
@@ -696,6 +732,61 @@ export function captureAndDecode(
     return { camera: i, translationMm: maxT * 1000, rotationDeg: maxR };
   });
 
+  // Where each camera was when the decode says it measured what it measured.
+  // The epochs come off the correspondences themselves, so this stays correct
+  // if the pattern plan changes the frame order — and stays honest, because it
+  // is the decoder's own statement about its own timing rather than a second
+  // copy of the frame layout maintained here.
+  const sumEpoch = new Float64Array(cameras.length);
+  const countEpoch = new Float64Array(cameras.length);
+  const sumU = new Float64Array(cameras.length);
+  const sumV = new Float64Array(cameras.length);
+  // The camera ROW matters as well as the frame, because a rolling shutter
+  // reads row r later than row 0 and the correspondences of a sphere in the
+  // middle of the frame are not spread symmetrically over the rows. Taking the
+  // mean row of that camera's own correspondences removes the readout term
+  // from the epoch instead of assuming it cancels.
+  const sumRow = new Float64Array(cameras.length);
+  for (const c of correspondences) {
+    if (c.camera < 0 || c.camera >= cameras.length) continue;
+    sumEpoch[c.camera] += (c.timeU + c.timeV) / 2;
+    sumU[c.camera] += c.timeU;
+    sumV[c.camera] += c.timeV;
+    sumRow[c.camera] += c.camV;
+    countEpoch[c.camera]++;
+  }
+  const cameraEpochFrame: number[] = [];
+  const cameraPoseAtEpoch: CameraPose[] = [];
+  const epochDisplacement: CaptureResult['epochDisplacement'] = [];
+  for (let i = 0; i < cameras.length; i++) {
+    const cam = cameras[i];
+    const n = countEpoch[i];
+    const frame = n > 0 ? sumEpoch[i] / n : 0;
+    const height = cam.intrinsics.resY;
+    const row = n > 0 ? sumRow[i] / n : (height - 1) / 2;
+    const at = (f: number): number => rowTimeSec(opts.conditions.clock, f, row, height);
+    cameraEpochFrame.push(frame);
+    cameraPoseAtEpoch.push(poseAt(cam.pose, opts.conditions.handheld, motionStates[i], at(frame)));
+    const fu = n > 0 ? sumU[i] / n : 0;
+    const fv = n > 0 ? sumV[i] / n : 0;
+    const a = poseAt(cam.pose, opts.conditions.handheld, motionStates[i], at(fu));
+    const b = poseAt(cam.pose, opts.conditions.handheld, motionStates[i], at(fv));
+    epochDisplacement.push({
+      camera: i,
+      translationMm:
+        Math.hypot(
+          b.position.x - a.position.x,
+          b.position.y - a.position.y,
+          b.position.z - a.position.z,
+        ) * 1000,
+      rotationDeg: Math.hypot(
+        b.yawDeg - a.yawDeg,
+        b.pitchDeg - a.pitchDeg,
+        b.rollDeg - a.rollDeg,
+      ),
+    });
+  }
+
   return {
     correspondences,
     stats,
@@ -704,6 +795,9 @@ export function captureAndDecode(
     pixelsTraced,
     preview,
     motionExcursion,
+    epochDisplacement,
+    cameraPoseAtEpoch,
+    cameraEpochFrame,
   };
 }
 

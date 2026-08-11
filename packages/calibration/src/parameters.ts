@@ -544,6 +544,127 @@ export const ASSUME_PHOTOMETRIC_IDS: string[] = [
   'mask_hi',
 ];
 
+// ---------------------------------------------------------------------------
+// Projector hardware profile — the spec sheet PARAMETERS.md §3.1 asks for
+// ---------------------------------------------------------------------------
+
+/**
+ * A projector model's published optical envelope.
+ *
+ * PARAMETERS.md §3.1 classes the throw ratio `T` as `CFG` — "read from a
+ * hardware spec sheet" — and derives `fov_h` from it. Until docs/AMENDMENTS.md
+ * A-35 there was no spec sheet, so §3.1's own `T ~ 3.0` stood as an inference
+ * and the solver had an effectively unbounded prior on the field of view.
+ *
+ * A profile is not a nominal and it is not a value: a zoom lens's throw ratio is
+ * a RANGE, and A-35 is explicit that knowing the model does not break the
+ * fov/distance degeneracy because the Red Ball procedure sets the zoom ring
+ * until the image matches the sphere. What a profile gives is a HARD BOX. No
+ * unit of this model can sit outside it, whatever the data says, because the
+ * lens does not move that far.
+ *
+ * Both halves of the boundary may read this file, and neither is obliged to.
+ * `packages/sim` does not: the bench draws its truth rigs around PARAMETERS.md's
+ * own construction, so a forward model built from this profile and an inverse
+ * model bounded by it would be the same statement made twice.
+ */
+export interface ProjectorProfile {
+  /** Stable id, used in reports so a result computed with it is attributable. */
+  id: string;
+  model: string;
+  klass: ParamClass;
+  /** Where every number below came from, verbatim enough to re-check. */
+  source: string;
+  /** Native raster, PARAMETERS.md §3.1 `res_proj`. */
+  resX: number;
+  resY: number;
+  /** Throw ratio at the wide (shortest) end of the zoom, distance over width. */
+  throwRatioMin: number;
+  /** Throw ratio at the tele (longest) end. */
+  throwRatioMax: number;
+  /**
+   * Horizontal field of view at the WIDE end, degrees — the LARGER of the two,
+   * because a shorter throw ratio is a wider field. Derived from
+   * `throwRatioMin` as `2*atan(1/(2*T))` and written here as a literal, since
+   * this package holds no arithmetic.
+   */
+  fovHDegMax: number;
+  /** Horizontal field of view at the TELE end, degrees. From `throwRatioMax`. */
+  fovHDegMin: number;
+  /**
+   * Mechanical lens shift limits in conventions.ts §I's units — a fraction of
+   * the HALF-image dimension, which is the same convention the manufacturer's
+   * percentage uses. Signed symmetric: the published figure is `-60% ~ +60%`.
+   */
+  shiftVMax: number;
+  shiftHMax: number;
+  /**
+   * Projection offset at neutral shift, as a fraction of the half-image. 0
+   * means the image is centred on the optical axis rather than thrown entirely
+   * above it, which is what makes §3.1's `shift = 0` nominal correct for this
+   * hardware rather than merely conventional.
+   */
+  projectionOffset: number;
+  /** Clear focus range, metres, at the wide and tele ends. PARAMETERS.md §3.3. */
+  focusMinWideM: number;
+  focusMaxWideM: number;
+  focusMinTeleM: number;
+  focusMaxTeleM: number;
+  /** §3.2 cares which it is: DLP and LCD leak differently per channel. */
+  displaySystem: string;
+  /** §3.2's gain rationale is lamp ageing. A laser has no lamp. */
+  lightSource: string;
+  note: string;
+}
+
+/**
+ * BenQ LK935, the projector this installation runs — four of them, one model.
+ *
+ * Every number is quoted or derived in docs/AMENDMENTS.md A-35 from the user
+ * manual (LK935_UM_EN) and confirmed against BenQ's published specification
+ * page. The throw ratio was obtained by dividing projection distance by image
+ * width across three rows of the manual's own distance table, all three
+ * agreeing, and the product page states the same 1.36~2.18 independently.
+ *
+ * Two consequences A-35 draws, both load-bearing for anything reading this:
+ *
+ *  - **§3.1's `T ~ 3.0` is not achievable by this projector at any zoom
+ *    setting.** It is beyond the tele end. docs/AMENDMENTS.md A-01 derived
+ *    `T ~ 1.69` from the sphere's geometry alone, before this manual existed,
+ *    and covering a 1.7272 m sphere from 5.18 m needs T = 1.687 — inside this
+ *    envelope, and agreeing with A-01 to three digits.
+ *  - **The model number does NOT settle `fov_h`.** The zoom is a continuous
+ *    manual ring and the Red Ball procedure turns it until the image matches
+ *    the sphere, so `T` stays coupled to `d_proj` exactly as before.
+ */
+export const PROJECTOR_LK935: ProjectorProfile = {
+  id: 'LK935',
+  model: 'BenQ LK935',
+  klass: 'CFG',
+  source:
+    'BenQ LK935 user manual (LK935_UM_EN, 102 pp) plus the published specification page; both supplied by the owner and transcribed in docs/AMENDMENTS.md A-35.',
+  resX: 3840,
+  resY: 2160,
+  throwRatioMin: 1.36,
+  throwRatioMax: 2.18,
+  // 2*atan(1/(2*1.36)) = 40.37 deg; 2*atan(1/(2*2.18)) = 25.84 deg.
+  fovHDegMax: 40.37,
+  fovHDegMin: 25.84,
+  // Manual and product page agree: -60% ~ +60% vertical, -23% ~ +23% horizontal.
+  shiftVMax: 0.6,
+  shiftHMax: 0.23,
+  // Product page: "Projection Offset (Full-Height) 0%".
+  projectionOffset: 0.0,
+  focusMinWideM: 1.8,
+  focusMaxWideM: 6.0,
+  focusMinTeleM: 2.88,
+  focusMaxTeleM: 9.6,
+  displaySystem: '1-CHIP DMD',
+  lightSource: 'Laser',
+  note:
+    'Zoom 1.60x, focal length 14.3-22.9 mm (the product page gives 8.6-9.4, which contradicts its own zoom ratio and lands on no real DMD; the manual wins — see A-35 section 6). The clear-focus span of 2.88-9.60 m at tele comfortably contains the sphere\'s 0.79 m depth swing, which downgrades PARAMETERS.md §3.3 and §9\'s depth-of-field concern.',
+};
+
 /** Acceptance gates, PARAMETERS.md §7. */
 export interface MetricGate {
   id: string;

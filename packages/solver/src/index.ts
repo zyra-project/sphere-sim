@@ -28,7 +28,8 @@ import type {
   SolveResult,
   Vec3,
 } from '../../calibration/src/index.ts';
-import { PARAMETER_TABLE } from '../../calibration/src/parameters.ts';
+import type { ProjectorProfile } from '../../calibration/src/parameters.ts';
+import { PARAMETER_TABLE, PROJECTOR_LK935 } from '../../calibration/src/parameters.ts';
 import {
   NOMINAL_AZIMUTH_SLOTS_DEG,
   NOMINAL_SILHOUETTE_MARGIN_FRAC,
@@ -52,6 +53,7 @@ import {
   type BundleOptions,
   type BundleState,
   type FloorReference,
+  type ParameterBox,
   type ParameterPrior,
   runBundle,
   slotProjector,
@@ -153,6 +155,18 @@ export interface SolvePriorOptions {
    * invented — and would then be the number that decides whether §7's rotation
    * gate passes. That is a decision for the spec, not for the solver. Filed as
    * docs/AMENDMENTS.md A-12 with the measurement.
+   *
+   * **What A-35 changed, and what it did not.** The LK935's manual supplies the
+   * mechanical travel (+/-0.6 V, +/-0.23 H) and the product page supplies a
+   * projection offset of 0%, which together confirm that §3.1's nominal of zero
+   * is right for this hardware rather than merely conventional. That is a BOX,
+   * and it is now enforced as one — see `SolveHardwareOptions`. It is not a
+   * sigma: nothing published says how far from zero an installed lens's shift
+   * knob actually sits, so the width of a prior would still be invented. The
+   * one width round 4 measured was derived from documents rather than from the
+   * bench — 0.058, the shift that A-12's arithmetic makes worth one degree of
+   * pointing, against §2's stated 1-2 degree mount tolerance — and
+   * docs/PHASE-1.md reports what it did.
    */
   shiftSigma: number;
 }
@@ -162,11 +176,40 @@ export const DEFAULT_PRIOR_OPTIONS: SolvePriorOptions = {
   shiftSigma: 0,
 };
 
+/**
+ * The projector's published optical envelope, as a HARD constraint.
+ *
+ * PARAMETERS.md §3.1 classes the throw ratio `CFG`, "read from a hardware spec
+ * sheet". docs/AMENDMENTS.md A-35 is that spec sheet: the install runs four BenQ
+ * LK935s, whose zoom ring travels 1.36:1 to 2.18:1 — a horizontal field of view
+ * of 25.84 to 40.37 degrees — and whose lens shift travels +/-60% vertically and
+ * +/-23% horizontally, with a projection offset of 0% at neutral.
+ *
+ * Those are not priors. A prior says a value is improbable; these say the lens
+ * physically stops there. The distinction decides whether the constraint is
+ * worth anything, because A-13 measured that a PRIOR on `fov_h` at any width a
+ * spec sheet could justify moves the worst-case pose error by under 3%: the
+ * failure along the fov/distance valley is bias, and a soft constraint is
+ * outvoted by biased data. A box cannot be outvoted.
+ *
+ * `profile: null` removes the box entirely and restores the pre-round-4
+ * behaviour exactly, which is what a site running some other projector should
+ * do until it supplies its own profile.
+ */
+export interface SolveHardwareOptions {
+  profile: ProjectorProfile | null;
+}
+
+export const DEFAULT_HARDWARE_OPTIONS: SolveHardwareOptions = {
+  profile: PROJECTOR_LK935,
+};
+
 export interface SolveOptions {
   decode: Partial<DecodeOptions>;
   init: Partial<InitOptions>;
   bundle: Partial<BundleOptions>;
   priors: Partial<SolvePriorOptions>;
+  hardware: Partial<SolveHardwareOptions>;
   /** Propagated to the bootstrap RANSAC. Every run with the same seed is identical. */
   seed: number;
 }
@@ -231,16 +274,32 @@ export interface SolverExtraDiagnostics {
    */
   pairResidualScale: number[];
   /**
-   * Per camera, how far the recovered trajectory says the camera moved over the
-   * epochs its own correspondences span — millimetres and degrees.
+   * Per camera, the recovered difference between its pose at the `u` epoch and
+   * its pose at the `v` epoch — millimetres and degrees.
    *
-   * All zeros unless `BundleFreeFlags.cameraVelocity` is on, and reported
-   * unconditionally so that "the solver did not model motion" and "the solver
-   * modelled motion and found none" stay distinguishable. `packages/bench`
-   * reports the motion it actually simulated as `capture.motionExcursion`; the
-   * two are the same quantity measured from opposite ends of the pipeline.
+   * All zeros unless `BundleFreeFlags.cameraEpochPose` is on, and reported
+   * unconditionally so that "the solver did not model the difference" and "the
+   * solver modelled it and found none" stay distinguishable.
+   *
+   * It is NOT the camera's excursion over the capture, and saying so was a real
+   * error: this is the displacement between two epochs four frames apart, which
+   * round 3's critic measured at 0.070 deg against 0.35 deg of simulated
+   * excursion. `packages/bench` reports both — `capture.motionExcursion` for the
+   * whole sequence and `capture.epochDisplacement` for the four-frame gap — and
+   * the second is the one this should be checked against.
    */
-  cameraMotion: { translationMm: number; rotationDeg: number; spanFrames: number }[];
+  cameraEpochOffset: { translationMm: number; rotationDeg: number; spanFrames: number }[];
+  /**
+   * How many times a trial step had to be projected back onto the hardware box
+   * (`SolveHardwareOptions`), and which bounded parameters ended on a limit.
+   *
+   * Zero and empty is the expected, and the interesting, case: it says the fit
+   * stayed inside the projector's published envelope without being made to. A
+   * non-zero count says the unconstrained solve was heading somewhere no LK935
+   * can go, which is a fact about that solve worth reading before quoting it.
+   */
+  boxProjections: number;
+  boundsAtLimit: { name: string; value: number; limit: 'lo' | 'hi' }[];
   /**
    * Recovered camera poses.
    *
@@ -372,9 +431,11 @@ export function solve(input: SolveInput): SolverResult {
     init: input.options?.init ?? {},
     bundle: input.options?.bundle ?? {},
     priors: input.options?.priors ?? {},
+    hardware: input.options?.hardware ?? {},
     seed: input.options?.seed ?? DEFAULT_INIT_OPTIONS.seed,
   };
   const priorOpts: SolvePriorOptions = { ...DEFAULT_PRIOR_OPTIONS, ...opts.priors };
+  const hardware: SolveHardwareOptions = { ...DEFAULT_HARDWARE_OPTIONS, ...opts.hardware };
 
   let correspondences: readonly Correspondence[];
   let decodeStats: DecodeStats;
@@ -401,6 +462,37 @@ export function solve(input: SolveInput): SolverResult {
   // damping lets it and then gets reported as if it had been measured.
   const centerHeightObserved = floor.length > 0;
 
+  // The hardware box, built here rather than in `bundle.ts` so the numbers stay
+  // attached to the profile they came from. One box per projector per bounded
+  // parameter; a tied field of view puts several slots on one column and
+  // `buildProblem` keeps them all, which is harmless because they carry the same
+  // interval and hold the same value.
+  const boxes: ParameterBox[] = [];
+  const profile = hardware.profile;
+  if (profile !== null) {
+    for (let i = 0; i < nominalState.projectors.length; i++) {
+      const id = nominalState.projectors[i].id;
+      boxes.push({
+        slot: slotProjector(i, PROJ_SLOT_FOV),
+        lo: profile.fovHDegMin,
+        hi: profile.fovHDegMax,
+        name: `${id}.fovH (${profile.model} zoom range)`,
+      });
+      boxes.push({
+        slot: slotProjector(i, PROJ_SLOT_SHIFT_H),
+        lo: -profile.shiftHMax,
+        hi: profile.shiftHMax,
+        name: `${id}.shiftH (${profile.model} lens shift)`,
+      });
+      boxes.push({
+        slot: slotProjector(i, PROJ_SLOT_SHIFT_V),
+        lo: -profile.shiftVMax,
+        hi: profile.shiftVMax,
+        name: `${id}.shiftV (${profile.model} lens shift)`,
+      });
+    }
+  }
+
   const bundleOptions: Partial<BundleOptions> = {
     ...DEFAULT_BUNDLE_OPTIONS,
     ...opts.bundle,
@@ -411,6 +503,8 @@ export function solve(input: SolveInput): SolverResult {
     },
     gauge: { ...DEFAULT_GAUGE_OPTIONS, ...(opts.bundle.gauge ?? {}) },
     loss: { ...DEFAULT_ROBUST_OPTIONS, ...(opts.bundle.loss ?? {}) },
+    // A caller passing explicit bounds means them; the profile only fills in.
+    bounds: opts.bundle.bounds ?? boxes,
   };
 
   // Centred on the NOMINAL field of view, never on the bootstrap's own estimate.
@@ -491,7 +585,9 @@ export function solve(input: SolveInput): SolverResult {
       priorResiduals: report.priorResiduals,
       cameraResidualScale: report.cameraResidualScale,
       pairResidualScale: report.pairResidualScale,
-      cameraMotion: report.cameraMotion,
+      cameraEpochOffset: report.cameraEpochOffset,
+      boxProjections: report.boxProjections,
+      boundsAtLimit: report.boundsAtLimit,
       cameras: report.state.cameras,
     },
   };

@@ -277,3 +277,65 @@ test('the capture is a pure function of its seed', () => {
     assert.equal(a.correspondences[i].sigmaU, b.correspondences[i].sigmaU);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Where the camera was when the decode says it measured
+// ---------------------------------------------------------------------------
+
+test('the reference-epoch pose is the pose the solver reports against, and it is NOT the static one', () => {
+  // Round 3's critic found that `camera_pose_rotation` was scored against the
+  // camera's static placement while the solver reports the pose at its own mean
+  // observation epoch, which made the gate unreachable: a PERFECT solver scored
+  // 0.08-0.33 deg against a 0.07 deg limit. The bench now computes where the
+  // camera actually was at that epoch, and this pins the two properties that
+  // makes the correction meaningful rather than cosmetic.
+  const cams = cameras(2);
+
+  // 1. With no motion, the epoch pose IS the static pose, exactly. A correction
+  //    that moved the static case would be inventing an error, not removing one.
+  const still = capture(cams, { handheld: null });
+  for (let i = 0; i < cams.length; i++) {
+    const at = still.cameraPoseAtEpoch[i];
+    assert.equal(at.position.x, cams[i].pose.position.x);
+    assert.equal(at.yawDeg, cams[i].pose.yawDeg);
+    assert.equal(still.epochDisplacement[i].translationMm, 0);
+    assert.equal(still.epochDisplacement[i].rotationDeg, 0);
+  }
+
+  // 2. With motion, it is NOT the static pose, and the gap is the definitional
+  //    floor the old metric carried. It has to be comparable with the 0.07 deg
+  //    gate or the correction would not have been worth making.
+  const moving = capture(cams, { handheld: DEFAULT_HANDHELD });
+  let worstGapDeg = 0;
+  for (let i = 0; i < cams.length; i++) {
+    const at = moving.cameraPoseAtEpoch[i];
+    const base = cams[i].pose;
+    worstGapDeg = Math.max(
+      worstGapDeg,
+      Math.hypot(at.yawDeg - base.yawDeg, at.pitchDeg - base.pitchDeg, at.rollDeg - base.rollDeg),
+    );
+  }
+  assert.ok(worstGapDeg > 0.01, `the epoch pose barely moved (${worstGapDeg} deg)`);
+
+  // 3. The epoch is read off the DECODE's own reported epochs, so it lands in
+  //    the phase blocks at the end of the sequence rather than at frame zero.
+  //    With the standard plan the two phase blocks are frames 26-29 and 30-33.
+  for (const f of moving.cameraEpochFrame) {
+    assert.ok(f > 20 && f < planLength(), `reference epoch ${f} is not in the phase blocks`);
+  }
+
+  // 4. And the inter-epoch displacement — what the solver's differential pose
+  //    can see — is much SMALLER than the whole-sequence excursion. Treating
+  //    those two as the same quantity was wrong by about 5x.
+  for (let i = 0; i < cams.length; i++) {
+    assert.ok(
+      moving.epochDisplacement[i].rotationDeg < moving.motionExcursion[i].rotationDeg,
+      'the four-frame displacement cannot exceed the whole-sequence excursion',
+    );
+  }
+});
+
+function planLength(): number {
+  // white + black + 2 axes x grayBits x 2 + 2 axes x phaseSteps.
+  return 2 + 4 * PLAN.grayBits + 2 * PLAN.phaseSteps;
+}

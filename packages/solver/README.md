@@ -221,13 +221,27 @@ procedure works in.
   median.** Inert. It is off by default and kept because it is the apparatus for
   the next attempt, not because it earns its place today. See docs/PHASE-1.md for
   why a per-pair weighting cannot work here and what shape the fix has to be.
-- **`tieProjectorFov` solves one field of view for the whole rig.** PARAMETERS.md
-  §3.1 derives `fov_h` from the throw ratio `T` and classes `T` as CFG, one spec
-  sheet per install — so a site running four of one model has one field of view,
-  not four. Paired on the same 35 cells it is worth **1.51x median on pose
-  position (28 helped, 4 hurt)** and **0.99x on grid displacement (15 / 16)**. It
-  is off by default because §3.1 does not say whether an install's projectors
-  share `T`; filed as docs/AMENDMENTS.md A-33 with the numbers.
+- **`tieProjectorFov` solves one field of view for the whole rig, and is ON by
+  default since round 4.** PARAMETERS.md §3.1 derives `fov_h` from the throw
+  ratio `T` and classes `T` as CFG, one spec sheet per install — so a site
+  running four of one model has one field of view, not four. Round 2 measured
+  the tie at 1.51x median on pose position and left it off because §3.1 does not
+  say whether an install's projectors share `T` (docs/AMENDMENTS.md A-33).
+  **A-35 answers that from the hardware**: the install is four BenQ LK935s, one
+  model bought together, and `packages/calibration`'s `PROJECTOR_LK935` carries
+  the manual's numbers. Re-measured paired on five fresh seeds in round 4; see
+  docs/PHASE-1.md for what it moves and what it leaves alone.
+- **The projector's published envelope is a BOX, not a prior**
+  (`SolveHardwareOptions`). The LK935's zoom ring travels 1.36:1 to 2.18:1, so
+  `fov_h` is confined to [25.84, 40.37] degrees, and its lens shift travels
+  +/-0.6 V and +/-0.23 H. Those are hard limits: a fit outside them describes a
+  projector nobody can buy. The distinction from a prior is the whole point —
+  the bullet above measures a prior on `fov_h` as inert at any honest width
+  because the failure along the valley is bias, and a box cannot be outvoted by
+  biased data. `solve()` builds the boxes from the profile and reports
+  `boxProjections` and `boundsAtLimit`, so "the constraint never fired" is a
+  reported fact rather than an assumption. Pass `profile: null` for a site
+  running something else.
 - **`p1`, `p2` are off by default**, per PARAMETERS.md §3.1.
 - **Sparse camera coverage is the fragile case.** Two cameras under heavy ambient
   and sensor noise is close to the edge of what the bootstrap handles; three is
@@ -251,14 +265,23 @@ procedure works in.
   34 and the phase-`v` frames 30-33, so the two coordinates are photographed
   four frame intervals apart. `decode.ts` now reports both epochs on the
   correspondence (`timeU`, `timeV`, in pattern frames, read off the capture's
-  own structure), and `BundleFreeFlags.cameraVelocity` lets the bundle solve a
-  rate of change of each camera's pose so that the `u` residual is evaluated at
-  the camera pose of the `u` epoch and the `v` residual at the pose of the `v`
-  epoch. Two epochs per pair is all the data has, so an offset and a rate is the
-  whole of what is identifiable — a richer trajectory would be damping, not
-  modelling. `rotation` frees three parameters per camera and `full` six; the
-  epochs are inert with the rate held, which `test/time-aware.test.ts` asserts
-  bit-for-bit.
+  own structure), and `BundleFreeFlags.cameraEpochPose` lets the bundle solve
+  the DIFFERENCE between each camera's pose at the `u` epoch and at the `v`
+  epoch, so that the `u` residual is evaluated at one pose and the `v` residual
+  at the other. Two epochs per pair is all the data has, so an offset and a
+  difference is the whole of what is identifiable — a richer trajectory would be
+  damping, not modelling. `rotation` frees three parameters per camera and
+  `full` six; the epochs are inert with the difference held, which
+  `test/epoch-pose.test.ts` asserts bit-for-bit.
+
+  **It is a differential u-vs-v camera pose, and not a "time-aware decode".**
+  Round 3 shipped it under the second name and round 3's critic falsified that:
+  `captureEpochs` returns the same two epochs for every capture this pipeline
+  produces, so the separation is a constant, the parameter is free, and only the
+  RATIO of the epochs enters the residual — multiplying every epoch by ten
+  changes the answer in the eighth significant figure. The model is correct and
+  useful; the claim to read a clock was not, and the name is fixed here, in
+  `bundle.ts`, in the option, in the diagnostic and in docs/AMENDMENTS.md A-34.
 
   Measured PAIRED on five fresh seeds and ten archetypes, 50 cells: **grid
   displacement 1.63x median (36 helped, 9 hurt)**, every motion archetype
@@ -271,12 +294,16 @@ procedure works in.
   millimetre, so the angular rates carry the signal and the translational ones
   mostly carry variance.
 
-  It also does NOT absorb an injected projector pose error — it recovers one
-  better. Injecting 1.0 deg of yaw and 20 mm of position truth-side and solving
-  both captures, the baseline returns the position at 0.29x and 1.64x on the two
-  handheld seeds while the rate-free solve returns 0.76-0.92x, and the injected
-  POINTING (yaw plus the yaw that lens shift is worth, since A-12 makes those
-  nearly one parameter) goes from 0.82-1.14x to 0.99-1.01x.
+  It also does NOT absorb an injected projector pose error. Round 3's version of
+  that guard was itself falsified — it injected along the RADIAL axis, which is
+  the fov/distance degeneracy and 99% of the error energy, at a magnitude 10-25x
+  smaller than the scenario's own error, so its position column was a
+  sign-random draw. Round 4 rebuilt it: the injection is TANGENTIAL, where a
+  displacement slides the footprint across the sphere and nothing else can
+  explain it, at 181 mm — 2.0 degrees of azimuth at 5.18 m, the top of
+  PARAMETERS.md §2's stated mount tolerance — with the scenario's own tangential
+  error printed beside it and the recovered difference projected onto the
+  injected axis so a sign cannot hide. See docs/PHASE-1.md for the table.
 
   **The clock is an assumption and it is decisive.** `frameEpochs: 'perCapture'`
   assumes every projector's sequence starts from the same point of the
@@ -300,9 +327,10 @@ procedure works in.
   ORACLE weighting, with every correspondence's sigma set to its true error,
   makes the affected scenarios worse rather than better, while an oracle
   REJECTION that keeps only the correspondences whose true error is under a pixel
-  improves them by 20-40%. What the solver would need is a time-aware decode that
-  models the camera pose per frame; nothing available to the current decoder
-  senses the bias from inside one frame set. **Round 3 built that** — see the
-  bullet above — and the oracle's verdict survives it: modelling WHEN each
-  coordinate was measured is not a weighting, which is why it works where three
-  rounds of weighting did not.
+  improves them by 20-40%. What the solver would need is a model of the camera
+  pose that distinguishes the two epochs a correspondence is read from; nothing
+  available to the current decoder senses the bias from inside one frame set.
+  **Round 3 built that** — see the bullet above — and the oracle's verdict
+  survives it: modelling that the two coordinates were photographed at different
+  moments is not a weighting, which is why it works where three rounds of
+  weighting did not.

@@ -569,6 +569,28 @@ the shipped behaviour depends on a number this document does not state. A test
 pins the mechanism — a tight shift prior must move the recovered *pointing*,
 which is the coupling this entry is about — rather than pinning a policy.
 
+**Round 4 update: A-35 supplies the BOX and still not the SIGMA, and the
+difference decides this entry.** The LK935's manual gives lens shift a
+mechanical travel of ±0.6 V and ±0.23 H, and its product page gives a
+**projection offset of 0%** — the image is centred on the optical axis at
+neutral shift, which is what makes §3.1's nominal of zero right for this
+hardware rather than merely conventional. `SolveHardwareOptions` enforces the
+travel as a hard box. Measured paired on five fresh seeds, the box is **exactly
+inert**: the recovered shifts sit orders of magnitude inside it and no trial
+step was ever projected onto it in 275 solves.
+
+A box cannot separate two parameters that are nearly the same parameter, so the
+prior is still the open question — and round 4 measured one. The only width
+available without inventing a constant comes from this entry's own arithmetic:
+0.01 of shift is worth 0.172 degrees of yaw, so **sigma = 0.058 is the shift
+worth one degree of pointing**, and §2 states the mount tolerance as ±1-2
+degrees. Paired, that prior is worth **1.009x on pose rotation (37 cells of 55
+helped, 3 hurt)** and nothing on the other gates. Real, consistent, and under
+one percent — so it is measured, reported, and NOT shipped. What this entry asks
+for has not changed: a stated uncertainty in §3.1, or one line in §8 item 2
+telling the operator to read the shift setting off the projector's own menu,
+which the LK935 displays.
+
 ---
 
 ## A-13 — §3.1 / §8: `fov_h` should be initialised from the throw ratio, not from `d_proj`, and the difference is the largest single term in the pose error
@@ -637,6 +659,19 @@ widest end of it.
 **What the code does meanwhile.** `packages/solver`'s `nominalRig` derives
 `fov_h` from `radiusM / distanceM` per A-01 when no field of view is passed, and
 documents that a caller holding the spec sheet should pass `fovHDeg` instead.
+
+**Round 4 update: a BOX is not a prior, and the distinction is this entry's own
+measurement turned around.** Point 1 above measures a prior on `fov_h` as inert
+at any width a spec sheet could justify, because the failure along the valley is
+BIAS and a prior is outvoted by data that is confidently wrong. A-35 supplies
+something a prior is not: the LK935's zoom ring stops at 1.36:1 and 2.18:1, so
+`fov_h` outside [25.84, 40.37] degrees is a projector that does not exist, and
+`SolveHardwareOptions` enforces that as a hard constraint the data cannot
+outvote. Measured paired on five fresh seeds it is **exactly inert** — 0 trial
+steps projected in 275 solves, every metric identical to the last digit — which
+is the finding: the fit stays inside the buildable envelope on its own. The one
+archetype that comes within a degree of a limit is `s09-long-throw`, whose truth
+sits at the far end of §2's `d_proj` conflict; see docs/PHASE-1.md round 4.
 `packages/bench` does **not** pass it: `run.ts` builds the solver's nominal at
 `d_proj`'s documented 5.18 m, so the bench is currently modelling a site that has
 not read its own spec sheet. That is a defensible thing to measure and it is not
@@ -1595,8 +1630,14 @@ is why it was worth running before building anything.
 
 ## A-33 — §3.1 does not say whether one install's projectors share one throw ratio, and the answer is worth 1.5x in pose position
 
-**Status:** OPEN. Not blocking; a decision the spec can make for free. Reported
-by the solver, measured paired on five fresh seeds.
+**Status:** ANSWERED by A-35, which is a spec-grade document rather than a
+decision: the install runs four BenQ LK935s bought together, so it has one lens
+and one throw ratio. `BundleOptions.tieProjectorFov` is ON by default as of
+round 4 and docs/PHASE-1.md reports the re-measurement on fresh seeds. The
+amendment stays OPEN against §3.1, which should still say the sentence — the
+code now assumes something the spec does not state, and the register is where
+that gap is recorded until it is closed. Originally reported by the solver,
+measured paired on five fresh seeds.
 
 **The gap.** §3.1 derives `fov_h` from the throw ratio `T` and classes `T` as
 `CFG` — "read from a hardware spec sheet, known per install". A-18 makes that
@@ -1667,19 +1708,66 @@ which they do — the same sentence A-13(a) already asks for, extended from "giv
 line in §8 item 2: record the zoom setting **per projector**, not once, because
 that single observation decides which of the two models a site should fit.
 
-**What the code does meanwhile.** `BundleOptions.tieProjectorFov` implements the
-shared reading and is **off by default**, because §3.1 does not license it and
-because the gate the loop is failing — grid displacement — does not improve.
-`packages/solver/test/coherence.test.ts` pins the mechanism (the four recovered
-fields are bit-identical when tied, and the tie is an exact no-op when off)
-rather than pinning a policy. `packages/bench` does not turn it on.
+**What the code does now (round 4).** `BundleOptions.tieProjectorFov` implements
+the shared reading and is **on by default**, because A-35 licenses it from the
+hardware: one install, one model, one lens. `packages/solver/test/coherence.test.ts`
+and `test/hardware-box.test.ts` pin the mechanism (the four recovered fields are
+bit-identical when tied, the tie costs exactly three columns, and four
+independent fields really do differ when it is off) rather than pinning a policy.
+
+**The measurement above was NOT inherited.** Round 4 re-ran it paired on five
+fresh seeds and eleven archetypes: **pose position 1.591x median, 39 cells of 55
+helped and 6 hurt; grid displacement 1.000x, 27 helped and 19 hurt.** The two
+independent measurements agree, on disjoint seeds, that the tie is worth about
+1.5x on §7's pose gate and is a dead heat on §7's seam gate. The reason for
+shipping is the licence in A-35 plus that re-measurement, not the 1.51x quoted
+above, which was measured on seeds now spent.
+
+**And round 4 measured what the tie COSTS, which this entry could previously
+only describe.** A-35 licenses one lens MODEL and one throw-ratio RANGE. It does
+NOT license one zoom SETTING: the Red Ball procedure turns each projector's ring
+until that projector's image matches the sphere, and four lenses at four
+slightly different distances end at four slightly different fields. On a
+noiseless synthetic scene whose four fields differ by up to 0.25 degrees — where
+a correctly-specified model recovers the rig exactly — the tie leaves **23.7 mm**
+of position error (`packages/solver/test/bundle.test.ts`, "the shared-lens tie
+costs what the spread costs", which pins the number rather than tolerating it).
+That is one to two orders of magnitude below the fitting error the tie removes
+when the decode carries a bias, which is why it still wins. It is also the
+reason the second half of this entry's proposed amendment — **record the zoom
+setting PER PROJECTOR** — is the observation that would replace the trade with a
+measurement.
 
 ---
 
-## A-34 — §8's capture checklist does not record WHEN each frame was taken, and the solver's best available guess is worth 1.4-5.8x on the seam gate
+## A-34 — §8's capture checklist does not state the pattern ORDER, and the solver's best available reading of it is worth 1.4-5.8x on the seam gate
 
-**Status:** OPEN. Actionable for free — every phone RAW carries a timestamp.
-Reported by the solver and the bench, measured paired on five fresh seeds.
+**Status:** OPEN. **Retitled and corrected in round 4** — see the correction
+block immediately below, which supersedes this entry's original ask. Actionable
+for free either way. Reported by the solver and the bench, measured paired on
+five fresh seeds.
+
+### CORRECTION (round 4): this entry asked for the wrong thing
+
+The original entry led with *"record each frame's timestamp (RAW metadata is
+sufficient)"*. **The solver cannot use a timestamp, and this repository's
+measurements never depended on one.** Round 3's critic established why:
+`decode.ts:captureEpochs` returns the same two epochs for every capture the
+pipeline produces, so the separation between a correspondence's `u` epoch and
+its `v` epoch is one constant, the differential-pose parameter is free, and only
+the RATIO of the epochs enters the residual — multiplying every epoch by ten is
+a no-op to eight significant figures.
+
+What the model actually consumes is **the pattern ORDER**: which block of frames
+determines `u`, which determines `v`, which came first, and whether one
+projector's sequence ran back to back with the next. That is a property of the
+capture PROTOCOL, it costs nothing to write down, and it is what §8 should ask
+for. A timestamp would become useful only if a decode reported genuinely
+differing epoch separations — which no plan in this repository does.
+
+The measurement below is unaffected: `perCapture` and `sequential` differ in the
+ORDER they attribute frames to, not in a clock rate, and the 3.3x penalty for
+getting it wrong stands.
 
 **The gap.** §8 lists what a ground-truth visit must capture: 35 frames per
 projector, RAW only, one projector at a time. It says nothing about **when** the
@@ -1691,8 +1779,8 @@ That silence used to be harmless because nothing read it. It is not harmless any
 more. A structured-light correspondence is not one observation: its `u` is
 decoded from one block of frames and its `v` from a block shot later, and under a
 handheld capture the camera has moved in between. Round 3 built a solver that
-models that (`BundleFreeFlags.cameraVelocity`), and it can only do so by
-ASSUMING a clock, because the capture does not carry one.
+models that (`BundleFreeFlags.cameraEpochPose`), and it can only do so by
+ASSUMING an ordering, because the capture does not carry one.
 
 **The measurement.** Paired, capture once per (seed, scenario), solve twice with
 only the assumed clock moved. Ratios are base/variant, so above 1 means the
@@ -1719,28 +1807,38 @@ need one per (camera, projector) pair. The number in the first row above is
 therefore conditional on a modelling choice nobody wrote down, which is the same
 defect as the one this entry asks §8 to fix, one level in.
 
-**Proposed amendment.** Two lines. In §8, add to the capture checklist: *record
-each frame's timestamp (RAW metadata is sufficient), and record whether the
-projector sequences were shot back to back or with pauses.* And in §8 item 2's
-neighbourhood, state the pattern ORDER as part of the protocol rather than
-leaving it to the pattern generator, because the order is what decides which
-frames a coordinate is attributed to.
+**Proposed amendment, as corrected.** Two lines, and the first one has changed.
+In §8, state the pattern ORDER as part of the capture protocol rather than
+leaving it to the pattern generator: which frames carry each axis's Gray planes,
+which carry its phase steps, and in what order — because the order is what
+decides which epoch a coordinate is attributed to, and it is the whole of what
+the solver can read. And second: *record whether the projector sequences were
+shot back to back or with pauses*, because that is the `perCapture`-versus-
+`sequential` question the 3.3x penalty below is about. Frame timestamps are
+worth recording if they are free, but nothing in the current model consumes
+them, and asking for them instead of the order was this entry's own error.
 
-**What the code does meanwhile.** `DecodeOptions.frameEpochs` names the clock it
-assumed (`off`, `perCapture`, `sequential`) and reports the resulting epochs on
-every correspondence, so the assumption is visible in the data rather than buried
-in a solver. `packages/bench/src/capture.ts` keeps its per-pair clock restart for
-now: changing the forward model's motion in the same round that measures against
-it would make the measurement uninterpretable.
+**What the code does meanwhile.** `DecodeOptions.frameEpochs` names the ordering
+it assumed (`off`, `perCapture`, `sequential`) and reports the resulting epochs
+on every correspondence, so the assumption is visible in the data rather than
+buried in a solver. `packages/bench/src/capture.ts` keeps its per-pair clock
+restart for now: changing the forward model's motion in the same round that
+measures against it would make the measurement uninterpretable. Round 4 renamed
+the mechanism from "time-aware decode" to what it is — a differential u-vs-v
+camera pose — in `bundle.ts`, `decode.ts`, the free flag, the diagnostic, the
+test file and `packages/solver/README.md`.
 
 ---
 
 ## A-35 — the projector is a BenQ LK935: six §3 values move from ASSUME/inferred to CFG, and one of them is impossible as written
 
-**Status:** OPEN, and the highest-value entry in this file. The owner supplied the
-projector's user manual (BenQ LK935, document LK935_UM_EN, 102 pp). §3.1 classes
-the throw ratio `T` as `CFG` — "read from a hardware spec sheet". This is that
-spec sheet.
+**Status:** OPEN against PARAMETERS.md, ACTED ON in code by round 4. The owner
+supplied the projector's user manual (BenQ LK935, document LK935_UM_EN, 102 pp).
+§3.1 classes the throw ratio `T` as `CFG` — "read from a hardware spec sheet".
+This is that spec sheet. Section 5 below records exactly what the code now does
+with it and docs/PHASE-1.md round 4 reports what each change is worth, measured
+paired on five fresh seeds. The entry stays OPEN because §3.1 still says
+`T ≈ 3.0:1`, which this manual refutes, and only the author can change that.
 
 Everything below is quoted or derived from the manual, with the derivation shown.
 
@@ -1845,11 +1943,32 @@ unit-to-unit manufacturing spread, and reword §8 item 17.
 
 ### 5. What the code does with this
 
-`packages/calibration/src/parameters.ts` gains an explicit `LK935` projector
-profile carrying these values with their `CFG` provenance and this citation.
-The PARAMETERS.md nominals are **not** overwritten — §3.1 still says what it says
-until the author decides. The profile is opt-in and named, so any result computed
-with it is attributable.
+`packages/calibration/src/parameters.ts` carries an explicit `PROJECTOR_LK935`
+profile with these values, their `CFG` provenance and this citation. The
+PARAMETERS.md nominals are **not** overwritten — §3.1 still says what it says
+until the author decides — and `packages/sim` does not read the profile at all,
+so the forward model is not being built from the same sentence the inverse model
+is bounded by.
+
+**Round 4 acted on it in two places, and both are statements about THIS
+install rather than about projectors in general.**
+
+1. `BundleOptions.tieProjectorFov` is **on by default**. Section 2 above is the
+   licence: four projectors of one model, bought together, share one lens and
+   one throw ratio. A site that mixed lenses sets it false.
+2. `SolveHardwareOptions.profile` defaults to `PROJECTOR_LK935` and turns the
+   envelope into **box constraints** on every free `fovHDeg`, `shiftH` and
+   `shiftV` — a projected LM step, not a prior. A-13 measured that a prior on
+   `fov_h` at any width a spec sheet could justify is outvoted two orders of
+   magnitude over, because the failure along the fov/distance valley is bias
+   rather than variance; a box cannot be outvoted. `solve()` reports
+   `boxProjections` and `boundsAtLimit` so an inert constraint is visibly inert.
+   A site running something else passes `profile: null`.
+
+Both are attributable in the sense this section asked for: the profile is named
+in the option, the numbers are in one place, and every result carries the count
+of times the constraint fired. docs/PHASE-1.md round 4 reports what each is
+worth, measured paired on fresh seeds.
 
 ### 6. Cross-check against the product page, supplied separately
 

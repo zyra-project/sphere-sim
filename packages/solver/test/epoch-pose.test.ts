@@ -1,16 +1,25 @@
 /**
- * The time-aware decode: a correspondence's two coordinates were photographed
- * at two different times, and a bundle that models one camera pose per capture
- * has nowhere to put the difference.
+ * The differential u-vs-v camera pose: a correspondence's two coordinates were
+ * photographed at two different times, and a bundle that models one camera pose
+ * per capture has nowhere to put the difference.
+ *
+ * **This file was called `time-aware.test.ts` and the mechanism was called a
+ * time-aware decode. Both names overstated it**, and round 3's critic proved it:
+ * `captureEpochs` returns the same two epochs for every capture this pipeline
+ * produces, so the epoch SEPARATION is a constant, only the ratio of the epochs
+ * enters the residual, and multiplying every epoch by ten is a no-op to eight
+ * significant figures. What is modelled is a pose difference between two
+ * epochs — three parameters per camera, or six — which is a real and useful
+ * model that reads no clock. The test below that scales the epochs by ten pins
+ * exactly that, so the claim cannot quietly come back.
  *
  * What these tests have to establish, in order:
  *
  *  - the epochs are read off the capture's own structure and mean what the
  *    normative order in `decode.ts` says they mean;
- *  - carrying them changes NOTHING unless the rate is freed, so the default
- *    build is untouched;
- *  - freeing the rate recovers a rig from a moving camera that a single pose
- *    cannot;
+ *  - carrying them changes NOTHING unless the difference is freed, so the
+ *    pre-round-3 build is untouched;
+ *  - freeing it recovers a rig from a moving camera that a single pose cannot;
  *  - it does NOT absorb a projector pose error, which is the failure mode that
  *    would make the mechanism worse than useless — it would hide the quantity
  *    PARAMETERS.md §7 scores;
@@ -127,7 +136,7 @@ test('epochs are inert: carrying them changes no number unless the rate is freed
   assert.ok(withEpochs[0].timeU > 0, 'the default decode should report epochs');
   assert.equal(without[0].timeU, 0);
 
-  const held = { free: { ...DEFAULT_FREE_FLAGS, cameraVelocity: 'off' as const } };
+  const held = { free: { ...DEFAULT_FREE_FLAGS, cameraEpochPose: 'off' as const } };
   const a = runBundle(nominal, without, floor, held, nominal);
   const b = runBundle(nominal, withEpochs, floor, held, nominal);
   // Bit-for-bit, not approximately. An epoch that is only READ when the rate is
@@ -137,7 +146,7 @@ test('epochs are inert: carrying them changes no number unless the rate is freed
   assert.equal(a.used, b.used);
   assert.equal(a.rejected, b.rejected);
   assert.equal(a.state.projectors[0].fovHDeg, b.state.projectors[0].fovHDeg);
-  for (const m of b.cameraMotion) assert.equal(m.translationMm, 0);
+  for (const m of b.cameraEpochOffset) assert.equal(m.translationMm, 0);
 
   // And the other direction, which is what protects a caller who decoded
   // without a clock: the DEFAULT flags on a capture that carries no epochs
@@ -165,10 +174,15 @@ test('a moving camera: the rate recovers a rig the single pose cannot', () => {
   const floor = floorAtEveryLens(scene.truth);
 
   const score = (
-    cameraVelocity: 'off' | 'rotation' | 'full',
+    cameraEpochPose: 'off' | 'rotation' | 'full',
   ): ReturnType<typeof scoreRecovery> => {
     const res = solveFromCorrespondences(scene.nominal, scene.cameraInputs, corrs, floor, {
-      bundle: { free: { ...DEFAULT_FREE_FLAGS, cameraVelocity } },
+      // Four independent fields, because this fixture's truth has four: the
+      // scene jitters `fovHDeg` per projector, and the default tie
+      // (docs/AMENDMENTS.md A-35) would put a modelling error into BOTH sides of
+      // the comparison and compress the ratio this test is measuring. The tie's
+      // own cost is measured in `bundle.test.ts`.
+      bundle: { tieProjectorFov: false, free: { ...DEFAULT_FREE_FLAGS, cameraEpochPose } },
     });
     const state: BundleState = {
       ...bundleStateFromCalibration(res.calibration, []),
@@ -203,12 +217,12 @@ test('the recovered rate is the motion that was there, not a free parameter', ()
     scene.cameraInputs,
     corrs,
     floorAtEveryLens(scene.truth),
-    { bundle: { free: { ...DEFAULT_FREE_FLAGS, cameraVelocity: 'full' } } },
+    { bundle: { free: { ...DEFAULT_FREE_FLAGS, cameraEpochPose: 'full' } } },
   );
   const v = scene.truth.cameras[0].velocity;
   const trueMm = Math.hypot(v.px, v.py, v.pz) * 4 * 1000;
   const trueDeg = Math.hypot(v.yawDeg, v.pitchDeg, v.rollDeg) * 4;
-  for (const m of res.extra.cameraMotion) {
+  for (const m of res.extra.cameraEpochOffset) {
     assert.equal(m.spanFrames, 4);
     assert.ok(
       Math.abs(m.translationMm - trueMm) < 0.5 * trueMm,
@@ -251,7 +265,7 @@ test('the rate does NOT absorb an injected projector pose error', () => {
       scene.cameraInputs,
       corrs,
       floorAtEveryLens(scene.truth),
-      { bundle: { free: { ...DEFAULT_FREE_FLAGS, cameraVelocity: 'full' } } },
+      { bundle: { free: { ...DEFAULT_FREE_FLAGS, cameraEpochPose: 'full' } } },
     );
     const state: BundleState = {
       ...bundleStateFromCalibration(res.calibration, []),
@@ -281,7 +295,7 @@ test('no epoch spread, no free rate: six parameters the data cannot see stay hel
   const corrs = generateCorrespondences(scene.truth, { cameraStride: 10 });
   const opts: BundleOptions = {
     ...DEFAULT_BUNDLE_OPTIONS,
-    free: { ...DEFAULT_FREE_FLAGS, cameraVelocity: 'full' },
+    free: { ...DEFAULT_FREE_FLAGS, cameraEpochPose: 'full' },
   };
   // Every correspondence carries the same epoch on both axes, so the rate is
   // multiplied by zero in every row it appears in. A layout that handed out the
@@ -321,10 +335,15 @@ test('the rate does not degrade the conditioning of the normal equations', () =>
    * metre against a degree.
    */
   const spectrum = (
-    cameraVelocity: 'off' | 'full',
+    cameraEpochPose: 'off' | 'full',
   ): { n: number; min: number; cond: number } => {
     const res = solveFromCorrespondences(scene.nominal, scene.cameraInputs, corrs, floor, {
-      bundle: { free: { ...DEFAULT_FREE_FLAGS, cameraVelocity } },
+      // Four independent fields, because this fixture's truth has four: the
+      // scene jitters `fovHDeg` per projector, and the default tie
+      // (docs/AMENDMENTS.md A-35) would put a modelling error into BOTH sides of
+      // the comparison and compress the ratio this test is measuring. The tie's
+      // own cost is measured in `bundle.test.ts`.
+      bundle: { tieProjectorFov: false, free: { ...DEFAULT_FREE_FLAGS, cameraEpochPose } },
     });
     const state: BundleState = {
       ...bundleStateFromCalibration(res.calibration, []),
@@ -332,7 +351,7 @@ test('the rate does not degrade the conditioning of the normal equations', () =>
     };
     const opts: BundleOptions = {
       ...DEFAULT_BUNDLE_OPTIONS,
-      free: { ...DEFAULT_FREE_FLAGS, cameraVelocity },
+      free: { ...DEFAULT_FREE_FLAGS, cameraEpochPose },
       gauge: DEFAULT_GAUGE_OPTIONS,
       loss: DEFAULT_ROBUST_OPTIONS,
     };

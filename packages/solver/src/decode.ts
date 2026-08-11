@@ -57,9 +57,13 @@
  * `PatternCapture`: the white and black references first if present, then each
  * Gray sequence in array order with every plane immediately followed by its own
  * complement, then each phase sequence in array order. That order is normative
- * for the same reason the patterns are: a decoder that wants to know WHEN a
- * correspondence was measured — see `Correspondence.timeU` — can only get it
- * from the structure of its own input.
+ * for the same reason the patterns are: a decoder that wants to know which of a
+ * correspondence's two coordinates was photographed FIRST, and how far apart
+ * they were — see `Correspondence.timeU` — can only get it from the structure
+ * of its own input. Note that it is the ORDER and the SEPARATION that carry the
+ * information a solver can use, not a wall clock: PARAMETERS.md §8 should be
+ * asking for the pattern order rather than for frame timestamps, which is the
+ * correction round 4 made to docs/AMENDMENTS.md A-34.
  * ---------------------------------------------------------------------------
  */
 
@@ -174,7 +178,17 @@ export interface DecodeOptions {
    *    handed to `decodeAll`, which is what a real operator does: shoot one
    *    projector's 34 frames, then the next projector's, drifting throughout.
    *
-   * Nothing downstream reads these unless `BundleFreeFlags.cameraVelocity` is
+   * **What the solver can actually use of this, stated because round 3 claimed
+   * more.** Under `perCapture` — the default, and what this bench shoots —
+   * `captureEpochs` returns the same two numbers for every capture, so every
+   * pair's `u` and `v` are separated by the same four frames and the bundle's
+   * differential pose is identified by the ORDER of the two blocks and their
+   * fixed separation, not by any clock. Scaling every epoch by a constant is a
+   * no-op to eight significant figures. `sequential` is the option that would
+   * carry real timing information, and it is the one this bench's own capture
+   * model makes wrong (docs/AMENDMENTS.md A-34).
+   *
+   * Nothing downstream reads these unless `BundleFreeFlags.cameraEpochPose` is
    * on, so this option is inert by itself — a property the tests pin rather
    * than assert.
    */

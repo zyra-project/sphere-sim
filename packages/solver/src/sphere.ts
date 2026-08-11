@@ -71,17 +71,26 @@ export interface CameraIntrinsics {
 }
 
 /**
- * How fast the camera was moving, per unit of capture time.
+ * The camera's pose DIFFERENCE between two observation epochs, expressed per
+ * unit of epoch separation.
  *
- * The unit of time is ONE PATTERN FRAME, because that is the only clock the
- * decoder can read off its own input: `decode.ts` knows the frame ORDER of a
- * capture from the pattern contract it defines, and does not know the frame
- * interval in seconds. A rate expressed per frame needs no such constant, and
- * the seconds cancel out of every residual anyway — only the ratio between the
+ * The unit is ONE PATTERN FRAME, because that is the only ordering the decoder
+ * can read off its own input: `decode.ts` knows the frame ORDER of a capture
+ * from the pattern contract it defines, and does not know the frame interval in
+ * seconds. A quantity expressed per frame needs no such constant, and the
+ * seconds cancel out of every residual anyway — only the ratio between the
  * epochs of two observations matters.
  *
+ * **Read "rate" here as a parameterisation, not as a trajectory.** With this
+ * pipeline's decode every capture reports the same two epochs, so the
+ * separation is one constant and this is exactly the `u`-to-`v` pose difference
+ * divided by four frames. It is written as a rate so that a decode reporting
+ * different separations would need no second code path — not because anything
+ * here integrates a motion over time. Round 3 shipped the opposite claim and
+ * round 3's critic falsified it; see the header of `bundle.ts`.
+ *
  * Zero everywhere is a camera on a tripod, and is the default state of every
- * solve. See `BundleFreeFlags.cameraVelocity`.
+ * solve. See `BundleFreeFlags.cameraEpochPose`.
  */
 export interface CameraRate {
   /** Metres per frame. */
@@ -113,13 +122,15 @@ export interface CameraModel {
    */
   focalScale: number;
   /**
-   * Rate of change of the pose over the capture, per pattern frame.
+   * The pose difference between observation epochs, per pattern frame of
+   * separation. See `CameraRate` for why "rate" is a parameterisation here and
+   * not a trajectory.
    *
    * The pose above is then the pose at the reference epoch the bundle chose,
-   * and the camera at time `t` is `pose + velocity * (t - tRef)`. A tripod
+   * and the camera at epoch `t` is `pose + velocity * (t - tRef)`. A tripod
    * capture leaves this at zero and every arithmetic result is identical to a
    * solver that had no such field — which is asserted rather than assumed, in
-   * `test/time-aware.test.ts`.
+   * `test/epoch-pose.test.ts`.
    */
   velocity: CameraRate;
 }

@@ -7,6 +7,8 @@
 node packages/bench/src/cli.ts --scenarios 6 --seed 1234 --out bench-results.json
 node packages/bench/src/gate.ts bench-results.json   # judge it; exits non-zero on an unwaived failure
 node packages/bench/src/loop.ts                 # one Phase 1 round, fresh seed
+node packages/bench/src/loop.ts --record bench-results.json --round 4
+                                                # rank a run that already happened
 node packages/bench/src/progress.ts             # rebuild progress/index.html alone
 node packages/bench/src/reference.ts --check    # recompute the static reference and DIFF it
 node tools/assert-deterministic.ts a.json b.json
@@ -114,6 +116,19 @@ The audit rows in `bench-results.json` (`gates.waivers`) are clock-free on
 purpose — the expiry *date* is recorded, the expiry *judgement* is not — so two
 runs with the same seed stay byte-identical and the determinism check keeps
 meaning what it says.
+
+---
+
+## The round history, and why it was empty for three rounds
+
+`progress/rounds.json` is what `loop.ts` ranks a round against. It did not exist
+until round 4, and the reason is worth keeping: a round's corpus is regenerated
+with `cli.ts`, `runRound` re-runs the corpus rather than reading one, and nobody
+was going to pay twelve scenarios twice — so the ranking machinery three rounds
+had edited had never once executed. `--record <results.json>` closes that: it
+folds a finished run into the history through the same `rankRound`,
+`classifyMovement` and `betterThan` a live round uses. `--round N` sets the round
+number, which a history that starts late needs.
 
 ---
 
@@ -226,12 +241,21 @@ rotation error separating every passing scenario from every failing one across
 30 instances at three seeds, at r = 0.70-0.89 against grid displacement, and
 because a quantity that predicts the gate the loop is failing while being
 invisible to the round-ranking rule is the same defect as ranking on a scalar.
-Its limit — 0.07 deg — is the top of the passing side of that separation. Read
-its `basis` before quoting it: the metric is scored against a STATIC ground-truth
-camera pose, so under handheld motion it carries a definitional floor of about
-half the camera's own excursion, and docs/PHASE-1.md records that the
+Its limit — 0.07 deg — is the top of the passing side of that separation.
+
+**Round 4 corrected the metric, not the threshold.** It used to be scored
+against the camera's STATIC placement while `packages/solver` reports the pose
+at each camera's own mean observation epoch, and round 3's critic measured what
+that costs: on a motion archetype a *perfect* solver scores 0.08-0.33 deg
+against a 0.07 deg limit, so the gate was unreachable by construction and the
+recovered numbers tracked that floor rather than the solver. It is now scored
+against the truth pose AT THE REFERENCE EPOCH, which `capture.ts` computes from
+the decode's own reported epochs and reports as `capture.cameraEpochFrame` and
+`cameraPoseAtEpoch`; `recovery.camerasStatic` keeps the old definition beside it
+so the two stay comparable. Raising the threshold instead would have been
+tuning. What still stands against the gate: docs/PHASE-1.md records that the
 correlation it rests on weakens once the failure mode it was measuring is
-treated.
+treated, which is what a predictor promoted to a requirement does.
 
 ### Determinism
 

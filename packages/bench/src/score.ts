@@ -542,7 +542,25 @@ export interface RecoveryScore {
   aligned: PoseErrorSet;
   gauge: GaugeReport;
   intrinsics: IntrinsicsErrorSet;
+  /**
+   * Camera pose error against the truth pose AT THE REFERENCE EPOCH when the
+   * caller supplied one, and against the static pose otherwise. This is what
+   * `camera_pose_rotation` scores.
+   */
   cameras: { perCamera: CameraPoseError[]; maxPositionMm: number; maxRotationDeg: number };
+  /**
+   * The same error against the STATIC truth pose — the definition used until
+   * round 4 — or null when no epoch pose was supplied and the two would be the
+   * same numbers twice.
+   *
+   * Kept because the difference between the two columns is the size of the
+   * definitional floor round 3's critic found, and a reader comparing this
+   * round's camera numbers against an earlier round's needs the old definition
+   * to compare against.
+   */
+  camerasStatic:
+    | { perCamera: CameraPoseError[]; maxPositionMm: number; maxRotationDeg: number }
+    | null;
   centerHeight: CenterHeightScore;
   /** The gauge-aligned recovered rig, for the metrics and the renders. */
   alignedRig: RigCalibration;
@@ -551,7 +569,25 @@ export interface RecoveryScore {
 export interface ScoreInput {
   truthRig: RigCalibration;
   recoveredRig: RigCalibration;
+  /** Where the cameras were placed. Static: the pose before any motion. */
   truthCameras: readonly EntityPose[];
+  /**
+   * Where each camera ACTUALLY WAS at the epoch the solver's reported pose
+   * refers to — the mean of that camera's own correspondence epochs.
+   *
+   * This exists because scoring a moving camera's recovered pose against its
+   * static placement is scoring against a quantity that no longer exists.
+   * `packages/solver` centres each camera's pose on its own mean observation
+   * epoch and says so; round 3 scored it against the static pose anyway, and
+   * round 3's critic measured the consequence: on a motion archetype a PERFECT
+   * solver scores 0.08 to 0.33 degrees against a 0.07 degree gate, and the
+   * recovered values track that floor rather than the solver. A gate nothing can
+   * reach is not a gate, and raising the threshold instead would have been
+   * tuning. So the metric is corrected and the threshold is not.
+   *
+   * Omit for a static capture, where it is the same pose.
+   */
+  truthCamerasAtEpoch?: readonly EntityPose[];
   recoveredCameras: readonly EntityPose[];
   cameraIds: readonly string[];
   gaugeFreeAxes: readonly boolean[];
@@ -562,11 +598,17 @@ export interface ScoreInput {
 
 export function scoreRecovery(input: ScoreInput): RecoveryScore {
   const raw = poseErrors(input.recoveredRig, input.truthRig);
+  // The gauge is fitted against the same poses the cameras are scored against.
+  // Using the static poses for the fit and the epoch poses for the score would
+  // put a millimetre of the camera's own motion into the rig's frame, which is
+  // small and is exactly the kind of small inconsistency that later turns up as
+  // an unexplained bias.
+  const truthCamerasScored = input.truthCamerasAtEpoch ?? input.truthCameras;
   const gauge = alignGauge(
     input.recoveredRig,
     input.recoveredCameras,
     input.truthRig,
-    input.truthCameras,
+    truthCamerasScored,
     input.gaugeFreeAxes,
   );
   const alignedRig = applyGlobalRotation(input.recoveredRig, gauge.rotation);
@@ -589,7 +631,11 @@ export function scoreRecovery(input: ScoreInput): RecoveryScore {
     aligned: poseErrors(alignedRig, input.truthRig),
     gauge: gauge.report,
     intrinsics: intrinsicsErrors(input.recoveredRig, input.truthRig),
-    cameras: cameraErrors(alignedCameras, input.truthCameras, input.cameraIds),
+    cameras: cameraErrors(alignedCameras, truthCamerasScored, input.cameraIds),
+    camerasStatic:
+      input.truthCamerasAtEpoch === undefined
+        ? null
+        : cameraErrors(alignedCameras, input.truthCameras, input.cameraIds),
     centerHeight: {
       trueM: input.truthRig.sphere.centerHeightM,
       recoveredM: input.recoveredRig.sphere.centerHeightM,

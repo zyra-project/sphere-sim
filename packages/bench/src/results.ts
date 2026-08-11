@@ -432,12 +432,13 @@ export const RECOVERY_GATES: RecoveryGateSpec[] = [
   },
   {
     id: 'camera_pose_rotation',
-    metric: 'Recovered CAMERA rotation error, worst camera, after gauge alignment',
+    metric:
+      'Recovered CAMERA rotation error, worst camera, after gauge alignment, against the truth pose at the reference epoch',
     unit: 'deg',
     max: 0.07,
     klass: 'DERIVED',
     basis:
-      "NOT a §7 gate, and not a tolerance anyone has published: §7 scores the RIG, and the camera is apparatus standing in the room. It is here because it is the best available PREDICTOR of the gate that fails — docs/PHASE-1.md records 30 scenario instances at three independent seeds in which the separation is perfect, every instance under 0.07 deg passing the 1.0 mm grid-displacement gate and every instance over 0.18 deg failing it with grid above 4.9 mm, at Pearson r = 0.70-0.89 and a slope of 20-39 mm/deg. The limit is the top of the passing side of that separation. Two things a reader should hold against it: the metric is scored against a STATIC ground-truth pose, so under handheld motion it carries a definitional floor of roughly half the camera's own excursion (a few hundredths of a degree on this bench's motion model); and a predictor promoted to a gate is a correlation being asked to act like a requirement.",
+      "NOT a §7 gate, and not a tolerance anyone has published: §7 scores the RIG, and the camera is apparatus standing in the room. It is here because it is the best available PREDICTOR of the gate that fails — docs/PHASE-1.md records 30 scenario instances at three independent seeds in which the separation is perfect, every instance under 0.07 deg passing the 1.0 mm grid-displacement gate and every instance over 0.18 deg failing it with grid above 4.9 mm, at Pearson r = 0.70-0.89 and a slope of 20-39 mm/deg. The limit is the top of the passing side of that separation. CORRECTED IN ROUND 4: it used to be scored against the camera's STATIC placement while the solver reports the pose at its own mean observation epoch, and round 3's critic measured the consequence — on a motion archetype a perfect solver scored 0.08 to 0.33 deg against this 0.07 deg limit, so the gate was unreachable by construction and the recovered numbers tracked that floor rather than the solver. It is now scored against the true pose AT THE REFERENCE EPOCH, which `packages/bench/src/capture.ts` computes from the decode's own reported epochs; `recovery.camerasStatic` still carries the old definition for comparison. The threshold was NOT moved. What remains against it: a predictor promoted to a gate is a correlation being asked to act like a requirement, and round 3 measured that treating the failure mode the correlation was built on weakens the correlation.",
     value: (r) => r.recovery?.cameras.maxRotationDeg ?? NaN,
   },
   {
@@ -763,6 +764,13 @@ function scenarioJson(r: ScenarioResult): ScenarioJson {
     decode: r.capture.stats,
     perPair: r.capture.perPair,
     motionExcursion: r.capture.motionExcursion,
+    // The camera's displacement between the two epochs ONE correspondence is
+    // read from, which is the quantity the solver's `cameraEpochOffset`
+    // estimates, and the reference epoch each camera's recovered pose is
+    // scored at. Both are ground truth the bench holds and the solver never
+    // sees; they are here so the comparison can be made from the file.
+    epochDisplacement: r.capture.epochDisplacement,
+    cameraEpochFrame: r.capture.cameraEpochFrame,
   };
 
   const solver: Record<string, unknown> | null =
@@ -792,10 +800,21 @@ function scenarioJson(r: ScenarioResult): ScenarioJson {
           // round it owed them without paying: the field existed on the
           // diagnostics and stopped here. All ones unless `pairCoherence` is on.
           pairResidualScale: r.solver.extra.pairResidualScale,
-          // What the solver says each camera did during the capture, against
-          // `capture.motionExcursion` above, which is what the simulator did.
-          // All zeros unless `cameraVelocity` is on.
-          cameraMotion: r.solver.extra.cameraMotion,
+          // What the solver says each camera's pose did BETWEEN THE TWO EPOCHS
+          // of a correspondence, against `capture.epochDisplacement` above,
+          // which is what the simulator did over the same four frames. It is
+          // NOT comparable with `capture.motionExcursion`, which is the whole
+          // sequence and about five times larger; claiming otherwise was round
+          // 3's error and its critic's finding. All zeros unless
+          // `free.cameraEpochPose` is on.
+          cameraEpochOffset: r.solver.extra.cameraEpochOffset,
+          // Hardware envelope (docs/AMENDMENTS.md A-35): how many trial steps
+          // had to be projected back onto the LK935's published zoom and lens
+          // shift range, and which parameters ended sitting on a limit. Zero
+          // and empty means the fit stayed inside a physically buildable
+          // projector without being made to.
+          boxProjections: r.solver.extra.boxProjections,
+          boundsAtLimit: r.solver.extra.boundsAtLimit,
           residuals: residualColumns(r.solver.diagnostics.residuals),
         };
 
@@ -825,7 +844,12 @@ function scenarioJson(r: ScenarioResult): ScenarioJson {
             rotationPass: r.recovery.aligned.maxRotationDeg <= 0.05,
           },
           intrinsics: r.recovery.intrinsics,
+          // Scored against the truth pose AT THE REFERENCE EPOCH. `camerasStatic`
+          // is the pre-round-4 definition, against the static placement, kept so
+          // the two are comparable and so the definitional floor round 3's
+          // critic measured stays visible rather than disappearing into a fix.
           cameras: r.recovery.cameras,
+          camerasStatic: r.recovery.camerasStatic,
           centerHeight: r.recovery.centerHeight,
         };
 

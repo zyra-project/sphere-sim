@@ -478,6 +478,35 @@ export interface LoopOptions {
   historyPath: string;
   outDir: string;
   quiet: boolean;
+  /**
+   * Record a round from a bench run that ALREADY HAPPENED, instead of running
+   * one — the path to its results JSON.
+   *
+   * This exists because for three rounds `progress/rounds.json` did not exist at
+   * all. The machinery above was written, edited by three rounds, and never
+   * executed, because a round is regenerated with `packages/bench/src/cli.ts`
+   * (twelve scenarios, a fresh seed, several minutes) and `runRound` re-runs
+   * that same corpus rather than reading it. Nobody was going to pay for the
+   * corpus twice, so the ranking never ran and the history the loop compares
+   * against stayed empty. A ranking rule that has never ranked anything is not a
+   * rule, and this is the smallest change that makes the two entry points meet.
+   *
+   * The round is ranked exactly as `runRound` ranks it: same `rankRound`, same
+   * `classifyMovement`, same `betterThan`, same history file.
+   */
+  record: string | null;
+  /**
+   * Which round number a `--record` is. Defaults to the next one in the
+   * history, which is what a fresh chain wants; give it explicitly when the
+   * history starts late, as it does here — Phase 1's rounds 0 to 3 ran before
+   * anything wrote this file, and numbering this round 0 would make the
+   * history disagree with docs/PHASE-1.md about which round is which.
+   *
+   * Ignored unless `record` is set: a live round's number comes from the
+   * history or from `--replay`, and letting a flag rename it would make
+   * "round 3" ambiguous.
+   */
+  round: number | null;
 }
 
 export function parseLoopArgs(argv: readonly string[]): LoopOptions {
@@ -488,6 +517,8 @@ export function parseLoopArgs(argv: readonly string[]): LoopOptions {
   let historyPath = HISTORY_PATH;
   let outDir = path.join('progress', 'data');
   let quiet = false;
+  let record: string | null = null;
+  let round: number | null = null;
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -521,6 +552,12 @@ export function parseLoopArgs(argv: readonly string[]): LoopOptions {
       case '--quiet':
         quiet = true;
         break;
+      case '--record':
+        record = next();
+        break;
+      case '--round':
+        round = Number(next());
+        break;
       default:
         throw new Error(`loop: unknown argument '${a}'`);
     }
@@ -533,6 +570,8 @@ export function parseLoopArgs(argv: readonly string[]): LoopOptions {
     historyPath,
     outDir,
     quiet,
+    record,
+    round,
   };
 }
 
@@ -543,35 +582,27 @@ export interface RoundOutcome {
   summary: string;
 }
 
-export function runRound(options: LoopOptions): RoundOutcome {
-  const history = loadHistory(options.historyPath);
-  const round = options.replay !== null ? options.replay : history.rounds.length;
-  const seed =
-    options.seed !== null
-      ? options.seed
-      : options.replay !== null
-        ? (history.rounds.find((r) => r.round === options.replay)?.seed ??
-          seedForRound(history.rootSeed, options.replay))
-        : seedForRound(history.rootSeed, round);
-
-  const resultsPath = path.join(options.outDir, `round-${String(round).padStart(3, '0')}.json`);
-  const cli: CliOptions = {
-    seed,
-    scenarios: options.scenarios,
-    out: resultsPath,
-    outDir: options.outDir,
-    preset: options.preset,
-    artifacts: true,
-    baseline: true,
-    attribute: options.preset.attributeFailures,
-    quiet: options.quiet,
-  };
-  const results = runBench(cli);
-
+/**
+ * Rank one finished bench run and fold it into the history.
+ *
+ * Pure: it reads a `BenchResults` and a `RoundHistory` and returns the next
+ * history. Whether the run happened just now (`runRound`) or an hour ago
+ * (`--record`) makes no difference to how it is judged, which is the property
+ * that lets the corpus be regenerated once per round instead of twice.
+ */
+export function recordRound(
+  results: BenchResults,
+  history: RoundHistory,
+  round: number,
+  seed: number,
+  presetName: string,
+  resultsPath: string,
+): RoundOutcome {
   // Throws rather than ranking on a provisional metric. Before the results are
   // used for anything, so a Phase 2 metric cannot sneak into a verdict.
   const series = rankRound(results);
-  const previous = history.rounds.length > 0 ? history.rounds[history.rounds.length - 1] : null;
+  const priorRounds = history.rounds.filter((r) => r.round < round);
+  const previous = priorRounds.length > 0 ? priorRounds[priorRounds.length - 1] : null;
   const { movement, improving, regressed } = classifyMovement(series, previous?.series ?? null);
   const consecutive = improving ? 0 : (previous?.consecutiveNonImproving ?? 0) + 1;
 
@@ -585,7 +616,7 @@ export function runRound(options: LoopOptions): RoundOutcome {
     round,
     seed,
     at: results.env.generatedAt,
-    preset: options.preset.name,
+    preset: presetName,
     scenarioCount: results.run.scenarioCount,
     gitCommit: results.env.gitCommit,
     pass: results.gates.pass,
@@ -619,6 +650,66 @@ export function runRound(options: LoopOptions): RoundOutcome {
   };
 
   return { record, results, history: nextHistory, summary: formatRound(record, previous, results) };
+}
+
+export function runRound(options: LoopOptions): RoundOutcome {
+  const history = loadHistory(options.historyPath);
+  const round = options.replay !== null ? options.replay : history.rounds.length;
+  const seed =
+    options.seed !== null
+      ? options.seed
+      : options.replay !== null
+        ? (history.rounds.find((r) => r.round === options.replay)?.seed ??
+          seedForRound(history.rootSeed, options.replay))
+        : seedForRound(history.rootSeed, round);
+
+  const resultsPath = path.join(options.outDir, `round-${String(round).padStart(3, '0')}.json`);
+  const cli: CliOptions = {
+    seed,
+    scenarios: options.scenarios,
+    out: resultsPath,
+    outDir: options.outDir,
+    preset: options.preset,
+    artifacts: true,
+    baseline: true,
+    attribute: options.preset.attributeFailures,
+    quiet: options.quiet,
+  };
+  const results = runBench(cli);
+  return recordRound(results, history, round, seed, options.preset.name, resultsPath);
+}
+
+/**
+ * Record a round from a results file the bench already wrote.
+ *
+ * The seed, the scenario count and the preset are read from the file rather
+ * than from the command line, so a recorded round cannot claim to be a run it
+ * was not. The round NUMBER is the next one in the history unless `--replay`
+ * names an existing one.
+ */
+export function recordFromFile(options: LoopOptions): RoundOutcome {
+  if (options.record === null) throw new Error('loop: recordFromFile needs --record');
+  const file = path.resolve(REPO_ROOT, options.record);
+  if (!fs.existsSync(file)) throw new Error(`loop: --record ${options.record}: no such file`);
+  const results = JSON.parse(fs.readFileSync(file, 'utf8')) as BenchResults;
+  if (results.run === undefined || results.gates === undefined) {
+    throw new Error(`loop: --record ${options.record}: not a bench results file`);
+  }
+  const history = loadHistory(options.historyPath);
+  const round =
+    options.round !== null
+      ? options.round
+      : options.replay !== null
+        ? options.replay
+        : history.rounds.length;
+  return recordRound(
+    results,
+    history,
+    round,
+    results.run.seed,
+    results.run.preset,
+    path.relative(REPO_ROOT, file),
+  );
 }
 
 export function formatRound(
@@ -680,6 +771,23 @@ export function formatRound(
 
 function main(): void {
   const options = parseLoopArgs(process.argv.slice(2));
+
+  // Recording an existing run writes the history and stops. It deliberately
+  // does NOT rewrite the results file or the progress page: it did not produce
+  // them, and a recorder that re-serialised somebody else's run would be one
+  // more place for the file on disk and the round on record to disagree.
+  if (options.record !== null) {
+    const outcome = recordFromFile(options);
+    fs.mkdirSync(path.dirname(options.historyPath), { recursive: true });
+    fs.writeFileSync(options.historyPath, `${JSON.stringify(outcome.history, null, 2)}\n`);
+    process.stdout.write(outcome.summary);
+    process.stdout.write(
+      `recorded round ${outcome.record.round} from ${options.record} ` +
+        `into ${path.relative(REPO_ROOT, options.historyPath)}\n`,
+    );
+    return;
+  }
+
   const outcome = runRound(options);
   const outDir = path.isAbsolute(options.outDir)
     ? options.outDir

@@ -1,0 +1,189 @@
+{
+  "schema": "sphere-sim/rounds@2",
+  "rootSeed": 20240001,
+  "rounds": [
+    {
+      "round": 4,
+      "seed": 771003,
+      "at": "2026-08-11T15:59:58.580Z",
+      "preset": "default",
+      "scenarioCount": 12,
+      "gitCommit": "b5fa860063e106f707bcc486e4cd473517dc07e2",
+      "pass": false,
+      "gates": [
+        {
+          "id": "pose_position",
+          "pass": false,
+          "failed": 12,
+          "scored": 12,
+          "worst": 349.4498664706727
+        },
+        {
+          "id": "pose_rotation",
+          "pass": false,
+          "failed": 11,
+          "scored": 12,
+          "worst": 3.874888896310351
+        },
+        {
+          "id": "camera_pose_rotation",
+          "pass": false,
+          "failed": 8,
+          "scored": 12,
+          "worst": 3.8351956008535284
+        },
+        {
+          "id": "h_center_recovery",
+          "pass": false,
+          "failed": 2,
+          "scored": 12,
+          "worst": 272.6461558140607
+        },
+        {
+          "id": "grid_displacement",
+          "pass": false,
+          "failed": 7,
+          "scored": 11,
+          "worst": 12.65066097516779
+        },
+        {
+          "id": "unlit_in_mask",
+          "pass": false,
+          "failed": 2,
+          "scored": 12,
+          "worst": 0.12800230946882218
+        },
+        {
+          "id": "off_sphere_flux_excess",
+          "pass": true,
+          "failed": 0,
+          "scored": 12,
+          "worst": 0.0015408167890593738
+        }
+      ],
+      "series": {
+        "gridDisplacementMm": {
+          "median": 3.507409323047886,
+          "p95": 12.485029322286387,
+          "max": 12.65066097516779,
+          "dispersion": 2.5212322632568136,
+          "gateMax": 1,
+          "gateFraction": 3.507409323047886
+        },
+        "poseMaxPositionMmAligned": {
+          "median": 44.12266631972908,
+          "p95": 310.436442955482,
+          "max": 349.4498664706727,
+          "dispersion": 28.4382629207396,
+          "gateMax": 2,
+          "gateFraction": 22.06133315986454
+        },
+        "poseMaxRotationDegAligned": {
+          "median": 0.2685599254185194,
+          "p95": 2.8560184595196203,
+          "max": 3.874888896310351,
+          "dispersion": 0.18324771327106704,
+          "gateMax": 0.05,
+          "gateFraction": 5.371198508370388
+        },
+        "centerHeightErrorMm": {
+          "median": 1.2647094729998365,
+          "p95": 132.82874437465136,
+          "max": 272.6461558140607,
+          "dispersion": 1.511920331387362,
+          "gateMax": 10,
+          "gateFraction": 0.12647094729998365
+        },
+        "cameraMaxRotationDeg": {
+          "median": 0.09870867010701603,
+          "p95": 1.8325947121932131,
+          "max": 3.8351956008535284,
+          "dispersion": 0.04178431819221572,
+          "gateMax": 0.07,
+          "gateFraction": 1.4101238586716576
+        },
+        "offSphereFluxExcess": {
+          "median": 0.00045642592023836803,
+          "p95": 0.0014706819863614883,
+          "max": 0.0015408167890593738,
+          "dispersion": 0.0004516094313658514,
+          "gateMax": 0.01,
+          "gateFraction": 0.0456425920238368
+        }
+      },
+      "movement": {
+        "gridDisplacementMm": "flat",
+        "poseMaxPositionMmAligned": "flat",
+        "poseMaxRotationDegAligned": "flat",
+        "centerHeightErrorMm": "flat",
+        "cameraMaxRotationDeg": "flat",
+        "offSphereFluxExcess": "flat"
+      },
+      "regressed": [],
+      "improving": false,
+      "consecutiveNonImproving": 1,
+      "comparison": {
+        "verdict": "better",
+        "improved": [],
+        "regressed": [],
+        "why": "first round on record: nothing to compare against, so it is the best by default."
+      },
+      "resultsPath": "bench-results.json",
+      "best": true
+    }
+  ],
+  "best": {
+    "round": 4,
+    "seed": 771003,
+    "series": {
+      "gridDisplacementMm": {
+        "median": 3.507409323047886,
+        "p95": 12.485029322286387,
+        "max": 12.65066097516779,
+        "dispersion": 2.5212322632568136,
+        "gateMax": 1,
+        "gateFraction": 3.507409323047886
+      },
+      "poseMaxPositionMmAligned": {
+        "median": 44.12266631972908,
+        "p95": 310.436442955482,
+        "max": 349.4498664706727,
+        "dispersion": 28.4382629207396,
+        "gateMax": 2,
+        "gateFraction": 22.06133315986454
+      },
+      "poseMaxRotationDegAligned": {
+        "median": 0.2685599254185194,
+        "p95": 2.8560184595196203,
+        "max": 3.874888896310351,
+        "dispersion": 0.18324771327106704,
+        "gateMax": 0.05,
+        "gateFraction": 5.371198508370388
+      },
+      "centerHeightErrorMm": {
+        "median": 1.2647094729998365,
+        "p95": 132.82874437465136,
+        "max": 272.6461558140607,
+        "dispersion": 1.511920331387362,
+        "gateMax": 10,
+        "gateFraction": 0.12647094729998365
+      },
+      "cameraMaxRotationDeg": {
+        "median": 0.09870867010701603,
+        "p95": 1.8325947121932131,
+        "max": 3.8351956008535284,
+        "dispersion": 0.04178431819221572,
+        "gateMax": 0.07,
+        "gateFraction": 1.4101238586716576
+      },
+      "offSphereFluxExcess": {
+        "median": 0.00045642592023836803,
+        "p95": 0.0014706819863614883,
+        "max": 0.0015408167890593738,
+        "dispersion": 0.0004516094313658514,
+        "gateMax": 0.01,
+        "gateFraction": 0.0456425920238368
+      }
+    }
+  }
+}

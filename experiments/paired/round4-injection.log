@@ -1,0 +1,60 @@
+393939  s01-nominal          none        base     posErr=   25.67 rotErr= 0.0347 grid=  0.2347 ownT=    0.4mm ownR=   24.3mm
+393939  s01-nominal          none        tie+box  posErr=   15.30 rotErr= 0.0362 grid=  0.1511 ownT=    0.3mm ownR=   15.3mm
+393939  s01-nominal          tangential  base     posErr=   25.31 rotErr= 0.0708 grid=  0.2412 ownT=    0.3mm ownR=   15.3mm
+393939  s01-nominal          tangential  tie+box  posErr=   13.52 rotErr= 0.0737 grid=  0.2064 ownT=    0.3mm ownR=   15.3mm
+393939  s01-nominal          pointing    base     posErr=   25.55 rotErr= 0.0371 grid=  0.3358 ownT=    0.3mm ownR=   15.3mm
+393939  s01-nominal          pointing    tie+box  posErr=   23.07 rotErr= 0.0391 grid=  0.1696 ownT=    0.3mm ownR=   15.3mm
+393939  s01-nominal          radial      base     posErr=   33.66 rotErr= 0.0332 grid=  0.1875 ownT=    0.3mm ownR=   15.3mm
+393939  s01-nominal          radial      tie+box  posErr=   22.13 rotErr= 0.0397 grid=  0.1735 ownT=    0.3mm ownR=   15.3mm
+# G1 393939 s01-nominal          base     TANGENTIAL   181.1mm of 181 (1.000x, cross -12.5mm) | RADIAL   123.1mm (0.680x) | POINTING dYaw=0.9722 dShiftAsYaw=0.0275 dPointing=0.9997 (1.000x) | ownT=0.3mm
+# G1 393939 s01-nominal          tie+box  TANGENTIAL   181.0mm of 181 (1.000x, cross -2.7mm) | RADIAL   169.8mm (0.938x) | POINTING dYaw=1.0121 dShiftAsYaw=-0.0124 dPointing=0.9997 (1.000x) | ownT=0.3mm
+393939  s04-handheld         none        base     posErr=  166.73 rotErr= 0.6548 grid=  3.0711 ownT=    8.0mm ownR=   71.2mm
+393939  s04-handheld         none        tie+box  posErr=   76.53 rotErr= 0.6875 grid=  3.4669 ownT=    9.0mm ownR=   52.9mm
+393939  s04-handheld         tangential  base     posErr=  143.72 rotErr= 0.8846 grid=  2.6405 ownT=    9.0mm ownR=   52.9mm
+393939  s04-handheld         tangential  tie+box  posErr=   90.33 rotErr= 0.7699 grid=  2.2156 ownT=    9.0mm ownR=   52.9mm
+393939  s04-handheld         pointing    base     posErr=  481.66 rotErr= 3.3367 grid=  8.1060 ownT=    9.0mm ownR=   52.9mm
+393939  s04-handheld         pointing    tie+box  posErr=   84.20 rotErr= 0.7672 grid=  4.2705 ownT=    9.0mm ownR=   52.9mm
+393939  s04-handheld         radial      base     posErr=  216.25 rotErr= 0.4001 grid=  2.9854 ownT=    9.0mm ownR=   52.9mm
+393939  s04-handheld         radial      tie+box  posErr=   69.87 rotErr= 0.6053 grid=  3.3975 ownT=    9.0mm ownR=   52.9mm
+# G1 393939 s04-handheld         base     TANGENTIAL   176.8mm of 181 (0.977x, cross -214.9mm) | RADIAL   -17.2mm (-0.095x) | POINTING dYaw=0.8559 dShiftAsYaw=0.1401 dPointing=0.9960 (0.996x) | ownT=9.0mm
+# G1 393939 s04-handheld         tie+box  TANGENTIAL   176.1mm of 181 (0.973x, cross -143.1mm) | RADIAL   172.7mm (0.954x) | POINTING dYaw=1.1344 dShiftAsYaw=-0.1187 dPointing=1.0157 (1.016x) | ownT=9.0mm
+393939  s06-six-cameras      none        base     posErr=   52.70 rotErr= 0.1406 grid=  2.6905 ownT=    1.2mm ownR=   40.5mm
+393939  s06-six-cameras      none        tie+box  posErr=   26.90 rotErr= 0.1903 grid=  2.6280 ownT=    1.6mm ownR=   20.2mm
+393939  s06-six-cameras      tangential  base     posErr=   51.57 rotErr= 0.1648 grid=  3.0475 ownT=    1.6mm ownR=   20.2mm
+393939  s06-six-cameras      tangential  tie+box  posErr=   29.29 rotErr= 0.1920 grid=  3.1503 ownT=    1.6mm ownR=   20.2mm
+393939  s06-six-cameras      pointing    base     posErr=   48.19 rotErr= 0.1761 grid=  2.3629 ownT=    1.6mm ownR=   20.2mm
+393939  s06-six-cameras      pointing    tie+box  posErr=   28.92 rotErr= 0.2085 grid=  2.4204 ownT=    1.6mm ownR=   20.2mm
+393939  s06-six-cameras      radial      base     posErr=   40.96 rotErr= 0.1771 grid=  2.4418 ownT=    1.6mm ownR=   20.2mm
+393939  s06-six-cameras      radial      tie+box  posErr=   28.26 rotErr= 0.2279 grid=  2.4037 ownT=    1.6mm ownR=   20.2mm
+# G1 393939 s06-six-cameras      base     TANGENTIAL   181.6mm of 181 (1.003x, cross -53.0mm) | RADIAL   167.1mm (0.923x) | POINTING dYaw=0.8838 dShiftAsYaw=0.1102 dPointing=0.9940 (0.994x) | ownT=1.6mm
+# G1 393939 s06-six-cameras      tie+box  TANGENTIAL   182.0mm of 181 (1.005x, cross -17.2mm) | RADIAL   165.8mm (0.916x) | POINTING dYaw=0.9354 dShiftAsYaw=0.0618 dPointing=0.9972 (0.997x) | ownT=1.6mm
+646464  s01-nominal          none        base     posErr=   14.50 rotErr= 0.0387 grid=  0.2449 ownT=    0.3mm ownR=    7.0mm
+646464  s01-nominal          none        tie+box  posErr=   29.84 rotErr= 0.0386 grid=  0.2090 ownT=    0.3mm ownR=    5.2mm
+646464  s01-nominal          tangential  base     posErr=   14.64 rotErr= 0.0383 grid=  0.2420 ownT=    0.3mm ownR=    5.2mm
+646464  s01-nominal          tangential  tie+box  posErr=   25.05 rotErr= 0.0405 grid=  0.2668 ownT=    0.3mm ownR=    5.2mm
+646464  s01-nominal          pointing    base     posErr=   15.08 rotErr= 0.0394 grid=  0.2462 ownT=    0.3mm ownR=    5.2mm
+646464  s01-nominal          pointing    tie+box  posErr=   25.44 rotErr= 0.0400 grid=  0.2115 ownT=    0.3mm ownR=    5.2mm
+646464  s01-nominal          radial      base     posErr=   16.68 rotErr= 0.0414 grid=  0.2124 ownT=    0.3mm ownR=    5.2mm
+646464  s01-nominal          radial      tie+box  posErr=   30.74 rotErr= 0.0394 grid=  0.2785 ownT=    0.3mm ownR=    5.2mm
+# G1 646464 s01-nominal          base     TANGENTIAL   180.6mm of 181 (0.998x, cross 9.6mm) | RADIAL   176.4mm (0.975x) | POINTING dYaw=1.0113 dShiftAsYaw=-0.0112 dPointing=1.0001 (1.000x) | ownT=0.3mm
+# G1 646464 s01-nominal          tie+box  TANGENTIAL   180.6mm of 181 (0.998x, cross 4.8mm) | RADIAL   179.7mm (0.993x) | POINTING dYaw=0.9988 dShiftAsYaw=0.0011 dPointing=0.9999 (1.000x) | ownT=0.3mm
+646464  s04-handheld         none        base     posErr=   34.40 rotErr= 0.2316 grid=  2.9435 ownT=    4.1mm ownR=   11.8mm
+646464  s04-handheld         none        tie+box  posErr=   50.40 rotErr= 0.2311 grid=  3.2195 ownT=    4.1mm ownR=   19.1mm
+646464  s04-handheld         tangential  base     posErr=  140.82 rotErr= 0.2420 grid=  3.6088 ownT=    4.1mm ownR=   19.1mm
+646464  s04-handheld         tangential  tie+box  posErr=   40.24 rotErr= 0.3034 grid=  2.9237 ownT=    4.1mm ownR=   19.1mm
+646464  s04-handheld         pointing    base     posErr=   52.19 rotErr= 0.2595 grid=  3.3907 ownT=    4.1mm ownR=   19.1mm
+646464  s04-handheld         pointing    tie+box  posErr=   67.65 rotErr= 0.2371 grid=  3.3883 ownT=    4.1mm ownR=   19.1mm
+646464  s04-handheld         radial      base     posErr=   64.40 rotErr= 0.2416 grid=  2.2516 ownT=    4.1mm ownR=   19.1mm
+646464  s04-handheld         radial      tie+box  posErr=   42.49 rotErr= 0.2341 grid=  2.3293 ownT=    4.1mm ownR=   19.1mm
+# G1 646464 s04-handheld         base     TANGENTIAL   183.4mm of 181 (1.013x, cross 59.9mm) | RADIAL   257.2mm (1.421x) | POINTING dYaw=0.8280 dShiftAsYaw=0.1602 dPointing=0.9882 (0.988x) | ownT=4.1mm
+# G1 646464 s04-handheld         tie+box  TANGENTIAL   182.7mm of 181 (1.009x, cross 46.5mm) | RADIAL   188.0mm (1.039x) | POINTING dYaw=0.8169 dShiftAsYaw=0.1719 dPointing=0.9888 (0.989x) | ownT=4.1mm
+646464  s06-six-cameras      none        base     posErr=   76.65 rotErr= 0.2012 grid=  1.9895 ownT=    2.4mm ownR=   76.6mm
+646464  s06-six-cameras      none        tie+box  posErr=   52.13 rotErr= 0.1234 grid=  1.9848 ownT=    2.3mm ownR=   52.1mm
+646464  s06-six-cameras      tangential  base     posErr=   72.42 rotErr= 0.1789 grid=  2.5048 ownT=    2.3mm ownR=   52.1mm
+646464  s06-six-cameras      tangential  tie+box  posErr=   25.69 rotErr= 0.1230 grid=  2.3777 ownT=    2.3mm ownR=   52.1mm
+646464  s06-six-cameras      pointing    base     posErr=   79.01 rotErr= 0.1902 grid=  2.5825 ownT=    2.3mm ownR=   52.1mm
+646464  s06-six-cameras      pointing    tie+box  posErr=   54.83 rotErr= 0.1841 grid=  2.6274 ownT=    2.3mm ownR=   52.1mm
+646464  s06-six-cameras      radial      base     posErr=   61.84 rotErr= 0.1991 grid=  2.2093 ownT=    2.3mm ownR=   52.1mm
+646464  s06-six-cameras      radial      tie+box  posErr=   37.41 rotErr= 0.1332 grid=  2.1411 ownT=    2.3mm ownR=   52.1mm
+# G1 646464 s06-six-cameras      base     TANGENTIAL   180.7mm of 181 (0.998x, cross 76.7mm) | RADIAL   258.4mm (1.428x) | POINTING dYaw=0.8102 dShiftAsYaw=0.1991 dPointing=1.0093 (1.009x) | ownT=2.3mm
+# G1 646464 s06-six-cameras      tie+box  TANGENTIAL   180.9mm of 181 (0.999x, cross 26.5mm) | RADIAL   195.8mm (1.082x) | POINTING dYaw=0.8277 dShiftAsYaw=0.1804 dPointing=1.0082 (1.008x) | ownT=2.3mm

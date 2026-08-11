@@ -70,7 +70,21 @@
  * standard treatment for a free-network adjustment. A bench that skips that
  * step is measuring the gauge, not the calibration.
  * ---------------------------------------------------------------------------
- * TIME-AWARE DECODE — one camera pose per capture is a modelling error.
+ * DIFFERENTIAL u-vs-v CAMERA POSE — one camera pose per capture is a modelling
+ * error.
+ *
+ * **This section used to be headed "TIME-AWARE DECODE" and that name was wrong.**
+ * Round 3's critic proved it: `decode.ts:captureEpochs` returns u = 27.5 and
+ * v = 31.5 for EVERY capture this pipeline produces, so the epoch separation
+ * `dt` is the same constant on every camera of every scenario, the rate is a
+ * free parameter, and only the RATIO of the epochs enters the residual —
+ * multiplying every `timeU`/`timeV` by ten changes the answer in the eighth
+ * significant figure. Nothing here reads a clock. What this models is that a
+ * correspondence's `u` and its `v` are measured at two different moments and the
+ * camera was not in the same place for both: **a differential u-vs-v camera
+ * pose, three parameters per camera** (or six). That is a correct and useful
+ * physical model. It is not a trajectory, and the sign convention on the epochs
+ * is the whole of what it takes from the frame ordering.
  *
  * A structured-light capture is a sequence, not a photograph. Thirty-four
  * frames at 20 fps take 1.7 seconds, and a handheld camera is somewhere
@@ -89,32 +103,42 @@
  * epochs as `timeU` and `timeV`. So the honest residual evaluates the `u`
  * component at the camera pose of the `u` epoch and the `v` component at the
  * pose of the `v` epoch. That is what `evaluate` does when
- * `free.cameraVelocity` is on, at the cost of a second ray-sphere intersection
+ * `free.cameraEpochPose` is on, at the cost of a second ray-sphere intersection
  * per correspondence.
  *
  * **Why a RATE and not a pose per frame.** Six degrees of freedom times
  * thirty-four frames times C cameras is an invitation to fit the noise. It is
  * also unidentifiable: with the phase frames of each axis shot as one
  * contiguous block, a capture presents exactly TWO distinct epochs per
- * (camera, projector) pair, so no trajectory model richer than an offset and a
- * rate is determined by the data. Six extra parameters per camera is therefore
- * not a truncation of a larger model — it is the whole of what two epochs can
- * support, and any higher-order term would be pure damping.
+ * (camera, projector) pair, so no model richer than an offset and a difference
+ * is determined by the data. The difference is *parameterised* as a rate — a
+ * per-epoch-unit derivative multiplied by the epoch separation — purely so that
+ * a decode which ever did report differing separations would be handled without
+ * a second code path. With this decode the separation is one constant, so the
+ * rate and the u-to-v pose difference are the same three (or six) numbers in
+ * different units.
  *
  * **The reference epoch is the mean of that camera's own observation times**, so
- * the reported pose is the mid-capture pose and is as uncorrelated with the rate
- * as centring can make it. It is NOT the pose at the start of the capture, and a
- * bench scoring against a static ground-truth pose is comparing against a
- * quantity that no longer exists once the camera moved: the residual definition
- * error is bounded by half the excursion, which this bench's motion model puts
- * at a couple of millimetres and a few hundredths of a degree.
+ * the reported pose is the mid-capture pose and is as uncorrelated with the
+ * difference as centring can make it. It is NOT the pose at the start of the
+ * capture, and a bench scoring the recovered pose against a STATIC ground-truth
+ * pose is comparing against a quantity that no longer exists once the camera
+ * moved — measured at 0.08 to 0.33 degrees on this bench's motion model, which
+ * is larger than the 0.07-degree gate that used to be scored that way.
+ * `packages/bench` now scores against the true pose at the reference epoch and
+ * reports the static-pose figure beside it.
  *
  * **What it does not model.** The intra-frame rolling-shutter shear (row `r` is
  * read later than row 0), which would make the epoch continuous in the camera's
  * own `v` coordinate and cost the precomputation this implementation depends
  * on; and hand tremor, which completes nearly two cycles inside one axis's phase
  * window and is therefore not linear over it. Both are real and both are left
- * in the residual rather than hidden.
+ * in the residual rather than hidden. And the difference is tied ACROSS a
+ * camera's (camera, projector) pairs — one difference per camera, not one per
+ * pair — which is exactly right for a bench that replays the same motion for
+ * every pair and is not what a real sequential capture does.
+ * ---------------------------------------------------------------------------
+ * HARDWARE BOX CONSTRAINTS — see `BundleOptions.bounds`.
  * ---------------------------------------------------------------------------
  */
 
@@ -248,6 +272,21 @@ export interface ParameterPrior {
   name: string;
 }
 
+/**
+ * A hard interval a parameter may not leave. See `BundleOptions.bounds`.
+ *
+ * `lo` and `hi` are in the parameter's own units, inclusive, and must bracket
+ * the initialisation — a box that excludes the starting point would make the
+ * first projection a jump rather than a constraint.
+ */
+export interface ParameterBox {
+  slot: number;
+  lo: number;
+  hi: number;
+  /** Human-readable, and it should say what the limit is a limit OF. */
+  name: string;
+}
+
 export interface BundleFreeFlags {
   projectorPose: boolean;
   projectorFov: boolean;
@@ -264,26 +303,27 @@ export interface BundleFreeFlags {
   /** Off by default: the operator calibrated their camera, so believe them. */
   cameraFocal: boolean;
   /**
-   * Solve a rate of change of each camera's pose over the capture. See the
-   * TIME-AWARE DECODE section of this file's header for what it models, what it
-   * cannot, and what it costs.
+   * Solve the DIFFERENCE between each camera's pose at its `u` epoch and at its
+   * `v` epoch. See the DIFFERENTIAL u-vs-v CAMERA POSE section of this file's
+   * header for what it models, what it cannot, and what it costs — including
+   * why the old name (`cameraVelocity`, "time-aware decode") overstated it.
    *
-   *  - `off` is today's build: one pose per camera per capture.
-   *  - `rotation` frees the three angular rates only, three parameters per
+   *  - `off` is the pre-round-3 build: one pose per camera per capture.
+   *  - `rotation` frees the three angular components only, three parameters per
    *    camera. This is not a truncation for tidiness. At 2.6 m from the sphere
    *    a hundredth of a degree of pointing moves the observed surface point
    *    about 0.45 mm, while a hundredth of a millimetre of translation moves it
-   *    a hundredth of a millimetre: the angular rate carries the great majority
+   *    a hundredth of a millimetre: the angular part carries the great majority
    *    of the observable effect at half the degrees of freedom, and degrees of
    *    freedom fitted to a static capture are pure overfitting.
    *  - `full` frees all six.
    *
    * Inert without per-axis epochs on the correspondences
    * (`DecodeOptions.frameEpochs`): a camera whose observations all carry the
-   * same epoch has no rate the data can see, and `buildLayout` holds its slots
-   * rather than handing the damping free parameters to invent.
+   * same epoch has no difference the data can see, and `buildLayout` holds its
+   * slots rather than handing the damping free parameters to invent.
    */
-  cameraVelocity: 'off' | 'rotation' | 'full';
+  cameraEpochPose: 'off' | 'rotation' | 'full';
   centerHeight: boolean;
 }
 
@@ -296,14 +336,15 @@ export const DEFAULT_FREE_FLAGS: BundleFreeFlags = {
   cameraPose: true,
   cameraFocal: false,
   // `rotation`, not `off` and not `full`, and both halves of that are measured.
-  // See docs/PHASE-1.md round 3: paired on five fresh seeds, three angular rates
-  // per camera are worth 1.4-5.8x on the seam gate across the motion archetypes
-  // while leaving all four tripod archetypes inside the 1.0 mm gate, and adding
-  // the three translational rates as well takes `s02-sensor-noise` OUT of it
-  // (0.756 -> 1.388 mm) for no gain the motion archetypes keep. The default
-  // rests on an assumption about the capture protocol that PARAMETERS.md §8 does
-  // not state — see `DecodeOptions.frameEpochs` and docs/AMENDMENTS.md A-34.
-  cameraVelocity: 'rotation',
+  // See docs/PHASE-1.md round 3: paired on five fresh seeds, three angular
+  // components per camera are worth 1.4-5.8x on the seam gate across the motion
+  // archetypes while leaving all four tripod archetypes inside the 1.0 mm gate,
+  // and adding the three translational ones as well takes `s02-sensor-noise`
+  // OUT of it (0.756 -> 1.388 mm) for no gain the motion archetypes keep. The
+  // default rests on an assumption about the capture protocol that
+  // PARAMETERS.md §8 does not state — see `DecodeOptions.frameEpochs` and
+  // docs/AMENDMENTS.md A-34.
+  cameraEpochPose: 'rotation',
   centerHeight: true,
 };
 
@@ -398,11 +439,47 @@ export interface BundleOptions {
    * that differs between projectors otherwise drives the four fields apart, and
    * a *differential* field-of-view error is what a seam metric sees.
    *
-   * Off by default: the tie is a claim about the install, and §3.1 does not say
-   * a rig cannot mix lenses. `packages/bench` turns it on per scenario so the
-   * consequence is measured rather than assumed.
+   * **ON by default since round 4, and the licence is a document rather than a
+   * measurement.** Round 2 built this, measured 1.51x median in pose position
+   * (28 of 32 cells helped, up to 7.50x on `no-floor-reference`) and left it OFF
+   * because whether one install's four projectors share a lens was a question
+   * for §3.1 that nobody could answer — filed as docs/AMENDMENTS.md A-33.
+   * A-35 answers it: the owner supplied the projector's manual and its spec
+   * page, the install is four BenQ LK935s bought together, one model, one lens,
+   * `packages/calibration`'s `PROJECTOR_LK935`. Round 4 re-measured the tie
+   * paired on five fresh seeds and reports every gate metric it moves in
+   * docs/PHASE-1.md, including the one it does NOT move: grid displacement.
+   *
+   * A site that mixed lenses sets this false, and should, because then the tie
+   * is a modelling error rather than a fact.
    */
   tieProjectorFov: boolean;
+  /**
+   * HARD physical limits on individual parameters — a box the solve may not
+   * leave, applied by projecting each trial step back onto it.
+   *
+   * Not a prior and not a regularisation. A prior says a value is unlikely; a
+   * box says the hardware cannot do it. docs/AMENDMENTS.md A-13 measured that a
+   * prior on `fov_h` at any width a spec sheet could justify is outvoted two
+   * orders of magnitude over by biased data — the failure along the fov/distance
+   * valley is BIAS, not variance, so a soft constraint is theatre. A box is not
+   * outvoted: the BenQ LK935's zoom ring stops at 1.36:1 and 2.18:1, so
+   * `fov_h` outside [25.84, 40.37] degrees describes a projector that does not
+   * exist, whatever the residual says. Same for lens shift, whose mechanical
+   * travel is +/-60% vertical and +/-23% horizontal.
+   *
+   * The honest reading of what this buys, stated before the numbers: if the
+   * solver never approaches a limit the constraint is INERT, and inert is the
+   * expected case for a well-posed solve. It is worth carrying anyway, because
+   * the alternative is a pathological solve reporting a calibration nobody could
+   * install, and because a bound that never binds is evidence that the fit is
+   * inside the envelope — which is a fact about the fit worth reporting.
+   *
+   * Empty by default at this layer: `solve()` builds the boxes from
+   * `SolveHardwareOptions.profile`, so the citation travels with the numbers and
+   * a caller with a different projector supplies a different profile.
+   */
+  bounds: readonly ParameterBox[];
   /** Detect residual coherence within a (camera, projector) pair. See `PairCoherenceOptions`. */
   pairCoherence: PairCoherenceOptions;
 }
@@ -546,7 +623,10 @@ export const DEFAULT_BUNDLE_OPTIONS: BundleOptions = {
   maxEvaluations: 2000,
   rejectionPasses: 1,
   varianceComponents: true,
-  tieProjectorFov: false,
+  // TRUE since round 4, licensed by docs/AMENDMENTS.md A-35 — the install is
+  // four projectors of one model, so it has one lens and one throw ratio.
+  tieProjectorFov: true,
+  bounds: [],
   pairCoherence: DEFAULT_PAIR_COHERENCE,
 };
 
@@ -602,7 +682,7 @@ export function buildLayout(
    * Per camera, the spread of its correspondences' observation epochs in
    * frames. A camera whose observations all landed on one epoch has no
    * observable rate, so its six velocity slots are held even when
-   * `free.cameraVelocity` is on — a free parameter with no observation does not
+   * `free.cameraEpochPose` is on — a free parameter with no observation does not
    * stay put, it wanders wherever the damping lets it. Omit to hold them all,
    * which is what a caller with no epochs wants.
    */
@@ -685,8 +765,8 @@ export function buildLayout(
       take(slotCamera(layoutHead, c, CAM_ROLL), `cam${c}.roll`);
     }
     if (f.cameraFocal) take(slotCamera(layoutHead, c, CAM_FOCAL), `cam${c}.focal`);
-    if (f.cameraVelocity !== 'off' && cameraTimeSpread !== undefined && cameraTimeSpread[c] > 0) {
-      if (f.cameraVelocity === 'full') {
+    if (f.cameraEpochPose !== 'off' && cameraTimeSpread !== undefined && cameraTimeSpread[c] > 0) {
+      if (f.cameraEpochPose === 'full') {
         take(slotCamera(layoutHead, c, CAM_VPX), `cam${c}.vpx`);
         take(slotCamera(layoutHead, c, CAM_VPY), `cam${c}.vpy`);
         take(slotCamera(layoutHead, c, CAM_VPZ), `cam${c}.vpz`);
@@ -998,6 +1078,19 @@ export interface BundleProblem {
    * False reproduces the single-pose arithmetic exactly, including its cost.
    */
   timeAware: boolean;
+  /**
+   * `opts.bounds`, filtered down to the slots this layout actually frees. A box
+   * on a held parameter is not wrong, it is just inert, and carrying it into the
+   * step loop would make every trial pay for it.
+   */
+  boxes: readonly ParameterBox[];
+  /**
+   * How many times a trial step was projected back onto the box. Mutable
+   * because it accumulates across LM passes, and reported because a constraint
+   * that fires is a different claim from one that does not: zero means the fit
+   * stayed inside the hardware envelope on its own.
+   */
+  boxProjections: number;
 }
 
 /**
@@ -1116,9 +1209,18 @@ export function buildProblem(
     pairScale: new Float64Array(layout.nCameras * layout.nProjectors).fill(1),
     epochU: epochs.epochU,
     epochV: epochs.epochV,
-    // A state that already carries a rate is time-aware whether or not the rate
-    // is free, or a caller could set one and have it silently ignored.
+    // A state that already carries an epoch difference is evaluated at two
+    // poses whether or not that difference is free, or a caller could set one
+    // and have it silently ignored. (`timeAware` is the internal name for
+    // "evaluate at two epochs"; it does not mean a clock is being read — see
+    // this file's DIFFERENTIAL u-vs-v CAMERA POSE section.)
     timeAware: anyVelocityFree(layout) || state.cameras.some((c) => rateIsNonZero(c.velocity)),
+    boxes: opts.bounds.filter((b) => {
+      if (b.slot < 0 || b.slot >= layout.nSlots) return false;
+      if (layout.freeMap[b.slot] < 0) return false;
+      return b.hi > b.lo;
+    }),
+    boxProjections: 0,
   };
 }
 
@@ -1228,7 +1330,8 @@ export function evaluate(
   const dWorldScratch = new Float64Array(6);
   const dPointScratch = new Float64Array(3 * CAM_PARAM_COUNT);
   // A second set, for the epoch at which the `v` coordinate was photographed.
-  // Allocated unconditionally and used only when the solve is time-aware: two
+  // Allocated unconditionally and used only when the solve evaluates at two
+  // epochs: two
   // scratch buffers cost nothing, and reusing one would have the second
   // projection overwrite the first's derivatives.
   const dParamScratchV = new Float64Array(2 * PROJ_PARAM_COUNT);
@@ -1258,7 +1361,7 @@ export function evaluate(
     : [];
 
   // The camera as it was at each epoch. Two per (camera, projector) pair when
-  // the solve is time-aware, one per camera otherwise — which is the same
+  // the solve evaluates both, one per camera otherwise — which is the same
   // object in both entries, so the loop below can compare by identity and take
   // the single-pose path with the single-pose arithmetic and the single-pose
   // cost.
@@ -1875,27 +1978,40 @@ export interface BundleReport {
    */
   pairResidualScale: number[];
   /**
-   * Per camera, how far the recovered trajectory says it moved between the
+   * Per camera, how far the recovered pose difference says it moved between the
    * FIRST and LAST epoch its own correspondences carry — millimetres and
    * degrees, not a rate, because a rate per pattern frame is a number nobody
    * can picture.
    *
-   * All zeros when `free.cameraVelocity` is off, which is the default. When it
-   * is on, this is the quantity to compare against the capture's own motion:
-   * `packages/bench` reports what it actually simulated as
-   * `capture.motionExcursion`, and the two are the same measurement made from
-   * opposite ends of the pipeline.
+   * All zeros when `free.cameraEpochPose` is off. When it is on, this is the
+   * displacement between the `u` pose and the `v` pose, which is a much smaller
+   * quantity than the camera's excursion over the whole capture: round 3's
+   * critic measured 0.070 deg here against 0.35 deg of simulated excursion and
+   * correctly called the earlier claim that these were the same quantity wrong
+   * by 5x. `packages/bench` reports the excursion as `capture.motionExcursion`
+   * and the true inter-epoch displacement as `capture.epochDisplacement`; the
+   * SECOND is the one this should be compared against.
    */
-  cameraMotion: { translationMm: number; rotationDeg: number; spanFrames: number }[];
+  cameraEpochOffset: { translationMm: number; rotationDeg: number; spanFrames: number }[];
+  /** How many times a trial step was projected back onto `BundleOptions.bounds`. */
+  boxProjections: number;
+  /** Boxed parameters sitting on a limit at the end of the solve. */
+  boundsAtLimit: { name: string; value: number; limit: 'lo' | 'hi' }[];
 }
 
 /**
- * The recovered trajectory, expressed over the epochs the data actually spans.
+ * The recovered u-to-v pose difference, expressed over the epochs the data
+ * actually spans.
  *
- * `spanFrames` is that span, so a reader can tell a camera that moved 3 mm over
- * four frames from one that moved 3 mm over a hundred.
+ * `spanFrames` is that span. It is 4 on every capture this pipeline's decode
+ * produces — the `u` phase block and the `v` phase block are four frames apart
+ * and every pair reports the same pair of epochs — so the guard in `buildLayout`
+ * that refuses columns to a camera whose epochs do not spread is, under the
+ * shipped decode, dead code kept for a decode that reported otherwise. It is
+ * reported anyway, because "the span is always 4" is exactly the fact that
+ * makes this a differential pose rather than a trajectory.
  */
-export function cameraMotionReport(
+export function cameraEpochOffsetReport(
   state: BundleState,
   problem: BundleProblem,
 ): { translationMm: number; rotationDeg: number; spanFrames: number }[] {
@@ -1951,6 +2067,60 @@ function transpose3(m: Mat3): Mat3 {
  * floor on the diagonal keeps a completely unobserved parameter (say, a
  * projector nobody photographed) from producing a division by zero.
  */
+/**
+ * Project a state onto the box, returning how many parameters had to move.
+ *
+ * This is what makes `BundleOptions.bounds` a constraint rather than a wish: the
+ * LM step is computed unconstrained, then clipped componentwise onto the
+ * feasible set before the cost is evaluated. A clipped step that does not
+ * decrease the cost is rejected exactly as any other failed trial is, so the
+ * damping shortens the step until it lands inside — which is the standard
+ * projected-gradient treatment of a box and needs no active-set bookkeeping.
+ *
+ * Writing to a tied slot is safe: every slot on one column carries the same
+ * value and the same box, so clipping them individually gives the same answer.
+ *
+ * **What convergence means once a bound is active**, since the step and
+ * gradient tests are computed on the UNCLAMPED step: a solve pressed against a
+ * wall keeps proposing steps through it, keeps failing to reduce the cost, and
+ * runs the damping up until it stops with `stopReason: 'lambda'` — a reported
+ * stall, which is the correct answer for "the data wants a projector that does
+ * not exist". It cannot report `converged` on a direction it never actually
+ * moved along, because `converged` is only ever set on an ACCEPTED step and an
+ * accepted step is one whose clamped state lowered the cost. `boxProjections`
+ * says whether any of this happened at all.
+ */
+function projectOntoBoxes(state: BundleState, problem: BundleProblem): number {
+  let moved = 0;
+  for (const b of problem.boxes) {
+    const v = readSlot(state, problem.layout, b.slot);
+    const c = v < b.lo ? b.lo : v > b.hi ? b.hi : v;
+    if (c !== v) {
+      writeSlot(state, problem.layout, b.slot, c);
+      moved++;
+    }
+  }
+  return moved;
+}
+
+/** Which boxed parameters ended the solve sitting on a limit, and which limit. */
+export function boundsAtLimit(
+  state: BundleState,
+  problem: BundleProblem,
+): { name: string; value: number; limit: 'lo' | 'hi' }[] {
+  const out: { name: string; value: number; limit: 'lo' | 'hi' }[] = [];
+  for (const b of problem.boxes) {
+    const v = readSlot(state, problem.layout, b.slot);
+    // A tolerance rather than equality: a projected step lands exactly on the
+    // limit, but a step that merely converged against it may sit a rounding
+    // error inside, and reporting that as "free" would be misleading.
+    const tol = (b.hi - b.lo) * 1e-9;
+    if (v <= b.lo + tol) out.push({ name: b.name, value: v, limit: 'lo' });
+    else if (v >= b.hi - tol) out.push({ name: b.name, value: v, limit: 'hi' });
+  }
+  return out;
+}
+
 export function levenbergMarquardt(
   initial: BundleState,
   problem: BundleProblem,
@@ -1964,6 +2134,10 @@ export function levenbergMarquardt(
   // vector, instead of letting the first accepted step silently equalise four
   // fields of view and charging the difference to that step.
   unpackState(packState(state, layout), state, layout);
+  // The initialisation itself is projected, so a caller who started outside the
+  // envelope starts inside it instead of taking one unconstrained step first.
+  // With no boxes this is a no-op that touches nothing.
+  problem.boxProjections += projectOntoBoxes(state, problem);
 
   if (layout.n === 0) {
     const ev = evaluate(state, problem, false);
@@ -2056,6 +2230,7 @@ export function levenbergMarquardt(
       const next = new Float64Array(n);
       for (let i = 0; i < n; i++) next[i] = current[i] + sol.x[i];
       unpackState(next, trial, layout);
+      problem.boxProjections += projectOntoBoxes(trial, problem);
 
       const trialEv = evaluate(trial, problem, false);
       evaluations++;
@@ -2196,7 +2371,9 @@ function finishReport(
     priorResiduals,
     cameraResidualScale: Array.from(problem.cameraScale),
     pairResidualScale: Array.from(problem.pairScale),
-    cameraMotion: cameraMotionReport(state, problem),
+    cameraEpochOffset: cameraEpochOffsetReport(state, problem),
+    boxProjections: problem.boxProjections,
+    boundsAtLimit: boundsAtLimit(state, problem),
   };
 }
 

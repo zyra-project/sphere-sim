@@ -22,6 +22,25 @@ import {
 
 const SMALL = { cameraRes: { x: 160, y: 120 }, cameraCount: 2 };
 
+/**
+ * Four independent fields of view — the model this fixture's truth actually has.
+ *
+ * `makeScene` jitters each projector's `fovHDeg` independently, because four
+ * zoom rings are set one at a time by the Red Ball procedure against four
+ * slightly different lens distances. The shipped default ties them
+ * (docs/AMENDMENTS.md A-35: one install, one projector model), so on a NOISELESS
+ * fixture whose fields differ the tie is the only error left in the residual —
+ * and these tests are about the pipeline and the bootstrap, not about the tie.
+ *
+ * What the tie costs is measured on purpose in `bundle.test.ts` ("the
+ * shared-lens tie costs what the spread costs"), and on the bench's own corpus
+ * it converges on every scenario at both seeds round 4 ran. Here, with nothing
+ * else in the residual, the fit plateaus against its own model error and the
+ * optimiser correctly reports a stall rather than convergence — which is
+ * `bundle.ts` behaving as documented, not a reason to loosen an assertion.
+ */
+const FOUR_LENSES = { bundle: { tieProjectorFov: false } };
+
 test('solve() recovers the rig from rendered structured-light images', () => {
   const scene = makeScene(31, SMALL);
   const captures = renderAllCaptures(scene.truth, { noiseSigma: 0 });
@@ -37,6 +56,7 @@ test('solve() recovers the rig from rendered structured-light images', () => {
     cameras: scene.cameraInputs,
     captures,
     floorReferences: floor,
+    options: FOUR_LENSES,
   });
 
   assert.ok(res.extra.decode.accepted > 1000, `decoded ${res.extra.decode.accepted}`);
@@ -128,6 +148,7 @@ test('the bootstrap does not care where in the d_proj prior it starts', () => {
       cameras: scene.cameraInputs,
       captures,
       floorReferences: floor,
+      options: FOUR_LENSES,
     });
     const state: BundleState = {
       ...bundleStateFromCalibration(res.calibration, []),
