@@ -1465,3 +1465,66 @@ belongs with them.
 **What the code does meanwhile.** `metrics/photometric.ts` reports the black-uplift
 ratio with ambient included as the scored metric and with ambient removed beside it,
 and Experiment 3 runs the pairwise design rather than reporting main effects alone.
+
+---
+
+## A-30 — the coverage-margin diagnostic is misleading below N=4, in a way that reads as a number rather than as "not applicable"
+
+**Status:** OPEN. Not a gate; a diagnostic. Reported by the interactive harness.
+
+The harness surfaces "coverage margin at the mask edge" — how far the lit region
+extends past `mask_lo` before the mask takes over. For a four-projector rig it is
+a useful one-glance check.
+
+For a **three-projector** rig it reads **−60.000°**, exactly. The cause is
+arithmetic rather than physics: `coverageBoundaryLatitude` returns 0 in the dark
+quadrant, and the diagnostic subtracts the 60° mask onset from it. The true
+statement is "the unlit region reaches the equator in this quadrant"; what the
+panel says is "the margin is −60°", which is a number a reader will reasonably
+take at face value and compare against other numbers.
+
+This is adjacent to A-10 — which records that §7's unlit-in-mask gate cannot be
+met at N=2 or N=3 at all — but it is a distinct problem. A-10 is about the gate
+being unsatisfiable. This is about a diagnostic that reports a *plausible-looking
+finite value* where the honest output is "not applicable in this quadrant".
+
+**Proposed amendment.** None to PARAMETERS.md. This is ours to fix: the
+diagnostic should return a sentinel and render as "n/a — quadrant unlit" rather
+than a subtraction against a boundary that does not exist. Recorded here rather
+than fixed silently because it is the second time a plausible-looking number has
+been produced where the honest answer was "no answer" — the one-camera cell in
+Experiment 1 was the first, and there the 17.5 m reading was correctly labelled
+degenerate rather than bad.
+
+---
+
+## A-31 — `k1`, `k2` and `roll` have nominals and classes but no stated range, and nothing in the register covers them
+
+**Status:** OPEN. Low risk individually; recorded because it completes A-04's list.
+
+A-04 enumerates the ASSUME-class constants whose plausible range PARAMETERS.md
+does not state, and A-12 covers lens shift. Three parameters are on neither list
+and have the same problem:
+
+| Symbol | §3.1 nominal | Class | Range stated? |
+| --- | --- | --- | --- |
+| `k1` | 0 | `SOLVE` | No |
+| `k2` | 0 | `SOLVE` | No |
+| `roll` | 0° | `SOLVE` (§2) | No |
+
+Being class `SOLVE` makes the *nominal* harmless — §2 is explicit that nominals
+only initialise the solver. But a range is needed for two things the spec does
+ask for: generating synthetic misalignment for the bench, and giving a human a
+slider to drag. The harness had to invent travel for all three and marks them
+`rangeSource: 'harness'` to keep them distinguishable from both stated and
+inferred ranges.
+
+`roll` deserves the specific note that §2 already gives it: "A degree of roll is
+invisible on a test grid until it interacts with the blend region." That is a
+statement about *why* the range matters — a plausible range for roll determines
+how hard the bench's injected misalignment exercises exactly the interaction §2
+flags as the dangerous one.
+
+**Proposed amendment.** Add plausible ranges to §2 and §3.1 for `roll`, `k1` and
+`k2` — ideally from the same source as A-18's recommendation, i.e. the projector's
+own spec sheet and lens data, which bounds `k1`/`k2` far better than we can guess.
