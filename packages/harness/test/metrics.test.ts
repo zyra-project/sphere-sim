@@ -34,7 +34,8 @@ function world(overrides: HarnessState = {}, pattern: 'graticule' | 'mid-gray' =
 }
 
 test('every photometric metric is PROVISIONAL, whatever the data says', () => {
-  for (const overrides of [{}, { gamma_B: 2.4 }, { L_black_R: 0.003333 }, { E_amb: 0.15 }]) {
+  const variants: HarnessState[] = [{}, { gamma_B: 2.4 }, { L_black_R: 0.003333 }, { E_amb: 0.15 }];
+  for (const overrides of variants) {
     const w = world(overrides);
     const metrics = photometricMetrics(w.rig, w.scene, DENSITY, w.shading);
     assert.ok(metrics.length >= 4, 'the photometric panel is empty');

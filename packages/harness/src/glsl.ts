@@ -82,7 +82,6 @@ precision highp sampler2D;
 const int MAX_PROJ = ${MAX_PROJECTORS};
 const int NEWTON_ITERATIONS = ${NEWTON_ITERATIONS};
 const float PI = 3.141592653589793;
-const float DEG2RAD = 0.017453292519943295;
 const float RAD2DEG = 57.29577951308232;
 
 uniform int   uProjCount;
@@ -91,8 +90,8 @@ uniform float uCenterHeight;
 uniform float uRotationOffset;
 
 uniform vec3  uLens[MAX_PROJ];
-uniform mat3  uRot[MAX_PROJ];        // world <- canonical camera frame, conventions.ts §R
-uniform vec4  uIntrinsics[MAX_PROJ]; // fx, fy, cx, cy  (conventions.ts §I)
+uniform mat3  uRot[MAX_PROJ];        // world <- canonical camera frame, conventions.ts section R
+uniform vec4  uIntrinsics[MAX_PROJ]; // fx, fy, cx, cy  (conventions.ts section I)
 uniform vec4  uRaster[MAX_PROJ];     // resX, resY, k1, k2
 uniform vec2  uLimb[MAX_PROJ];       // distance to sphere centre, R/d
 uniform vec3  uGamma[MAX_PROJ];
@@ -105,7 +104,7 @@ uniform float uRampGamma;
 uniform float uMaskLo;
 uniform float uMaskHi;
 uniform int   uMaskBottomOnly;
-uniform int   uMaskInterp;           // 0 latitude (§4.4's reading), 1 colatitude (A-02)
+uniform int   uMaskInterp;           // 0 latitude (section 4.4's reading), 1 colatitude (A-02)
 
 uniform vec3  uEncodeGamma;
 uniform vec3  uReflectance;
@@ -275,7 +274,7 @@ vec3 pixelToRay(int i, float u, float v) {
   float xd = (u - it.z) / it.x;
   float yd = -(v - it.w) / it.y;
   vec2 ideal = invertDistortion(vec2(xd, yd), ra.z, ra.w);
-  // Canonical frame: optical axis +X, right -Y, up +Z (conventions.ts §R).
+  // Canonical frame: optical axis +X, right -Y, up +Z (conventions.ts section R).
   return normalize(uRot[i] * vec3(1.0, -ideal.x, ideal.y));
 }
 
@@ -447,7 +446,7 @@ vec3 shadeFloor(vec3 point) {
     float falloff = (ref * ref) / (distanceM * distanceM);
     float k = cosv * falloff;
     // The ray that reaches this floor point missed the sphere, so the content is
-    // black there and conventions.ts §P collapses to gain * blackFloor. That is
+    // black there and conventions.ts section P collapses to gain * blackFloor. That is
     // the rectangle of glow around the sphere in every real SOS photograph.
     acc += uGain[i] * uBlack[i] * k;
   }
@@ -494,7 +493,7 @@ void main() {
   vec3 c;
   if (uMode == 1) {
     vec4 ra = uRaster[uProjIndex];
-    // GL's viewport origin is bottom-left and conventions.ts §I puts the
+    // GL's viewport origin is bottom-left and conventions.ts section I puts the
     // projector's raster origin at TOP-left, so v is flipped once, here.
     c = projectorPixel(uProjIndex, vUv.x * ra.x, (1.0 - vUv.y) * ra.y);
     fragColor = vec4(c, 1.0);

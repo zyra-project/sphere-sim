@@ -10,6 +10,7 @@ node packages/bench/src/loop.ts                 # one Phase 1 round, fresh seed
 node packages/bench/src/progress.ts             # rebuild progress/index.html alone
 node packages/bench/src/reference.ts --check    # recompute the static reference and DIFF it
 node tools/assert-deterministic.ts a.json b.json
+node packages/bench/src/validation.ts           # rebuild validation/index.html
 ```
 
 The bench **measures**; `gate.ts` **judges**. CI runs the first twice (the second
@@ -58,6 +59,7 @@ projection of the same surface point.
 | `run.ts` | One scenario end to end |
 | `attribute.ts` | Naming the largest contributor to a failing gate, by measurement |
 | `results.ts` | The `bench-results.json` schema |
+| `validation.ts` | The validation page. **Not part of the loop, not read by any critic** — plausibility only. Reads `validation/` from disk; never fetches |
 | `progress.ts` | `progress/index.html` — the live report. Refreshed by every round |
 | `reference.ts` | The static coverage reference. Rendered ONCE, by hand, never by a round |
 | `waivers.ts` | `gate-waivers.json` and `docs/AMENDMENTS.md`: which failures the project has already explained, and until when |

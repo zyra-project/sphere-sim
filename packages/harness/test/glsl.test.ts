@@ -91,6 +91,27 @@ test('the shader is assembled from named chunks that each name what they mirror'
   }
 });
 
+test('the shader source is pure ASCII', () => {
+  // This is a guard for something that cannot be executed in this container.
+  // WebGL restricts a shader source string to the GLSL ES source character set,
+  // and implementations differ on whether a non-ASCII byte inside a COMMENT is
+  // tolerated or generates INVALID_VALUE. The rest of the project writes
+  // "PARAMETERS.md §3.1" everywhere and it would be entirely natural for that
+  // habit to reach the shader — where the symptom is a blank canvas and a
+  // compile error nobody reads. The TypeScript prose around the templates is
+  // free to use whatever it likes; the templates are not.
+  for (const [name, src] of [['fragment', FRAGMENT_SHADER], ['vertex', VERTEX_SHADER]] as const) {
+    const offenders = new Set<string>();
+    for (const ch of src) if (ch.codePointAt(0)! > 126) offenders.add(ch);
+    assert.deepEqual(
+      [...offenders],
+      [],
+      `the ${name} shader contains non-ASCII characters: ${[...offenders].join(' ')}. ` +
+        `Write "section 3.1" rather than the section sign.`,
+    );
+  }
+});
+
 test('the shader declares GLSL ES 3.00 exactly once, at the top of each stage', () => {
   for (const [name, src] of [['fragment', FRAGMENT_SHADER], ['vertex', VERTEX_SHADER]] as const) {
     assert.ok(src.startsWith('#version 300 es'), `${name} shader does not start with #version 300 es`);
@@ -125,6 +146,65 @@ test('the parity-relevant constants are shared, not restated', () => {
   // so the two loops cannot fall out of step.
   const before = reference.invertDistortion(0.3, 0.2, 0.05, 0.01);
   assert.ok(Number.isFinite(before[0]) && Number.isFinite(before[1]));
+});
+
+/**
+ * A static lint, because the shader cannot be compiled in this container.
+ *
+ * These two checks catch the authoring mistakes that actually happen when source
+ * is assembled from ordered chunks: an unbalanced delimiter, and a function used
+ * before it is declared. GLSL requires declaration before use and has no
+ * forward declarations, so reordering `FRAGMENT_CHUNKS` — or adding a helper at
+ * the bottom and calling it from the top — is a compile error whose only symptom
+ * in this repository would be a blank canvas.
+ */
+test('the shader has balanced delimiters', () => {
+  const stripped = FRAGMENT_SHADER.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const pairs: [string, string][] = [
+    ['{', '}'],
+    ['(', ')'],
+    ['[', ']'],
+  ];
+  for (const [open, close] of pairs) {
+    let depth = 0;
+    for (const ch of stripped) {
+      if (ch === open) depth++;
+      else if (ch === close) depth--;
+      assert.ok(depth >= 0, `the shader closes a '${close}' that was never opened`);
+    }
+    assert.equal(depth, 0, `the shader leaves ${depth} unclosed '${open}'`);
+  }
+});
+
+test('every shader function is declared before it is used', () => {
+  const stripped = FRAGMENT_SHADER.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const declaredAt = new Map<string, number>();
+  for (const m of stripped.matchAll(
+    /^\s*(?:float|vec2|vec3|vec4|bool|int|void|Surface)\s+([A-Za-z_]\w*)\s*\(/gm,
+  )) {
+    if (!declaredAt.has(m[1])) declaredAt.set(m[1], m.index ?? 0);
+  }
+  for (const [name, declIndex] of declaredAt) {
+    // The declaration itself is the first match; a call is any later `name(`
+    // that is not preceded by a return type on the same statement.
+    for (const use of stripped.matchAll(new RegExp(`\\b${name}\\s*\\(`, 'g'))) {
+      const at = use.index ?? 0;
+      if (at <= declIndex) {
+        const line = stripped.slice(0, at).split('\n').length;
+        assert.fail(
+          `${name} is used at line ${line}, before its declaration. GLSL has no forward ` +
+            `declarations, so this does not compile — check the order of FRAGMENT_CHUNKS.`,
+        );
+      }
+    }
+  }
+  // And nothing is declared and never called (main excepted, which is the entry).
+  for (const [name, declIndex] of declaredAt) {
+    const uses = [...stripped.matchAll(new RegExp(`\\b${name}\\s*\\(`, 'g'))].filter(
+      (u) => (u.index ?? 0) > declIndex,
+    );
+    assert.ok(uses.length > 0, `${name} is declared and never called — dead code in a shader`);
+  }
 });
 
 test('the shader declares every uniform the binder looks for, and no orphans', () => {

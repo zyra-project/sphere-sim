@@ -20,6 +20,8 @@ build on any import across that line.
 | [`packages/calibration/README.md`](packages/calibration/README.md) | The boundary object, and why it contains no code |
 | [`packages/bench/README.md`](packages/bench/README.md) | The scorer: how a solve is graded, how the gauge is removed, and how to read `bench-results.json` |
 | [`packages/experiments/README.md`](packages/experiments/README.md) | The measurements. Each runs once and is not iterated |
+| [`packages/harness/README.md`](packages/harness/README.md) | The interactive window, and exactly which links of the GPU↔CPU parity chain are verified by execution |
+| [`validation/README.md`](validation/README.md) | Photographs of real installations beside our render. Plausibility only — no metric, no gate, no score |
 | [`docs/EXPERIMENT-1.md`](docs/EXPERIMENT-1.md) | **How many photographs a calibration needs, and whether a phone suffices.** Measured |
 
 ## The honesty structure
@@ -46,7 +48,10 @@ npm run gate               # judge bench-results.json against §7; exits non-zer
 npm run experiments        # experiments 2 and 3, each run once
 npm run experiment1        # experiment 1: camera count, resolution, floor reference,
                            # and each degradation on its own. ~2 h; --list prints the budget
-npm run harness            # interactive WebGL harness
+npm run build:web          # compile sim + calibration + harness to browser ESM
+npm run harness            # interactive WebGL harness on http://localhost:8173/
+node packages/bench/src/validation.ts   # regenerate validation/index.html (reads local files only;
+                           # images are never fetched — the owner supplies them)
 ```
 
 Node 22.18+ runs the TypeScript directly; there is no build step for anything

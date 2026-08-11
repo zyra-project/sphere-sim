@@ -489,14 +489,34 @@ export function collectValidationInput(options: CollectOptions = {}): Validation
   };
 }
 
+/**
+ * Find the dataset file a `sources.json` row names.
+ *
+ * The directory is SCANNED rather than probed for `name.png`, so a dataset the
+ * owner dropped in as a JPEG is found and reported as "convert this to PNG"
+ * instead of as "no such dataset". The difference matters: the second message
+ * sends somebody looking for a missing file that is sitting right there.
+ *
+ * A name containing a separator or `..` is refused outright rather than
+ * resolved, because a `dataset` field is a label and never a path.
+ */
 function findDataset(dir: string, name: string): string | null {
   if (!fs.existsSync(dir)) return null;
   if (name.includes('/') || name.includes('\\') || name.includes('..')) return null;
-  for (const candidate of [`${name}.png`, name, `${name}.PNG`]) {
-    const full = path.join(dir, candidate);
-    if (fs.existsSync(full) && fs.statSync(full).isFile()) return full;
+  const wanted = name.toLowerCase();
+  let fallback: string | null = null;
+  for (const entry of fs.readdirSync(dir)) {
+    if (entry.startsWith('.')) continue;
+    const full = path.join(dir, entry);
+    if (!fs.statSync(full).isFile()) continue;
+    const lower = entry.toLowerCase();
+    const stem = lower.slice(0, lower.length - path.extname(lower).length);
+    if (lower === wanted || stem === wanted) {
+      if (lower.endsWith('.png')) return full;
+      fallback = fallback ?? full;
+    }
   }
-  return null;
+  return fallback;
 }
 
 // ---------------------------------------------------------------------------
