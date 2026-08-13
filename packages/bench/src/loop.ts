@@ -219,6 +219,22 @@ export interface RoundRecord {
   resultsPath: string;
   /** True when this round became the new best. */
   best: boolean;
+  /**
+   * How this record came to exist.
+   *
+   * `recorded` — written by `loop.ts` as the round actually ran.
+   * `replayed` — reconstructed afterwards by `tools/replay-rounds.ts`, which
+   *   checks the round's own commit out and runs its own bench at a fixed seed.
+   *
+   * Rounds 0-3 are necessarily `replayed`: the recorder did not exist until
+   * round 4 and their results files were gitignored and overwritten. A replay is
+   * the more CONTROLLED comparison — one seed, one corpus size, across every
+   * round — but it is not the same thing as a measurement taken at the time, and
+   * a reader has to be able to tell which they are looking at.
+   */
+  provenance?: 'recorded' | 'replayed';
+  /** What shipped in this round, one line. Set by the replay tool. */
+  shipped?: string;
 }
 
 export const ROUNDS_SCHEMA = 'sphere-sim/rounds@2';
@@ -290,9 +306,10 @@ function seriesOf(d: Dispersion | undefined, gateMax: number): RoundSeries {
  * a metric with no limit means the vector silently loses a component, and a
  * ranking that quietly drops a term is how the pose blindness happened.
  */
-export function assertScorable(results: BenchResults): void {
+export function assertScorable(results: BenchResults, only?: readonly string[]): void {
   const problems: string[] = [];
   for (const t of TRACKED) {
+    if (only !== undefined && !only.includes(t.key)) continue;
     const gate = results.gates.gates.find((g) => g.id === t.gateId);
     if (gate === undefined) {
       problems.push(
@@ -316,11 +333,26 @@ export function assertScorable(results: BenchResults): void {
   }
 }
 
-/** The ranking vector for a round: every tracked metric, in gate units. */
-export function rankRound(results: BenchResults): Record<string, RoundSeries> {
-  assertScorable(results);
+/**
+ * The ranking vector for a round: every tracked metric, in gate units.
+ *
+ * `only` narrows the vector to a named subset. It exists for ONE caller —
+ * `tools/replay-rounds.ts`, which ranks rounds whose code predates a gate this
+ * project later added, and must compare them on the metrics they all produced.
+ * Narrowing is legitimate there and dishonest anywhere else: dropping a term
+ * from the vector during the loop is how the pose blindness happened, which is
+ * why `assertScorable` refuses a missing gate rather than skipping it. A caller
+ * that passes `only` is asserting the omission is a property of the DATA, not a
+ * preference about the result.
+ */
+export function rankRound(
+  results: BenchResults,
+  only?: readonly string[],
+): Record<string, RoundSeries> {
+  assertScorable(results, only);
   const series: Record<string, RoundSeries> = {};
   for (const t of TRACKED) {
+    if (only !== undefined && !only.includes(t.key)) continue;
     const gate = results.gates.gates.find((g) => g.id === t.gateId);
     series[t.key] = seriesOf(results.aggregate[t.key], gate?.max ?? NaN);
   }
@@ -597,10 +629,11 @@ export function recordRound(
   seed: number,
   presetName: string,
   resultsPath: string,
+  only?: readonly string[],
 ): RoundOutcome {
   // Throws rather than ranking on a provisional metric. Before the results are
   // used for anything, so a Phase 2 metric cannot sneak into a verdict.
-  const series = rankRound(results);
+  const series = rankRound(results, only);
   const priorRounds = history.rounds.filter((r) => r.round < round);
   const previous = priorRounds.length > 0 ? priorRounds[priorRounds.length - 1] : null;
   const { movement, improving, regressed } = classifyMovement(series, previous?.series ?? null);
@@ -731,6 +764,13 @@ export function formatRound(
   );
   for (const t of TRACKED) {
     const s = record.series[t.key];
+    // A replayed round can legitimately lack a tracked metric: rounds whose code
+    // predates a gate never produced it. `rankRound`'s `only` narrows the vector
+    // for exactly that case, so print the omission rather than assuming it away.
+    if (s === undefined) {
+      lines.push(pad(t.label, 26) + 'not produced by this round');
+      continue;
+    }
     const p = previous?.series[t.key];
     lines.push(
       pad(t.label, 26) +

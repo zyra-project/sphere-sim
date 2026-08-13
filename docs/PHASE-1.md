@@ -1842,3 +1842,96 @@ this install are at four zoom settings or one is not in A-35, is not in §3.1,
 and decides how much the tie costs. The bench asserts they differ (0.15 degrees,
 "chosen, not documented"); the tie asserts they do not. Both are guesses about
 one observation an operator could make in ten seconds.
+
+---
+
+# The five-round series, replayed — and a third instance of one defect
+
+The progress page rendered a trend section and a before/after section against a
+**single data point** for four rounds. Round 3's critic had already found why:
+`progress/rounds.json` did not exist, and "the ranking machinery three rounds
+have now edited has never recorded a round." Round 4 built the recorder and
+recorded itself. Rounds 0–3's results files were gitignored and overwritten.
+
+Rather than relabel the page, `tools/replay-rounds.ts` replays each round: checks
+its own commit out in a worktree, runs its own bench at **one fixed seed and one
+scenario count**, and records it through `loop.ts`'s own `recordRound`.
+
+**Why the comparison is legitimate**, verified in git before the tool was
+written: `packages/bench/src/scenarios.ts` has been touched **exactly once**, in
+the commit that created the bench, and `packages/sim/src/scene.ts`'s two later
+commits are a refactor that moved constants without changing them and a one-line
+amendment renumbering. So seed 771003 selects the same scenarios and the same
+truth rig at every commit in the range — **the same photographs, a different
+solver**. The tool re-checks this on every run and prints what it finds; if
+either file ever changes behaviourally the replay stops being valid across it.
+
+## The series
+
+All at seed 771003, six scenarios. Worst-scenario value, which is what each gate
+judges.
+
+| round | what shipped | pose pos, mm | pose rot, ° | grid, mm | `h_center`, mm |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 0 | baseline — the bench exists | 632.8 | 6.374 | 25.9 | 9.07 |
+| 1 | pooled decode noise estimate | 772.6 | 7.059 | 16.5 | 14.32 |
+| 2 | null — both knobs left off | 772.6 | 7.059 | 16.5 | 14.32 |
+| 3 | differential u/v camera pose | 250.8 | 0.308 | 3.83 | 2.34 |
+| 4 | LK935 envelope + shared-lens tie | **93.2** | **0.271** | 4.13 | 2.35 |
+
+**Round 0 → 4: pose position 6.8×, pose rotation 23.5×, grid 6.3×, `h_center`
+3.9×.**
+
+Three things the series settles that no single round could:
+
+- **Round 2 really was a null.** Its row is identical to round 1's on every
+  metric — independent confirmation of the byte-for-byte worktree diff it
+  claimed at the time, arrived at from a completely different direction.
+- **Round 1 was genuinely mixed, and the paired analysis was right.** Pose got
+  *worse* (632.8 → 772.6) while grid got *better* (25.9 → 16.5). That is the
+  tripod-helps / handheld-hurts split, visible in one controlled comparison.
+- **Round 3 was larger than it claimed.** It reported grid 18.9 → 4.9 mm; at
+  fixed seed it is 16.5 → 3.8 on grid, 772.6 → 250.8 on pose, and **7.06 → 0.31°
+  on rotation**. A 23× rotation improvement was never attributed to it, because
+  nothing was comparing rounds.
+
+`cameraMaxRotationDeg` is omitted from the ranking vector: its gate first exists
+in round 3, and ranking a series on a metric that exists for part of it compares
+a number against its own absence. The tool computes the common set, states what
+it dropped and why, and `rankRound` grew an `only` parameter for that one caller.
+
+## The defect the replay exposed
+
+**Every round classifies as `flat`, and round 0 holds `best`.**
+
+That is the rule working exactly as written, and the rule is wrong.
+`classifyMovement` and `betterThan` compare each metric's **median** against the
+within-round dispersion. Every gate is scored on its **max**. Here the two
+statistics disagree completely:
+
+| | round 0 | round 4 | |
+| --- | ---: | ---: | --- |
+| grid **median** | 0.817 | 0.499 | what the ranking sees |
+| grid **max** | 25.888 | 4.128 | what the gate judges — 6.3× |
+| pose **median** | 118.4 | 35.8 | what the ranking sees |
+| pose **max** | 632.8 | 93.2 | what the gate judges — 6.8× |
+
+So a round can be `flat` while the quantity that fails a build moves by a factor
+of seven, and round 0 keeps a crown it won by being first.
+
+**This is the third instance of one defect class in this project**, and the
+pattern is worth naming: *a scoring rule that measures something adjacent to what
+it claims to measure.* The loop once ranked on median grid displacement while
+being structurally blind to pose. The stopping condition was satisfiable by
+making the measurement noisy enough. This is the same error one level down —
+ranking on a statistic the gate does not judge.
+
+**Reported, not fixed.** The verdicts in `progress/rounds.json` are what the rule
+says, recorded faithfully rather than corrected in the commit that found them.
+Changing how rounds are ranked is a decision about scoring, and correcting a rule
+in the same breath as discovering it — while the corrected rule happens to
+flatter the most recent work — is exactly the move this project's separation of
+builder and critic exists to prevent.
+
+The fix is small and obvious: rank on the statistic the gate scores. It should be
+made deliberately, by whoever owns the scoring, and re-recorded.
