@@ -2012,3 +2012,101 @@ product page's lands on nothing and contradicts its own zoom ratio.
 Nothing in the simulator depends on focal length directly — throw ratio is the
 operative quantity and both sources agree on it — so this conflict is recorded
 for completeness rather than because it blocks anything.
+
+---
+
+## A-36 — NOAA Boulder's live config contradicts §1 and §2 on three constants, and makes two dormant defects live
+
+**Status:** OPEN, and the most consequential entry since A-35. Raised from an
+independently-built interactive simulator supplied by the project owner, which
+cites the **NOAA Boulder reference install's `sos_stream_control.config`**
+directly. §8 item 5 asks the ground-truth visit to "read the site's actual
+config … which may differ from the documented defaults." This is that item,
+arriving early, and it does differ.
+
+Nothing here is applied. PARAMETERS.md remains authoritative until the author
+decides — but this is primary-source site data, not something found online, and
+the spec's own §8 asks for exactly it.
+
+### The three conflicts
+
+| Quantity | Boulder's config | PARAMETERS.md | Δ |
+| --- | --- | --- | --- |
+| Sphere equator height | **84 in = 2.1336 m** | 86 in = 2.1844 m (§1, `DOC`) | −2 in |
+| Projector height | **92 in = 2.3368 m** | 2.1844 m, "generally … the same 7 ft 2 in as the equator" (§2) | +8 in above the equator |
+| Sphere centre to lens | **211 in = 5.3594 m**, stated as *horizontal* | 5.18 m (manual) or 5.50–6.14 m (floor plan), §2 records them as conflicting | a third value, between the two |
+
+The third is the interesting one: **211 in falls between the alignment manual's
+17 ft and the floor plan's 18–20 ft**, which is consistent with §2's diagnosis
+that the two documents differ by reference point or rounding rather than by
+being about different rooms.
+
+### Consequence 1 — A-17's horizontal-vs-3D ambiguity stops being academic
+
+Round 4's cross-check pinned a residual divergence between the two `nominalRig`
+builders: `sim` reads `d_proj` as a horizontal radius, `solver` as a 3D lens
+distance, worth `d − √(d²−z²)`. At the bench corpus's ±2 cm height scatter that
+is **39 µm**, and it was recorded as harmless with a note that it would reach
+3.9 mm at a 0.2 m ceiling mount.
+
+**Boulder's projectors sit 0.2032 m above the equator.** Exactly that case:
+
+| | |
+| --- | --- |
+| horizontal radius | 5.3594 m |
+| true 3D lens distance | 5.3633 m |
+| difference | **3.85 mm** |
+
+Against §7's **2 mm** pose gate. So at the one real installation whose geometry
+we now have, the two readings of `d_proj` differ by nearly twice the gate, and
+§2 does not say which it means.
+
+**Proposed:** §2 should state whether `d_proj` is the horizontal radius or the
+3D lens distance. At a level rig they coincide; at Boulder they do not.
+
+### Consequence 2 — A-07's pitch clause stops being vacuous, and it is worth 4.3°
+
+A-07 recorded that `conventions.ts` §R contradicted itself on the sign of pitch,
+and that the error was *vacuous* because §1 and §2 put lens and equator at the
+same height, so the elevation was zero. It was fixed in the contract, and both
+models had independently implemented the correct reading anyway.
+
+**Boulder's lens is 8 in above the equator, so the elevation is not zero:**
+
+| | |
+| --- | --- |
+| elevation of sphere centre from the lens | **−2.171°** (looking down) |
+| correct pitch (`= elevation`) | −2.171° |
+| the clause as originally written (`= −elevation`) | +2.171° |
+| error, had it been implemented as written | **4.343°** |
+
+Against §7's **0.05°** rotation gate — **eighty-seven times over**. A-07 called
+this "the worst possible timing" for a latent sign error because it would only
+appear under injected misalignment. It would in fact have appeared at the first
+real site, on every projector, permanently.
+
+### An independent confirmation worth recording
+
+The supplied simulator states the LK935's zoom as a **vertical half-angle band
+of 7.4° to 11.7°** at 16:9. A-35 derived the same lens from the manual's
+projection table as a **throw ratio of 1.36–2.18**. These agree:
+
+| | derived here | app states |
+| --- | --- | --- |
+| T = 1.36 (wide) | 11.68° | 11.7° |
+| T = 2.18 (tele) | 7.35° | 7.4° |
+
+Two independently-built simulators, two different derivations from the same spec
+sheet, agreeing to 0.02°. Boulder's setting of **10.2°** corresponds to
+**T ≈ 1.563**, inside the zoom range, and overfills a 68-inch sphere at 211
+inches by **1.04°** — which matches the app's own stated intent that the image
+"just overfill the sphere". A-35's claim that §3.1's `T ≈ 3.0` is unreachable
+survives a second, independent check.
+
+### What this does not settle
+
+`d_proj` remains `SOLVE`. One site's config is one site, and §2's conflict is
+between two *documents*, not between a document and a measurement. What Boulder
+gives is a real operating point to test against — and a demonstration that the
+spec's "projectors are generally level with the equator" is not true at the
+reference install.
