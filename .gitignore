@@ -1,5 +1,7 @@
 node_modules/
 packages/harness/dist/
+packages/web/dist/
+site/
 out/
 *.tsbuildinfo
 

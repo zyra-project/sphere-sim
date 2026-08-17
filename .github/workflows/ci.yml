@@ -29,6 +29,17 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # The browser bundles are typechecked separately from the Node one: they
+      # target DOM and WebWorker libs, forbid the `node:` builtins, and emit real
+      # JavaScript rather than only checking types. A page that typechecks under
+      # tsconfig.json and fails under tsconfig.app.json is a page that imported
+      # `node:zlib` through the sim barrel — which is exactly why neither browser
+      # entry point ever imports a package's index.
+      - name: Build the browser bundles
+        run: |
+          npm run build:web
+          npm run build:app
+
       # The bench MEASURES. It does not judge, which is why both runs carry
       # --allow-failure: a failing gate must not stop the determinism check from
       # running, and a step that both measures and judges makes it ambiguous

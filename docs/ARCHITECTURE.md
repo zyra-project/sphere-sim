@@ -20,14 +20,20 @@
         └──────────────┐            ┌──────────────┘
                        ▼            ▼
                     packages/bench
-              the scorer — the ONLY place
-                 the two models meet
+              the scorer — where the two
+                  models are compared
                        │
-        ┌──────────────┼──────────────┐
-        ▼              ▼              ▼
-  bench-results   progress page   experiments
-     .json        (live, updated)  (run once each)
+        ┌──────────────┼──────────────┬──────────────┐
+        ▼              ▼              ▼              ▼
+  bench-results   progress page   experiments   packages/web
+     .json        (live, updated)  (run once)   the browser app
 ```
+
+`packages/bench` and `packages/web` both import both sides, and that is the only
+arrangement in which a solve can be scored at all. The rule the lint cannot
+check applies to each of them: **neither may become a PATH between `sim` and
+`solver`.** No helper is shared by both sides; each call hands one model's output
+to the other as data, through the boundary types.
 
 `packages/sim` and `packages/solver` may import `packages/calibration` and
 nothing else across package lines. `tools/boundary-lint.ts` enforces this as an
@@ -152,21 +158,39 @@ ground-truth visit in PARAMETERS.md §8.
 Experiments 2 and 3 depend on Phase 2 photometry, so their outputs inherit the
 PROVISIONAL marking. Experiment 1 is purely geometric and does not.
 
-## Two interfaces, same core
+## Three interfaces, same core
 
-- **Interactive harness** — one window, one WebGL2 context, five viewports (room
-  view, four projector views) plus a live metrics panel, sliders for every
-  parameter in PARAMETERS.md. Everything stays on the GPU. For a human building
-  intuition, and for checking that the metrics track what the eye sees.
-- **Headless bench** — renders N seeded scenarios, writes `bench-results.json`
-  and PNGs. Deterministic. **This is what critics read.** A live window is never
-  screenshotted for scoring.
+- **Developer harness** (`packages/harness`) — one window, one WebGL2 context,
+  five viewports (room view, four projector views) plus a live metrics panel,
+  sliders for every parameter in PARAMETERS.md. Everything stays on the GPU. For
+  a human building intuition, and for checking that the metrics track what the
+  eye sees.
+- **Headless bench** (`packages/bench`) — renders N seeded scenarios, writes
+  `bench-results.json` and PNGs. Deterministic. **This is what critics read.** A
+  live window is never screenshotted for scoring.
+- **Browser app** (`packages/web`) — the same models, for somebody who has never
+  read PARAMETERS.md. It is the only interface that holds TWO calibrations at
+  once — what the lenses do and what the software believes — which is the only
+  way misregistration can be shown at all, and the only one that can run a live
+  solve.
 
-The harness renders with GLSL and the bench renders on the CPU. Those are two
-implementations of the simulator's *own* model, which is a different thing from
-the A/B duplication and carries a different risk: they can drift apart. A parity
-test pins them together by comparing GPU and CPU renders of the same scene, and
-the harness displays the parity delta rather than hiding it.
+### The parity risk, and where each interface answers it
+
+The harness and the app render with GLSL; the bench renders on the CPU. Those
+are two implementations of the simulator's *own* model, which is a different
+thing from the A/B duplication and carries a different risk: they can drift
+apart silently, and a human then builds intuition from a renderer nothing scores.
+
+The harness pins its shader with a headless chain — a line-for-line TypeScript
+transliteration, a structural test, a CPU comparison in CI — and displays the
+runtime GPU delta. The app cannot reuse that shader, because a single-calibration
+renderer cannot show misregistration, so it has its own and measures the delta
+against `packages/sim`'s two-rig renderer at runtime, on screen.
+
+Neither can prove the shader compiles, which no headless test can.
+`tools/smoke-app.ts` does, by driving Chromium over the DevTools protocol with
+nothing but Node's built-in `WebSocket`; it runs in the Pages workflow before a
+deploy.
 
 ## Determinism
 

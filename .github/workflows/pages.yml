@@ -1,0 +1,74 @@
+name: Pages
+
+# Publishes the interactive simulator, the developer harness and — when the
+# bench has produced one — the measurement record.
+#
+# It runs on `main` only. A branch build would deploy whatever is on that branch
+# to the one live URL, and the failure mode is somebody reading a number from a
+# page that was published by an experiment.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and a newer commit waits rather than cancelling: the
+# published site should be the newest COMPLETED build, not whichever race
+# finished last.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+          cache: npm
+      - run: npm ci
+
+      # The boundary rule gates the deploy as well as the build. A site that
+      # published a simulator scoring its own assumptions would be worse than no
+      # site: it would look authoritative.
+      - name: Boundary isolation (A/B share no math)
+        run: npm run lint:boundary
+
+      - name: Build the site
+        run: npm run build:site
+
+      # Does the shader actually compile? No headless test can answer that, and a
+      # page whose canvas is black is the one failure a visitor cannot diagnose.
+      # `ubuntu-latest` ships Chromium; the tool finds it or says which paths it
+      # tried.
+      - name: Smoke test the app in a real browser
+        run: |
+          npx --yes serve@14 -l 8174 site/app > /tmp/serve.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://localhost:8174/ && break
+            sleep 1
+          done
+          node tools/smoke-app.ts --url http://localhost:8174/
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

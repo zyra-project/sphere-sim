@@ -22,5 +22,6 @@ export * from './random.ts';
 export * from './equirect.ts';
 export * from './shading.ts';
 export * from './render.ts';
+export * from './misregistration.ts';
 export * from './png.ts';
 export * from './metrics/index.ts';

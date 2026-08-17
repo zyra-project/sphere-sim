@@ -1,0 +1,251 @@
+/**
+ * Panel settings to calibrations. The only place the page's vocabulary meets
+ * PARAMETERS.md's.
+ *
+ * ## Three rigs, and the difference between them is the whole page
+ *
+ *   - {@link WebWorld.asBuiltRig} — the rig this room was *specified* as. Nobody
+ *     ever has this one; it is the drawing.
+ *   - {@link WebWorld.truthRig} — the rig the room actually has, the drawing
+ *     shaken by the §2 mount tolerances. This is what the lenses do. It is
+ *     ground truth and the solver never sees it.
+ *   - {@link WebWorld.compositorRig} — what the SOFTWARE believes. It starts as
+ *     the drawing, because that is what an operator types into a config file,
+ *     and after a solve it becomes whatever `packages/solver` recovered.
+ *
+ * Every alignment number on the page is a disagreement between the last two. A
+ * simulator run against itself cannot misregister — it paints the physically
+ * correct texel at the physically correct point by construction — so a page with
+ * one rig could show a pretty sphere and never show the problem.
+ *
+ * ## What this module is allowed to do
+ *
+ * Call `packages/sim`. Nothing here re-derives geometry: the rigs come from
+ * `nominalRig`, the shaking comes from `injectMisalignment`, the pattern comes
+ * from `gridAlignmentPattern`. If a projection or a distortion model ever
+ * appears in this file, the page has started scoring its own assumptions.
+ */
+
+import type { BlendCalibration, RigCalibration } from '../../calibration/src/index.ts';
+import { gridAlignmentPattern } from '../../sim/src/equirect.ts';
+import type { EquirectImage } from '../../sim/src/equirect.ts';
+import { defaultScene } from '../../sim/src/render.ts';
+import type { Scene, ViewerCamera } from '../../sim/src/render.ts';
+import type { MisalignmentMagnitudes, Perturbation } from '../../sim/src/scene.ts';
+import { DEFAULT_MISALIGNMENT, injectMisalignment, nominalRig } from '../../sim/src/scene.ts';
+import { DEG2RAD } from '../../sim/src/vec.ts';
+import type { Settings } from './settings.ts';
+import { IN_TO_M, RESOLUTIONS } from './settings.ts';
+
+/** Equirectangular content raster. Big enough that the grid is not the limit. */
+const CONTENT_WIDTH = 1024;
+const CONTENT_HEIGHT = 512;
+
+export interface WebWorld {
+  /** The drawing: the rig as specified, before anyone picked up a wrench. */
+  asBuiltRig: RigCalibration;
+  /** The rig the lenses have. Ground truth. */
+  truthRig: RigCalibration;
+  /** What the compositor believes. The drawing, or a recovered calibration. */
+  compositorRig: RigCalibration;
+  /** Exactly what was done to the rig, so the page can name the worst offender. */
+  perturbation: Perturbation;
+  scene: Scene;
+  image: EquirectImage;
+}
+
+/** Blend and mask, straight off the panel. Every field here is class ASSUME. */
+export function blendFrom(s: Settings): Partial<BlendCalibration> {
+  return {
+    rampShape: 'cosine',
+    widthDeg: s.blendDeg,
+    rampGamma: s.rampGamma,
+    maskLoDeg: s.maskLoDeg,
+    maskHiDeg: s.maskHiDeg,
+    bottomOnly: true,
+  };
+}
+
+/**
+ * The rig the drawing describes.
+ *
+ * `lensRiseM` is measured from the EQUATOR, because that is how a site survey
+ * reads it and how `sos_stream_control.config` records it (two heights in
+ * inches, and the difference is what matters). `nominalRig` wants an absolute
+ * height above the floor, so the addition happens here, once.
+ */
+export function buildAsBuilt(s: Settings): RigCalibration {
+  const res = RESOLUTIONS[Math.round(s.resolution)] ?? RESOLUTIONS[1];
+  const centerHeightM = s.equatorIn * IN_TO_M;
+  return nominalRig({
+    radiusM: (s.sphereDiaIn * IN_TO_M) / 2,
+    centerHeightM,
+    distanceM: s.distanceM,
+    projectorHeightM: centerHeightM + s.lensRiseM,
+    projectorCount: Math.round(s.projectorCount),
+    resX: res.resX,
+    resY: res.resY,
+    marginFrac: s.overfillPct / 100,
+    blend: blendFrom(s),
+  });
+}
+
+/**
+ * Every §2 tolerance, scaled by one knob.
+ *
+ * `DEFAULT_MISALIGNMENT` is the simulator's own statement of how hard to shake
+ * each degree of freedom and why; multiplying it is the only thing this page
+ * does to it. Spelling the fields out rather than mapping over the object is
+ * deliberate — a new degree of freedom appearing in `sim` should fail the
+ * typecheck here and be given a considered scale, not silently inherit one.
+ */
+export function scaledMagnitudes(scale: number): MisalignmentMagnitudes {
+  const k = Math.max(0, scale);
+  const d = DEFAULT_MISALIGNMENT;
+  return {
+    azimuthDeg: d.azimuthDeg * k,
+    distanceM: d.distanceM * k,
+    heightM: d.heightM * k,
+    yawDeg: d.yawDeg * k,
+    pitchDeg: d.pitchDeg * k,
+    rollDeg: d.rollDeg * k,
+    fovHDeg: d.fovHDeg * k,
+    shiftH: d.shiftH * k,
+    shiftV: d.shiftV * k,
+    k1: d.k1 * k,
+    k2: d.k2 * k,
+    centerHeightM: d.centerHeightM * k,
+  };
+}
+
+/**
+ * Build the world the page is showing.
+ *
+ * `compositorRig` defaults to the drawing — an operator's config file, before
+ * anyone has run a calibration. Pass a recovered rig to see what the solve
+ * bought.
+ */
+export function buildWorld(s: Settings, compositorRig?: RigCalibration): WebWorld {
+  const asBuiltRig = buildAsBuilt(s);
+  const misaligned = injectMisalignment(
+    asBuiltRig,
+    Math.round(s.errorSeed),
+    scaledMagnitudes(s.mountError),
+  );
+  const image = gridAlignmentPattern({
+    width: CONTENT_WIDTH,
+    height: CONTENT_HEIGHT,
+    spacingDeg: Math.round(s.gridDeg),
+    lineWidthDeg: 0.35,
+    emphasizeAxes: true,
+  });
+  const scene = defaultScene(image, { maskInterpretation: 'latitude' });
+  return {
+    asBuiltRig,
+    truthRig: misaligned.rig,
+    compositorRig: compositorRig ?? asBuiltRig,
+    perturbation: misaligned.perturbation,
+    scene,
+    image,
+  };
+}
+
+/**
+ * The eye. Orbits the sphere centre, which sits at world origin — the world
+ * frame's origin is the sphere centre and +Z is up (conventions.ts §W), so the
+ * floor is at `-h_center`.
+ */
+export function buildViewer(s: Settings, width: number, height: number): ViewerCamera {
+  const az = s.viewAzDeg * DEG2RAD;
+  const el = s.viewElDeg * DEG2RAD;
+  const r = s.viewRangeM;
+  // `sim`'s `viewerAt` places a viewer by azimuth and eye HEIGHT, which is the
+  // right parameterisation for a person standing in a room and the wrong one for
+  // an orbit control that has to pass over the pole. The struct is the boundary
+  // between the two and is built here rather than fought with there.
+  return {
+    position: {
+      x: r * Math.cos(el) * Math.cos(az),
+      y: r * Math.cos(el) * Math.sin(az),
+      z: r * Math.sin(el),
+    },
+    target: { x: 0, y: 0, z: 0 },
+    upHint: { x: 0, y: 0, z: 1 },
+    fovHDeg: s.viewFovDeg,
+    width,
+    height,
+  };
+}
+
+/**
+ * Which perturbed degree of freedom moved the lens furthest, so the page can say
+ * *what* went wrong rather than only *how much*.
+ *
+ * The comparison is between contributions to the lens position, which is why
+ * the angular terms are converted through the throw distance: a tenth of a
+ * degree of azimuth at 5.36 m is 9.4 mm, and a tenth of a degree of yaw moves
+ * the lens not at all. Aim errors are therefore reported separately rather than
+ * ranked against placement errors in the same list, because they are not the
+ * same kind of quantity and adding them would produce a number with no units.
+ */
+export interface Offender {
+  projectorId: string;
+  /** Plain-language name of the degree of freedom. */
+  what: string;
+  /** How much it moved, in its own units, as a printable string. */
+  amount: string;
+  /** Millimetres of lens displacement this term is responsible for. */
+  displacementMm: number;
+}
+
+export function worstPlacementOffender(p: Perturbation, distanceM: number): Offender | null {
+  let worst: Offender | null = null;
+  for (const proj of p.projectors) {
+    const terms: { what: string; amount: string; mm: number }[] = [
+      {
+        what: 'swung sideways on its mount',
+        amount: `${proj.azimuthDeg >= 0 ? '+' : ''}${proj.azimuthDeg.toFixed(2)}° of azimuth`,
+        mm: Math.abs(proj.azimuthDeg * DEG2RAD * distanceM) * 1000,
+      },
+      {
+        what: 'sits at the wrong distance',
+        amount: `${proj.distanceM >= 0 ? '+' : ''}${(proj.distanceM * 1000).toFixed(0)} mm`,
+        mm: Math.abs(proj.distanceM) * 1000,
+      },
+      {
+        what: 'hangs at the wrong height',
+        amount: `${proj.heightM >= 0 ? '+' : ''}${(proj.heightM * 1000).toFixed(0)} mm`,
+        mm: Math.abs(proj.heightM) * 1000,
+      },
+    ];
+    for (const t of terms) {
+      if (worst === null || t.mm > worst.displacementMm) {
+        worst = { projectorId: proj.id, what: t.what, amount: t.amount, displacementMm: t.mm };
+      }
+    }
+  }
+  return worst;
+}
+
+/** The largest aim error, reported in degrees because that is what it is. */
+export function worstAimOffender(p: Perturbation): Offender | null {
+  let worst: Offender | null = null;
+  for (const proj of p.projectors) {
+    const terms: { what: string; deg: number }[] = [
+      { what: 'aimed left or right of the centre', deg: proj.yawDeg },
+      { what: 'aimed above or below the centre', deg: proj.pitchDeg },
+      { what: 'is rolled in its mount', deg: proj.rollDeg },
+    ];
+    for (const t of terms) {
+      if (worst === null || Math.abs(t.deg) > worst.displacementMm) {
+        worst = {
+          projectorId: proj.id,
+          what: t.what,
+          amount: `${t.deg >= 0 ? '+' : ''}${t.deg.toFixed(2)}°`,
+          displacementMm: Math.abs(t.deg),
+        };
+      }
+    }
+  }
+  return worst;
+}

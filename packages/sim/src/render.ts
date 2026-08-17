@@ -476,7 +476,7 @@ function shadeFloor(point: Vec3, rig: PreparedRig, scene: Scene): ChannelTriplet
  * conventions.ts §I's half-integer convention requires and what makes
  * single-sample renders comparable against an analytic expectation.
  */
-function sampleOffset(
+export function sampleOffset(
   x: number,
   y: number,
   s: number,

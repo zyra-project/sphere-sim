@@ -1,36 +1,32 @@
 /**
- * The WebGL2 plumbing: one context, one program, one texture, and the
- * offscreen target the parity check reads back from.
+ * WebGL2 plumbing for the display shader: one context, one program, one content
+ * texture, and the offscreen target the parity check reads back from.
  *
- * Kept apart from `main.ts` so the interesting file is about what the harness
- * shows rather than about `getUniformLocation`.
+ * Two rules enforced rather than documented:
  *
- * Two rules this module enforces rather than documents:
- *
- *  - **Every uniform the shader declares must be found.** `glsl.ts` parses its
- *    own source for the list, and a name that fails to resolve is reported
- *    rather than silently ignored. A uniform that quietly went missing is a term
- *    of the model that stopped being applied, and the picture would still look
- *    like a sphere.
+ *  - **Every uniform the shader declares must resolve.** `glsl.ts` parses its own
+ *    source for the list and a name the linker did not expose is reported on
+ *    screen. A uniform that quietly went missing is a term of the model that
+ *    stopped being applied — and the picture would still look like a sphere.
  *  - **The texture format is reported, not assumed.** A half-float equirect
- *    texture quantizes the content by about one part in a thousand, which is
- *    half of the GPU parity tolerance all on its own. Which format was actually
- *    obtained therefore goes on screen next to the parity number.
+ *    quantizes linear content by about one part in a thousand, which is a
+ *    meaningful share of the parity budget before the renderer has done anything.
+ *    Which format the device actually gave us goes next to the parity number.
  */
 
 import { FRAGMENT_SHADER, VERTEX_SHADER, glslUniformNames } from '../src/glsl.ts';
-import type { Mat3x3, TextureData, Uniforms } from '../src/uniforms.ts';
+import type { DisplayUniforms, PackedRig } from '../src/uniforms.ts';
 
-export interface GlHarness {
+export interface DisplayGl {
   gl: WebGL2RenderingContext;
   program: WebGLProgram;
   uniforms: Map<string, WebGLUniformLocation>;
   /** Uniform names the shader declares that the linker did not expose. */
   missingUniforms: string[];
   texture: WebGLTexture;
-  /** `RGBA32F`, `RGBA16F` or `RGBA8` — whichever the device gave us. */
+  /** `RGBA32F` or `RGBA16F` — whichever the device gave us. */
   textureFormat: string;
-  /** True when the parity read-back can be done in float rather than 8-bit. */
+  /** True when the parity read-back can be float rather than 8-bit. */
   floatReadback: boolean;
   readTarget: ReadTarget | null;
 }
@@ -50,8 +46,8 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string): WebG
   gl.compileShader(shader);
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
     const log = gl.getShaderInfoLog(shader) ?? '(no log)';
-    // Number the lines: a GLSL error names a line and the source is assembled
-    // from chunks, so an unnumbered dump is unusable.
+    // A GLSL error names a line and the source is assembled from chunks, so an
+    // unnumbered dump is unusable.
     const numbered = source
       .split('\n')
       .map((l, i) => `${String(i + 1).padStart(4)}| ${l}`)
@@ -61,7 +57,7 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string): WebG
   return shader;
 }
 
-export function createHarnessGl(canvas: HTMLCanvasElement): GlHarness {
+export function createDisplayGl(canvas: HTMLCanvasElement): DisplayGl {
   const gl = canvas.getContext('webgl2', {
     antialias: false,
     depth: false,
@@ -89,16 +85,12 @@ export function createHarnessGl(canvas: HTMLCanvasElement): GlHarness {
     else uniforms.set(name, loc);
   }
 
-  // Float textures are wanted for one reason: the equirect content is linear
-  // light and a half-float texture quantizes it by ~1e-3, which is half the
-  // whole GPU parity budget before the renderer has done anything.
   const floatLinear = gl.getExtension('OES_texture_float_linear') !== null;
   const colorFloat = gl.getExtension('EXT_color_buffer_float') !== null;
-
   const texture = gl.createTexture();
   if (!texture) throw new Error('gl.createTexture returned null');
 
-  const harness: GlHarness = {
+  return {
     gl,
     program,
     uniforms,
@@ -108,7 +100,6 @@ export function createHarnessGl(canvas: HTMLCanvasElement): GlHarness {
     floatReadback: colorFloat,
     readTarget: null,
   };
-  return harness;
 }
 
 /**
@@ -116,13 +107,13 @@ export function createHarnessGl(canvas: HTMLCanvasElement): GlHarness {
  *
  * `REPEAT` on S and `CLAMP_TO_EDGE` on T, and the asymmetry is the correctness:
  * the texture is periodic in longitude and is not periodic in latitude. Wrapping
- * T folds the north pole onto the south, which on a globe dataset looks like a
- * rendering artifact rather than like the bug it is.
- *
- * `UNPACK_FLIP_Y_WEBGL` is left at its default of false so texture row 0 is the
- * data's row 0, which conventions.ts and `equirect.ts` both put at latitude +90.
+ * T folds the north pole onto the south, which looks like a rendering artifact
+ * rather than like the bug it is.
  */
-export function uploadEquirect(h: GlHarness, tex: TextureData): void {
+export function uploadEquirect(
+  h: DisplayGl,
+  tex: { width: number; height: number; data: Float32Array },
+): void {
   const gl = h.gl;
   const n = tex.width * tex.height;
   const rgba = new Float32Array(n * 4);
@@ -144,56 +135,43 @@ export function uploadEquirect(h: GlHarness, tex: TextureData): void {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 }
 
-function transposed(m: Mat3x3): number[] {
-  // GLSL matrices are column-major; `uniforms.ts` builds row-major. Transposing
-  // here rather than passing `transpose = true` keeps the call portable and
-  // makes the convention visible at the point it changes.
-  return [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
+/**
+ * Push one rig's arrays under a name prefix.
+ *
+ * The physical rig's uniforms are `uLens`, `uRot`, …; the compositor's are the
+ * same names with a `C`. Driving both from one function is deliberate — see the
+ * second rule in `src/uniforms.ts`.
+ */
+function setRig(h: DisplayGl, prefix: '' | 'C', rig: PackedRig): void {
+  const gl = h.gl;
+  const loc = (name: string): WebGLUniformLocation | null => h.uniforms.get(name) ?? null;
+  gl.uniform3fv(loc(`u${prefix}Lens`), rig.lens);
+  gl.uniformMatrix3fv(loc(`u${prefix}Rot`), false, rig.rot);
+  gl.uniform4fv(loc(`u${prefix}Intr`), rig.intrinsics);
+  gl.uniform4fv(loc(`u${prefix}Raster`), rig.raster);
+  gl.uniform2fv(loc(`u${prefix}Limb`), rig.limb);
 }
 
-/** Push the whole uniform block. Called once per frame; it is not the bottleneck. */
-export function setUniforms(h: GlHarness, u: Uniforms): void {
+/** Push the whole uniform block. Once per frame; it is not the bottleneck. */
+export function setUniforms(h: DisplayGl, u: DisplayUniforms): void {
   bindContent(h);
   const gl = h.gl;
   const loc = (name: string): WebGLUniformLocation | null => h.uniforms.get(name) ?? null;
 
   gl.uniform1i(loc('uProjCount'), u.projCount);
-  gl.uniform1f(loc('uRadius'), u.radius);
-  gl.uniform1f(loc('uCenterHeight'), u.centerHeight);
-  gl.uniform1f(loc('uRotationOffset'), u.rotationOffset);
+  gl.uniform1f(loc('uRadius'), u.physical.radiusM);
+  gl.uniform1f(loc('uCenterHeight'), u.physical.centerHeightM);
+  setRig(h, '', u.physical);
 
-  const n = 4;
-  const lens = new Float32Array(n * 3);
-  const rot = new Float32Array(n * 9);
-  const intr = new Float32Array(n * 4);
-  const rast = new Float32Array(n * 4);
-  const limb = new Float32Array(n * 2);
-  const gamma = new Float32Array(n * 3);
-  const black = new Float32Array(n * 3);
-  const gain = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    // Slots past the projector count are never read (every loop guards on
-    // `uProjCount`), but they are filled with the last real projector rather
-    // than with zeros so a driver that speculatively evaluates cannot divide by
-    // a zero distance.
-    const p = u.projectors[Math.min(i, u.projectors.length - 1)];
-    lens.set([p.lens.x, p.lens.y, p.lens.z], i * 3);
-    rot.set(transposed(p.rot), i * 9);
-    intr.set(p.intrinsics, i * 4);
-    rast.set(p.raster, i * 4);
-    limb.set(p.limb, i * 2);
-    gamma.set([p.gamma.r, p.gamma.g, p.gamma.b], i * 3);
-    black.set([p.black.r, p.black.g, p.black.b], i * 3);
-    gain.set([p.gain.r, p.gain.g, p.gain.b], i * 3);
-  }
-  gl.uniform3fv(loc('uLens'), lens);
-  gl.uniformMatrix3fv(loc('uRot'), false, rot);
-  gl.uniform4fv(loc('uIntrinsics'), intr);
-  gl.uniform4fv(loc('uRaster'), rast);
-  gl.uniform2fv(loc('uLimb'), limb);
-  gl.uniform3fv(loc('uGamma'), gamma);
-  gl.uniform3fv(loc('uBlack'), black);
-  gl.uniform3fv(loc('uGain'), gain);
+  gl.uniform1f(loc('uCRadius'), u.content.radiusM);
+  gl.uniform1f(loc('uCRotOffset'), u.content.rotationOffsetDeg);
+  setRig(h, 'C', u.content);
+
+  // The transfer curve is the PHYSICAL projector's: it describes the lamp and
+  // the panel, which do not move when the compositor's belief changes.
+  gl.uniform3fv(loc('uGamma'), u.physical.gamma);
+  gl.uniform3fv(loc('uBlack'), u.physical.black);
+  gl.uniform3fv(loc('uGain'), u.physical.gain);
 
   gl.uniform1i(loc('uRampShape'), u.rampShape);
   gl.uniform1f(loc('uWidthDeg'), u.widthDeg);
@@ -203,21 +181,20 @@ export function setUniforms(h: GlHarness, u: Uniforms): void {
   gl.uniform1i(loc('uMaskBottomOnly'), u.maskBottomOnly);
   gl.uniform1i(loc('uMaskInterp'), u.maskInterp);
 
-  gl.uniform3f(loc('uEncodeGamma'), u.encodeGamma.r, u.encodeGamma.g, u.encodeGamma.b);
-  gl.uniform3f(loc('uReflectance'), u.reflectance.r, u.reflectance.g, u.reflectance.b);
-  gl.uniform3f(loc('uAmbient'), u.ambient.r, u.ambient.g, u.ambient.b);
+  gl.uniform3f(loc('uEncodeGamma'), u.encodeGamma[0], u.encodeGamma[1], u.encodeGamma[2]);
+  gl.uniform3f(loc('uReflectance'), u.reflectance[0], u.reflectance[1], u.reflectance[2]);
+  gl.uniform3f(loc('uAmbient'), u.ambient[0], u.ambient[1], u.ambient[2]);
   gl.uniform1f(loc('uRoomAlbedo'), u.roomAlbedo);
-  gl.uniform1f(loc('uSpecWeight'), u.specWeight);
-  gl.uniform1f(loc('uSpecAlpha'), u.specAlpha);
 
-  gl.uniform3f(loc('uCamPos'), u.camPos.x, u.camPos.y, u.camPos.z);
-  gl.uniform3f(loc('uCamForward'), u.camForward.x, u.camForward.y, u.camForward.z);
-  gl.uniform3f(loc('uCamRight'), u.camRight.x, u.camRight.y, u.camRight.z);
-  gl.uniform3f(loc('uCamUp'), u.camUp.x, u.camUp.y, u.camUp.z);
+  gl.uniform3f(loc('uCamPos'), u.camPos[0], u.camPos[1], u.camPos[2]);
+  gl.uniform3f(loc('uCamForward'), u.camForward[0], u.camForward[1], u.camForward[2]);
+  gl.uniform3f(loc('uCamRight'), u.camRight[0], u.camRight[1], u.camRight[2]);
+  gl.uniform3f(loc('uCamUp'), u.camUp[0], u.camUp[1], u.camUp[2]);
   gl.uniform2f(loc('uCamHalf'), u.camHalf[0], u.camHalf[1]);
 
-  gl.uniform1i(loc('uMode'), u.mode);
-  gl.uniform1i(loc('uProjIndex'), u.projIndex);
+  gl.uniform1i(loc('uOverlay'), u.overlay);
+  gl.uniform1f(loc('uOverlayMix'), u.overlayMix);
+  gl.uniform1i(loc('uHighlight'), u.highlight);
   gl.uniform1i(loc('uDrawFloor'), u.drawFloor);
   gl.uniform1f(loc('uFloorRadius'), u.floorRadius);
   gl.uniform1f(loc('uExposure'), u.exposure);
@@ -230,31 +207,41 @@ export function setUniforms(h: GlHarness, u: Uniforms): void {
  *
  * Called from `setUniforms`, which is the one place both the on-screen draw and
  * the parity read-back pass through, and which already tells the shader the
- * content lives at unit 0. Binding there means the two statements cannot drift
- * apart. `ensureReadTarget` binds its own
- * texture while it builds the framebuffer, which clobbers whatever
- * `uploadEquirect` left bound — so the FIRST parity read-back in a fresh context
- * sampled the empty read-back texture and came back black, and every later one
- * worked because the target already existed and the allocation path was skipped.
+ * content lives at unit 0. Binding there rather than once after upload is a fix,
+ * not a belt-and-braces habit. `ensureReadTarget` binds its own texture
+ * to `TEXTURE_2D` while it builds the framebuffer, which silently clobbers
+ * whatever `uploadEquirect` left bound. The FIRST parity read-back in a fresh
+ * context therefore sampled the empty read-back texture and came back black,
+ * while every later one worked because the target already existed and the
+ * allocation path was skipped.
  *
- * Found in `packages/web`, which has the same structure, where it produced a
- * runtime parity failure at exactly the moment a reader first looks at the
- * number, on 9.6% of pixels — the sphere's share of the frame — and then passed
- * forever after. It reads exactly like a model difference. It is ambient GL
- * state, and it was latent here too.
+ * The symptom was a parity check that failed once, hard, at exactly the moment a
+ * reader would first look at it — 9.6% of pixels disagreeing, which is precisely
+ * the sphere's share of the frame — and then passed forever after. It reads
+ * exactly like a model difference. It was ambient GL state.
  */
-function bindContent(h: GlHarness): void {
+function bindContent(h: DisplayGl): void {
   h.gl.activeTexture(h.gl.TEXTURE0);
   h.gl.bindTexture(h.gl.TEXTURE_2D, h.texture);
 }
 
 /** The full-screen triangle. No vertex buffer — `gl_VertexID` makes the corners. */
-export function drawFullScreen(h: GlHarness): void {
+export function drawFullScreen(h: DisplayGl): void {
   h.gl.drawArrays(h.gl.TRIANGLES, 0, 3);
 }
 
+export function drawToCanvas(h: DisplayGl, u: DisplayUniforms, width: number, height: number): void {
+  const gl = h.gl;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, width, height);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  setUniforms(h, u);
+  drawFullScreen(h);
+}
+
 /** An offscreen target for the parity read-back. Float when the device allows it. */
-export function ensureReadTarget(h: GlHarness, width: number, height: number): ReadTarget {
+export function ensureReadTarget(h: DisplayGl, width: number, height: number): ReadTarget {
   const gl = h.gl;
   if (h.readTarget && h.readTarget.width === width && h.readTarget.height === height) {
     return h.readTarget;
@@ -292,12 +279,12 @@ export function ensureReadTarget(h: GlHarness, width: number, height: number): R
  *
  * The flip is the one thing that has to be right for the parity number to mean
  * anything: comparing a GPU image against a CPU image with the rows the other
- * way up produces a large, stable, entirely fictitious delta, and on a
+ * way up produces a large, stable, entirely fictitious delta — and on a
  * four-fold-symmetric rig it does not even look obviously wrong.
  */
 export function renderAndRead(
-  h: GlHarness,
-  u: Uniforms,
+  h: DisplayGl,
+  u: DisplayUniforms,
   width: number,
   height: number,
 ): { width: number; height: number; data: Float32Array; float: boolean } {
