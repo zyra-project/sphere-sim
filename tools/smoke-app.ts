@@ -622,6 +622,15 @@ async function main(): Promise<void> {
     // own worker request against a named calibration, so this also checks that
     // the "before" rig survived the solve that replaced it.
     if (opts.solve) {
+      // Back to the frame tab first: the warp-mesh check above left the card on
+      // its third view, where there is no frame to click. The check caught that
+      // as "no lightbox", which is what it should say and not what it meant.
+      await cdp.evaluate(`(() => {
+        const b = [...document.querySelectorAll('#inspect .seg button')]
+          .find((x) => /Its frame/.test(x.textContent ?? ''));
+        if (b) b.click();
+      })()`);
+      await sleep(500);
       await cdp.evaluate("document.querySelector('#inspect canvas.framepic')?.click()");
       await sleep(3500);
       const lb = await cdp.evaluate<{ modes: string[]; w: number; before: number } | null>(`(() => {
