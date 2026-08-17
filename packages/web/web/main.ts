@@ -1068,20 +1068,16 @@ function projectorTabs(): HTMLElement {
     const b = el('button', {
       className: `${state.selected === i ? 'on' : ''}${on ? '' : ' dark'}`,
       title: on
-        ? 'Click to select. Click again to switch it off at the wall.'
-        : 'Switched off — its quadrant of the framebuffer is dark. Click to switch it back on.',
+        ? 'Edit this projector.'
+        : 'Switched off at the wall — its quadrant of the framebuffer is dark.',
     });
     const dot = el('span', { className: 'dot' });
     dot.style.background = PROJECTOR_TINTS[i] ?? '#888';
     b.append(dot, el('span', { textContent: `P${i + 1}` }));
-    b.addEventListener('click', () => {
-      if (state.selected === i && state.inspectOpen) {
-        state.settings = withNudge(state.settings, i, { on: !on });
-        touched(true);
-        return;
-      }
-      selectProjector(i);
-    });
+    // Select, and only select. A second click on the selected tab used to switch
+    // the projector off at the wall: a hidden gesture on the same target as the
+    // most-used one, so the way you found it was by accident.
+    b.addEventListener('click', () => selectProjector(i));
     row.append(b);
   }
   return row;
@@ -1094,11 +1090,45 @@ function projectorSection(): HTMLElement[] {
       className: 'grouphelp',
       textContent:
         'Pick a projector to move it — here, or by clicking its lens in the room. These are its ' +
-        'REAL position and aim; what the software believes only changes when you recalibrate, ' +
-        'which is why the frame below does not move when you drag these. Click a selected ' +
-        'projector again to switch it off.',
+        'real position and aim; what the software believes only changes when you recalibrate, ' +
+        'which is why the frame below does not move when you drag these.',
     }),
   );
+  {
+    // The only switch on the page. Switching a projector off is a change to the
+    // installation — a dark quadrant, a hole in the coverage, a different unlit
+    // figure — so it gets a labelled control that says which state it is in,
+    // rather than a second click on the tab you use to select things.
+    const lit = state.settings.nudge[state.selected]?.on !== false;
+    out.push(
+      chipRow(
+        [
+          {
+            label: 'On',
+            on: lit,
+            onPick: () => {
+              if (lit) return;
+              state.settings = withNudge(state.settings, state.selected, { on: true });
+              touched(true);
+            },
+          },
+          {
+            label: 'Off at the wall',
+            on: !lit,
+            onPick: () => {
+              if (!lit) return;
+              state.settings = withNudge(state.settings, state.selected, { on: false });
+              touched(true);
+            },
+          },
+        ],
+        'Switching one off is what an operator does when a lamp fails. Its quadrant of the ' +
+          'framebuffer goes dark and the framebuffer keeps its size (§2), so the sphere loses that ' +
+          'share of its light entirely and the neighbours do not widen to cover the gap — watch the ' +
+          'unlit figure. Nothing else on this page turns a projector on or off.',
+      ),
+    );
+  }
   const nudge = state.settings.nudge[state.selected];
   const tint = PROJECTOR_TINTS[state.selected] ?? '#888';
   const live = model?.live[state.selected] ?? true;
@@ -1108,8 +1138,8 @@ function projectorSection(): HTMLElement[] {
       textContent:
         `P${state.selected + 1} is switched off at the wall. Its quadrant of the framebuffer is ` +
         'dark and the framebuffer keeps its size — PARAMETERS.md §2\u2019s "quadrants go dark". ' +
-        'The sphere loses that share of its light entirely; watch the unlit figure. Click its tab ' +
-        'again to switch it back on.',
+        'The sphere loses that share of its light entirely; watch the unlit figure. The On / Off ' +
+        'pair above puts it back.',
     });
     off.style.color = 'var(--warn)';
     out.push(off);
@@ -1461,8 +1491,8 @@ function roomSection(): HTMLElement[] {
         label: 'Projectors',
         title:
           'The four projectors on their hangers, and the rod the sphere hangs from. Each lens ' +
-          'glows in its own colour; click one to see only its light and the frame going down its ' +
-          'cable. Scenery — the trace is not told any of it exists, and no light comes off it.',
+          'glows in its own colour; click one to select it and see the frame going down its cable. ' +
+          'Scenery — the trace is not told any of it exists, and no light comes off it.',
         on: state.markersOn,
         onPick: () => {
           state.markersOn = !state.markersOn;
@@ -1497,34 +1527,40 @@ function roomSection(): HTMLElement[] {
       },
     ]),
   );
-  out.push(el('span', { className: 'lab', textContent: 'Isolate' }));
+  out.push(el('span', { className: 'lab', textContent: 'Show only' }));
   const n = Math.round(state.settings.projectorCount);
   out.push(
-    chipRow([
-      {
-        label: 'All',
-        on: state.highlight === -1,
-        onPick: () => {
-          state.highlight = -1;
-          markDirty();
-          renderControls();
+    chipRow(
+      [
+        {
+          label: 'All',
+          on: state.highlight === -1,
+          onPick: () => {
+            state.highlight = -1;
+            markDirty();
+            renderControls();
+          },
         },
-      },
-      ...Array.from({ length: n }, (_, i) => ({
-        label: `P${i + 1}`,
-        on: state.highlight === i,
-        onPick: () => {
-          state.highlight = i;
-          // Isolating also selects, so the inspect card is showing the frame of
-          // the projector whose light is on screen rather than some other one's.
-          state.selected = i;
-          state.inspectOpen = true;
-          markDirty();
-          renderControls();
-          renderInspect();
-        },
-      })),
-    ]),
+        ...Array.from({ length: n }, (_, i) => ({
+          label: `P${i + 1}`,
+          on: state.highlight === i,
+          onPick: () => {
+            state.highlight = i;
+            // Showing one also selects it, so the inspect card is describing the
+            // projector whose light is on screen rather than some other one's.
+            state.selected = i;
+            state.inspectOpen = true;
+            markDirty();
+            renderControls();
+            renderInspect();
+          },
+        })),
+      ],
+      'Draws one projector’s contribution on its own, which is how you see what a single lens is ' +
+        'responsible for and where its edges fall. This is a filter on the PICTURE and nothing ' +
+        'else: the rig is untouched, every number below is still the whole installation, and ' +
+        'switching a projector off is on the Projectors tab.',
+    ),
   );
   return out;
 }
@@ -1722,6 +1758,9 @@ function openHelp(): void {
       'see the unlit cap at the bottom.',
     'On the Room tab, press "Whole room" to step outside the ring — all four projectors, each in ' +
       'its own colour — or turn the grid off and drop any 2:1 equirectangular image on the page.',
+    '"Show only" on the Room tab draws one projector\u2019s light on its own. It changes the ' +
+      'picture and nothing else; the switch that actually turns a projector off is on the ' +
+      'Projectors tab, beside its sliders.',
     'The "what do these do?" link above the sliders turns on a plain-language note under every ' +
       'control, and stays on until you turn it off.',
     'This sheet is always one press of "?" away, top right.',
@@ -1894,9 +1933,18 @@ function renderInspect(): void {
     className: 'note tiny',
     textContent: frame ? frame.caption : 'switched off',
   });
-  if (state.highlight === state.selected && lastUniforms) {
-    const lx = lastUniforms.physical.lens[3 * state.selected];
-    const ly = lastUniforms.physical.lens[3 * state.selected + 1];
+  // Offered whenever the selected projector lights the side of the ball you are
+  // not looking at. It used to be gated on that projector being ISOLATED, which
+  // was the only way the room went dark — and selecting no longer isolates, so
+  // the gate would have retired a link that is useful either way.
+  //
+  // The lens array is indexed by RIG position and `state.selected` is a panel
+  // slot; with one projector switched off the two stop agreeing, and reading it
+  // directly walked you round to a different projector's side.
+  const rigIndex = lastSlots.indexOf(state.selected);
+  if (lastUniforms && rigIndex >= 0) {
+    const lx = lastUniforms.physical.lens[3 * rigIndex];
+    const ly = lastUniforms.physical.lens[3 * rigIndex + 1];
     const az = (Math.atan2(ly, lx) * 180) / Math.PI;
     const lightsFarSide = Math.abs(((az - state.settings.viewAzDeg + 540) % 360) - 180) > 120;
     if (lightsFarSide) {
@@ -1963,10 +2011,15 @@ function renderInspect(): void {
               ? 'Red is where the old warp drew the grid; cyan is where it draws it now. The ' +
                 'recalibration rewrote this frame — the projector has not moved since, and the ' +
                 'light now lands where the software thinks it does.'
-              : 'The image this projector is sending down the cable. It fades out at the left and ' +
-                'right where it hands over to its neighbours — widest across the equator, pinching ' +
-                'shut toward the poles. Moving the projector does NOT change this picture, because ' +
-                'the software has not been told. Recalibrating is what rewrites it.',
+              : !on
+                ? 'The frame this projector would be sending. Nothing is going down the cable ' +
+                  'while it is switched off, but the compositor’s arithmetic for it has not ' +
+                  'changed — switch it back on and this is what arrives.'
+                : 'The image this projector is sending down the cable. It fades out at the left ' +
+                  'and right where it hands over to its neighbours — widest across the equator, ' +
+                  'pinching shut toward the poles. Moving the projector does NOT change this ' +
+                  'picture, because the software has not been told. Recalibrating is what ' +
+                  'rewrites it.',
         }),
       );
       // The zoom cursor is a mouse affordance and this card is now the phone's
@@ -2992,13 +3045,16 @@ function markerUnder(e: PointerEvent, slopPx = PICK_SLOP_PX[e.pointerType] ?? 3)
 /**
  * Select a projector from anywhere — a marker in the room, or a tab.
  *
- * Selecting isolates it, which is the answer to "what is THIS one painting":
- * everything else goes dark and what is left is that projector's contribution,
- * with its own frame beside it in the inspect card.
+ * Selecting is selecting. It used to also ISOLATE, so clicking a lens in the
+ * room put the other three out and left you looking at a quarter-lit sphere —
+ * which reads as having switched them off, and is a destructive-looking answer
+ * to what should be the mildest gesture on the page. What a click does now is
+ * point the panel and the card at that projector and nothing else. "Show only"
+ * on the Room tab is still there for the isolating question, where it is
+ * labelled and reversible.
  */
 function selectProjector(i: number): void {
   state.selected = i;
-  state.highlight = i;
   state.inspectOpen = true;
   state.section = 'projectors';
   markDirty();

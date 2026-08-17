@@ -14,6 +14,7 @@ import {
   PROJECTOR_TINTS,
   RESOLUTIONS,
   SPEC_PRESET,
+  clearNudges,
   coerce,
   formatSetting,
   noNudge,
@@ -183,4 +184,17 @@ test('every ASSUME control says so in its help, since the colour alone is not a 
   for (const c of CONTROLS.filter((x) => x.klass === 'ASSUME')) {
     assert.ok(c.help.length > 40, `${c.key} is class ASSUME and needs an explanation of what is assumed`);
   }
+});
+
+test('clearing the hand adjustments does not switch a projector back on', () => {
+  // Whether a lamp is on is the state of the installation, not an adjustment.
+  // "Another install" clears the nudges and draws a different mount error; a
+  // projector somebody switched off to look at the hole it leaves must not come
+  // back silently, which is the same class of surprise as switching one off from
+  // a second click on the tab you select with.
+  const dark = withNudge(withNudge(PERFECT_PRESET, 2, { on: false }), 2, { yawDeg: 1.5 });
+  const cleared = clearNudges(dark);
+  assert.equal(cleared.nudge[2].yawDeg, 0, 'the hand adjustment should be gone');
+  assert.equal(cleared.nudge[2].on, false, 'and the projector should still be switched off');
+  for (const i of [0, 1, 3]) assert.equal(cleared.nudge[i].on, true);
 });

@@ -470,6 +470,17 @@ async function main(): Promise<void> {
       } else {
         process.stdout.write(`  clicked the P${pickIndex + 1} marker and P${pickIndex + 1} was selected\n`);
       }
+      // Selecting is selecting. A click used to isolate as well, which put the
+      // other three projectors out — a room gone dark in response to the mildest
+      // gesture on the page, and indistinguishable from having switched them off.
+      const isolated = await cdp.evaluate<number>(
+        "Number(document.getElementById('view')?.dataset.highlight ?? -1)",
+      );
+      if (isolated !== -1) {
+        failures.push(
+          `clicking a projector isolated it (highlight=${isolated}); the other projectors went out`,
+        );
+      }
     }
 
     const parity = await cdp.evaluate<string>(

@@ -1135,7 +1135,18 @@ export function withNudge(s: Settings, index: number, patch: Partial<ProjectorNu
   return { ...s, nudge };
 }
 
-/** Clear every hand adjustment. */
+/**
+ * Clear every hand adjustment, and leave the lamps alone.
+ *
+ * Whether a projector is switched on at the wall is not an adjustment — it is
+ * the state of the installation, and it is the one thing on this panel a person
+ * has to set deliberately. "Another install" draws a different MOUNT error; a
+ * projector somebody had switched off to look at the hole coming silently back
+ * on is not part of that, and it is the same surprise in the opposite direction
+ * as the one that made switching off a second click on a tab.
+ *
+ * "Reset" restores everything, including this, and says so.
+ */
 export function clearNudges(s: Settings): Settings {
-  return { ...s, nudge: s.nudge.map(() => noNudge()) };
+  return { ...s, nudge: s.nudge.map((n) => ({ ...noNudge(), on: n.on })) };
 }

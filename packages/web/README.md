@@ -51,8 +51,9 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   else — the badge, the gate, the warp mesh — described that pair without ever
   showing it. "At the seams" picks one of the four joins and draws the patch of
   sphere either side of it, with every grid line painted twice: once by each of
-  the two projectors that reach it, each in its own colour, and a dashed meridian
-  where they hand over.
+  the two projectors that reach it, each in its own colour, and the hand-over
+  meridian marked above the plot — inside it a grid meridian falls on the seam at
+  the default graticule and hides any rule drawn there.
 
   It is `worldToPixel(compositor) → pixelToRay(truth) → sphere`, the same
   composition the warp mesh uses, entered from a world point instead of from a
@@ -93,9 +94,19 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   axes, distance, height, image size, lens shift in two axes, lamp output and
   black level. The last two are Phase 2 and carry `ASSUME` badges, because
   PARAMETERS.md gives no absolute lumen figure anywhere and §3.2 holds the gains
-  at 1 and classes them unmeasured. Click a selected projector again to switch it
+  at 1 and classes them unmeasured. An On / Off pair beside the tabs switches one
   off at the wall — its quadrant goes dark, the framebuffer keeps its size (§2),
-  and the unlit figure jumps. Install is the site survey; Room is blend, mask,
+  and the unlit figure jumps. That pair is the only control on the page that
+  turns a projector on or off: it used to be a second click on the selected tab,
+  a hidden gesture on the same target as the most-used one, so the way you found
+  it was by accident. Clicking a lens in the room SELECTS it and nothing more —
+  it used to isolate as well, putting the other three out, which reads as having
+  switched them off. "Show only" on the Room tab is the isolating control, and
+  it is a filter on the picture: the rig is untouched and every number below is
+  still the whole installation. "Another install" leaves the lamps as they are
+  for the same reason: it draws a different MOUNT error, and a projector somebody
+  switched off coming silently back on is the same surprise in the other
+  direction. Install is the site survey; Room is blend, mask,
   content, viewpoint and overlays. The panel minimises to an icon, because a
   settings window in the middle of the screen with the sphere behind it has no
   good answer to "how do I move this".
