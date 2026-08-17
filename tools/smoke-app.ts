@@ -617,6 +617,39 @@ async function main(): Promise<void> {
       process.stdout.write(`  warp mesh: ${mesh.h} px tall, ${mesh.tinted} corrected lines\n`);
     }
 
+    // The enlarged preview is a re-render, not an upscale, and after a solve it
+    // is a comparison with three ways of reading it. Both halves come from their
+    // own worker request against a named calibration, so this also checks that
+    // the "before" rig survived the solve that replaced it.
+    if (opts.solve) {
+      await cdp.evaluate("document.querySelector('#inspect canvas.framepic')?.click()");
+      await sleep(3500);
+      const lb = await cdp.evaluate<{ modes: string[]; w: number; before: number } | null>(`(() => {
+        const box = document.getElementById('lightbox');
+        if (!box || !box.classList.contains('on')) return null;
+        const a = document.getElementById('lightbox-canvas');
+        const b = document.getElementById('lightbox-canvas-b');
+        return {
+          modes: [...box.querySelectorAll('.modes .chip')].map((c) => c.textContent),
+          w: a ? a.width : 0,
+          before: b ? b.width : 0,
+        };
+      })()`);
+      if (!lb) {
+        failures.push('clicking the projector frame opened no lightbox');
+      } else if (lb.w < 700) {
+        failures.push(`the enlarged frame is ${lb.w} px wide — it is being upscaled, not re-rendered`);
+      } else if (lb.modes.length !== 3) {
+        failures.push(
+          `the enlarged comparison offers ${lb.modes.length} ways to read it (${lb.modes.join(', ')}), expected overlay, blink and side by side`,
+        );
+      } else {
+        process.stdout.write(`  enlarged frame: ${lb.w} px · ${lb.modes.join(' / ')}\n`);
+      }
+      await cdp.evaluate("document.getElementById('lightbox')?.click()");
+      await sleep(300);
+    }
+
     // The seam close-up is the one picture of the thing the page is about, and
     // it is built from two rigs composed together — run it with one rig twice
     // and it draws a perfectly aligned installation, which is exactly the

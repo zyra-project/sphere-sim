@@ -70,6 +70,23 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   The ring is anchored at the lowest slot rather than at whichever projector
   sorts first by azimuth, because a solve moves the recovered azimuths by a hair
   and that was enough to renumber the seams under the picker.
+- **The comparison, enlarged, three ways.** Clicking the projector's frame used
+  to blow up the 296-pixel thumbnail, and after a recalibration it dropped the
+  before-and-after entirely and showed the current frame alone. Both halves are
+  now re-rendered at the size of the screen through a request that names the
+  calibration to render FROM — `FramesRequest`, its own worker message, because
+  going through a model request would recompute every metric to fetch a picture
+  and would compute them for a rig nobody is looking at. That means the page
+  keeps the pre-solve RIG rather than a snapshot image: a picture can only be
+  blown up, a calibration can be re-rendered.
+
+  Three ways to read it, because a shift of a few per cent on a repeating grid
+  fails differently in each: **overlay** (old in red, new in cyan, grey where
+  they agree) is readable at a glance, **blink** is the only one that survives a
+  fine grid, and **side by side** is the only one that shows each frame as it
+  actually is. The blink is a `steps(1, end)` switch rather than a crossfade — a
+  fade reads as motion in the image instead of as a difference — and it honours
+  `prefers-reduced-motion` by holding both at half opacity.
 - **Where it actually is, against where the software thinks it is.** The same six
   facts — distance, height, azimuth, raster, field of view, distortion —
   computed by one function from two rigs, in two columns. Every alignment number

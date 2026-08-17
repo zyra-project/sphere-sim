@@ -275,12 +275,32 @@ pre.cfg { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font
 
 /* ---- lightbox ------------------------------------------------------------ */
 #lightbox { position: fixed; inset: 0; background: rgba(4,4,7,0.92); z-index: 20;
-  display: none; align-items: center; justify-content: center; padding: 32px; cursor: zoom-out; }
+  display: none; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; padding: 28px 32px 56px; cursor: zoom-out; }
 #lightbox.on { display: flex; }
-#lightbox canvas { max-width: 100%; max-height: 84vh; border-radius: 6px;
-  border: 1px solid var(--line-strong); background: var(--stage); }
-#lightbox .cap { position: absolute; bottom: 22px; left: 0; right: 0; text-align: center;
-  font-size: 12px; color: var(--muted); }
+#lightbox .modes { display: flex; gap: 5px; flex: 0 0 auto; }
+#lightbox .modes:empty { display: none; }
+#lightbox .stage { position: relative; display: flex; gap: 20px; align-items: flex-start;
+  justify-content: center; min-height: 0; flex: 0 1 auto; max-width: 100%; }
+#lightbox canvas { max-width: 100%; max-height: 72vh; border-radius: 6px;
+  border: 1px solid var(--line-strong); background: var(--stage); object-fit: contain; }
+#lightbox canvas.hidden { display: none; }
+/* The blink: the BEFORE frame sits exactly over the after one and is shown for
+   half the cycle. Two pictures a few per cent apart on a repeating grid are
+   indistinguishable side by side and obvious when they alternate, which is why
+   this mode exists at all. `steps(1, end)` makes it a switch, not a crossfade —
+   a fade would read as motion in the image rather than as a difference. */
+#lightbox .stage.blink canvas + canvas { position: absolute; inset: 0; width: 100%; height: 100%;
+  animation: lbBlink 1.3s steps(1, end) infinite; }
+@keyframes lbBlink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
+@media (prefers-reduced-motion: reduce) {
+  #lightbox .stage.blink canvas + canvas { animation: none !important; opacity: 0.5 !important; }
+}
+#lightbox .lbl { position: absolute; top: -18px; left: 0; right: 0; text-align: center;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+#lightbox .pane { position: relative; display: flex; min-width: 0; flex: 0 1 auto; }
+#lightbox .cap { flex: 0 0 auto; text-align: center; max-width: 74ch;
+  font-size: 12px; line-height: 1.5; color: var(--muted); }
 
 /* ---- help ---------------------------------------------------------------- */
 #help { position: fixed; inset: 0; background: rgba(4,4,7,0.82); z-index: 25;
@@ -378,7 +398,11 @@ body.dropping #dropzone { display: flex; }
   </div>
 </div>
 
-<div id="lightbox"><canvas id="lightbox-canvas"></canvas><div class="cap"></div></div>
+<div id="lightbox">
+  <div class="modes"></div>
+  <div class="stage"><canvas id="lightbox-canvas"></canvas><canvas id="lightbox-canvas-b"></canvas></div>
+  <div class="cap"></div>
+</div>
 <div id="fatal"></div>
 
 <script type="module" src="./dist/web/web/main.js"></script>

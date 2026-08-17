@@ -41,6 +41,8 @@ import { framebufferSentence, projectorFacts, readingsFrom, rigFacts } from './r
 import type { EquirectImage } from '../../sim/src/equirect.ts';
 import type {
   FrameImage,
+  FramesRequest,
+  FramesResponse,
   ModelRequest,
   ModelResponse,
   SeamLine,
@@ -124,6 +126,51 @@ function poseDrift(
     );
   }
   return { positionMm, aimDeg };
+}
+
+/**
+ * One projector's frame, for a calibration the caller names.
+ *
+ * The same render {@link computeModel} does for the inspect card's thumbnail,
+ * reachable on its own so the page can ask for it at four times the width — and
+ * for a DIFFERENT compositor rig than the one currently applied, which is what
+ * "the frame it used to send" means. Neither is possible through a model
+ * request: one would recompute the whole metric set to fetch a picture, and the
+ * other would replace every number on the page with one belonging to a rig
+ * nobody is looking at.
+ */
+export function computeFrames(req: FramesRequest): FramesResponse {
+  const world = buildWorld(
+    req.settings,
+    req.compositorRig ?? undefined,
+    cachedImage && cachedImageId === req.customImageId ? cachedImage : undefined,
+  );
+  const compositor = prepareRig(world.compositorRig);
+  const i = world.slots.indexOf(req.slot);
+  if (i < 0) return { kind: 'frames', id: req.id, ok: true, slot: req.slot, tag: req.tag, frame: null };
+
+  const it = compositor.projectors[i].cal.intrinsics;
+  const w = Math.max(16, Math.round(req.width));
+  const h = Math.max(1, Math.round((w * it.resY) / it.resX));
+  const img = renderProjectorView(compositor, i, world.scene, {
+    samplesPerPixel: 1,
+    sampleWidth: w,
+    sampleHeight: h,
+  });
+  return {
+    kind: 'frames',
+    id: req.id,
+    ok: true,
+    slot: req.slot,
+    tag: req.tag,
+    frame: {
+      width: img.width,
+      height: img.height,
+      data: img.data,
+      caption: `${compositor.projectors[i].cal.id} — ${it.resX} × ${it.resY}`,
+      space: 'display',
+    },
+  };
 }
 
 /**

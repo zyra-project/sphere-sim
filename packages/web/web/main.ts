@@ -74,6 +74,8 @@ import type {
   ModelMessage,
   ModelRequest,
   ModelResponse,
+  FramesMessage,
+  FramesRequest,
   RecoveredAxis,
   SeamPatch,
   SolveMessage,
@@ -348,37 +350,142 @@ const THUMB_PX = 296;
  */
 function zoomWidth(): number {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const wide = Math.max(window.innerWidth * 0.92, window.innerHeight * 0.84 * (16 / 9));
-  return Math.round(Math.max(768, Math.min(1600, wide * dpr)));
+  const wide = Math.max(window.innerWidth * 0.92, window.innerHeight * 0.72 * (16 / 9));
+  // Capped at 1200: this is a CPU ray trace per pixel in a worker, and past
+  // about a megapixel the wait to see a sharper grid line costs more than the
+  // sharper grid line is worth. The card's thumbnail is on screen throughout.
+  return Math.round(Math.max(768, Math.min(1200, wide * dpr)));
 }
 
-let previewWidth = THUMB_PX;
+const previewWidth = THUMB_PX;
 
-/** Which projector the lightbox is showing, so a re-render can repaint it. */
-let lightboxSlot = -1;
+/**
+ * What the lightbox is showing.
+ *
+ * `after` is the frame as it is now; `before` is the one the same projector was
+ * sending under the calibration the last solve replaced. Both are re-rendered at
+ * the size of the screen rather than being the card's 296-pixel thumbnail blown
+ * up — a comparison of two smoothed upscales would show the smoothing rather
+ * than the difference.
+ */
+type LightboxMode = 'overlay' | 'blink' | 'pair';
+let lightbox: {
+  slot: number;
+  caption: string;
+  after: FrameImage | null;
+  before: FrameImage | null;
+  mode: LightboxMode;
+} | null = null;
 
 function openLightbox(frame: FrameImage, caption: string, slot = -1): void {
-  paintFrame(lightboxCanvas, frame);
-  const cap = lightboxEl.querySelector('.cap');
-  if (cap) cap.textContent = caption;
+  lightbox = { slot, caption, after: frame, before: null, mode: 'overlay' };
   lightboxEl.classList.add('on');
-  lightboxSlot = slot;
-  const want = zoomWidth();
-  if (slot >= 0 && previewWidth !== want) {
-    previewWidth = want;
-    requestModel(true);
-  }
+  renderLightbox();
+  if (slot < 0) return;
+
+  // Ask for both halves at screen size. These are their own request kind: a
+  // model request would recompute every metric to fetch a picture, and the
+  // "before" one would compute them for a rig nobody is looking at.
+  const width = zoomWidth();
+  askFrames(slot, state.compositorRig, width, 'after');
+  if (solveResult && beforeRig !== undefined) askFrames(slot, beforeRig, width, 'before');
+}
+
+let framesSeq = 0;
+
+/** Ask the model worker for one projector's frame at a named calibration. */
+function askFrames(
+  slot: number,
+  compositorRig: RigCalibration | null,
+  width: number,
+  tag: string,
+): void {
+  const req: FramesRequest = {
+    kind: 'frames',
+    id: ++framesSeq,
+    settings: state.settings,
+    compositorRig,
+    slot,
+    width,
+    tag,
+    customImageId: suppliedName(),
+  };
+  modelWorker.postMessage(req);
 }
 
 function closeLightbox(): void {
   lightboxEl.classList.remove('on');
-  lightboxSlot = -1;
-  if (previewWidth !== THUMB_PX) {
-    previewWidth = THUMB_PX;
-    requestModel(true);
+  lightbox = null;
+}
+lightboxEl.addEventListener('click', (e) => {
+  // The mode buttons live inside the overlay, and the overlay closes on click.
+  if ((e.target as HTMLElement)?.closest('.modes')) return;
+  closeLightbox();
+});
+
+/**
+ * Draw whichever comparison the lightbox is set to.
+ *
+ * Three, because the difference between two frames is a few per cent of the
+ * image radius on a repeating grid and each way of showing it fails differently:
+ * the overlay is readable at a glance and colours the picture, the blink is the
+ * only one that survives a fine grid, and side by side is the only one that
+ * shows each frame as it actually is.
+ */
+function renderLightbox(): void {
+  if (!lightbox) return;
+  const stage = lightboxEl.querySelector('.stage') as HTMLElement | null;
+  const modes = lightboxEl.querySelector('.modes') as HTMLElement | null;
+  const cap = lightboxEl.querySelector('.cap') as HTMLElement | null;
+  if (!stage || !modes || !cap) return;
+  const { after, before, mode } = lightbox;
+  if (!after) return;
+
+  modes.replaceChildren();
+  stage.classList.toggle('blink', before !== null && mode === 'blink');
+  const second = document.getElementById('lightbox-canvas-b') as HTMLCanvasElement;
+
+  if (!before) {
+    paintFrame(lightboxCanvas, after);
+    second.classList.add('hidden');
+    lightboxCanvas.classList.remove('hidden');
+    cap.textContent = `${lightbox.caption} · click anywhere to close`;
+    return;
+  }
+
+  for (const m of [
+    { id: 'overlay' as const, label: 'Overlay' },
+    { id: 'blink' as const, label: 'Blink' },
+    { id: 'pair' as const, label: 'Side by side' },
+  ]) {
+    const b = el('button', { className: `chip${mode === m.id ? ' on' : ''}`, textContent: m.label });
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (lightbox) lightbox.mode = m.id;
+      renderLightbox();
+    });
+    modes.append(b);
+  }
+
+  lightboxCanvas.classList.remove('hidden');
+  second.classList.toggle('hidden', mode === 'overlay');
+  if (mode === 'overlay') {
+    paintFramePair(lightboxCanvas, before, after);
+    cap.textContent =
+      'Red is where the old warp drew the grid, cyan where it draws it now; grey is where the ' +
+      'two agree. The projector has not moved between them — the recalibration rewrote the frame.';
+  } else if (mode === 'blink') {
+    paintFrame(lightboxCanvas, after);
+    paintFrame(second, before);
+    cap.textContent =
+      'The same frame before and after, alternating. A shift of a few per cent on a repeating ' +
+      'grid is invisible side by side and obvious when it blinks.';
+  } else {
+    paintFrame(lightboxCanvas, before);
+    paintFrame(second, after);
+    cap.textContent = 'Left: what it was sending. Right: what it sends now. Click anywhere to close.';
   }
 }
-lightboxEl.addEventListener('click', closeLightbox);
 
 /** A thumbnail that opens full size when clicked. */
 function thumb(frame: FrameImage, caption: string): HTMLElement {
@@ -718,8 +825,17 @@ function requestModel(fine: boolean): void {
   renderReadout();
 }
 
-modelWorker.onmessage = (event: MessageEvent<ModelMessage>): void => {
+modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage>): void => {
   const msg = event.data;
+  // A frame the lightbox asked for, on its own id sequence. It carries no
+  // metrics and must not be mistaken for a stale model reply.
+  if (msg.kind === 'frames') {
+    if (!msg.ok || !lightbox || msg.slot !== lightbox.slot) return;
+    if (msg.tag === 'before') lightbox.before = msg.frame;
+    else if (msg.frame) lightbox.after = msg.frame;
+    renderLightbox();
+    return;
+  }
   // Drop a stale reply: a coarse pass sent before the last drag can land after
   // the fine pass that superseded it, and showing it would make the panel walk
   // backwards for no visible reason.
@@ -747,10 +863,6 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage>): void => {
   const projectorFrames = msg.projectorFrames.map((f, i) => f ?? kept[i] ?? null);
   model = { ...msg, projectorFrames };
   if (msg.parityImage) checkParity(msg.parityImage, msg.parityMs);
-  // The lightbox asked for a sharper render of the frame it is showing; this is
-  // it arriving.
-  const zoomed = lightboxSlot >= 0 ? (model.projectorFrames[lightboxSlot] ?? null) : null;
-  if (zoomed) paintFrame(lightboxCanvas, zoomed);
   renderReadout();
   renderInspect();
 };
@@ -811,6 +923,16 @@ let beforeFrames: (FrameImage | null)[] = [];
  */
 let beforeSeams: SeamPatch[] = [];
 let beforeMeshes: (WarpMesh | null)[] = [];
+
+/**
+ * The compositor calibration in force before the last recalibration — `null`
+ * meaning the config as written, which is what it usually is.
+ *
+ * A rig rather than a picture, because the lightbox re-renders the "before"
+ * frame at the size of the screen and a snapshot image could only ever be blown
+ * up. `undefined` means there is nothing to compare against.
+ */
+let beforeRig: RigCalibration | null | undefined;
 let seamPick = 0;
 
 function startSolve(): void {
@@ -825,6 +947,7 @@ function startSolve(): void {
   beforeFrames = (model?.projectorFrames ?? []).slice();
   beforeSeams = (model?.seams ?? []).slice();
   beforeMeshes = (model?.meshes ?? []).slice();
+  beforeRig = state.compositorRig;
   solveStartedAt = performance.now();
   solveStage = 'Placing the cameras…';
   const req: SolveRequest = {
@@ -852,6 +975,7 @@ function forgetCalibration(): void {
   beforeFrames = [];
   beforeSeams = [];
   beforeMeshes = [];
+  beforeRig = undefined;
   solveResult = null;
   solveTrace = [];
   solveStep = null;
@@ -868,6 +992,7 @@ function invalidateCalibration(): void {
   beforeFrames = [];
   beforeSeams = [];
   beforeMeshes = [];
+  beforeRig = undefined;
   solveResult = null;
   solveTrace = [];
   solveStep = null;

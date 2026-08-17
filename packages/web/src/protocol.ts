@@ -219,8 +219,46 @@ export interface SeamPatch {
   worstMm: number;
 }
 
+/**
+ * Render one projector's frame for a NAMED compositor calibration.
+ *
+ * Separate from {@link ModelRequest} because it answers a different question and
+ * must not disturb the answer to the first one. The lightbox needs the same
+ * frame at four times the width, and the frame the rig was sending BEFORE the
+ * last recalibration — which is a different calibration entirely. Asking the
+ * model worker for either through a normal request would replace every metric on
+ * the page with one computed for a rig nobody is looking at, and would recompute
+ * the whole metric set to fetch a picture.
+ */
+export interface FramesRequest {
+  kind: 'frames';
+  id: number;
+  settings: Settings;
+  /** The compositor calibration to render FROM. `null` is the config as written. */
+  compositorRig: RigCalibration | null;
+  /** Panel slot. */
+  slot: number;
+  /** Target width in pixels. */
+  width: number;
+  /** Identifies the supplied image the worker already holds. `''` when there is none. */
+  customImageId: string;
+  /** Echoed back, so the page knows which half of a comparison arrived. */
+  tag: string;
+}
+
+export interface FramesResponse {
+  kind: 'frames';
+  id: number;
+  ok: true;
+  slot: number;
+  tag: string;
+  frame: FrameImage | null;
+}
+
+export type FramesMessage = FramesResponse | WorkerFailure;
+
 export interface WorkerFailure {
-  kind: 'model' | 'solve';
+  kind: 'model' | 'solve' | 'frames';
   id: number;
   ok: false;
   /** What went wrong, in a sentence the page can print. */

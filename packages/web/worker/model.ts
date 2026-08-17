@@ -6,14 +6,21 @@
  * it, so a 128×96 float render crosses the boundary without being cloned.
  */
 
-import { computeModel } from '../src/model.ts';
-import type { ModelRequest, WorkerFailure } from '../src/protocol.ts';
+import { computeFrames, computeModel } from '../src/model.ts';
+import type { FramesRequest, ModelRequest, WorkerFailure } from '../src/protocol.ts';
 
 declare const self: DedicatedWorkerGlobalScope;
 
-self.onmessage = (event: MessageEvent<ModelRequest>): void => {
+self.onmessage = (event: MessageEvent<ModelRequest | FramesRequest>): void => {
   const req = event.data;
   try {
+    // A frame on its own, for the lightbox: same renderer, no metrics, and a
+    // compositor calibration the caller names rather than the one applied.
+    if (req.kind === 'frames') {
+      const reply = computeFrames(req);
+      self.postMessage(reply, reply.frame ? [reply.frame.data.buffer] : []);
+      return;
+    }
     // The incoming image is adopted by the worker's cache, so its buffer must
     // NOT be transferred back — it is still in use here.
     const reply = computeModel(req);
