@@ -188,7 +188,7 @@ export interface SolveRequest {
 
 export type SolvePhase = 'capture' | 'decode' | 'initialize' | 'bundle' | 'score' | 'done';
 
-/** A greyscale frame, as the page will draw it. */
+/** A frame, as the page will draw it. */
 export interface FrameImage {
   width: number;
   height: number;
@@ -196,6 +196,23 @@ export interface FrameImage {
   data: Float32Array;
   /** What it is a picture of. */
   caption: string;
+  /**
+   * Which space the numbers are in, because the two kinds of frame on this page
+   * are genuinely in different ones and the difference was invisible.
+   *
+   * `'linear'` — radiance, as a camera sensor integrated it. The capture
+   * thumbnails and the parity patch.
+   * `'display'` — a video signal, already through conventions.ts §P's encode.
+   * A projector's own frame is exactly this: it is the picture going down the
+   * cable, and `blendedSignal` encoded it on the way out.
+   *
+   * Getting it wrong is not subtle in its cause and is very subtle in its
+   * effect. The projector frames were being encoded a second time on the way to
+   * the canvas — `^(1/2.2)` twice, so `^(1/4.84)` — which compresses a blend
+   * ramp running 1.0 to 0.5 to nothing into 29 of 255 display levels. The fade
+   * was there in the model the whole time and could not be seen.
+   */
+  space: 'linear' | 'display';
 }
 
 export interface SolveProgress {

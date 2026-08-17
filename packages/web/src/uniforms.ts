@@ -328,24 +328,59 @@ export function pickMarker(u: DisplayUniforms, ndcX: number, ndcY: number): numb
   const ball = raySphereIntersect(origin, dir, u.physical.radiusM, 1e-9);
   let best = ball ? ball.t : 1e9;
   let which = -1;
-  for (let i = 0; i < u.projCount; i++) {
-    const ox = origin.x - u.physical.lens[3 * i];
-    const oy = origin.y - u.physical.lens[3 * i + 1];
-    const oz = origin.z - u.physical.lens[3 * i + 2];
+
+  /** Nearest hit on a sphere, or -1. */
+  const hitSphere = (cx: number, cy: number, cz: number, r: number): number => {
+    const ox = origin.x - cx;
+    const oy = origin.y - cy;
+    const oz = origin.z - cz;
     const h = ox * dir.x + oy * dir.y + oz * dir.z;
     const mx = ox - h * dir.x;
     const my = oy - h * dir.y;
     const mz = oz - h * dir.z;
-    const disc = u.markerRadius * u.markerRadius - (mx * mx + my * my + mz * mz);
-    if (disc < 0) continue;
+    const disc = r * r - (mx * mx + my * my + mz * mz);
+    if (disc < 0) return -1;
     const t = -h - Math.sqrt(disc);
-    if (t > 1e-4 && t < best) {
-      best = t;
-      which = i;
+    return t > 1e-4 ? t : -1;
+  };
+
+  for (let i = 0; i < u.projCount; i++) {
+    const lx = u.physical.lens[3 * i];
+    const ly = u.physical.lens[3 * i + 1];
+    const lz = u.physical.lens[3 * i + 2];
+    // The body sits BEHIND the lens point — `sdProjector` puts it at 0.33 m back
+    // along the axis, which is where the largest part of what a viewer sees is.
+    // Testing only a small ball at the lens meant clicking the middle of the
+    // visible projector missed it by nearly three marker radii.
+    const len = Math.hypot(lx, ly, lz) || 1;
+    const bx = lx + (lx / len) * PROJECTOR_BODY_BACK_M;
+    const by = ly + (ly / len) * PROJECTOR_BODY_BACK_M;
+    const bz = lz + (lz / len) * PROJECTOR_BODY_BACK_M;
+
+    for (const t of [
+      hitSphere(bx, by, bz, PROJECTOR_BODY_PICK_M),
+      hitSphere(lx, ly, lz, u.markerRadius),
+    ]) {
+      if (t >= 0 && t < best) {
+        best = t;
+        which = i;
+      }
     }
   }
   return which;
 }
+
+/**
+ * Where the shader puts a projector's body, and how big a click target it is.
+ *
+ * These mirror `sdProjector` and `projectorBodyCentre` in `glsl.ts`. Two spheres
+ * rather than a full signed-distance march on the CPU: the body's half-diagonal
+ * is 0.28 m so 0.30 covers it, and the barrel reaches forward to the lens point,
+ * which the second sphere covers. Slightly generous on purpose — this is a click
+ * target, and erring toward "you hit it" is the right error for one.
+ */
+const PROJECTOR_BODY_BACK_M = 0.33;
+const PROJECTOR_BODY_PICK_M = 0.3;
 
 /** Used by {@link pickMarker}, and by the shader's `main` under another name. */
 export function eyeRay(

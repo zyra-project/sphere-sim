@@ -261,6 +261,7 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     height: p.image.height,
     data: p.image.data,
     caption: `${cameras[p.camera]?.id ?? `C${p.camera + 1}`} — Gray plane ${p.frame}`,
+    space: 'linear',
   }));
 
   report(

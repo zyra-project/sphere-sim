@@ -242,6 +242,9 @@ export function computeModel(req: ModelRequest): ModelResponse {
         height: img.height,
         data: img.data,
         caption: `${compositor.projectors[i].cal.id} — ${it.resX} × ${it.resY}`,
+        // What goes down the cable, already through the §P encode by
+        // `blendedSignal`. Not radiance.
+        space: 'display',
       });
     }
   }

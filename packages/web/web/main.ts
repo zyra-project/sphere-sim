@@ -251,7 +251,13 @@ function paintFrame(target: HTMLCanvasElement, frame: FrameImage, exposure = 1):
   for (let i = 0; i < n; i++) {
     for (let c = 0; c < 3; c++) {
       const v = Math.max(0, frame.data[3 * i + c] * exposure);
-      out.data[4 * i + c] = Math.min(255, Math.round(255 * Math.pow(v, 1 / 2.2)));
+      // A frame that is already a video signal is blitted, not encoded again.
+      // See `FrameImage.space` — doing this twice is a `^(1/4.84)` curve, and it
+      // flattened the blend ramp on every projector frame into invisibility.
+      out.data[4 * i + c] = Math.min(
+        255,
+        Math.round(255 * (frame.space === 'display' ? v : Math.pow(v, 1 / 2.2))),
+      );
     }
     out.data[4 * i + 3] = 255;
   }
@@ -516,7 +522,7 @@ function requestModel(fine: boolean): void {
     parity: null,
     // Only on the settled pass: a projector frame is a CPU trace and four of
     // them on every drag would starve the metrics they sit beside.
-    projectorPreviewWidth: fine ? 208 : 0,
+    projectorPreviewWidth: fine ? 296 : 0,
     // Sent once per image, not once per request: the worker caches it by id, and
     // a megabyte of float on every slider drag would cost more than the metrics.
     // A copy rather than a transfer, because the main thread still needs it for
@@ -1141,14 +1147,39 @@ function roomSection(): HTMLElement[] {
   out.push(
     chipRow([
       {
-        label: 'Lens markers',
+        label: 'Projectors',
         title:
-          'Where each projector physically is, in its own colour. Click one in the room to see ' +
-          'only its light and the frame going down its cable. A drawing aid — the trace is not ' +
-          'told they exist, and no light comes off them.',
+          'The four projectors on their hangers, and the rod the sphere hangs from. Each lens ' +
+          'glows in its own colour; click one to see only its light and the frame going down its ' +
+          'cable. Scenery — the trace is not told any of it exists, and no light comes off it.',
         on: state.markersOn,
         onPick: () => {
           state.markersOn = !state.markersOn;
+          markDirty();
+          renderControls();
+        },
+      },
+      {
+        label: 'Guard rail',
+        title:
+          'The rail visitors stand behind, and its footprint on the floor. Scenery — nothing in ' +
+          'the model reads it, it emits no light and occludes none.',
+        on: state.railOn,
+        onPick: () => {
+          state.railOn = !state.railOn;
+          markDirty();
+          renderControls();
+        },
+      },
+      {
+        label: 'Aim guides',
+        title:
+          "A faint cone of light from each lens to the ball, in the projector's own colour. Drawn " +
+          'from where the lens ACTUALLY is, so a bumped projector\u2019s cone visibly misses where ' +
+          'the others converge.',
+        on: state.aimGuides,
+        onPick: () => {
+          state.aimGuides = !state.aimGuides;
           markDirty();
           renderControls();
         },

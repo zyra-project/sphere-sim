@@ -31,9 +31,21 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   looking at the whole installation; "Standing at it" on the Room tab walks you
   in, where two projectors are behind you — as they are in the real room.
 - **Each projector's own frame** — the image going down its cable, rendered by
-  `packages/sim` from the COMPOSITOR's calibration. Moving a projector does not
-  change it; only recalibrating does, which is the least intuitive thing about
-  how the system works and the reason it gets a picture.
+  `packages/sim` from the COMPOSITOR's calibration. A lune, widest at the equator
+  and pinching toward the poles, with the sides faded out where it hands over to
+  its neighbours. Moving a projector does not change it; only recalibrating does,
+  which is the least intuitive thing about how the system works and the reason it
+  gets a picture.
+
+  It looked like a flat disc for two independent reasons, and both had to go.
+  The blend was the wrong shape (A-37, above), and the frame was being **gamma
+  encoded twice** — `blendedSignal` applies conventions.ts §P's encode on the way
+  out of the model, and the canvas painter applied it again, so `^(1/4.84)`. That
+  compresses a ramp running 1.0 → 0.5 → 0 into 29 of 255 display levels. The fade
+  was in the model the whole time and could not be seen. `FrameImage.space` now
+  says which space a frame is in, because the two kinds on this page really are in
+  different ones: a camera capture is radiance, a projector frame is a video
+  signal.
 - **Where it actually is, against where the software thinks it is.** The same six
   facts — distance, height, azimuth, raster, field of view, distortion —
   computed by one function from two rigs, in two columns. Every alignment number
