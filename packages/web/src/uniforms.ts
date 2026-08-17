@@ -18,14 +18,22 @@
  *     must never do.
  */
 
+import { raySphereIntersect } from '../../sim/src/geometry.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import type { Scene, ViewerCamera } from '../../sim/src/render.ts';
 import { cross, dot, normalize, sub, DEG2RAD } from '../../sim/src/vec.ts';
 import { MAX_PROJECTORS } from './glsl.ts';
+import { PROJECTOR_TINTS_LINEAR } from './settings.ts';
 
-export type OverlayMode = 'none' | 'overlap' | 'seams' | 'unlit';
+export type OverlayMode = 'none' | 'overlap' | 'seams' | 'unlit' | 'byprojector';
 
-const OVERLAY_CODE: Record<OverlayMode, number> = { none: 0, overlap: 1, seams: 2, unlit: 3 };
+const OVERLAY_CODE: Record<OverlayMode, number> = {
+  none: 0,
+  overlap: 1,
+  seams: 2,
+  unlit: 3,
+  byprojector: 4,
+};
 
 export interface DisplayOptions {
   overlay?: OverlayMode;
@@ -38,6 +46,17 @@ export interface DisplayOptions {
   exposure?: number;
   /** `0` disables the final encode, for a linear readback the parity check can use. */
   displayGamma?: number;
+  /**
+   * Lens marker radius in metres. `0` — the default — draws none.
+   *
+   * Opt-in rather than opt-out, and that is load-bearing: the CPU two-rig
+   * renderer knows nothing about markers, so a path that got them by default
+   * would fail the parity check for a difference belonging to neither model.
+   * `drawFloor` already taught this lesson once.
+   */
+  markerRadiusM?: number;
+  /** Which marker reads as selected. `-1` none. */
+  markerSelected?: number;
 }
 
 /** One rig's arrays, in the layout the shader declares. */
@@ -167,7 +186,24 @@ export interface DisplayUniforms {
   floorRadius: number;
   exposure: number;
   displayGamma: number;
+
+  /** `3 * MAX_PROJECTORS` floats, linear light. */
+  tint: Float32Array;
+  markerRadius: number;
+  markerSelected: number;
 }
+
+/** One copy, since the colours never change. */
+const TINTS = ((): Float32Array => {
+  const a = new Float32Array(3 * MAX_PROJECTORS);
+  for (let i = 0; i < MAX_PROJECTORS; i++) {
+    const t = PROJECTOR_TINTS_LINEAR[i] ?? ([0.5, 0.5, 0.5] as const);
+    a[3 * i] = t[0];
+    a[3 * i + 1] = t[1];
+    a[3 * i + 2] = t[2];
+  }
+  return a;
+})();
 
 const RAMP_SHAPE_CODE: Record<string, number> = {
   linear: 0,
@@ -251,10 +287,52 @@ export function buildDisplayUniforms(
     floorRadius: options.floorRadiusM ?? 8,
     exposure: options.exposure ?? 1,
     displayGamma: options.displayGamma ?? 2.2,
+
+    tint: TINTS,
+    markerRadius: options.markerRadiusM ?? 0,
+    markerSelected: options.markerSelected ?? -1,
   };
 }
 
-/** Unused, but kept adjacent to the packer so the two never drift apart. */
+/**
+ * Which lens marker is under a point on the canvas, or `-1` for none.
+ *
+ * This mirrors the shader's `markerHit` deliberately: the same ray, the same
+ * spheres, the same occlusion by the ball. A click that selects something other
+ * than what is visibly under the cursor — a projector hidden behind the sphere,
+ * say — is worse than a click that does nothing. It reads the packed uniforms
+ * rather than the rig so there is only ever one statement of where a lens is.
+ *
+ * `ndc` is −1..1 with y up, as the shader's `s` is.
+ */
+export function pickMarker(u: DisplayUniforms, ndcX: number, ndcY: number): number {
+  if (u.markerRadius <= 0) return -1;
+  const dir = eyeRay(u, ndcX, ndcY);
+  const origin = { x: u.camPos[0], y: u.camPos[1], z: u.camPos[2] };
+
+  const ball = raySphereIntersect(origin, dir, u.physical.radiusM, 1e-9);
+  let best = ball ? ball.t : 1e9;
+  let which = -1;
+  for (let i = 0; i < u.projCount; i++) {
+    const ox = origin.x - u.physical.lens[3 * i];
+    const oy = origin.y - u.physical.lens[3 * i + 1];
+    const oz = origin.z - u.physical.lens[3 * i + 2];
+    const h = ox * dir.x + oy * dir.y + oz * dir.z;
+    const mx = ox - h * dir.x;
+    const my = oy - h * dir.y;
+    const mz = oz - h * dir.z;
+    const disc = u.markerRadius * u.markerRadius - (mx * mx + my * my + mz * mz);
+    if (disc < 0) continue;
+    const t = -h - Math.sqrt(disc);
+    if (t > 1e-4 && t < best) {
+      best = t;
+      which = i;
+    }
+  }
+  return which;
+}
+
+/** Used by {@link pickMarker}, and by the shader's `main` under another name. */
 export function eyeRay(
   u: DisplayUniforms,
   ndcX: number,

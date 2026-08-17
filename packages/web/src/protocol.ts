@@ -98,6 +98,47 @@ export interface ModelResponse {
   densityScale: number;
   /** One per projector, in rig order. Empty when none was asked for. */
   projectorFrames: FrameImage[];
+  /** One per projector, in rig order. See {@link WarpMesh}. */
+  meshes: WarpMesh[];
+}
+
+/**
+ * The warp mesh a calibration would have to write, for one projector.
+ *
+ * The config file carries heights and distances in inches and nothing finer;
+ * what actually removes a doubled grid line is a per-vertex displacement applied
+ * to the projector's raster. This is that displacement, and it is *derived*
+ * rather than drawn: for each vertex, follow the pixel out to the sphere through
+ * the calibration the compositor is using, then ask the real rig which pixel
+ * would have to be lit to put light on that same point. The difference is the
+ * correction.
+ *
+ * Which makes it a direct read-out of how wrong the compositor currently is.
+ * Before a solve the compositor holds the config as written and the mesh is
+ * visibly bent; feed a recovered calibration back in and the same computation
+ * collapses towards zero. Nothing about the drawing changes — only the two rigs
+ * it is asked about.
+ */
+export interface WarpMesh {
+  projectorId: string;
+  cols: number;
+  rows: number;
+  resX: number;
+  resY: number;
+  /** Vertex positions in the raster, `cols * rows` of them, row-major. */
+  u: Float32Array;
+  v: Float32Array;
+  /**
+   * Where each vertex must move to, in pixels. `NaN` where the vertex does not
+   * reach the sphere at all — the corners of a raster overshoot the limb, and a
+   * zero there would be a claim rather than a gap.
+   */
+  du: Float32Array;
+  dv: Float32Array;
+  /** Largest finite displacement, pixels. */
+  worstPx: number;
+  /** How many vertices reached the sphere. */
+  onSphere: number;
 }
 
 export interface WorkerFailure {
@@ -164,6 +205,17 @@ export interface SolveProgress {
   shots?: FrameImage[];
   /** One accepted optimiser step, for the convergence trace. */
   step?: { pass: number; iteration: number; cost: number };
+  /**
+   * The answer so far, so the sphere can be seen converging rather than
+   * snapping into place at the end.
+   *
+   * NOT gauge-aligned — the unobservable global rotation is removed once, after
+   * the loop. An intermediate is a valid solution in whatever frame the
+   * initialisation left it in: right for watching, wrong for measuring. The page
+   * draws with it and computes nothing from it, and the readout keeps showing
+   * the pre-calibration numbers until the real result lands.
+   */
+  partialRig?: RigCalibration;
 }
 
 export interface SolveResponse {

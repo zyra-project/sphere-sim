@@ -343,7 +343,14 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
         // then jump. This saturates instead: honest about being an estimate.
         0.6 + 0.35 * (1 - Math.exp(-stepCount / 12)),
         `Fitting: pass ${s.pass + 1}, step ${s.iteration}, cost ${s.cost.toPrecision(4)}`,
-        { step: { pass: s.pass, iteration: s.iteration, cost: s.cost } },
+        {
+          step: { pass: s.pass, iteration: s.iteration, cost: s.cost },
+          // Every step, so the sphere moves as the optimiser does. It is a few
+          // hundred bytes of JSON against a step that costs milliseconds, and
+          // watching the doubled grid lines walk back together is the clearest
+          // statement of what a calibration is that this page can make.
+          partialRig: s.calibration,
+        },
       );
     },
   });

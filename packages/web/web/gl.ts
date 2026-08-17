@@ -199,6 +199,11 @@ export function setUniforms(h: DisplayGl, u: DisplayUniforms): void {
   gl.uniform1f(loc('uFloorRadius'), u.floorRadius);
   gl.uniform1f(loc('uExposure'), u.exposure);
   gl.uniform1f(loc('uDisplayGamma'), u.displayGamma);
+
+  gl.uniform3fv(loc('uTint'), u.tint);
+  gl.uniform1f(loc('uMarkerRadius'), u.markerRadius);
+  gl.uniform1i(loc('uMarkerSelected'), u.markerSelected);
+
   gl.uniform1i(loc('uEquirect'), 0);
 }
 

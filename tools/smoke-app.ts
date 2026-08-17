@@ -307,6 +307,152 @@ async function main(): Promise<void> {
       );
     }
 
+    // The help sheet opens itself on a first visit — which is what a fresh
+    // profile always is — and everything behind it is unreachable until it
+    // closes. Check both halves and then get it out of the way, so the
+    // screenshot below is of the page rather than of the introduction.
+    const helpOpen = await cdp.evaluate<boolean>(
+      "document.getElementById('help')?.classList.contains('on') ?? false",
+    );
+    if (!helpOpen) {
+      failures.push('the help sheet did not open on a first visit');
+    } else {
+      await cdp.evaluate<boolean>(`(() => {
+        const b = document.querySelector('#help [data-smoke="help-close"]');
+        if (!(b instanceof HTMLElement)) return false;
+        b.click();
+        return true;
+      })()`);
+      await sleep(300);
+      const stillOpen = await cdp.evaluate<boolean>(
+        "document.getElementById('help')?.classList.contains('on') ?? false",
+      );
+      if (stillOpen) failures.push('the help sheet would not close');
+    }
+
+    // Step outside the ring first. At the default viewpoint you are standing
+    // between two of the projectors and cannot see them, which is true of the
+    // real room; the whole-room viewpoint is the one that claims to show all
+    // four, so it is the one worth checking.
+    const stepped = await cdp.evaluate<boolean>(`(() => {
+      const tab = [...document.querySelectorAll('#controls .seg button')]
+        .find((b) => /Room/.test(b.textContent ?? ''));
+      if (!tab) return false;
+      tab.click();
+      const chip = [...document.querySelectorAll('#controls button')]
+        .find((b) => /Whole room/.test(b.textContent ?? ''));
+      if (!chip) return false;
+      chip.click();
+      return true;
+    })()`);
+    if (!stepped) failures.push('there is no "Whole room" viewpoint on the Room tab');
+    await sleep(1200);
+
+    // The lens markers, and the click that picks one.
+    //
+    // There are two implementations of where a marker is: the shader's
+    // `markerHit`, which draws it, and `uniforms.ts`'s `pickMarker`, which
+    // decides what a click landed on. Nothing in Node can compare them — one of
+    // them is GLSL. So this finds a marker by its COLOUR in the rendered canvas
+    // and clicks it, and the assertion is that the projector the CPU picked is
+    // the one whose tint the GPU painted there. If the two ray-casts ever drift,
+    // the click selects the wrong projector and this fails.
+    const markers = await cdp.evaluate<{ found: number[]; spot: ({ x: number; y: number } | null)[] }>(`(() => {
+      const c = document.getElementById('view');
+      const rect = c.getBoundingClientRect();
+      const W = Math.round(rect.width), H = Math.round(rect.height);
+      const off = document.createElement('canvas');
+      off.width = W; off.height = H;
+      const ctx = off.getContext('2d');
+      ctx.drawImage(c, 0, 0, W, H);
+      const d = ctx.getImageData(0, 0, W, H).data;
+      // The four panel colours, as hues. Everything else the shader draws — the
+      // sphere, the floor — is grey, so saturation alone separates a marker from
+      // the room and the hue says which projector it is.
+      const hues = [180, 279, 30, 120];
+      const found = [0, 0, 0, 0];
+      const spot = [null, null, null, null];
+      const inBand = [[], [], [], []];
+      for (let y = 0; y < H; y += 2) {
+        for (let x = 0; x < W; x += 2) {
+          const i = 4 * (y * W + x);
+          const r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
+          const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+          if (mx < 0.12 || mx === mn) continue;
+          if ((mx - mn) / mx < 0.25) continue;
+          let h;
+          if (mx === r) h = 60 * ((((g - b) / (mx - mn)) % 6 + 6) % 6);
+          else if (mx === g) h = 60 * (((b - r) / (mx - mn)) + 2);
+          else h = 60 * (((r - g) / (mx - mn)) + 4);
+          let best = -1, bestD = 25;
+          for (let k = 0; k < 4; k++) {
+            let dh = Math.abs(h - hues[k]);
+            if (dh > 180) dh = 360 - dh;
+            if (dh < bestD) { bestD = dh; best = k; }
+          }
+          if (best < 0) continue;
+          found[best]++;
+          // Only somewhere the control panels are not, or the click lands on a
+          // slider instead of on the room.
+          if (x > W * 0.30 && x < W * 0.74) inBand[best].push([x, y]);
+        }
+      }
+      // Aim at the pixel nearest the centroid rather than at the first one found.
+      // The first is on the marker's top edge, where the ray grazes the sphere
+      // and a pixel of rounding misses it entirely — which would look exactly
+      // like the picker disagreeing with the shader.
+      for (let k = 0; k < 4; k++) {
+        const px = inBand[k];
+        if (px.length < 4) continue;
+        const cx = px.reduce((a, p) => a + p[0], 0) / px.length;
+        const cy = px.reduce((a, p) => a + p[1], 0) / px.length;
+        let bestP = px[0], bestD = Infinity;
+        for (const p of px) {
+          const d2 = (p[0] - cx) ** 2 + (p[1] - cy) ** 2;
+          if (d2 < bestD) { bestD = d2; bestP = p; }
+        }
+        spot[k] = { x: Math.round(rect.left + bestP[0]), y: Math.round(rect.top + bestP[1]) };
+      }
+      return { found, spot };
+    })()`);
+    const lit = markers.found.filter((n) => n > 0).length;
+    process.stdout.write(`  lens markers: ${lit} of 4 tints on screen (${markers.found.join('/')} px)\n`);
+    if (stepped && lit < 4) {
+      failures.push(
+        `the whole-room viewpoint shows ${lit} of 4 projectors — it exists to show all of them`,
+      );
+    }
+
+    const pickIndex = markers.spot.findIndex((s) => s !== null);
+    if (pickIndex < 0 && lit > 0) {
+      process.stdout.write('  (no marker in the clickable band; skipping the pick)\n');
+    } else if (pickIndex >= 0) {
+      const at = markers.spot[pickIndex]!;
+      for (const type of ['mousePressed', 'mouseReleased'] as const) {
+        await cdp.send('Input.dispatchMouseEvent', {
+          type,
+          x: at.x,
+          y: at.y,
+          button: 'left',
+          buttons: type === 'mousePressed' ? 1 : 0,
+          clickCount: 1,
+          pointerType: 'mouse',
+        });
+      }
+      await sleep(400);
+      const selected = await cdp.evaluate<number>(
+        "Number(document.getElementById('view')?.dataset.selected ?? -1)",
+      );
+      if (selected !== pickIndex) {
+        failures.push(
+          `clicking the P${pickIndex + 1} marker at (${at.x}, ${at.y}) selected ` +
+            `${selected < 0 ? 'nothing' : `P${selected + 1}`} — the shader and the picker disagree`,
+        );
+      } else {
+        process.stdout.write(`  clicked the P${pickIndex + 1} marker and P${pickIndex + 1} was selected\n`);
+      }
+    }
+
     const parity = await cdp.evaluate<string>(
       "document.querySelector('[data-smoke=\"parity\"]')?.dataset.state ?? '(none)'",
     );
@@ -381,7 +527,33 @@ async function main(): Promise<void> {
       }
     }
 
+    // The warp mesh is the one diagram computed by composing the two rigs, and a
+    // flex column will happily squash an SVG to nothing while its caption goes on
+    // claiming a picture is there — which is what it did. Check it has height.
+    const mesh = await cdp.evaluate<{ h: number; grey: number; tinted: number } | null>(`(() => {
+      const svg = document.querySelector('#inspect svg');
+      if (!svg) return null;
+      const groups = [...svg.querySelectorAll('g')];
+      const count = (i) => groups[i] ? groups[i].querySelectorAll('polyline').length : 0;
+      return { h: Math.round(svg.getBoundingClientRect().height), grey: count(0), tinted: count(1) };
+    })()`);
+    if (!mesh) {
+      failures.push('the selected projector shows no warp mesh');
+    } else if (mesh.h < 40) {
+      failures.push(`the warp mesh drew at ${mesh.h} px tall — it has been squashed away`);
+    } else if (mesh.grey < 8 || mesh.tinted < 8) {
+      failures.push(
+        `the warp mesh has ${mesh.grey} raster lines and ${mesh.tinted} corrected ones`,
+      );
+    } else {
+      process.stdout.write(`  warp mesh: ${mesh.h} px tall, ${mesh.tinted} corrected lines\n`);
+    }
+
     if (opts.screenshot) {
+      // Scroll the inspect card so the diagrams are in the frame rather than
+      // below the fold — the screenshot is for a person to look at.
+      await cdp.evaluate("document.getElementById('inspect').scrollTop = 1e6; 1");
+      await sleep(150);
       const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
       fs.writeFileSync(opts.screenshot, Buffer.from(shot.data, 'base64'));
       process.stdout.write(`  screenshot: ${opts.screenshot}\n`);

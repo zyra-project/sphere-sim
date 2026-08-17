@@ -2124,7 +2124,7 @@ export function boundsAtLimit(
 export function levenbergMarquardt(
   initial: BundleState,
   problem: BundleProblem,
-  onIteration?: (iteration: number, cost: number, lambda: number) => void,
+  onIteration?: (iteration: number, cost: number, lambda: number, state: BundleState) => void,
 ): BundleReport {
   const { layout, opts } = problem;
   let state = cloneState(initial);
@@ -2247,7 +2247,7 @@ export function levenbergMarquardt(
         cost = trialEv.cost;
         lambda = Math.max(lambda / opts.lambdaDown, 1e-12);
         accepted = true;
-        if (onIteration) onIteration(iterations, cost, lambda);
+        if (onIteration) onIteration(iterations, cost, lambda, state);
 
         if (maxStep < opts.stepTol) {
           converged = true;
@@ -2627,6 +2627,20 @@ export interface BundleStep {
   /** The robust cost. Falling is the point; the units are not pixels. */
   cost: number;
   lambda: number;
+  /**
+   * The optimiser's state at this step, so a caller can see the answer moving
+   * rather than only the cost falling.
+   *
+   * NOT gauge-aligned — that happens once, at the end, against the nominal. An
+   * intermediate is therefore a valid solution in whatever frame the
+   * initialisation left it in, which is exactly right for a preview and wrong
+   * for a measurement. Anything scoring a recovery must use the final report.
+   *
+   * A reference into the optimiser's own working state, not a copy: cloning it
+   * per accepted step would cost more than the step. A consumer that keeps it
+   * past the callback must clone it itself.
+   */
+  state: BundleState;
 }
 
 export function runBundle(
@@ -2653,8 +2667,10 @@ export function runBundle(
   };
   const problem = buildProblem(initial, correspondences, floor, opts, priors);
 
-  const stepReporter = (pass: number): ((i: number, cost: number, lambda: number) => void) | undefined =>
-    onStep ? (iteration, cost, lambda) => onStep({ pass, iteration, cost, lambda }) : undefined;
+  const stepReporter = (
+    pass: number,
+  ): ((i: number, cost: number, lambda: number, state: BundleState) => void) | undefined =>
+    onStep ? (iteration, cost, lambda, state) => onStep({ pass, iteration, cost, lambda, state }) : undefined;
 
   let report = levenbergMarquardt(initial, problem, stepReporter(0));
   let totalIterations = report.iterations;

@@ -78,6 +78,20 @@ camera images  ──decode.ts──▶  correspondences (+ per-point sigma)
 rough tripod poses, the PARAMETERS.md nominals as a `RigCalibration`, and — if
 `h_center` is wanted — one or more floor heights.
 
+### Watching it converge
+
+`SolveInput.onStep` reports every accepted Levenberg–Marquardt step as a
+`SolveStep`: the pass, the iteration, the cost, `lambda`, and the calibration as
+it stands. It exists so a caller can *draw* the optimiser working.
+
+**A `SolveStep.calibration` is not gauge-aligned.** The unobservable global
+rotation is removed once, after the loop — see the gauge section below — so an
+intermediate is a perfectly valid solution expressed in whatever frame the
+initialisation happened to leave it in. Scoring one against ground truth measures
+the gauge and not the fit. Draw with it; do not measure from it. `packages/web`
+does exactly this: the sphere moves every step and the readout keeps showing the
+pre-calibration numbers until the real result lands.
+
 ## Structured light: what the patterns must look like
 
 The normative pattern definition is at the top of `decode.ts`. Two points that

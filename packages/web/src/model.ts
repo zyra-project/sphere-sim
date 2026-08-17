@@ -28,7 +28,9 @@
  */
 
 import type { RigCalibration } from '../../calibration/src/index.ts';
-import { prepareRig } from '../../sim/src/optics.ts';
+import { raySphereIntersect } from '../../sim/src/geometry.ts';
+import { pixelToRay, prepareRig, worldToPixelUnbounded } from '../../sim/src/optics.ts';
+import type { PreparedRig } from '../../sim/src/optics.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
 import type { MetricSet } from '../../sim/src/metrics/index.ts';
 import { renderTwoRigRoomView } from '../../sim/src/misregistration.ts';
@@ -37,7 +39,7 @@ import type { ViewerCamera } from '../../sim/src/render.ts';
 import { buildWorld } from './rigs.ts';
 import { framebufferSentence, readingsFrom, rigFacts } from './readout.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
-import type { FrameImage, ModelRequest, ModelResponse } from './protocol.ts';
+import type { FrameImage, ModelRequest, ModelResponse, WarpMesh } from './protocol.ts';
 
 /**
  * The last supplied image, held across requests.
@@ -70,6 +72,84 @@ function metricsFor(
     densityScale,
     convergence: false,
   });
+}
+
+/** Vertices across and down. Odd, so a vertex sits on the optical axis. */
+const MESH_COLS = 17;
+const MESH_ROWS = 11;
+
+/**
+ * The warp mesh for every projector. See {@link WarpMesh} for what it means.
+ *
+ * The composition is `worldToPixelUnbounded(truth) ∘ pixelToRay(compositor)`,
+ * and both halves matter:
+ *
+ *  - `pixelToRay` uses the COMPOSITOR's rig because the question starts from a
+ *    pixel the compositor is about to paint, in the frame it believes it is in.
+ *  - `worldToPixel` uses the TRUTH rig because the answer is which pixel of the
+ *    real projector puts light on that point.
+ *
+ * Swap either and the mesh comes out flat, which looks like a well-calibrated
+ * system rather than like a bug.
+ *
+ * `Unbounded` on the return leg is deliberate: a vertex whose correction pushes
+ * it off the edge of the raster is a real and interesting answer — it says the
+ * content there cannot be corrected without losing it — and clamping to `null`
+ * would draw that as a hole indistinguishable from a limb overshoot.
+ */
+function warpMeshes(truth: PreparedRig, compositor: PreparedRig): WarpMesh[] {
+  const out: WarpMesh[] = [];
+  const n = MESH_COLS * MESH_ROWS;
+  for (let i = 0; i < compositor.projectors.length; i++) {
+    const c = compositor.projectors[i];
+    const t = truth.projectors[i];
+    const it = c.cal.intrinsics;
+    const u = new Float32Array(n);
+    const v = new Float32Array(n);
+    const du = new Float32Array(n);
+    const dv = new Float32Array(n);
+    let worstPx = 0;
+    let onSphere = 0;
+
+    for (let row = 0; row < MESH_ROWS; row++) {
+      for (let col = 0; col < MESH_COLS; col++) {
+        const k = row * MESH_COLS + col;
+        const pu = (it.resX * col) / (MESH_COLS - 1);
+        const pv = (it.resY * row) / (MESH_ROWS - 1);
+        u[k] = pu;
+        v[k] = pv;
+        du[k] = Number.NaN;
+        dv[k] = Number.NaN;
+
+        const ray = pixelToRay(c, pu, pv);
+        // The sphere is centred on the world origin (conventions.ts §W), so the
+        // lens position is the ray origin as it stands.
+        const hit = raySphereIntersect(c.lens, ray, compositor.radiusM);
+        if (!hit) continue;
+        const back = t ? worldToPixelUnbounded(t, hit.point) : null;
+        if (!back) continue;
+        onSphere++;
+        du[k] = back.u - pu;
+        dv[k] = back.v - pv;
+        const d = Math.hypot(du[k], dv[k]);
+        if (d > worstPx) worstPx = d;
+      }
+    }
+    out.push({
+      projectorId: c.cal.id,
+      cols: MESH_COLS,
+      rows: MESH_ROWS,
+      resX: it.resX,
+      resY: it.resY,
+      u,
+      v,
+      du,
+      dv,
+      worstPx,
+      onSphere,
+    });
+  }
+  return out;
 }
 
 /**
@@ -171,6 +251,7 @@ export function computeModel(req: ModelRequest): ModelResponse {
     id: req.id,
     ok: true,
     projectorFrames,
+    meshes: warpMeshes(prepareRig(world.truthRig), prepareRig(world.compositorRig)),
     readings: readingsFrom(set),
     facts: rigFacts(world.asBuiltRig, set),
     framebuffer: framebufferSentence(world.truthRig),

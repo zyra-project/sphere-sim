@@ -49,6 +49,7 @@ import {
   PROJECTOR_TINTS,
   RESOLUTIONS,
   SPEC_PRESET,
+  VIEWPOINTS,
   clearNudges,
   formatSetting,
   withNudge,
@@ -62,8 +63,8 @@ import {
   worstPlacementOffender,
 } from '../src/rigs.ts';
 import type { Reading, RigFact } from '../src/readout.ts';
-import { buildDisplayUniforms } from '../src/uniforms.ts';
-import type { OverlayMode } from '../src/uniforms.ts';
+import { buildDisplayUniforms, pickMarker } from '../src/uniforms.ts';
+import type { DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
 import type { ParityVerdict } from '../src/parity.ts';
 import { BOUNDARY_PIXEL_ALLOWANCE, PARITY_HEIGHT, PARITY_WIDTH, judgeParity } from '../src/parity.ts';
 import type {
@@ -75,6 +76,7 @@ import type {
   SolveMessage,
   SolveRequest,
   SolveResponse,
+  WarpMesh,
 } from '../src/protocol.ts';
 import type { DisplayGl } from './gl.ts';
 import { createDisplayGl, drawToCanvas, renderAndRead, uploadEquirect } from './gl.ts';
@@ -95,8 +97,11 @@ interface PageState {
   overlay: OverlayMode;
   /** `-1` shows every projector; otherwise isolate one. */
   highlight: number;
+  /** Draw the lens markers in the room. They are also what a click hits. */
+  markersOn: boolean;
   explain: boolean;
   panelOpen: boolean;
+  readoutOpen: boolean;
   /** Solve inputs. Deliberately few — see `protocol.ts` on why there is no noise slider. */
   cameraCount: number;
   handheld: boolean;
@@ -110,10 +115,12 @@ const state: PageState = {
   selected: 0,
   overlay: 'none',
   highlight: -1,
+  markersOn: true,
   // Off by default: with every note expanded the control panel is taller than
   // most screens, and a person who wants the reasoning is one click from it.
   explain: false,
   panelOpen: true,
+  readoutOpen: true,
   cameraCount: 3,
   handheld: false,
   ambient: 0.04,
@@ -145,6 +152,9 @@ const controlsEl = document.getElementById('controls') as HTMLDivElement;
 const actionsEl = document.getElementById('actions') as HTMLDivElement;
 const topBtnsEl = document.getElementById('topbtns') as HTMLDivElement;
 const rightEl = document.getElementById('right') as HTMLDivElement;
+const leftEl = document.getElementById('left') as HTMLDivElement;
+const leftBtnsEl = document.getElementById('leftbtns') as HTMLDivElement;
+const helpEl = document.getElementById('help') as HTMLDivElement;
 const readoutEl = document.getElementById('readout') as HTMLDivElement;
 const inspectEl = document.getElementById('inspect') as HTMLDivElement;
 const bootEl = document.getElementById('boot') as HTMLDivElement;
@@ -387,16 +397,41 @@ async function loadCustomImage(file: File): Promise<void> {
   }
 }
 
+/**
+ * Drop an equirectangular image anywhere on the page.
+ *
+ * The whole window is the target, which is generous and completely invisible —
+ * so dragging a file over the page raises a banner saying what will happen to
+ * it. Without one there is nothing on screen that says the page accepts a file
+ * at all, which is exactly the report this came from.
+ */
 function installDropTarget(): void {
+  let depth = 0;
   const stop = (e: DragEvent): void => {
     e.preventDefault();
     e.stopPropagation();
   };
-  for (const type of ['dragenter', 'dragover', 'dragleave'] as const) {
-    window.addEventListener(type, stop);
-  }
+  const show = (on: boolean): void => {
+    document.body.classList.toggle('dropping', on);
+  };
+
+  window.addEventListener('dragenter', (e) => {
+    stop(e);
+    // Entering a child fires `dragenter` before the parent's `dragleave`, so a
+    // boolean flickers and a counter does not.
+    depth++;
+    show(true);
+  });
+  window.addEventListener('dragover', stop);
+  window.addEventListener('dragleave', (e) => {
+    stop(e);
+    depth = Math.max(0, depth - 1);
+    if (depth === 0) show(false);
+  });
   window.addEventListener('drop', (e) => {
     stop(e);
+    depth = 0;
+    show(false);
     const file = e.dataTransfer?.files?.[0];
     if (file) void loadCustomImage(file);
   });
@@ -487,6 +522,14 @@ solveWorker.onmessage = (event: MessageEvent<SolveMessage>): void => {
     solveStage = msg.message;
     if (msg.shots) solveShots = msg.shots;
     if (msg.step) solveTrace.push({ pass: msg.step.pass, cost: msg.step.cost });
+    if (msg.partialRig) {
+      // Draw with it; compute nothing from it. The readout keeps showing the
+      // pre-calibration numbers until the real result lands, because an
+      // intermediate has not had the unobservable global rotation removed and a
+      // metric taken from one would be measuring the gauge.
+      state.compositorRig = msg.partialRig;
+      markDirty();
+    }
     renderReadout();
     return;
   }
@@ -571,6 +614,22 @@ function ensureContent(image: { width: number; height: number; data: Float32Arra
   }
 }
 
+/**
+ * Lens marker radius, metres. Roughly the size of a projector's front element at
+ * this scale — large enough to see across a 5 m room and to hit with a mouse,
+ * small enough that it does not read as an object the light comes out of the
+ * middle of.
+ */
+const MARKER_RADIUS_M = 0.12;
+
+/**
+ * The uniforms of the last on-screen frame, kept so a click can be turned into a
+ * projector. It is the drawn state, not a recomputed one: picking against a
+ * freshly built camera would drift from what the viewer is looking at during the
+ * frame a drag ends on.
+ */
+let lastUniforms: DisplayUniforms | null = null;
+
 function draw(): void {
   if (!gl) return;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -595,8 +654,16 @@ function draw(): void {
       drawFloor: true,
       floorRadiusM: 8,
       displayGamma: 2.2,
+      markerRadiusM: state.markersOn ? MARKER_RADIUS_M : 0,
+      markerSelected: state.selected,
     },
   );
+  lastUniforms = uniforms;
+  // Test hooks, set by the function that draws so they cannot describe a state
+  // the picture is not in. `tools/smoke-app.ts` clicks a marker it found by
+  // colour and reads these back.
+  canvas.dataset.selected = String(state.selected);
+  canvas.dataset.highlight = String(state.highlight);
   drawToCanvas(gl, uniforms, w, h);
 }
 
@@ -719,12 +786,7 @@ function projectorTabs(): HTMLElement {
         touched(true);
         return;
       }
-      state.selected = i;
-      state.highlight = i;
-      markDirty();
-      renderControls();
-      renderInspect();
-      renderActions();
+      selectProjector(i);
     });
     row.append(b);
   }
@@ -737,9 +799,10 @@ function projectorSection(): HTMLElement[] {
     el('p', {
       className: 'grouphelp',
       textContent:
-        'Pick a projector to move it. These are its REAL position and aim — what the software ' +
-        'believes only changes when you recalibrate, which is why the frame below does not move ' +
-        'when you drag these. Click a selected projector again to switch it off.',
+        'Pick a projector to move it — here, or by clicking its lens in the room. These are its ' +
+        'REAL position and aim; what the software believes only changes when you recalibrate, ' +
+        'which is why the frame below does not move when you drag these. Click a selected ' +
+        'projector again to switch it off.',
     }),
   );
   const nudge = state.settings.nudge[state.selected];
@@ -955,6 +1018,13 @@ function roomSection(): HTMLElement[] {
     },
     { id: 'seams', label: 'Seams', title: 'Where two projectors overlap and crossfade.' },
     {
+      id: 'byprojector',
+      label: 'By projector',
+      title:
+        'Tinted by whichever projector is contributing most, in the four panel colours. The line ' +
+        'between two tints is the middle of the blend band — and it moves when a projector moves.',
+    },
+    {
       id: 'unlit',
       label: 'Dark',
       title:
@@ -976,6 +1046,45 @@ function roomSection(): HTMLElement[] {
       })),
     ),
   );
+  out.push(el('span', { className: 'lab', textContent: 'Where you stand' }));
+  // Which chip is lit, if any: dragging the sphere leaves none of them lit,
+  // which is correct — the viewpoint is then wherever you put it.
+  const here = VIEWPOINTS.findIndex((v) =>
+    (Object.keys(v.view) as (keyof typeof v.view)[]).every(
+      (k) => Math.abs(state.settings[k] - v.view[k]) < 1e-6,
+    ),
+  );
+  out.push(
+    chipRow(
+      VIEWPOINTS.map((v, i) => ({
+        label: v.label,
+        title: v.help,
+        on: here === i,
+        onPick: () => {
+          state.settings = { ...state.settings, ...v.view };
+          touched(true);
+        },
+      })),
+    ),
+  );
+  out.push(el('span', { className: 'lab', textContent: 'In the room' }));
+  out.push(
+    chipRow([
+      {
+        label: 'Lens markers',
+        title:
+          'Where each projector physically is, in its own colour. Click one in the room to see ' +
+          'only its light and the frame going down its cable. A drawing aid — the trace is not ' +
+          'told they exist, and no light comes off them.',
+        on: state.markersOn,
+        onPick: () => {
+          state.markersOn = !state.markersOn;
+          markDirty();
+          renderControls();
+        },
+      },
+    ]),
+  );
   out.push(el('span', { className: 'lab', textContent: 'Isolate' }));
   const n = Math.round(state.settings.projectorCount);
   out.push(
@@ -994,8 +1103,12 @@ function roomSection(): HTMLElement[] {
         on: state.highlight === i,
         onPick: () => {
           state.highlight = i;
+          // Isolating also selects, so the inspect card is showing the frame of
+          // the projector whose light is on screen rather than some other one's.
+          state.selected = i;
           markDirty();
           renderControls();
+          renderInspect();
         },
       })),
     ]),
@@ -1049,10 +1162,20 @@ function pickImage(): void {
 
 function renderTopButtons(): void {
   topBtnsEl.replaceChildren();
+
+  const help = el('button', {
+    className: 'btn icon',
+    textContent: '?',
+    title: 'What is this, and how do I use it?',
+  });
+  help.addEventListener('click', () => openHelp());
+  topBtnsEl.append(help);
+
   const toggle = el('button', {
     className: 'btn icon',
-    textContent: state.panelOpen ? '–' : '≡',
+    textContent: state.panelOpen ? '\u2013' : '\u2261',
     title: state.panelOpen ? 'Hide the controls' : 'Show the controls',
+    ariaLabel: state.panelOpen ? 'Hide the controls' : 'Show the controls',
   });
   toggle.addEventListener('click', () => {
     state.panelOpen = !state.panelOpen;
@@ -1060,6 +1183,117 @@ function renderTopButtons(): void {
     renderTopButtons();
   });
   topBtnsEl.append(toggle);
+
+  leftBtnsEl.replaceChildren();
+  const readout = el('button', {
+    className: 'btn icon',
+    textContent: state.readoutOpen ? '\u2013' : '\u2261',
+    title: state.readoutOpen ? 'Hide the readout' : 'Show the readout',
+    ariaLabel: state.readoutOpen ? 'Hide the readout' : 'Show the readout',
+  });
+  readout.addEventListener('click', () => {
+    state.readoutOpen = !state.readoutOpen;
+    leftEl.classList.toggle('collapsed', !state.readoutOpen);
+    renderTopButtons();
+  });
+  leftBtnsEl.append(readout);
+}
+
+/**
+ * The help sheet.
+ *
+ * Shown once, unprompted, and then only when asked for. A page whose first
+ * screen is a sphere and thirty controls needs to say what it is; a page that
+ * says it every visit is a page people learn to dismiss without reading.
+ *
+ * The "seen" flag is in `localStorage` and its absence is handled: a browser
+ * with storage disabled shows the sheet every time, which is the failure that
+ * costs a click rather than the one that hides the explanation.
+ */
+const HELP_SEEN_KEY = 'sphere-sim.help.seen.v1';
+
+function openHelp(): void {
+  const sheet = helpEl.querySelector('.sheet');
+  if (!sheet) return;
+  sheet.replaceChildren();
+
+  const h = (tag: 'h2' | 'h3' | 'p', text: string, cls = ''): HTMLElement =>
+    el(tag, { textContent: text, className: cls });
+
+  sheet.append(h('h2', 'What this is'));
+  sheet.append(
+    h(
+      'p',
+      'A Science On a Sphere theatre, simulated. Four projectors ring a 68-inch ball and paint ' +
+        'one image between them. Getting them to agree — so a coastline drawn by two projectors ' +
+        'lands in one place rather than two — is the whole problem, and this page lets you break ' +
+        'it and then fix it.',
+    ),
+  );
+
+  sheet.append(h('h3', 'The one thing worth understanding'));
+  sheet.append(
+    h(
+      'p',
+      'There are two rigs, not one. Where the lenses ACTUALLY are, and where the software BELIEVES ' +
+        'they are. Move a projector and only the first changes — which is why the frame that ' +
+        'projector is sending does not move, and why the picture on the ball goes wrong. ' +
+        'Recalibrating is what updates the second one.',
+    ),
+  );
+
+  sheet.append(h('h3', 'Try this'));
+  const list = el('ul');
+  for (const item of [
+    'Drag the sphere to walk around it. Scroll to move closer.',
+    'On the Room tab, press "Whole room" to step outside the ring — all four projectors, each in its own colour. Click a lens to see only its light and the frame going down its cable.',
+    'On the Projectors tab, drag "Aim left / right" and watch the grid lines double at the seams — the number on the left climbs past its 1 mm gate.',
+    'Press Recalibrate. The simulator photographs the sphere with structured light, the solver works out where the lenses really are from those photographs alone, and the sphere converges as it goes. Five seconds or so.',
+    'Open "What it found" to see which axis it moved and how close it landed to the truth it never saw.',
+    'On the Room tab, turn the grid off and drop any 2:1 equirectangular image on the page — a NOAA dataset, Blue Marble, a test chart.',
+  ]) {
+    list.append(el('li', { textContent: item }));
+  }
+  sheet.append(list);
+
+  sheet.append(h('h3', 'Where the numbers come from'));
+  sheet.append(
+    h(
+      'p',
+      'The picture is drawn by a shader. Every NUMBER is computed separately by the project\u2019s ' +
+        'forward model, and the two are compared against each other continuously — that ' +
+        'disagreement is printed at the bottom of the readout rather than assumed away. The ' +
+        'calibration is run by an inverse model that shares no geometry code with the simulator ' +
+        'at all, which is the only reason its score means anything.',
+    ),
+  );
+  sheet.append(
+    h(
+      'p',
+      'The page opens at NOAA Boulder\u2019s published configuration, which disagrees with this ' +
+        'project\u2019s own specification on three constants. That conflict is recorded rather than ' +
+        'resolved, and the readout flags what it costs.',
+      'small',
+    ),
+  );
+
+  const close = el('div', { className: 'close' });
+  const btn = el('button', { className: 'btn primary', textContent: 'Start' });
+  btn.dataset.smoke = 'help-close';
+  btn.addEventListener('click', closeHelp);
+  close.append(btn);
+  sheet.append(close);
+
+  helpEl.classList.add('on');
+}
+
+function closeHelp(): void {
+  helpEl.classList.remove('on');
+  try {
+    localStorage.setItem(HELP_SEEN_KEY, '1');
+  } catch {
+    /* storage disabled — the sheet shows again next visit, which is the harmless failure */
+  }
 }
 
 function renderActions(): void {
@@ -1129,7 +1363,12 @@ function renderActions(): void {
 function renderInspect(): void {
   inspectEl.replaceChildren();
   const frame = model?.projectorFrames[state.selected];
-  if (state.section !== 'projectors' || !frame) {
+  // Shown whenever a projector is the subject — either because the Projectors
+  // tab is open, or because one is isolated in the room. It used to be tied to
+  // the tab alone, which meant clicking a lens in the room lit up its light and
+  // showed nothing about it.
+  const subject = state.section === 'projectors' || state.highlight >= 0;
+  if (!subject || !frame) {
     inspectEl.classList.remove('on');
     return;
   }
@@ -1142,6 +1381,31 @@ function renderInspect(): void {
   name.style.color = tint;
   head.append(name, el('span', { className: 'note tiny', textContent: frame.caption }));
   inspectEl.append(head);
+
+  // Walk round to this projector's side.
+  //
+  // Isolating a projector that lights the far side of the ball leaves you
+  // looking at the unlit back of it, which is the truth and reads as a fault.
+  // The azimuth comes off the drawn uniforms rather than being recomputed, so
+  // the button goes exactly where the marker is.
+  if (state.highlight === state.selected && lastUniforms) {
+    const lx = lastUniforms.physical.lens[3 * state.selected];
+    const ly = lastUniforms.physical.lens[3 * state.selected + 1];
+    const az = (Math.atan2(ly, lx) * 180) / Math.PI;
+    const lightsFarSide = Math.abs(((az - state.settings.viewAzDeg + 540) % 360) - 180) > 120;
+    if (lightsFarSide) {
+      const walk = el('button', {
+        className: 'linkish',
+        textContent: `stand where P${state.selected + 1} does`,
+        title: 'This projector lights the side of the ball you are not looking at.',
+      });
+      walk.addEventListener('click', () => {
+        state.settings = withSetting(state.settings, 'viewAzDeg', az);
+        touched(true);
+      });
+      inspectEl.append(walk);
+    }
+  }
 
   const c = el('canvas', { className: 'framepic' });
   paintFrame(c, frame);
@@ -1162,6 +1426,38 @@ function renderInspect(): void {
     const off = el('p', { className: 'note', textContent: 'Currently switched off at the wall.' });
     off.style.color = 'var(--warn)';
     inspectEl.append(off);
+  }
+
+  const mesh = model?.meshes[state.selected];
+  if (mesh) {
+    // Magnified so the shape is legible. At true scale a 1 mm error and a 100 mm
+    // error are both a straight grid, so the factor is chosen to put the worst
+    // vertex at a fixed fraction of the raster — and then printed, because a
+    // diagram whose scale is picked to look convincing is not evidence.
+    const gain =
+      mesh.worstPx > 1e-9 ? Math.min(400, Math.max(1, (0.07 * mesh.resX) / mesh.worstPx)) : 1;
+    inspectEl.append(el('p', { className: 'eyebrow-sm', textContent: 'Warp mesh' }));
+    inspectEl.append(meshDiagram(mesh, tint, gain));
+    inspectEl.append(
+      el('p', {
+        className: 'note tiny num',
+        textContent:
+          `worst vertex ${mesh.worstPx.toFixed(mesh.worstPx < 10 ? 2 : 1)} px ` +
+          `across a ${mesh.resX}-pixel raster, drawn ×${gain < 10 ? gain.toFixed(1) : gain.toFixed(0)} ` +
+          `to be visible at all — ${mesh.onSphere} of ${mesh.cols * mesh.rows} vertices reach the ball`,
+      }),
+    );
+    inspectEl.append(
+      el('p', {
+        className: 'note',
+        textContent:
+          'Grey is the raster as the software addresses it; colour is where each vertex has to ' +
+          'move for the light to land where the software thinks it does. This is the correction ' +
+          'the config file cannot carry. It is not drawn — each vertex is followed out to the ' +
+          'ball through the believed calibration and back through the real one, so recalibrating ' +
+          'collapses it towards straight.',
+      }),
+    );
   }
 }
 
@@ -1230,6 +1526,77 @@ function sparkline(trace: readonly { pass: number; cost: number }[]): HTMLElemen
   line.setAttribute('stroke-linecap', 'round');
   svg.append(line);
   return svg as unknown as HTMLElement;
+}
+
+/**
+ * One projector's warp mesh, drawn.
+ *
+ * The grey grid is the raster as the compositor addresses it; the coloured grid
+ * is where each vertex has to move so the light lands where the compositor
+ * thinks it does. The displacement is magnified by a stated factor, because at
+ * true scale a good calibration and a bad one are both a straight grid — and the
+ * factor is printed rather than tuned to taste.
+ *
+ * Every number here came from the model worker. This function positions lines.
+ */
+function meshDiagram(mesh: WarpMesh, tint: string, gain: number): HTMLElement {
+  const W = 320;
+  const H = Math.round((W * mesh.resY) / mesh.resX);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', String(H));
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `Warp mesh for ${mesh.projectorId}`);
+
+  const sx = W / mesh.resX;
+  const sy = H / mesh.resY;
+  const at = (k: number, warped: boolean): [number, number] | null => {
+    const dx = mesh.du[k];
+    const dy = mesh.dv[k];
+    if (warped && !Number.isFinite(dx)) return null;
+    return [
+      (mesh.u[k] + (warped ? dx * gain : 0)) * sx,
+      (mesh.v[k] + (warped ? dy * gain : 0)) * sy,
+    ];
+  };
+
+  for (const warped of [false, true]) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('fill', 'none');
+    g.setAttribute('stroke', warped ? tint : 'rgba(255,255,255,0.16)');
+    g.setAttribute('stroke-width', warped ? '1.3' : '1');
+    // Rows then columns, each broken wherever a vertex missed the sphere: a
+    // segment drawn straight through a gap would assert a correction nobody
+    // computed.
+    for (const alongRow of [true, false]) {
+      const outer = alongRow ? mesh.rows : mesh.cols;
+      const inner = alongRow ? mesh.cols : mesh.rows;
+      for (let a = 0; a < outer; a++) {
+        let run: string[] = [];
+        for (let b = 0; b < inner; b++) {
+          const k = alongRow ? a * mesh.cols + b : b * mesh.cols + a;
+          const p = at(k, warped);
+          if (!p) {
+            if (run.length > 1) run = flushRun(g, run);
+            else run = [];
+            continue;
+          }
+          run.push(`${p[0].toFixed(1)},${p[1].toFixed(1)}`);
+        }
+        if (run.length > 1) flushRun(g, run);
+      }
+    }
+    svg.append(g);
+  }
+  return svg as unknown as HTMLElement;
+}
+
+function flushRun(g: SVGElement, run: string[]): string[] {
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+  line.setAttribute('points', run.join(' '));
+  g.append(line);
+  return [];
 }
 
 function recoveryTableEl(rows: readonly RecoveredAxis[]): HTMLElement {
@@ -1614,15 +1981,52 @@ function renderReadout(): void {
 // Pointer interaction
 // ---------------------------------------------------------------------------
 
+/**
+ * Which projector marker is under a canvas event, or `-1`.
+ *
+ * The NDC conversion is the inverse of the shader's `vUv * 2 - 1`, with y
+ * flipped because the DOM measures down from the top and the shader measures up.
+ */
+function markerUnder(e: PointerEvent): number {
+  if (!lastUniforms) return -1;
+  const r = canvas.getBoundingClientRect();
+  if (r.width <= 0 || r.height <= 0) return -1;
+  const ndcX = ((e.clientX - r.left) / r.width) * 2 - 1;
+  const ndcY = 1 - ((e.clientY - r.top) / r.height) * 2;
+  return pickMarker(lastUniforms, ndcX, ndcY);
+}
+
+/**
+ * Select a projector from anywhere — a marker in the room, or a tab.
+ *
+ * Selecting isolates it, which is the answer to "what is THIS one painting":
+ * everything else goes dark and what is left is that projector's contribution,
+ * with its own frame beside it in the inspect card.
+ */
+function selectProjector(i: number): void {
+  state.selected = i;
+  state.highlight = i;
+  state.section = 'projectors';
+  markDirty();
+  renderControls();
+  renderInspect();
+  renderActions();
+}
+
 function installPointer(): void {
   let dragging = false;
   let lastX = 0;
   let lastY = 0;
+  // Distance travelled since the press, so a drag that ends over a marker is not
+  // also a click on it. Compared against a few pixels rather than zero because a
+  // mouse moves a little while a button goes down.
+  let travel = 0;
 
   canvas.addEventListener('pointerdown', (e) => {
     dragging = true;
     lastX = e.clientX;
     lastY = e.clientY;
+    travel = 0;
     canvas.classList.add('dragging');
     canvas.setPointerCapture(e.pointerId);
   });
@@ -1635,14 +2039,29 @@ function installPointer(): void {
     } catch {
       /* the capture was already released */
     }
+    if (travel < 5) {
+      const hit = markerUnder(e);
+      if (hit >= 0) selectProjector(hit);
+      else if (state.highlight !== -1) {
+        // Clicking past the projectors puts them all back. The pair reads as one
+        // gesture: click a lens to see only it, click the room to see the sum.
+        state.highlight = -1;
+        markDirty();
+        renderActions();
+      }
+    }
     requestModel(true);
   };
   canvas.addEventListener('pointerup', stop);
   canvas.addEventListener('pointercancel', stop);
   canvas.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
+    if (!dragging) {
+      canvas.classList.toggle('overmarker', markerUnder(e) >= 0);
+      return;
+    }
     const dx = e.clientX - lastX;
     const dy = e.clientY - lastY;
+    travel += Math.abs(dx) + Math.abs(dy);
     lastX = e.clientX;
     lastY = e.clientY;
     state.settings = withSetting(state.settings, 'viewAzDeg', state.settings.viewAzDeg - dx * 0.35);
@@ -1663,7 +2082,9 @@ function installPointer(): void {
   );
   window.addEventListener('resize', markDirty);
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') lightboxEl.classList.remove('on');
+    if (e.key !== 'Escape') return;
+    if (helpEl.classList.contains('on')) closeHelp();
+    else lightboxEl.classList.remove('on');
   });
 }
 
@@ -1691,12 +2112,23 @@ function boot(): void {
   }
   installPointer();
   installDropTarget();
+  helpEl.addEventListener('click', (e) => {
+    if (e.target === helpEl) closeHelp();
+  });
   renderTopButtons();
   renderControls();
   renderActions();
   renderReadout();
   requestModel(true);
   requestAnimationFrame(frame);
+
+  let seen = false;
+  try {
+    seen = localStorage.getItem(HELP_SEEN_KEY) === '1';
+  } catch {
+    /* storage disabled */
+  }
+  if (!seen) openHelp();
   // The solve's elapsed clock and the "measuring" state both want a repaint that
   // no message triggers. One second is enough for a five-second job.
   window.setInterval(() => {

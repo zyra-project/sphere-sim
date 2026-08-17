@@ -19,17 +19,33 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   NOAA dataset, Blue Marble, a test chart. It is read in the page, converted out
   of sRGB into the linear light the model works in, and never sent anywhere. None
   ships with the site, which is why none has to have its provenance argued about.
+- **Four projectors in the room**, each a coloured lens marker you can click. The
+  colour is the same one its tab, its overlay band and its inspect card use.
+  Picking one isolates its light. At the default viewpoint you are standing
+  *inside* the ring and two of them are behind you, which is true of the real
+  room — "Whole room" on the Room tab steps outside it.
 - **Each projector's own frame** — the image going down its cable, rendered by
   `packages/sim` from the COMPOSITOR's calibration. Moving a projector does not
   change it; only recalibrating does, which is the least intuitive thing about
   how the system works and the reason it gets a picture.
+- **Its warp mesh.** The config file carries heights and distances in inches;
+  what actually removes a doubled grid line is a per-vertex correction on the
+  raster, and that is what this draws. It is derived, not illustrated — each
+  vertex is followed out to the ball through the calibration the software
+  believes and back through the one the lenses actually have. Before a solve it
+  is visibly bent; after one it collapses from about 85 px to under 1.
 - **Three control sections.** Projectors (move one lens at a time, or switch it
   off), Install (the site survey, as chips and sliders), Room (blend, mask,
-  pattern, viewpoint). Anything class `ASSUME` carries a badge.
+  pattern, viewpoint, overlays). Anything class `ASSUME` carries a badge. The
+  panel minimises to an icon, because a settings window in the middle of the
+  screen with the sphere behind it has no good answer to "how do I move this".
 - **Recalibrate**, which photographs the sphere and solves. While it runs you see
-  the actual camera frames it is working from and the optimiser's cost falling;
-  when it finishes, what it moved and whether it moved to the right place, plus
-  the geometry as `sos_stream_control.config` would carry it.
+  the actual camera frames it is working from, the optimiser's cost falling, and
+  the sphere itself converging — the partial calibration is drawn as it arrives.
+  Nothing is *measured* from an intermediate: the gauge freedom has not been
+  removed yet, so a metric taken from one would be measuring the gauge. When it
+  finishes: what it moved and whether it moved to the right place, plus the
+  geometry as `sos_stream_control.config` would carry it.
 
 ## What is actually happening
 
@@ -116,6 +132,10 @@ node --test "packages/web/test/**/*.test.ts"
   ungated metric can never read as a verdict
 - `model.test.ts` — the supplied image reaches the worker, is cached by id, is
   never reused for a different one, and never moves a §7 number
+- `mesh.test.ts` — the warp mesh reaches the ball and misses at the corners,
+  needs no correction on a perfect rig, wants pixels on a knocked one, and
+  vanishes when the compositor is handed the truth — which is what proves it is
+  composing two rigs rather than reading one twice
 - `parity.test.ts` — the two calibration facts above, measured
 - `solve.test.ts` — a real capture and a real bundle adjustment, asserting the
   calibration improves the alignment by more than 2× and that the same seed gives
@@ -127,6 +147,19 @@ whether the GLSL compiles, whether the canvas is lit, and — with `--solve` —
 whether a live calibration runs end to end in a browser and actually improves the
 number. It fails if the alignment does not get better, which at the default
 settings means 127 mm to 0.14 mm.
+
+Two of its checks exist because nothing in Node can make them:
+
+- **The click and the shader agree about where a lens is.** There are two
+  ray-casts against the marker spheres — `markerHit` in GLSL, which draws them,
+  and `pickMarker` in TypeScript, which decides what a click hit. The tool finds
+  a marker by its *colour* in the rendered canvas, clicks it, and asserts the
+  page selected the projector whose tint the GPU painted there. If the two ever
+  drift, the click picks the wrong projector and this fails.
+- **The diagrams have height.** Both panels are flex columns that overflow, and a
+  flex item shrinks before its container scrolls — which silently squashed the
+  warp mesh to twenty pixels while its caption went on describing a picture that
+  was not there.
 
 ```bash
 npm run app                                    # in one terminal

@@ -148,9 +148,18 @@ uniform float uDisplayGamma;          // 0 disables the final encode (linear rea
 
 // Diagnostic overlays. Each is a way of LOOKING at the same trace, never a
 // different trace: they recolour what step 3 already computed.
-uniform int   uOverlay;               // 0 none, 1 overlap count, 2 seam bands, 3 unlit
+uniform int   uOverlay;               // 0 none, 1 overlap count, 2 seams, 3 unlit, 4 by projector
 uniform float uOverlayMix;
 uniform int   uHighlight;             // -1 none, else a projector index to isolate
+
+// Which projector is which, everywhere on the page: the panel tab, the inspect
+// card, the overlay and the marker in the room all read the same colour.
+uniform vec3  uTint[MAX_PROJ];
+// Lens markers, drawn in the room so a viewer can see where the light is coming
+// from and click on one. A drawing aid — no light is emitted from them, and the
+// trace below is not told they exist.
+uniform float uMarkerRadius;          // metres; 0 hides them
+uniform int   uMarkerSelected;        // -1 none
 
 uniform sampler2D uEquirect;
 
@@ -377,11 +386,19 @@ vec3 emittedRadianceRgb(vec3 signal, int i) {
  * disagree with the picture it is drawn over.
  */
 const CHUNK_TRACE = `
-vec3 shadeTwoRig(vec3 point, out int overlapCount, out int litCount) {
+vec3 shadeTwoRig(
+  vec3 point,
+  out int overlapCount,
+  out int litCount,
+  out int strongest,
+  out float strongestWeight
+) {
   vec3 normal = point / uRadius;
   vec3 diffuse = uAmbient;
   overlapCount = 0;
   litCount = 0;
+  strongest = -1;
+  strongestWeight = 0.0;
 
   for (int i = 0; i < MAX_PROJ; i++) {
     if (i >= uProjCount) continue;
@@ -401,6 +418,10 @@ vec3 shadeTwoRig(vec3 point, out int overlapCount, out int litCount) {
       int count;
       float weight = contentWeight(xp, i, count) * polarMask(ll.x);
       overlapCount = max(overlapCount, count);
+      if (weight > strongestWeight) {
+        strongestWeight = weight;
+        strongest = i;
+      }
       signal = blendedSignal(sampleEquirect(ll.x, wrapDeg180(ll.y - uCRotOffset)), weight);
     }
 
@@ -449,7 +470,7 @@ vec3 shadeFloor(vec3 point) {
  * not as a round cap.
  */
 const CHUNK_OVERLAY = `
-vec3 overlayTint(int overlapCount, int litCount) {
+vec3 overlayTint(int overlapCount, int litCount, int strongest, float strongestWeight) {
   if (uOverlay == 1) {
     if (litCount == 0) return vec3(0.10, 0.10, 0.13);
     if (litCount == 1) return vec3(0.16, 0.38, 0.62);
@@ -459,7 +480,56 @@ vec3 overlayTint(int overlapCount, int litCount) {
   if (uOverlay == 2) {
     return litCount >= 2 ? vec3(0.95, 0.72, 0.20) : vec3(0.10, 0.10, 0.13);
   }
+  if (uOverlay == 4) {
+    // Which projector is doing most of the work here. Inside a blend band the two
+    // weights approach each other, so the boundary between two tints IS the seam
+    // — and it moves when a projector moves, which is the point.
+    if (litCount == 0 || strongest < 0) return vec3(0.10, 0.10, 0.13);
+    for (int i = 0; i < MAX_PROJ; i++) {
+      if (i == strongest) return uTint[i] * (0.45 + 0.55 * strongestWeight);
+    }
+    return vec3(0.5);
+  }
   return litCount == 0 ? vec3(0.85, 0.20, 0.35) : vec3(0.10, 0.10, 0.13);
+}
+
+/**
+ * The lens markers.
+ *
+ * Returns -1 for a miss, otherwise the projector index, and writes the hit
+ * distance. They are drawn AFTER the sphere and only when nearer than it, so a
+ * projector behind the ball is correctly hidden by it.
+ */
+int markerHit(vec3 origin, vec3 dir, float maxT, out float hitT) {
+  int which = -1;
+  hitT = maxT;
+  if (uMarkerRadius <= 0.0) return -1;
+  for (int i = 0; i < MAX_PROJ; i++) {
+    if (i >= uProjCount) continue;
+    vec3 oc = origin - uLens[i];
+    float h = dot(oc, dir);
+    vec3 m = oc - h * dir;
+    float disc = uMarkerRadius * uMarkerRadius - dot(m, m);
+    if (disc < 0.0) continue;
+    float t = -h - sqrt(disc);
+    if (t > 1e-4 && t < hitT) {
+      hitT = t;
+      which = i;
+    }
+  }
+  return which;
+}
+
+vec3 shadeMarker(int i, vec3 point, vec3 dir) {
+  vec3 n = normalize(point - uLens[i]);
+  // A plain wrapped-diffuse ball lit from the viewer, so it reads as a solid
+  // object without pretending to be part of the photometric model.
+  float k = 0.35 + 0.65 * max(dot(n, -dir), 0.0);
+  vec3 base = uTint[i] * k;
+  if (uMarkerSelected == i) base += vec3(0.22);
+  // A dark band toward the sphere, so the marker reads as pointing at it.
+  float aim = max(-dot(n, normalize(-uLens[i])), 0.0);
+  return base * (1.0 - 0.45 * pow(aim, 6.0));
 }
 `;
 
@@ -470,19 +540,32 @@ void main() {
 
   vec3 c = vec3(0.0);
   float t = raySphereIntersect(uCamPos, dir, uRadius, 1e-9);
+  float sceneT = t > 0.0 ? t : 1e9;
   if (t > 0.0) {
     int overlapCount;
     int litCount;
-    c = shadeTwoRig(uCamPos + dir * t, overlapCount, litCount);
-    if (uOverlay > 0) c = mix(c, overlayTint(overlapCount, litCount), uOverlayMix);
+    int strongest;
+    float strongestWeight;
+    c = shadeTwoRig(uCamPos + dir * t, overlapCount, litCount, strongest, strongestWeight);
+    if (uOverlay > 0) {
+      c = mix(c, overlayTint(overlapCount, litCount, strongest, strongestWeight), uOverlayMix);
+    }
   } else if (uDrawFloor == 1 && dir.z < 0.0) {
     float floorZ = -uCenterHeight;
     float tf = (floorZ - uCamPos.z) / dir.z;
     if (tf > 0.0) {
       vec3 p = vec3(uCamPos.x + dir.x * tf, uCamPos.y + dir.y * tf, floorZ);
-      if (length(p.xy) <= uFloorRadius) c = shadeFloor(p);
+      if (length(p.xy) <= uFloorRadius) {
+        c = shadeFloor(p);
+        sceneT = tf;
+      }
     }
   }
+
+  // Markers last, and only where they are in front of whatever was drawn.
+  float markerT;
+  int marker = markerHit(uCamPos, dir, sceneT, markerT);
+  if (marker >= 0) c = shadeMarker(marker, uCamPos + dir * markerT, dir);
 
   c *= uExposure;
   if (uDisplayGamma > 0.0) c = pow(max(c, vec3(0.0)), vec3(1.0 / uDisplayGamma));

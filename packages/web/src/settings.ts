@@ -297,6 +297,50 @@ export const PERFECT_PRESET: Settings = {
   nudge: [noNudge(), noNudge(), noNudge(), noNudge()],
 };
 
+/**
+ * Where to stand.
+ *
+ * At any realistic standing distance you cannot see all four projectors at once,
+ * because you are standing *inside* the ring — two of them are behind you. That
+ * is a fact about the room rather than about the renderer, so seeing the whole
+ * installation means stepping outside it, which is what an installer's drawing
+ * does too.
+ *
+ * The close view stays the default for a reason that is not aesthetic: the
+ * parity check renders whatever the viewer is looking at, and its sensitivity
+ * scales with how much of the frame the sphere fills. `test/parity.test.ts`
+ * pins that a complete mount error fails the check at these values — with the
+ * ball at a fifth of the width it would not. Widening the default would quietly
+ * blunt the page's own self-check.
+ */
+export const VIEWPOINTS: readonly {
+  id: string;
+  label: string;
+  help: string;
+  view: Pick<Settings, 'viewAzDeg' | 'viewElDeg' | 'viewRangeM' | 'viewFovDeg'>;
+}[] = [
+  {
+    id: 'close',
+    label: 'Standing at it',
+    help: 'Where a visitor stands — inside the ring of projectors, with two of them behind you.',
+    view: { viewAzDeg: 35, viewElDeg: 12, viewRangeM: 6.2, viewFovDeg: 50 },
+  },
+  {
+    id: 'room',
+    label: 'Whole room',
+    help:
+      'Outside the ring, looking down slightly: the ball and all four projectors at once, each ' +
+      'in its own colour. This is the view to click a lens in.',
+    view: { viewAzDeg: 35, viewElDeg: 16, viewRangeM: 10.5, viewFovDeg: 65 },
+  },
+  {
+    id: 'seam',
+    label: 'At a seam',
+    help: "Close in on the boundary between two projectors, square on, where a misalignment doubles a grid line.",
+    view: { viewAzDeg: 45, viewElDeg: 0, viewRangeM: 2.6, viewFovDeg: 34 },
+  },
+];
+
 export const PRESETS: readonly { id: string; label: string; blurb: string; settings: Settings }[] = [
   {
     id: 'boulder',
@@ -417,6 +461,26 @@ export const NUDGE_CONTROLS: readonly NudgeSpec[] = [
 
 /** Tints for P1…P4, in rig order. Used for tabs, dots and every per-projector plot. */
 export const PROJECTOR_TINTS: readonly string[] = ['#5cc8c8', '#c486f7', '#f59f4a', '#6dc96d'];
+
+/**
+ * The same four colours as linear-light triples, for the shader.
+ *
+ * The lens markers and the by-projector overlay are drawn before the display
+ * encode, so a tint handed to the shader as its 8-bit value would come back out
+ * lighter than the chip beside it and the page would be using two different
+ * colours for one projector.
+ *
+ * The exponent is 2.2 rather than the sRGB piecewise curve on purpose: this has
+ * to invert the shader's `pow(c, 1/uDisplayGamma)`, which is a plain power. It is
+ * not a claim about sRGB — the dropped-in image conversion, which really is
+ * decoding sRGB, uses the piecewise curve.
+ */
+export const PROJECTOR_TINTS_LINEAR: readonly (readonly [number, number, number])[] =
+  PROJECTOR_TINTS.map((hex) => {
+    const n = Number.parseInt(hex.slice(1), 16);
+    const ch = (shift: number): number => Math.pow(((n >> shift) & 255) / 255, 2.2);
+    return [ch(16), ch(8), ch(0)] as const;
+  });
 
 export type SettingKey = keyof Omit<Settings, 'nudge'>;
 

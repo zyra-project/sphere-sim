@@ -23,7 +23,7 @@ import {
   glslFunctionNames,
   glslUniformNames,
 } from '../src/glsl.ts';
-import { buildDisplayUniforms, packRig } from '../src/uniforms.ts';
+import { buildDisplayUniforms, packRig, pickMarker } from '../src/uniforms.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import { BOULDER_PRESET } from '../src/settings.ts';
 import { buildViewer, buildWorld } from '../src/rigs.ts';
@@ -214,6 +214,80 @@ test('the uniforms take the blend from the compositor, not from the lenses', () 
   );
   assert.equal(u.widthDeg, 7.5);
   assert.equal(u.rampGamma, 1.4);
+});
+
+test('the markers are off unless asked for, so the parity check never sees one', () => {
+  // The same class of bug `RoomViewOptions.drawFloor` produced: the CPU two-rig
+  // renderer knows nothing about lens markers, so a default that drew them would
+  // make the parity number report a disagreement belonging to neither model.
+  const world = buildWorld(BOULDER_PRESET);
+  const u = buildDisplayUniforms(
+    prepareRig(world.truthRig),
+    prepareRig(world.compositorRig),
+    world.scene,
+    buildViewer(BOULDER_PRESET, 64, 48),
+  );
+  assert.equal(u.markerRadius, 0);
+  assert.equal(u.markerSelected, -1);
+  assert.equal(pickMarker(u, 0, 0), -1, 'nothing can be picked when nothing is drawn');
+});
+
+test('a click picks the projector under it, and never one behind the sphere', () => {
+  // The picker mirrors the shader's `markerHit`. This checks the property that
+  // makes the mirror worth having: what you can click is what you can see.
+  const world = buildWorld(BOULDER_PRESET);
+  const physical = prepareRig(world.truthRig);
+  const camera = buildViewer(BOULDER_PRESET, 64, 48);
+  const u = buildDisplayUniforms(physical, prepareRig(world.compositorRig), world.scene, camera, {
+    markerRadiusM: 0.12,
+  });
+
+  // Aim the centre pixel straight down the barrel at each lens in turn, by
+  // rebuilding the uniforms with the camera looking at it from outside the room.
+  for (let i = 0; i < u.projCount; i++) {
+    const lens = {
+      x: u.physical.lens[3 * i],
+      y: u.physical.lens[3 * i + 1],
+      z: u.physical.lens[3 * i + 2],
+    };
+    const len = Math.hypot(lens.x, lens.y, lens.z);
+    const outside = { x: (lens.x / len) * (len + 3), y: (lens.y / len) * (len + 3), z: lens.z };
+    const looking = buildDisplayUniforms(
+      physical,
+      prepareRig(world.compositorRig),
+      world.scene,
+      { ...camera, position: outside, target: lens },
+      { markerRadiusM: 0.12 },
+    );
+    assert.equal(pickMarker(looking, 0, 0), i, `looking straight at P${i + 1} did not pick it`);
+
+    // From the far side, the sphere is between the camera and that lens. The
+    // answer is not "nothing": the projectors are a ring, so the antipode of one
+    // lens is behind another, and that near one is genuinely on screen. What must
+    // never happen is picking the lens the sphere is hiding.
+    const behind = { x: -outside.x, y: -outside.y, z: outside.z };
+    const through = buildDisplayUniforms(
+      physical,
+      prepareRig(world.compositorRig),
+      world.scene,
+      { ...camera, position: behind, target: lens },
+      { markerRadiusM: 0.12 },
+    );
+    const hidden = pickMarker(through, 0, 0);
+    assert.notEqual(hidden, i, `P${i + 1} was picked through the sphere`);
+    if (hidden >= 0) {
+      const range = (j: number): number =>
+        Math.hypot(
+          looking.physical.lens[3 * j] - behind.x,
+          looking.physical.lens[3 * j + 1] - behind.y,
+          looking.physical.lens[3 * j + 2] - behind.z,
+        );
+      assert.ok(range(hidden) < range(i), 'the picked lens must be the nearer one');
+    }
+  }
+
+  // A corner of the frame is room, not lens.
+  assert.equal(pickMarker(u, -1, -1), -1);
 });
 
 test('every chunk names the sim module it mirrors', () => {

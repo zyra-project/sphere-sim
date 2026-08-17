@@ -74,7 +74,14 @@ test('watching a solve cannot change it', () => {
 
   const silent = solve(input);
   const steps: { pass: number; iteration: number; cost: number }[] = [];
-  const watched = solve({ ...input, onStep: (s) => steps.push({ pass: s.pass, iteration: s.iteration, cost: s.cost }) });
+  const rigs: unknown[] = [];
+  const watched = solve({
+    ...input,
+    onStep: (s) => {
+      steps.push({ pass: s.pass, iteration: s.iteration, cost: s.cost });
+      rigs.push(s.calibration);
+    },
+  });
 
   assert.equal(JSON.stringify(watched.calibration), JSON.stringify(silent.calibration));
   assert.equal(JSON.stringify(watched.diagnostics), JSON.stringify(silent.diagnostics));
@@ -85,6 +92,16 @@ test('watching a solve cannot change it', () => {
     steps.every((s, i) => i === 0 || s.cost <= steps[i - 1].cost || s.pass > steps[i - 1].pass),
     'the cost rose on an accepted step within a pass, which cannot happen',
   );
+
+  // Each step carries the answer so far, so a caller can show it moving. The
+  // last one is not necessarily the final calibration — the gauge is removed
+  // after the loop — but it must be a real rig with the right shape.
+  assert.equal(rigs.length, steps.length);
+  const last = rigs[rigs.length - 1] as typeof watched.calibration;
+  assert.equal(last.projectors.length, watched.calibration.projectors.length);
+  for (const p of last.projectors) {
+    assert.ok(Number.isFinite(p.pose.position.x) && Number.isFinite(p.intrinsics.fovHDeg));
+  }
 });
 
 test('the synthetic generator is itself reproducible', () => {

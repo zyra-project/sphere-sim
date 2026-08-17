@@ -239,7 +239,31 @@ export interface SolveInput {
    * It exists because a solve takes several seconds and a person watching one
    * should be able to see it converging rather than a spinner.
    */
-  onStep?: (step: BundleStep) => void;
+  onStep?: (step: SolveStep) => void;
+}
+
+/**
+ * One accepted optimiser step, as a caller outside this package sees it.
+ *
+ * The difference from {@link BundleStep} is `calibration`: the optimiser works
+ * on a flat parameter state and nobody outside should have to know its layout,
+ * so the state is converted here on the way out. That conversion is the same
+ * `calibrationFromState` the final answer goes through.
+ *
+ * **The calibration is not gauge-aligned.** A sphere photographed from outside
+ * cannot fix its own rotation about its centre, and that rotation is removed
+ * once, at the end, against the nominal. An intermediate is a valid solution in
+ * whatever frame the initialisation left it in — right for showing the answer
+ * moving, wrong for measuring anything. Score the final result.
+ */
+export interface SolveStep {
+  pass: number;
+  iteration: number;
+  /** The robust cost. Falling is the point; the units are not pixels. */
+  cost: number;
+  lambda: number;
+  /** The answer so far. See the note on the gauge. */
+  calibration: RigCalibration;
 }
 
 export interface SolverExtraDiagnostics {
@@ -568,7 +592,16 @@ export function solve(input: SolveInput): SolverResult {
     bundleOptions,
     nominalState,
     priors,
-    input.onStep,
+    input.onStep
+      ? (step) =>
+          input.onStep?.({
+            pass: step.pass,
+            iteration: step.iteration,
+            cost: step.cost,
+            lambda: step.lambda,
+            calibration: calibrationFromState(step.state, input.nominal),
+          })
+      : undefined,
   );
 
   const diagnostics: SolveDiagnostics = {
