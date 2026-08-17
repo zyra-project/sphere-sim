@@ -36,7 +36,19 @@ import { renderProjectorView } from '../../sim/src/render.ts';
 import type { ViewerCamera } from '../../sim/src/render.ts';
 import { buildWorld } from './rigs.ts';
 import { framebufferSentence, readingsFrom, rigFacts } from './readout.ts';
+import type { EquirectImage } from '../../sim/src/equirect.ts';
 import type { FrameImage, ModelRequest, ModelResponse } from './protocol.ts';
+
+/**
+ * The last supplied image, held across requests.
+ *
+ * The page sends one only when it changes; every other request carries the id
+ * alone. Caching here rather than resending is what keeps a slider drag from
+ * moving a megabyte of float per frame — and holding the ID beside it is what
+ * stops a stale image being used for a different one.
+ */
+let cachedImage: EquirectImage | null = null;
+let cachedImageId = '';
 
 /**
  * The metric set for one rig pair.
@@ -67,7 +79,18 @@ function metricsFor(
  * display and no test can call is a readout nobody has ever checked.
  */
 export function computeModel(req: ModelRequest): ModelResponse {
-  const world = buildWorld(req.settings, req.compositorRig ?? undefined);
+  if (req.customImage) {
+    cachedImage = req.customImage;
+    cachedImageId = req.customImageId;
+  } else if (req.customImageId === '') {
+    cachedImage = null;
+    cachedImageId = '';
+  }
+  // A request naming an image this worker has never been sent renders the
+  // fallback rather than the wrong picture. The page's parity check would catch
+  // a mismatch, so the failure mode to avoid is a SILENT one.
+  const custom = cachedImageId === req.customImageId ? cachedImage : null;
+  const world = buildWorld(req.settings, req.compositorRig ?? undefined, custom);
 
   const t0 = performance.now();
   const set = metricsFor(world.truthRig, world.compositorRig, world.scene, req.densityScale);

@@ -1,13 +1,22 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
+import { createImage } from '../../sim/src/equirect.ts';
 import { aimAtSphereCenter } from '../../sim/src/geometry.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
 import { DEFAULT_MISALIGNMENT } from '../../sim/src/scene.ts';
-import { BOULDER_PRESET, IN_TO_M, PERFECT_PRESET, SPEC_PRESET } from '../src/settings.ts';
+import {
+  BOULDER_PRESET,
+  CONTENTS,
+  CONTENT_CUSTOM,
+  IN_TO_M,
+  PERFECT_PRESET,
+  SPEC_PRESET,
+} from '../src/settings.ts';
 import type { Settings } from '../src/settings.ts';
 import {
   buildAsBuilt,
+  buildContent,
   buildViewer,
   buildWorld,
   scaledMagnitudes,
@@ -244,4 +253,80 @@ test('switching a projector off removes it and leaves the framebuffer alone', ()
   // §2's "quadrants go dark": the X screen does not shrink.
   const full = buildWorld(BOULDER_PRESET).truthRig.framebuffer;
   assert.deepEqual(world.truthRig.framebuffer, full);
+});
+
+test('the grid toggle turns the graticule on and off without changing the field', () => {
+  const on = buildContent({ ...BOULDER_PRESET, gridOn: 1, content: 1 }, null);
+  const off = buildContent({ ...BOULDER_PRESET, gridOn: 0, content: 1 }, null);
+
+  // With the grid off the field is flat: every texel is the same value, and that
+  // value is the base field's.
+  const first = off.data[0];
+  let flat = true;
+  for (let i = 0; i < off.data.length; i++) {
+    if (Math.abs(off.data[i] - first) > 1e-6) flat = false;
+  }
+  assert.ok(flat, 'the grid is off and the field is not flat');
+  // 1e-6, not 1e-9: `RgbImage` is a Float32Array, so 0.18 stores as
+  // 0.18000000715255737 and a tighter bound would be a statement about the
+  // storage format rather than about the field.
+  assert.ok(Math.abs(first - 0.18) < 1e-6, `expected the mid-grey field, got ${first}`);
+
+  // With it on, the lines are brighter than the field somewhere.
+  let brightest = 0;
+  for (let i = 0; i < on.data.length; i++) brightest = Math.max(brightest, on.data[i]);
+  assert.ok(brightest > 0.5, `the graticule is not visible over the field; brightest ${brightest}`);
+});
+
+test('every base field renders, and each is a different brightness', () => {
+  const means = CONTENTS.map((_, i) => {
+    const img = buildContent({ ...BOULDER_PRESET, content: i, gridOn: 0 }, null);
+    let sum = 0;
+    for (let k = 0; k < img.data.length; k++) sum += img.data[k];
+    return sum / img.data.length;
+  });
+  // Black, mid grey and white must be ordered and distinct. The fourth entry is
+  // the drop-in, which falls back to the grey field when no image has been
+  // supplied — an empty sphere reads as a broken page.
+  assert.ok(means[0] < means[1] && means[1] < means[2], `not ordered: ${means.join(', ')}`);
+  assert.ok(Math.abs(means[3] - means[1]) < 1e-6, 'the drop-in should fall back to the grey field');
+});
+
+test('a supplied image is used as-is, and the grid composites over it', () => {
+  // A recognisable fake: a horizontal ramp. If the page ever resized, cropped or
+  // re-encoded it the ramp would stop being a ramp.
+  const supplied = createImage(64, 32);
+  for (let y = 0; y < 32; y++) {
+    for (let x = 0; x < 64; x++) {
+      const i = 3 * (y * 64 + x);
+      supplied.data[i] = supplied.data[i + 1] = supplied.data[i + 2] = x / 63;
+    }
+  }
+  const plain = buildContent({ ...BOULDER_PRESET, content: CONTENT_CUSTOM, gridOn: 0 }, supplied);
+  assert.equal(plain, supplied, 'the image should be passed through untouched with the grid off');
+
+  const withGrid = buildContent({ ...BOULDER_PRESET, content: CONTENT_CUSTOM, gridOn: 1 }, supplied);
+  assert.equal(withGrid.width, supplied.width);
+  assert.equal(withGrid.height, supplied.height);
+  // The composite is a blend toward white, so it can never darken the source and
+  // can never leave the display range.
+  for (let i = 0; i < supplied.data.length; i++) {
+    assert.ok(withGrid.data[i] >= supplied.data[i] - 1e-9, `the grid darkened the image at ${i}`);
+    assert.ok(withGrid.data[i] <= 1 + 1e-9, `the composite clipped past white at ${i}`);
+  }
+});
+
+test('room light reaches the scene, and it is the §5 nominal by default', () => {
+  assert.equal(BOULDER_PRESET.ambient, 0.04, 'PARAMETERS.md §5 nominal');
+  const dark = buildWorld({ ...BOULDER_PRESET, ambient: 0 });
+  const lit = buildWorld({ ...BOULDER_PRESET, ambient: 0.15 });
+  assert.equal(dark.scene.ambient.r, 0);
+  assert.equal(lit.scene.ambient.r, 0.15);
+});
+
+test('the projector count is capped at four, and the error says why', () => {
+  // §3.4: one framebuffer split into four quadrant viewports. A fifth projector
+  // has no quadrant to be, which is why the page offers 2, 3 and 4 and explains
+  // the absence rather than silently listing three options.
+  assert.throws(() => buildAsBuilt({ ...BOULDER_PRESET, projectorCount: 5 }), /1\.\.4|§2/);
 });

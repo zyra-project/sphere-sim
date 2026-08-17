@@ -34,11 +34,14 @@
  */
 
 import type { RigCalibration } from '../../calibration/src/index.ts';
+import type { EquirectImage } from '../../sim/src/equirect.ts';
+import { createImage } from '../../sim/src/equirect.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
   BOULDER_PRESET,
   CONTENTS,
+  CONTENT_CUSTOM,
   CONTROLS,
   IN_TO_M,
   NUDGE_CONTROLS,
@@ -130,6 +133,12 @@ let resultView: 'axes' | 'config' = 'axes';
 
 let gl: DisplayGl | null = null;
 let contentKey = '';
+/** A supplied equirectangular image, in linear light. Never leaves the page. */
+let customImage: EquirectImage | null = null;
+let customName = '';
+let customError = '';
+/** Which image the model worker has been sent, so it is sent exactly once. */
+let sentImageId = '';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const controlsEl = document.getElementById('controls') as HTMLDivElement;
@@ -308,6 +317,91 @@ function chipRow(
   return row;
 }
 
+/**
+ * Read an image file into an equirectangular map in LINEAR light.
+ *
+ * Two things this does that a naive `drawImage` into a texture would not:
+ *
+ *  - **It undoes the display encode.** A JPEG or PNG holds sRGB-ish values; the
+ *    model works in linear radiance throughout (conventions.ts §P). Uploading
+ *    the bytes straight through would make every dataset a stop and a half too
+ *    bright at the midtones and would move every photometric number on the page.
+ *    2.2 is the encode `defaultScene` assumes, so it is the one undone here.
+ *  - **It checks the aspect.** An equirectangular map is 2:1. Anything else is
+ *    almost certainly not a sphere map, and stretching it silently would put the
+ *    poles in the wrong place with no indication anything was wrong.
+ *
+ * Nothing is uploaded anywhere. The file is read by the page, converted, and
+ * held in memory — which is also why no image ships with the site.
+ */
+async function readEquirect(file: File): Promise<EquirectImage> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const ratio = bitmap.width / bitmap.height;
+    if (Math.abs(ratio - 2) > 0.08) {
+      throw new Error(
+        `that image is ${bitmap.width}×${bitmap.height}, a ${ratio.toFixed(2)}:1 aspect. An ` +
+          'equirectangular sphere map is 2:1 — stretching this one would put the poles in the ' +
+          'wrong place.',
+      );
+    }
+    // Downscale to the raster the rest of the page uses. A 4096-wide map is four
+    // times the content the projectors can resolve at this geometry and sixteen
+    // times the memory.
+    const w = 1024;
+    const h = 512;
+    const off = document.createElement('canvas');
+    off.width = w;
+    off.height = h;
+    const ctx = off.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('could not open a 2D context to read the image');
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const px = ctx.getImageData(0, 0, w, h).data;
+    const out = createImage(w, h);
+    for (let i = 0; i < w * h; i++) {
+      for (let c = 0; c < 3; c++) {
+        out.data[3 * i + c] = Math.pow(px[4 * i + c] / 255, 2.2);
+      }
+    }
+    return out;
+  } finally {
+    bitmap.close();
+  }
+}
+
+async function loadCustomImage(file: File): Promise<void> {
+  customError = '';
+  try {
+    customImage = await readEquirect(file);
+    customName = `${file.name}:${file.size}`;
+    sentImageId = '';
+    state.settings = withSetting(state.settings, 'content', CONTENT_CUSTOM);
+    contentKey = '';
+    touched(false);
+    requestModel(true);
+  } catch (err) {
+    customImage = null;
+    customName = '';
+    customError = err instanceof Error ? err.message : String(err);
+    renderControls();
+  }
+}
+
+function installDropTarget(): void {
+  const stop = (e: DragEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  for (const type of ['dragenter', 'dragover', 'dragleave'] as const) {
+    window.addEventListener(type, stop);
+  }
+  window.addEventListener('drop', (e) => {
+    stop(e);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) void loadCustomImage(file);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Workers
 // ---------------------------------------------------------------------------
@@ -338,7 +432,17 @@ function requestModel(fine: boolean): void {
     // Only on the settled pass: a projector frame is a CPU trace and four of
     // them on every drag would starve the metrics they sit beside.
     projectorPreviewWidth: fine ? 208 : 0,
+    // Sent once per image, not once per request: the worker caches it by id, and
+    // a megabyte of float on every slider drag would cost more than the metrics.
+    // A copy rather than a transfer, because the main thread still needs it for
+    // the GPU upload.
+    customImage:
+      customImage !== null && customName !== sentImageId
+        ? { width: customImage.width, height: customImage.height, data: customImage.data }
+        : null,
+    customImageId: customImage === null ? '' : customName,
   };
+  sentImageId = customImage === null ? '' : customName;
   if (fine) {
     const camera = buildViewer(state.settings, PARITY_WIDTH, PARITY_HEIGHT);
     req.parity = {
@@ -460,7 +564,7 @@ function markDirty(): void {
 }
 
 function ensureContent(image: { width: number; height: number; data: Float32Array }): void {
-  const key = `${state.settings.gridDeg}|${state.settings.content}`;
+  const key = `${state.settings.gridDeg}|${state.settings.content}|${state.settings.gridOn}|${customName}`;
   if (gl && key !== contentKey) {
     uploadEquirect(gl, image);
     contentKey = key;
@@ -477,7 +581,7 @@ function draw(): void {
     canvas.height = h;
   }
 
-  const world = buildWorld(state.settings, state.compositorRig ?? undefined);
+  const world = buildWorld(state.settings, state.compositorRig ?? undefined, customImage);
   ensureContent(world.image);
   const camera = buildViewer(state.settings, w, h);
   const uniforms = buildDisplayUniforms(
@@ -506,7 +610,7 @@ function checkParity(
     return;
   }
   try {
-    const world = buildWorld(state.settings, state.compositorRig ?? undefined);
+    const world = buildWorld(state.settings, state.compositorRig ?? undefined, customImage);
     // Not merely defensive: a worker reply that landed before the first animation
     // frame would find the content texture never uploaded, and an incomplete
     // texture samples as black — indistinguishable from the shader getting the
@@ -743,8 +847,8 @@ function installSection(): HTMLElement[] {
   );
   out.push(el('span', { className: 'lab', textContent: 'Projectors' }));
   out.push(
-    chipRow(
-      [2, 3, 4].map((n) => ({
+    chipRow([
+      ...[2, 3, 4].map((n) => ({
         label: String(n),
         title:
           n === 2
@@ -753,7 +857,19 @@ function installSection(): HTMLElement[] {
         on: Math.round(state.settings.projectorCount) === n,
         onPick: () => setSetting('projectorCount', n),
       })),
-    ),
+      {
+        label: '5 or 6',
+        title:
+          'Not offered, and the reason is one of the three facts this project exists to reproduce: ' +
+          'SOS drives every projector from ONE framebuffer split into four quadrant viewports ' +
+          '(§3.4), so a fifth projector has no quadrant to be. PARAMETERS.md §2 supports 2, 3 and ' +
+          '4 and nothing else. A six-projector ring is a perfectly buildable thing — it is just a ' +
+          'different display from the one this simulates, and pretending otherwise here would put ' +
+          'a number on screen for a machine that does not exist.',
+        on: false,
+        onPick: () => {},
+      },
+    ]),
   );
   out.push(...controlsFor(['install', 'lens', 'error'], ['resolution', 'projectorCount']));
   return out;
@@ -761,20 +877,72 @@ function installSection(): HTMLElement[] {
 
 function roomSection(): HTMLElement[] {
   const out: HTMLElement[] = [];
-  out.push(el('span', { className: 'lab', textContent: 'Test pattern' }));
+
+  out.push(el('span', { className: 'lab', textContent: 'On the sphere' }));
   out.push(
-    chipRow(
-      CONTENTS.map((c, i) => ({
+    chipRow([
+      {
+        label: 'Grid lines',
+        title:
+          'The alignment graticule, over whatever the base field is. This is the pattern the ' +
+          'grid-displacement gate measures and the one a misalignment shows up in.',
+        on: Math.round(state.settings.gridOn) === 1,
+        onPick: () => setSetting('gridOn', Math.round(state.settings.gridOn) === 1 ? 0 : 1),
+      },
+      ...CONTENTS.map((c, i) => ({
         label: c.label,
         title: c.help,
         on: Math.round(state.settings.content) === i,
-        onPick: () => setSetting('content', i),
+        onPick: () => {
+          if (i === CONTENT_CUSTOM && customImage === null) {
+            pickImage();
+            return;
+          }
+          setSetting('content', i);
+        },
       })),
-    ),
+    ]),
   );
   const chosen = CONTENTS[Math.round(state.settings.content)] ?? CONTENTS[1];
   out.push(el('p', { className: 'grouphelp', textContent: chosen.help }));
-  out.push(...controlsFor(['blend', 'view'], ['content']));
+
+  if (Math.round(state.settings.content) === CONTENT_CUSTOM || customImage !== null) {
+    const row = el('div', { className: 'chips' });
+    const pick = el('button', {
+      className: 'chip',
+      textContent: customImage ? `Replace “${customName.split(':')[0]}”` : 'Choose an image…',
+    });
+    pick.addEventListener('click', pickImage);
+    row.append(pick);
+    if (customImage) {
+      const drop = el('button', { className: 'chip', textContent: 'Remove' });
+      drop.addEventListener('click', () => {
+        customImage = null;
+        customName = '';
+        sentImageId = '';
+        contentKey = '';
+        setSetting('content', 1);
+      });
+      row.append(drop);
+    }
+    out.push(row);
+    out.push(
+      el('p', {
+        className: 'note tiny',
+        textContent:
+          'Or drop a file anywhere on the page. Any 2:1 equirectangular map — a NOAA dataset, Blue ' +
+          'Marble, a test chart. It is read in the page, converted out of sRGB into the linear ' +
+          'light the model works in, and never sent anywhere.',
+      }),
+    );
+  }
+  if (customError) {
+    const err = el('p', { className: 'note', textContent: customError });
+    err.style.color = 'var(--warn)';
+    out.push(err);
+  }
+
+  out.push(...controlsFor(['blend', 'view'], ['content', 'gridOn']));
   out.push(el('span', { className: 'lab', textContent: 'Show me' }));
   const overlays: { id: OverlayMode; label: string; title: string }[] = [
     { id: 'none', label: 'Plain', title: 'The sphere as a visitor sees it.' },
@@ -866,6 +1034,18 @@ function renderControls(): void {
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
+
+/** The file picker, created on demand so the page has no hidden input in its DOM. */
+function pickImage(): void {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.addEventListener('change', () => {
+    const file = input.files?.[0];
+    if (file) void loadCustomImage(file);
+  });
+  input.click();
+}
 
 function renderTopButtons(): void {
   topBtnsEl.replaceChildren();
@@ -1510,6 +1690,7 @@ function boot(): void {
     );
   }
   installPointer();
+  installDropTarget();
   renderTopButtons();
   renderControls();
   renderActions();

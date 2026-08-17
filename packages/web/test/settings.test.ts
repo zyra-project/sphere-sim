@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   BOULDER_PRESET,
   CONTENTS,
+  CONTENT_CUSTOM,
   CONTROLS,
   GROUPS,
   IN_TO_M,
@@ -53,16 +54,18 @@ test('every projector has a tint, and they are distinct', () => {
   assert.equal(new Set(PROJECTOR_TINTS).size, PROJECTOR_TINTS.length);
 });
 
-test('every test pattern says what it is for', () => {
+test('every base field says what it is for', () => {
   for (const c of CONTENTS) {
-    assert.ok(c.help.length > 40, `content '${c.label}' has no explanation`);
+    assert.ok(c.help.length > 40, `base field '${c.label}' has no explanation`);
     assert.ok(c.background >= 0 && c.background <= 1);
-    assert.ok(c.lines >= 0 && c.lines <= 1);
   }
   // The one the page opens at must light the sphere: a graticule on black is the
   // honest alignment pattern and a mostly-dark ball, and a first impression of a
   // dark ball is a first impression of nothing.
   assert.ok((CONTENTS[BOULDER_PRESET.content]?.background ?? 0) > 0.05);
+  assert.equal(BOULDER_PRESET.gridOn, 1, 'the alignment grid should be on at first sight');
+  // The drop-in is last, so the three flat fields read as a run.
+  assert.equal(CONTENT_CUSTOM, CONTENTS.length - 1);
 });
 
 test('every control opens inside its own range', () => {

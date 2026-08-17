@@ -10,10 +10,15 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
 
 ## What is on the page
 
-- **The sphere**, full-bleed, drag to walk around. A test-pattern selector: the
-  bare graticule the grid gate measures, the same lines over a lit field, and the
-  two flat frames PARAMETERS.md §8 prescribes for judging seams and photographing
-  spill.
+- **The sphere**, full-bleed, drag to walk around. The graticule is a toggle over
+  a base field — black, mid grey, white, or an image you drop on the page. The
+  flat fields are the frames §8 items 6–9 and 13 prescribe for judging seams and
+  photographing spill; the grid is what the displacement gate measures. They are
+  separate controls because they answer different questions.
+- **Any equirectangular map you like.** Drop a 2:1 image anywhere on the page — a
+  NOAA dataset, Blue Marble, a test chart. It is read in the page, converted out
+  of sRGB into the linear light the model works in, and never sent anywhere. None
+  ships with the site, which is why none has to have its provenance argued about.
 - **Each projector's own frame** — the image going down its cable, rendered by
   `packages/sim` from the COMPOSITOR's calibration. Moving a projector does not
   change it; only recalibrating does, which is the least intuitive thing about
@@ -109,6 +114,8 @@ node --test "packages/web/test/**/*.test.ts"
   uniform the shader declares is set by the binder and vice versa
 - `readout.test.ts` — every metric `sim` produces has plain-language copy; an
   ungated metric can never read as a verdict
+- `model.test.ts` — the supplied image reaches the worker, is cached by id, is
+  never reused for a different one, and never moves a §7 number
 - `parity.test.ts` — the two calibration facts above, measured
 - `solve.test.ts` — a real capture and a real bundle adjustment, asserting the
   calibration improves the alignment by more than 2× and that the same seed gives

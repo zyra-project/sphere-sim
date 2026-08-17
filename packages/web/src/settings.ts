@@ -152,15 +152,26 @@ export interface Settings {
   /** Grid spacing on the alignment pattern, degrees. */
   gridDeg: number;
   /**
-   * Which test pattern is playing. Index into {@link CONTENTS}.
+   * Ambient irradiance on the sphere. PARAMETERS.md §5 `E_amb`, nominal 0.04,
+   * documented range 0.01–0.15.
    *
-   * Not a cosmetic choice. PARAMETERS.md §8 item 13 prescribes a flat mid-grey
-   * frame for judging seams, because a graticule on black leaves most of the
-   * sphere dark and a seam has nothing to show up against; the grid is what an
-   * operator judges REGISTRATION on. The two questions want different frames and
-   * the page offers both.
+   * Sphere galleries are kept dark for a reason and this is the reason: the
+   * ambient term adds to every surface point whether a projector lights it or
+   * not, so it lifts the blacks, flattens the contrast and washes the polar mask
+   * out of visibility. It is the one photometric constant on this page with a
+   * documented range rather than an assumed one.
+   */
+  ambient: number;
+  /**
+   * The base field. Index into {@link CONTENTS}.
+   *
+   * Not a cosmetic choice. §8 prescribes a flat mid-grey frame for judging seams
+   * and a flat white one for photographing spill; the graticule is what an
+   * operator judges REGISTRATION on. Different questions want different frames.
    */
   content: number;
+  /** Draw the graticule over whatever the base field is. */
+  gridOn: number;
 
   // ---- per projector ------------------------------------------------------
   /**
@@ -171,52 +182,58 @@ export interface Settings {
 }
 
 /**
- * The test patterns on offer, and what each is for.
+ * The base field the sphere is showing, before any graticule.
  *
  * `background` is linear light. A graticule on pure black is the honest
- * alignment pattern and it is also a mostly-dark sphere; putting the same lines
- * over a lit field is what makes the seams, the blend ramps and the polar mask
- * visible at the same time, which is most of what there is to look at.
+ * alignment pattern and it is also a mostly-dark sphere; the same lines over a
+ * lit field make the seams, the blend ramps and the polar mask visible at the
+ * same time, which is most of what there is to look at.
+ *
+ * The grid is a SEPARATE toggle rather than baked into each entry, because "is
+ * the graticule on" and "how bright is the field under it" are two questions and
+ * an operator asks them independently: §8 item 13 wants a flat frame with no
+ * pattern for judging seams, and the grid gate wants the pattern with nothing
+ * else. Folding them together would make four of the six useful combinations
+ * unreachable.
  */
 export const CONTENTS: readonly {
   label: string;
   background: number;
-  lines: number;
   help: string;
 }[] = [
   {
-    label: 'Grid on black',
+    label: 'Black',
     background: 0,
-    lines: 1,
     help:
-      'The bare alignment graticule. This is what the grid-displacement gate measures and what an ' +
-      'operator judges registration on — but it leaves most of the sphere dark.',
+      'Nothing but the graticule, if it is on. This is what the grid-displacement gate measures ' +
+      'against and what an operator judges registration on — and it leaves most of the ball dark.',
   },
   {
-    label: 'Grid on grey',
+    label: 'Mid grey',
     background: 0.18,
-    lines: 1,
     help:
-      'The same lines over a lit field. The seams, the blend ramps and the polar mask all become ' +
-      'visible at once, which is most of what there is to look at.',
+      'PARAMETERS.md §8 item 13 prescribes exactly this frame for judging seams: with a lit field ' +
+      'and no pattern, a luminance step at a join is the only thing left to see.',
   },
   {
-    label: 'Flat grey',
-    background: 0.18,
-    lines: 0.18,
-    help:
-      'PARAMETERS.md §8 item 13 prescribes exactly this frame for judging seams: with no pattern ' +
-      'to distract, a luminance step at a join is the only thing left to see.',
-  },
-  {
-    label: 'Flat white',
+    label: 'White',
     background: 0.9,
-    lines: 0.9,
     help:
       '§8 items 6–9. Drives the projectors to full and shows the off-sphere spill on the room ' +
       'behind — the thing the field card goes to photograph.',
   },
+  {
+    label: 'Your own image',
+    background: 0.18,
+    help:
+      'Drop an equirectangular image on the sphere, or use the button. Any 2:1 map works — a NOAA ' +
+      'dataset, Blue Marble, a test chart. Nothing is uploaded: the file is read in the page and ' +
+      'never leaves it, which is also why none is shipped with the site.',
+  },
 ];
+
+/** Index into {@link CONTENTS} for the drop-in image. */
+export const CONTENT_CUSTOM = 3;
 
 /** Per-projector rasters. §3.4: the X screen is twice this in each dimension. */
 export const RESOLUTIONS: readonly { label: string; resX: number; resY: number }[] = [
@@ -254,7 +271,9 @@ export const BOULDER_PRESET: Settings = {
   viewRangeM: 6.2,
   viewFovDeg: 50,
   gridDeg: 15,
+  ambient: 0.04,
   content: 1,
+  gridOn: 1,
   nudge: [noNudge(), noNudge(), noNudge(), noNudge()],
 };
 
@@ -635,21 +654,57 @@ export const CONTROLS: readonly ControlSpec[] = [
   },
 
   {
+    key: 'ambient',
+    label: 'Room light',
+    symbol: 'E_amb',
+    section: '§5',
+    klass: 'DOC',
+    min: 0,
+    max: 0.2,
+    step: 0.005,
+    unit: '',
+    decimals: 3,
+    group: 'blend',
+    help:
+      'Light in the gallery, as irradiance on the sphere relative to full scale. §5 gives 0.04 as ' +
+      'nominal and 0.01–0.15 as the range. Turn it up and the picture washes out — the ambient adds ' +
+      'to every point whether a projector lights it or not, so it lifts the blacks and hides the ' +
+      'polar mask. This is why sphere rooms are kept dark.',
+  },
+  {
     key: 'content',
-    label: 'Test pattern',
+    label: 'Base field',
     symbol: '',
     section: '§8',
     klass: 'PANEL',
     min: 0,
-    max: 3,
+    max: CONTENTS.length - 1,
     step: 1,
     unit: '',
     decimals: 0,
     options: CONTENTS.map((c) => c.label),
     group: 'view',
     help:
-      'What is playing on the sphere. The grid is what registration is judged on; the flat fields ' +
-      'are what §8 prescribes for judging seams and for photographing the spill.',
+      'What is playing on the sphere under the graticule. The flat fields are what §8 prescribes ' +
+      'for judging seams and for photographing the spill.',
+  },
+  {
+    key: 'gridOn',
+    label: 'Grid lines',
+    symbol: '',
+    section: '§7',
+    klass: 'PANEL',
+    min: 0,
+    max: 1,
+    step: 1,
+    unit: '',
+    decimals: 0,
+    options: ['off', 'on'],
+    group: 'view',
+    help:
+      'The alignment graticule, over whatever the base field is. This is the pattern the ' +
+      'grid-displacement gate measures and the one a misalignment shows up in — turn it off to ' +
+      'judge the imagery alone.',
   },
   {
     key: 'viewAzDeg',

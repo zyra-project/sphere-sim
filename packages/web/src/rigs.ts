@@ -27,7 +27,7 @@
  */
 
 import type { BlendCalibration, RigCalibration } from '../../calibration/src/index.ts';
-import { gridAlignmentPattern } from '../../sim/src/equirect.ts';
+import { createImage, graticuleCoverage, gridAlignmentPattern } from '../../sim/src/equirect.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
 import { defaultScene } from '../../sim/src/render.ts';
 import type { Scene, ViewerCamera } from '../../sim/src/render.ts';
@@ -36,7 +36,7 @@ import { DEFAULT_MISALIGNMENT, injectMisalignment, nominalRig } from '../../sim/
 import { DEG2RAD } from '../../sim/src/vec.ts';
 import { aimAtSphereCenter } from '../../sim/src/geometry.ts';
 import type { ProjectorNudge, Settings } from './settings.ts';
-import { CONTENTS, IN_TO_M, RESOLUTIONS } from './settings.ts';
+import { CONTENTS, CONTENT_CUSTOM, IN_TO_M, RESOLUTIONS } from './settings.ts';
 
 /** Equirectangular content raster. Big enough that the grid is not the limit. */
 const CONTENT_WIDTH = 1024;
@@ -193,24 +193,93 @@ export function nudgesAreClear(nudges: readonly ProjectorNudge[]): boolean {
  * it is wrong about where they point. The alignment error is still measured
  * across whatever is left.
  */
-export function buildWorld(s: Settings, compositorRig?: RigCalibration): WebWorld {
+/**
+ * The equirectangular content the sphere is showing.
+ *
+ * Three cases, one function, because the alternative is three places that decide
+ * what the sphere is displaying and only one of them being the one the metrics
+ * ran against.
+ *
+ *   - a flat field with the graticule over it,
+ *   - a flat field with no graticule,
+ *   - a supplied image, optionally with the graticule over it.
+ *
+ * The graticule is composited by MULTIPLYING the base where a line is not, and
+ * writing the line colour where it is — rather than adding — so a grid over a
+ * white field stays inside the display's range instead of clipping into a flat
+ * white smear. `graticuleCoverage` is the same continuous function the
+ * grid-displacement metric evaluates, so the lines a reader sees and the lines
+ * the gate measures are the same lines.
+ */
+export function buildContent(s: Settings, custom: EquirectImage | null): EquirectImage {
+  const choice = Math.round(s.content);
+  const base = CONTENTS[choice] ?? CONTENTS[1];
+  const grid = Math.round(s.gridOn) === 1;
+  const spacingDeg = Math.round(s.gridDeg);
+
+  // A supplied image that has not arrived yet falls back to the grey field
+  // rather than to black: an empty sphere reads as a broken page.
+  const supplied = choice === CONTENT_CUSTOM ? custom : null;
+  if (choice === CONTENT_CUSTOM && supplied === null) {
+    return gridAlignmentPattern({
+      width: CONTENT_WIDTH,
+      height: CONTENT_HEIGHT,
+      spacingDeg,
+      lineWidthDeg: 0.35,
+      emphasizeAxes: grid,
+      lineColor: grid ? { r: 1, g: 1, b: 1 } : { r: 0.18, g: 0.18, b: 0.18 },
+      backgroundColor: { r: 0.18, g: 0.18, b: 0.18 },
+    });
+  }
+
+  if (supplied === null) {
+    const v = base.background;
+    return gridAlignmentPattern({
+      width: CONTENT_WIDTH,
+      height: CONTENT_HEIGHT,
+      spacingDeg,
+      lineWidthDeg: 0.35,
+      emphasizeAxes: grid,
+      // With the grid off, the line colour IS the background: the generator then
+      // paints a flat field, and there is no second code path to keep in step.
+      lineColor: grid ? { r: 1, g: 1, b: 1 } : { r: v, g: v, b: v },
+      backgroundColor: { r: v, g: v, b: v },
+    });
+  }
+
+  if (!grid) return supplied;
+
+  const out = createImage(supplied.width, supplied.height);
+  for (let y = 0; y < supplied.height; y++) {
+    const latDeg = 90 - ((y + 0.5) / supplied.height) * 180;
+    for (let x = 0; x < supplied.width; x++) {
+      const lonDeg = ((x + 0.5) / supplied.width) * 360 - 180;
+      const cover = graticuleCoverage(latDeg, lonDeg, spacingDeg, 0.35, true);
+      const i = 3 * (y * supplied.width + x);
+      for (let c = 0; c < 3; c++) {
+        out.data[i + c] = supplied.data[i + c] * (1 - cover) + cover;
+      }
+    }
+  }
+  return out;
+}
+
+export function buildWorld(
+  s: Settings,
+  compositorRig?: RigCalibration,
+  custom: EquirectImage | null = null,
+): WebWorld {
   const asBuiltRig = buildAsBuilt(s);
   const misaligned = injectMisalignment(
     asBuiltRig,
     Math.round(s.errorSeed),
     scaledMagnitudes(s.mountError),
   );
-  const content = CONTENTS[Math.round(s.content)] ?? CONTENTS[1];
-  const image = gridAlignmentPattern({
-    width: CONTENT_WIDTH,
-    height: CONTENT_HEIGHT,
-    spacingDeg: Math.round(s.gridDeg),
-    lineWidthDeg: 0.35,
-    emphasizeAxes: content.lines !== content.background,
-    lineColor: { r: content.lines, g: content.lines, b: content.lines },
-    backgroundColor: { r: content.background, g: content.background, b: content.background },
+  const image = buildContent(s, custom);
+  const scene = defaultScene(image, {
+    maskInterpretation: 'latitude',
+    ambient: { r: s.ambient, g: s.ambient, b: s.ambient },
   });
-  const scene = defaultScene(image, { maskInterpretation: 'latitude' });
 
   // The `on` flags are the only part of a nudge the software knows about, so
   // they apply to both rigs; the movements apply to the lenses alone.

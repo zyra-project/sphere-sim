@@ -42,6 +42,23 @@ export interface ModelRequest {
   /** Omit to skip the parity render — it is the expensive half. */
   parity: ParityCameraRequest | null;
   /**
+   * A supplied equirectangular image, in linear light, when the page is showing
+   * one — and `null` when it is not.
+   *
+   * The worker cannot see the file the user dropped, so it has to be sent. It is
+   * sent only when {@link ModelRequest.customImageId} changes and the worker
+   * holds the last one, because a megabyte of float across the boundary on every
+   * slider drag would cost more than the metrics.
+   *
+   * Getting this wrong is not cosmetic and was caught by the page's own parity
+   * check: with the image on the GPU and the fallback in the worker, the two
+   * renderers were comparing different pictures and reported a 15% disagreement
+   * that belonged to neither model.
+   */
+  customImage: { width: number; height: number; data: Float32Array } | null;
+  /** Identifies the supplied image. `''` when there is none. */
+  customImageId: string;
+  /**
    * Render each projector's own frame at this width. Zero skips it.
    *
    * The frame a projector is SENDING is a property of the compositor's

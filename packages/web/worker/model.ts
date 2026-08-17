@@ -14,6 +14,8 @@ declare const self: DedicatedWorkerGlobalScope;
 self.onmessage = (event: MessageEvent<ModelRequest>): void => {
   const req = event.data;
   try {
+    // The incoming image is adopted by the worker's cache, so its buffer must
+    // NOT be transferred back — it is still in use here.
     const reply = computeModel(req);
     const transfer: ArrayBufferLike[] = reply.projectorFrames.map((f) => f.data.buffer);
     if (reply.parityImage) transfer.push(reply.parityImage.data.buffer);
