@@ -487,6 +487,35 @@ async function main(): Promise<void> {
     // starting, the module graph resolving in a worker context, and the whole
     // capture-and-solve pipeline surviving structured cloning.
     if (opts.solve) {
+      // The page opens on an ALIGNED rig, so there is nothing for a solve to
+      // recover until something is broken. "Another install" draws the §2 mount
+      // tolerances, which is what an operator is actually calibrating away.
+      await cdp.evaluate(`(() => {
+        const b = [...document.querySelectorAll('#actions button')]
+          .find((x) => /Another install/.test(x.textContent ?? ''));
+        if (b) b.click();
+        return !!b;
+      })()`);
+      // Wait for the model worker to report the BROKEN rig, rather than sleeping
+      // a guessed interval. `headline` still holds the aligned figure, and
+      // comparing that against the post-solve one compares two different
+      // installations and calls a working calibration a regression.
+      const breakDeadline = Date.now() + 30_000;
+      while (Date.now() < breakDeadline) {
+        await sleep(400);
+        const now = await cdp.evaluate<string>(
+          "document.querySelector('[data-smoke=\"grid-mm\"]')?.textContent?.trim() ?? ''",
+        );
+        const mm = Number.parseFloat(now);
+        if (Number.isFinite(mm) && mm > 1) {
+          headline = now;
+          break;
+        }
+      }
+      if (Number.parseFloat(headline) <= 1) {
+        failures.push('"Another install" did not break the rig, so the solve has nothing to recover');
+      }
+
       const started = await cdp.evaluate<boolean>(`(() => {
         const b = [...document.querySelectorAll('button')].find((x) => /Recalibrate/.test(x.textContent ?? ''));
         if (!b) return false;

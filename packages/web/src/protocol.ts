@@ -96,10 +96,20 @@ export interface ModelResponse {
   parityMs: number;
   metricsMs: number;
   densityScale: number;
-  /** One per projector, in rig order. Empty when none was asked for. */
-  projectorFrames: FrameImage[];
-  /** One per projector, in rig order. See {@link WarpMesh}. */
-  meshes: WarpMesh[];
+  /**
+   * One per PANEL SLOT, `null` where that projector is switched off or where no
+   * frames were asked for.
+   *
+   * Slot, not rig position. A projector switched off is dropped from the rig
+   * entirely — PARAMETERS.md §2's "quadrants go dark" — so rig position stops
+   * meaning P-number the moment anybody uses the switch, and every array after it
+   * shifts by one. Which looks entirely plausible.
+   */
+  projectorFrames: (FrameImage | null)[];
+  /** One per panel slot, `null` where switched off. See {@link WarpMesh}. */
+  meshes: (WarpMesh | null)[];
+  /** Which panel slots are actually in the rig. */
+  live: boolean[];
   /**
    * Each projector's own configuration, twice: what the software believes, and
    * where the lens actually is.
@@ -108,7 +118,7 @@ export interface ModelResponse {
    * without a diagram — and it is why they are computed by the same function
    * from two different rigs rather than by two functions from one.
    */
-  projectorConfig: { believed: RigFact[]; actual: RigFact[] }[];
+  projectorConfig: ({ believed: RigFact[]; actual: RigFact[] } | null)[];
 }
 
 /**

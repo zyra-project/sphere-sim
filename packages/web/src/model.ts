@@ -97,8 +97,13 @@ const MESH_ROWS = 11;
  * content there cannot be corrected without losing it — and clamping to `null`
  * would draw that as a hole indistinguishable from a limb overshoot.
  */
-function warpMeshes(truth: PreparedRig, compositor: PreparedRig): WarpMesh[] {
-  const out: WarpMesh[] = [];
+function warpMeshes(
+  truth: PreparedRig,
+  compositor: PreparedRig,
+  slots: readonly number[],
+  slotCount: number,
+): (WarpMesh | null)[] {
+  const out: (WarpMesh | null)[] = Array.from({ length: slotCount }, () => null);
   const n = MESH_COLS * MESH_ROWS;
   for (let i = 0; i < compositor.projectors.length; i++) {
     const c = compositor.projectors[i];
@@ -135,7 +140,7 @@ function warpMeshes(truth: PreparedRig, compositor: PreparedRig): WarpMesh[] {
         if (d > worstPx) worstPx = d;
       }
     }
-    out.push({
+    out[slots[i] ?? i] = {
       projectorId: c.cal.id,
       cols: MESH_COLS,
       rows: MESH_ROWS,
@@ -147,7 +152,7 @@ function warpMeshes(truth: PreparedRig, compositor: PreparedRig): WarpMesh[] {
       dv,
       worstPx,
       onSphere,
-    });
+    };
   }
   return out;
 }
@@ -225,7 +230,11 @@ export function computeModel(req: ModelRequest): ModelResponse {
   // COMPOSITOR's calibration, because that is whose arithmetic wrote it. Moving
   // a projector cannot change this picture; only a recalibration rewrites it,
   // and that is the point of showing it.
-  const projectorFrames: FrameImage[] = [];
+  // Indexed by PANEL SLOT, not by position in the rig — a projector switched off
+  // is absent from the rig, and without this every projector after it would take
+  // its neighbour's frame, its neighbour's colour and its neighbour's name.
+  const slotCount = req.settings.nudge.length;
+  const projectorFrames: (FrameImage | null)[] = Array.from({ length: slotCount }, () => null);
   if (req.projectorPreviewWidth > 0) {
     const compositor = prepareRig(world.compositorRig);
     const w = Math.round(req.projectorPreviewWidth);
@@ -237,7 +246,7 @@ export function computeModel(req: ModelRequest): ModelResponse {
         sampleWidth: w,
         sampleHeight: h,
       });
-      projectorFrames.push({
+      projectorFrames[world.slots[i] ?? i] = {
         width: img.width,
         height: img.height,
         data: img.data,
@@ -245,7 +254,7 @@ export function computeModel(req: ModelRequest): ModelResponse {
         // What goes down the cable, already through the §P encode by
         // `blendedSignal`. Not radiance.
         space: 'display',
-      });
+      };
     }
   }
 
@@ -254,11 +263,21 @@ export function computeModel(req: ModelRequest): ModelResponse {
     id: req.id,
     ok: true,
     projectorFrames,
-    meshes: warpMeshes(prepareRig(world.truthRig), prepareRig(world.compositorRig)),
-    projectorConfig: world.compositorRig.projectors.map((_, i) => ({
-      believed: projectorFacts(world.compositorRig, i),
-      actual: projectorFacts(world.truthRig, i),
-    })),
+    meshes: warpMeshes(
+      prepareRig(world.truthRig),
+      prepareRig(world.compositorRig),
+      world.slots,
+      slotCount,
+    ),
+    projectorConfig: Array.from({ length: slotCount }, (_, slot) => {
+      const i = world.slots.indexOf(slot);
+      if (i < 0) return null;
+      return {
+        believed: projectorFacts(world.compositorRig, i),
+        actual: projectorFacts(world.truthRig, i),
+      };
+    }),
+    live: Array.from({ length: slotCount }, (_, slot) => world.slots.includes(slot)),
     readings: readingsFrom(set),
     facts: rigFacts(world.asBuiltRig, set),
     framebuffer: framebufferSentence(world.truthRig),

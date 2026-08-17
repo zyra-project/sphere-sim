@@ -12,6 +12,7 @@ import {
   PERFECT_PRESET,
   PRESETS,
   PROJECTOR_TINTS,
+  RESOLUTIONS,
   SPEC_PRESET,
   coerce,
   formatSetting,
@@ -145,7 +146,12 @@ test('presets do not share a nudge array, so editing one cannot edit the others'
 test('a discrete control formats as its option label, not as a number', () => {
   const res = CONTROLS.find((c) => c.key === 'resolution');
   assert.ok(res && res.options);
-  assert.equal(formatSetting(res, 3), '3840 × 2160 (LK935)');
+  assert.equal(formatSetting(res, 3), '3840 × 2160 · 16:9 · LK935');
+  // Every raster names its aspect, because the shape is what §7's off-sphere gate
+  // is about (A-03) and the pixel count is not.
+  for (const label of RESOLUTIONS.map((r) => r.label)) {
+    assert.ok(/·\s\d+:\d+/.test(label), `'${label}' does not say what shape it is`);
+  }
 });
 
 test('every ASSUME control says so in its help, since the colour alone is not a claim', () => {

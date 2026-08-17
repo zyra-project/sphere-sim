@@ -35,6 +35,18 @@ import { NOMINAL_SILHOUETTE_MARGIN_FRAC } from '../../calibration/src/convention
 /** Inches to metres. The SOS config is in inches; this project is in metres. */
 export const IN_TO_M = 0.0254;
 
+/**
+ * The BenQ LK935's rated output. Amendment A-35 sourced the rest of that sheet.
+ *
+ * Up here rather than beside `noNudge`, which uses it: the presets build their
+ * nudge arrays while this module is still initialising, so a `const` declared
+ * after them is in its temporal dead zone when they run.
+ */
+export const NOMINAL_LUMENS = 5500;
+
+/** §3.2's nominal black floor, 1/800, as a percentage. Class ASSUME. */
+export const NOMINAL_BLACK_PCT = 0.125;
+
 /** How a control is presented, and what it actually drives. */
 export interface ControlSpec {
   key: SettingKey;
@@ -256,10 +268,16 @@ export const CONTENT_CUSTOM = 4;
 
 /** Per-projector rasters. §3.4: the X screen is twice this in each dimension. */
 export const RESOLUTIONS: readonly { label: string; resX: number; resY: number }[] = [
-  { label: '1024 × 768', resX: 1024, resY: 768 },
-  { label: '1920 × 1080', resX: 1920, resY: 1080 },
-  { label: '1920 × 1200', resX: 1920, resY: 1200 },
-  { label: '3840 × 2160 (LK935)', resX: 3840, resY: 2160 },
+  { label: '1024 × 768 · 4:3', resX: 1024, resY: 768 },
+  { label: '1920 × 1080 · 16:9', resX: 1920, resY: 1080 },
+  { label: '1920 × 1200 · 16:10', resX: 1920, resY: 1200 },
+  { label: '3840 × 2160 · 16:9 · LK935', resX: 3840, resY: 2160 },
+  // The shape matters more than the pixel count for one §7 gate, so a square
+  // chip is offered even though no projector on the market has one: A-03 shows
+  // §7's 52% off-sphere-flux gate is unreachable on 16:9 — the floor is about
+  // 56% — and reachable on a square. It is the fastest way to see that the gate
+  // is about the CHIP and not about the aim.
+  { label: '2048 × 2048 · 1:1', resX: 2048, resY: 2048 },
 ];
 
 /**
@@ -404,17 +422,56 @@ export interface ProjectorNudge {
   distanceM: number;
   /** Metres, added to the lens height. */
   heightM: number;
+  /** Degrees, added to the horizontal field of view. The zoom ring. */
+  fovDeltaDeg: number;
+  /** Lens shift, added to the fraction-of-half-image offsets §3.1 defines. */
+  shiftH: number;
+  shiftV: number;
+  /**
+   * Lamp output in lumens. PROVISIONAL — see the control's help.
+   *
+   * Scales the projector's channel gain against {@link NOMINAL_LUMENS}, which is
+   * the LK935's rated figure. PARAMETERS.md gives no absolute lumen number at
+   * all; `g_R,G,B` are class ASSUME/MEAS at 1, 1, 1 and §10 counts them among the
+   * 31 constants nobody has measured.
+   */
+  lumens: number;
+  /**
+   * Black floor, as a percentage of full output. PROVISIONAL.
+   *
+   * §3.2's nominal is 1/800 = 0.125%, which is a contrast-ratio spec read as a
+   * floor. It is class ASSUME.
+   */
+  blackPct: number;
   /** Switched off at the wall. Its quadrant goes dark; the framebuffer does not. */
   on: boolean;
 }
 
 export function noNudge(): ProjectorNudge {
-  return { yawDeg: 0, pitchDeg: 0, rollDeg: 0, distanceM: 0, heightM: 0, on: true };
+  return {
+    yawDeg: 0,
+    pitchDeg: 0,
+    rollDeg: 0,
+    distanceM: 0,
+    heightM: 0,
+    fovDeltaDeg: 0,
+    shiftH: 0,
+    shiftV: 0,
+    lumens: NOMINAL_LUMENS,
+    blackPct: NOMINAL_BLACK_PCT,
+    on: true,
+  };
 }
 
 /** One control on the per-projector tab. Same shape as {@link ControlSpec}. */
 export interface NudgeSpec {
   key: keyof Omit<ProjectorNudge, 'on'>;
+  /**
+   * Phase 2. Everything downstream of it is marked PROVISIONAL, because every
+   * constant it rests on is class ASSUME and PARAMETERS.md §10 says of them:
+   * "All of it. This is where the bar breaks."
+   */
+  provisional?: boolean;
   label: string;
   min: number;
   max: number;
@@ -481,6 +538,76 @@ export const NUDGE_CONTROLS: readonly NudgeSpec[] = [
     unit: ' m',
     decimals: 3,
     help: 'Up or down on its mount, again with an automatic re-aim.',
+  },
+  {
+    key: 'fovDeltaDeg',
+    label: 'Image size',
+    min: -6,
+    max: 6,
+    step: 0.02,
+    unit: '°',
+    decimals: 2,
+    help:
+      'The zoom ring. How wide a cone of light it throws, on top of the field of view the ' +
+      'distance and the overfill already imply. Too narrow leaves a dark rim at the limb; too wide ' +
+      'wastes light on the wall behind and dims what lands. The LK935\u2019s 1.6\u00d7 zoom spans ' +
+      'about \u00b16\u00b0 at this throw \u2014 A-35.',
+  },
+  {
+    key: 'shiftH',
+    label: 'Lens shift left / right',
+    min: -0.3,
+    max: 0.3,
+    step: 0.002,
+    unit: '',
+    decimals: 3,
+    help:
+      'Slides the image inside the lens without turning the projector, as a fraction of half the ' +
+      'image width (§3.1). Different from aim: the cone stays where it points and the picture moves ' +
+      'within it, so the silhouette stops being centred in the raster.',
+  },
+  {
+    key: 'shiftV',
+    label: 'Lens shift up / down',
+    min: -0.3,
+    max: 0.3,
+    step: 0.002,
+    unit: '',
+    decimals: 3,
+    help:
+      'The same, vertically. This is the control a real install uses to put the ball in the frame ' +
+      'from a ceiling mount without tilting the projector down and keystoning the image.',
+  },
+  {
+    key: 'lumens',
+    label: 'Lamp output',
+    min: 500,
+    max: 8000,
+    step: 50,
+    unit: ' lm',
+    decimals: 0,
+    provisional: true,
+    help:
+      'PROVISIONAL. Scales this projector\u2019s channel gain against the LK935\u2019s rated 5500 lm. ' +
+      'PARAMETERS.md gives no absolute lumen figure anywhere \u2014 §3.2 holds the three gains at 1 ' +
+      'and classes them ASSUME/MEAS, noting that four lamps at different hour counts give four ' +
+      'different white points. So the SHAPE of what this does is modelled and the number it is ' +
+      'measured against is not. The phase gate says build it and do not optimise against it.',
+  },
+  {
+    key: 'blackPct',
+    label: 'Black level',
+    min: 0,
+    max: 1.2,
+    step: 0.005,
+    unit: '%',
+    decimals: 3,
+    provisional: true,
+    help:
+      'PROVISIONAL. What this projector emits with black in the frame, as a percentage of full ' +
+      'output. §3.2\u2019s nominal 0.125% is a contrast-ratio spec read as a floor, class ASSUME. It ' +
+      'is what lifts the unlit polar cap off true black and what makes the rectangle of glow around ' +
+      'the sphere in every real SOS photograph.',
   },
 ];
 
@@ -833,13 +960,20 @@ export const CONTROLS: readonly ControlSpec[] = [
     symbol: '',
     section: '§6',
     klass: 'PANEL',
-    min: -35,
-    max: 70,
+    // Past the poles in both directions, which is not a nicety: §4.3's unlit
+    // region is at the SOUTH pole and you cannot see it from a viewer's eye
+    // height. The one part of this display that four projectors can never reach
+    // was the one part the camera could not be pointed at.
+    min: -89,
+    max: 89,
     step: 1,
     unit: '°',
     decimals: 0,
     group: 'view',
-    help: 'Looking up from the floor, or down from the mezzanine.',
+    help:
+      'Looking up from the floor or down from the mezzanine — and all the way under, which is the ' +
+      'only way to see the unlit polar cap §4.3 is about. §6 bounds where a VISITOR stands; this ' +
+      'is a camera and no metric depends on it.',
   },
   {
     key: 'viewRangeM',

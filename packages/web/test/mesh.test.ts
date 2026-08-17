@@ -28,8 +28,10 @@ function request(over: Partial<ModelRequest> = {}): ModelRequest {
 
 test('there is a mesh per projector, and it reaches the ball', () => {
   const res = computeModel(request());
-  assert.equal(res.meshes.length, Math.round(BOULDER_PRESET.projectorCount));
+  assert.equal(res.meshes.length, BOULDER_PRESET.nudge.length);
+  assert.equal(res.meshes.filter(Boolean).length, Math.round(BOULDER_PRESET.projectorCount));
   for (const m of res.meshes) {
+    if (!m) continue;
     assert.equal(m.u.length, m.cols * m.rows);
     // The raster overshoots the silhouette by design (§3.1 and A-01), so the
     // corners must MISS — a mesh where every vertex landed would mean the
@@ -50,13 +52,14 @@ test('there is a mesh per projector, and it reaches the ball', () => {
 test('a perfect rig needs no correction, and a knocked one does', () => {
   const perfect = computeModel(request({ settings: PERFECT_PRESET, id: 2 }));
   for (const m of perfect.meshes) {
+    if (!m) continue;
     assert.ok(
       m.worstPx < 0.02,
       `a perfectly-mounted ${m.projectorId} still wants ${m.worstPx.toFixed(3)} px of warp`,
     );
   }
   const knocked = computeModel(request({ id: 3 }));
-  const worst = Math.max(...knocked.meshes.map((m) => m.worstPx));
+  const worst = Math.max(...knocked.meshes.filter(Boolean).map((m) => m!.worstPx));
   assert.ok(worst > 1, `a 1x mount error should bend the mesh by pixels, got ${worst.toFixed(2)}`);
 });
 
@@ -68,6 +71,7 @@ test('the mesh measures the compositor against the truth, not the truth against 
   const world = buildWorld(BOULDER_PRESET);
   const res = computeModel(request({ compositorRig: world.truthRig, id: 4 }));
   for (const m of res.meshes) {
+    if (!m) continue;
     assert.ok(
       m.worstPx < 0.02,
       `${m.projectorId} wants ${m.worstPx.toFixed(3)} px of warp against its own truth`,

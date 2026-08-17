@@ -262,9 +262,15 @@ export function coverageAndWeights(
   const blend = rig.blend;
   const width = blend.widthDeg > 0 ? blend.widthDeg : 1e-9;
   const sector = blend.region === 'sector';
-  // Each projector's share of the circle. A two-projector rig gets 180° each, a
-  // four 90°, which is where the ±45° seams come from.
-  const span = n > 0 ? 360 / n : 360;
+  // Each projector's share of the circle, from where its NEIGHBOURS actually are
+  // rather than from `360 / n`.
+  //
+  // The even-ring answer is the same — four projectors get 90° each and the seams
+  // land at ±45° — but a rig is not always an even ring. Switch one of four off
+  // and `360 / n` would hand the three survivors 120° apiece, silently widening
+  // their wedges to cover a gap they cannot physically reach. The two projectors
+  // either side of the hole should keep their own halves of it and no more.
+  const half = sector ? sectorHalfWidths(rig) : null;
 
   for (let i = 0; i < n; i++) {
     const p = rig.projectors[i];
@@ -286,17 +292,18 @@ export function coverageAndWeights(
     // model different systems, and the default is the one every scored number in
     // bench-results.json was produced under.
     let t: number;
-    if (sector) {
-      // Longitude wedge: this projector owns `span` degrees of longitude centred
-      // on its own meridian, and crossfades across `width/2` either side of the
-      // boundary with its neighbour. `t = 1` inside, falling to 0 outside.
+    if (sector && half) {
+      // Longitude wedge: this projector owns the ground between the midpoints to
+      // its two neighbours, and crossfades across `width/2` either side of each
+      // boundary. `t = 1` well inside, falling to 0 outside.
       const lonDeg = Math.atan2(point.y, point.x) * RAD2DEG;
       const meridianDeg = Math.atan2(p.lens.y, p.lens.x) * RAD2DEG;
-      const dLon = Math.abs(wrapDeg180(lonDeg - meridianDeg));
-      const half = span / 2;
-      t = (half + width / 2 - dLon) / width;
+      const dLon = wrapDeg180(lonDeg - meridianDeg);
+      const edge = dLon >= 0 ? half[i].plus : half[i].minus;
+      t = (edge + width / 2 - Math.abs(dLon)) / width;
       // Still bounded by what the projector can physically reach: a wedge that
-      // outran the limb would claim light nobody is emitting.
+      // outran the limb would claim light nobody is emitting, and §4.3's unlit
+      // polar region would quietly vanish from the model.
       t = Math.min(t, (thetaMaxDeg - thetaDeg) / width);
     } else {
       t = (thetaMaxDeg - thetaDeg) / width;
@@ -306,6 +313,31 @@ export function coverageAndWeights(
 
   normalizeWeights(weights);
   return { weights, lit };
+}
+
+/**
+ * Half the angular gap to each neighbour, per projector, in degrees.
+ *
+ * A lone projector owns the whole circle (180° each way). Otherwise each
+ * boundary sits at the midpoint between two adjacent lenses, so two projectors
+ * that disagree about where the seam is cannot leave a gap or an overlap in the
+ * wedges — whatever one gives up, the other takes.
+ */
+function sectorHalfWidths(rig: PreparedRig): { plus: number; minus: number }[] {
+  const az = rig.projectors.map((p) => Math.atan2(p.lens.y, p.lens.x) * RAD2DEG);
+  return az.map((a, i) => {
+    let plus = 180;
+    let minus = 180;
+    for (let j = 0; j < az.length; j++) {
+      if (j === i) continue;
+      // Positive-going and negative-going gaps, measured the short way round.
+      const d = ((az[j] - a) % 360 + 360) % 360;
+      if (d > 0 && d / 2 < plus) plus = d / 2;
+      const e = 360 - d;
+      if (e > 0 && e / 2 < minus) minus = e / 2;
+    }
+    return { plus, minus };
+  });
 }
 
 /**

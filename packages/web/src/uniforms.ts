@@ -63,6 +63,15 @@ export interface DisplayOptions {
   rail?: boolean;
   /** Draw a faint cone of light from each lens to the ball. */
   aimGuides?: boolean;
+  /**
+   * `slots[rigIndex]` is the panel slot that projector came from. Identity unless
+   * one is switched off, in which case the rig is shorter than the panel.
+   *
+   * `highlight` and `markerSelected` arrive as panel SLOTS because that is what
+   * the reader clicked; the shader indexes the rig. Without the map, switching P2
+   * off made selecting P3 isolate P4 and paint it P3's colour.
+   */
+  slots?: readonly number[];
 }
 
 /** One rig's arrays, in the layout the shader declares. */
@@ -204,17 +213,26 @@ export interface DisplayUniforms {
   aimGuides: number;
 }
 
-/** One copy, since the colours never change. */
-const TINTS = ((): Float32Array => {
+/** The tints in RIG order, which is panel order until somebody uses the switch. */
+function tintsFor(slots: readonly number[] | undefined): Float32Array {
   const a = new Float32Array(3 * MAX_PROJECTORS);
   for (let i = 0; i < MAX_PROJECTORS; i++) {
-    const t = PROJECTOR_TINTS_LINEAR[i] ?? ([0.5, 0.5, 0.5] as const);
+    const slot = slots ? (slots[i] ?? i) : i;
+    const t = PROJECTOR_TINTS_LINEAR[slot] ?? ([0.5, 0.5, 0.5] as const);
     a[3 * i] = t[0];
     a[3 * i + 1] = t[1];
     a[3 * i + 2] = t[2];
   }
   return a;
-})();
+}
+
+/** Panel slot to rig index, or `-1` when that projector is switched off. */
+function rigIndexOf(slot: number, slots: readonly number[] | undefined): number {
+  if (slot < 0) return -1;
+  if (!slots) return slot;
+  const i = slots.indexOf(slot);
+  return i;
+}
 
 const RAMP_SHAPE_CODE: Record<string, number> = {
   linear: 0,
@@ -294,15 +312,15 @@ export function buildDisplayUniforms(
 
     overlay: OVERLAY_CODE[options.overlay ?? 'none'],
     overlayMix: options.overlayMix ?? 0.75,
-    highlight: options.highlight ?? -1,
+    highlight: rigIndexOf(options.highlight ?? -1, options.slots),
     drawFloor: (options.drawFloor ?? true) ? 1 : 0,
     floorRadius: options.floorRadiusM ?? 8,
     exposure: options.exposure ?? 1,
     displayGamma: options.displayGamma ?? 2.2,
 
-    tint: TINTS,
+    tint: tintsFor(options.slots),
     markerRadius: options.markerRadiusM ?? 0,
-    markerSelected: options.markerSelected ?? -1,
+    markerSelected: rigIndexOf(options.markerSelected ?? -1, options.slots),
     ceiling: options.ceilingM ?? 4.27,
     rail: (options.rail ?? true) ? 1 : 0,
     aimGuides: (options.aimGuides ?? false) ? 1 : 0,
@@ -320,67 +338,106 @@ export function buildDisplayUniforms(
  *
  * `ndc` is −1..1 with y up, as the shader's `s` is.
  */
+/**
+ * Which projector is under a point on the canvas, or `-1` for none.
+ *
+ * This is a sphere trace against the same signed distance field `glsl.ts` draws —
+ * `sdProjector` and `projectorBodyCentre`, transliterated. Two bounding spheres
+ * were tried first and were wrong in a way worth recording: a sphere generous
+ * enough to cover the body is also generous enough to be hit by a ray that merely
+ * passes NEAR a projector, so clicking the far P3 returned the near P1, which the
+ * viewer could see was not under the cursor.
+ *
+ * The rail and the rod are not in this field. They are not pickable, and a click
+ * that landed on a handrail and selected nothing would be right.
+ *
+ * `ndc` is −1..1 with y up, as the shader's `s` is.
+ */
 export function pickMarker(u: DisplayUniforms, ndcX: number, ndcY: number): number {
   if (u.markerRadius <= 0) return -1;
   const dir = eyeRay(u, ndcX, ndcY);
   const origin = { x: u.camPos[0], y: u.camPos[1], z: u.camPos[2] };
 
   const ball = raySphereIntersect(origin, dir, u.physical.radiusM, 1e-9);
-  let best = ball ? ball.t : 1e9;
-  let which = -1;
+  const maxT = ball ? ball.t : 1e9;
 
-  /** Nearest hit on a sphere, or -1. */
-  const hitSphere = (cx: number, cy: number, cz: number, r: number): number => {
-    const ox = origin.x - cx;
-    const oy = origin.y - cy;
-    const oz = origin.z - cz;
-    const h = ox * dir.x + oy * dir.y + oz * dir.z;
-    const mx = ox - h * dir.x;
-    const my = oy - h * dir.y;
-    const mz = oz - h * dir.z;
-    const disc = r * r - (mx * mx + my * my + mz * mz);
-    if (disc < 0) return -1;
-    const t = -h - Math.sqrt(disc);
-    return t > 1e-4 ? t : -1;
-  };
-
-  for (let i = 0; i < u.projCount; i++) {
-    const lx = u.physical.lens[3 * i];
-    const ly = u.physical.lens[3 * i + 1];
-    const lz = u.physical.lens[3 * i + 2];
-    // The body sits BEHIND the lens point — `sdProjector` puts it at 0.33 m back
-    // along the axis, which is where the largest part of what a viewer sees is.
-    // Testing only a small ball at the lens meant clicking the middle of the
-    // visible projector missed it by nearly three marker radii.
-    const len = Math.hypot(lx, ly, lz) || 1;
-    const bx = lx + (lx / len) * PROJECTOR_BODY_BACK_M;
-    const by = ly + (ly / len) * PROJECTOR_BODY_BACK_M;
-    const bz = lz + (lz / len) * PROJECTOR_BODY_BACK_M;
-
-    for (const t of [
-      hitSphere(bx, by, bz, PROJECTOR_BODY_PICK_M),
-      hitSphere(lx, ly, lz, u.markerRadius),
-    ]) {
-      if (t >= 0 && t < best) {
-        best = t;
+  let t = 0.02;
+  for (let step = 0; step < PICK_STEPS; step++) {
+    if (t >= maxT) return -1;
+    const px = origin.x + dir.x * t;
+    const py = origin.y + dir.y * t;
+    const pz = origin.z + dir.z * t;
+    let nearest = 1e9;
+    let which = -1;
+    for (let i = 0; i < u.projCount; i++) {
+      const d = projectorDistance(u, i, px, py, pz);
+      if (d < nearest) {
+        nearest = d;
         which = i;
       }
     }
+    if (nearest < 0.0015) return which;
+    t += Math.max(nearest, 0.004);
   }
-  return which;
+  return -1;
 }
 
-/**
- * Where the shader puts a projector's body, and how big a click target it is.
- *
- * These mirror `sdProjector` and `projectorBodyCentre` in `glsl.ts`. Two spheres
- * rather than a full signed-distance march on the CPU: the body's half-diagonal
- * is 0.28 m so 0.30 covers it, and the barrel reaches forward to the lens point,
- * which the second sphere covers. Slightly generous on purpose — this is a click
- * target, and erring toward "you hit it" is the right error for one.
- */
-const PROJECTOR_BODY_BACK_M = 0.33;
-const PROJECTOR_BODY_PICK_M = 0.3;
+/** March steps. The shader's `ROOM_STEPS`; more would only cost a click. */
+const PICK_STEPS = 72;
+
+/** `glsl.ts` `sdProjector`, in the frame where the lens is the origin. */
+function projectorDistance(
+  u: DisplayUniforms,
+  i: number,
+  px: number,
+  py: number,
+  pz: number,
+): number {
+  const lx = u.physical.lens[3 * i];
+  const ly = u.physical.lens[3 * i + 1];
+  const lz = u.physical.lens[3 * i + 2];
+  const len = Math.hypot(lx, ly, lz) || 1;
+  // Forward points at the sphere centre, which is the origin.
+  const fx = -lx / len;
+  const fy = -ly / len;
+  const fz = -lz / len;
+  // The shader's `up0` choice, so the roll of the body matches what is drawn.
+  const upz = Math.abs(fz) > 0.98 ? 0 : 1;
+  const upx = Math.abs(fz) > 0.98 ? 1 : 0;
+  let rx = fy * upz - fz * 0;
+  let ry = fz * upx - fx * upz;
+  let rz = fx * 0 - fy * upx;
+  const rl = Math.hypot(rx, ry, rz) || 1;
+  rx /= rl;
+  ry /= rl;
+  rz /= rl;
+  const ux = ry * fz - rz * fy;
+  const uy = rz * fx - rx * fz;
+  const uz = rx * fy - ry * fx;
+
+  const relx = px - lx;
+  const rely = py - ly;
+  const relz = pz - lz;
+  const qx = relx * rx + rely * ry + relz * rz;
+  const qy = relx * ux + rely * uy + relz * uz;
+  const qz = relx * fx + rely * fy + relz * fz;
+
+  // Barrel: capped cylinder along +z, centre −0.065, half-length 0.065, r 0.068.
+  const bd = Math.hypot(qx, qy) - 0.068;
+  const bz = Math.abs(qz + 0.065) - 0.065;
+  const barrel =
+    Math.min(Math.max(bd, bz), 0) + Math.hypot(Math.max(bd, 0), Math.max(bz, 0));
+
+  // Body: box at −0.33 with half-extents (0.17, 0.075, 0.20).
+  const ex = Math.abs(qx) - 0.17;
+  const ey = Math.abs(qy) - 0.075;
+  const ez = Math.abs(qz + 0.33) - 0.2;
+  const body =
+    Math.hypot(Math.max(ex, 0), Math.max(ey, 0), Math.max(ez, 0)) +
+    Math.min(Math.max(ex, Math.max(ey, ez)), 0);
+
+  return Math.min(barrel, body);
+}
 
 /** Used by {@link pickMarker}, and by the shader's `main` under another name. */
 export function eyeRay(

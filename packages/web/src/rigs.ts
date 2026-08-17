@@ -36,7 +36,15 @@ import { DEFAULT_MISALIGNMENT, injectMisalignment, nominalRig } from '../../sim/
 import { DEG2RAD } from '../../sim/src/vec.ts';
 import { aimAtSphereCenter } from '../../sim/src/geometry.ts';
 import type { ProjectorNudge, Settings } from './settings.ts';
-import { CONTENTS, CONTENT_CUSTOM, CONTENT_MARBLE, IN_TO_M, RESOLUTIONS } from './settings.ts';
+import {
+  CONTENTS,
+  CONTENT_CUSTOM,
+  CONTENT_MARBLE,
+  IN_TO_M,
+  NOMINAL_BLACK_PCT,
+  NOMINAL_LUMENS,
+  RESOLUTIONS,
+} from './settings.ts';
 
 /** Equirectangular content raster. Big enough that the grid is not the limit. */
 const CONTENT_WIDTH = 1024;
@@ -53,6 +61,14 @@ export interface WebWorld {
   perturbation: Perturbation;
   scene: Scene;
   image: EquirectImage;
+  /**
+   * `slots[rigIndex]` is the panel slot that projector came from.
+   *
+   * Identity until somebody switches one off. See {@link NudgedRig} — everything
+   * the page shows per projector is indexed by SLOT, so that P3 stays P3, keeps
+   * its colour and keeps its frame when P2 goes dark.
+   */
+  slots: number[];
 }
 
 /**
@@ -136,22 +152,34 @@ export function scaledMagnitudes(scale: number): MisalignmentMagnitudes {
 }
 
 /**
- * Apply the panel's hand adjustments to the lenses.
+ * Move the lenses by hand, and drop the ones switched off at the wall.
  *
  * Applied AFTER `injectMisalignment`, so a nudge reads as "and then somebody
  * knocked it", which is what the control means. The lens is moved along its own
- * radius and in height, then RE-AIMED at the sphere centre, and only then are
- * the aim offsets added — the same separation `injectMisalignment` makes, and
- * for the same reason: a pure placement error should leave a rig that is still
- * pointing at the sphere, which is what a real installer would leave behind.
+ * radius and in height, then RE-AIMED at the sphere centre, and only then are the
+ * aim offsets added — the same separation `injectMisalignment` makes, and for the
+ * same reason: a pure placement error should leave a rig that is still pointing at
+ * the sphere, which is what a real installer would leave behind.
  *
- * A projector switched off is dropped from the rig entirely rather than left in
- * with zero output. Its quadrant of the framebuffer goes dark and the
- * framebuffer keeps its size, which is exactly what PARAMETERS.md §2's
- * "quadrants go dark" describes — and it is why `nominalRig` is asked to rebuild
- * the viewport assignment rather than this function editing one.
+ * Dropping rather than dimming is the model PARAMETERS.md §2 describes — the
+ * quadrant goes dark, the framebuffer does not shrink, and a point nothing
+ * reaches is genuinely unlit, which is what §7's zero-tolerance gate is about. A
+ * projector left in the rig emitting black would still count as covering, and the
+ * unlit metric would report a lit sphere with a dark quarter on it.
+ *
+ * The cost is that the rig's array stops being indexed by panel slot, which is
+ * why {@link NudgedRig.slots} exists. Without it, switching P2 off silently
+ * renamed P3 to P2 everywhere downstream — its tint, its frame, its warp mesh and
+ * its config column all shifted by one, and every one of them looked plausible.
  */
-function applyNudges(rig: RigCalibration, nudges: readonly ProjectorNudge[]): RigCalibration {
+export interface NudgedRig {
+  rig: RigCalibration;
+  /** `slots[rigIndex]` is the panel slot that projector came from. */
+  slots: number[];
+}
+
+function applyNudges(rig: RigCalibration, nudges: readonly ProjectorNudge[]): NudgedRig {
+  const slots: number[] = [];
   const projectors = rig.projectors
     .map((p, i) => {
       const n = nudges[i];
@@ -170,6 +198,13 @@ function applyNudges(rig: RigCalibration, nudges: readonly ProjectorNudge[]): Ri
       // exactly — no drift from merely passing through.
       const wasAimed = aimAtSphereCenter(pos);
       const aim = aimAtSphereCenter(position);
+      // Lumens scale the channel gain against the LK935's rated output, and the
+      // black level is a percentage of full. Both are Phase 2 — the SHAPE is
+      // modelled and the constants underneath are class ASSUME, so the controls
+      // carry PROVISIONAL and nothing is optimised against them.
+      const lamp = Math.max(0, n.lumens) / NOMINAL_LUMENS;
+      const black = Math.max(0, n.blackPct) / 100;
+      const t = p.transfer;
       return {
         ...p,
         pose: {
@@ -178,10 +213,25 @@ function applyNudges(rig: RigCalibration, nudges: readonly ProjectorNudge[]): Ri
           pitchDeg: aim.pitchDeg + (p.pose.pitchDeg - wasAimed.pitchDeg) + n.pitchDeg,
           rollDeg: p.pose.rollDeg + n.rollDeg,
         },
+        intrinsics: {
+          ...p.intrinsics,
+          fovHDeg: Math.max(0.5, p.intrinsics.fovHDeg + n.fovDeltaDeg),
+          shiftH: p.intrinsics.shiftH + n.shiftH,
+          shiftV: p.intrinsics.shiftV + n.shiftV,
+        },
+        transfer: {
+          ...t,
+          gain: { r: t.gain.r * lamp, g: t.gain.g * lamp, b: t.gain.b * lamp },
+          blackFloor: { r: black, g: black, b: black },
+        },
       };
     })
-    .filter((_, i) => nudges[i]?.on !== false);
-  return { ...rig, projectors };
+    .filter((_, i) => {
+      if (nudges[i]?.on === false) return false;
+      slots.push(i);
+      return true;
+    });
+  return { rig: { ...rig, projectors }, slots };
 }
 
 /** True when nothing has been moved by hand. */
@@ -193,7 +243,12 @@ export function nudgesAreClear(nudges: readonly ProjectorNudge[]): boolean {
       n.pitchDeg === 0 &&
       n.rollDeg === 0 &&
       n.distanceM === 0 &&
-      n.heightM === 0,
+      n.heightM === 0 &&
+      n.fovDeltaDeg === 0 &&
+      n.shiftH === 0 &&
+      n.shiftV === 0 &&
+      n.lumens === NOMINAL_LUMENS &&
+      n.blackPct === NOMINAL_BLACK_PCT,
   );
 }
 
@@ -305,7 +360,9 @@ export function buildWorld(
   // The `on` flags are the only part of a nudge the software knows about, so
   // they apply to both rigs; the movements apply to the lenses alone.
   const off = s.nudge.map((n) => ({ ...n, yawDeg: 0, pitchDeg: 0, rollDeg: 0, distanceM: 0, heightM: 0 }));
-  const drawing = applyNudges(asBuiltRig, off);
+  const drawn = applyNudges(asBuiltRig, off);
+  const drawing = drawn.rig;
+  const truth = applyNudges(misaligned.rig, s.nudge);
   // A recovered rig comes back from `packages/solver`, which knows nothing about
   // blending — the boundary type carries the fields but the solver never reads or
   // writes them, so its `blend` is whatever nominal it was handed. The blend is a
@@ -318,7 +375,8 @@ export function buildWorld(
     : drawing;
   return {
     asBuiltRig: drawing,
-    truthRig: applyNudges(misaligned.rig, s.nudge),
+    truthRig: truth.rig,
+    slots: truth.slots,
     compositorRig: compositor,
     perturbation: misaligned.perturbation,
     scene,

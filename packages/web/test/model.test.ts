@@ -107,13 +107,37 @@ test('the metrics are unaffected by which image is playing', () => {
 
 test('projector frames are rendered only when asked for', () => {
   const none = computeModel(request({ projectorPreviewWidth: 0 }));
-  assert.equal(none.projectorFrames.length, 0);
+  // Slot-indexed, so the array is always as long as the panel has projectors and
+  // the entries are null when no frames were asked for.
+  assert.equal(none.projectorFrames.filter(Boolean).length, 0);
 
   const some = computeModel(request({ projectorPreviewWidth: 64, parity: null }));
-  assert.equal(some.projectorFrames.length, BOULDER_PRESET.projectorCount);
+  assert.equal(some.projectorFrames.length, BOULDER_PRESET.nudge.length);
+  assert.equal(some.projectorFrames.filter(Boolean).length, BOULDER_PRESET.projectorCount);
   for (const f of some.projectorFrames) {
+    if (!f) continue;
     assert.equal(f.width, 64);
     assert.ok(f.height > 0 && f.height < 64, 'a 16:9 raster should come back wider than it is tall');
     assert.ok(/^P[1-4] — \d+ × \d+$/.test(f.caption), `unhelpful caption: '${f.caption}'`);
+    assert.equal(f.space, 'display', 'a projector frame is a video signal, not radiance');
   }
+});
+
+test('switching a projector off leaves a hole rather than renaming its neighbours', () => {
+  // The bug this indexing exists to prevent. A projector switched off is dropped
+  // from the RIG — §2's "quadrants go dark" — so without a slot map every
+  // projector after it inherits its neighbour's frame, colour and name, and every
+  // one of them looks entirely plausible.
+  const nudge = BOULDER_PRESET.nudge.map((n, i) => ({ ...n, on: i !== 1 }));
+  const res = computeModel(
+    request({ settings: { ...BOULDER_PRESET, nudge }, projectorPreviewWidth: 48, parity: null, id: 9 }),
+  );
+  assert.deepEqual(res.live, [true, false, true, true]);
+  assert.equal(res.projectorFrames[1], null, 'P2 is off and must have no frame');
+  assert.equal(res.meshes[1], null);
+  assert.equal(res.projectorConfig[1], null);
+  // …and P3 is still P3.
+  assert.ok(res.projectorFrames[2]?.caption.startsWith('P3'), res.projectorFrames[2]?.caption);
+  assert.equal(res.meshes[2]?.projectorId, 'P3');
+  assert.equal(res.meshes[3]?.projectorId, 'P4');
 });

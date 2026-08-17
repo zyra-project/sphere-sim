@@ -2269,3 +2269,55 @@ is `2 × 15° = 30°` against this project's `w_width = 20°`.
 Until 1–4 are done the default stays `'limb'`, because a spec whose numbers moved
 because a simulator changed its mind is worth less than one whose conflicts are
 written down.
+
+---
+
+## A-38 — The reference offers four fisheye lens mappings. This project has none, and should not.
+
+**Status:** CLOSED as *will not implement*, recorded because the difference is
+visible to anyone comparing the two simulators and the reason is not obvious.
+
+The reference implementation supplied by the project owner has a **Lens mapping**
+control on its Install tab with four options, implemented as:
+
+| Option | Angle to chip radius |
+| --- | --- |
+| Equidistant | `r = θ / h` |
+| Equisolid | `r = sin(θ/2) / sin(h/2)` |
+| Orthographic | `r = sin θ / sin h` |
+| Stereographic | `r = tan(θ/2) / tan(h/2)` |
+
+These are the four standard **fisheye** projections. Its own help text says what
+the control is for: *"the others bunch or stretch detail toward the rim, which is
+exactly where the seams are."*
+
+### Why this project does not have it
+
+1. **PARAMETERS.md §3.1 specifies a different lens.** The documented model is a
+   rectilinear pinhole with Brown-Conrady radial distortion — `k1`, `k2`, with
+   `p1`, `p2` held at zero because "extra DOF overfits". That is the correct model
+   for a BenQ LK935, which is a conventional long-throw projector lens and not a
+   fisheye. None of the four mappings above reduces to it.
+2. **`conventions.ts` §D is the boundary contract, and both sides implement it
+   independently.** `packages/solver` has its own projection written against §D.
+   A simulator that emitted equisolid and a solver that assumed rectilinear would
+   not be two implementations of one convention disagreeing usefully — it would be
+   two different lenses, and the recovery error would measure the mismatch rather
+   than the solver. Adding the mappings therefore means changing §D and both
+   models, not adding a control.
+3. **The reference's own control cannot show what it implies.** Its help says
+   *"here the software is told which lens it has, so alignment still resolves"* —
+   both its rigs get the same mapping, so the interesting case, being wrong about
+   the lens in the field, is precisely the one it does not model.
+
+### What the interesting version of this would be
+
+A projector whose true mapping differs from the compositor's assumed one. That is
+a **two-rig** question and this project already has the machinery for it — the
+whole page is built on the truth rig and the compositor rig disagreeing. It would
+belong in `ProjectorIntrinsics` as a mapping identifier, would need §D amended
+first, and would need `packages/solver` to grow the same identifier and implement
+it separately. It is a real experiment and it is not a UI gap.
+
+Until §3.1 says an SOS projector is a fisheye, the honest control count here is
+zero.

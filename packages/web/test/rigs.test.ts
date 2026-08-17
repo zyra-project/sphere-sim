@@ -10,8 +10,10 @@ import {
   CONTENTS,
   CONTENT_CUSTOM,
   IN_TO_M,
+  NUDGE_CONTROLS,
   PERFECT_PRESET,
   SPEC_PRESET,
+  noNudge,
 } from '../src/settings.ts';
 import type { Settings } from '../src/settings.ts';
 import {
@@ -203,19 +205,50 @@ test('a zero nudge changes nothing at all', () => {
   // carry it and the "perfect mount scores zero" check above would be measuring
   // this function instead of the rig.
   const plain = buildWorld(BOULDER_PRESET);
+  // Built from `noNudge()` rather than spelled out, so a new degree of freedom
+  // appearing on the panel is covered here the day it lands instead of silently
+  // dropping out of this comparison.
   const explicit = buildWorld({
     ...BOULDER_PRESET,
-    nudge: BOULDER_PRESET.nudge.map(() => ({
-      yawDeg: 0,
-      pitchDeg: 0,
-      rollDeg: 0,
-      distanceM: 0,
-      heightM: 0,
-      on: true,
-    })),
+    nudge: BOULDER_PRESET.nudge.map(() => noNudge()),
   });
   assert.deepEqual(explicit.truthRig, plain.truthRig);
   assert.deepEqual(explicit.asBuiltRig, plain.asBuiltRig);
+});
+
+test('every per-projector control moves something, and the neutral value moves nothing', () => {
+  // Two failures this catches. A control wired to nothing looks like it works —
+  // the slider moves and the picture does not, which reads as "the model says it
+  // does not matter". And a control whose neutral value is not its identity makes
+  // an untouched rig differ from the drawing, which would put a number on the
+  // page for a projector nobody has touched.
+  const at = (over: Partial<ReturnType<typeof noNudge>>) =>
+    buildWorld({ ...BOULDER_PRESET, nudge: BOULDER_PRESET.nudge.map(() => ({ ...noNudge(), ...over })) })
+      .truthRig;
+  const base = at({});
+  assert.deepEqual(base, buildWorld(BOULDER_PRESET).truthRig, 'noNudge must be the identity');
+
+  for (const spec of NUDGE_CONTROLS) {
+    const away = spec.key === 'lumens' ? 3000 : spec.key === 'blackPct' ? 0.6 : spec.max / 2;
+    const moved = at({ [spec.key]: away });
+    assert.notDeepEqual(moved, base, `'${spec.label}' is wired to nothing`);
+  }
+
+  // …and the two photometric ones move the TRANSFER, not the geometry, which is
+  // what keeps them inside the phase gate: they cannot touch a §7 geometry number.
+  for (const key of ['lumens', 'blackPct'] as const) {
+    const away = at({ [key]: key === 'lumens' ? 3000 : 0.6 });
+    assert.deepEqual(
+      away.projectors.map((p) => p.pose),
+      base.projectors.map((p) => p.pose),
+      `'${key}' moved a pose`,
+    );
+    assert.deepEqual(
+      away.projectors.map((p) => p.intrinsics),
+      base.projectors.map((p) => p.intrinsics),
+      `'${key}' moved an intrinsic`,
+    );
+  }
 });
 
 test('a nudge moves the lens and re-aims it, without losing the mount error', () => {

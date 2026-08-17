@@ -112,7 +112,15 @@ interface PageState {
 }
 
 const state: PageState = {
-  settings: { ...BOULDER_PRESET, nudge: BOULDER_PRESET.nudge.map((n) => ({ ...n })) },
+  // Opens on a rig that is ALIGNED, and one click breaks it.
+  //
+  // Still Boulder's three constants — `PERFECT_PRESET` is Boulder with the mount
+  // shake at zero, so A-36's conflict is live and the readout still flags it. What
+  // is off is the §2 tolerance draw, and that is a first-impression decision: a
+  // page that opens at 127 mm in red has already happened to you, and you have no
+  // way to know whether that is the simulator or the room. Press "Another install"
+  // or "Bump this one" and the §2 tolerances arrive, with a before to compare to.
+  settings: { ...PERFECT_PRESET, nudge: PERFECT_PRESET.nudge.map((n) => ({ ...n })) },
   compositorRig: null,
   section: 'projectors',
   selected: 0,
@@ -711,6 +719,7 @@ function draw(): void {
     {
       overlay: state.overlay,
       highlight: state.highlight,
+      slots: world.slots,
       drawFloor: true,
       floorRadiusM: 13,
       displayGamma: 2.2,
@@ -756,7 +765,7 @@ function checkParity(
       // either here would make the parity number measure a difference in
       // settings. The cost is that `shadeFloor` — its occlusion test and the room
       // albedo — is the one part of the shader this check does not cover.
-      { overlay: 'none', highlight: -1, drawFloor: false, displayGamma: 0 },
+      { overlay: 'none', highlight: -1, drawFloor: false, displayGamma: 0, slots: world.slots },
     );
     const gpu = renderAndRead(gl, uniforms, cpu.width, cpu.height);
     parity = judgeParity(gpu, { width: cpu.width, height: cpu.height, data: cpu.data }, {
@@ -870,6 +879,19 @@ function projectorSection(): HTMLElement[] {
   );
   const nudge = state.settings.nudge[state.selected];
   const tint = PROJECTOR_TINTS[state.selected] ?? '#888';
+  const live = model?.live[state.selected] ?? true;
+  if (!live) {
+    const off = el('p', {
+      className: 'grouphelp',
+      textContent:
+        `P${state.selected + 1} is switched off at the wall. Its quadrant of the framebuffer is ` +
+        'dark and the framebuffer keeps its size — PARAMETERS.md §2\u2019s "quadrants go dark". ' +
+        'The sphere loses that share of its light entirely; watch the unlit figure. Click its tab ' +
+        'again to switch it back on.',
+    });
+    off.style.color = 'var(--warn)';
+    out.push(off);
+  }
   for (const spec of NUDGE_CONTROLS) {
     out.push(
       slider({
@@ -880,9 +902,13 @@ function projectorSection(): HTMLElement[] {
         step: spec.step,
         decimals: spec.decimals,
         unit: spec.unit,
-        help: spec.help,
+        // The phase gate is a property of the phase, not of the run: a control
+        // whose constants nobody has measured says so on the control, not only in
+        // whatever it eventually moves.
+        help: spec.provisional ? `PROVISIONAL — ${spec.help.replace(/^PROVISIONAL\. /, '')}` : spec.help,
+        klass: spec.provisional ? 'ASSUME' : undefined,
         tint,
-        bipolar: true,
+        bipolar: !spec.provisional,
         onInput: (v) => setNudge(spec.key, v),
         onSettle: () => requestModel(true),
       }),
@@ -1226,8 +1252,8 @@ function renderControls(): void {
   const head = el('div', { className: 'rowline' });
   head.append(el('p', { className: 'eyebrow-sm', textContent: section.title }));
   const explain = el('button', {
-    className: 'linkish',
-    textContent: state.explain ? 'hide notes' : 'explain',
+    className: state.explain ? 'linkish on' : 'linkish',
+    textContent: state.explain ? 'hide notes' : 'what do these do?',
   });
   explain.addEventListener('click', () => {
     state.explain = !state.explain;
@@ -1426,7 +1452,11 @@ function renderActions(): void {
       'Install tab, and the same seed always gives the same rig.',
   });
   drift.addEventListener('click', () => {
+    // Also turns the mount shake ON, because the page opens with it off. A button
+    // labelled "another install" that produced the same perfectly-mounted rig
+    // every time would be a button that does nothing.
     state.settings = clearNudges(state.settings);
+    state.settings = withSetting(state.settings, 'mountError', 1);
     setSetting('errorSeed', ((state.settings.errorSeed + 104729) % 999_999) + 1);
   });
   actionsEl.append(drift);
@@ -1448,7 +1478,7 @@ function renderActions(): void {
 
   const reset = el('button', { className: 'btn', textContent: 'Reset' });
   reset.addEventListener('click', () => {
-    state.settings = { ...BOULDER_PRESET, nudge: BOULDER_PRESET.nudge.map((n) => ({ ...n })) };
+    state.settings = { ...PERFECT_PRESET, nudge: PERFECT_PRESET.nudge.map((n) => ({ ...n })) };
     state.overlay = 'none';
     state.highlight = -1;
     forgetCalibration();
@@ -1479,7 +1509,7 @@ let inspectView: (typeof INSPECT_VIEWS)[number]['id'] = 'frame';
 
 function renderInspect(): void {
   inspectEl.replaceChildren();
-  const frame = model?.projectorFrames[state.selected];
+  const frame = model?.projectorFrames[state.selected] ?? null;
   // Shown whenever a projector is the subject — either because the Projectors
   // tab is open, or because one is isolated in the room. It used to be tied to
   // the tab alone, which meant clicking a lens in the room lit up its light and
@@ -1563,7 +1593,7 @@ function renderInspect(): void {
     }
   }
 
-  const cfg = model?.projectorConfig[state.selected];
+  const cfg = model?.projectorConfig[state.selected] ?? null;
   if (inspectView === 'where' && cfg) {
     const table = el('table', { className: 'rec' });
     const head = el('tr');
@@ -1601,7 +1631,7 @@ function renderInspect(): void {
     );
   }
 
-  const mesh = model?.meshes[state.selected];
+  const mesh = model?.meshes[state.selected] ?? null;
   if (inspectView === 'mesh' && mesh) {
     // Magnified so the shape is legible. At true scale a 1 mm error and a 100 mm
     // error are both a straight grid, so the factor is chosen to put the worst
@@ -1645,11 +1675,14 @@ function fmtMm(v: number): string {
 
 function badgeFor(status: Reading['status'] | 'PENDING'): HTMLElement {
   const map: Record<string, { text: string; fg: string; bg: string; bd: string }> = {
-    PASS: { text: 'WITHIN GATE', fg: '#7ee2a8', bg: 'rgba(34,197,94,0.14)', bd: 'rgba(34,197,94,0.4)' },
-    FAIL: { text: 'OVER GATE', fg: '#ff9b9b', bg: 'rgba(255,107,107,0.14)', bd: 'rgba(255,107,107,0.4)' },
-    REFERENCE: { text: 'REFERENCE', fg: '#999', bg: 'rgba(255,255,255,0.06)', bd: 'var(--line-strong)' },
-    PROVISIONAL: { text: 'PROVISIONAL', fg: '#ffcc66', bg: 'rgba(255,204,102,0.12)', bd: 'rgba(255,204,102,0.4)' },
-    PENDING: { text: 'MEASURING', fg: '#999', bg: 'rgba(255,255,255,0.06)', bd: 'var(--line-strong)' },
+    // The page's own palette, not two lighter greens and reds that appear nowhere
+    // else in it. `--good` and `--bad` are declared in index.html and every other
+    // state colour on the page already uses them.
+    PASS: { text: 'ALIGNED', fg: 'var(--good)', bg: 'rgba(34,197,94,0.10)', bd: 'rgba(34,197,94,0.45)' },
+    FAIL: { text: 'DRIFTED', fg: 'var(--bad)', bg: 'rgba(239,68,68,0.10)', bd: 'rgba(239,68,68,0.45)' },
+    REFERENCE: { text: 'REFERENCE', fg: 'var(--muted)', bg: 'rgba(255,255,255,0.06)', bd: 'var(--line-strong)' },
+    PROVISIONAL: { text: 'PROVISIONAL', fg: 'var(--warn)', bg: 'rgba(255,204,102,0.12)', bd: 'rgba(255,204,102,0.4)' },
+    PENDING: { text: 'MEASURING', fg: 'var(--muted)', bg: 'rgba(255,255,255,0.06)', bd: 'var(--line-strong)' },
   };
   const m = map[status] ?? map.PENDING;
   const b = el('span', { className: 'badge', textContent: m.text });
@@ -1866,7 +1899,7 @@ function solveSection(): HTMLElement | null {
   if (solveStage) box.append(el('p', { className: 'note', textContent: solveStage }));
 
   if (solveShots.length > 0) {
-    box.append(el('p', { className: 'eyebrow-sm', textContent: 'What it worked from' }));
+    box.append(el('p', { className: 'eyebrow-sm', textContent: 'Where it shot from' }));
     const row = el('div', { className: 'shots' });
     for (const s of solveShots) row.append(thumb(s, s.caption.split('—')[0].trim()));
     box.append(row);
@@ -1874,8 +1907,11 @@ function solveSection(): HTMLElement | null {
       el('p', {
         className: 'note',
         textContent:
-          'Real rendered photographs, one per camera position, through a sensor with read noise ' +
-          'and quantization. These pixels are the solver’s entire input — it has never seen where ' +
+          'The sphere from each spot the camera was moved to. These are renders of the same rig, ' +
+          'not frames from the capture: the capture patterns one projector at a time, so a single ' +
+          'frame is a crescent of light on one side of the ball and tells you nothing about where ' +
+          'anybody stood. The frames themselves go through a sensor with read noise and ' +
+          'quantization, and those pixels are the solver’s entire input — it has never seen where ' +
           'the projectors are. Spread matters more than exact position: from one spot alone, a ' +
           'near projector zoomed in looks identical to a far one zoomed out.',
       }),
@@ -2237,7 +2273,11 @@ function installPointer(): void {
     travel += Math.abs(dx) + Math.abs(dy);
     lastX = e.clientX;
     lastY = e.clientY;
-    state.settings = withSetting(state.settings, 'viewAzDeg', state.settings.viewAzDeg - dx * 0.35);
+    // Azimuth WRAPS rather than clamping. `withSetting` clamps to the control's
+    // declared range, so dragging round the ball used to hit a wall at ±180° —
+    // mid-orbit, for no reason a viewer could see.
+    const az = state.settings.viewAzDeg - dx * 0.35;
+    state.settings = withSetting(state.settings, 'viewAzDeg', ((az + 540) % 360) - 180);
     state.settings = withSetting(state.settings, 'viewElDeg', state.settings.viewElDeg + dy * 0.3);
     markDirty();
   });

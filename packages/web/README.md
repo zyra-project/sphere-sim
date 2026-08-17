@@ -66,11 +66,22 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   vertex is followed out to the ball through the calibration the software
   believes and back through the one the lenses actually have. Before a solve it
   is visibly bent; after one it collapses from about 85 px to under 1.
-- **Three control sections.** Projectors (move one lens at a time, or switch it
-  off), Install (the site survey, as chips and sliders), Room (blend, mask,
-  pattern, viewpoint, overlays). Anything class `ASSUME` carries a badge. The
-  panel minimises to an icon, because a settings window in the middle of the
-  screen with the sphere behind it has no good answer to "how do I move this".
+- **Three control sections.** Projectors — ten controls per lens: aim in three
+  axes, distance, height, image size, lens shift in two axes, lamp output and
+  black level. The last two are Phase 2 and carry `ASSUME` badges, because
+  PARAMETERS.md gives no absolute lumen figure anywhere and §3.2 holds the gains
+  at 1 and classes them unmeasured. Click a selected projector again to switch it
+  off at the wall — its quadrant goes dark, the framebuffer keeps its size (§2),
+  and the unlit figure jumps. Install is the site survey; Room is blend, mask,
+  content, viewpoint and overlays. The panel minimises to an icon, because a
+  settings window in the middle of the screen with the sphere behind it has no
+  good answer to "how do I move this".
+- **A rig that starts aligned.** The page opens at Boulder's three constants with
+  the §2 mount shake at zero, reading `0.01 mm · ALIGNED`. "Another install" draws
+  the tolerances, "Bump this one" knocks the selected lens a quarter of a degree,
+  and then there is a before to compare the calibration against. A page that opens
+  at 127 mm in red has already happened to you and gives you no way to tell
+  whether that is the simulator or the room.
 - **Recalibrate**, which photographs the sphere and solves. While it runs you see
   the actual camera frames it is working from, the optimiser's cost falling, and
   the sphere itself converging — the partial calibration is drawn as it arrives.
