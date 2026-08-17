@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
+import { aimAtSphereCenter } from '../../sim/src/geometry.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
 import { DEFAULT_MISALIGNMENT } from '../../sim/src/scene.ts';
 import { BOULDER_PRESET, IN_TO_M, PERFECT_PRESET, SPEC_PRESET } from '../src/settings.ts';
@@ -185,4 +186,62 @@ test('a perfect rig has no offender worth naming', () => {
   const world = buildWorld(PERFECT_PRESET);
   const place = worstPlacementOffender(world.perturbation, PERFECT_PRESET.distanceM);
   assert.ok(place && place.displacementMm === 0);
+});
+
+test('a zero nudge changes nothing at all', () => {
+  // The path every rig takes when nobody has touched a projector. If passing
+  // through `applyNudges` moved a pose by a rounding error, every metric would
+  // carry it and the "perfect mount scores zero" check above would be measuring
+  // this function instead of the rig.
+  const plain = buildWorld(BOULDER_PRESET);
+  const explicit = buildWorld({
+    ...BOULDER_PRESET,
+    nudge: BOULDER_PRESET.nudge.map(() => ({
+      yawDeg: 0,
+      pitchDeg: 0,
+      rollDeg: 0,
+      distanceM: 0,
+      heightM: 0,
+      on: true,
+    })),
+  });
+  assert.deepEqual(explicit.truthRig, plain.truthRig);
+  assert.deepEqual(explicit.asBuiltRig, plain.asBuiltRig);
+});
+
+test('a nudge moves the lens and re-aims it, without losing the mount error', () => {
+  const before = buildWorld(BOULDER_PRESET).truthRig.projectors[0];
+  const after = buildWorld({
+    ...BOULDER_PRESET,
+    nudge: BOULDER_PRESET.nudge.map((n, i) => (i === 0 ? { ...n, distanceM: 0.25 } : { ...n })),
+  }).truthRig.projectors[0];
+
+  const horiz = (p: typeof before): number => Math.hypot(p.pose.position.x, p.pose.position.y);
+  assert.ok(
+    Math.abs(horiz(after) - horiz(before) - 0.25) < 1e-9,
+    'the lens did not move by the amount asked for',
+  );
+  // The aim error the mount already had is still there: the projector was
+  // re-aimed from its new position and the same offset re-applied, so a pure
+  // placement nudge must not quietly straighten a crooked projector.
+  const aimBefore = aimAtSphereCenter(before.pose.position);
+  const aimAfter = aimAtSphereCenter(after.pose.position);
+  assert.ok(
+    Math.abs(
+      (after.pose.yawDeg - aimAfter.yawDeg) - (before.pose.yawDeg - aimBefore.yawDeg),
+    ) < 1e-9,
+    'the mount error was lost when the projector moved',
+  );
+});
+
+test('switching a projector off removes it and leaves the framebuffer alone', () => {
+  const world = buildWorld({
+    ...BOULDER_PRESET,
+    nudge: BOULDER_PRESET.nudge.map((n, i) => (i === 1 ? { ...n, on: false } : { ...n })),
+  });
+  assert.equal(world.truthRig.projectors.length, 3);
+  assert.equal(world.compositorRig.projectors.length, 3, 'the software knows which outputs it drives');
+  // §2's "quadrants go dark": the X screen does not shrink.
+  const full = buildWorld(BOULDER_PRESET).truthRig.framebuffer;
+  assert.deepEqual(world.truthRig.framebuffer, full);
 });

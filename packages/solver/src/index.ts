@@ -52,6 +52,7 @@ import {
   PROJ_SLOT_SHIFT_V,
   type BundleOptions,
   type BundleState,
+  type BundleStep,
   type FloorReference,
   type ParameterBox,
   type ParameterPrior,
@@ -230,6 +231,15 @@ export interface SolveInput {
   /** Without at least one of these, `h_center` is held at its nominal. */
   floorReferences?: readonly FloorReference[];
   options?: Partial<SolveOptions>;
+  /**
+   * Called on each accepted optimiser step. Purely observational — see
+   * {@link BundleStep}. Supplying one cannot change the answer, and the tests
+   * assert exactly that by solving the same problem with and without.
+   *
+   * It exists because a solve takes several seconds and a person watching one
+   * should be able to see it converging rather than a spinner.
+   */
+  onStep?: (step: BundleStep) => void;
 }
 
 export interface SolverExtraDiagnostics {
@@ -558,6 +568,7 @@ export function solve(input: SolveInput): SolverResult {
     bundleOptions,
     nominalState,
     priors,
+    input.onStep,
   );
 
   const diagnostics: SolveDiagnostics = {
@@ -789,6 +800,7 @@ export function nominalRig(options: Partial<NominalRigOptions> = {}): RigCalibra
 
 export { decodeAll, decodeCapture } from './decode.ts';
 export { bootstrap } from './initialize.ts';
+export type { BundleStep } from './bundle.ts';
 export {
   runBundle,
   levenbergMarquardt,

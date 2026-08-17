@@ -8,6 +8,24 @@ npm run app           # serve on http://localhost:8174/
 node tools/smoke-app.ts   # load it in a real browser and check the shader compiled
 ```
 
+## What is on the page
+
+- **The sphere**, full-bleed, drag to walk around. A test-pattern selector: the
+  bare graticule the grid gate measures, the same lines over a lit field, and the
+  two flat frames PARAMETERS.md §8 prescribes for judging seams and photographing
+  spill.
+- **Each projector's own frame** — the image going down its cable, rendered by
+  `packages/sim` from the COMPOSITOR's calibration. Moving a projector does not
+  change it; only recalibrating does, which is the least intuitive thing about
+  how the system works and the reason it gets a picture.
+- **Three control sections.** Projectors (move one lens at a time, or switch it
+  off), Install (the site survey, as chips and sliders), Room (blend, mask,
+  pattern, viewpoint). Anything class `ASSUME` carries a badge.
+- **Recalibrate**, which photographs the sphere and solves. While it runs you see
+  the actual camera frames it is working from and the optimiser's cost falling;
+  when it finishes, what it moved and whether it moved to the right place, plus
+  the geometry as `sos_stream_control.config` would carry it.
+
 ## What is actually happening
 
 Three things run at once, and the division between them is the whole design.
@@ -96,9 +114,17 @@ node --test "packages/web/test/**/*.test.ts"
   calibration improves the alignment by more than 2× and that the same seed gives
   the same answer
 
-`tools/smoke-app.ts` covers the one thing none of them can: whether the GLSL
-compiles. It drives Chromium over the DevTools protocol using nothing but Node
-22's built-in `WebSocket`.
+`tools/smoke-app.ts` covers the things none of them can, by driving Chromium
+over the DevTools protocol with nothing but Node 22's built-in `WebSocket`:
+whether the GLSL compiles, whether the canvas is lit, and — with `--solve` —
+whether a live calibration runs end to end in a browser and actually improves the
+number. It fails if the alignment does not get better, which at the default
+settings means 127 mm to 0.14 mm.
+
+```bash
+npm run app                                    # in one terminal
+node tools/smoke-app.ts --solve --screenshot out.png
+```
 
 ## Why this package may import both `sim` and `solver`
 

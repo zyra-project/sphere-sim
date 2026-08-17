@@ -41,6 +41,16 @@ export interface ModelRequest {
   densityScale: number;
   /** Omit to skip the parity render — it is the expensive half. */
   parity: ParityCameraRequest | null;
+  /**
+   * Render each projector's own frame at this width. Zero skips it.
+   *
+   * The frame a projector is SENDING is a property of the compositor's
+   * calibration alone — it is what the software wrote into that raster — so
+   * bumping a projector does not change it. Only recalibrating does. That is the
+   * single most counterintuitive thing about how this system works and it is
+   * worth a picture.
+   */
+  projectorPreviewWidth: number;
 }
 
 export interface ModelResponse {
@@ -69,6 +79,8 @@ export interface ModelResponse {
   parityMs: number;
   metricsMs: number;
   densityScale: number;
+  /** One per projector, in rig order. Empty when none was asked for. */
+  projectorFrames: FrameImage[];
 }
 
 export interface WorkerFailure {
@@ -109,6 +121,16 @@ export interface SolveRequest {
 
 export type SolvePhase = 'capture' | 'decode' | 'initialize' | 'bundle' | 'score' | 'done';
 
+/** A greyscale frame, as the page will draw it. */
+export interface FrameImage {
+  width: number;
+  height: number;
+  /** RGB float, row 0 at the top — `packages/sim`'s `RgbImage` layout. */
+  data: Float32Array;
+  /** What it is a picture of. */
+  caption: string;
+}
+
 export interface SolveProgress {
   kind: 'solve-progress';
   id: number;
@@ -117,6 +139,14 @@ export interface SolveProgress {
   fraction: number;
   /** One line, written for someone watching rather than debugging. */
   message: string;
+  /**
+   * The photographs, sent as soon as the capture finishes rather than with the
+   * result. A person watching a five-second solve should see what it is working
+   * from while it works, not afterwards.
+   */
+  shots?: FrameImage[];
+  /** One accepted optimiser step, for the convergence trace. */
+  step?: { pass: number; iteration: number; cost: number };
 }
 
 export interface SolveResponse {
@@ -154,6 +184,30 @@ export interface SolveResponse {
   gaugeAngleDeg: number;
   captureMs: number;
   solveMs: number;
+  /**
+   * What the solver got wrong and by how much, per projector and axis, against
+   * ground truth it never saw.
+   *
+   * `documented` is the config as written — what the compositor believed before
+   * the solve. `recovered` is what came back. `truth` is what the lenses
+   * actually have. A reader needs all three: recovered-versus-documented is what
+   * MOVED, and recovered-versus-truth is whether it moved to the right place.
+   */
+  recovery: RecoveredAxis[];
+}
+
+export interface RecoveredAxis {
+  projectorId: string;
+  /** Plain-language axis name. */
+  axis: string;
+  unit: string;
+  documented: number;
+  recovered: number;
+  truth: number;
+  /** `recovered - truth`, in `unit`. */
+  errorFromTruth: number;
+  /** How far the solve moved it. Large with a small error is a good result. */
+  moved: number;
 }
 
 export type ModelMessage = ModelResponse | WorkerFailure;

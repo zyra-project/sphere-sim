@@ -151,7 +151,72 @@ export interface Settings {
   viewFovDeg: number;
   /** Grid spacing on the alignment pattern, degrees. */
   gridDeg: number;
+  /**
+   * Which test pattern is playing. Index into {@link CONTENTS}.
+   *
+   * Not a cosmetic choice. PARAMETERS.md §8 item 13 prescribes a flat mid-grey
+   * frame for judging seams, because a graticule on black leaves most of the
+   * sphere dark and a seam has nothing to show up against; the grid is what an
+   * operator judges REGISTRATION on. The two questions want different frames and
+   * the page offers both.
+   */
+  content: number;
+
+  // ---- per projector ------------------------------------------------------
+  /**
+   * Hand adjustments to each lens, on top of the seeded mount error. Always four
+   * entries, so switching projector count does not lose what was set.
+   */
+  nudge: ProjectorNudge[];
 }
+
+/**
+ * The test patterns on offer, and what each is for.
+ *
+ * `background` is linear light. A graticule on pure black is the honest
+ * alignment pattern and it is also a mostly-dark sphere; putting the same lines
+ * over a lit field is what makes the seams, the blend ramps and the polar mask
+ * visible at the same time, which is most of what there is to look at.
+ */
+export const CONTENTS: readonly {
+  label: string;
+  background: number;
+  lines: number;
+  help: string;
+}[] = [
+  {
+    label: 'Grid on black',
+    background: 0,
+    lines: 1,
+    help:
+      'The bare alignment graticule. This is what the grid-displacement gate measures and what an ' +
+      'operator judges registration on — but it leaves most of the sphere dark.',
+  },
+  {
+    label: 'Grid on grey',
+    background: 0.18,
+    lines: 1,
+    help:
+      'The same lines over a lit field. The seams, the blend ramps and the polar mask all become ' +
+      'visible at once, which is most of what there is to look at.',
+  },
+  {
+    label: 'Flat grey',
+    background: 0.18,
+    lines: 0.18,
+    help:
+      'PARAMETERS.md §8 item 13 prescribes exactly this frame for judging seams: with no pattern ' +
+      'to distract, a luminance step at a join is the only thing left to see.',
+  },
+  {
+    label: 'Flat white',
+    background: 0.9,
+    lines: 0.9,
+    help:
+      '§8 items 6–9. Drives the projectors to full and shows the off-sphere spill on the room ' +
+      'behind — the thing the field card goes to photograph.',
+  },
+];
 
 /** Per-projector rasters. §3.4: the X screen is twice this in each dimension. */
 export const RESOLUTIONS: readonly { label: string; resX: number; resY: number }[] = [
@@ -189,6 +254,8 @@ export const BOULDER_PRESET: Settings = {
   viewRangeM: 6.2,
   viewFovDeg: 50,
   gridDeg: 15,
+  content: 1,
+  nudge: [noNudge(), noNudge(), noNudge(), noNudge()],
 };
 
 /**
@@ -201,10 +268,15 @@ export const SPEC_PRESET: Settings = {
   equatorIn: 86,
   distanceM: 5.18,
   lensRiseM: 0,
+  nudge: BOULDER_PRESET.nudge.map((n) => ({ ...n })),
 };
 
 /** A perfectly-mounted rig. Useful for seeing what the metrics read at zero. */
-export const PERFECT_PRESET: Settings = { ...BOULDER_PRESET, mountError: 0 };
+export const PERFECT_PRESET: Settings = {
+  ...BOULDER_PRESET,
+  mountError: 0,
+  nudge: [noNudge(), noNudge(), noNudge(), noNudge()],
+};
 
 export const PRESETS: readonly { id: string; label: string; blurb: string; settings: Settings }[] = [
   {
@@ -227,7 +299,107 @@ export const PRESETS: readonly { id: string; label: string; blurb: string; setti
   },
 ];
 
-export type SettingKey = keyof Settings;
+/**
+ * Per-projector adjustment, on top of whatever the seeded mount error already
+ * did. The panel's "Projectors" tab edits one of these at a time.
+ *
+ * These move the LENSES and nothing else. The software is not told — that is the
+ * whole point, and it is why bumping a projector does not change the frame that
+ * projector is sending. Only a recalibration rewrites that.
+ */
+export interface ProjectorNudge {
+  /** Degrees, added to the aim after the projector is re-aimed at the centre. */
+  yawDeg: number;
+  pitchDeg: number;
+  rollDeg: number;
+  /** Metres, added to the lens's distance from the sphere centre. */
+  distanceM: number;
+  /** Metres, added to the lens height. */
+  heightM: number;
+  /** Switched off at the wall. Its quadrant goes dark; the framebuffer does not. */
+  on: boolean;
+}
+
+export function noNudge(): ProjectorNudge {
+  return { yawDeg: 0, pitchDeg: 0, rollDeg: 0, distanceM: 0, heightM: 0, on: true };
+}
+
+/** One control on the per-projector tab. Same shape as {@link ControlSpec}. */
+export interface NudgeSpec {
+  key: keyof Omit<ProjectorNudge, 'on'>;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  unit: string;
+  decimals: number;
+  help: string;
+}
+
+export const NUDGE_CONTROLS: readonly NudgeSpec[] = [
+  {
+    key: 'yawDeg',
+    label: 'Aim left / right',
+    min: -3,
+    max: 3,
+    step: 0.01,
+    unit: '°',
+    decimals: 2,
+    help:
+      'Swings this projector like turning your head. A degree is plenty to ruin a seam — at 5.36 m ' +
+      'it moves the image about 94 mm across the sphere.',
+  },
+  {
+    key: 'pitchDeg',
+    label: 'Aim up / down',
+    min: -3,
+    max: 3,
+    step: 0.01,
+    unit: '°',
+    decimals: 2,
+    help: 'Tips it up or down, on top of the down-tilt its mount height already gives it.',
+  },
+  {
+    key: 'rollDeg',
+    label: 'Roll',
+    min: -3,
+    max: 3,
+    step: 0.01,
+    unit: '°',
+    decimals: 2,
+    help:
+      'Twists the picture, like tilting a frame on a wall. PARAMETERS.md §2: "A degree of roll is ' +
+      'invisible on a test grid until it interacts with the blend region" — so watch the seams, ' +
+      'not the middle.',
+  },
+  {
+    key: 'distanceM',
+    label: 'Move in / out',
+    min: -0.4,
+    max: 0.4,
+    step: 0.002,
+    unit: ' m',
+    decimals: 3,
+    help:
+      'Slides this one along its own radius. It re-aims at the sphere centre automatically, so this ' +
+      'changes how much of the ball it covers rather than where it points.',
+  },
+  {
+    key: 'heightM',
+    label: 'Raise / lower',
+    min: -0.4,
+    max: 0.4,
+    step: 0.002,
+    unit: ' m',
+    decimals: 3,
+    help: 'Up or down on its mount, again with an automatic re-aim.',
+  },
+];
+
+/** Tints for P1…P4, in rig order. Used for tabs, dots and every per-projector plot. */
+export const PROJECTOR_TINTS: readonly string[] = ['#5cc8c8', '#c486f7', '#f59f4a', '#6dc96d'];
+
+export type SettingKey = keyof Omit<Settings, 'nudge'>;
 
 export const CONTROLS: readonly ControlSpec[] = [
   {
@@ -463,6 +635,23 @@ export const CONTROLS: readonly ControlSpec[] = [
   },
 
   {
+    key: 'content',
+    label: 'Test pattern',
+    symbol: '',
+    section: '§8',
+    klass: 'PANEL',
+    min: 0,
+    max: 3,
+    step: 1,
+    unit: '',
+    decimals: 0,
+    options: CONTENTS.map((c) => c.label),
+    group: 'view',
+    help:
+      'What is playing on the sphere. The grid is what registration is judged on; the flat fields ' +
+      'are what §8 prescribes for judging seams and for photographing the spill.',
+  },
+  {
     key: 'viewAzDeg',
     label: 'Walk around',
     symbol: '',
@@ -567,7 +756,29 @@ export function withSetting(s: Settings, key: SettingKey, value: number): Settin
   return next;
 }
 
-export function formatSetting(spec: ControlSpec, value: number): string {
+/**
+ * `signed` prints a leading `+`, and only a control whose zero is meaningful
+ * should ask for it. "+5.359 m" for a distance reads as an offset from something
+ * and there is nothing to be offset from; "+0.25°" for a nudge is exactly right,
+ * because the reader needs to see which way it was moved without parsing a minus
+ * sign that may or may not be there.
+ */
+export function formatSetting(
+  spec: { options?: readonly string[]; decimals: number; unit: string; signed?: boolean },
+  value: number,
+): string {
   if (spec.options) return spec.options[Math.round(value)] ?? String(value);
-  return `${value.toFixed(spec.decimals)}${spec.unit}`;
+  const sign = spec.signed && value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(spec.decimals)}${spec.unit}`;
+}
+
+/** Replace one projector's nudge, leaving the rest alone. */
+export function withNudge(s: Settings, index: number, patch: Partial<ProjectorNudge>): Settings {
+  const nudge = s.nudge.map((n, i) => (i === index ? { ...n, ...patch } : { ...n }));
+  return { ...s, nudge };
+}
+
+/** Clear every hand adjustment. */
+export function clearNudges(s: Settings): Settings {
+  return { ...s, nudge: s.nudge.map(() => noNudge()) };
 }

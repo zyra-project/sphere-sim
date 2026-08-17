@@ -34,8 +34,9 @@ import type { Scene, ViewerCamera } from '../../sim/src/render.ts';
 import type { MisalignmentMagnitudes, Perturbation } from '../../sim/src/scene.ts';
 import { DEFAULT_MISALIGNMENT, injectMisalignment, nominalRig } from '../../sim/src/scene.ts';
 import { DEG2RAD } from '../../sim/src/vec.ts';
-import type { Settings } from './settings.ts';
-import { IN_TO_M, RESOLUTIONS } from './settings.ts';
+import { aimAtSphereCenter } from '../../sim/src/geometry.ts';
+import type { ProjectorNudge, Settings } from './settings.ts';
+import { CONTENTS, IN_TO_M, RESOLUTIONS } from './settings.ts';
 
 /** Equirectangular content raster. Big enough that the grid is not the limit. */
 const CONTENT_WIDTH = 1024;
@@ -119,11 +120,78 @@ export function scaledMagnitudes(scale: number): MisalignmentMagnitudes {
 }
 
 /**
+ * Apply the panel's hand adjustments to the lenses.
+ *
+ * Applied AFTER `injectMisalignment`, so a nudge reads as "and then somebody
+ * knocked it", which is what the control means. The lens is moved along its own
+ * radius and in height, then RE-AIMED at the sphere centre, and only then are
+ * the aim offsets added — the same separation `injectMisalignment` makes, and
+ * for the same reason: a pure placement error should leave a rig that is still
+ * pointing at the sphere, which is what a real installer would leave behind.
+ *
+ * A projector switched off is dropped from the rig entirely rather than left in
+ * with zero output. Its quadrant of the framebuffer goes dark and the
+ * framebuffer keeps its size, which is exactly what PARAMETERS.md §2's
+ * "quadrants go dark" describes — and it is why `nominalRig` is asked to rebuild
+ * the viewport assignment rather than this function editing one.
+ */
+function applyNudges(rig: RigCalibration, nudges: readonly ProjectorNudge[]): RigCalibration {
+  const projectors = rig.projectors
+    .map((p, i) => {
+      const n = nudges[i];
+      if (!n) return p;
+      const pos = p.pose.position;
+      const horizontal = Math.hypot(pos.x, pos.y);
+      const scaleXY = horizontal > 1e-9 ? (horizontal + n.distanceM) / horizontal : 1;
+      const position = {
+        x: pos.x * scaleXY,
+        y: pos.y * scaleXY,
+        z: pos.z + n.heightM,
+      };
+      // Re-aim from the NEW position, then re-apply whatever aim error the
+      // mount already had, then the hand adjustment. With both movements at zero
+      // the two aims are identical and this reduces to `pose.yawDeg + n.yawDeg`
+      // exactly — no drift from merely passing through.
+      const wasAimed = aimAtSphereCenter(pos);
+      const aim = aimAtSphereCenter(position);
+      return {
+        ...p,
+        pose: {
+          position,
+          yawDeg: aim.yawDeg + (p.pose.yawDeg - wasAimed.yawDeg) + n.yawDeg,
+          pitchDeg: aim.pitchDeg + (p.pose.pitchDeg - wasAimed.pitchDeg) + n.pitchDeg,
+          rollDeg: p.pose.rollDeg + n.rollDeg,
+        },
+      };
+    })
+    .filter((_, i) => nudges[i]?.on !== false);
+  return { ...rig, projectors };
+}
+
+/** True when nothing has been moved by hand. */
+export function nudgesAreClear(nudges: readonly ProjectorNudge[]): boolean {
+  return nudges.every(
+    (n) =>
+      n.on &&
+      n.yawDeg === 0 &&
+      n.pitchDeg === 0 &&
+      n.rollDeg === 0 &&
+      n.distanceM === 0 &&
+      n.heightM === 0,
+  );
+}
+
+/**
  * Build the world the page is showing.
  *
  * `compositorRig` defaults to the drawing — an operator's config file, before
  * anyone has run a calibration. Pass a recovered rig to see what the solve
  * bought.
+ *
+ * Switching a projector off removes it from the TRUTH rig and from the
+ * compositor's, because the software knows which outputs it is driving even when
+ * it is wrong about where they point. The alignment error is still measured
+ * across whatever is left.
  */
 export function buildWorld(s: Settings, compositorRig?: RigCalibration): WebWorld {
   const asBuiltRig = buildAsBuilt(s);
@@ -132,18 +200,26 @@ export function buildWorld(s: Settings, compositorRig?: RigCalibration): WebWorl
     Math.round(s.errorSeed),
     scaledMagnitudes(s.mountError),
   );
+  const content = CONTENTS[Math.round(s.content)] ?? CONTENTS[1];
   const image = gridAlignmentPattern({
     width: CONTENT_WIDTH,
     height: CONTENT_HEIGHT,
     spacingDeg: Math.round(s.gridDeg),
     lineWidthDeg: 0.35,
-    emphasizeAxes: true,
+    emphasizeAxes: content.lines !== content.background,
+    lineColor: { r: content.lines, g: content.lines, b: content.lines },
+    backgroundColor: { r: content.background, g: content.background, b: content.background },
   });
   const scene = defaultScene(image, { maskInterpretation: 'latitude' });
+
+  // The `on` flags are the only part of a nudge the software knows about, so
+  // they apply to both rigs; the movements apply to the lenses alone.
+  const off = s.nudge.map((n) => ({ ...n, yawDeg: 0, pitchDeg: 0, rollDeg: 0, distanceM: 0, heightM: 0 }));
+  const drawing = applyNudges(asBuiltRig, off);
   return {
-    asBuiltRig,
-    truthRig: misaligned.rig,
-    compositorRig: compositorRig ?? asBuiltRig,
+    asBuiltRig: drawing,
+    truthRig: applyNudges(misaligned.rig, s.nudge),
+    compositorRig: compositorRig ?? drawing,
     perturbation: misaligned.perturbation,
     scene,
     image,

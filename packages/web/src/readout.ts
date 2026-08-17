@@ -50,8 +50,21 @@ export interface Reading {
   section: string;
 }
 
+/**
+ * A metric's value, printed.
+ *
+ * Anything `sim` reports as a fraction is shown as a percentage, and the long
+ * unit string ("fraction of the protected region") becomes a tooltip rather than
+ * a line of body text. "0.0013 fraction of emitted raster area" is precise and
+ * unreadable; "0.13% of the raster" is the same number in a form somebody can
+ * compare against the one beside it.
+ */
 function fmt(value: number, unit: string): string {
   if (!Number.isFinite(value)) return '—';
+  if (unit.startsWith('fraction')) {
+    const pct = value * 100;
+    return `${pct.toFixed(pct === 0 || pct >= 10 ? 1 : pct >= 1 ? 2 : 3)}%`;
+  }
   const abs = Math.abs(value);
   const digits = abs === 0 ? 1 : abs >= 100 ? 1 : abs >= 10 ? 2 : abs >= 1 ? 3 : 4;
   return `${value.toFixed(digits)}${unit ? ` ${unit}` : ''}`;

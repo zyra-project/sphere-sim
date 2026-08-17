@@ -5,7 +5,8 @@
  *
  *   - **Main** — draws. It owns the GL context and the DOM and it never computes
  *     a metric. Every number it displays arrived from a worker.
- *   - **Model worker** — `packages/sim`. Says what is true about the rig.
+ *   - **Model worker** — `packages/sim`. Says what is true about the rig, and
+ *     renders each projector's own frame.
  *   - **Solve worker** — `packages/sim` photographing, `packages/solver`
  *     calibrating. Says what an operator could recover from photographs.
  *
@@ -19,38 +20,55 @@
  * ## Coarse then fine
  *
  * While a slider is moving the page asks for a coarse metric pass and no parity
- * render; when it settles it asks for the full density and the parity check. The
- * density is printed with the numbers, because a value that depends on a sample
- * count the reader cannot see is a value the reader cannot check.
+ * render; when it settles it asks for the full density, the parity check and the
+ * projector frames. The density is printed with the numbers, because a value
+ * that depends on a sample count the reader cannot see is a value the reader
+ * cannot check.
  *
- * ## What the parity number is measuring
+ * ## Everything drawn here is a Float32 image from the model
  *
- * The same camera, rendered twice: once by the GPU and once by
- * `packages/sim`'s `renderTwoRigRoomView`. `src/parity.ts` explains why the
- * verdict is a percentile rather than a maximum, and why the tolerance is 2e-3.
+ * The projector frames, the capture thumbnails and the lightbox are all painted
+ * by {@link paintFrame} from linear radiance the worker produced. There is no
+ * second rendering path and no image asset: if a thumbnail is wrong, the model
+ * is wrong, and that is the property worth having.
  */
 
 import type { RigCalibration } from '../../calibration/src/index.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
-import type { Settings, SettingKey, ControlSpec } from '../src/settings.ts';
+import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
   BOULDER_PRESET,
+  CONTENTS,
   CONTROLS,
-  GROUPS,
-  PRESETS,
+  IN_TO_M,
+  NUDGE_CONTROLS,
+  PERFECT_PRESET,
+  PROJECTOR_TINTS,
+  RESOLUTIONS,
+  SPEC_PRESET,
+  clearNudges,
   formatSetting,
+  withNudge,
   withSetting,
 } from '../src/settings.ts';
-import { buildViewer, buildWorld, worstAimOffender, worstPlacementOffender } from '../src/rigs.ts';
+import {
+  buildViewer,
+  buildWorld,
+  nudgesAreClear,
+  worstAimOffender,
+  worstPlacementOffender,
+} from '../src/rigs.ts';
 import type { Reading, RigFact } from '../src/readout.ts';
 import { buildDisplayUniforms } from '../src/uniforms.ts';
 import type { OverlayMode } from '../src/uniforms.ts';
 import type { ParityVerdict } from '../src/parity.ts';
 import { BOUNDARY_PIXEL_ALLOWANCE, PARITY_HEIGHT, PARITY_WIDTH, judgeParity } from '../src/parity.ts';
 import type {
+  FrameImage,
   ModelMessage,
   ModelRequest,
   ModelResponse,
+  RecoveredAxis,
   SolveMessage,
   SolveRequest,
   SolveResponse,
@@ -62,28 +80,39 @@ import { createDisplayGl, drawToCanvas, renderAndRead, uploadEquirect } from './
 // State
 // ---------------------------------------------------------------------------
 
+type SectionId = 'projectors' | 'install' | 'room';
+
 interface PageState {
   settings: Settings;
   /** What the compositor believes. `null` = the config as written. */
   compositorRig: RigCalibration | null;
+  section: SectionId;
+  /** Which projector the Projectors tab is editing, and the inspect card shows. */
+  selected: number;
   overlay: OverlayMode;
   /** `-1` shows every projector; otherwise isolate one. */
   highlight: number;
+  explain: boolean;
+  panelOpen: boolean;
   /** Solve inputs. Deliberately few — see `protocol.ts` on why there is no noise slider. */
   cameraCount: number;
   handheld: boolean;
-  sensorNoise: boolean;
   ambient: number;
 }
 
 const state: PageState = {
-  settings: { ...BOULDER_PRESET },
+  settings: { ...BOULDER_PRESET, nudge: BOULDER_PRESET.nudge.map((n) => ({ ...n })) },
   compositorRig: null,
+  section: 'projectors',
+  selected: 0,
   overlay: 'none',
   highlight: -1,
+  // Off by default: with every note expanded the control panel is taller than
+  // most screens, and a person who wants the reasoning is one click from it.
+  explain: false,
+  panelOpen: true,
   cameraCount: 3,
   handheld: false,
-  sensorNoise: true,
   ambient: 0.04,
 };
 
@@ -91,25 +120,192 @@ let model: ModelResponse | null = null;
 let parity: ParityVerdict | null = null;
 let solveResult: SolveResponse | null = null;
 let solveRunning = false;
-let solvePhase = '';
-let solveFraction = 0;
+let solveStage = '';
+let solveTrace: { pass: number; cost: number }[] = [];
+let solveShots: FrameImage[] = [];
+let solveStartedAt = 0;
 let modelPending = false;
 let lastError = '';
+let resultView: 'axes' | 'config' = 'axes';
 
 let gl: DisplayGl | null = null;
-/** Which content the texture currently holds, so it is re-uploaded only on a change. */
 let contentKey = '';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const controlsEl = document.getElementById('controls') as HTMLDivElement;
-const panelEl = document.getElementById('panel') as HTMLDivElement;
-const toolbarEl = document.getElementById('toolbar') as HTMLDivElement;
-const stageNoteEl = document.getElementById('stagenote') as HTMLDivElement;
+const actionsEl = document.getElementById('actions') as HTMLDivElement;
+const topBtnsEl = document.getElementById('topbtns') as HTMLDivElement;
+const rightEl = document.getElementById('right') as HTMLDivElement;
+const readoutEl = document.getElementById('readout') as HTMLDivElement;
+const inspectEl = document.getElementById('inspect') as HTMLDivElement;
+const bootEl = document.getElementById('boot') as HTMLDivElement;
 const fatalEl = document.getElementById('fatal') as HTMLDivElement;
+const lightboxEl = document.getElementById('lightbox') as HTMLDivElement;
+const lightboxCanvas = document.getElementById('lightbox-canvas') as HTMLCanvasElement;
 
 function fatal(message: string): void {
   fatalEl.textContent = message;
   fatalEl.classList.add('on');
+  bootEl.classList.add('off');
+}
+
+// ---------------------------------------------------------------------------
+// DOM helpers
+// ---------------------------------------------------------------------------
+
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  props: Partial<HTMLElementTagNameMap[K]> = {},
+  children: (Node | string)[] = [],
+): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  Object.assign(node, props);
+  for (const c of children) node.append(c);
+  return node;
+}
+
+/**
+ * Paint a linear-radiance image from the model into a canvas.
+ *
+ * The display encode happens HERE and nowhere else, which is conventions.ts §P's
+ * rule applied to the DOM: the worker sends linear light because that is what
+ * the model produces, and a second encode somewhere upstream would silently
+ * brighten every thumbnail on the page relative to the sphere beside them.
+ */
+function paintFrame(target: HTMLCanvasElement, frame: FrameImage, exposure = 1): void {
+  target.width = frame.width;
+  target.height = frame.height;
+  const ctx = target.getContext('2d');
+  if (!ctx) return;
+  const out = ctx.createImageData(frame.width, frame.height);
+  const n = frame.width * frame.height;
+  for (let i = 0; i < n; i++) {
+    for (let c = 0; c < 3; c++) {
+      const v = Math.max(0, frame.data[3 * i + c] * exposure);
+      out.data[4 * i + c] = Math.min(255, Math.round(255 * Math.pow(v, 1 / 2.2)));
+    }
+    out.data[4 * i + 3] = 255;
+  }
+  ctx.putImageData(out, 0, 0);
+}
+
+function openLightbox(frame: FrameImage, caption: string): void {
+  paintFrame(lightboxCanvas, frame);
+  const cap = lightboxEl.querySelector('.cap');
+  if (cap) cap.textContent = caption;
+  lightboxEl.classList.add('on');
+}
+lightboxEl.addEventListener('click', () => lightboxEl.classList.remove('on'));
+
+/** A thumbnail that opens full size when clicked. */
+function thumb(frame: FrameImage, caption: string): HTMLElement {
+  const fig = el('figure');
+  const c = el('canvas');
+  paintFrame(c, frame);
+  fig.append(c, el('figcaption', { textContent: caption }));
+  fig.addEventListener('click', () => openLightbox(frame, caption));
+  return fig;
+}
+
+interface SliderOptions {
+  label: string;
+  symbol?: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  decimals: number;
+  unit: string;
+  options?: readonly string[];
+  help: string;
+  tint?: string;
+  /** Draw the fill from the centre, and print a sign: a control whose zero is the middle. */
+  bipolar?: boolean;
+  klass?: string;
+  onInput: (v: number) => void;
+  onSettle?: () => void;
+}
+
+/**
+ * A pointer-drag slider.
+ *
+ * Hand-built rather than `<input type=range>` for one reason that is not
+ * aesthetics: a bipolar control needs its fill drawn from the centre outward, so
+ * a reader can see at a glance that a projector has been nudged left rather than
+ * having to read the number. A native range input cannot do that.
+ */
+function slider(o: SliderOptions): HTMLElement {
+  const wrap = el('div', { className: 'sl' });
+  const label = el('span', { className: 'lab', textContent: o.label });
+  if (o.symbol) label.append(el('span', { className: 'sym mono', textContent: o.symbol }));
+  if (o.klass === 'ASSUME') {
+    label.append(el('span', { className: 'kpill', textContent: 'ASSUME', title: 'Nobody has measured this constant.' }));
+  }
+  const value = el('span', {
+    className: 'val num',
+    textContent: formatSetting(
+      { decimals: o.decimals, unit: o.unit, options: o.options, signed: o.bipolar },
+      o.value,
+    ),
+  });
+  wrap.append(el('div', { className: 'row' }, [label, value]));
+
+  const track = el('div', { className: 'track' });
+  const rail = el('div', { className: 'rail' });
+  const fill = el('div', { className: 'fill' });
+  const knob = el('div', { className: 'knob' });
+  if (o.tint) fill.style.background = o.tint;
+  const span = o.max - o.min || 1;
+  const pct = ((o.value - o.min) / span) * 100;
+  if (o.bipolar) {
+    const zero = ((0 - o.min) / span) * 100;
+    fill.style.left = `${Math.min(zero, pct)}%`;
+    fill.style.width = `${Math.abs(pct - zero)}%`;
+  } else {
+    fill.style.width = `${pct}%`;
+  }
+  knob.style.left = `${pct}%`;
+  rail.append(fill, knob);
+  track.append(rail);
+  wrap.append(track);
+  wrap.append(el('p', { className: 'help', textContent: o.help }));
+
+  const setFromClientX = (clientX: number): void => {
+    const r = rail.getBoundingClientRect();
+    const t = Math.min(1, Math.max(0, (clientX - r.left) / Math.max(1, r.width)));
+    const raw = o.min + t * span;
+    const stepped = o.step > 0 ? Math.round(raw / o.step) * o.step : raw;
+    o.onInput(Math.min(o.max, Math.max(o.min, stepped)));
+  };
+  track.addEventListener('pointerdown', (e) => {
+    track.setPointerCapture(e.pointerId);
+    setFromClientX(e.clientX);
+    const move = (ev: PointerEvent): void => setFromClientX(ev.clientX);
+    const up = (): void => {
+      track.removeEventListener('pointermove', move);
+      track.removeEventListener('pointerup', up);
+      if (o.onSettle) o.onSettle();
+    };
+    track.addEventListener('pointermove', move);
+    track.addEventListener('pointerup', up);
+  });
+  return wrap;
+}
+
+function chipRow(
+  items: readonly { label: string; on: boolean; onPick: () => void; title?: string }[],
+): HTMLElement {
+  const row = el('div', { className: 'chips' });
+  for (const it of items) {
+    const b = el('button', {
+      className: `chip${it.on ? ' on' : ''}`,
+      textContent: it.label,
+      title: it.title ?? '',
+    });
+    b.addEventListener('click', it.onPick);
+    row.append(b);
+  }
+  return row;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,16 +317,13 @@ const solveWorker = new Worker(new URL('../worker/solve.js', import.meta.url), {
 
 let modelSeq = 0;
 let modelWanted = -1;
-/** The camera the outstanding parity request was made for, so a stale reply is dropped. */
 let parityRequestKey = '';
 
-/**
- * Ask the model worker for the metrics.
- *
- * `fine` decides both the sampling density and whether a parity render comes
- * back. The coarse pass exists so a drag feels connected to the numbers; the
- * fine pass is the one worth reading, and the panel says which it is showing.
- */
+function viewKey(): string {
+  const s = state.settings;
+  return `${s.viewAzDeg}|${s.viewElDeg}|${s.viewRangeM}|${s.viewFovDeg}`;
+}
+
 function requestModel(fine: boolean): void {
   const id = ++modelSeq;
   modelWanted = id;
@@ -142,6 +335,9 @@ function requestModel(fine: boolean): void {
     compositorRig: state.compositorRig,
     densityScale: fine ? 1 : 0.3,
     parity: null,
+    // Only on the settled pass: a projector frame is a CPU trace and four of
+    // them on every drag would starve the metrics they sit beside.
+    projectorPreviewWidth: fine ? 208 : 0,
   };
   if (fine) {
     const camera = buildViewer(state.settings, PARITY_WIDTH, PARITY_HEIGHT);
@@ -155,7 +351,7 @@ function requestModel(fine: boolean): void {
     parityRequestKey = viewKey();
   }
   modelWorker.postMessage(req);
-  renderPanel();
+  renderReadout();
 }
 
 modelWorker.onmessage = (event: MessageEvent<ModelMessage>): void => {
@@ -165,38 +361,44 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage>): void => {
   // backwards for no visible reason.
   if (msg.id !== modelWanted) return;
   modelPending = false;
+  bootEl.classList.add('off');
   if (!msg.ok) {
     lastError = msg.error;
-    renderPanel();
+    renderReadout();
     return;
   }
   lastError = '';
-  model = msg;
+  // A coarse pass carries no projector frames; keep the last good ones rather
+  // than blanking the inspect card on every drag.
+  const keptFrames = msg.projectorFrames.length > 0 ? msg.projectorFrames : (model?.projectorFrames ?? []);
+  model = { ...msg, projectorFrames: keptFrames };
   if (msg.parityImage) checkParity(msg.parityImage, msg.parityMs);
-  renderPanel();
+  renderReadout();
+  renderInspect();
 };
 
 solveWorker.onmessage = (event: MessageEvent<SolveMessage>): void => {
   const msg = event.data;
   if (msg.kind === 'solve-progress') {
-    solvePhase = msg.message;
-    solveFraction = msg.fraction;
-    renderPanel();
+    solveStage = msg.message;
+    if (msg.shots) solveShots = msg.shots;
+    if (msg.step) solveTrace.push({ pass: msg.step.pass, cost: msg.step.cost });
+    renderReadout();
     return;
   }
   solveRunning = false;
   if (!msg.ok) {
     lastError = msg.error;
-    solvePhase = '';
-    renderPanel();
+    solveStage = '';
+    renderReadout();
     return;
   }
   solveResult = msg;
   state.compositorRig = msg.recoveredRig;
-  solvePhase = '';
-  solveFraction = 1;
+  solveStage = '';
   markDirty();
   requestModel(true);
+  renderActions();
 };
 
 let solveSeq = 0;
@@ -204,8 +406,11 @@ let solveSeq = 0;
 function startSolve(): void {
   if (solveRunning) return;
   solveRunning = true;
-  solveFraction = 0;
-  solvePhase = 'Building the room and placing the cameras…';
+  solveTrace = [];
+  solveShots = [];
+  solveResult = null;
+  solveStartedAt = performance.now();
+  solveStage = 'Placing the cameras…';
   const req: SolveRequest = {
     kind: 'solve',
     id: ++solveSeq,
@@ -217,19 +422,32 @@ function startSolve(): void {
     cameraResX: 320,
     cameraResY: 240,
     handheld: state.handheld,
-    sensorNoise: state.sensorNoise,
+    sensorNoise: true,
     ambient: state.ambient,
     seed: (state.settings.errorSeed * 2654435761) % 2147483647,
   };
   solveWorker.postMessage(req);
-  renderPanel();
+  renderActions();
+  renderReadout();
 }
 
-function resetCalibration(): void {
+function forgetCalibration(): void {
   state.compositorRig = null;
   solveResult = null;
+  solveTrace = [];
+  solveShots = [];
   markDirty();
   requestModel(true);
+  renderActions();
+}
+
+/** Anything that moves the LENSES invalidates a calibration solved for the old rig. */
+function invalidateCalibration(): void {
+  if (state.compositorRig === null) return;
+  state.compositorRig = null;
+  solveResult = null;
+  solveTrace = [];
+  solveShots = [];
 }
 
 // ---------------------------------------------------------------------------
@@ -241,20 +459,8 @@ function markDirty(): void {
   dirty = true;
 }
 
-function viewKey(): string {
-  const s = state.settings;
-  return `${s.viewAzDeg}|${s.viewElDeg}|${s.viewRangeM}|${s.viewFovDeg}`;
-}
-
-/**
- * Upload the equirect content only when something it depends on moved.
- *
- * The grid spacing is the only setting that changes the texture; everything else
- * changes where the texture LANDS. Re-uploading a megabyte every frame because
- * the viewer turned would cost more than the render.
- */
 function ensureContent(image: { width: number; height: number; data: Float32Array }): void {
-  const key = `${state.settings.gridDeg}`;
+  const key = `${state.settings.gridDeg}|${state.settings.content}`;
   if (gl && key !== contentKey) {
     uploadEquirect(gl, image);
     contentKey = key;
@@ -263,10 +469,9 @@ function ensureContent(image: { width: number; height: number; data: Float32Arra
 
 function draw(): void {
   if (!gl) return;
-  const rect = canvas.getBoundingClientRect();
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const w = Math.max(1, Math.round(rect.width * dpr));
-  const h = Math.max(1, Math.round(rect.height * dpr));
+  const w = Math.max(1, Math.round(window.innerWidth * dpr));
+  const h = Math.max(1, Math.round(window.innerHeight * dpr));
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;
@@ -291,16 +496,6 @@ function draw(): void {
   drawToCanvas(gl, uniforms, w, h);
 }
 
-/**
- * The GPU half of the parity check, compared against the CPU half the worker
- * just sent.
- *
- * Rendered at `displayGamma: 0` — linear, unencoded — because `sim` returns
- * linear radiance and encoding one side would make the comparison measure the
- * encode. Skipped when the view moved while the worker was busy, since the two
- * images would then be of different cameras and the delta would be enormous and
- * meaningless.
- */
 function checkParity(
   cpu: { width: number; height: number; data: Float32Array },
   cpuMs: number,
@@ -314,8 +509,8 @@ function checkParity(
     const world = buildWorld(state.settings, state.compositorRig ?? undefined);
     // Not merely defensive: a worker reply that landed before the first animation
     // frame would find the content texture never uploaded, and an incomplete
-    // texture samples as black — which is indistinguishable from the shader
-    // getting the model wrong. `ensureContent` is a no-op when it is current.
+    // texture samples as black — indistinguishable from the shader getting the
+    // model wrong. `ensureContent` is a no-op when it is current.
     ensureContent(world.image);
     const camera = buildViewer(state.settings, cpu.width, cpu.height);
     const uniforms = buildDisplayUniforms(
@@ -325,9 +520,8 @@ function checkParity(
       camera,
       // No floor and no overlay: `renderTwoRigRoomView` draws neither, so drawing
       // either here would make the parity number measure a difference in
-      // settings. The cost is that `shadeFloor` — its occlusion test and the
-      // room albedo — is the one part of the shader this check does not cover,
-      // and the panel says so rather than implying full coverage.
+      // settings. The cost is that `shadeFloor` — its occlusion test and the room
+      // albedo — is the one part of the shader this check does not cover.
       { overlay: 'none', highlight: -1, drawFloor: false, displayGamma: 0 },
     );
     const gpu = renderAndRead(gl, uniforms, cpu.width, cpu.height);
@@ -339,8 +533,6 @@ function checkParity(
     parity = null;
     lastError = err instanceof Error ? err.message : String(err);
   }
-  // The read-back bound an offscreen framebuffer; the canvas is stale until the
-  // next frame redraws it.
   markDirty();
 }
 
@@ -351,6 +543,7 @@ function frame(): void {
       draw();
     } catch (err) {
       fatal(err instanceof Error ? err.message : String(err));
+      return;
     }
   }
   requestAnimationFrame(frame);
@@ -362,398 +555,713 @@ function frame(): void {
 
 let settleTimer = 0;
 
-function onSettingChanged(key: SettingKey, value: number): void {
-  state.settings = withSetting(state.settings, key, value);
-  // Changing the geometry invalidates a calibration that was solved for the old
-  // one. Silently keeping it would show a recovered rig against a rig it never
-  // saw, which is a picture of nothing.
-  const spec = CONTROL_BY_KEY.get(key);
-  if (spec && spec.group !== 'view' && state.compositorRig !== null) {
-    state.compositorRig = null;
-    solveResult = null;
-  }
+function touched(invalidates: boolean): void {
+  if (invalidates) invalidateCalibration();
   markDirty();
   renderControls();
+  renderReadout();
   requestModel(false);
   window.clearTimeout(settleTimer);
   settleTimer = window.setTimeout(() => requestModel(true), 260);
 }
 
-const CONTROL_BY_KEY = new Map<SettingKey, ControlSpec>(CONTROLS.map((c) => [c.key, c]));
-
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  props: Partial<HTMLElementTagNameMap[K]> = {},
-  children: (Node | string)[] = [],
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  Object.assign(node, props);
-  for (const c of children) node.append(c);
-  return node;
+function setSetting(key: SettingKey, value: number): void {
+  state.settings = withSetting(state.settings, key, value);
+  const spec = CONTROLS.find((c) => c.key === key);
+  touched(spec ? spec.group !== 'view' : true);
 }
 
-const openHelp = new Set<string>();
-
-function controlRow(spec: ControlSpec): HTMLElement {
-  const value = state.settings[spec.key];
-  const box = el('div', { className: `ctl${spec.klass === 'ASSUME' ? ' assume' : ''}` });
-  if (openHelp.has(spec.key)) box.classList.add('open');
-
-  const name = el('div', {}, [
-    el('span', { className: 'cname', textContent: spec.label }),
-    spec.symbol ? el('span', { className: 'csym mono', textContent: spec.symbol }) : '',
-  ]);
-  const right = el('div', {}, [
-    el('span', { className: 'cval', textContent: formatSetting(spec, value) }),
-    ' ',
-    el('span', { className: `pill k-${spec.klass}`, textContent: spec.klass, title: klassTitle(spec.klass) }),
-  ]);
-  box.append(el('div', { className: 'crow' }, [name, right]));
-
-  const range = el('input', {
-    type: 'range',
-    min: String(spec.min),
-    max: String(spec.max),
-    step: String(spec.step),
-    value: String(value),
-  });
-  range.addEventListener('input', () => onSettingChanged(spec.key, Number(range.value)));
-  box.append(range);
-
-  const why = el('button', { className: 'cwhy', textContent: openHelp.has(spec.key) ? 'less' : 'what is this?' });
-  why.addEventListener('click', () => {
-    if (openHelp.has(spec.key)) openHelp.delete(spec.key);
-    else openHelp.add(spec.key);
-    renderControls();
-  });
-  box.append(why);
-  box.append(el('div', { className: 'chelp', textContent: `${spec.section} ${spec.help}`.trim() }));
-  return box;
+function setNudge(key: NudgeSpec['key'], value: number): void {
+  state.settings = withNudge(state.settings, state.selected, { [key]: value });
+  touched(true);
 }
 
-function klassTitle(klass: ControlSpec['klass']): string {
-  switch (klass) {
-    case 'DOC':
-      return 'Documented. Written down in a NOAA document.';
-    case 'CFG':
-      return "Configuration. Read out of the installation's own config file.";
-    case 'SOLVE':
-      return 'Solved. Recovered by calibration rather than measured.';
-    case 'ASSUME':
-      return 'Assumed. NOBODY HAS MEASURED THIS. Anything downstream is provisional.';
-    case 'MEAS':
-      return 'Needs measuring in person. On the field card.';
-    default:
-      return 'A control of this page, not a constant of the installation.';
-  }
-}
+const SECTIONS: { id: SectionId; label: string; title: string }[] = [
+  { id: 'projectors', label: 'Projectors', title: 'The lenses, one at a time' },
+  { id: 'install', label: 'Install', title: 'What was built' },
+  { id: 'room', label: 'Room', title: 'Seams, mask and the view' },
+];
 
-const openGroups = new Set<string>(['install', 'lens', 'error']);
-
-function renderControls(): void {
-  controlsEl.replaceChildren();
-  for (const group of GROUPS) {
-    const details = el('details', { className: 'group', open: openGroups.has(group.id) });
-    details.addEventListener('toggle', () => {
-      if (details.open) openGroups.add(group.id);
-      else openGroups.delete(group.id);
+function sectionTabs(): HTMLElement {
+  const seg = el('div', { className: 'seg' });
+  for (const s of SECTIONS) {
+    const b = el('button', { className: state.section === s.id ? 'on' : '', textContent: s.label });
+    b.addEventListener('click', () => {
+      state.section = s.id;
+      renderControls();
     });
-    details.append(el('summary', { textContent: group.title }));
-    details.append(el('div', { className: 'gblurb', textContent: group.blurb }));
-    for (const spec of CONTROLS.filter((c) => c.group === group.id)) {
-      details.append(controlRow(spec));
-    }
-    controlsEl.append(details);
+    seg.append(b);
   }
+  return seg;
 }
 
-// ---------------------------------------------------------------------------
-// Toolbar
-// ---------------------------------------------------------------------------
-
-function renderToolbar(): void {
-  toolbarEl.replaceChildren();
-
-  const preset = el('select');
-  preset.append(el('option', { value: '', textContent: 'Load a preset…' }));
-  for (const p of PRESETS) {
-    preset.append(el('option', { value: p.id, textContent: `${p.label} — ${p.blurb}` }));
+function projectorTabs(): HTMLElement {
+  const row = el('div', { className: 'ptabs' });
+  const n = Math.round(state.settings.projectorCount);
+  for (let i = 0; i < n; i++) {
+    const on = state.settings.nudge[i]?.on !== false;
+    const b = el('button', {
+      className: `${state.selected === i ? 'on' : ''}${on ? '' : ' dark'}`,
+      title: on
+        ? 'Click to select. Click again to switch it off at the wall.'
+        : 'Switched off — its quadrant of the framebuffer is dark. Click to switch it back on.',
+    });
+    const dot = el('span', { className: 'dot' });
+    dot.style.background = PROJECTOR_TINTS[i] ?? '#888';
+    b.append(dot, el('span', { textContent: `P${i + 1}` }));
+    b.addEventListener('click', () => {
+      if (state.selected === i) {
+        state.settings = withNudge(state.settings, i, { on: !on });
+        touched(true);
+        return;
+      }
+      state.selected = i;
+      state.highlight = i;
+      markDirty();
+      renderControls();
+      renderInspect();
+      renderActions();
+    });
+    row.append(b);
   }
-  preset.addEventListener('change', () => {
-    const found = PRESETS.find((p) => p.id === preset.value);
-    if (!found) return;
-    state.settings = { ...found.settings };
-    state.compositorRig = null;
-    solveResult = null;
-    preset.value = '';
-    markDirty();
-    renderControls();
-    requestModel(true);
-  });
-  toolbarEl.append(preset);
-
-  const overlay = el('select');
-  const modes: { id: OverlayMode; label: string }[] = [
-    { id: 'none', label: 'Plain view' },
-    { id: 'overlap', label: 'Colour by how many projectors light it' },
-    { id: 'seams', label: 'Show the seams' },
-    { id: 'unlit', label: 'Show what is dark' },
-  ];
-  for (const m of modes) overlay.append(el('option', { value: m.id, textContent: m.label }));
-  overlay.value = state.overlay;
-  overlay.addEventListener('change', () => {
-    state.overlay = overlay.value as OverlayMode;
-    markDirty();
-  });
-  toolbarEl.append(overlay);
-
-  const isolate = el('select');
-  isolate.append(el('option', { value: '-1', textContent: 'All projectors' }));
-  for (let i = 0; i < Math.round(state.settings.projectorCount); i++) {
-    isolate.append(el('option', { value: String(i), textContent: `Only P${i + 1}` }));
-  }
-  isolate.value = String(state.highlight);
-  isolate.addEventListener('change', () => {
-    state.highlight = Number(isolate.value);
-    markDirty();
-  });
-  toolbarEl.append(isolate);
-
-  toolbarEl.append(el('div', { className: 'spacer' }));
-
-  const cams = el('select', { title: 'How many positions the operator photographs from.' });
-  for (let n = 1; n <= 8; n++) {
-    cams.append(el('option', { value: String(n), textContent: `${n} camera${n === 1 ? '' : 's'}` }));
-  }
-  cams.value = String(state.cameraCount);
-  cams.addEventListener('change', () => {
-    state.cameraCount = Number(cams.value);
-  });
-  toolbarEl.append(cams);
-
-  const rig = el('select', {
-    title: 'Experiment 1 measured this: a tripod localises to under a millimetre, the same camera ' +
-      'handheld to about nine, and that one difference outweighs everything else put together.',
-  });
-  rig.append(el('option', { value: 'tripod', textContent: 'On a tripod' }));
-  rig.append(el('option', { value: 'handheld', textContent: 'Handheld' }));
-  rig.value = state.handheld ? 'handheld' : 'tripod';
-  rig.addEventListener('change', () => {
-    state.handheld = rig.value === 'handheld';
-  });
-  toolbarEl.append(rig);
-
-  const solveBtn = el('button', {
-    className: 'primary',
-    textContent: solveRunning ? 'Calibrating…' : 'Recalibrate',
-    disabled: solveRunning,
-  });
-  solveBtn.addEventListener('click', startSolve);
-  toolbarEl.append(solveBtn);
-
-  if (state.compositorRig !== null) {
-    const reset = el('button', { textContent: 'Forget the calibration' });
-    reset.addEventListener('click', resetCalibration);
-    toolbarEl.append(reset);
-  }
-
-  // The seed is a slider in the panel because it belongs beside the mount error
-  // it draws. It is also a button here, because "show me a different unlucky
-  // installer" is a thing somebody wants to do repeatedly and dragging a slider
-  // across a million positions is not how they want to do it.
-  const reshuffle = el('button', {
-    textContent: 'Another install',
-    title: 'Draw a different mount error at the same magnitude. Deterministic: the seed is shown ' +
-      'in the panel and the same seed always gives the same rig.',
-  });
-  reshuffle.addEventListener('click', () => {
-    // A fixed odd stride rather than Math.random: the sequence is reproducible
-    // from the starting seed, which is the property every other number on this
-    // page depends on.
-    onSettingChanged('errorSeed', ((state.settings.errorSeed + 104729) % 999_999) + 1);
-  });
-  toolbarEl.append(reshuffle);
+  return row;
 }
 
-// ---------------------------------------------------------------------------
-// Panel
-// ---------------------------------------------------------------------------
-
-const openRows = new Set<string>();
-
-function fmtMm(v: number): string {
-  return Number.isFinite(v) ? `${v.toFixed(v < 10 ? 2 : 1)} mm` : '—';
-}
-
-function headline(): HTMLElement {
-  const box = el('div', { className: 'headline' });
-  if (!model) {
-    box.append(el('div', { className: 'cap', textContent: 'Worst grid-line error' }));
-    box.append(el('div', { className: 'big muted', textContent: 'computing…' }));
-    return box;
-  }
-  const grid = model.readings.find((r) => r.id === 'grid_displacement');
-  const pass = grid?.status === 'PASS';
-  box.append(el('div', { className: 'cap', textContent: 'Worst grid-line error' }));
-  box.append(
-    el('div', { className: `big ${pass ? 'pass' : 'fail'}`, textContent: fmtMm(model.gridWorstMm) }),
+function projectorSection(): HTMLElement[] {
+  const out: HTMLElement[] = [projectorTabs()];
+  out.push(
+    el('p', {
+      className: 'grouphelp',
+      textContent:
+        'Pick a projector to move it. These are its REAL position and aim — what the software ' +
+        'believes only changes when you recalibrate, which is why the frame below does not move ' +
+        'when you drag these. Click a selected projector again to switch it off.',
+    }),
   );
-  box.append(
-    el('div', {
-      className: 'why',
-      textContent: pass
-        ? 'Inside the 1 mm gate. A line on the alignment grid lands where it should everywhere on ' +
-          'the sphere.'
-        : 'Outside the 1 mm gate. This is how far a line on the alignment grid sits from where it ' +
-          'belongs, at the worst point on the sphere — the doubled or kinked line an operator sees.',
+  const nudge = state.settings.nudge[state.selected];
+  const tint = PROJECTOR_TINTS[state.selected] ?? '#888';
+  for (const spec of NUDGE_CONTROLS) {
+    out.push(
+      slider({
+        label: spec.label,
+        value: nudge?.[spec.key] ?? 0,
+        min: spec.min,
+        max: spec.max,
+        step: spec.step,
+        decimals: spec.decimals,
+        unit: spec.unit,
+        help: spec.help,
+        tint,
+        bipolar: true,
+        onInput: (v) => setNudge(spec.key, v),
+        onSettle: () => requestModel(true),
+      }),
+    );
+  }
+  return out;
+}
+
+/**
+ * Sliders for a set of groups.
+ *
+ * `skip` exists because a few controls read better as chips — a choice from a
+ * list should not look like a continuum, since a slider implies the values in
+ * between are real. Those are rendered by their section and named here so they
+ * cannot also appear as a slider.
+ */
+function controlsFor(groups: readonly string[], skip: readonly SettingKey[] = []): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  for (const spec of CONTROLS.filter((c) => groups.includes(c.group) && !skip.includes(c.key))) {
+    out.push(
+      slider({
+        label: spec.label,
+        symbol: spec.symbol,
+        value: state.settings[spec.key],
+        min: spec.min,
+        max: spec.max,
+        step: spec.step,
+        decimals: spec.decimals,
+        unit: spec.unit,
+        options: spec.options,
+        help: `${spec.section} ${spec.help}`.trim(),
+        klass: spec.klass,
+        bipolar: spec.min < 0 && spec.max > 0,
+        onInput: (v) => setSetting(spec.key, v),
+        onSettle: () => requestModel(true),
+      }),
+    );
+  }
+  return out;
+}
+
+function installSection(): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  out.push(
+    el('p', {
+      className: 'grouphelp',
+      textContent:
+        "Everything here starts at the NOAA Boulder reference install — four BenQ LK935 projectors " +
+        'on a 68-inch sphere, 211 inches out and 8 inches above an 84-inch equator, from that ' +
+        "theatre's own sos_stream_control.config. That config disagrees with this project's " +
+        'specification on three constants; amendment A-36 is open and nothing has been applied to it.',
     }),
   );
 
-  if (model.gridBaselineMm !== null && solveResult) {
-    const from = model.gridBaselineMm;
-    const to = model.gridWorstMm;
-    const factor = to > 0 ? from / to : Infinity;
-    const d = el('div', { className: 'delta' }, [
-      el('span', { className: 'from', textContent: fmtMm(from) }),
-      el('span', { className: 'arrow', textContent: '→' }),
-      el('span', { className: 'to', textContent: fmtMm(to) }),
-      el('span', {
-        className: 'muted small',
-        textContent: Number.isFinite(factor)
-          ? `${factor.toFixed(1)}× better after the calibration`
-          : 'after the calibration',
+  const presets: { label: string; s: Settings; title: string }[] = [
+    { label: 'Boulder', s: BOULDER_PRESET, title: "the site's own config (A-36)" },
+    { label: 'PARAMETERS.md', s: SPEC_PRESET, title: '§1 and §2 as documented' },
+    { label: 'Perfect mount', s: PERFECT_PRESET, title: 'Boulder with zero mount error' },
+  ];
+  out.push(
+    chipRow(
+      presets.map((p) => ({
+        label: p.label,
+        title: p.title,
+        on: false,
+        onPick: () => {
+          state.settings = { ...p.s, nudge: p.s.nudge.map((n) => ({ ...n })) };
+          invalidateCalibration();
+          markDirty();
+          renderControls();
+          requestModel(true);
+        },
+      })),
+    ),
+  );
+
+  // Resolution and projector count read better as chips than as a slider: they
+  // are choices from a list, and a slider implies the values in between exist.
+  out.push(el('span', { className: 'lab', textContent: 'Resolution' }));
+  out.push(
+    chipRow(
+      RESOLUTIONS.map((r, i) => ({
+        label: r.label,
+        on: Math.round(state.settings.resolution) === i,
+        onPick: () => setSetting('resolution', i),
+      })),
+    ),
+  );
+  out.push(el('span', { className: 'lab', textContent: 'Projectors' }));
+  out.push(
+    chipRow(
+      [2, 3, 4].map((n) => ({
+        label: String(n),
+        title:
+          n === 2
+            ? 'Two take opposite slots — adjacent ones would leave most of the sphere unlit (A-06).'
+            : '§2: "quadrants go dark". The framebuffer keeps its size.',
+        on: Math.round(state.settings.projectorCount) === n,
+        onPick: () => setSetting('projectorCount', n),
+      })),
+    ),
+  );
+  out.push(...controlsFor(['install', 'lens', 'error'], ['resolution', 'projectorCount']));
+  return out;
+}
+
+function roomSection(): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  out.push(el('span', { className: 'lab', textContent: 'Test pattern' }));
+  out.push(
+    chipRow(
+      CONTENTS.map((c, i) => ({
+        label: c.label,
+        title: c.help,
+        on: Math.round(state.settings.content) === i,
+        onPick: () => setSetting('content', i),
+      })),
+    ),
+  );
+  const chosen = CONTENTS[Math.round(state.settings.content)] ?? CONTENTS[1];
+  out.push(el('p', { className: 'grouphelp', textContent: chosen.help }));
+  out.push(...controlsFor(['blend', 'view'], ['content']));
+  out.push(el('span', { className: 'lab', textContent: 'Show me' }));
+  const overlays: { id: OverlayMode; label: string; title: string }[] = [
+    { id: 'none', label: 'Plain', title: 'The sphere as a visitor sees it.' },
+    {
+      id: 'overlap',
+      label: 'Coverage',
+      title:
+        'Tinted by how many projectors light each point. Never three — PARAMETERS.md §4.2, and if ' +
+        'red ever appears the code has a bug.',
+    },
+    { id: 'seams', label: 'Seams', title: 'Where two projectors overlap and crossfade.' },
+    {
+      id: 'unlit',
+      label: 'Dark',
+      title:
+        'The polar hole. Four-lobed and scalloped, not a circle: coverage reaches ~80° along each ' +
+        "projector's meridian and only ~76° between them.",
+    },
+  ];
+  out.push(
+    chipRow(
+      overlays.map((o) => ({
+        label: o.label,
+        title: o.title,
+        on: state.overlay === o.id,
+        onPick: () => {
+          state.overlay = o.id;
+          markDirty();
+          renderControls();
+        },
+      })),
+    ),
+  );
+  out.push(el('span', { className: 'lab', textContent: 'Isolate' }));
+  const n = Math.round(state.settings.projectorCount);
+  out.push(
+    chipRow([
+      {
+        label: 'All',
+        on: state.highlight === -1,
+        onPick: () => {
+          state.highlight = -1;
+          markDirty();
+          renderControls();
+        },
+      },
+      ...Array.from({ length: n }, (_, i) => ({
+        label: `P${i + 1}`,
+        on: state.highlight === i,
+        onPick: () => {
+          state.highlight = i;
+          markDirty();
+          renderControls();
+        },
+      })),
+    ]),
+  );
+  return out;
+}
+
+function renderControls(): void {
+  controlsEl.replaceChildren();
+  controlsEl.classList.toggle('explain', state.explain);
+  controlsEl.append(sectionTabs());
+
+  const section = SECTIONS.find((s) => s.id === state.section) ?? SECTIONS[0];
+  const head = el('div', { className: 'rowline' });
+  head.append(el('p', { className: 'eyebrow-sm', textContent: section.title }));
+  const explain = el('button', {
+    className: 'linkish',
+    textContent: state.explain ? 'hide notes' : 'explain',
+  });
+  explain.addEventListener('click', () => {
+    state.explain = !state.explain;
+    renderControls();
+  });
+  head.append(explain);
+  controlsEl.append(head);
+
+  const body =
+    state.section === 'projectors'
+      ? projectorSection()
+      : state.section === 'install'
+        ? installSection()
+        : roomSection();
+  for (const node of body) controlsEl.append(node);
+}
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+
+function renderTopButtons(): void {
+  topBtnsEl.replaceChildren();
+  const toggle = el('button', {
+    className: 'btn icon',
+    textContent: state.panelOpen ? '–' : '≡',
+    title: state.panelOpen ? 'Hide the controls' : 'Show the controls',
+  });
+  toggle.addEventListener('click', () => {
+    state.panelOpen = !state.panelOpen;
+    rightEl.classList.toggle('collapsed', !state.panelOpen);
+    renderTopButtons();
+  });
+  topBtnsEl.append(toggle);
+}
+
+function renderActions(): void {
+  actionsEl.replaceChildren();
+
+  const bump = el('button', {
+    className: 'btn',
+    textContent: 'Bump this one',
+    title: 'Knock the selected projector by about a quarter of a degree, the way a ladder does.',
+  });
+  bump.addEventListener('click', () => {
+    const i = state.selected;
+    const n = state.settings.nudge[i];
+    // A fixed step rather than a random one: the same click twice does the same
+    // thing, and every number this page shows depends on that.
+    state.settings = withNudge(state.settings, i, {
+      yawDeg: Math.max(-3, Math.min(3, (n?.yawDeg ?? 0) + 0.25)),
+      rollDeg: Math.max(-3, Math.min(3, (n?.rollDeg ?? 0) + 0.15)),
+    });
+    touched(true);
+  });
+  actionsEl.append(bump);
+
+  const drift = el('button', {
+    className: 'btn',
+    textContent: 'Another install',
+    title:
+      'Draw a different mount error at the same magnitude. Deterministic — the seed is on the ' +
+      'Install tab, and the same seed always gives the same rig.',
+  });
+  drift.addEventListener('click', () => {
+    state.settings = clearNudges(state.settings);
+    setSetting('errorSeed', ((state.settings.errorSeed + 104729) % 999_999) + 1);
+  });
+  actionsEl.append(drift);
+
+  const solve = el('button', {
+    className: 'btn primary',
+    textContent: solveRunning ? 'Calibrating…' : 'Recalibrate',
+    disabled: solveRunning,
+    title: 'Photograph the sphere with structured light and solve for where the lenses really are.',
+  });
+  solve.addEventListener('click', startSolve);
+  actionsEl.append(solve);
+
+  if (state.compositorRig !== null) {
+    const forget = el('button', { className: 'btn', textContent: 'Forget it' });
+    forget.addEventListener('click', forgetCalibration);
+    actionsEl.append(forget);
+  }
+
+  const reset = el('button', { className: 'btn', textContent: 'Reset' });
+  reset.addEventListener('click', () => {
+    state.settings = { ...BOULDER_PRESET, nudge: BOULDER_PRESET.nudge.map((n) => ({ ...n })) };
+    state.overlay = 'none';
+    state.highlight = -1;
+    forgetCalibration();
+    renderControls();
+  });
+  actionsEl.append(reset);
+}
+
+// ---------------------------------------------------------------------------
+// The inspect card: one projector's own frame
+// ---------------------------------------------------------------------------
+
+function renderInspect(): void {
+  inspectEl.replaceChildren();
+  const frame = model?.projectorFrames[state.selected];
+  if (state.section !== 'projectors' || !frame) {
+    inspectEl.classList.remove('on');
+    return;
+  }
+  inspectEl.classList.add('on');
+  const tint = PROJECTOR_TINTS[state.selected] ?? '#888';
+  const on = state.settings.nudge[state.selected]?.on !== false;
+
+  const head = el('div', { className: 'rowline' });
+  const name = el('p', { className: 'eyebrow-sm', textContent: `P${state.selected + 1} — its own frame` });
+  name.style.color = tint;
+  head.append(name, el('span', { className: 'note tiny', textContent: frame.caption }));
+  inspectEl.append(head);
+
+  const c = el('canvas', { className: 'framepic' });
+  paintFrame(c, frame);
+  c.addEventListener('click', () => openLightbox(frame, `P${state.selected + 1} — ${frame.caption}`));
+  inspectEl.append(c);
+
+  inspectEl.append(
+    el('p', {
+      className: 'note',
+      textContent:
+        'The image this projector is sending down the cable. It fades out at the left and right ' +
+        'where it hands over to its neighbours — widest across the equator, pinching shut toward ' +
+        'the poles. Moving the projector does NOT change this picture, because the software has ' +
+        'not been told. Recalibrating is what rewrites it.',
+    }),
+  );
+  if (!on) {
+    const off = el('p', { className: 'note', textContent: 'Currently switched off at the wall.' });
+    off.style.color = 'var(--warn)';
+    inspectEl.append(off);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The readout
+// ---------------------------------------------------------------------------
+
+function fmtMm(v: number): string {
+  if (!Number.isFinite(v)) return '—';
+  const a = Math.abs(v);
+  return v.toFixed(a >= 100 ? 0 : a >= 10 ? 1 : 2);
+}
+
+function badgeFor(status: Reading['status'] | 'PENDING'): HTMLElement {
+  const map: Record<string, { text: string; fg: string; bg: string; bd: string }> = {
+    PASS: { text: 'WITHIN GATE', fg: '#7ee2a8', bg: 'rgba(34,197,94,0.14)', bd: 'rgba(34,197,94,0.4)' },
+    FAIL: { text: 'OVER GATE', fg: '#ff9b9b', bg: 'rgba(255,107,107,0.14)', bd: 'rgba(255,107,107,0.4)' },
+    REFERENCE: { text: 'REFERENCE', fg: '#999', bg: 'rgba(255,255,255,0.06)', bd: 'var(--line-strong)' },
+    PROVISIONAL: { text: 'PROVISIONAL', fg: '#ffcc66', bg: 'rgba(255,204,102,0.12)', bd: 'rgba(255,204,102,0.4)' },
+    PENDING: { text: 'MEASURING', fg: '#999', bg: 'rgba(255,255,255,0.06)', bd: 'var(--line-strong)' },
+  };
+  const m = map[status] ?? map.PENDING;
+  const b = el('span', { className: 'badge', textContent: m.text });
+  b.style.color = m.fg;
+  b.style.background = m.bg;
+  b.style.border = `1px solid ${m.bd}`;
+  return b;
+}
+
+/** The convergence trace, as a sparkline. Log cost, because it falls decades. */
+function sparkline(trace: readonly { pass: number; cost: number }[]): HTMLElement | null {
+  if (trace.length < 2) return null;
+  const w = 320;
+  const h = 38;
+  const logs = trace.map((t) => Math.log10(Math.max(1e-12, t.cost)));
+  const lo = Math.min(...logs);
+  const hi = Math.max(...logs);
+  const span = hi - lo || 1;
+  const pts = logs
+    .map((v, i) => {
+      const x = (i / Math.max(1, logs.length - 1)) * w;
+      const y = 34 - ((v - lo) / span) * 30;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', String(h));
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Optimiser cost falling with each accepted step');
+  const base = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  base.setAttribute('x1', '0');
+  base.setAttribute('y1', '36');
+  base.setAttribute('x2', String(w));
+  base.setAttribute('y2', '36');
+  base.setAttribute('stroke', 'rgba(255,255,255,0.1)');
+  svg.append(base);
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+  line.setAttribute('points', pts);
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', solveRunning ? '#4da6ff' : '#22c55e');
+  line.setAttribute('stroke-width', '1.8');
+  line.setAttribute('stroke-linejoin', 'round');
+  line.setAttribute('stroke-linecap', 'round');
+  svg.append(line);
+  return svg as unknown as HTMLElement;
+}
+
+function recoveryTableEl(rows: readonly RecoveredAxis[]): HTMLElement {
+  const table = el('table', { className: 'rec' });
+  const head = el('tr');
+  for (const h of ['', 'Axis', 'Config → recovered', 'vs truth']) {
+    head.append(el('th', { textContent: h }));
+  }
+  table.append(head);
+  for (const r of rows.slice(0, 6)) {
+    const tr = el('tr');
+    const idx = Number(r.projectorId.replace(/\D/g, '')) - 1;
+    const id = el('td', { textContent: r.projectorId });
+    id.style.color = PROJECTOR_TINTS[idx] ?? 'var(--fg-2)';
+    id.style.fontWeight = '600';
+    tr.append(id);
+    tr.append(el('td', { textContent: r.axis }));
+    const d = Math.abs(r.documented) >= 100 ? 0 : 2;
+    tr.append(
+      el('td', {
+        className: 'r num',
+        textContent: `${r.documented.toFixed(d)} → ${r.recovered.toFixed(d)}${r.unit}`,
       }),
-    ]);
-    box.append(d);
-  } else {
-    const world = buildWorld(state.settings);
-    const place = worstPlacementOffender(world.perturbation, state.settings.distanceM);
-    const aim = worstAimOffender(world.perturbation);
-    const parts: string[] = [];
-    if (place) parts.push(`${place.projectorId} ${place.what} (${place.amount})`);
-    if (aim) parts.push(`${aim.projectorId} ${aim.what} (${aim.amount})`);
-    if (parts.length > 0) {
+    );
+    const off = el('td', {
+      className: 'r num',
+      textContent: `${r.errorFromTruth >= 0 ? '+' : ''}${r.errorFromTruth.toFixed(d)}${r.unit}`,
+    });
+    const rel = Math.abs(r.errorFromTruth) / Math.max(1e-9, Math.abs(r.moved));
+    off.style.color = rel < 0.2 ? 'var(--good)' : rel < 0.6 ? 'var(--warn)' : 'var(--bad)';
+    tr.append(off);
+    table.append(tr);
+  }
+  return table;
+}
+
+/**
+ * The recovered geometry as `sos_stream_control.config` would carry it.
+ *
+ * Only coarse geometry lives in that file — heights and distances, in inches.
+ * Everything finer is in the warp mesh, and the page says so rather than
+ * implying a config edit is the whole calibration.
+ */
+function configText(recovered: RigCalibration, documented: RigCalibration): string {
+  const inches = (m: number): string => (m / IN_TO_M).toFixed(1);
+  const lines: string[] = [];
+  lines.push(
+    `Sphere_Height_At_Equator_Inches  ${inches(recovered.sphere.centerHeightM)}` +
+      (Math.abs(recovered.sphere.centerHeightM - documented.sphere.centerHeightM) > 1e-6
+        ? `   was ${inches(documented.sphere.centerHeightM)}`
+        : ''),
+  );
+  for (let i = 0; i < recovered.projectors.length; i++) {
+    const r = recovered.projectors[i];
+    const d = documented.projectors[i];
+    const hR = r.pose.position.z + recovered.sphere.centerHeightM;
+    const hD = d ? d.pose.position.z + documented.sphere.centerHeightM : hR;
+    const dR = Math.hypot(r.pose.position.x, r.pose.position.y);
+    const dD = d ? Math.hypot(d.pose.position.x, d.pose.position.y) : dR;
+    lines.push(
+      `${r.id}_Height_Inches                 ${inches(hR)}` +
+        (Math.abs(hR - hD) > 1e-6 ? `   was ${inches(hD)}` : ''),
+    );
+    lines.push(
+      `${r.id}_DIST_INCHES                  ${inches(dR)}` +
+        (Math.abs(dR - dD) > 1e-6 ? `   was ${inches(dD)}` : ''),
+    );
+  }
+  return lines.join('\n');
+}
+
+function solveSection(): HTMLElement | null {
+  if (!solveRunning && !solveResult && solveShots.length === 0) return null;
+  const box = el('div', { className: 'sect' });
+
+  const head = el('div', { className: 'rowline' });
+  const title = el('p', {
+    className: 'eyebrow-sm',
+    textContent: solveRunning ? 'Calibrating' : 'Calibration result',
+  });
+  title.style.color = solveRunning ? 'var(--accent)' : 'var(--good)';
+  const right = el('span', {
+    className: 'note tiny num',
+    textContent: solveRunning
+      ? `${((performance.now() - solveStartedAt) / 1000).toFixed(0)} s`
+      : solveResult
+        ? `${((solveResult.captureMs + solveResult.solveMs) / 1000).toFixed(1)} s`
+        : '',
+  });
+  head.append(title, right);
+  box.append(head);
+
+  const spark = sparkline(solveTrace);
+  if (spark) box.append(spark);
+  if (solveStage) box.append(el('p', { className: 'note', textContent: solveStage }));
+
+  if (solveShots.length > 0) {
+    box.append(el('p', { className: 'eyebrow-sm', textContent: 'What it worked from' }));
+    const row = el('div', { className: 'shots' });
+    for (const s of solveShots) row.append(thumb(s, s.caption.split('—')[0].trim()));
+    box.append(row);
+    box.append(
+      el('p', {
+        className: 'note',
+        textContent:
+          'Real rendered photographs, one per camera position, through a sensor with read noise ' +
+          'and quantization. These pixels are the solver’s entire input — it has never seen where ' +
+          'the projectors are. Spread matters more than exact position: from one spot alone, a ' +
+          'near projector zoomed in looks identical to a far one zoomed out.',
+      }),
+    );
+  }
+
+  if (solveResult) {
+    const r = solveResult;
+    box.append(
+      el('p', {
+        className: 'note',
+        textContent:
+          `${r.correspondences.toLocaleString()} points decoded from ${r.frames} frames ` +
+          `(${r.grayBits} Gray planes). Converged in ${r.iterations} steps` +
+          `${r.converged ? '' : ' — hit the cap'}, residual ${r.residualRmsPx.toFixed(3)} px.`,
+      }),
+    );
+
+    const seg = el('div', { className: 'seg' });
+    for (const v of [
+      { id: 'axes' as const, label: 'What it found' },
+      { id: 'config' as const, label: 'Config file' },
+    ]) {
+      const b = el('button', { className: resultView === v.id ? 'on' : '', textContent: v.label });
+      b.addEventListener('click', () => {
+        resultView = v.id;
+        renderReadout();
+      });
+      seg.append(b);
+    }
+    box.append(seg);
+
+    if (resultView === 'axes') {
+      box.append(recoveryTableEl(r.recovery));
       box.append(
-        el('div', { className: 'delta' }, [
-          el('span', { className: 'muted small', textContent: `Biggest single fault: ${parts.join('; ')}.` }),
-        ]),
+        el('p', {
+          className: 'note',
+          textContent:
+            'Largest movements first. The last column is against ground truth the solver never ' +
+            'saw — small there with a large movement is a good result, because it means the ' +
+            'calibration moved a long way and landed in the right place.',
+        }),
+      );
+    } else {
+      const world = buildWorld(state.settings);
+      box.append(el('pre', { className: 'cfg', textContent: configText(r.recoveredRig, world.asBuiltRig) }));
+      box.append(
+        el('p', {
+          className: 'note',
+          textContent:
+            'Only coarse geometry — heights and distances, in inches — persists in the config. ' +
+            'Everything finer lives in the warp mesh, which is what actually removes a doubled ' +
+            'grid line.',
+        }),
       );
     }
   }
   return box;
 }
 
-function parityBox(): HTMLElement {
+function parityLine(): HTMLElement {
+  const wrap = el('div', { className: 'sect' });
+  wrap.dataset.smoke = 'parity';
+  wrap.dataset.state = parity ? (parity.pass ? 'ok' : 'bad') : 'pending';
+  wrap.append(el('p', { className: 'eyebrow-sm', textContent: 'Picture vs model' }));
   if (!parity) {
-    return el('div', { className: 'parity pending' }, [
-      el('div', { className: 'ph', textContent: 'Picture vs model' }),
-      el('div', {
+    wrap.append(
+      el('p', {
+        className: 'note',
         textContent:
-          'Not measured yet — it runs when the view settles. The page renders the same camera twice, ' +
-          'once on the GPU and once through the forward model on the CPU, and prints how far apart ' +
-          'they are.',
+          'Measured when the view settles. The page renders the same camera twice — once on the ' +
+          'GPU, once through the forward model on the CPU — and prints how far apart they are.',
       }),
-    ]);
+    );
+    return wrap;
   }
-  const box = el('div', { className: `parity ${parity.pass ? 'ok' : 'bad'}` });
-  box.append(
-    el('div', { className: 'ph', textContent: parity.pass ? 'Picture matches the model' : 'Picture disagrees with the model' }),
+  const line = el('p', { className: 'note', textContent: parity.summary });
+  line.style.color = parity.pass ? 'var(--good)' : 'var(--bad)';
+  wrap.append(line);
+  wrap.append(
+    el('p', {
+      className: 'note tiny num',
+      textContent:
+        `worst pixel ${parity.delta.maxAbs.toExponential(1)} · ` +
+        `${(parity.delta.fractionOverTolerance * 100).toFixed(2)}% over tolerance ` +
+        `(${(BOUNDARY_PIXEL_ALLOWANCE * 100).toFixed(0)}% allowed for edges) · ` +
+        `${parity.delta.pixelCount.toLocaleString()} px · CPU ${parity.cpuMs.toFixed(0)} ms`,
+    }),
   );
-  box.append(el('div', { textContent: parity.summary }));
-  box.append(
-    el('div', {
-      className: 'small muted gap',
+  wrap.append(
+    el('p', {
+      className: 'note tiny',
       textContent:
         'The floor is off on both sides for this comparison, because the model’s two-calibration ' +
-        'renderer does not draw one — so the floor’s occlusion test and the room albedo are the one ' +
-        'part of the shader this number does not cover.',
+        'renderer draws none — so the floor is the one part of the shader this does not cover.',
     }),
   );
-  box.append(
-    el('div', {
-      className: 'small muted',
-      textContent:
-        `worst pixel ${parity.delta.maxAbs.toExponential(1)}, ` +
-        `${(parity.delta.fractionOverTolerance * 100).toFixed(2)}% over tolerance ` +
-        `(${(BOUNDARY_PIXEL_ALLOWANCE * 100).toFixed(0)}% allowed for edges), ` +
-        `${parity.delta.pixelCount.toLocaleString()} pixels, CPU side ${parity.cpuMs.toFixed(0)} ms`,
-    }),
-  );
-  return box;
-}
-
-function readingsTable(readings: readonly Reading[]): HTMLElement {
-  const table = el('table', { className: 'rows' });
-  const head = el('tr', {}, [
-    el('th', { textContent: 'What was measured' }),
-    el('th', { textContent: '' }),
-    el('th', { textContent: 'Value' }),
-  ]);
-  table.append(head);
-  for (const r of readings) {
-    const tr = el('tr', { className: 'clickable' });
-    if (openRows.has(r.id)) tr.classList.add('open');
-    tr.addEventListener('click', () => {
-      if (openRows.has(r.id)) openRows.delete(r.id);
-      else openRows.add(r.id);
-      renderPanel();
-    });
-    const nameCell = el('td', {}, [
-      el('span', { className: 'rname', textContent: r.label }),
-      el('div', { className: 'rnote', textContent: `${r.means} ${r.lever}`.trim() }),
-    ]);
-    tr.append(nameCell);
-    tr.append(el('td', {}, [el('span', { className: `st ${r.status}`, textContent: r.status })]));
-    tr.append(
-      el('td', { className: 'rval' }, [
-        r.value,
-        r.gate ? el('span', { className: 'rgate', textContent: `gate ${r.gate}` }) : '',
-      ]),
-    );
-    table.append(tr);
-  }
-  return table;
-}
-
-function factsTable(facts: readonly RigFact[]): HTMLElement {
-  const table = el('table', { className: 'rows' });
-  for (const f of facts) {
-    const id = `fact:${f.label}`;
-    const tr = el('tr', { className: 'clickable' });
-    if (openRows.has(id)) tr.classList.add('open');
-    tr.addEventListener('click', () => {
-      if (openRows.has(id)) openRows.delete(id);
-      else openRows.add(id);
-      renderPanel();
-    });
-    tr.append(
-      el('td', {}, [
-        el('span', { className: 'rname', textContent: f.label }),
-        el('div', { className: 'rnote', textContent: f.note }),
-      ]),
-    );
-    tr.append(
-      el('td', {}, [
-        f.ok === null
-          ? ''
-          : el('span', { className: `st ${f.ok ? 'PASS' : 'FAIL'}`, textContent: f.ok ? 'OK' : 'WATCH' }),
-      ]),
-    );
-    tr.append(
-      el('td', { className: 'rval' }, [
-        f.value,
-        f.verdict ? el('span', { className: 'rgate', textContent: f.verdict }) : '',
-      ]),
-    );
-    table.append(tr);
-  }
-  return table;
+  return wrap;
 }
 
 const MULT_COLORS = ['#2a2f38', '#2a61a0', '#33ad6b', '#e62419'];
 
 function coverageBar(fractions: readonly number[]): HTMLElement {
-  const wrap = el('div');
+  const wrap = el('div', { className: 'sect' });
+  wrap.append(el('p', { className: 'eyebrow-sm', textContent: 'Coverage' }));
   const bar = el('div', { className: 'bar' });
   const legend = el('div', { className: 'legend' });
   const labels = ['dark', 'one projector', 'two — a seam', 'THREE — impossible'];
@@ -765,129 +1273,161 @@ function coverageBar(fractions: readonly number[]): HTMLElement {
     seg.style.width = `${(f * 100).toFixed(3)}%`;
     seg.style.background = color;
     bar.append(seg);
-    const key = el('span', {}, []);
-    const swatch = el('i');
-    swatch.style.background = color;
-    key.append(swatch, `${labels[Math.min(i, labels.length - 1)]} ${(f * 100).toFixed(1)}%`);
+    const key = el('span');
+    const sw = el('i');
+    sw.style.background = color;
+    key.append(sw, `${labels[Math.min(i, labels.length - 1)]} ${(f * 100).toFixed(1)}%`);
     legend.append(key);
   }
   wrap.append(bar, legend);
   return wrap;
 }
 
-function solveBox(): HTMLElement {
-  const box = el('div', { id: 'solvebox', className: solveRunning ? 'running' : '' });
-  if (solveRunning) {
-    box.append(el('div', { textContent: solvePhase }));
-    const prog = el('div', { className: 'prog' });
-    const fill = el('i');
-    fill.style.width = `${Math.round(solveFraction * 100)}%`;
-    prog.append(fill);
-    box.append(prog);
-    box.append(
-      el('div', {
-        className: 'small muted',
-        textContent:
-          'The simulator is photographing the sphere and the solver is recovering the rig from ' +
-          'those photographs alone. It has never seen where the projectors really are.',
-      }),
-    );
-    return box;
+function factsList(facts: readonly RigFact[]): HTMLElement {
+  const wrap = el('div', { className: 'sect' });
+  wrap.append(el('p', { className: 'eyebrow-sm', textContent: 'This rig' }));
+  const table = el('table', { className: 'rec' });
+  for (const f of facts) {
+    const tr = el('tr');
+    tr.setAttribute('title', f.note);
+    tr.append(el('td', { textContent: f.label }));
+    const v = el('td', { className: 'r num', textContent: f.value });
+    tr.append(v);
+    const verdict = el('td', { className: 'r', textContent: f.verdict });
+    verdict.style.color = f.ok === null ? 'var(--dim)' : f.ok ? 'var(--good)' : 'var(--warn)';
+    verdict.style.fontSize = '10px';
+    tr.append(verdict);
+    table.append(tr);
   }
-  if (!solveResult) {
-    box.append(
-      el('div', {
-        textContent:
-          'The software is running on the config as written — the numbers an operator typed in, ' +
-          'not where the projectors ended up. Press Recalibrate to photograph the sphere and solve ' +
-          'for the truth.',
-      }),
-    );
-    return box;
-  }
-
-  const r = solveResult;
-  box.append(el('div', { className: 'ph', textContent: 'Calibration result' }));
-  const dl = el('dl');
-  const row = (k: string, v: string): void => {
-    dl.append(el('dt', { textContent: k }), el('dd', { textContent: v }));
-  };
-  row('Photographs', `${r.frames} frames, ${r.grayBits} Gray planes`);
-  row('Points decoded', r.correspondences.toLocaleString());
-  row('Residual', `${r.residualRmsPx.toFixed(3)} px`);
-  row('Iterations', `${r.iterations}${r.converged ? '' : ' (hit the cap)'}`);
-  row('Lens position error', fmtMm(r.posePositionMm));
-  row('Lens aim error', `${r.poseRotationDeg.toFixed(3)}°`);
-  row('Sphere height error', fmtMm(r.centerHeightErrorMm));
-  row('Unobservable rotation', `${r.gaugeAngleDeg.toFixed(3)}°`);
-  row('Time', `${((r.captureMs + r.solveMs) / 1000).toFixed(1)} s`);
-  box.append(dl);
-  box.append(
-    el('div', {
-      className: 'small muted',
-      textContent:
-        'The three error figures are against ground truth the solver never saw. The unobservable ' +
-        'rotation is real and not a defect: a sphere photographed from outside cannot fix its own ' +
-        'rotation about its centre, so that much is removed before anything is scored.',
-    }),
-  );
-  return box;
+  wrap.append(table);
+  return wrap;
 }
 
-function renderPanel(): void {
-  panelEl.replaceChildren();
+function renderReadout(): void {
+  readoutEl.replaceChildren();
 
   if (lastError) {
-    panelEl.append(
-      el('div', { className: 'parity bad' }, [
-        el('div', { className: 'ph', textContent: 'Something failed' }),
-        el('div', { textContent: lastError }),
-      ]),
-    );
+    const box = el('div');
+    box.append(el('p', { className: 'eyebrow-sm', textContent: 'Something failed' }));
+    const p = el('p', { className: 'note', textContent: lastError });
+    p.style.color = 'var(--bad)';
+    box.append(p);
+    readoutEl.append(box);
   }
 
-  panelEl.append(headline());
-  panelEl.append(solveBox());
-  panelEl.append(parityBox());
+  const grid = model?.readings.find((r) => r.id === 'grid_displacement');
+  const head = el('div', { className: 'rowline' });
+  head.append(el('p', { className: 'eyebrow-sm', textContent: 'Worst grid-line error' }));
+  head.append(badgeFor(grid?.status ?? 'PENDING'));
+  readoutEl.append(head);
+
+  const big = el('div', { className: 'bigrow' });
+  const value = el('div', {
+    className: 'big num',
+    textContent: model ? fmtMm(model.gridWorstMm) : '—',
+  });
+  // A stable hook for `tools/smoke-app.ts`. The tool must not key off styling
+  // classes: a restyle would then break the one check that answers "did the
+  // shader compile and did the worker reply", and it would break silently.
+  value.dataset.smoke = 'grid-mm';
+  value.style.color = grid ? (grid.status === 'PASS' ? 'var(--good)' : 'var(--bad)') : 'var(--muted)';
+  const unit = el('div', { className: 'note unit', textContent: `mm  / gate ${grid?.gate || '1.000'}` });
+  big.append(value, unit);
+  readoutEl.append(big);
+
+  readoutEl.append(
+    el('p', {
+      className: 'note',
+      textContent:
+        'How far a line on the alignment grid lands from where it belongs, at the worst point on ' +
+        'the sphere. This is the doubled or kinked line an operator sees.',
+    }),
+  );
+
+  if (model?.gridBaselineMm !== null && model !== null && solveResult) {
+    const from = model.gridBaselineMm as number;
+    const to = model.gridWorstMm;
+    const factor = to > 0 ? from / to : Infinity;
+    const d = el('p', { className: 'note num' });
+    d.innerHTML = '';
+    d.append(
+      `${fmtMm(from)} mm before  →  `,
+      el('strong', { textContent: `${fmtMm(to)} mm now` }),
+      Number.isFinite(factor) ? `   (${factor.toFixed(1)}× better)` : '',
+    );
+    d.style.color = 'var(--good)';
+    d.dataset.smoke = 'improvement';
+    readoutEl.append(d);
+  } else if (model) {
+    const world = buildWorld(state.settings);
+    const place = worstPlacementOffender(world.perturbation, state.settings.distanceM);
+    const aim = worstAimOffender(world.perturbation);
+    const parts: string[] = [];
+    if (place && place.displacementMm > 0) parts.push(`${place.projectorId} ${place.what} (${place.amount})`);
+    if (aim && aim.displacementMm > 0) parts.push(`${aim.projectorId} ${aim.what} (${aim.amount})`);
+    if (!nudgesAreClear(state.settings.nudge)) parts.push('plus what you moved by hand');
+    if (parts.length > 0) {
+      readoutEl.append(
+        el('p', { className: 'note tiny', textContent: `Biggest faults: ${parts.join('; ')}.` }),
+      );
+    }
+  }
+
+  const solveBox = solveSection();
+  if (solveBox) readoutEl.append(solveBox);
 
   if (model) {
-    panelEl.append(el('h2', { textContent: 'Against the specification' }));
-    panelEl.append(readingsTable(model.readings));
-    panelEl.append(
-      el('div', {
-        className: 'small muted gap',
-        textContent:
-          `Computed by packages/sim at ${(model.densityScale * 100).toFixed(0)}% of the bench's ` +
-          `sampling density, ${model.metricsMs.toFixed(0)} ms` +
-          `${modelPending ? ' — a newer pass is running' : ''}. Click a row for what it means.`,
-      }),
+    const g = el('div', { className: 'grid2' });
+    const cell = (k: string, v: string, title = ''): HTMLElement => {
+      const d = el('div', { title });
+      d.append(el('span', { className: 'k', textContent: k }), el('span', { className: 'v num', textContent: v }));
+      return d;
+    };
+    const unlit = model.readings.find((r) => r.id === 'unlit_in_mask');
+    const spill = model.readings.find((r) => r.id === 'off_sphere_flux_excess');
+    g.append(
+      cell(
+        'Lens position',
+        solveResult ? `${fmtMm(solveResult.posePositionMm)} mm` : '— not solved',
+        'Worst lens position error after removing the unobservable global rotation. Ground truth; the solver never saw it.',
+      ),
     );
+    g.append(
+      cell(
+        'Lens aim',
+        solveResult ? `${solveResult.poseRotationDeg.toFixed(3)}°` : '— not solved',
+        'Worst aim error, same basis.',
+      ),
+    );
+    g.append(cell('Unlit above mask', unlit ? unlit.value : '—', unlit?.means ?? ''));
+    g.append(cell('Excess spill', spill ? spill.value : '—', spill?.means ?? ''));
+    readoutEl.append(g);
 
-    panelEl.append(el('h2', { textContent: 'What this rig is' }));
-    panelEl.append(factsTable(model.facts));
-
-    panelEl.append(el('h2', { textContent: 'Coverage' }));
-    panelEl.append(coverageBar(model.multiplicityAreaFraction));
-    panelEl.append(
-      el('div', {
-        className: 'small muted gap',
+    readoutEl.append(factsList(model.facts));
+    readoutEl.append(coverageBar(model.multiplicityAreaFraction));
+    readoutEl.append(
+      el('p', {
+        className: 'note tiny',
         textContent:
           `The dark region at the bottom is ${(model.unlitPolarSouth * 100).toFixed(2)}% of the ` +
-          `sphere, and it is not a circle — coverage reaches about 80° of latitude along each ` +
-          `projector's own meridian and only about 76° between them, so the hole is four-lobed and ` +
-          `scalloped. Turn on "Show what is dark" and look at it from below.`,
+          `sphere and is not a circle — four-lobed and scalloped. ${model.framebuffer}`,
       }),
     );
-    panelEl.append(
-      el('div', { className: 'small muted gap', textContent: model.framebuffer }),
-    );
-  } else if (!lastError) {
-    panelEl.append(el('div', { className: 'small muted', textContent: 'Computing the first pass…' }));
   }
 
-  renderToolbar();
-  stageNoteEl.textContent =
-    'Drag to walk around, scroll to move closer. The picture is a shader; the numbers are the model.';
+  readoutEl.append(parityLine());
+
+  if (model) {
+    readoutEl.append(
+      el('p', {
+        className: 'note tiny',
+        textContent:
+          `Computed by packages/sim at ${(model.densityScale * 100).toFixed(0)}% of the bench's ` +
+          `sampling density in ${model.metricsMs.toFixed(0)} ms` +
+          `${modelPending ? ' — a newer pass is running' : ''}.`,
+      }),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -906,12 +1446,19 @@ function installPointer(): void {
     canvas.classList.add('dragging');
     canvas.setPointerCapture(e.pointerId);
   });
-  canvas.addEventListener('pointerup', (e) => {
+  const stop = (e: PointerEvent): void => {
+    if (!dragging) return;
     dragging = false;
     canvas.classList.remove('dragging');
-    canvas.releasePointerCapture(e.pointerId);
+    try {
+      canvas.releasePointerCapture(e.pointerId);
+    } catch {
+      /* the capture was already released */
+    }
     requestModel(true);
-  });
+  };
+  canvas.addEventListener('pointerup', stop);
+  canvas.addEventListener('pointercancel', stop);
   canvas.addEventListener('pointermove', (e) => {
     if (!dragging) return;
     const dx = e.clientX - lastX;
@@ -935,6 +1482,9 @@ function installPointer(): void {
     { passive: false },
   );
   window.addEventListener('resize', markDirty);
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') lightboxEl.classList.remove('on');
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -960,10 +1510,17 @@ function boot(): void {
     );
   }
   installPointer();
+  renderTopButtons();
   renderControls();
-  renderPanel();
+  renderActions();
+  renderReadout();
   requestModel(true);
   requestAnimationFrame(frame);
+  // The solve's elapsed clock and the "measuring" state both want a repaint that
+  // no message triggers. One second is enough for a five-second job.
+  window.setInterval(() => {
+    if (solveRunning) renderReadout();
+  }, 1000);
 }
 
 boot();

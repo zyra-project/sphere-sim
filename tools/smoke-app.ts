@@ -27,7 +27,8 @@
  *
  * Usage:
  *   node tools/smoke-app.ts [--url http://localhost:8174/] [--browser PATH]
- *                           [--timeout MS] [--keep]
+ *                           [--timeout MS] [--keep] [--solve]
+ *                           [--screenshot out.png]
  */
 
 import { spawn } from 'node:child_process';
@@ -49,16 +50,29 @@ interface Options {
   browser: string | null;
   timeoutMs: number;
   keep: boolean;
+  /** Also press Recalibrate and wait for a result. */
+  solve: boolean;
+  /** Write a PNG of the page here. */
+  screenshot: string | null;
 }
 
 function parseArgs(argv: readonly string[]): Options {
-  const opts: Options = { url: 'http://localhost:8174/', browser: null, timeoutMs: 90_000, keep: false };
+  const opts: Options = {
+    url: 'http://localhost:8174/',
+    browser: null,
+    timeoutMs: 90_000,
+    keep: false,
+    solve: false,
+    screenshot: null,
+  };
   for (let i = 0; i < argv.length; i++) {
     const next = argv[i + 1];
     if (argv[i] === '--url' && next) opts.url = next;
     else if (argv[i] === '--browser' && next) opts.browser = next;
     else if (argv[i] === '--timeout' && next) opts.timeoutMs = Number(next);
     else if (argv[i] === '--keep') opts.keep = true;
+    else if (argv[i] === '--solve') opts.solve = true;
+    else if (argv[i] === '--screenshot' && next) opts.screenshot = next;
   }
   return opts;
 }
@@ -198,6 +212,7 @@ async function main(): Promise<void> {
       '--enable-unsafe-swiftshader',
       '--use-gl=angle',
       '--use-angle=swiftshader',
+      '--window-size=1600,1000',
       '--remote-debugging-port=0',
       `--user-data-dir=${profile}`,
       'about:blank',
@@ -245,9 +260,9 @@ async function main(): Promise<void> {
         );
         if (fatal !== '') break;
         headline = await cdp.evaluate<string>(
-          "document.querySelector('.headline .big')?.textContent?.trim() ?? ''",
+          "document.querySelector('[data-smoke=\"grid-mm\"]')?.textContent?.trim() ?? ''",
         );
-        if (headline !== '' && !headline.includes('computing')) break;
+        if (headline !== '' && headline !== '\u2014') break;
       } catch {
         /* the document is still being replaced by the navigation */
       }
@@ -293,14 +308,83 @@ async function main(): Promise<void> {
     }
 
     const parity = await cdp.evaluate<string>(
-      "document.querySelector('.parity')?.className ?? '(none)'",
+      "document.querySelector('[data-smoke=\"parity\"]')?.dataset.state ?? '(none)'",
     );
     process.stdout.write(`  parity: ${parity}\n`);
-    if (parity.includes('bad')) {
+    if (parity === 'bad') {
       const why = await cdp.evaluate<string>(
-        "document.querySelector('.parity')?.textContent?.trim() ?? ''",
+        "document.querySelector('[data-smoke=\"parity\"]')?.textContent?.trim() ?? ''",
       );
       failures.push(`the shader disagrees with packages/sim:\n    ${why.slice(0, 400)}`);
+    }
+    if (parity === '(none)') {
+      failures.push('the parity section never rendered — the readout did not reach a settled state');
+    }
+
+    // The live calibration, end to end, in a browser: the one claim on this page
+    // that a CPU test in Node cannot make, because it depends on both workers
+    // starting, the module graph resolving in a worker context, and the whole
+    // capture-and-solve pipeline surviving structured cloning.
+    if (opts.solve) {
+      const started = await cdp.evaluate<boolean>(`(() => {
+        const b = [...document.querySelectorAll('button')].find((x) => /Recalibrate/.test(x.textContent ?? ''));
+        if (!b) return false;
+        b.click();
+        return true;
+      })()`);
+      if (!started) {
+        failures.push('there is no Recalibrate button on the page');
+      } else {
+        const before = Number.parseFloat(headline);
+        process.stdout.write(`  solving… (${headline} mm before)\n`);
+        const solveUntil = Date.now() + Math.max(opts.timeoutMs, 240_000);
+        let stage = '';
+        let done = false;
+        while (Date.now() < solveUntil) {
+          await sleep(1000);
+          // Wait for the IMPROVEMENT line, not merely for the result card: the
+          // solve finishing and the metrics being recomputed against the
+          // recovered rig are two events, and reading the headline between them
+          // reports the pre-calibration number as though it were the outcome.
+          const s = await cdp.evaluate<{ stage: string; done: boolean }>(`(() => {
+            const t = document.querySelector('#readout')?.textContent ?? '';
+            const improved = document.querySelector('[data-smoke="improvement"]') !== null;
+            return { stage: /Fitting[^.]*/.exec(t)?.[0] ?? '', done: improved };
+          })()`);
+          if (s.done) {
+            done = true;
+            break;
+          }
+          stage = s.stage;
+        }
+        if (!done) {
+          failures.push(`the solve never produced a result${stage ? ` (last stage: ${stage})` : ''}`);
+        } else {
+          const summary = await cdp.evaluate<string>(
+            "document.querySelector('[data-smoke=\"grid-mm\"]')?.textContent?.trim() ?? ''",
+          );
+          const shots = await cdp.evaluate<number>(
+            "document.querySelectorAll('#readout .shots figure').length",
+          );
+          const improvement = await cdp.evaluate<string>(
+            "document.querySelector('[data-smoke=\"improvement\"]')?.textContent?.trim() ?? ''",
+          );
+          process.stdout.write(`  after calibration: ${summary} mm, ${shots} capture thumbnail(s)\n`);
+          process.stdout.write(`  ${improvement}\n`);
+          if (shots === 0) failures.push('the solve produced no capture thumbnails');
+          if (Number.parseFloat(summary) >= before) {
+            failures.push(
+              `the calibration did not improve the alignment: ${before} mm before, ${summary} mm after`,
+            );
+          }
+        }
+      }
+    }
+
+    if (opts.screenshot) {
+      const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(opts.screenshot, Buffer.from(shot.data, 'base64'));
+      process.stdout.write(`  screenshot: ${opts.screenshot}\n`);
     }
 
     for (const e of cdp.pageErrors) failures.push(`uncaught in the page: ${e.split('\n')[0]}`);
@@ -309,7 +393,20 @@ async function main(): Promise<void> {
     cdp.close();
   } finally {
     child.kill('SIGKILL');
-    if (!opts.keep) fs.rmSync(profile, { recursive: true, force: true });
+    // Chromium's own teardown races the delete and re-creates files under the
+    // profile as it goes, so a single rm can fail with ENOTEMPTY on a directory
+    // that is about to be empty. A temporary directory left behind is noise; a
+    // crash here would report a passing check as a failure.
+    if (!opts.keep) {
+      for (let i = 0; i < 5; i++) {
+        try {
+          fs.rmSync(profile, { recursive: true, force: true });
+          break;
+        } catch {
+          await sleep(200);
+        }
+      }
+    }
   }
 
   if (failures.length > 0) {

@@ -309,3 +309,23 @@ export function signalForTarget(
  * collapses.
  */
 export const LUMINANCE_WEIGHTS = { r: 0.2126, g: 0.7152, b: 0.0722 } as const;
+
+/**
+ * The Gray plane kept as an artifact: coarse enough to read in a thumbnail,
+ * fine enough to show the sphere's curvature bending it.
+ *
+ * Found by SEARCHING the frame plan rather than by computing an offset into it.
+ * An offset would be a second place that knows the capture order, and the first
+ * place to notice they had drifted apart would be a PNG that looked slightly
+ * wrong to nobody in particular.
+ *
+ * It lives here, beside `planFrames`, for the same reason: the bench keeps one
+ * of these frames as a PNG artifact and the browser app shows one per camera, so
+ * a copy in each would be two places that know the capture order.
+ */
+export function previewFrameIndex(plan: PatternPlan): number {
+  const specs = planFrames(plan);
+  const wanted = Math.min(3, Math.max(0, plan.grayBits - 3));
+  const i = specs.findIndex((s) => s.kind === 'gray' && s.axis === 'u' && s.index === wanted);
+  return i >= 0 ? i : 0;
+}

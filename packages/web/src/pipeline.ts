@@ -50,7 +50,12 @@ import { PARAMETER_TABLE } from '../../calibration/src/parameters.ts';
 import { placeCameras } from '../../bench/src/camera.ts';
 import { DEFAULT_CLOCK, DEFAULT_HANDHELD } from '../../bench/src/camera.ts';
 import { captureAndDecode, DEFAULT_SENSOR } from '../../bench/src/capture.ts';
-import { DEFAULT_PATTERN_PLAN, grayBitsForCamera, planFrames } from '../../bench/src/patterns.ts';
+import {
+  DEFAULT_PATTERN_PLAN,
+  grayBitsForCamera,
+  planFrames,
+  previewFrameIndex,
+} from '../../bench/src/patterns.ts';
 import { makeBenchRng } from '../../bench/src/random.ts';
 import { scoreRecovery } from '../../bench/src/score.ts';
 import { nominalRig as solverNominalRig, solve } from '../../solver/src/index.ts';
@@ -60,7 +65,13 @@ import { nominalRig as solverNominalRig, solve } from '../../solver/src/index.ts
 import { DEFAULT_FREE_FLAGS } from '../../solver/src/bundle.ts';
 import { buildWorld } from './rigs.ts';
 import { RESOLUTIONS } from './settings.ts';
-import type { SolveProgress, SolveRequest, SolveResponse } from './protocol.ts';
+import type {
+  FrameImage,
+  RecoveredAxis,
+  SolveProgress,
+  SolveRequest,
+  SolveResponse,
+} from './protocol.ts';
 
 /** Where a progress line goes. Injected so `runSolve` can be tested off-thread. */
 export type ProgressSink = (progress: SolveProgress) => void;
@@ -101,6 +112,71 @@ function planPatternFor(
 }
 
 /**
+ * What the solve moved, and whether it moved to the right place.
+ *
+ * Three numbers per axis, and all three are needed. `documented` is what the
+ * compositor believed before — the config as written. `recovered` is what came
+ * back. `truth` is what the lenses actually have, and the solver never saw it.
+ *
+ * Recovered-versus-documented is what MOVED; recovered-versus-truth is whether
+ * the move was right. Showing only the first would let a solve that confidently
+ * moved every projector to the wrong place read as a success, which is the exact
+ * failure a calibration display must not be able to have.
+ *
+ * The axes are the ones an installer can act on. Field of view is included
+ * because amendment A-18 measured it as the term worth 88-97% of the position
+ * error, so a reader watching a solve should see what it did with it.
+ */
+function recoveryTable(
+  documented: RigCalibration,
+  recovered: RigCalibration,
+  truth: RigCalibration,
+): RecoveredAxis[] {
+  const rows: RecoveredAxis[] = [];
+  const n = Math.min(
+    documented.projectors.length,
+    recovered.projectors.length,
+    truth.projectors.length,
+  );
+  type Proj = RigCalibration['projectors'][number];
+  const dist = (p: Proj): number =>
+    Math.hypot(p.pose.position.x, p.pose.position.y, p.pose.position.z);
+  const azDeg = (p: Proj): number =>
+    (Math.atan2(p.pose.position.y, p.pose.position.x) * 180) / Math.PI;
+  const axes: { axis: string; unit: string; of: (p: Proj) => number }[] = [
+    { axis: 'distance to sphere', unit: 'mm', of: (p) => dist(p) * 1000 },
+    { axis: 'height', unit: 'mm', of: (p) => p.pose.position.z * 1000 },
+    { axis: 'azimuth', unit: '\u00b0', of: azDeg },
+    { axis: 'aim yaw', unit: '\u00b0', of: (p) => p.pose.yawDeg },
+    { axis: 'aim pitch', unit: '\u00b0', of: (p) => p.pose.pitchDeg },
+    { axis: 'roll', unit: '\u00b0', of: (p) => p.pose.rollDeg },
+    { axis: 'field of view', unit: '\u00b0', of: (p) => p.intrinsics.fovHDeg },
+  ];
+
+  for (let i = 0; i < n; i++) {
+    for (const a of axes) {
+      const documentedV = a.of(documented.projectors[i]);
+      const recoveredV = a.of(recovered.projectors[i]);
+      const truthV = a.of(truth.projectors[i]);
+      rows.push({
+        projectorId: truth.projectors[i].id,
+        axis: a.axis,
+        unit: a.unit,
+        documented: documentedV,
+        recovered: recoveredV,
+        truth: truthV,
+        errorFromTruth: recoveredV - truthV,
+        moved: recoveredV - documentedV,
+      });
+    }
+  }
+  // Largest movement first: the page shows the top handful, and what a reader
+  // wants to see is what the solve actually did rather than the axes it left
+  // alone.
+  return rows.sort((a, b) => Math.abs(b.moved) - Math.abs(a.moved));
+}
+
+/**
  * The whole pipeline, as a plain function of its request.
  *
  * Exported and free of `self` so `test/solve.test.ts` can run a real capture and
@@ -109,8 +185,13 @@ function planPatternFor(
  * this one is the reason the page can claim anything at all.
  */
 export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {}): SolveResponse {
-  const report = (phase: SolveProgress['phase'], fraction: number, message: string): void => {
-    onProgress({ kind: 'solve-progress', id: req.id, phase, fraction, message });
+  const report = (
+    phase: SolveProgress['phase'],
+    fraction: number,
+    message: string,
+    extra: Partial<SolveProgress> = {},
+  ): void => {
+    onProgress({ kind: 'solve-progress', id: req.id, phase, fraction, message, ...extra });
   };
   const world = buildWorld(req.settings);
   const rng = makeBenchRng(req.seed);
@@ -166,10 +247,21 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     },
     seed: req.seed,
     decode: { pixelStride: 1, maxCorrespondences: 4000 },
-    previewPair: null,
-    previewFrame: -1,
+    // One frame from every camera, so the page can show what the solve worked
+    // from. The frame is the fourth Gray plane of the u axis: coarse enough to
+    // read as a pattern in a thumbnail, fine enough that the sphere's curvature
+    // visibly bends it.
+    previewPairs: cameras.map((_, c) => ({ camera: c, projector: 0 })),
+    previewFrame: previewFrameIndex(plan),
   });
   const captureMs = performance.now() - t0;
+
+  const shots: FrameImage[] = capture.previews.map((p) => ({
+    width: p.image.width,
+    height: p.image.height,
+    data: p.image.data,
+    caption: `${cameras[p.camera]?.id ?? `C${p.camera + 1}`} — Gray plane ${p.frame}`,
+  }));
 
   report(
     'decode',
@@ -178,6 +270,7 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
       `${capture.stats.considered.toLocaleString()} candidates. ` +
       `${(capture.stats.considered - capture.stats.accepted).toLocaleString()} rejected — ` +
       `too dim, ambiguous, or the two axes disagreed.`,
+    { shots },
   );
 
   // The nominal the operator hands the solver: built by the SOLVER's own
@@ -230,12 +323,29 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
   report('initialize', 0.6, 'Bootstrapping poses from the correspondences…');
 
   const t1 = performance.now();
+  // `onStep` is read-only by construction and the solver's own determinism test
+  // asserts that a watched solve and a silent one produce identical output. It
+  // is here because five seconds of spinner tells a person nothing and a falling
+  // cost tells them the optimiser is working.
+  let stepCount = 0;
   const solver = solve({
     nominal: solverNominal,
     cameras: cameraInputs,
     correspondences: capture.correspondences,
     floorReferences,
     options: { seed: req.seed, bundle: { free: { ...DEFAULT_FREE_FLAGS } } },
+    onStep: (s) => {
+      stepCount++;
+      report(
+        'bundle',
+        // The optimiser's own budget is 100 iterations and it almost never uses
+        // them, so a bar driven by `iteration / maxIterations` would crawl and
+        // then jump. This saturates instead: honest about being an estimate.
+        0.6 + 0.35 * (1 - Math.exp(-stepCount / 12)),
+        `Fitting: pass ${s.pass + 1}, step ${s.iteration}, cost ${s.cost.toPrecision(4)}`,
+        { step: { pass: s.pass, iteration: s.iteration, cost: s.cost } },
+      );
+    },
   });
   const solveMs = performance.now() - t1;
 
@@ -279,5 +389,6 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     gaugeAngleDeg: recovery.gauge.angleDeg,
     captureMs,
     solveMs,
+    recovery: recoveryTable(world.asBuiltRig, recovery.alignedRig, world.truthRig),
   };
 }

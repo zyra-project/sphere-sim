@@ -2607,6 +2607,28 @@ export function estimatePairCoherence(
  * left the problem. Separating the passes keeps each LM run minimising a fixed
  * objective, which is the only version whose convergence report can be believed.
  */
+/**
+ * A single accepted Levenberg-Marquardt step, reported as it happens.
+ *
+ * READ-ONLY BY CONSTRUCTION. The callback receives numbers and returns nothing;
+ * there is no path from it back into the optimisation, and nothing downstream
+ * branches on whether one was supplied. That is the whole reason it is safe to
+ * have: an observer that could change the answer would make every solve
+ * dependent on who was watching.
+ *
+ * `pass` counts outlier-rejection rounds. `runBundle` runs the optimiser once,
+ * then again after each rejection or variance re-estimation, so the iteration
+ * counter restarts and a consumer plotting the trace needs to know where the
+ * restarts are.
+ */
+export interface BundleStep {
+  pass: number;
+  iteration: number;
+  /** The robust cost. Falling is the point; the units are not pixels. */
+  cost: number;
+  lambda: number;
+}
+
 export function runBundle(
   initial: BundleState,
   correspondences: readonly Correspondence[],
@@ -2619,6 +2641,7 @@ export function runBundle(
    */
   gaugeReference?: BundleState,
   priors: readonly ParameterPrior[] = [],
+  onStep?: (step: BundleStep) => void,
 ): BundleReport {
   const opts: BundleOptions = {
     ...DEFAULT_BUNDLE_OPTIONS,
@@ -2630,7 +2653,10 @@ export function runBundle(
   };
   const problem = buildProblem(initial, correspondences, floor, opts, priors);
 
-  let report = levenbergMarquardt(initial, problem);
+  const stepReporter = (pass: number): ((i: number, cost: number, lambda: number) => void) | undefined =>
+    onStep ? (iteration, cost, lambda) => onStep({ pass, iteration, cost, lambda }) : undefined;
+
+  let report = levenbergMarquardt(initial, problem, stepReporter(0));
   let totalIterations = report.iterations;
 
   for (let pass = 0; pass < opts.rejectionPasses; pass++) {
@@ -2696,7 +2722,7 @@ export function runBundle(
       problem.excluded[i] = next;
     }
     if (!changed && !scaleChanged) break;
-    report = levenbergMarquardt(report.state, problem);
+    report = levenbergMarquardt(report.state, problem, stepReporter(pass + 1));
     totalIterations += report.iterations;
   }
 

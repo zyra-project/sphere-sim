@@ -61,6 +61,32 @@ test('the whole pipeline, images included, is reproducible', () => {
   assert.equal(JSON.stringify(a.diagnostics), JSON.stringify(b.diagnostics));
 });
 
+test('watching a solve cannot change it', () => {
+  // `SolveInput.onStep` exists so a person waiting several seconds can see the
+  // optimiser converging rather than a spinner. It is documented as read-only by
+  // construction; this is what makes that a claim rather than an intention. An
+  // observer that could move the answer would make every solve depend on who was
+  // looking at it.
+  const scene = makeScene(54, SMALL);
+  const corrs = generateCorrespondences(scene.truth, { ...STRIDE, noisePx: 0.1, seed: 5 });
+  const floor = floorRefs(scene);
+  const input = { nominal: scene.nominal, cameras: scene.cameraInputs, correspondences: corrs, floorReferences: floor };
+
+  const silent = solve(input);
+  const steps: { pass: number; iteration: number; cost: number }[] = [];
+  const watched = solve({ ...input, onStep: (s) => steps.push({ pass: s.pass, iteration: s.iteration, cost: s.cost }) });
+
+  assert.equal(JSON.stringify(watched.calibration), JSON.stringify(silent.calibration));
+  assert.equal(JSON.stringify(watched.diagnostics), JSON.stringify(silent.diagnostics));
+
+  // And it actually reported something, or the check above is vacuous.
+  assert.ok(steps.length > 0, 'no steps were reported');
+  assert.ok(
+    steps.every((s, i) => i === 0 || s.cost <= steps[i - 1].cost || s.pass > steps[i - 1].pass),
+    'the cost rose on an accepted step within a pass, which cannot happen',
+  );
+});
+
 test('the synthetic generator is itself reproducible', () => {
   // If the generator drifted, a determinism failure in the solver would be
   // misattributed. Pin the input before pinning the output.

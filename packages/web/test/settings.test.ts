@@ -3,14 +3,19 @@ import { test } from 'node:test';
 
 import {
   BOULDER_PRESET,
+  CONTENTS,
   CONTROLS,
   GROUPS,
   IN_TO_M,
+  NUDGE_CONTROLS,
   PERFECT_PRESET,
   PRESETS,
+  PROJECTOR_TINTS,
   SPEC_PRESET,
   coerce,
   formatSetting,
+  noNudge,
+  withNudge,
   withSetting,
 } from '../src/settings.ts';
 import type { Settings } from '../src/settings.ts';
@@ -29,11 +34,35 @@ test('every control drives a real setting, and every setting has a control', () 
     assert.ok(keys.has(c.key), `control ${c.key} drives a setting that does not exist`);
     driven.add(c.key);
   }
-  // A setting with no control is a number nobody can reach and nobody can see,
-  // which is worse than not having it: it silently participates in every metric.
+  // The per-projector adjustments are an array, not a scalar, and have their own
+  // spec list. Everything else must be reachable: a setting with no control is a
+  // number nobody can see and nobody can move, which is worse than not having it
+  // — it silently participates in every metric.
+  driven.add('nudge');
   for (const k of keys) {
     assert.ok(driven.has(k), `setting '${k}' has no control — it would be invisible and immovable`);
   }
+  for (const spec of NUDGE_CONTROLS) {
+    assert.ok(spec.key in noNudge(), `nudge control ${spec.key} drives nothing`);
+    assert.ok(spec.help.length > 30, `nudge control ${spec.key} has no explanation`);
+  }
+});
+
+test('every projector has a tint, and they are distinct', () => {
+  assert.ok(PROJECTOR_TINTS.length >= 4);
+  assert.equal(new Set(PROJECTOR_TINTS).size, PROJECTOR_TINTS.length);
+});
+
+test('every test pattern says what it is for', () => {
+  for (const c of CONTENTS) {
+    assert.ok(c.help.length > 40, `content '${c.label}' has no explanation`);
+    assert.ok(c.background >= 0 && c.background <= 1);
+    assert.ok(c.lines >= 0 && c.lines <= 1);
+  }
+  // The one the page opens at must light the sphere: a graticule on black is the
+  // honest alignment pattern and a mostly-dark ball, and a first impression of a
+  // dark ball is a first impression of nothing.
+  assert.ok((CONTENTS[BOULDER_PRESET.content]?.background ?? 0) > 0.05);
 });
 
 test('every control opens inside its own range', () => {
@@ -47,10 +76,14 @@ test('every control opens inside its own range', () => {
 });
 
 test('A-36: the Boulder preset differs from the spec preset on exactly the three constants', () => {
-  const differing = (Object.keys(BOULDER_PRESET) as (keyof Settings)[]).filter(
-    (k) => BOULDER_PRESET[k] !== SPEC_PRESET[k],
-  );
+  const differing = (Object.keys(BOULDER_PRESET) as (keyof Settings)[])
+    .filter((k) => k !== 'nudge')
+    .filter((k) => BOULDER_PRESET[k] !== SPEC_PRESET[k]);
   assert.deepEqual(differing.sort(), ['distanceM', 'equatorIn', 'lensRiseM']);
+  // The nudge arrays are separate objects but must hold the same values: a
+  // preset that arrived with a projector already knocked would make every
+  // comparison between presets meaningless.
+  assert.deepEqual(BOULDER_PRESET.nudge, SPEC_PRESET.nudge);
 
   // The values themselves, so a later edit to either preset that made them agree
   // would fail here rather than quietly erasing the conflict the page exists to
@@ -67,11 +100,12 @@ test('A-36: the Boulder preset differs from the spec preset on exactly the three
 });
 
 test('the perfect preset differs from Boulder only in the mount error', () => {
-  const differing = (Object.keys(BOULDER_PRESET) as (keyof Settings)[]).filter(
-    (k) => BOULDER_PRESET[k] !== PERFECT_PRESET[k],
-  );
+  const differing = (Object.keys(BOULDER_PRESET) as (keyof Settings)[])
+    .filter((k) => k !== 'nudge')
+    .filter((k) => BOULDER_PRESET[k] !== PERFECT_PRESET[k]);
   assert.deepEqual(differing, ['mountError']);
   assert.equal(PERFECT_PRESET.mountError, 0);
+  assert.deepEqual(PERFECT_PRESET.nudge, BOULDER_PRESET.nudge);
 });
 
 test('every preset is reachable from the preset list', () => {
@@ -96,6 +130,13 @@ test('the mask pair can never be inverted by dragging either end', () => {
     s.maskHiDeg > s.maskLoDeg,
     `dragging hi below lo must push lo down, got lo ${s.maskLoDeg} hi ${s.maskHiDeg}`,
   );
+});
+
+test('presets do not share a nudge array, so editing one cannot edit the others', () => {
+  const a = withNudge({ ...BOULDER_PRESET }, 0, { yawDeg: 1 });
+  assert.equal(a.nudge[0].yawDeg, 1);
+  assert.equal(BOULDER_PRESET.nudge[0].yawDeg, 0, 'the preset was mutated');
+  assert.equal(SPEC_PRESET.nudge[0].yawDeg, 0, 'a sibling preset was mutated');
 });
 
 test('a discrete control formats as its option label, not as a number', () => {

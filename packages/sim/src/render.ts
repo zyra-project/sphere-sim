@@ -84,6 +84,22 @@ export interface RenderOptions {
   floorRadiusM?: number;
   /** Linear radiance of everything that is neither sphere nor floor. */
   background?: ChannelTriplet;
+  /**
+   * Evaluate a projector view on a coarser grid than its own raster.
+   *
+   * `renderProjectorView` at Boulder's 3840x2160 is eight megapixels through a
+   * CPU tracer, which is minutes for a thumbnail nobody will look at closely.
+   * Setting these renders the SAME function of the same pixel coordinates at
+   * fewer of them — the pixel coordinate handed to `pixelToRay` still spans the
+   * full raster, so the field of view, the lens shift and the distortion are all
+   * exactly what the projector has. It is a sampling change, not a crop and not
+   * a resize.
+   *
+   * Omit both, and the raster is its own grid: the default is byte-identical to
+   * what this function returned before the option existed.
+   */
+  sampleWidth?: number;
+  sampleHeight?: number;
 }
 
 const BLACK: ChannelTriplet = { r: 0, g: 0, b: 0 };
@@ -172,18 +188,25 @@ export function renderProjectorView(
   const samples = Math.max(1, Math.floor(options.samplesPerPixel ?? 1));
   const seed = options.seed ?? 0;
   const it = proj.cal.intrinsics;
-  const img = createImage(it.resX, it.resY);
+  const width = Math.max(1, Math.floor(options.sampleWidth ?? it.resX));
+  const height = Math.max(1, Math.floor(options.sampleHeight ?? it.resY));
+  // How many raster pixels one grid cell spans. Exactly 1 at the default, which
+  // is what keeps that path byte-identical.
+  const stepX = it.resX / width;
+  const stepY = it.resY / height;
+  const img = createImage(width, height);
 
-  for (let y = 0; y < it.resY; y++) {
-    for (let x = 0; x < it.resX; x++) {
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
       let r = 0;
       let g = 0;
       let b = 0;
       for (let s = 0; s < samples; s++) {
         const [ox, oy] = sampleOffset(x, y, s, samples, seed);
         // conventions.ts §I: pixel centres at half-integers. With one sample the
-        // offsets are exactly (0.5, 0.5), i.e. the pixel centre.
-        const ray = pixelToRay(proj, x + ox, y + oy);
+        // offsets are exactly (0.5, 0.5), i.e. the pixel centre — and at the
+        // default step of 1 the coordinate is exactly `x + 0.5` as before.
+        const ray = pixelToRay(proj, (x + ox) * stepX, (y + oy) * stepY);
         const hit = raySphereIntersect(proj.lens, ray, rig.radiusM);
         if (!hit) continue;
         const surf = sampleSurface(hit.point, rig, scene);
@@ -192,7 +215,7 @@ export function renderProjectorView(
         g += sig.g;
         b += sig.b;
       }
-      const i = 3 * (y * it.resX + x);
+      const i = 3 * (y * width + x);
       img.data[i] = r / samples;
       img.data[i + 1] = g / samples;
       img.data[i + 2] = b / samples;

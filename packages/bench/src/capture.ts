@@ -169,8 +169,16 @@ export interface CaptureOptions {
   /** Everything random in the capture derives from this. */
   seed: number;
   decode: Partial<DecodeOptions>;
-  /** Render this (camera, projector) pair's Gray plane into `preview`. */
-  previewPair: { camera: number; projector: number } | null;
+  /**
+   * Render these (camera, projector) pairs' frames into {@link CaptureResult.previews}.
+   *
+   * A list rather than one pair, because "what did the operator actually
+   * photograph" is a question about the whole set: one frame from one camera is
+   * a thumbnail, and a frame from EACH camera is the evidence that the spread of
+   * viewpoints is what makes the solve well conditioned. The bench asks for one;
+   * the browser app asks for one per camera and shows them.
+   */
+  previewPairs: readonly { camera: number; projector: number }[];
   previewFrame: number;
 }
 
@@ -188,8 +196,10 @@ export interface CaptureResult {
   framesRendered: number;
   /** Camera pixels traced through the geometry. The bench's dominant cost. */
   pixelsTraced: number;
-  /** One frame as an image, for the artifact PNG. Null unless requested. */
+  /** The LAST requested frame, for the artifact PNG. Null unless requested. */
   preview: RgbImage | null;
+  /** Every requested frame, in (camera, projector) order. See `previewPairs`. */
+  previews: PreviewFrame[];
   /** Per-camera motion excursion over the whole sequence, metres and degrees. */
   motionExcursion: { camera: number; translationMm: number; rotationDeg: number }[];
   /**
@@ -432,6 +442,15 @@ interface RenderedSequence {
   preview: RgbImage | null;
 }
 
+/** One rendered frame, with enough context to caption it. */
+export interface PreviewFrame {
+  camera: number;
+  projector: number;
+  /** Index into `planFrames(plan)`. */
+  frame: number;
+  image: RgbImage;
+}
+
 function renderPair(
   prepared: PreparedRig,
   cameras: readonly SimulatedCamera[],
@@ -648,6 +667,7 @@ export function captureAndDecode(
   let framesRendered = 0;
   let pixelsTraced = 0;
   let preview: RgbImage | null = null;
+  const previews: PreviewFrame[] = [];
   const stats: DecodeStats = {
     considered: 0,
     accepted: 0,
@@ -661,8 +681,7 @@ export function captureAndDecode(
 
   for (let c = 0; c < cameras.length; c++) {
     for (let p = 0; p < prepared.projectors.length; p++) {
-      const wantPreview =
-        opts.previewPair !== null && opts.previewPair.camera === c && opts.previewPair.projector === p;
+      const wantPreview = opts.previewPairs.some((q) => q.camera === c && q.projector === p);
       const rendered = renderPair(
         prepared,
         cameras,
@@ -675,7 +694,10 @@ export function captureAndDecode(
       );
       framesRendered += rendered.framesRendered;
       pixelsTraced += rendered.pixelsTraced;
-      if (rendered.preview !== null) preview = rendered.preview;
+      if (rendered.preview !== null) {
+        preview = rendered.preview;
+        previews.push({ camera: c, projector: p, frame: opts.previewFrame, image: rendered.preview });
+      }
 
       const decoded = decodeCapture(rendered.capture, opts.decode);
       for (const corr of decoded.correspondences) correspondences.push(corr);
@@ -794,6 +816,7 @@ export function captureAndDecode(
     framesRendered,
     pixelsTraced,
     preview,
+    previews,
     motionExcursion,
     epochDisplacement,
     cameraPoseAtEpoch,

@@ -77,7 +77,7 @@ function capture(cams: SimulatedCamera[], args: Partial<CaptureArgs> = {}) {
     },
     seed: 4242,
     decode: { pixelStride: 1, maxCorrespondences: 0 },
-    previewPair: null,
+    previewPairs: [],
     previewFrame: -1,
   });
 }

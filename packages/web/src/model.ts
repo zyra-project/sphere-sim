@@ -32,10 +32,11 @@ import { prepareRig } from '../../sim/src/optics.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
 import type { MetricSet } from '../../sim/src/metrics/index.ts';
 import { renderTwoRigRoomView } from '../../sim/src/misregistration.ts';
+import { renderProjectorView } from '../../sim/src/render.ts';
 import type { ViewerCamera } from '../../sim/src/render.ts';
 import { buildWorld } from './rigs.ts';
 import { framebufferSentence, readingsFrom, rigFacts } from './readout.ts';
-import type { ModelRequest, ModelResponse } from './protocol.ts';
+import type { FrameImage, ModelRequest, ModelResponse } from './protocol.ts';
 
 /**
  * The metric set for one rig pair.
@@ -117,10 +118,36 @@ export function computeModel(req: ModelRequest): ModelResponse {
     parityImage = { width: img.width, height: img.height, data: img.data };
   }
 
+  // Each projector's own frame — what goes down its cable. Rendered from the
+  // COMPOSITOR's calibration, because that is whose arithmetic wrote it. Moving
+  // a projector cannot change this picture; only a recalibration rewrites it,
+  // and that is the point of showing it.
+  const projectorFrames: FrameImage[] = [];
+  if (req.projectorPreviewWidth > 0) {
+    const compositor = prepareRig(world.compositorRig);
+    const w = Math.round(req.projectorPreviewWidth);
+    for (let i = 0; i < compositor.projectors.length; i++) {
+      const it = compositor.projectors[i].cal.intrinsics;
+      const h = Math.max(1, Math.round((w * it.resY) / it.resX));
+      const img = renderProjectorView(compositor, i, world.scene, {
+        samplesPerPixel: 1,
+        sampleWidth: w,
+        sampleHeight: h,
+      });
+      projectorFrames.push({
+        width: img.width,
+        height: img.height,
+        data: img.data,
+        caption: `${compositor.projectors[i].cal.id} — ${it.resX} × ${it.resY}`,
+      });
+    }
+  }
+
   return {
     kind: 'model',
     id: req.id,
     ok: true,
+    projectorFrames,
     readings: readingsFrom(set),
     facts: rigFacts(world.asBuiltRig, set),
     framebuffer: framebufferSentence(world.truthRig),

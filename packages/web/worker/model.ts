@@ -15,7 +15,8 @@ self.onmessage = (event: MessageEvent<ModelRequest>): void => {
   const req = event.data;
   try {
     const reply = computeModel(req);
-    const transfer = reply.parityImage ? [reply.parityImage.data.buffer] : [];
+    const transfer: ArrayBufferLike[] = reply.projectorFrames.map((f) => f.data.buffer);
+    if (reply.parityImage) transfer.push(reply.parityImage.data.buffer);
     self.postMessage(reply, transfer);
   } catch (err) {
     const failure: WorkerFailure = {

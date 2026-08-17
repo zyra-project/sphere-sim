@@ -45,7 +45,7 @@ import { placeCameras } from './camera.ts';
 import type { CaptureResult } from './capture.ts';
 import { captureAndDecode } from './capture.ts';
 import type { PatternPlan } from './patterns.ts';
-import { grayBitsForCamera, planFrames } from './patterns.ts';
+import { grayBitsForCamera, planFrames, previewFrameIndex } from './patterns.ts';
 import { makeBenchRng } from './random.ts';
 import type { BenchPreset, Scenario } from './scenarios.ts';
 import { scaledMisalignment } from './scenarios.ts';
@@ -267,7 +267,7 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
     // One frame kept as an artifact: the fourth Gray plane of the u axis, which
     // is coarse enough to read as a pattern in a thumbnail and fine enough to
     // show the sphere's curvature bending it.
-    previewPair: { camera: 0, projector: 0 },
+    previewPairs: [{ camera: 0, projector: 0 }],
     previewFrame: options.writeArtifacts ? previewFrameIndex(plan) : -1,
   });
   const tCapture = Date.now();
@@ -407,22 +407,6 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
       totalMs: tRender - t0,
     },
   };
-}
-
-/**
- * The Gray plane kept as an artifact: coarse enough to read in a thumbnail,
- * fine enough to show the sphere's curvature bending it.
- *
- * Found by SEARCHING the frame plan rather than by computing an offset into it.
- * An offset would be a second place that knows the capture order, and the first
- * place to notice they had drifted apart would be a PNG that looked slightly
- * wrong to nobody in particular.
- */
-function previewFrameIndex(plan: PatternPlan): number {
-  const specs = planFrames(plan);
-  const wanted = Math.min(3, Math.max(0, plan.grayBits - 3));
-  const i = specs.findIndex((s) => s.kind === 'gray' && s.axis === 'u' && s.index === wanted);
-  return i >= 0 ? i : 0;
 }
 
 function writeArtifacts(
