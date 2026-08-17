@@ -28,6 +28,11 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   `packages/sim` from the COMPOSITOR's calibration. Moving a projector does not
   change it; only recalibrating does, which is the least intuitive thing about
   how the system works and the reason it gets a picture.
+- **Where it actually is, against where the software thinks it is.** The same six
+  facts — distance, height, azimuth, raster, field of view, distortion —
+  computed by one function from two rigs, in two columns. Every alignment number
+  on the page is the gap between those columns, and the solver only ever sees the
+  left one.
 - **Its warp mesh.** The config file carries heights and distances in inches;
   what actually removes a doubled grid line is a per-vertex correction on the
   raster, and that is what this draws. It is derived, not illustrated — each
@@ -129,7 +134,9 @@ node --test "packages/web/test/**/*.test.ts"
   optics functions take a rig explicitly rather than reading a global; every
   uniform the shader declares is set by the binder and vice versa
 - `readout.test.ts` — every metric `sim` produces has plain-language copy; an
-  ungated metric can never read as a verdict
+  ungated metric can never read as a verdict; a projector's configuration is the
+  same rows from either rig, disagrees when the mount is knocked, agrees exactly
+  when it is not, and never disagrees about the raster size
 - `model.test.ts` — the supplied image reaches the worker, is cached by id, is
   never reused for a different one, and never moves a §7 number
 - `mesh.test.ts` — the warp mesh reaches the ball and misses at the corners,

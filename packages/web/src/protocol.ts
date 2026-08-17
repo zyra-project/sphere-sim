@@ -100,6 +100,15 @@ export interface ModelResponse {
   projectorFrames: FrameImage[];
   /** One per projector, in rig order. See {@link WarpMesh}. */
   meshes: WarpMesh[];
+  /**
+   * Each projector's own configuration, twice: what the software believes, and
+   * where the lens actually is.
+   *
+   * Two columns of the same six numbers is the whole misregistration story
+   * without a diagram — and it is why they are computed by the same function
+   * from two different rigs rather than by two functions from one.
+   */
+  projectorConfig: { believed: RigFact[]; actual: RigFact[] }[];
 }
 
 /**

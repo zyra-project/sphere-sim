@@ -313,6 +313,99 @@ export function rigFacts(rig: RigCalibration, set: MetricSet | null): RigFact[] 
   return facts;
 }
 
+/** PARAMETERS.md §1 works in inches; the models work in metres. */
+const IN_PER_M = 1 / 0.0254;
+
+/**
+ * One projector's own configuration, as an installer would read it off a
+ * drawing: where the lens is, what it is pointed at, what raster it is driven at.
+ *
+ * These come off the rig the argument names, and the page calls it twice — once
+ * for what the software believes and once for where the lens actually is. Two
+ * columns of the same six numbers is the whole misregistration story in a form
+ * that needs no diagram, so this function must not be given a special case for
+ * either rig.
+ */
+export function projectorFacts(rig: RigCalibration, index: number): RigFact[] {
+  const p = rig.projectors[index];
+  if (!p) return [];
+  const pos = p.pose.position;
+  const it = p.intrinsics;
+  const dist = Math.hypot(pos.x, pos.y);
+  // Wrapped into [0, 360) rather than atan2's (-180, 180]. Believed 180.00 next
+  // to actual -178.95 is a one-degree error that reads as a three-hundred-and-
+  // fifty-nine-degree one, and the whole point of the column pair is that a
+  // reader can subtract them by eye.
+  const az = ((Math.atan2(pos.y, pos.x) * 180) / Math.PI + 360) % 360;
+  // The config file measures height from the FLOOR; the models measure it from
+  // the sphere centre. Getting that wrong is an eight-inch error that looks
+  // entirely plausible on a drawing.
+  const heightFromFloor = pos.z + rig.sphere.centerHeightM;
+
+  return [
+    {
+      label: 'Distance from the axis',
+      value: `${(dist * IN_PER_M).toFixed(1)} in / ${dist.toFixed(3)} m`,
+      verdict: '',
+      ok: null,
+      note:
+        '`P*_DIST_INCHES` in sos_stream_control.config, measured from the sphere’s vertical ' +
+        'axis to the lens. PARAMETERS.md §1 says 5.18 m; Boulder’s own config says 211 in. ' +
+        'That conflict is amendment A-36 and the page opens at Boulder’s number.',
+    },
+    {
+      label: 'Lens height',
+      value: `${(heightFromFloor * IN_PER_M).toFixed(1)} in above the floor`,
+      verdict: '',
+      ok: null,
+      note:
+        '`P*_Height_Inches`, from the floor. §2 puts the lenses level with the equator; ' +
+        'Boulder mounts them 8 in above it. Everything in this panel is measured from the sphere ' +
+        'centre instead, and the two differ by the equator height — an eight-inch error that ' +
+        'reads as plausible on a drawing.',
+    },
+    {
+      label: 'Around the ball',
+      value: `${az.toFixed(2)}°`,
+      verdict: '',
+      ok: null,
+      note:
+        'Where it stands on the ring. Four projectors sit 90° apart; a mount tolerance moves ' +
+        'this by a fraction of a degree, which is enough to double a grid line at the seam.',
+    },
+    {
+      label: 'Raster',
+      value: `${it.resX} × ${it.resY}`,
+      verdict: '',
+      ok: null,
+      note:
+        'One quadrant of the single X screen SOS drives (§3.4). Not a separate output — ' +
+        'switching a projector off blacks its quadrant and leaves the framebuffer the same size.',
+    },
+    {
+      label: 'Field of view',
+      value: `${it.fovHDeg.toFixed(2)}° × ${fovVDeg(it).toFixed(2)}°`,
+      verdict: '',
+      ok: null,
+      note:
+        'Derived from the distance and the overfill rather than set: the image has to just cover ' +
+        'the ball. A-18 measured that which way round this is derived — lens first or distance ' +
+        'first — is worth most of the recovery error.',
+    },
+    {
+      label: 'Lens distortion',
+      value: `k1 ${it.k1.toFixed(5)}, k2 ${it.k2.toFixed(5)}`,
+      verdict: it.k1 === 0 && it.k2 === 0 ? 'a pinhole' : '',
+      ok: null,
+      note:
+        'PARAMETERS.md §3.1 holds k1 and k2 at zero nominal and classes them SOLVE — precisely ' +
+        'because real lenses are not zero. So the drawing is a pinhole and the room is not, and ' +
+        'the gap between these two columns is about a pixel at the raster corner: the scale SOS’s ' +
+        'manual "Vertex Tweaking" exists to remove by hand.',
+    },
+  ];
+}
+
 /** How many pixels the whole framebuffer is, said out loud. */
 export function framebufferSentence(rig: RigCalibration): string {
   const fb = rig.framebuffer;

@@ -37,7 +37,7 @@ import { renderTwoRigRoomView } from '../../sim/src/misregistration.ts';
 import { renderProjectorView } from '../../sim/src/render.ts';
 import type { ViewerCamera } from '../../sim/src/render.ts';
 import { buildWorld } from './rigs.ts';
-import { framebufferSentence, readingsFrom, rigFacts } from './readout.ts';
+import { framebufferSentence, projectorFacts, readingsFrom, rigFacts } from './readout.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
 import type { FrameImage, ModelRequest, ModelResponse, WarpMesh } from './protocol.ts';
 
@@ -252,6 +252,10 @@ export function computeModel(req: ModelRequest): ModelResponse {
     ok: true,
     projectorFrames,
     meshes: warpMeshes(prepareRig(world.truthRig), prepareRig(world.compositorRig)),
+    projectorConfig: world.compositorRig.projectors.map((_, i) => ({
+      believed: projectorFacts(world.compositorRig, i),
+      actual: projectorFacts(world.truthRig, i),
+    })),
     readings: readingsFrom(set),
     facts: rigFacts(world.asBuiltRig, set),
     framebuffer: framebufferSentence(world.truthRig),

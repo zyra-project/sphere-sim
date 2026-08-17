@@ -527,6 +527,15 @@ async function main(): Promise<void> {
       }
     }
 
+    // The inspect card shows one view at a time; the mesh is the third.
+    await cdp.evaluate(`(() => {
+      const b = [...document.querySelectorAll('#inspect .seg button')]
+        .find((x) => /Warp mesh/.test(x.textContent ?? ''));
+      if (b) b.click();
+      return !!b;
+    })()`);
+    await sleep(200);
+
     // The warp mesh is the one diagram computed by composing the two rigs, and a
     // flex column will happily squash an SVG to nothing while its caption goes on
     // claiming a picture is there — which is what it did. Check it has height.
@@ -550,10 +559,6 @@ async function main(): Promise<void> {
     }
 
     if (opts.screenshot) {
-      // Scroll the inspect card so the diagrams are in the frame rather than
-      // below the fold — the screenshot is for a person to look at.
-      await cdp.evaluate("document.getElementById('inspect').scrollTop = 1e6; 1");
-      await sleep(150);
       const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
       fs.writeFileSync(opts.screenshot, Buffer.from(shot.data, 'base64'));
       process.stdout.write(`  screenshot: ${opts.screenshot}\n`);

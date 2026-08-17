@@ -1357,8 +1357,24 @@ function renderActions(): void {
 }
 
 // ---------------------------------------------------------------------------
-// The inspect card: one projector's own frame
+// The inspect card: one projector, three ways
 // ---------------------------------------------------------------------------
+
+const INSPECT_VIEWS = [
+  { id: 'frame' as const, label: 'Its frame', title: 'The image going down this projector’s cable.' },
+  {
+    id: 'where' as const,
+    label: 'Where it is',
+    title: 'Its configuration as the software holds it, against where the lens actually is.',
+  },
+  {
+    id: 'mesh' as const,
+    label: 'Warp mesh',
+    title: 'The per-vertex correction the config file cannot carry.',
+  },
+];
+
+let inspectView: (typeof INSPECT_VIEWS)[number]['id'] = 'frame';
 
 function renderInspect(): void {
   inspectEl.replaceChildren();
@@ -1377,17 +1393,15 @@ function renderInspect(): void {
   const on = state.settings.nudge[state.selected]?.on !== false;
 
   const head = el('div', { className: 'rowline' });
-  const name = el('p', { className: 'eyebrow-sm', textContent: `P${state.selected + 1} — its own frame` });
+  const name = el('p', { className: 'eyebrow-sm', textContent: `P${state.selected + 1}` });
   name.style.color = tint;
-  head.append(name, el('span', { className: 'note tiny', textContent: frame.caption }));
-  inspectEl.append(head);
-
   // Walk round to this projector's side.
   //
   // Isolating a projector that lights the far side of the ball leaves you
   // looking at the unlit back of it, which is the truth and reads as a fault.
   // The azimuth comes off the drawn uniforms rather than being recomputed, so
-  // the button goes exactly where the marker is.
+  // the link goes exactly where the marker is.
+  let caption: HTMLElement = el('span', { className: 'note tiny', textContent: frame.caption });
   if (state.highlight === state.selected && lastUniforms) {
     const lx = lastUniforms.physical.lens[3 * state.selected];
     const ly = lastUniforms.physical.lens[3 * state.selected + 1];
@@ -1403,40 +1417,97 @@ function renderInspect(): void {
         state.settings = withSetting(state.settings, 'viewAzDeg', az);
         touched(true);
       });
-      inspectEl.append(walk);
+      caption = walk;
+    }
+  }
+  head.append(name, caption);
+  inspectEl.append(head);
+
+  // One view at a time. All three at once needs more height than a panel beside
+  // a sphere has, and the frame is what a reader wants first.
+  const seg = el('div', { className: 'seg' });
+  for (const v of INSPECT_VIEWS) {
+    const b = el('button', {
+      className: inspectView === v.id ? 'on' : '',
+      textContent: v.label,
+      title: v.title,
+    });
+    b.addEventListener('click', () => {
+      inspectView = v.id;
+      renderInspect();
+    });
+    seg.append(b);
+  }
+  inspectEl.append(seg);
+
+  if (inspectView === 'frame') {
+    const c = el('canvas', { className: 'framepic' });
+    paintFrame(c, frame);
+    c.addEventListener('click', () => openLightbox(frame, `P${state.selected + 1} — ${frame.caption}`));
+    inspectEl.append(c);
+    inspectEl.append(
+      el('p', {
+        className: 'note',
+        textContent:
+          'The image this projector is sending down the cable. It fades out at the left and right ' +
+          'where it hands over to its neighbours — widest across the equator, pinching shut toward ' +
+          'the poles. Moving the projector does NOT change this picture, because the software has ' +
+          'not been told. Recalibrating is what rewrites it.',
+      }),
+    );
+    if (!on) {
+      const off = el('p', { className: 'note', textContent: 'Currently switched off at the wall.' });
+      off.style.color = 'var(--warn)';
+      inspectEl.append(off);
     }
   }
 
-  const c = el('canvas', { className: 'framepic' });
-  paintFrame(c, frame);
-  c.addEventListener('click', () => openLightbox(frame, `P${state.selected + 1} — ${frame.caption}`));
-  inspectEl.append(c);
-
-  inspectEl.append(
-    el('p', {
-      className: 'note',
-      textContent:
-        'The image this projector is sending down the cable. It fades out at the left and right ' +
-        'where it hands over to its neighbours — widest across the equator, pinching shut toward ' +
-        'the poles. Moving the projector does NOT change this picture, because the software has ' +
-        'not been told. Recalibrating is what rewrites it.',
-    }),
-  );
-  if (!on) {
-    const off = el('p', { className: 'note', textContent: 'Currently switched off at the wall.' });
-    off.style.color = 'var(--warn)';
-    inspectEl.append(off);
+  const cfg = model?.projectorConfig[state.selected];
+  if (inspectView === 'where' && cfg) {
+    const table = el('table', { className: 'rec' });
+    const head = el('tr');
+    head.append(
+      el('th', { textContent: '' }),
+      el('th', { className: 'r', textContent: 'software believes' }),
+      el('th', { className: 'r', textContent: 'actually' }),
+    );
+    table.append(head);
+    for (let k = 0; k < cfg.believed.length; k++) {
+      const b = cfg.believed[k];
+      const a = cfg.actual[k];
+      const tr = el('tr');
+      tr.setAttribute('title', b.note);
+      tr.append(el('td', { textContent: b.label }));
+      tr.append(el('td', { className: 'r num', textContent: b.value }));
+      const right = el('td', { className: 'r num', textContent: a ? a.value : '—' });
+      // Only the disagreements are coloured. A row where the two agree is not a
+      // finding, and colouring every row would make the page look alarmed about
+      // a raster size.
+      if (a && a.value !== b.value) right.style.color = 'var(--warn)';
+      tr.append(right);
+      table.append(tr);
+    }
+    inspectEl.append(table);
+    inspectEl.append(
+      el('p', {
+        className: 'note',
+        textContent:
+          'Left is the calibration the compositor is working from — what an operator typed into ' +
+          'sos_stream_control.config, or what the last solve recovered. Right is where the lens ' +
+          'actually is. Every alignment number on this page is the gap between those two columns; ' +
+          'the solver sees only photographs and never the right-hand one.',
+      }),
+    );
   }
 
   const mesh = model?.meshes[state.selected];
-  if (mesh) {
+  if (inspectView === 'mesh' && mesh) {
     // Magnified so the shape is legible. At true scale a 1 mm error and a 100 mm
     // error are both a straight grid, so the factor is chosen to put the worst
     // vertex at a fixed fraction of the raster — and then printed, because a
     // diagram whose scale is picked to look convincing is not evidence.
     const gain =
       mesh.worstPx > 1e-9 ? Math.min(400, Math.max(1, (0.07 * mesh.resX) / mesh.worstPx)) : 1;
-    inspectEl.append(el('p', { className: 'eyebrow-sm', textContent: 'Warp mesh' }));
     inspectEl.append(meshDiagram(mesh, tint, gain));
     inspectEl.append(
       el('p', {

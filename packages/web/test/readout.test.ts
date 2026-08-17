@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
-import { BOULDER_PRESET, SPEC_PRESET } from '../src/settings.ts';
+import { BOULDER_PRESET, PERFECT_PRESET, SPEC_PRESET } from '../src/settings.ts';
 import { buildWorld } from '../src/rigs.ts';
 import {
   LK935_THROW_MAX,
@@ -10,6 +10,7 @@ import {
   dProjAmbiguityMm,
   framebufferSentence,
   pixelFootprintMm,
+  projectorFacts,
   readingsFrom,
   rigFacts,
 } from '../src/readout.ts';
@@ -146,4 +147,56 @@ test('the framebuffer sentence says one image, and names the dark quadrants', ()
   );
   assert.ok(three.includes('1 of them black'));
   assert.ok(three.includes('7680 × 4320'), 'fewer projectors must not shrink the framebuffer');
+});
+
+test('a projector\'s configuration is the same six facts from whichever rig is asked', () => {
+  const world = buildWorld(BOULDER_PRESET);
+  const believed = projectorFacts(world.compositorRig, 2);
+  const actual = projectorFacts(world.truthRig, 2);
+
+  // Same function, two rigs. Two functions would be free to disagree about what
+  // a row MEANS, and the page prints them side by side as if they could not.
+  assert.equal(believed.length, actual.length);
+  assert.deepEqual(
+    believed.map((f) => f.label),
+    actual.map((f) => f.label),
+  );
+  assert.ok(believed.length >= 5);
+  for (const f of believed) assert.ok(f.note.length > 40, `${f.label} has no explanation`);
+
+  // A knocked rig must differ somewhere, or the column pair is decoration.
+  const differing = believed.filter((f, i) => f.value !== actual[i].value);
+  assert.ok(differing.length > 0, 'the mount error moved nothing this page can see');
+  // …and the raster is not one of the things a mount tolerance moves.
+  assert.ok(
+    !differing.some((f) => f.label === 'Raster'),
+    'a mount tolerance cannot change how many pixels a projector has',
+  );
+});
+
+test('azimuth is wrapped so the two columns can be subtracted by eye', () => {
+  // atan2 answers in (-180, 180], which puts a one-degree error either side of
+  // the wrap at 180.00 against -178.95 — a 359-degree difference on the page.
+  const world = buildWorld(BOULDER_PRESET);
+  for (const rig of [world.compositorRig, world.truthRig]) {
+    for (let i = 0; i < rig.projectors.length; i++) {
+      const az = projectorFacts(rig, i).find((f) => f.label === 'Around the ball');
+      assert.ok(az);
+      const deg = Number.parseFloat(az.value);
+      assert.ok(deg >= 0 && deg < 360, `azimuth reads ${az.value}`);
+    }
+  }
+});
+
+test('a perfectly-mounted rig agrees with itself on every row', () => {
+  const world = buildWorld(PERFECT_PRESET);
+  for (let i = 0; i < world.truthRig.projectors.length; i++) {
+    const believed = projectorFacts(world.compositorRig, i);
+    const actual = projectorFacts(world.truthRig, i);
+    assert.deepEqual(
+      believed.map((f) => f.value),
+      actual.map((f) => f.value),
+      `P${i + 1} disagrees with itself at zero mount error`,
+    );
+  }
 });
