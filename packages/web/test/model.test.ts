@@ -19,7 +19,7 @@ import { test } from 'node:test';
 
 import { createImage } from '../../sim/src/equirect.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
-import { BOULDER_PRESET, CONTENT_CUSTOM } from '../src/settings.ts';
+import { BOULDER_PRESET, CONTENT_CUSTOM, PERFECT_PRESET, withNudge } from '../src/settings.ts';
 import { computeModel } from '../src/model.ts';
 import type { ModelRequest } from '../src/protocol.ts';
 
@@ -140,4 +140,45 @@ test('switching a projector off leaves a hole rather than renaming its neighbour
   assert.ok(res.projectorFrames[2]?.caption.startsWith('P3'), res.projectorFrames[2]?.caption);
   assert.equal(res.meshes[2]?.projectorId, 'P3');
   assert.equal(res.meshes[3]?.projectorId, 'P4');
+});
+
+test('the seam patch has both projectors drawing the same lines, and closes when the rig is true', () => {
+  // The doubled line is the product's whole subject and it is the one thing the
+  // page never drew. What makes the picture worth anything is that it is the
+  // composition of BOTH rigs — where the compositor thinks a point is, thrown by
+  // the lens that actually exists.
+  const perfect = computeModel(request({ settings: { ...PERFECT_PRESET, gridOn: 1 } }));
+  assert.equal(perfect.seams.length, 4, 'four projectors make four seams');
+  for (const s of perfect.seams) {
+    assert.ok(s.worstMm < 0.5, `a true rig should agree at the seam, not by ${s.worstMm} mm`);
+    assert.ok(
+      s.lines.some((l) => l.which === 0) && s.lines.some((l) => l.which === 1),
+      `the seam between P${s.a + 1} and P${s.b + 1} only has one projector drawing it`,
+    );
+    for (const l of s.lines) {
+      assert.equal(l.lonDeg.length, l.dLonDeg.length);
+      assert.equal(l.lonDeg.length, l.latDeg.length);
+    }
+  }
+
+  // Anchored on the lowest slot and going round the ring, so the picker does not
+  // renumber itself when the recovered azimuths move by a hair.
+  assert.deepEqual(
+    perfect.seams.map((s) => [s.a, s.b]),
+    [
+      [0, 1],
+      [1, 2],
+      [2, 3],
+      [3, 0],
+    ],
+  );
+
+  // Knock P1 and its two seams open; the seam on the far side stays shut.
+  const bumped = computeModel(
+    request({ settings: withNudge({ ...PERFECT_PRESET, gridOn: 1 }, 0, { yawDeg: 0.25 }) }),
+  );
+  const at = (a: number, b: number) => bumped.seams.find((s) => s.a === a && s.b === b);
+  assert.ok(at(0, 1)!.worstMm > 5, 'the bumped projector should disagree with its neighbour');
+  assert.ok(at(3, 0)!.worstMm > 5, 'and with its other neighbour');
+  assert.ok(at(1, 2)!.worstMm < 0.5, 'the seam on the far side of the ring is untouched');
 });

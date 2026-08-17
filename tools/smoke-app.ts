@@ -606,6 +606,45 @@ async function main(): Promise<void> {
       process.stdout.write(`  warp mesh: ${mesh.h} px tall, ${mesh.tinted} corrected lines\n`);
     }
 
+    // The seam close-up is the one picture of the thing the page is about, and
+    // it is built from two rigs composed together — run it with one rig twice
+    // and it draws a perfectly aligned installation, which is exactly the
+    // failure that looks like success.
+    const seam = await cdp.evaluate<{
+      chips: string[];
+      svgs: number;
+      height: number;
+      scale: string;
+    } | null>(`(() => {
+      const s = [...document.querySelectorAll('#readout .sect')]
+        .find((x) => /At the seams/i.test(x.textContent ?? ''));
+      if (!s) return null;
+      const svg = s.querySelector('svg');
+      return {
+        chips: [...s.querySelectorAll('.chip')].map((c) => c.textContent),
+        svgs: s.querySelectorAll('svg').length,
+        height: svg ? Math.round(svg.getBoundingClientRect().height) : 0,
+        scale: [...s.querySelectorAll('p')].map((p) => p.textContent).find((t) => /scale|magnified/.test(t ?? '')) ?? '',
+      };
+    })()`);
+    if (!seam) {
+      failures.push('the readout has no seam section — the doubled line is not drawn anywhere');
+    } else if (seam.chips.length < 2) {
+      failures.push(`the seam picker offers ${seam.chips.length} seams`);
+    } else if (seam.height < 40) {
+      failures.push(`the seam diagram drew at ${seam.height} px tall`);
+    } else if (seam.scale === '') {
+      failures.push('the seam diagram does not say what scale it is drawn at');
+    } else {
+      process.stdout.write(
+        `  seams: ${seam.chips.join(' ')} · ${seam.height} px · ${seam.scale}\n`,
+      );
+      // After a solve there are two of them, before and after.
+      if (opts.solve && seam.svgs < 2) {
+        failures.push('a solve produced no before-and-after seam comparison');
+      }
+    }
+
     if (opts.screenshot) {
       const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
       fs.writeFileSync(opts.screenshot, Buffer.from(shot.data, 'base64'));

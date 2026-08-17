@@ -29,7 +29,7 @@
 
 import type { RigCalibration } from '../../calibration/src/index.ts';
 import { angleBetweenDeg, projectorBasis, raySphereIntersect } from '../../sim/src/geometry.ts';
-import { pixelToRay, prepareRig, worldToPixelUnbounded } from '../../sim/src/optics.ts';
+import { pixelToRay, prepareRig, worldToPixel, worldToPixelUnbounded } from '../../sim/src/optics.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
 import type { MetricSet } from '../../sim/src/metrics/index.ts';
@@ -39,7 +39,14 @@ import type { ViewerCamera } from '../../sim/src/render.ts';
 import { buildWorld } from './rigs.ts';
 import { framebufferSentence, projectorFacts, readingsFrom, rigFacts } from './readout.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
-import type { FrameImage, ModelRequest, ModelResponse, WarpMesh } from './protocol.ts';
+import type {
+  FrameImage,
+  ModelRequest,
+  ModelResponse,
+  SeamLine,
+  SeamPatch,
+  WarpMesh,
+} from './protocol.ts';
 
 /**
  * The last supplied image, held across requests.
@@ -118,6 +125,217 @@ function poseDrift(
   }
   return { positionMm, aimDeg };
 }
+
+/**
+ * The doubled line, drawn.
+ *
+ * ## What this computes
+ *
+ * For a point `P` on the sphere, projector `i` paints it by asking its own
+ * calibration which pixel covers `P` — and that pixel, thrown by the lens the
+ * projector ACTUALLY has, lands somewhere else. So the feature that belongs at
+ * `P` is drawn at `Q_i`. Two projectors overlap at a seam, so the same feature
+ * is drawn twice, at `Q_a` and `Q_b`, and `|Q_a − Q_b|` is the doubled line.
+ *
+ * `worldToPixel(compositor) → pixelToRay(truth) → sphere` is the same
+ * composition {@link warpMeshes} uses, entered from a world point instead of
+ * from a pixel. Both rigs are needed and neither can stand in for the other: run
+ * it with one rig twice and every offset is zero, which draws a perfectly
+ * aligned installation.
+ *
+ * ## Why the offsets come back separately
+ *
+ * They are far too small to see. At Boulder's throw a bad seam is a few
+ * millimetres on an 864 mm radius — a hundredth of a degree — so a picture at
+ * true scale is two lines on top of each other whatever the state of the rig.
+ * The page exaggerates and prints the factor; keeping the offset apart from the
+ * position is what lets it.
+ *
+ * ## Bounded, and facing
+ *
+ * `worldToPixel` rather than the unbounded version: a projector only paints what
+ * its raster addresses, and a line continuing past the edge of the frame would
+ * be a line nobody can see. The facing test is separate — a point on the far
+ * side of the ball is still in front of the lens plane, and without it each
+ * projector would also draw the seam on the back of the sphere.
+ */
+function seamPatches(
+  truth: PreparedRig,
+  compositor: PreparedRig,
+  slots: readonly number[],
+  gridDeg: number,
+): SeamPatch[] {
+  const n = Math.min(truth.projectors.length, compositor.projectors.length);
+  if (n < 2) return [];
+
+  // Ring order by lens azimuth, so a seam is always between neighbours even when
+  // a projector in the middle of the ring has been switched off — then rotated
+  // to start at the lowest panel slot. Without that rotation the list is stable
+  // in CONTENT and not in ORDER: a recalibration moves the recovered azimuths by
+  // a hair, which was enough to renumber the seams under the picker and put the
+  // before-and-after of a solve on two different seams.
+  const order = Array.from({ length: n }, (_, i) => i).sort(
+    (i, j) => azimuthOf(compositor, i) - azimuthOf(compositor, j),
+  );
+  let first = 0;
+  for (let k = 1; k < order.length; k++) {
+    if ((slots[order[k]] ?? order[k]) < (slots[order[first]] ?? order[first])) first = k;
+  }
+  const ring = order.slice(first).concat(order.slice(0, first));
+
+  const step = 1.5;
+  // Wide enough that at the default 15-degree graticule the window always holds
+  // two meridians: one line either side of the seam is what makes a doubled one
+  // read as doubled rather than as a line drawn slightly crooked.
+  const half = 15;
+  const latMax = 24;
+  const spacing = Math.max(5, Math.min(45, gridDeg));
+
+  const out: SeamPatch[] = [];
+  for (let k = 0; k < ring.length; k++) {
+    const ia = ring[k];
+    const ib = ring[(k + 1) % ring.length];
+    const aAz = azimuthOf(compositor, ia);
+    const bAz = azimuthOf(compositor, ib);
+    // Half way round from a to b, going the short way through the gap between
+    // them — which for the last pair means crossing the ±180 wrap.
+    const seamLon = wrapDeg(aAz + wrapDeg(bAz - aAz) / 2);
+
+    // The graticule inside the window: whichever parallels and meridians fall
+    // in it, at the spacing the content is actually drawn with.
+    const lats: number[] = [];
+    for (let lat = -Math.floor(latMax / spacing) * spacing; lat <= latMax + 1e-9; lat += spacing) {
+      lats.push(lat);
+    }
+    const lons: number[] = [];
+    for (let m = Math.ceil((seamLon - half) / spacing) * spacing; m <= seamLon + half; m += spacing) {
+      lons.push(m);
+    }
+
+    const lines: SeamLine[] = [];
+    let worstDeg = 0;
+    let worstMm = 0;
+
+    // Every geometric line is walked once and painted by both projectors, so the
+    // separation between the two copies is available point by point.
+    const walk = (points: { lonDeg: number; latDeg: number }[]): void => {
+      const acc: { lon: number[]; lat: number[]; dLon: number[]; dLat: number[] }[] = [
+        { lon: [], lat: [], dLon: [], dLat: [] },
+        { lon: [], lat: [], dLon: [], dLat: [] },
+      ];
+      for (const p of points) {
+        const target = sphereAt(p.latDeg, p.lonDeg, compositor.radiusM);
+        const qa = paintedAt(truth, compositor, ia, target);
+        const qb = paintedAt(truth, compositor, ib, target);
+        for (const [which, q] of [
+          [0, qa],
+          [1, qb],
+        ] as const) {
+          if (!q) continue;
+          const lat = Math.asin(Math.max(-1, Math.min(1, q.z / compositor.radiusM))) * RAD2DEG;
+          const lon = Math.atan2(q.y, q.x) * RAD2DEG;
+          const dLat = lat - p.latDeg;
+          const dLon = wrapDeg(lon - p.lonDeg);
+          worstDeg = Math.max(worstDeg, Math.abs(dLat), Math.abs(dLon));
+          acc[which].lon.push(p.lonDeg);
+          acc[which].lat.push(p.latDeg);
+          acc[which].dLon.push(dLon);
+          acc[which].dLat.push(dLat);
+        }
+        if (qa && qb) {
+          worstMm = Math.max(
+            worstMm,
+            Math.hypot(qa.x - qb.x, qa.y - qb.y, qa.z - qb.z) * 1000,
+          );
+        }
+      }
+      for (const which of [0, 1] as const) {
+        const a = acc[which];
+        if (a.lon.length < 2) continue;
+        lines.push({
+          which,
+          lonDeg: Float32Array.from(a.lon),
+          latDeg: Float32Array.from(a.lat),
+          dLonDeg: Float32Array.from(a.dLon),
+          dLatDeg: Float32Array.from(a.dLat),
+        });
+      }
+    };
+
+    for (const lat of lats) {
+      const pts = [];
+      for (let lon = seamLon - half; lon <= seamLon + half + 1e-9; lon += step) {
+        pts.push({ lonDeg: lon, latDeg: lat });
+      }
+      walk(pts);
+    }
+    for (const lon of lons) {
+      const pts = [];
+      for (let lat = -latMax; lat <= latMax + 1e-9; lat += step) {
+        pts.push({ lonDeg: lon, latDeg: lat });
+      }
+      walk(pts);
+    }
+
+    out.push({
+      a: slots[ia] ?? ia,
+      b: slots[ib] ?? ib,
+      seamLonDeg: seamLon,
+      halfSpanDeg: half,
+      latMaxDeg: latMax,
+      lines,
+      worstDeg,
+      worstMm,
+    });
+  }
+  return out;
+}
+
+/** Where projector `i` actually puts the content that belongs at `target`. */
+function paintedAt(
+  truth: PreparedRig,
+  compositor: PreparedRig,
+  i: number,
+  target: { x: number; y: number; z: number },
+): { x: number; y: number; z: number } | null {
+  const c = compositor.projectors[i];
+  const t = truth.projectors[i];
+  if (!c || !t) return null;
+  // Facing: the surface has to be turned toward the lens. Being in front of the
+  // lens plane is not enough — the far side of the ball passes that test.
+  const toLens = {
+    x: c.lens.x - target.x,
+    y: c.lens.y - target.y,
+    z: c.lens.z - target.z,
+  };
+  if (target.x * toLens.x + target.y * toLens.y + target.z * toLens.z <= 0) return null;
+  const px = worldToPixel(c, target);
+  if (!px) return null;
+  const ray = pixelToRay(t, px.u, px.v);
+  const hit = raySphereIntersect(t.lens, ray, truth.radiusM);
+  return hit ? hit.point : null;
+}
+
+function azimuthOf(rig: PreparedRig, i: number): number {
+  return Math.atan2(rig.projectors[i].lens.y, rig.projectors[i].lens.x) * RAD2DEG;
+}
+
+function sphereAt(latDeg: number, lonDeg: number, radiusM: number): { x: number; y: number; z: number } {
+  const la = latDeg * DEG2RAD;
+  const lo = lonDeg * DEG2RAD;
+  return {
+    x: Math.cos(la) * Math.cos(lo) * radiusM,
+    y: Math.cos(la) * Math.sin(lo) * radiusM,
+    z: Math.sin(la) * radiusM,
+  };
+}
+
+function wrapDeg(deg: number): number {
+  return ((deg + 540) % 360) - 180;
+}
+
+const DEG2RAD = Math.PI / 180;
+const RAD2DEG = 180 / Math.PI;
 
 /**
  * The warp mesh for every projector. See {@link WarpMesh} for what it means.
@@ -312,6 +530,12 @@ export function computeModel(req: ModelRequest): ModelResponse {
     ok: true,
     driftPositionMm: drift.positionMm,
     driftAimDeg: drift.aimDeg,
+    seams: seamPatches(
+      prepareRig(world.truthRig),
+      prepareRig(world.compositorRig),
+      world.slots,
+      req.settings.gridDeg,
+    ),
     projectorFrames,
     meshes: warpMeshes(
       prepareRig(world.truthRig),

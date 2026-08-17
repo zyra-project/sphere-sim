@@ -92,6 +92,8 @@ export interface ModelResponse {
    */
   driftPositionMm: number;
   driftAimDeg: number;
+  /** One per seam, in ring order. Empty when fewer than two projectors are lit. */
+  seams: SeamPatch[];
   /** Fraction of the sphere lit by 0, 1, 2 … projectors. */
   multiplicityAreaFraction: number[];
   /** §4.3's unlit polar region, north and south, as area fractions. */
@@ -169,6 +171,52 @@ export interface WarpMesh {
   worstPx: number;
   /** How many vertices reached the sphere. */
   onSphere: number;
+}
+
+/**
+ * One projector's copy of one grid line, near a seam.
+ *
+ * `lonDeg`/`latDeg` is where the line BELONGS — the graticule as the content
+ * defines it. `dLonDeg`/`dLatDeg` is how far from there this projector actually
+ * puts it: the compositor works out which pixel covers the point, and the real
+ * lens throws that pixel somewhere else. Two projectors painting the same line
+ * from two different wrong places is the doubled line a visitor notices, and it
+ * is the entire subject of {@link SeamPatch}.
+ *
+ * The offset is kept separate from the position rather than pre-added because
+ * the page has to exaggerate it to draw it — a tenth of a degree is a fifth of a
+ * pixel in a 200-pixel-wide diagram — and an exaggerated picture whose factor is
+ * not stated is a picture that is lying.
+ */
+export interface SeamLine {
+  /** 0 for the seam's first projector, 1 for its second. */
+  which: 0 | 1;
+  lonDeg: Float32Array;
+  latDeg: Float32Array;
+  dLonDeg: Float32Array;
+  dLatDeg: Float32Array;
+}
+
+/** A patch of sphere either side of one seam, with both projectors' copies of it. */
+export interface SeamPatch {
+  /** Panel slots of the pair, in ring order. */
+  a: number;
+  b: number;
+  /** Where the two hand over, degrees of world longitude. */
+  seamLonDeg: number;
+  /** The window drawn: `seamLonDeg ± halfSpanDeg`, and `± latMaxDeg`. */
+  halfSpanDeg: number;
+  latMaxDeg: number;
+  lines: SeamLine[];
+  /** Worst single-axis offset in the patch, degrees. Sets the exaggeration. */
+  worstDeg: number;
+  /**
+   * Worst distance between the two projectors' copies of the SAME point, mm on
+   * the sphere surface. This is the width of the doubled line, and it is
+   * measured where both projectors reach — not the whole-sphere worst case the
+   * headline reports.
+   */
+  worstMm: number;
 }
 
 export interface WorkerFailure {

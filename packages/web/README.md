@@ -46,6 +46,29 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   says which space a frame is in, because the two kinds on this page really are in
   different ones: a camera capture is radiance, a projector frame is a video
   signal.
+- **The doubled line, drawn.** The page's headline is a millimetre figure and its
+  subject is a pair of lines that do not sit on top of each other; everything
+  else — the badge, the gate, the warp mesh — described that pair without ever
+  showing it. "At the seams" picks one of the four joins and draws the patch of
+  sphere either side of it, with every grid line painted twice: once by each of
+  the two projectors that reach it, each in its own colour, and a dashed meridian
+  where they hand over.
+
+  It is `worldToPixel(compositor) → pixelToRay(truth) → sphere`, the same
+  composition the warp mesh uses, entered from a world point instead of from a
+  pixel: where the compositor thinks a point is, thrown by the lens that actually
+  exists. Both rigs are needed and neither can stand in for the other — run it
+  with one rig twice and every offset is zero, which draws a perfectly aligned
+  installation, and that is the failure mode that looks like success.
+
+  The offsets are magnified, and the factor is printed, because at Boulder's
+  throw a failing seam is a hundredth of a degree across a thirty-degree window.
+  A magnification chosen to look convincing and then not stated is not evidence.
+  After a recalibration the same seam is drawn twice, before and after, at the
+  same magnification: a comparison at two different scales would be worthless.
+  The ring is anchored at the lowest slot rather than at whichever projector
+  sorts first by azimuth, because a solve moves the recovered azimuths by a hair
+  and that was enough to renumber the seams under the picker.
 - **Where it actually is, against where the software thinks it is.** The same six
   facts — distance, height, azimuth, raster, field of view, distortion —
   computed by one function from two rigs, in two columns. Every alignment number

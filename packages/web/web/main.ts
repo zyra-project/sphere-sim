@@ -75,6 +75,7 @@ import type {
   ModelRequest,
   ModelResponse,
   RecoveredAxis,
+  SeamPatch,
   SolveMessage,
   SolveRequest,
   SolveResponse,
@@ -788,6 +789,17 @@ let solveSeq = 0;
  */
 let beforeFrames: (FrameImage | null)[] = [];
 
+/**
+ * The seams as they were before the last recalibration, and which one the
+ * picker is on.
+ *
+ * The seam index is a position in the ring, not a projector: switching one off
+ * or changing the count re-forms the ring, so it is clamped where it is read
+ * rather than tracked.
+ */
+let beforeSeams: SeamPatch[] = [];
+let seamPick = 0;
+
 function startSolve(): void {
   if (solveRunning) return;
   solveRunning = true;
@@ -798,6 +810,7 @@ function startSolve(): void {
   // Snapshot before the solve, not after: once the compositor rig is replaced
   // there is no way back to the frames it was generating.
   beforeFrames = (model?.projectorFrames ?? []).slice();
+  beforeSeams = (model?.seams ?? []).slice();
   solveStartedAt = performance.now();
   solveStage = 'Placing the cameras…';
   const req: SolveRequest = {
@@ -823,6 +836,7 @@ function startSolve(): void {
 function forgetCalibration(): void {
   state.compositorRig = null;
   beforeFrames = [];
+  beforeSeams = [];
   solveResult = null;
   solveTrace = [];
   solveStep = null;
@@ -837,6 +851,7 @@ function invalidateCalibration(): void {
   if (state.compositorRig === null) return;
   state.compositorRig = null;
   beforeFrames = [];
+  beforeSeams = [];
   solveResult = null;
   solveTrace = [];
   solveStep = null;
@@ -2208,6 +2223,127 @@ function meshDiagram(mesh: WarpMesh, tint: string, gain: number): HTMLElement {
   return svg as unknown as HTMLElement;
 }
 
+/**
+ * One seam, close up: both projectors' copies of the same grid lines.
+ *
+ * Every point on this patch of sphere is drawn twice, once by each of the two
+ * projectors that reach it, and where the two copies land apart is the doubled
+ * line a visitor sees. Each is drawn in its own projector's colour, so which
+ * line belongs to which lens is a fact about the picture rather than something
+ * to be inferred, and the dashed vertical is the meridian they hand over on.
+ *
+ * `gain` magnifies the offsets and is printed by the caller. It has to: at
+ * Boulder's throw a failing seam is a hundredth of a degree across a 24-degree
+ * window, which is a fifth of a pixel here. What is NOT magnified is the
+ * position of the lines themselves, so the shape of the patch stays true and
+ * only the disagreement is amplified.
+ */
+function seamDiagram(patch: SeamPatch, gain: number): HTMLElement {
+  const PAD = 6;
+  const GUT = 0;
+  const W = 262;
+  const H = 132;
+  // Headroom for the seam marker. It cannot live inside the plot: at the default
+  // graticule a grid meridian falls exactly on the seam, so a line drawn there
+  // is a line drawn underneath another one whatever order they are painted in.
+  const TOP = 13;
+  const lonSpan = patch.halfSpanDeg * 2;
+  const latSpan = patch.latMaxDeg * 2;
+  const lonMin = patch.seamLonDeg - patch.halfSpanDeg;
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W + GUT + PAD * 2} ${H + TOP + PAD}`);
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute(
+    'aria-label',
+    `The seam between P${patch.a + 1} and P${patch.b + 1}, offsets magnified ${Math.round(gain)} times`,
+  );
+
+  const x = (lon: number, dLon: number): number =>
+    GUT + PAD + ((lon + dLon * gain - lonMin) / lonSpan) * W;
+  const y = (lat: number, dLat: number): number =>
+    TOP + ((patch.latMaxDeg - (lat + dLat * gain)) / latSpan) * H;
+
+  const tints = [PROJECTOR_TINTS[patch.a] ?? '#888', PROJECTOR_TINTS[patch.b] ?? '#888'];
+  for (const which of [0, 1] as const) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('fill', 'none');
+    g.setAttribute('stroke', tints[which]);
+    g.setAttribute('stroke-width', '1.3');
+    g.setAttribute('stroke-linecap', 'round');
+    g.setAttribute('stroke-linejoin', 'round');
+    for (const line of patch.lines) {
+      if (line.which !== which) continue;
+      const pts: string[] = [];
+      for (let i = 0; i < line.lonDeg.length; i++) {
+        pts.push(
+          `${x(line.lonDeg[i], line.dLonDeg[i]).toFixed(1)},` +
+            `${y(line.latDeg[i], line.dLatDeg[i]).toFixed(1)}`,
+        );
+      }
+      if (pts.length > 1) {
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        poly.setAttribute('points', pts.join(' '));
+        g.append(poly);
+      }
+    }
+    svg.append(g);
+  }
+
+  // Drawn LAST. At the default graticule a grid meridian falls exactly on the
+  // seam, so underneath the lines this was invisible — and the legend was
+  // pointing at a dashed line nobody could see.
+  const sx = x(patch.seamLonDeg, 0).toFixed(1);
+  const seam = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  seam.setAttribute('x1', sx);
+  seam.setAttribute('x2', sx);
+  seam.setAttribute('y1', String(TOP));
+  seam.setAttribute('y2', String(TOP + H));
+  seam.setAttribute('stroke', 'rgba(255,255,255,0.45)');
+  seam.setAttribute('stroke-dasharray', '3 5');
+  svg.append(seam);
+  const mark = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  mark.setAttribute('x', sx);
+  mark.setAttribute('y', '9');
+  mark.setAttribute('text-anchor', 'middle');
+  mark.setAttribute('fill', 'rgba(255,255,255,0.55)');
+  mark.setAttribute('font-size', '8.5');
+  mark.textContent = 'seam';
+  svg.append(mark);
+  return svg as unknown as HTMLElement;
+}
+
+/** Which colour is which projector, said once under the picture. */
+function seamLegend(patch: SeamPatch): HTMLElement {
+  const row = el('div', { className: 'legend' });
+  for (const slot of [patch.a, patch.b]) {
+    const item = el('span');
+    const swatch = el('i');
+    swatch.style.background = PROJECTOR_TINTS[slot] ?? '#888';
+    item.append(swatch, `P${slot + 1}`);
+    row.append(item);
+  }
+  // Named rather than described: at the default graticule a grid meridian falls
+  // on the seam and hides the dashed rule, so "dashed" was pointing at something
+  // a reader could not always find. The marker at the top of the plot is labelled.
+  row.append(el('span', { textContent: 'seam: where they hand over' }));
+  return row;
+}
+
+/**
+ * How much to magnify a seam's offsets.
+ *
+ * Chosen to put the worst one at a fixed fraction of the window rather than
+ * tuned by eye, capped so a rig that is out by a lot does not draw lines off the
+ * patch, and floored at 1 so an aligned seam draws as one line rather than as
+ * two that have been pushed apart to look like something.
+ */
+function seamGain(worstDeg: number): number {
+  if (!(worstDeg > 1e-4)) return 1;
+  return Math.max(1, Math.min(120, 3.2 / worstDeg));
+}
+
 function flushRun(g: SVGElement, run: string[]): string[] {
   const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
   line.setAttribute('points', run.join(' '));
@@ -2282,6 +2418,112 @@ function configText(recovered: RigCalibration, documented: RigCalibration): stri
     );
   }
   return lines.join('\n');
+}
+
+/**
+ * The doubled line itself, at one seam, with a picker for the others.
+ *
+ * The page's headline is a millimetre figure and its subject is a pair of lines
+ * that do not sit on top of each other. Everything else here — the badge, the
+ * gate, the warp mesh — describes that pair without ever drawing it, and the
+ * reference implementation is right that this is the picture the product is
+ * about. It lives in the readout rather than in the calibration result because
+ * the doubled line exists BEFORE you solve; that is the whole complaint.
+ *
+ * After a recalibration the same seam is drawn twice, before and after, at the
+ * same magnification — a comparison at two different scales would be worthless
+ * and is the easiest way to accidentally overstate a result.
+ */
+function seamSection(): HTMLElement | null {
+  const seams = model?.seams ?? [];
+  if (seams.length === 0) return null;
+  const pick = Math.min(seamPick, seams.length - 1);
+  const patch = seams[pick];
+  const box = el('div', { className: 'sect' });
+
+  const head = el('div', { className: 'rowline' });
+  head.append(el('p', { className: 'eyebrow-sm', textContent: 'At the seams' }));
+  head.append(
+    el('span', {
+      className: 'note tiny num',
+      textContent: `${fmtMm(patch.worstMm)} mm apart`,
+      title:
+        'The worst distance between the two projectors’ copies of the same point, inside this ' +
+        'seam. The headline above is the worst point anywhere on the sphere.',
+    }),
+  );
+  box.append(head);
+
+  box.append(
+    chipRow(
+      seams.map((s, i) => ({
+        label: `P${s.a + 1}–P${s.b + 1}`,
+        on: i === pick,
+        onPick: () => {
+          seamPick = i;
+          renderReadout();
+        },
+      })),
+    ),
+  );
+
+  // ONE magnification for both pictures, taken from whichever is worse — which
+  // before a solve is the "before" and after one is very much not.
+  // Same seam, or no comparison: the ring is rebuilt on every pass and a "before"
+  // taken from a different pair of projectors would be a comparison of two
+  // unrelated things wearing the same label.
+  const snapshot = beforeSeams[pick] ?? null;
+  const before = snapshot && snapshot.a === patch.a && snapshot.b === patch.b ? snapshot : null;
+  const gain = seamGain(Math.max(patch.worstDeg, before?.worstDeg ?? 0));
+
+  if (before && solveResult) {
+    // The caption follows the numbers. "They draw the same lines in different
+    // places" is the usual case and is false for a seam that was already clean —
+    // which happens whenever the bump was on the other side of the ring.
+    box.append(
+      el('p', {
+        className: 'note tiny',
+        textContent:
+          before.worstMm >= 0.5
+            ? `Before — P${before.a + 1} and P${before.b + 1} draw the same lines in different places`
+            : `Before — P${before.a + 1} and P${before.b + 1} already agreed here`,
+      }),
+    );
+    box.append(seamDiagram(before, gain));
+    box.append(
+      el('p', {
+        className: 'note tiny',
+        textContent: `After — ${fmtMm(before.worstMm)} mm apart became ${fmtMm(patch.worstMm)} mm`,
+      }),
+    );
+  }
+  box.append(seamDiagram(patch, gain));
+  box.append(seamLegend(patch));
+
+  box.append(
+    el('p', {
+      className: 'note',
+      textContent:
+        'Both projectors paint this patch, so every line here is drawn twice — once by each, in ' +
+        'its own colour, and the marked meridian is where they hand over. Where the two ' +
+        'copies land apart is the doubled line a visitor notices. The solver removes it by bending ' +
+        'each projector’s image on the warp mesh.',
+    }),
+  );
+  // What the picture's scale is, always — a diagram whose magnification is
+  // chosen to look convincing and then not stated is not evidence.
+  box.append(
+    el('p', {
+      className: 'note tiny num',
+      textContent:
+        gain > 1.01
+          ? `offsets magnified ×${gain < 10 ? gain.toFixed(1) : gain.toFixed(0)} to be visible at all`
+          : patch.worstMm < 0.5
+            ? 'true scale — the two copies are on top of each other'
+            : 'true scale — no magnification needed to see them apart',
+    }),
+  );
+  return box;
 }
 
 function solveSection(): HTMLElement | null {
@@ -2625,6 +2867,9 @@ function renderReadout(): void {
       );
     }
   }
+
+  const seamBox = seamSection();
+  if (seamBox) readoutEl.append(seamBox);
 
   const solveBox = solveSection();
   if (solveBox) readoutEl.append(solveBox);
