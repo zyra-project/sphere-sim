@@ -59,7 +59,7 @@ export interface DisplayOptions {
   markerSelected?: number;
   /** Floor to ceiling, metres. The hangers and the sphere's rod reach it. */
   ceilingM?: number;
-  /** Draw the guard rail. */
+  /** Draw the guard rail, its floor ring and the sphere's rod. Off by default. */
   rail?: boolean;
   /** Draw a faint cone of light from each lens to the ball. */
   aimGuides?: boolean;
@@ -201,6 +201,19 @@ export interface DisplayUniforms {
   highlight: number;
   drawFloor: number;
   floorRadius: number;
+  /**
+   * Viewing gain on the picture, and on nothing else.
+   *
+   * The sphere is a PAINTED BALL lit by four projectors, so what it shows is
+   * `texture × reflectance × cos(incidence)`: 0.9 for §1's paint, and a cosine
+   * that runs to zero at the limb. A demo that draws the map as an emissive
+   * material has neither term and is most of a stop brighter for it. Ours is the
+   * physically right picture and it is genuinely dim, so the viewer gets an
+   * exposure the way a camera has one.
+   *
+   * The parity check builds its own uniforms and does not pass this, so the
+   * render it reads back is the model's own radiance. No metric can see it.
+   */
   exposure: number;
   displayGamma: number;
 
@@ -322,7 +335,14 @@ export function buildDisplayUniforms(
     markerRadius: options.markerRadiusM ?? 0,
     markerSelected: rigIndexOf(options.markerSelected ?? -1, options.slots),
     ceiling: options.ceilingM ?? 4.27,
-    rail: (options.rail ?? true) ? 1 : 0,
+    // Opt-IN, exactly like `markerRadiusM` and for exactly the same reason: the
+    // CPU two-rig renderer draws no furniture, so anything the display shader
+    // draws by default is a difference the parity check reports as a
+    // disagreement between two renderers. This defaulted to true and only got
+    // away with it because `roomHit` used to refuse to march at all unless the
+    // markers were on — so fixing the guard rail's toggle turned the parity
+    // check red, which is the check doing its job.
+    rail: (options.rail ?? false) ? 1 : 0,
     aimGuides: (options.aimGuides ?? false) ? 1 : 0,
   };
 }

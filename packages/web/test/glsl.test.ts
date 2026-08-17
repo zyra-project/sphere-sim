@@ -236,6 +236,14 @@ test('the markers are off unless asked for, so the parity check never sees one',
   assert.equal(u.markerRadius, 0);
   assert.equal(u.markerSelected, -1);
   assert.equal(pickMarker(u, 0, 0), -1, 'nothing can be picked when nothing is drawn');
+  // The rail is the same hazard and had the same rule stated about it in prose
+  // while defaulting the other way. It got away with it only because the room
+  // march refused to run without markers; the moment the guard rail earned its
+  // own toggle, the parity check went red.
+  assert.equal(u.rail, 0, 'the guard rail must be opt-in, or the parity render draws one');
+  assert.equal(u.aimGuides, 0);
+  assert.equal(u.drawFloor, 1, 'the floor is the one piece of scenery that is opt-OUT');
+  assert.equal(u.exposure, 1, 'a linear readback must not be scaled by a viewing gain');
 });
 
 test('a click picks the projector under it, and never one behind the sphere', () => {

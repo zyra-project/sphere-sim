@@ -590,6 +590,10 @@ float roomDistance(vec3 p, out int which) {
   float ceilZ = floorZ + uCeilingM;
   float d = 1e9;
 
+  // The room's own structure: the guard rail, and the rod the sphere hangs from.
+  // PARAMETERS.md section 4.4 on the rod — the ceiling mount is why the north cap
+  // needs no software mask and the south does. The ball has to hang from
+  // something whether or not the projectors are being drawn.
   if (uRailOn == 1) {
     d = min(d, sdTorusZ(p - vec3(0.0, 0.0, floorZ + RAIL_TOP_M), RAIL_RADIUS_M, 0.021));
     d = min(d, sdTorusZ(p - vec3(0.0, 0.0, floorZ + RAIL_MID_M), RAIL_RADIUS_M, 0.013));
@@ -600,13 +604,16 @@ float roomDistance(vec3 p, out int which) {
     float rad = length(p.xy);
     vec3 q = vec3(rad * cos(folded) - RAIL_RADIUS_M, rad * sin(folded), p.z - floorZ - 0.52);
     d = min(d, sdCylinderZ(q, 0.52, 0.021));
+
+    float rodTop = ceilZ;
+    float rodBot = uRadius * 0.96;
+    d = min(d, sdCylinderZ(vec3(p.xy, p.z - 0.5 * (rodTop + rodBot)), max(0.5 * (rodTop - rodBot), 0.0), 0.018));
   }
 
-  // The rod the sphere hangs from. PARAMETERS.md section 4.4: the ceiling mount is
-  // why the north cap needs no software mask and the south does.
-  float rodTop = ceilZ;
-  float rodBot = uRadius * 0.96;
-  d = min(d, sdCylinderZ(vec3(p.xy, p.z - 0.5 * (rodTop + rodBot)), max(0.5 * (rodTop - rodBot), 0.0), 0.018));
+  // Everything below hangs off the PROJECTOR toggle. The rail and the rod above
+  // do not: one flag used to gate the march itself, so turning the projectors
+  // off took the handrail, the rod and the floor plan with them.
+  if (uMarkerRadius <= 0.0) return d;
 
   for (int i = 0; i < MAX_PROJ; i++) {
     if (i >= uProjCount) continue;
@@ -647,7 +654,8 @@ vec3 roomNormal(vec3 p) {
  */
 int roomHit(vec3 origin, vec3 dir, float maxT, out float hitT) {
   hitT = maxT;
-  if (uMarkerRadius <= 0.0) return -2;
+  // Nothing to march only when BOTH kinds of furniture are off.
+  if (uMarkerRadius <= 0.0 && uRailOn == 0) return -2;
   float t = 0.02;
   int which = -1;
   for (int s = 0; s < ROOM_STEPS; s++) {
@@ -744,7 +752,7 @@ void main() {
         sceneT = tf;
         // The rail's footprint, so the room has a floor plan rather than a
         // circle of grey. Presentation, like the rail itself.
-        if (uMarkerRadius > 0.0 && uRailOn == 1) {
+        if (uRailOn == 1) {
           float ring = abs(length(p.xy) - RAIL_RADIUS_M);
           c = mix(c, c * 1.9 + vec3(0.010, 0.012, 0.016), 1.0 - smoothstep(0.02, 0.05, ring));
         }

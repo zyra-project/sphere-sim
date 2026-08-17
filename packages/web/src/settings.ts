@@ -119,7 +119,12 @@ export const GROUPS: readonly Group[] = [
     title: 'What went wrong',
     blurb:
       'Nobody mounts four projectors perfectly. This shakes the rig by the tolerances PARAMETERS.md §2 ' +
-      'states — and the software is not told. That gap is the whole problem the solver exists to close.',
+      'states — and the software is not told. That gap is the whole problem the solver exists to close. ' +
+      'The draw is pseudo-random but never arbitrary: each degree of freedom is a normal draw about ' +
+      'its nominal, at the sigma §2 implies — 0.75° of azimuth, 0.3° of yaw and pitch, 0.5° of roll, ' +
+      '30 mm of distance, 20 mm of height — scaled by Mount error and fixed by the seed, so the same ' +
+      'seed gives byte-identical projectors every time. The two Bump buttons are not random at all: ' +
+      'they add a fixed step by hand, on top of whatever the mount already did.',
   },
   {
     id: 'blend',
@@ -187,6 +192,12 @@ export interface Settings {
   viewRangeM: number;
   /** §6 `fov_eye`. Inert to every metric, and the tests assert it. */
   viewFovDeg: number;
+  /**
+   * Viewing gain on the picture. PANEL class: it multiplies the render on its
+   * way to the screen and nothing else, exactly like the brightness knob on a
+   * monitor.
+   */
+  viewExposure: number;
   /** Grid spacing on the alignment pattern, degrees. */
   gridDeg: number;
   /**
@@ -326,6 +337,11 @@ export const BOULDER_PRESET: Settings = {
   viewElDeg: 14,
   viewRangeM: 10.2,
   viewFovDeg: 71,
+  // Opens above 1. The model's own radiance off a 0.9-albedo ball at a real
+  // incidence angle is a dim picture on a bright screen — correct, and hard to
+  // look at beside a demo that draws the map as an emissive texture. This is the
+  // only place the two are reconciled, and it is a display term.
+  viewExposure: 1.8,
   gridDeg: 15,
   ambient: 0.04,
   content: CONTENT_MARBLE,
@@ -1023,6 +1039,26 @@ export const CONTROLS: readonly ControlSpec[] = [
     decimals: 1,
     group: 'view',
     help: 'How far back you are from the middle of the ball.',
+  },
+  {
+    key: 'viewExposure',
+    label: 'Screen brightness',
+    symbol: '',
+    section: '§6',
+    klass: 'PANEL',
+    min: 0.5,
+    max: 4,
+    step: 0.1,
+    unit: '×',
+    decimals: 1,
+    group: 'view',
+    help:
+      'How hard the picture is exposed on the way to your screen, like the brightness knob on a ' +
+      'monitor. It multiplies the render and nothing else: no metric can see it, the parity check ' +
+      'reads the model’s own radiance underneath it, and turning it up does not make the ' +
+      'projectors brighter — Lamp output on the Projectors tab does that. It opens above 1 because ' +
+      'the sphere is a painted ball at 0.9 reflectance lit at an angle, so the honest picture is ' +
+      'darker than a demo that draws the map as if it glowed.',
   },
   {
     key: 'viewFovDeg',

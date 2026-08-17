@@ -340,7 +340,18 @@ function paintFramePair(target: HTMLCanvasElement, before: FrameImage, after: Fr
  * frames at 768 on every settle would cost more than the picture is worth.
  */
 const THUMB_PX = 296;
-const ZOOM_PX = 768;
+
+/**
+ * How wide to re-render for the lightbox: enough for the screen it lands on,
+ * capped so a 5K monitor does not ask the worker for a 4000-pixel CPU trace of
+ * four frames. A fixed 768 was still an upscale on any modern display.
+ */
+function zoomWidth(): number {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const wide = Math.max(window.innerWidth * 0.92, window.innerHeight * 0.84 * (16 / 9));
+  return Math.round(Math.max(768, Math.min(1600, wide * dpr)));
+}
+
 let previewWidth = THUMB_PX;
 
 /** Which projector the lightbox is showing, so a re-render can repaint it. */
@@ -352,8 +363,9 @@ function openLightbox(frame: FrameImage, caption: string, slot = -1): void {
   if (cap) cap.textContent = caption;
   lightboxEl.classList.add('on');
   lightboxSlot = slot;
-  if (slot >= 0 && previewWidth !== ZOOM_PX) {
-    previewWidth = ZOOM_PX;
+  const want = zoomWidth();
+  if (slot >= 0 && previewWidth !== want) {
+    previewWidth = want;
     requestModel(true);
   }
 }
@@ -798,6 +810,7 @@ let beforeFrames: (FrameImage | null)[] = [];
  * rather than tracked.
  */
 let beforeSeams: SeamPatch[] = [];
+let beforeMeshes: (WarpMesh | null)[] = [];
 let seamPick = 0;
 
 function startSolve(): void {
@@ -811,6 +824,7 @@ function startSolve(): void {
   // there is no way back to the frames it was generating.
   beforeFrames = (model?.projectorFrames ?? []).slice();
   beforeSeams = (model?.seams ?? []).slice();
+  beforeMeshes = (model?.meshes ?? []).slice();
   solveStartedAt = performance.now();
   solveStage = 'Placing the cameras…';
   const req: SolveRequest = {
@@ -837,6 +851,7 @@ function forgetCalibration(): void {
   state.compositorRig = null;
   beforeFrames = [];
   beforeSeams = [];
+  beforeMeshes = [];
   solveResult = null;
   solveTrace = [];
   solveStep = null;
@@ -852,6 +867,7 @@ function invalidateCalibration(): void {
   state.compositorRig = null;
   beforeFrames = [];
   beforeSeams = [];
+  beforeMeshes = [];
   solveResult = null;
   solveTrace = [];
   solveStep = null;
@@ -923,6 +939,9 @@ function draw(): void {
       drawFloor: true,
       floorRadiusM: 13,
       displayGamma: 2.2,
+      // Display only. `checkParity` builds its own uniforms and does not pass
+      // this, so what the parity check reads back is the model's own radiance.
+      exposure: state.settings.viewExposure,
       markerRadiusM: state.markersOn ? MARKER_RADIUS_M : 0,
       markerSelected: state.selected,
       ceilingM: state.settings.ceilingM,
@@ -966,10 +985,13 @@ function checkParity(
       prepareRig(world.compositorRig),
       world.scene,
       camera,
-      // No floor and no overlay: `renderTwoRigRoomView` draws neither, so drawing
-      // either here would make the parity number measure a difference in
-      // settings. The cost is that `shadeFloor` — its occlusion test and the room
-      // albedo — is the one part of the shader this check does not cover.
+      // No floor, no overlay and NO EXPOSURE: `renderTwoRigRoomView` has none of
+      // the three, so passing any of them here would make the parity number
+      // measure a difference in settings rather than a disagreement between two
+      // renderers. Exposure defaults to 1 by omission, which is the whole reason
+      // the viewing gain can exist without touching this check. The cost is that
+      // `shadeFloor` — its occlusion test and the room albedo — is the one part
+      // of the shader this check does not cover.
       { overlay: 'none', highlight: -1, drawFloor: false, displayGamma: 0, slots: world.slots },
     );
     const gpu = renderAndRead(gl, uniforms, cpu.width, cpu.height);
@@ -1279,6 +1301,7 @@ function installSection(): HTMLElement[] {
             viewElDeg: state.settings.viewElDeg,
             viewRangeM: state.settings.viewRangeM,
             viewFovDeg: state.settings.viewFovDeg,
+            viewExposure: state.settings.viewExposure,
             content: state.settings.content,
             gridOn: state.settings.gridOn,
           };
@@ -1503,8 +1526,9 @@ function roomSection(): HTMLElement[] {
       {
         label: 'Guard rail',
         title:
-          'The rail visitors stand behind, and its footprint on the floor. Scenery — nothing in ' +
-          'the model reads it, it emits no light and occludes none.',
+          'The rail visitors stand behind, its footprint on the floor, and the rod the sphere ' +
+          'hangs from. Scenery — nothing in the model reads it, it emits no light and occludes ' +
+          'none.',
         on: state.railOn,
         onPick: () => {
           state.railOn = !state.railOn;
@@ -1761,6 +1785,14 @@ function openHelp(): void {
     '"Show only" on the Room tab draws one projector\u2019s light on its own. It changes the ' +
       'picture and nothing else; the switch that actually turns a projector off is on the ' +
       'Projectors tab, beside its sliders.',
+    'Nothing here is arbitrary. "Another install" draws each mount error from a normal about its ' +
+      'nominal at the tolerance \u00a72 implies, fixed by a seed you can see and set on the Install ' +
+      'tab \u2014 the same seed gives the same rig forever. The two Bump buttons add a fixed step ' +
+      'rather than a random one, so the same click twice does the same thing.',
+    'The sphere looks dimmer here than in a demo that draws a map as if it glowed, because it is a ' +
+      'painted ball: what you see is the image times the paint\u2019s 0.9 reflectance times the ' +
+      'cosine of the angle the light arrives at, which falls to nothing at the edge. "Screen ' +
+      'brightness" on the Room tab exposes the picture without touching a single number.',
     'The "what do these do?" link above the sliders turns on a plain-language note under every ' +
       'control, and stays on until you turn it off.',
     'This sheet is always one press of "?" away, top right.',
@@ -1829,6 +1861,36 @@ function renderActions(): void {
     touched(true);
   });
   actionsEl.append(bump);
+
+  // The reference calls this "drift all", and it is a different thing from
+  // "another install": this knocks every lens by hand, on top of whatever the
+  // mount already did, without redrawing the mount error or changing the seed.
+  // A building settling moves all four; a ladder moves one.
+  const bumpAll = el('button', {
+    className: 'btn',
+    textContent: 'Bump all four',
+    title:
+      'Knock every projector by the same amount in a different direction. A fixed step, not a ' +
+      'random one — the same click twice does the same thing.',
+  });
+  bumpAll.addEventListener('click', () => {
+    let next = state.settings;
+    for (let i = 0; i < next.nudge.length; i++) {
+      const n = next.nudge[i];
+      // Deterministic and different per projector: alternating signs, so the four
+      // do not all move the same way and cancel at every seam.
+      const sy = i % 2 === 0 ? 1 : -1;
+      const sr = i < 2 ? 1 : -1;
+      next = withNudge(next, i, {
+        yawDeg: Math.max(-3, Math.min(3, (n?.yawDeg ?? 0) + 0.18 * sy)),
+        pitchDeg: Math.max(-3, Math.min(3, (n?.pitchDeg ?? 0) + 0.12 * sr)),
+        rollDeg: Math.max(-3, Math.min(3, (n?.rollDeg ?? 0) + 0.1 * sy * sr)),
+      });
+    }
+    state.settings = next;
+    touched(true);
+  });
+  actionsEl.append(bumpAll);
 
   const drift = el('button', {
     className: 'btn',
@@ -1999,9 +2061,9 @@ function renderInspect(): void {
       const slot = state.selected;
       if (beforeFrames[slot] && solveResult) paintFramePair(c, beforeFrames[slot]!, frame);
       else paintFrame(c, frame);
-      c.addEventListener('click', () =>
-        openLightbox(frame, `P${slot + 1} — ${frame.caption}`, slot),
-      );
+      // The caption already opens with the projector id, so prefixing it printed
+      // "P1 — P1 — 3840 × 2160".
+      c.addEventListener('click', () => openLightbox(frame, frame.caption, slot));
       inspectEl.append(c);
       inspectEl.append(
         el('p', {
@@ -2116,8 +2178,29 @@ function renderInspect(): void {
     // error are both a straight grid, so the factor is chosen to put the worst
     // vertex at a fixed fraction of the raster — and then printed, because a
     // diagram whose scale is picked to look convincing is not evidence.
-    const gain =
-      mesh.worstPx > 1e-9 ? Math.min(400, Math.max(1, (0.07 * mesh.resX) / mesh.worstPx)) : 1;
+    //
+    // When there is a before, ONE factor covers both pictures, taken from the
+    // worse of the two. A solved mesh is nearly flat and would otherwise be
+    // magnified a hundred times more than the mesh it is being compared with,
+    // which would draw the correction as having got worse.
+    const was = solveResult ? (beforeMeshes[state.selected] ?? null) : null;
+    const worst = Math.max(mesh.worstPx, was?.worstPx ?? 0);
+    const gain = worst > 1e-9 ? Math.min(400, Math.max(1, (0.07 * mesh.resX) / worst)) : 1;
+    if (was) {
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent: `Before — the bend the compositor was applying, ${was.worstPx.toFixed(1)} px at worst`,
+        }),
+      );
+      inspectEl.append(meshDiagram(was, 'rgba(255,107,107,0.85)', gain));
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent: `After — ${mesh.worstPx.toFixed(2)} px, at the same magnification`,
+        }),
+      );
+    }
     inspectEl.append(meshDiagram(mesh, tint, gain));
     inspectEl.append(
       el('p', {

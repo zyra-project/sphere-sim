@@ -110,6 +110,16 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   content, viewpoint and overlays. The panel minimises to an icon, because a
   settings window in the middle of the screen with the sphere behind it has no
   good answer to "how do I move this".
+- **A picture you can expose, and a reason it needs it.** The sphere is a painted
+  ball lit by four projectors, so what it shows is `texture × ρ × cos(incidence)`
+  — §1's 0.90 paint, and a cosine that runs to zero at the limb. A demo that
+  draws the map as an emissive material has neither term, which is why one looks
+  most of a stop brighter than this: measured against the reference app at the
+  same framing, its lit pixels averaged 156 of 255 and ours 53. Ours is the
+  physically right picture and it is genuinely dim on a bright screen, so "Screen
+  brightness" on the Room tab is a viewing gain — class `PANEL`, applied on the
+  way to the canvas, excluded from the linear readback the parity check reads,
+  and invisible to every metric. It opens at 1.8×.
 - **A rig that starts aligned.** The page opens at Boulder's three constants with
   the §2 mount shake at zero, reading `0.01 mm · ALIGNED`. "Another install" draws
   the tolerances, "Bump this one" knocks the selected lens a quarter of a degree,
