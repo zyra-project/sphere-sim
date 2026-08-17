@@ -385,6 +385,51 @@ export function pickMarker(u: DisplayUniforms, ndcX: number, ndcY: number): numb
 /** March steps. The shader's `ROOM_STEPS`; more would only cost a click. */
 const PICK_STEPS = 72;
 
+/**
+ * The same pick, widened to the size of a fingertip.
+ *
+ * `pickMarker` asks what is exactly under one ray, which is the right question
+ * for a mouse and the wrong one for a thumb. A projector body is about ten CSS
+ * pixels across on a phone and a touch point is nearer forty, so an exact test
+ * answers "nothing" for taps that visibly landed on a projector — the whole
+ * gesture then does nothing, with no way for the person tapping to tell whether
+ * they missed or the page is broken.
+ *
+ * Sampling rings outward from the tap and taking the first hit means the answer
+ * is still the projector NEAREST to where the finger went down, so a tap between
+ * two of them cannot silently pick the far one. The centre is always tried
+ * first, so a precise pointer keeps its exact behaviour.
+ *
+ * `radiusX`/`radiusY` are the tolerance in NDC — a pixel radius scaled by the
+ * canvas, which is why they are two numbers and not one.
+ */
+export function pickMarkerNear(
+  u: DisplayUniforms,
+  ndcX: number,
+  ndcY: number,
+  radiusX: number,
+  radiusY: number,
+): number {
+  const centre = pickMarker(u, ndcX, ndcY);
+  if (centre >= 0 || radiusX <= 0 || radiusY <= 0) return centre;
+  for (const scale of PICK_RINGS) {
+    for (let k = 0; k < PICK_RING_SAMPLES; k++) {
+      const a = (2 * Math.PI * k) / PICK_RING_SAMPLES;
+      const hit = pickMarker(
+        u,
+        ndcX + Math.cos(a) * radiusX * scale,
+        ndcY + Math.sin(a) * radiusY * scale,
+      );
+      if (hit >= 0) return hit;
+    }
+  }
+  return -1;
+}
+
+/** Two rings is enough to cover a fingertip without eight more sphere traces. */
+const PICK_RINGS = [0.5, 1] as const;
+const PICK_RING_SAMPLES = 8;
+
 /** `glsl.ts` `sdProjector`, in the frame where the lens is the origin. */
 function projectorDistance(
   u: DisplayUniforms,

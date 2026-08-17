@@ -23,7 +23,7 @@ import {
   glslFunctionNames,
   glslUniformNames,
 } from '../src/glsl.ts';
-import { buildDisplayUniforms, packRig, pickMarker } from '../src/uniforms.ts';
+import { buildDisplayUniforms, packRig, pickMarker, pickMarkerNear } from '../src/uniforms.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import { BOULDER_PRESET } from '../src/settings.ts';
 import { buildViewer, buildWorld } from '../src/rigs.ts';
@@ -288,6 +288,70 @@ test('a click picks the projector under it, and never one behind the sphere', ()
 
   // A corner of the frame is room, not lens.
   assert.equal(pickMarker(u, -1, -1), -1);
+});
+
+test('a fingertip-wide tap finds the projector it landed beside, and still not one behind the sphere', () => {
+  // `pickMarkerNear` is what a touchscreen calls. The property it has to keep is
+  // the one above — you cannot select what you cannot see — while answering for
+  // a contact patch rather than a point, because a projector body is about ten
+  // CSS pixels across on a phone and an exact test says "nothing" to most real
+  // taps.
+  const world = buildWorld(BOULDER_PRESET);
+  const physical = prepareRig(world.truthRig);
+  const camera = buildViewer(BOULDER_PRESET, 64, 48);
+
+  for (let i = 0; i < 4; i++) {
+    const lens = {
+      x: physical.projectors[i].lens.x,
+      y: physical.projectors[i].lens.y,
+      z: physical.projectors[i].lens.z,
+    };
+    const len = Math.hypot(lens.x, lens.y, lens.z);
+    const outside = { x: (lens.x / len) * (len + 3), y: (lens.y / len) * (len + 3), z: lens.z };
+    const looking = buildDisplayUniforms(
+      physical,
+      prepareRig(world.compositorRig),
+      world.scene,
+      { ...camera, position: outside, target: lens },
+      { markerRadiusM: 0.12 },
+    );
+
+    // Walk out from the barrel until an exact ray stops hitting it, then tap
+    // just past that edge. Measured rather than assumed: how much NDC a
+    // projector body covers depends on where the camera was put.
+    let missX = 0;
+    while (missX < 1 && pickMarker(looking, missX, 0) === i) missX += 0.01;
+    assert.ok(missX < 1, `P${i + 1} covers the whole frame; the camera is wrong`);
+    assert.equal(pickMarker(looking, missX, 0), -1, 'the near miss should be an exact miss');
+    assert.equal(
+      pickMarkerNear(looking, missX, 0, 0.03, 0.03),
+      i,
+      `a tap just past the edge of P${i + 1} did not find it`,
+    );
+
+    // Tolerance must not become x-ray vision: from the far side the sphere is in
+    // the way, and widening the search must not start returning the hidden lens.
+    const behind = { x: -outside.x, y: -outside.y, z: outside.z };
+    const through = buildDisplayUniforms(
+      physical,
+      prepareRig(world.compositorRig),
+      world.scene,
+      { ...camera, position: behind, target: lens },
+      { markerRadiusM: 0.12 },
+    );
+    assert.notEqual(
+      pickMarkerNear(through, 0, 0, 0.12, 0.12),
+      i,
+      `P${i + 1} was picked through the sphere by a wide tap`,
+    );
+  }
+
+  // Zero tolerance is exactly the old behaviour, and empty room is still empty.
+  const u = buildDisplayUniforms(physical, prepareRig(world.compositorRig), world.scene, camera, {
+    markerRadiusM: 0.12,
+  });
+  assert.equal(pickMarkerNear(u, -1, -1, 0, 0), pickMarker(u, -1, -1));
+  assert.equal(pickMarkerNear(u, -1, -1, 0.05, 0.05), -1, 'the corner of the room is not a lens');
 });
 
 test('every chunk names the sim module it mirrors', () => {

@@ -36,6 +36,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+/** The phone the last pass emulates: an iPhone 14/15 in portrait, in CSS pixels. */
+const PHONE_W = 390;
+const PHONE_H = 844;
+
 const CANDIDATE_BROWSERS = [
   process.env.CHROME_PATH,
   '/opt/pw-browsers/chromium',
@@ -606,6 +610,83 @@ async function main(): Promise<void> {
       const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
       fs.writeFileSync(opts.screenshot, Buffer.from(shot.data, 'base64'));
       process.stdout.write(`  screenshot: ${opts.screenshot}\n`);
+    }
+
+    // ---- and now the same page on a phone ---------------------------------
+    //
+    // This pass exists because the desktop one passed while the phone layout was
+    // unusable: measured on a 390×844 screen the panels covered the canvas from
+    // edge to edge — 0 visible pixels of room — and the readout was crushed into
+    // 31 px. Every check above was green throughout. What follows asserts the
+    // two things a phone visitor needs and a wide window never exercises: that
+    // the room is visible between the sheets, and that a pinch zooms, since a
+    // phone has no scroll wheel.
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: PHONE_W,
+      height: PHONE_H,
+      deviceScaleFactor: 2,
+      mobile: true,
+    });
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    await cdp.send('Page.navigate', { url: opts.url });
+    await sleep(1200);
+    for (let i = 0; i < 30; i++) {
+      const lit = await cdp.evaluate<string>(
+        "document.getElementById('view')?.dataset?.range ?? ''",
+      );
+      if (lit !== '') break;
+      await sleep(500);
+    }
+    await cdp.evaluate("document.querySelector('[data-smoke=\"help-close\"]')?.click()");
+    await sleep(400);
+
+    const phone = await cdp.evaluate<{ band: number; collapsed: boolean; range: string }>(`(() => {
+      const box = (id) => document.getElementById(id).getBoundingClientRect();
+      return {
+        band: Math.round(box('left').top - box('right').bottom),
+        collapsed: document.getElementById('right').classList.contains('collapsed'),
+        range: document.getElementById('view').dataset.range ?? '',
+      };
+    })()`);
+    if (!phone.collapsed) {
+      failures.push('the control panel opens over the room on a phone instead of collapsed');
+    }
+    if (phone.band < 180) {
+      failures.push(
+        `the room is ${phone.band} px tall between the panels on a ${PHONE_W}×${PHONE_H} screen — ` +
+          'the picture this page is about has been covered up',
+      );
+    } else {
+      process.stdout.write(`  phone: ${phone.band} px of room between the sheets\n`);
+    }
+
+    // Two fingers, drawn apart, at the middle of that visible band.
+    const midY = Math.round(PHONE_H / 2);
+    const finger = (x: number, id: number): unknown => ({ x, y: midY, id, radiusX: 12, radiusY: 12, force: 1 });
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [finger(150, 1), finger(240, 2)],
+    });
+    for (let i = 1; i <= 6; i++) {
+      const half = 45 + i * 9;
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [finger(195 - half, 1), finger(195 + half, 2)],
+      });
+      await sleep(60);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await sleep(600);
+    const pinched = await cdp.evaluate<string>("document.getElementById('view').dataset.range");
+    const before = Number.parseFloat(phone.range);
+    const after = Number.parseFloat(pinched);
+    if (!(after < before - 0.05)) {
+      failures.push(
+        `a pinch did not zoom: the camera stayed at ${phone.range} m (now ${pinched} m). ` +
+          'A phone has no scroll wheel, so this is the only way in.',
+      );
+    } else {
+      process.stdout.write(`  phone: pinch moved the camera ${before.toFixed(1)} → ${after.toFixed(1)} m\n`);
     }
 
     for (const e of cdp.pageErrors) failures.push(`uncaught in the page: ${e.split('\n')[0]}`);

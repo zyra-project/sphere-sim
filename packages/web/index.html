@@ -65,7 +65,10 @@ button { font-family: inherit; }
   display: flex; flex-direction: column; align-items: stretch; gap: 10px;
   overflow: hidden; z-index: 6; pointer-events: none; }
 #right > * { pointer-events: auto; }
-#right.collapsed #controls, #right.collapsed #actions { display: none; }
+/* Collapsing hides the CONTROLS, not the actions. The button says "hide the
+   controls" and the four actions are the whole point of the page — a phone that
+   collapses the panel to see the sphere should not also lose "Recalibrate". */
+#right.collapsed #controls { display: none; }
 #left.collapsed #readout, #left.collapsed #inspect { display: none; }
 #topbtns { display: flex; gap: 6px; justify-content: flex-end; flex: 0 0 auto; }
 #controls { flex: 0 1 auto; min-height: 0; overflow: hidden auto;
@@ -111,13 +114,39 @@ button { font-family: inherit; }
   #right { width: 300px; }
   #left { width: 320px; top: 118px; }
 }
+/* A phone.
+ *
+ * The two columns become two sheets pinned to the top and bottom edges with the
+ * room visible BETWEEN them. That band is the whole design: measured on a
+ * 390×844 screen the old rule gave the canvas exactly zero visible pixels —
+ * controls from 12 to 417, the projector card from 417 to 791, the readout
+ * crushed into the remaining 31 — so the page was a stack of panels describing a
+ * picture nobody could see. Every height here is a viewport fraction for that
+ * reason, and both sheets scroll inside themselves rather than growing.
+ */
 @media (max-width: 820px) {
   #left, #right { left: 8px; right: 8px; width: auto; }
-  #left { top: auto; height: 46vh; }
-  #right { bottom: auto; max-height: 48vh; }
+  /* Clear of the wordmark: the sheet starts below it rather than over it. */
+  #right { top: 56px; bottom: auto; max-height: 58vh; }
+  #left { top: auto; height: auto; max-height: 52vh;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+  #inspect { max-height: 40vh; }
+  #readout { flex: 0 1 auto; max-height: 38vh; }
+  /* One subject at a time. Stacked, the projector card and the readout come to
+     more than the screen and push each other over the room; the sphere then has
+     nowhere left to be tapped, which is also the only way to dismiss them. */
+  #left.inspecting #readout { display: none; }
   #left.collapsed, #right.collapsed { height: auto; }
-  .brand { padding: 12px 14px; }
+  .brand { padding: 10px 12px; }
   .brand .sub { display: none; }
+  .brand h1 { font-size: 15px; letter-spacing: 0.1em; }
+  .brand .eyebrow { font-size: 10px; margin: 0 0 3px; }
+  /* The buttons sit beside the wordmark, not under the sheet they open. */
+  #topbtns { position: fixed; top: 10px; right: 10px; z-index: 7; }
+  /* A 28px icon button is under every touch-target guideline going. */
+  .btn.icon { width: 38px; height: 38px; font-size: 17px; }
+  .btn { padding: 8px 13px; }
+  .chip { padding: 8px 12px; }
 }
 
 /* ---- buttons ------------------------------------------------------------- */

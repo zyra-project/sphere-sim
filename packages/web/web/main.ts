@@ -64,7 +64,7 @@ import {
   worstPlacementOffender,
 } from '../src/rigs.ts';
 import type { Reading, RigFact } from '../src/readout.ts';
-import { buildDisplayUniforms, pickMarker } from '../src/uniforms.ts';
+import { buildDisplayUniforms, pickMarkerNear } from '../src/uniforms.ts';
 import type { DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
 import type { ParityVerdict } from '../src/parity.ts';
 import { BOUNDARY_LIT_ALLOWANCE, PARITY_HEIGHT, PARITY_WIDTH, judgeParity } from '../src/parity.ts';
@@ -95,6 +95,16 @@ interface PageState {
   section: SectionId;
   /** Which projector the Projectors tab is editing, and the inspect card shows. */
   selected: number;
+  /**
+   * Whether the projector card is up.
+   *
+   * Separate from `selected` because on a phone the card is 30% of the screen
+   * and the Projectors tab is the one that opens by default: tying the card to
+   * the tab meant it covered the sphere before anyone had asked to see it, with
+   * no way to put it away. Clicking a projector opens it; clicking past them, or
+   * the card's own ✕, closes it.
+   */
+  inspectOpen: boolean;
   overlay: OverlayMode;
   /** `-1` shows every projector; otherwise isolate one. */
   highlight: number;
@@ -124,6 +134,9 @@ const state: PageState = {
   compositorRig: null,
   section: 'projectors',
   selected: 0,
+  // Open on a wide screen, where it sits beside the room and answers "what is
+  // this page about" without a click. `boot` closes it on a phone.
+  inspectOpen: true,
   overlay: 'none',
   highlight: -1,
   markersOn: true,
@@ -743,6 +756,10 @@ function draw(): void {
   // colour and reads these back.
   canvas.dataset.selected = String(state.selected);
   canvas.dataset.highlight = String(state.highlight);
+  // The camera, so a test can assert that a pinch actually moved it rather than
+  // that the page merely survived one.
+  canvas.dataset.range = state.settings.viewRangeM.toFixed(3);
+  canvas.dataset.az = state.settings.viewAzDeg.toFixed(2);
   drawToCanvas(gl, uniforms, w, h);
 }
 
@@ -860,7 +877,7 @@ function projectorTabs(): HTMLElement {
     dot.style.background = PROJECTOR_TINTS[i] ?? '#888';
     b.append(dot, el('span', { textContent: `P${i + 1}` }));
     b.addEventListener('click', () => {
-      if (state.selected === i) {
+      if (state.selected === i && state.inspectOpen) {
         state.settings = withNudge(state.settings, i, { on: !on });
         touched(true);
         return;
@@ -1240,6 +1257,7 @@ function roomSection(): HTMLElement[] {
           // Isolating also selects, so the inspect card is showing the frame of
           // the projector whose light is on screen rather than some other one's.
           state.selected = i;
+          state.inspectOpen = true;
           markDirty();
           renderControls();
           renderInspect();
@@ -1379,7 +1397,9 @@ function openHelp(): void {
   sheet.append(h('h3', 'Try this'));
   const list = el('ul');
   for (const item of [
-    'Drag the sphere to walk around it. Scroll to move closer.',
+    'Drag to walk around the sphere — the orbit passes underneath it. Scroll, or pinch on a ' +
+      'touchscreen, to move closer. Tap a projector to see the frame it is sending; tap the room ' +
+      'to put that card away.',
     'On the Room tab, press "Whole room" to step outside the ring — all four projectors, each in its own colour. Click a lens to see only its light and the frame going down its cable.',
     'On the Projectors tab, drag "Aim left / right" and watch the grid lines double at the seams — the number on the left climbs past its 1 mm gate.',
     'Press Recalibrate. The simulator photographs the sphere with structured light, the solver works out where the lenses really are from those photographs alone, and the sphere converges as it goes. Five seconds or so.',
@@ -1521,7 +1541,10 @@ function renderInspect(): void {
   // tab is open, or because one is isolated in the room. It used to be tied to
   // the tab alone, which meant clicking a lens in the room lit up its light and
   // showed nothing about it.
-  const subject = state.section === 'projectors' || state.highlight >= 0;
+  const subject = state.inspectOpen && (state.section === 'projectors' || state.highlight >= 0);
+  // The class is on the column, not the card: on a phone it is what tells the
+  // readout to stand down while a projector is the subject.
+  leftEl.classList.toggle('inspecting', subject && frame !== null);
   if (!subject || !frame) {
     inspectEl.classList.remove('on');
     return;
@@ -1558,7 +1581,17 @@ function renderInspect(): void {
       caption = walk;
     }
   }
-  head.append(name, caption);
+  const close = el('button', {
+    className: 'linkish',
+    textContent: '✕',
+    title: 'Put this card away',
+    ariaLabel: 'Close the projector card',
+  });
+  close.addEventListener('click', () => {
+    state.inspectOpen = false;
+    renderInspect();
+  });
+  head.append(name, caption, close);
   inspectEl.append(head);
 
   // One view at a time. All three at once needs more height than a panel beside
@@ -2200,18 +2233,28 @@ function renderReadout(): void {
 // ---------------------------------------------------------------------------
 
 /**
+ * How far from the point of contact a projector still counts as hit, in CSS
+ * pixels. A mouse gets almost nothing — the cursor tip is exact and a generous
+ * radius would select things it is not over. A finger gets 22, which is about
+ * half the 44px touch target everyone's guidelines ask for, because the miss it
+ * prevents (a projector body is ten pixels across on a phone) is total: the tap
+ * does nothing at all and looks like a broken page.
+ */
+const PICK_SLOP_PX: Record<string, number> = { touch: 22, pen: 10, mouse: 3 };
+
+/**
  * Which projector marker is under a canvas event, or `-1`.
  *
  * The NDC conversion is the inverse of the shader's `vUv * 2 - 1`, with y
  * flipped because the DOM measures down from the top and the shader measures up.
  */
-function markerUnder(e: PointerEvent): number {
+function markerUnder(e: PointerEvent, slopPx = PICK_SLOP_PX[e.pointerType] ?? 3): number {
   if (!lastUniforms) return -1;
   const r = canvas.getBoundingClientRect();
   if (r.width <= 0 || r.height <= 0) return -1;
   const ndcX = ((e.clientX - r.left) / r.width) * 2 - 1;
   const ndcY = 1 - ((e.clientY - r.top) / r.height) * 2;
-  return pickMarker(lastUniforms, ndcX, ndcY);
+  return pickMarkerNear(lastUniforms, ndcX, ndcY, (2 * slopPx) / r.width, (2 * slopPx) / r.height);
 }
 
 /**
@@ -2224,6 +2267,7 @@ function markerUnder(e: PointerEvent): number {
 function selectProjector(i: number): void {
   state.selected = i;
   state.highlight = i;
+  state.inspectOpen = true;
   state.section = 'projectors';
   markDirty();
   renderControls();
@@ -2231,83 +2275,222 @@ function selectProjector(i: number): void {
   renderActions();
 }
 
+/**
+ * Orbit degrees per pixel dragged, slowed as the camera closes in.
+ *
+ * At arm's length a drag should swing you round the room; two metres from the
+ * seam the same drag threw the view off the sphere entirely, because a degree of
+ * azimuth covers the same arc no matter how near you are but the SCREEN covers
+ * far less of it. The floor of 0.25 stops the gesture from dying at the closest
+ * zoom.
+ */
+function orbitGain(): number {
+  return Math.min(1, (state.settings.viewRangeM / 10.2) * 0.75 + 0.25);
+}
+
+function zoomTo(range: number): void {
+  state.settings = withSetting(state.settings, 'viewRangeM', range);
+  markDirty();
+  window.clearTimeout(settleTimer);
+  settleTimer = window.setTimeout(() => requestModel(true), 260);
+}
+
 function installPointer(): void {
-  let dragging = false;
+  // Every pointer currently down on the canvas. One is an orbit, two is a pinch.
+  //
+  // The single-pointer version of this was a promise the page did not keep: the
+  // hint line has said "scroll or pinch to zoom" since it was written, and a
+  // phone has no scroll wheel, so on a touchscreen there was no way to zoom at
+  // all short of finding the Range slider inside a panel that covered the
+  // sphere. Two fingers arrived as two independent orbit drags fighting each
+  // other, and the browser then cancelled both.
+  const down = new Map<number, { x: number; y: number }>();
+  let mode: 'idle' | 'orbit' | 'pinch' = 'idle';
   let lastX = 0;
   let lastY = 0;
   // Distance travelled since the press, so a drag that ends over a marker is not
   // also a click on it. Compared against a few pixels rather than zero because a
-  // mouse moves a little while a button goes down.
+  // mouse moves a little while a button goes down — and a finger moves rather
+  // more than a little, which is why the threshold follows the pointer type.
   let travel = 0;
+  let tapType = 'mouse';
+  let pinchSpan0 = 0;
+  let pinchRange0 = 0;
+
+  const span = (): number => {
+    const p = [...down.values()];
+    if (p.length < 2) return 0;
+    return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+  };
+  const beginPinch = (): void => {
+    mode = 'pinch';
+    pinchSpan0 = Math.max(span(), 1);
+    pinchRange0 = state.settings.viewRangeM;
+    // A pinch is not a click, and it is not an orbit either: whichever finger
+    // went down first has already accumulated travel, and lifting it must not
+    // then be read as a tap on whatever is underneath.
+    travel = 1e9;
+  };
 
   canvas.addEventListener('pointerdown', (e) => {
-    dragging = true;
-    lastX = e.clientX;
-    lastY = e.clientY;
-    travel = 0;
-    canvas.classList.add('dragging');
+    down.set(e.pointerId, { x: e.clientX, y: e.clientY });
     canvas.setPointerCapture(e.pointerId);
+    if (down.size === 1) {
+      mode = 'orbit';
+      lastX = e.clientX;
+      lastY = e.clientY;
+      travel = 0;
+      tapType = e.pointerType;
+      canvas.classList.add('dragging');
+    } else if (down.size === 2) {
+      beginPinch();
+    }
   });
+
   const stop = (e: PointerEvent): void => {
-    if (!dragging) return;
-    dragging = false;
-    canvas.classList.remove('dragging');
+    if (!down.has(e.pointerId)) return;
+    down.delete(e.pointerId);
     try {
       canvas.releasePointerCapture(e.pointerId);
     } catch {
       /* the capture was already released */
     }
-    if (travel < 5) {
+    if (down.size === 1) {
+      // Back to one finger: resume orbiting from wherever it now is rather than
+      // from where the pinch started, or the view jumps.
+      const p = [...down.values()][0];
+      mode = 'orbit';
+      lastX = p.x;
+      lastY = p.y;
+      return;
+    }
+    if (down.size > 0) return;
+
+    mode = 'idle';
+    canvas.classList.remove('dragging');
+    // A tap, not a drag. A fingertip wobbles while it lifts; five pixels is the
+    // right threshold for a mouse and would reject most real taps.
+    if (travel < (tapType === 'touch' ? 14 : 5)) {
       const hit = markerUnder(e);
       if (hit >= 0) selectProjector(hit);
-      else if (state.highlight !== -1) {
-        // Clicking past the projectors puts them all back. The pair reads as one
-        // gesture: click a lens to see only it, click the room to see the sum.
+      else {
+        // Clicking past the projectors puts them all back and puts the card
+        // away. The pair reads as one gesture: click a lens to see only it,
+        // click the room to see the sum — and on a phone this is how you get
+        // the sphere back from under the card.
+        const changed = state.highlight !== -1 || state.inspectOpen;
         state.highlight = -1;
-        markDirty();
-        renderActions();
+        state.inspectOpen = false;
+        if (changed) {
+          markDirty();
+          renderActions();
+          renderInspect();
+        }
       }
     }
     requestModel(true);
   };
   canvas.addEventListener('pointerup', stop);
   canvas.addEventListener('pointercancel', stop);
+
   canvas.addEventListener('pointermove', (e) => {
-    if (!dragging) {
-      canvas.classList.toggle('overmarker', markerUnder(e) >= 0);
+    if (!down.has(e.pointerId)) {
+      if (mode === 'idle') canvas.classList.toggle('overmarker', markerUnder(e) >= 0);
       return;
     }
+    down.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (down.size >= 2) {
+      if (mode !== 'pinch') beginPinch();
+      // Fingers apart means zoom IN, which is a shorter range: the ratio is the
+      // starting span over the current one.
+      zoomTo(pinchRange0 * (pinchSpan0 / Math.max(span(), 1)));
+      return;
+    }
+    if (mode !== 'orbit') return;
+
     const dx = e.clientX - lastX;
     const dy = e.clientY - lastY;
     travel += Math.abs(dx) + Math.abs(dy);
     lastX = e.clientX;
     lastY = e.clientY;
+    const gain = orbitGain();
     // Azimuth WRAPS rather than clamping. `withSetting` clamps to the control's
     // declared range, so dragging round the ball used to hit a wall at ±180° —
     // mid-orbit, for no reason a viewer could see.
-    const az = state.settings.viewAzDeg - dx * 0.35;
+    const az = state.settings.viewAzDeg - dx * 0.35 * gain;
     state.settings = withSetting(state.settings, 'viewAzDeg', ((az + 540) % 360) - 180);
-    state.settings = withSetting(state.settings, 'viewElDeg', state.settings.viewElDeg + dy * 0.3);
+    state.settings = withSetting(
+      state.settings,
+      'viewElDeg',
+      state.settings.viewElDeg + dy * 0.3 * gain,
+    );
     markDirty();
   });
+
   canvas.addEventListener(
     'wheel',
     (e) => {
       e.preventDefault();
-      const next = state.settings.viewRangeM * Math.exp(e.deltaY * 0.0012);
-      state.settings = withSetting(state.settings, 'viewRangeM', next);
-      markDirty();
-      window.clearTimeout(settleTimer);
-      settleTimer = window.setTimeout(() => requestModel(true), 260);
+      // A trackpad pinch arrives as a wheel event with ctrlKey set, at a much
+      // larger deltaY than a scroll notch. Treating the two the same made a
+      // two-finger pinch on a laptop fly straight to the near limit.
+      const k = e.ctrlKey ? 0.0004 : 0.0012;
+      zoomTo(state.settings.viewRangeM * Math.exp(e.deltaY * k));
     },
     { passive: false },
   );
   window.addEventListener('resize', markDirty);
   window.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
+    // Innermost first: the sheet over the lightbox over the card.
     if (helpEl.classList.contains('on')) closeHelp();
-    else lightboxEl.classList.remove('on');
+    else if (lightboxEl.classList.contains('on')) lightboxEl.classList.remove('on');
+    else if (state.inspectOpen) {
+      state.inspectOpen = false;
+      renderInspect();
+    }
   });
+}
+
+/**
+ * A phone gets a different first screen.
+ *
+ * Not a different page — the same controls, the same numbers — but the panels
+ * open on a wide screen would cover every pixel of the room on a narrow one, and
+ * the sphere is the subject. So the control sheet and the projector card start
+ * closed, leaving the action bar, the readout and the room. The threshold is the
+ * width at which two 330px columns plus a sphere between them stop fitting.
+ */
+const NARROW_PX = 760;
+
+function fitFirstScreen(): void {
+  if (window.innerWidth >= NARROW_PX) return;
+  state.panelOpen = false;
+  state.inspectOpen = false;
+  rightEl.classList.add('collapsed');
+  state.settings = withSetting(state.settings, 'viewFovDeg', portraitFovDeg());
+}
+
+/**
+ * A horizontal field chosen so the VERTICAL one stays sane on a tall screen.
+ *
+ * `viewFovDeg` is horizontal and the renderer derives the vertical half-angle by
+ * multiplying by the raster's aspect — right on a desktop, and untenable in
+ * portrait: 71° across a 390×844 screen works out to a 114° vertical field, so
+ * the room stretches away at the top and bottom of the frame and the sphere in
+ * the middle is forty pixels across. Holding the vertical field at 78° instead
+ * puts the ball back at about a fifth of the screen width, which is where the
+ * reference installation photo has it.
+ *
+ * Clamped to the slider's own range so this can never set a value the Range
+ * control cannot show, and so a landscape phone gets the desktop framing back.
+ */
+function portraitFovDeg(): number {
+  const aspect = window.innerWidth / Math.max(window.innerHeight, 1);
+  const halfV = Math.tan((78 / 2) * (Math.PI / 180));
+  const fovH = 2 * Math.atan(halfV * aspect) * (180 / Math.PI);
+  return Math.max(34, Math.min(71, fovH));
 }
 
 // ---------------------------------------------------------------------------
@@ -2332,6 +2515,7 @@ function boot(): void {
         'still look like a sphere.',
     );
   }
+  fitFirstScreen();
   installPointer();
   installDropTarget();
   void loadMarble();
