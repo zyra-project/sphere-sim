@@ -3,12 +3,26 @@ name: Pages
 # Publishes the interactive simulator, the developer harness and — when the
 # bench has produced one — the measurement record.
 #
-# It runs on `main` only. A branch build would deploy whatever is on that branch
-# to the one live URL, and the failure mode is somebody reading a number from a
-# page that was published by an experiment.
+# ## Why the development branch is here alongside main
+#
+# There is exactly one live Pages URL, so publishing from a branch normally means
+# somebody can read a number off a page that was published by an experiment. That
+# is a real hazard and it is why this list is short and explicit rather than
+# `branches: ['**']`.
+#
+# It does not apply yet. `main` is empty: every commit this project has is on the
+# development branch below, and PR #1 is the project rather than a change to it.
+# Until that merges there is nothing on main for a branch build to clobber, and
+# the alternative — no way to look at the page before merging the commit that
+# creates it — is worse.
+#
+# **Delete the second entry when PR #1 merges.** After that, a branch deploy is
+# the hazard the first paragraph describes.
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - claude/sphere-sim-solver-fs3jg9
   workflow_dispatch:
 
 permissions:
@@ -61,6 +75,16 @@ jobs:
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
+          path: site
+
+      # The same bytes, downloadable, for the case where the deploy is blocked by
+      # an environment rule or Pages is not enabled. Unzip it and serve it — the
+      # page will not run from `file://`, because ES modules and module workers
+      # both require an http origin.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: site
           path: site
 
   deploy:
