@@ -114,6 +114,11 @@ export function nominalBlend(overrides: Partial<BlendCalibration> = {}): BlendCa
     maskLoDeg: overrides.maskLoDeg ?? 60,
     maskHiDeg: overrides.maskHiDeg ?? 70,
     bottomOnly: overrides.bottomOnly ?? true,
+    // Present only when asked for. docs/AMENDMENTS.md A-37 is not applied, so a
+    // rig nobody opted in for must serialize exactly as it did before the field
+    // existed — bench-results.json is what critics read and it should not gain a
+    // key because a simulator grew an option.
+    ...(overrides.region ? { region: overrides.region } : {}),
   };
 }
 

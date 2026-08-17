@@ -18,7 +18,7 @@
 
 import type { BlendCalibration } from '../../calibration/src/index.ts';
 import type { Vec3 } from './vec.ts';
-import { DEG2RAD, RAD2DEG, clamp, dot, sub } from './vec.ts';
+import { DEG2RAD, RAD2DEG, clamp, dot, sub, wrapDeg180 } from './vec.ts';
 import { latLonToWorld } from './geometry.ts';
 import type { PreparedProjector, PreparedRig } from './optics.ts';
 import { worldToPixel } from './optics.ts';
@@ -261,6 +261,10 @@ export function coverageAndWeights(
   const lit = new Array<boolean>(n).fill(false);
   const blend = rig.blend;
   const width = blend.widthDeg > 0 ? blend.widthDeg : 1e-9;
+  const sector = blend.region === 'sector';
+  // Each projector's share of the circle. A two-projector rig gets 180° each, a
+  // four 90°, which is where the ±45° seams come from.
+  const span = n > 0 ? 360 / n : 360;
 
   for (let i = 0; i < n; i++) {
     const p = rig.projectors[i];
@@ -278,7 +282,25 @@ export function coverageAndWeights(
     const thetaDeg = Math.acos(cosTheta) * RAD2DEG;
     const thetaMaxDeg = Math.acos(p.limbCos) * RAD2DEG;
 
-    const t = (thetaMaxDeg - thetaDeg) / width;
+    // Where `t` is measured from. See docs/AMENDMENTS.md A-37 — the two readings
+    // model different systems, and the default is the one every scored number in
+    // bench-results.json was produced under.
+    let t: number;
+    if (sector) {
+      // Longitude wedge: this projector owns `span` degrees of longitude centred
+      // on its own meridian, and crossfades across `width/2` either side of the
+      // boundary with its neighbour. `t = 1` inside, falling to 0 outside.
+      const lonDeg = Math.atan2(point.y, point.x) * RAD2DEG;
+      const meridianDeg = Math.atan2(p.lens.y, p.lens.x) * RAD2DEG;
+      const dLon = Math.abs(wrapDeg180(lonDeg - meridianDeg));
+      const half = span / 2;
+      t = (half + width / 2 - dLon) / width;
+      // Still bounded by what the projector can physically reach: a wedge that
+      // outran the limb would claim light nobody is emitting.
+      t = Math.min(t, (thetaMaxDeg - thetaDeg) / width);
+    } else {
+      t = (thetaMaxDeg - thetaDeg) / width;
+    }
     weights[i] = rampWeight(blend.rampShape, t, blend.rampGamma);
   }
 

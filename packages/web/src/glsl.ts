@@ -126,6 +126,7 @@ uniform float uMaskLo;
 uniform float uMaskHi;
 uniform int   uMaskBottomOnly;
 uniform int   uMaskInterp;            // 0 latitude (section 4.4's reading), 1 colatitude (A-02)
+uniform int   uBlendSector;           // 0 limb-inward, 1 longitude sector (A-37)
 
 uniform vec3  uEncodeGamma;
 uniform vec3  uReflectance;
@@ -344,7 +345,17 @@ float contentWeight(vec3 x, int want, out int count) {
     float cosTheta = clamp(dot(x, uCLens[i]) / (uCRadius * uCLimb[i].x), -1.0, 1.0);
     float thetaDeg = acos(cosTheta) * RAD2DEG;
     float thetaMaxDeg = acos(uCLimb[i].y) * RAD2DEG;
-    float w = rampWeight(uRampShape, (thetaMaxDeg - thetaDeg) / width, uRampGamma);
+    // Where the blend region is. AMENDMENTS.md A-37 and coverage.ts must agree
+    // here or the parity readout on this very page reports the disagreement.
+    float t = (thetaMaxDeg - thetaDeg) / width;
+    if (uBlendSector == 1) {
+      float span = 360.0 / float(uProjCount);
+      float lonDeg = atan(x.y, x.x) * RAD2DEG;
+      float meridianDeg = atan(uCLens[i].y, uCLens[i].x) * RAD2DEG;
+      float dLon = abs(wrapDeg180(lonDeg - meridianDeg));
+      t = min((span * 0.5 + width * 0.5 - dLon) / width, t);
+    }
+    float w = rampWeight(uRampShape, t, uRampGamma);
     sum += w;
     if (i == want) mine = w;
   }

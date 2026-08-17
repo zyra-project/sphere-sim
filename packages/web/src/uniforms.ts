@@ -173,6 +173,8 @@ export interface DisplayUniforms {
   maskHi: number;
   maskBottomOnly: number;
   maskInterp: number;
+  /** AMENDMENTS.md A-37. Must track `blend.region` or parity reports it. */
+  blendSector: number;
 
   encodeGamma: [number, number, number];
   reflectance: [number, number, number];
@@ -277,6 +279,7 @@ export function buildDisplayUniforms(
     maskHi: blend.maskHiDeg,
     maskBottomOnly: blend.bottomOnly ? 1 : 0,
     maskInterp: scene.maskInterpretation === 'colatitude' ? 1 : 0,
+    blendSector: blend.region === 'sector' ? 1 : 0,
 
     encodeGamma: [scene.encodeGamma.r, scene.encodeGamma.g, scene.encodeGamma.b],
     reflectance: [scene.reflectance.r, scene.reflectance.g, scene.reflectance.b],

@@ -330,6 +330,21 @@ async function main(): Promise<void> {
       if (stillOpen) failures.push('the help sheet would not close');
     }
 
+    // Put a flat, colourless field on the sphere first. The marker hunt below
+    // finds projectors by their HUE, and Earth is full of saturated orange
+    // desert — which the scan cheerfully reported as 1154 pixels of P3 and then
+    // clicked, landing on the Sahara.
+    await cdp.evaluate(`(() => {
+      const tab = [...document.querySelectorAll('#controls .seg button')]
+        .find((b) => /Room/.test(b.textContent ?? ''));
+      if (tab) tab.click();
+      const flat = [...document.querySelectorAll('#controls button')]
+        .find((b) => (b.textContent ?? '').trim() === 'Black');
+      if (flat) flat.click();
+      return !!flat;
+    })()`);
+    await sleep(1200);
+
     // Step outside the ring first. At the default viewpoint you are standing
     // between two of the projectors and cannot see them, which is true of the
     // real room; the whole-room viewpoint is the one that claims to show all

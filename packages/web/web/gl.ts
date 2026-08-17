@@ -180,6 +180,7 @@ export function setUniforms(h: DisplayGl, u: DisplayUniforms): void {
   gl.uniform1f(loc('uMaskHi'), u.maskHi);
   gl.uniform1i(loc('uMaskBottomOnly'), u.maskBottomOnly);
   gl.uniform1i(loc('uMaskInterp'), u.maskInterp);
+  gl.uniform1i(loc('uBlendSector'), u.blendSector);
 
   gl.uniform3f(loc('uEncodeGamma'), u.encodeGamma[0], u.encodeGamma[1], u.encodeGamma[2]);
   gl.uniform3f(loc('uReflectance'), u.reflectance[0], u.reflectance[1], u.reflectance[2]);

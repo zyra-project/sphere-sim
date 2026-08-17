@@ -2110,3 +2110,129 @@ between two *documents*, not between a document and a measurement. What Boulder
 gives is a real operating point to test against — and a demonstration that the
 spec's "projectors are generally level with the equator" is not true at the
 reference install.
+
+---
+
+## A-37 — The blend region is at the seam, not at the limb: `sim` and the reference implementation model different systems
+
+**Status:** OPEN. Implemented but **not made the default**, so no scored number
+in `bench-results.json` moves. The interactive app opts into the new reading and
+says so; the bench, the harness parity chain and every §7 figure stay on the old
+one until the author decides.
+
+Raised from the second independently-built simulator the project owner supplied
+— the same source as A-36 — by looking at one picture: **what a single projector
+is sending down its cable.**
+
+### The disagreement, in one image each
+
+The reference draws each projector's frame as a **lune**: a longitude wedge,
+widest at the equator, pinching shut toward the poles, with the left and right
+edges faded out. Its caption says why — *"the four projectors divide the sphere
+by longitude."*
+
+`packages/sim` draws the same frame as a **full circular disc** at more than half
+weight everywhere, with the fade compressed into a thin annulus at the limb.
+
+Both are the same code answering the same question, so one of them is a different
+model of what an SOS compositor does.
+
+### What each implementation actually computes
+
+The reference, in its fragment shader:
+
+```glsl
+float dl   = abs(angDiff(lon, float(i) * uSpan));   // uSpan = 360 / count
+float half0 = uSpan * 0.5;                          // 45° for four projectors
+float mask = pow(smoothstep(half0 + uBlend, half0 - uBlend, dl), uGamma);
+```
+
+Each projector owns a longitude sector and crossfades across ±`uBlend` at the
+boundary with its neighbour. Weights are **not** renormalized; a rim vignette and
+a grazing-incidence falloff multiply it.
+
+`packages/sim/src/coverage.ts` `coverageAndWeights`:
+
+```
+t_i        = (θ_max_i − θ_i) / w_width          θ_max = acos(R/d) = 80.4°
+weights[i] = rampWeight(shape, t_i, γ_blend)     then normalized to sum to one
+```
+
+Each projector fades in from **its own limb**, and the module note is explicit
+that this was a choice: *"§B defines `t` as the normalized position across a
+projector's blend region but leaves the region's geometry to the
+implementation."*
+
+### Why it matters, measured
+
+At the Boulder rig, P1's normalized weight sampled across its raster at the
+equator, every 5%:
+
+```
+-- -- -- -- -- 0.50 0.50 0.50 0.67 1.00 1.00 1.00 0.67 0.50 0.50 0.50 -- -- -- -- --
+```
+
+and straight down its own meridian: **1.00 everywhere**.
+
+Two consequences follow, and neither is cosmetic:
+
+1. **The overlap is 71° of longitude wide, not 20°.** At a point only 20° from
+   P1's own centre meridian — deep inside what anyone would call P1's territory —
+   the neighbour P2 still carries **38%** of the signal. Under this model the
+   sphere is very nearly everywhere a blend of two projectors, so a misalignment
+   doubles lines almost everywhere rather than at the seams. The app's headline
+   grid-displacement figure is inflated by exactly this.
+2. **Each projector throws away half its light over most of its coverage.** Two
+   projectors at 0.50 across 71° of longitude is a stop of brightness given up
+   across the majority of the ball, for a system whose §7 gates are about getting
+   light onto it.
+
+### Which reading §4.5 supports
+
+§4.5's own words: `w_width`, *"Blend region angular width, ~20°, `ASSUME`,*
+***derived from seam geometry***; *verify against a real sphere."*
+
+**Derived from seam geometry** places the blend region at the seam. Under the
+limb reading the region where both weights are strictly between 0 and 1 is a 20°
+annulus at each limb, and between them sits a 50/50 plateau ~31° of longitude
+wide in which neither ramp varies at all — a plateau §4.5 does not describe and
+whose width is not a parameter anybody chose.
+
+§4.2's sentence *"N is 1 or 2 everywhere: 1 near each projector's center
+meridian, 2 in the seams"* is about **coverage**, and both models agree on
+coverage exactly — the disagreement is entirely about the **weight** inside it.
+But the sentence reads as a description of a system whose seams are seams.
+
+### What has been changed
+
+`BlendCalibration` gains one field, `region: 'limb' | 'sector'`, defaulting to
+`'limb'`. It is a string in a bag of numbers and carries no math, so the
+`packages/calibration` boundary rule is intact and `packages/solver` neither
+reads it nor needs to.
+
+- `'limb'` is byte-identical to every previous run. `bench-results.json`, the
+  three experiments, and `packages/harness`'s zero-delta parity chain are
+  untouched, and the harness continues to build rigs without the field.
+- `'sector'` implements the reference's reading: a longitude wedge of
+  `360/count`, crossfading over ±`w_width/2` at each boundary, normalized as §B
+  clause 3 requires — normalization is kept, because §B's clause is about the
+  weights summing to one and that is orthogonal to where the region is.
+
+`packages/web` sets `'sector'` and the panel says which reading it is showing.
+
+### What would have to happen to make it the default
+
+1. Re-run the bench and report the movement in every §7 metric rather than
+   quietly restating them. The grid and registration figures will fall
+   substantially, because the region they are measured over shrinks.
+2. **Re-run Experiment 2.** It sweeps registration error against blend ramp width
+   and finds the contour where a seam becomes visible. That experiment is about
+   this ramp, and its finding does not survive a change to where the ramp is.
+3. Update `packages/harness`'s `glsl.ts` and `reference.ts` together, or its
+   verified line-for-line chain stops being verified.
+4. Settle §4.5's "derived from seam geometry" on the ground-truth visit, which is
+   the one measurement that ends the argument.
+
+Until 1–4 are done the default stays `'limb'`, because a spec whose numbers moved
+because a simulator changed its mind is worth less than one whose conflicts are
+written down.

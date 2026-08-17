@@ -127,7 +127,25 @@ export interface BlendCalibration {
   maskHiDeg: number;
   /** Apply the mask at the south pole only, matching `set bottommask`. */
   bottomOnly: boolean;
+  /**
+   * Where the blend region IS. See docs/AMENDMENTS.md A-37; absent means `'limb'`.
+   *
+   * `'limb'` ramps inward from each projector's own footprint edge, so the region
+   * is an annulus at the limb and the middle of an overlap is a 50/50 plateau
+   * about 31° of longitude wide. `'sector'` gives each projector a longitude
+   * wedge of `360/count` and crossfades across ±`widthDeg/2` at the boundary with
+   * its neighbour, which is what an SOS compositor does and what §4.5's "derived
+   * from seam geometry" describes.
+   *
+   * A string in a bag of numbers, and deliberately not a function: which region a
+   * rig uses is a fact about the installation, and the arithmetic for both lives
+   * on the simulator's side of this boundary where it belongs.
+   */
+  region?: BlendRegion;
 }
+
+/** See {@link BlendCalibration.region} and docs/AMENDMENTS.md A-37. */
+export type BlendRegion = 'limb' | 'sector';
 
 export type RampShape = 'linear' | 'cosine' | 'smoothstep' | 'gaussian';
 

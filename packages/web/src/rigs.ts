@@ -55,7 +55,22 @@ export interface WebWorld {
   image: EquirectImage;
 }
 
-/** Blend and mask, straight off the panel. Every field here is class ASSUME. */
+/**
+ * Blend and mask, straight off the panel. Every field here is class ASSUME.
+ *
+ * `region: 'sector'` is docs/AMENDMENTS.md **A-37** and it is the one place this
+ * page departs from the rig the bench scores. The default everywhere else is
+ * `'limb'`, which ramps inward from each projector's own footprint edge and
+ * leaves the middle of a 71°-wide overlap at 50/50 — under which a projector's
+ * own frame is a full disc and the neighbour still carries 38% of the signal 20°
+ * from your own centre meridian. `'sector'` gives each projector a longitude
+ * wedge and crossfades at the seam, which is what an SOS compositor does and what
+ * §4.5's "derived from seam geometry" describes.
+ *
+ * The page opts in and says which reading it is showing; `bench-results.json` and
+ * the harness's zero-delta parity chain stay on `'limb'` until the bench and
+ * Experiment 2 have been re-run against the change. A-37 lists what that takes.
+ */
 export function blendFrom(s: Settings): Partial<BlendCalibration> {
   return {
     rampShape: 'cosine',
@@ -64,6 +79,7 @@ export function blendFrom(s: Settings): Partial<BlendCalibration> {
     maskLoDeg: s.maskLoDeg,
     maskHiDeg: s.maskHiDeg,
     bottomOnly: true,
+    region: 'sector',
   };
 }
 
@@ -290,10 +306,20 @@ export function buildWorld(
   // they apply to both rigs; the movements apply to the lenses alone.
   const off = s.nudge.map((n) => ({ ...n, yawDeg: 0, pitchDeg: 0, rollDeg: 0, distanceM: 0, heightM: 0 }));
   const drawing = applyNudges(asBuiltRig, off);
+  // A recovered rig comes back from `packages/solver`, which knows nothing about
+  // blending — the boundary type carries the fields but the solver never reads or
+  // writes them, so its `blend` is whatever nominal it was handed. The blend is a
+  // panel setting rather than something a calibration recovers, so it is taken
+  // from the panel in both cases. Without this the projector frames silently
+  // changed shape after a solve, because the recovered rig's blend had no A-37
+  // region and fell back to the default.
+  const compositor = compositorRig
+    ? { ...compositorRig, blend: { ...compositorRig.blend, ...blendFrom(s) } }
+    : drawing;
   return {
     asBuiltRig: drawing,
     truthRig: applyNudges(misaligned.rig, s.nudge),
-    compositorRig: compositorRig ?? drawing,
+    compositorRig: compositor,
     perturbation: misaligned.perturbation,
     scene,
     image,

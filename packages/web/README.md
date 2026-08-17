@@ -15,15 +15,21 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   flat fields are the frames §8 items 6–9 and 13 prescribe for judging seams and
   photographing spill; the grid is what the displacement gate measures. They are
   separate controls because they answer different questions.
-- **Any equirectangular map you like.** Drop a 2:1 image anywhere on the page — a
-  NOAA dataset, Blue Marble, a test chart. It is read in the page, converted out
-  of sRGB into the linear light the model works in, and never sent anywhere. None
-  ships with the site, which is why none has to have its provenance argued about.
-- **Four projectors in the room**, each a coloured lens marker you can click. The
-  colour is the same one its tab, its overlay band and its inspect card use.
-  Picking one isolates its light. At the default viewpoint you are standing
-  *inside* the ring and two of them are behind you, which is true of the real
-  room — "Whole room" on the Room tab steps outside it.
+- **Earth by default, or any equirectangular map you like.** Blue Marble ships
+  with the page — see `assets/README.md` on where the file came from — because a
+  misalignment that doubles a coastline is the one a person recognises. Drop any
+  2:1 image anywhere on the page to replace it: a NOAA dataset, a test chart,
+  your own. It is read in the page, converted out of sRGB into the linear light
+  the model works in, and never sent anywhere.
+- **A room, not a void.** Four projectors on ceiling hangers, the guard rail
+  visitors stand behind, the rod the sphere hangs from, and the rail's footprint
+  on the floor — sphere-traced as an SDF because a ray-torus intersection is a
+  quartic float32 cannot be trusted with. Each projector's lens glows in its own
+  colour, the same one its tab and its overlay band use, and clicking one selects
+  it. None of it is in the model: nothing emits light, occludes a beam or casts a
+  shadow, and the parity pass removes all of it. The page opens outside the ring
+  looking at the whole installation; "Standing at it" on the Room tab walks you
+  in, where two projectors are behind you — as they are in the real room.
 - **Each projector's own frame** — the image going down its cable, rendered by
   `packages/sim` from the COMPOSITOR's calibration. Moving a projector does not
   change it; only recalibrating does, which is the least intuitive thing about
@@ -33,6 +39,15 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   computed by one function from two rigs, in two columns. Every alignment number
   on the page is the gap between those columns, and the solver only ever sees the
   left one.
+- **A blend that is a seam.** docs/AMENDMENTS.md **A-37**: `packages/sim`'s
+  default blend ramps inward from each projector's own limb, which leaves the
+  middle of a 71°-wide overlap at 50/50 and the neighbour carrying 38% of the
+  signal 20° from your own centre meridian. This page opts into `region:
+  'sector'` — a longitude wedge crossfading at the seam, which is what an SOS
+  compositor does — so a projector's frame is the lune it should be and a
+  misalignment shows up at the joins rather than smeared over the whole ball.
+  The bench, the three experiments and the harness's zero-delta parity chain all
+  stay on the old reading until A-37's four preconditions are met.
 - **Its warp mesh.** The config file carries heights and distances in inches;
   what actually removes a doubled grid line is a per-vertex correction on the
   raster, and that is what this draws. It is derived, not illustrated — each
@@ -100,18 +115,27 @@ The same camera, rendered twice: once by the GPU, once by `packages/sim`'s
 `renderTwoRigRoomView` on the CPU in the worker. The disagreement is on screen
 and is never hidden.
 
-Two things about how it is judged, both of which took a measurement to get right:
+Three things about how it is judged, each of which took a measurement to get
+right and each of which was wrong first:
 
 - **The verdict percentile is derived from the boundary allowance**, not chosen
   beside it. Two independent-looking criteria can be quietly inconsistent, and
   these were: an allowance of 2% with a verdict at the 99.5th percentile means
   the percentile always fires first and the allowance is dead code that reads
   like a safeguard. The percentile is `1 - allowance` exactly.
-- **The allowance is 1% because that is twice what was measured**, not because a
-  perimeter calculation suggested it. The estimate that came first said 2% and
-  was four times too large — and at 2% the check could not have failed for a
-  difference the size of a complete misalignment, which moves 1.7% of pixels at
-  this raster. Both facts are pinned in `test/parity.test.ts`.
+- **The allowance is twice what was measured**, not what a perimeter calculation
+  suggested. The estimate that came first said 2% and was four times too large.
+- **It is a fraction of the LIT pixels, not of the frame** — and that one was
+  load-bearing. As a fraction of the frame the number is not a property of the
+  two renderers at all, it is a property of how much of the window the sphere
+  fills. A complete mount error moves 40.1% of the frame at a seam close-up,
+  4.65% standing at the ball and **0.70% from across the room** — under the old
+  1% allowance. The page's own self-check would have passed a rig in pieces at
+  exactly the framing that shows the room best, which is now where the page
+  opens. Against lit pixels the same three renders give 40.6%, 48.6% and 47.8%,
+  with boundary noise flat at 5–6%, so one allowance means one thing at every
+  zoom. A patch with fewer than 60 lit pixels reads BLIND rather than passing.
+  All six measurements are pinned in `test/parity.test.ts`.
 
 What it does **not** cover: `shadeFloor`. The CPU two-rig renderer draws no
 floor, so the parity pass turns the floor off on the GPU too. The floor shares

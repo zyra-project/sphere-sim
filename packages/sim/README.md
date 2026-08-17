@@ -65,3 +65,19 @@ From PARAMETERS.md §4.2 and §4.3, and asserted in `test/coverage.test.ts`:
   viewports**, not four independent outputs.
 
 If a change makes any of these false, the change is wrong, not the assertion.
+
+## The blend region is a choice, and it is written down
+
+`BlendCalibration.region` selects where each projector's blend region sits.
+`'limb'` — the default and everything `bench-results.json` was produced under —
+ramps inward from each projector's own footprint edge. `'sector'` gives each
+projector a longitude wedge of `360/count` and crossfades at the boundary with
+its neighbour.
+
+They are different models of what an SOS compositor does, not two spellings of
+one. Under `'limb'` two projectors split the signal 50/50 across 71 degrees of
+longitude; under `'sector'` the overlap is the blend band and nothing else.
+docs/AMENDMENTS.md **A-37** has the evidence, the measurements, and the four
+things that have to happen before the default can move. `test/blend-region.test.ts`
+pins that opting out changes nothing — including that a rig which never mentions
+the field serializes exactly as it did before the field existed.
