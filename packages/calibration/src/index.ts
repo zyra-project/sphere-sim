@@ -117,7 +117,13 @@ export interface SphereCalibration {
 export interface BlendCalibration {
   /** Ramp shape identifier. See conventions.ts §B for the normative definitions. */
   rampShape: RampShape;
-  /** Blend region angular half-width in degrees, w_width. */
+  /**
+   * Blend region angular width in degrees, `w_width`. PARAMETERS.md §4.5, ~20.
+   *
+   * FULL width, not a half-width — this comment said half-width and the
+   * simulator has never treated it as one. `rampWeight` is evaluated at
+   * `t = (edge − θ) / widthDeg`, so the ramp spans `widthDeg` end to end.
+   */
   widthDeg: number;
   /** Blend ramp exponent, gamma_blend. One global scalar in SOS. Class DOC. */
   rampGamma: number;

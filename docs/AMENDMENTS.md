@@ -2203,6 +2203,27 @@ meridian, 2 in the seams"* is about **coverage**, and both models agree on
 coverage exactly — the disagreement is entirely about the **weight** inside it.
 But the sentence reads as a description of a system whose seams are seams.
 
+### The argument on the other side, which is real
+
+§4.1 defines `θ` as the angular distance from a projector's sub-projector point,
+and §4.5 writes the blend weight as **`w(θ)`**. A weight that is a function of `θ`
+is a weight anchored to the projector's own axis, which is the limb reading
+exactly. That notation is the strongest thing the spec says for it, and it is why
+this entry is OPEN rather than decided: §4.5 contains one phrase pointing each
+way, in the same four-line table.
+
+What breaks the tie is not the notation but the consequence. Under `w(θ)` alone,
+`t = (θ_max − θ) / w_width` leaves a **31.5°-wide plateau** — measured: the
+normalized weight is flat at 0.500 from Δlon 29.3° to 60.7° — in which neither
+ramp varies and both projectors emit half. Nothing in §4.5 describes a plateau,
+nothing sets its width, and it is wider than the blend region the same table is
+defining. A reading that produces a large unnamed constant out of two named ones
+is the weaker reading.
+
+**What actually ends the argument** is item 4 below: measuring the physical
+crossfade width on the Boulder sphere. Neither of these is evidence about a real
+installation; both are readings of a sentence.
+
 ### What has been changed
 
 `BlendCalibration` gains one field, `region: 'limb' | 'sector'`, defaulting to
@@ -2230,8 +2251,20 @@ reads it nor needs to.
    this ramp, and its finding does not survive a change to where the ramp is.
 3. Update `packages/harness`'s `glsl.ts` and `reference.ts` together, or its
    verified line-for-line chain stops being verified.
-4. Settle §4.5's "derived from seam geometry" on the ground-truth visit, which is
-   the one measurement that ends the argument.
+4. Settle §4.5's "derived from seam geometry" against its own `w(θ)` on the
+   ground-truth visit — photograph a seam on the Boulder sphere with one
+   projector blanked and measure where its content actually stops. That is the
+   one measurement that ends the argument, and it is cheap.
+
+### Addendum — `widthDeg` was documented as a half-width and never was one
+
+`BlendCalibration.widthDeg` carried the comment *"Blend region angular
+half-width"*. Every implementation — `coverage.ts`, both harness shaders, the
+app's shader — evaluates `rampWeight` at `t = (edge − θ) / widthDeg`, i.e. the
+ramp spans `widthDeg` end to end. The comment was wrong, not the code; corrected
+in place. It matters here because it doubles or halves any comparison with the
+reference implementation, whose `uBlend` **is** a half-width: its effective band
+is `2 × 15° = 30°` against this project's `w_width = 20°`.
 
 Until 1–4 are done the default stays `'limb'`, because a spec whose numbers moved
 because a simulator changed its mind is worth less than one whose conflicts are
