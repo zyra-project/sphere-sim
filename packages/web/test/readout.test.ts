@@ -200,3 +200,21 @@ test('a perfectly-mounted rig agrees with itself on every row', () => {
     );
   }
 });
+
+test('a gate printed beside the headline drops the sampling basis and keeps the unit', () => {
+  // `sim` says what a number was measured over — "mm on sphere surface" — which
+  // belongs in a table and not in the line under a 44px figure, where it wrapped
+  // onto three lines beside the number it was captioning.
+  const { set } = metricsAt();
+  const grid = readingsFrom(set).find((r) => r.id === 'grid_displacement');
+  assert.ok(grid);
+  assert.match(grid.gate, /mm on sphere surface$/, 'the long form is what the table wants');
+  assert.match(grid.gateShort, /^[\d.]+ mm$/, `short gate reads '${grid.gateShort}'`);
+  assert.match(grid.valueShort, /^[\d.]+ mm$/, `short value reads '${grid.valueShort}'`);
+
+  // A fraction has no short form to take: "0.13%" is already the whole of it,
+  // and chopping its unit would leave a bare number with no percent sign.
+  const unlit = readingsFrom(set).find((r) => r.id === 'unlit_in_mask');
+  assert.ok(unlit);
+  assert.equal(unlit.valueShort, unlit.value);
+});

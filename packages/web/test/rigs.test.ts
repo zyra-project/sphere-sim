@@ -12,8 +12,10 @@ import {
   IN_TO_M,
   NUDGE_CONTROLS,
   PERFECT_PRESET,
+  SHIFT_PCT_PER_UNIT,
   SPEC_PRESET,
   noNudge,
+  withNudge,
 } from '../src/settings.ts';
 import type { Settings } from '../src/settings.ts';
 import {
@@ -362,4 +364,28 @@ test('the projector count is capped at four, and the error says why', () => {
   // has no quadrant to be, which is why the page offers 2, 3 and 4 and explains
   // the absence rather than silently listing three options.
   assert.throws(() => buildAsBuilt({ ...BOULDER_PRESET, projectorCount: 5 }), /1\.\.4|§2/);
+});
+
+test('the panel states lens shift the way a spec sheet does, and the calibration keeps its own units', () => {
+  // The panel's control is a percentage of the FULL image, because that is what
+  // a projector's data sheet quotes and what an installer reads off one — the
+  // LK935 is ±23% across and ±60% up. conventions §3.1 measures shift against
+  // the HALF-extent instead, so the two differ by exactly a factor of two and
+  // the conversion belongs in one place.
+  const h = NUDGE_CONTROLS.find((c) => c.key === 'shiftH');
+  const v = NUDGE_CONTROLS.find((c) => c.key === 'shiftV');
+  assert.ok(h && v);
+  assert.equal(h.unit, '%');
+  assert.equal(v.max, 60, 'the vertical range is the projector\u2019s, not a quarter of it');
+
+  const base = buildWorld(PERFECT_PRESET).truthRig.projectors[0].intrinsics;
+  const shifted = buildWorld(withNudge(PERFECT_PRESET, 0, { shiftV: 60 })).truthRig.projectors[0]
+    .intrinsics;
+  assert.ok(
+    Math.abs(shifted.shiftV - (base.shiftV + 60 / SHIFT_PCT_PER_UNIT)) < 1e-9,
+    `60% of image height became ${shifted.shiftV - base.shiftV} of the half-extent`,
+  );
+  // 60% of the image is 1.2 half-extents: past the edge of the frame, which is
+  // exactly what a ceiling mount does and what the old ±0.3 could not express.
+  assert.ok(shifted.shiftV - base.shiftV > 1, 'the ceiling-mount case is still unreachable');
 });

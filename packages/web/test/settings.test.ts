@@ -154,6 +154,31 @@ test('a discrete control formats as its option label, not as a number', () => {
   }
 });
 
+test('the eye cannot be put inside the ball, whatever size the ball is', () => {
+  // `viewRangeM` is measured from the sphere CENTRE, so a constant floor is
+  // wrong at both ends of `sphereDiaIn`: at 130 inches a 1.4 m range is a
+  // quarter of a metre inside the surface, and at 40 inches it holds the camera
+  // most of a metre off a surface somebody was trying to inspect.
+  const big = withSetting(PERFECT_PRESET, 'sphereDiaIn', 130);
+  const closest = withSetting(big, 'viewRangeM', 0.5);
+  const radius = (130 * IN_TO_M) / 2;
+  assert.ok(
+    closest.viewRangeM > radius,
+    `the eye is inside a ${radius.toFixed(2)} m sphere at ${closest.viewRangeM} m`,
+  );
+  assert.ok(closest.viewRangeM - radius < 0.2, 'and it is not held further out than it needs to be');
+
+  // The floor follows the ball rather than being applied once: growing the
+  // sphere under a camera that was already close pushes the camera out.
+  const near = withSetting(PERFECT_PRESET, 'viewRangeM', 1.0);
+  assert.ok(near.viewRangeM < 1.1, 'a 68-inch ball allows a close look');
+  const grown = withSetting(near, 'sphereDiaIn', 120);
+  assert.ok(
+    grown.viewRangeM > (120 * IN_TO_M) / 2,
+    'growing the sphere left the camera buried inside it',
+  );
+});
+
 test('every ASSUME control says so in its help, since the colour alone is not a claim', () => {
   for (const c of CONTROLS.filter((x) => x.klass === 'ASSUME')) {
     assert.ok(c.help.length > 40, `${c.key} is class ASSUME and needs an explanation of what is assumed`);

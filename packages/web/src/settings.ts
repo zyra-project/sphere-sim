@@ -35,6 +35,17 @@ import { NOMINAL_SILHOUETTE_MARGIN_FRAC } from '../../calibration/src/convention
 /** Inches to metres. The SOS config is in inches; this project is in metres. */
 export const IN_TO_M = 0.0254;
 
+/** How far back the eye may stand. Far enough to see the room and its ceiling. */
+export const MAX_VIEW_RANGE_M = 14;
+
+/**
+ * Panel per cent of full image to the calibration's fraction of HALF the image.
+ *
+ * Half, not full — conventions §3.1 measures lens shift against the half-extent
+ * — so 50% of the image is 1.0 in the calibration and the factor is 50.
+ */
+export const SHIFT_PCT_PER_UNIT = 50;
+
 /**
  * The BenQ LK935's rated output. Amendment A-35 sourced the rest of that sheet.
  *
@@ -63,6 +74,11 @@ export interface ControlSpec {
   step: number;
   /** Printed after the value. */
   unit: string;
+  /**
+   * Multiply by this before printing. The stored value keeps PARAMETERS.md's
+   * units; only the row is in the reader's.
+   */
+  displayScale?: number;
   decimals: number;
   /** Discrete labels, when the control is a choice rather than a quantity. */
   options?: readonly string[];
@@ -94,7 +110,9 @@ export const GROUPS: readonly Group[] = [
     blurb:
       'Where each projector sits and how wide it throws. The distance and the overfill together ' +
       'decide the field of view, which is the single number the recovery is most sensitive to ' +
-      '(amendment A-18).',
+      '(amendment A-18). Every lens here is rectilinear — an angle maps to a radius on the chip ' +
+      'by a tangent, as a projection lens does; the k1/k2 pair in the readout is the only ' +
+      'departure from that, and a fisheye mapping is amendment A-38 and not implemented.',
   },
   {
     id: 'error',
@@ -553,30 +571,39 @@ export const NUDGE_CONTROLS: readonly NudgeSpec[] = [
       'wastes light on the wall behind and dims what lands. The LK935\u2019s 1.6\u00d7 zoom spans ' +
       'about \u00b16\u00b0 at this throw \u2014 A-35.',
   },
+  // Per cent of the FULL image, which is how a projector spec sheet states lens
+  // shift and how an installer reads it off one. The calibration carries the
+  // §3.1 fraction-of-half-image instead, so `applyNudges` divides by
+  // `SHIFT_PCT_PER_UNIT` on the way in — the panel speaks the installer's units
+  // and the model keeps its own. The ranges are the LK935's own: ±23% across,
+  // ±60% up, which is the whole point of a ceiling mount and was previously
+  // clipped to a quarter of it.
   {
     key: 'shiftH',
     label: 'Lens shift left / right',
-    min: -0.3,
-    max: 0.3,
-    step: 0.002,
-    unit: '',
-    decimals: 3,
+    min: -23,
+    max: 23,
+    step: 0.5,
+    unit: '%',
+    decimals: 1,
     help:
-      'Slides the image inside the lens without turning the projector, as a fraction of half the ' +
-      'image width (§3.1). Different from aim: the cone stays where it points and the picture moves ' +
-      'within it, so the silhouette stops being centred in the raster.',
+      'Slides the image inside the lens without turning the projector, as a percentage of the ' +
+      'image width. Different from aim: the cone stays where it points and the picture moves ' +
+      'within it, so the silhouette stops being centred in the raster. The LK935 shifts ±23% ' +
+      'horizontally.',
   },
   {
     key: 'shiftV',
     label: 'Lens shift up / down',
-    min: -0.3,
-    max: 0.3,
-    step: 0.002,
-    unit: '',
-    decimals: 3,
+    min: -60,
+    max: 60,
+    step: 0.5,
+    unit: '%',
+    decimals: 1,
     help:
-      'The same, vertically. This is the control a real install uses to put the ball in the frame ' +
-      'from a ceiling mount without tilting the projector down and keystoning the image.',
+      'The same, vertically, and the LK935 goes to ±60% of image height. This is the control a ' +
+      'real install uses to put the ball in the frame from a ceiling mount without tilting the ' +
+      'projector down and keystoning the image.',
   },
   {
     key: 'lumens',
@@ -896,8 +923,13 @@ export const CONTROLS: readonly ControlSpec[] = [
     min: 0,
     max: 0.2,
     step: 0.005,
-    unit: '',
-    decimals: 3,
+    // Shown as a percentage of full scale. The stored constant is §5's E_amb and
+    // stays exactly as §5 states it; what changed is that the row used to read
+    // "0.040" with no unit at all, and the sentence saying what 0.040 was a
+    // fraction OF was hidden behind the notes toggle.
+    unit: '%',
+    displayScale: 100,
+    decimals: 1,
     group: 'blend',
     help:
       'Light in the gallery, as irradiance on the sphere relative to full scale. §5 gives 0.04 as ' +
@@ -977,12 +1009,15 @@ export const CONTROLS: readonly ControlSpec[] = [
   },
   {
     key: 'viewRangeM',
+    // The floor here is a hard bound for the CONTROL, below the smallest sphere
+    // this page can be asked to draw. What actually stops the drag is the live
+    // floor in `withSetting`, which tracks `sphereDiaIn`.
     label: 'Standing distance',
     symbol: '',
     section: '§6',
     klass: 'PANEL',
-    min: 1.4,
-    max: 14,
+    min: 0.5,
+    max: MAX_VIEW_RANGE_M,
     step: 0.1,
     unit: ' m',
     decimals: 1,
@@ -1038,8 +1073,27 @@ export function coerce(key: SettingKey, value: number): number {
   return clamped;
 }
 
+/**
+ * How close the eye may get to the surface of the ball, in metres.
+ *
+ * Close enough to read one projector pixel — at Boulder's throw a pixel is under
+ * a millimetre on the surface — and far enough that the near plane is outside
+ * the sphere rather than inside it.
+ */
+export const VIEW_GAP_M = 0.09;
+
 export function withSetting(s: Settings, key: SettingKey, value: number): Settings {
   const next: Settings = { ...s, [key]: coerce(key, value) };
+  // The standing distance is measured from the CENTRE of the ball, so its floor
+  // has to move with the ball. `min: 1.4` in the spec is right for the 68-inch
+  // default and wrong at both ends of `sphereDiaIn`: at 40 inches it holds the
+  // camera 0.9 m off a surface you were trying to inspect, and at 130 inches it
+  // puts the eye a quarter of a metre INSIDE the sphere, which renders as the
+  // room seen from within a black shell.
+  if (key === 'viewRangeM' || key === 'sphereDiaIn') {
+    const floor = (next.sphereDiaIn * IN_TO_M) / 2 + VIEW_GAP_M;
+    if (next.viewRangeM < floor) next.viewRangeM = Math.min(floor, MAX_VIEW_RANGE_M);
+  }
   // The mask is a pair, and a lo above a hi is not a configuration, it is a bug
   // that would silently invert the ramp. Push the other end rather than refuse
   // the drag.
@@ -1060,12 +1114,19 @@ export function withSetting(s: Settings, key: SettingKey, value: number): Settin
  * sign that may or may not be there.
  */
 export function formatSetting(
-  spec: { options?: readonly string[]; decimals: number; unit: string; signed?: boolean },
+  spec: {
+    options?: readonly string[];
+    decimals: number;
+    unit: string;
+    signed?: boolean;
+    displayScale?: number;
+  },
   value: number,
 ): string {
   if (spec.options) return spec.options[Math.round(value)] ?? String(value);
-  const sign = spec.signed && value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(spec.decimals)}${spec.unit}`;
+  const shown = value * (spec.displayScale ?? 1);
+  const sign = spec.signed && shown > 0 ? '+' : '';
+  return `${sign}${shown.toFixed(spec.decimals)}${spec.unit}`;
 }
 
 /** Replace one projector's nudge, leaving the rest alone. */

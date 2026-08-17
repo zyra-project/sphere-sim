@@ -44,6 +44,7 @@ import {
   CONTENT_CUSTOM,
   CONTENT_MARBLE,
   CONTROLS,
+  GROUPS,
   IN_TO_M,
   NUDGE_CONTROLS,
   PERFECT_PRESET,
@@ -64,7 +65,7 @@ import {
   worstPlacementOffender,
 } from '../src/rigs.ts';
 import type { Reading, RigFact } from '../src/readout.ts';
-import { buildDisplayUniforms, pickMarkerNear } from '../src/uniforms.ts';
+import { buildDisplayUniforms, pickMarkerNear, slotOfRigIndex } from '../src/uniforms.ts';
 import type { DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
 import type { ParityVerdict } from '../src/parity.ts';
 import { BOUNDARY_LIT_ALLOWANCE, PARITY_HEIGHT, PARITY_WIDTH, judgeParity } from '../src/parity.ts';
@@ -286,13 +287,85 @@ function paintFrame(target: HTMLCanvasElement, frame: FrameImage, exposure = 1):
   ctx.putImageData(out, 0, 0);
 }
 
-function openLightbox(frame: FrameImage, caption: string): void {
+/**
+ * Two frames in one picture: the old warp in red, the new one in cyan.
+ *
+ * The card's own caption promises that recalibrating rewrites the frame, and
+ * then showed one frame — so pressing Recalibrate appeared to do nothing to it.
+ * The shift is a few per cent of the image radius on a repeating grid, which is
+ * invisible unless the old frame is sitting underneath the new one. Where the
+ * two agree the channels sum back to grey, so what a reader sees is colour
+ * exactly where the warp moved.
+ *
+ * Both are encoded the same way `paintFrame` encodes one, for the same reason.
+ */
+function paintFramePair(target: HTMLCanvasElement, before: FrameImage, after: FrameImage): void {
+  const w = Math.min(before.width, after.width);
+  const h = Math.min(before.height, after.height);
+  target.width = w;
+  target.height = h;
+  const ctx = target.getContext('2d');
+  if (!ctx) return;
+  const out = ctx.createImageData(w, h);
+  const grey = (f: FrameImage, x: number, y: number): number => {
+    // Nearest sample: the two frames are rendered at the same target width, but
+    // a stale `before` from a coarser pass must not shear the comparison.
+    const sx = Math.min(f.width - 1, Math.round((x * f.width) / w));
+    const sy = Math.min(f.height - 1, Math.round((y * f.height) / h));
+    const i = 3 * (sy * f.width + sx);
+    const v = (f.data[i] + f.data[i + 1] + f.data[i + 2]) / 3;
+    return Math.min(255, Math.round(255 * (f.space === 'display' ? v : Math.pow(Math.max(0, v), 1 / 2.2))));
+  };
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const o = 4 * (y * w + x);
+      const a = grey(after, x, y);
+      out.data[o] = grey(before, x, y);
+      out.data[o + 1] = a;
+      out.data[o + 2] = a;
+      out.data[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+}
+
+/**
+ * How wide the worker renders each projector frame.
+ *
+ * 296 is what the card shows. The lightbox is up to 84vh tall, so blowing the
+ * thumbnail up there is a four-fold smooth of a grid the card had just drawn
+ * sharp — the opposite of what a zoom-in cursor promises. Opening the lightbox
+ * asks for the frame again at 768 and puts this back afterwards, because four
+ * frames at 768 on every settle would cost more than the picture is worth.
+ */
+const THUMB_PX = 296;
+const ZOOM_PX = 768;
+let previewWidth = THUMB_PX;
+
+/** Which projector the lightbox is showing, so a re-render can repaint it. */
+let lightboxSlot = -1;
+
+function openLightbox(frame: FrameImage, caption: string, slot = -1): void {
   paintFrame(lightboxCanvas, frame);
   const cap = lightboxEl.querySelector('.cap');
   if (cap) cap.textContent = caption;
   lightboxEl.classList.add('on');
+  lightboxSlot = slot;
+  if (slot >= 0 && previewWidth !== ZOOM_PX) {
+    previewWidth = ZOOM_PX;
+    requestModel(true);
+  }
 }
-lightboxEl.addEventListener('click', () => lightboxEl.classList.remove('on'));
+
+function closeLightbox(): void {
+  lightboxEl.classList.remove('on');
+  lightboxSlot = -1;
+  if (previewWidth !== THUMB_PX) {
+    previewWidth = THUMB_PX;
+    requestModel(true);
+  }
+}
+lightboxEl.addEventListener('click', closeLightbox);
 
 /** A thumbnail that opens full size when clicked. */
 function thumb(frame: FrameImage, caption: string): HTMLElement {
@@ -313,8 +386,12 @@ interface SliderOptions {
   step: number;
   decimals: number;
   unit: string;
+  /** Multiply by this before printing; the value itself keeps the spec's units. */
+  displayScale?: number;
   options?: readonly string[];
   help: string;
+  /** PARAMETERS.md section, rendered as a tag beside the label. */
+  section?: string;
   tint?: string;
   /** Draw the fill from the centre, and print a sign: a control whose zero is the middle. */
   bipolar?: boolean;
@@ -338,10 +415,27 @@ function slider(o: SliderOptions): HTMLElement {
   if (o.klass === 'ASSUME') {
     label.append(el('span', { className: 'kpill', textContent: 'ASSUME', title: 'Nobody has measured this constant.' }));
   }
+  // '—' is what a control with no section carries, and a tag reading "—" says
+  // less than no tag at all.
+  if (o.section && o.section !== '—') {
+    label.append(
+      el('span', {
+        className: 'sym mono',
+        textContent: o.section,
+        title: 'The PARAMETERS.md section this constant comes from.',
+      }),
+    );
+  }
   const value = el('span', {
     className: 'val num',
     textContent: formatSetting(
-      { decimals: o.decimals, unit: o.unit, options: o.options, signed: o.bipolar },
+      {
+        decimals: o.decimals,
+        unit: o.unit,
+        options: o.options,
+        signed: o.bipolar,
+        displayScale: o.displayScale,
+      },
       o.value,
     ),
   });
@@ -389,8 +483,19 @@ function slider(o: SliderOptions): HTMLElement {
   return wrap;
 }
 
+/**
+ * A row of chips, and — when the notes are on — a sentence saying what the row
+ * is for.
+ *
+ * The explanation used to be a `title=` attribute on each chip, which is a hover
+ * tooltip: it does not exist on a touchscreen, and the panel's own "what do
+ * these do?" toggle did not reveal it. So every slider on the page could explain
+ * itself and no chip row could, including the four rows whose authored `help`
+ * text in `settings.ts` therefore rendered nowhere at all.
+ */
 function chipRow(
   items: readonly { label: string; on: boolean; onPick: () => void; title?: string }[],
+  help = '',
 ): HTMLElement {
   const row = el('div', { className: 'chips' });
   for (const it of items) {
@@ -402,7 +507,32 @@ function chipRow(
     b.addEventListener('click', it.onPick);
     row.append(b);
   }
-  return row;
+  if (!help) return row;
+  const wrap = el('div');
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+  wrap.style.gap = '6px';
+  wrap.append(row, el('p', { className: 'grouphelp', textContent: help }));
+  return wrap;
+}
+
+/** The authored explanation for a control, for rows that render as chips. */
+function helpFor(key: SettingKey): string {
+  return CONTROLS.find((c) => c.key === key)?.help ?? '';
+}
+
+/**
+ * Do these two settings describe the same INSTALL?
+ *
+ * The comparison deliberately skips the view, the content and the nudges: a
+ * preset chip should light when the room matches it, whatever you are looking
+ * at and from where.
+ */
+function matchesInstall(a: Settings, b: Settings): boolean {
+  return CONTROLS.every((c) => {
+    if (c.group === 'view' || c.key === 'content' || c.key === 'gridOn') return true;
+    return Math.abs(a[c.key] - b[c.key]) < 1e-9;
+  });
 }
 
 /**
@@ -544,7 +674,7 @@ function requestModel(fine: boolean): void {
     parity: null,
     // Only on the settled pass: a projector frame is a CPU trace and four of
     // them on every drag would starve the metrics they sit beside.
-    projectorPreviewWidth: fine ? 296 : 0,
+    projectorPreviewWidth: fine ? previewWidth : 0,
     // Sent once per image, not once per request: the worker caches it by id, and
     // a megabyte of float on every slider drag would cost more than the metrics.
     // A copy rather than a transfer, because the main thread still needs it for
@@ -591,9 +721,23 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage>): void => {
   lastError = '';
   // A coarse pass carries no projector frames; keep the last good ones rather
   // than blanking the inspect card on every drag.
-  const keptFrames = msg.projectorFrames.length > 0 ? msg.projectorFrames : (model?.projectorFrames ?? []);
-  model = { ...msg, projectorFrames: keptFrames };
+  //
+  // Per SLOT, not per array. The worker always returns an array as long as the
+  // panel has projectors and fills it only on a fine pass, so the reply from a
+  // drag is four nulls — a non-empty array of nothing. Testing `.length` took
+  // that branch and overwrote the frames with the nulls, so the card vanished
+  // on the first pointermove and came back 260 ms after the drag stopped. The
+  // comment above this line has been right since it was written and the code
+  // under it was not. Merging slot by slot also survives a projector being
+  // switched off, where only that slot comes back null.
+  const kept = model?.projectorFrames ?? [];
+  const projectorFrames = msg.projectorFrames.map((f, i) => f ?? kept[i] ?? null);
+  model = { ...msg, projectorFrames };
   if (msg.parityImage) checkParity(msg.parityImage, msg.parityMs);
+  // The lightbox asked for a sharper render of the frame it is showing; this is
+  // it arriving.
+  const zoomed = lightboxSlot >= 0 ? (model.projectorFrames[lightboxSlot] ?? null) : null;
+  if (zoomed) paintFrame(lightboxCanvas, zoomed);
   renderReadout();
   renderInspect();
 };
@@ -635,6 +779,15 @@ solveWorker.onmessage = (event: MessageEvent<SolveMessage>): void => {
 
 let solveSeq = 0;
 
+/**
+ * The frames as they were before the last recalibration, one per slot.
+ *
+ * Kept so the card can show what the solve rewrote. Cleared whenever the
+ * calibration stops being the one these frames belong to — which is any lens
+ * movement, and "Forget it".
+ */
+let beforeFrames: (FrameImage | null)[] = [];
+
 function startSolve(): void {
   if (solveRunning) return;
   solveRunning = true;
@@ -642,6 +795,9 @@ function startSolve(): void {
   solveStep = null;
   solveShots = [];
   solveResult = null;
+  // Snapshot before the solve, not after: once the compositor rig is replaced
+  // there is no way back to the frames it was generating.
+  beforeFrames = (model?.projectorFrames ?? []).slice();
   solveStartedAt = performance.now();
   solveStage = 'Placing the cameras…';
   const req: SolveRequest = {
@@ -666,6 +822,7 @@ function startSolve(): void {
 
 function forgetCalibration(): void {
   state.compositorRig = null;
+  beforeFrames = [];
   solveResult = null;
   solveTrace = [];
   solveStep = null;
@@ -679,6 +836,7 @@ function forgetCalibration(): void {
 function invalidateCalibration(): void {
   if (state.compositorRig === null) return;
   state.compositorRig = null;
+  beforeFrames = [];
   solveResult = null;
   solveTrace = [];
   solveStep = null;
@@ -718,6 +876,13 @@ const MARKER_RADIUS_M = 0.12;
  */
 let lastUniforms: DisplayUniforms | null = null;
 
+/**
+ * Which panel slot each projector in `lastUniforms` came from, kept beside them
+ * because the uniforms themselves are indexed by the rig and a rig omits every
+ * projector that is switched off.
+ */
+let lastSlots: readonly number[] = [];
+
 function draw(): void {
   if (!gl) return;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -751,6 +916,7 @@ function draw(): void {
     },
   );
   lastUniforms = uniforms;
+  lastSlots = world.slots;
   // Test hooks, set by the function that draws so they cannot describe a state
   // the picture is not in. `tools/smoke-app.ts` clicks a marker it found by
   // colour and reads these back.
@@ -824,12 +990,27 @@ let settleTimer = 0;
 
 function touched(invalidates: boolean): void {
   if (invalidates) invalidateCalibration();
+  clampSelection();
   markDirty();
   renderControls();
   renderReadout();
   requestModel(false);
   window.clearTimeout(settleTimer);
   settleTimer = window.setTimeout(() => requestModel(true), 260);
+}
+
+/**
+ * Keep the selection inside the rig that exists.
+ *
+ * The projector count is a slider. Dragging it from four down to two left the
+ * Projectors tab editing P4 and the card describing P4 — a projector that had
+ * stopped being in the room, whose sliders wrote into a slot nothing read and
+ * whose frame was the last one drawn before it vanished.
+ */
+function clampSelection(): void {
+  const last = Math.max(0, Math.round(state.settings.projectorCount) - 1);
+  if (state.selected > last) state.selected = last;
+  if (state.highlight > last) state.highlight = last;
 }
 
 function setSetting(key: SettingKey, value: number): void {
@@ -845,8 +1026,10 @@ function setNudge(key: NudgeSpec['key'], value: number): void {
 
 const SECTIONS: { id: SectionId; label: string; title: string }[] = [
   { id: 'projectors', label: 'Projectors', title: 'The lenses, one at a time' },
-  { id: 'install', label: 'Install', title: 'What was built' },
-  { id: 'room', label: 'Room', title: 'Seams, mask and the view' },
+  { id: 'install', label: 'Install', title: 'The installation' },
+  // "Seams, mask and the view" named a term — mask — that no visible sentence on
+  // the page defines, in a heading whose job is to say what is underneath it.
+  { id: 'room', label: 'Room', title: 'Seams, the polar hole and where you stand' },
 ];
 
 function sectionTabs(): HTMLElement {
@@ -937,6 +1120,22 @@ function projectorSection(): HTMLElement[] {
         onSettle: () => requestModel(true),
       }),
     );
+    // Turning the whole rig down to see how a dim install reads meant selecting
+    // each projector in turn and dragging the same slider four times.
+    if (spec.key === 'lumens' || spec.key === 'blackPct') {
+      const all = el('button', {
+        className: 'linkish',
+        textContent: `give all ${Math.round(state.settings.projectorCount)} this ${spec.label.toLowerCase()}`,
+      });
+      all.addEventListener('click', () => {
+        const v = nudge?.[spec.key] ?? 0;
+        let next = state.settings;
+        for (let i = 0; i < next.nudge.length; i++) next = withNudge(next, i, { [spec.key]: v });
+        state.settings = next;
+        touched(true);
+      });
+      out.push(all);
+    }
   }
   return out;
 }
@@ -951,34 +1150,55 @@ function projectorSection(): HTMLElement[] {
  */
 function controlsFor(groups: readonly string[], skip: readonly SettingKey[] = []): HTMLElement[] {
   const out: HTMLElement[] = [];
-  for (const spec of CONTROLS.filter((c) => groups.includes(c.group) && !skip.includes(c.key))) {
-    out.push(
-      slider({
-        label: spec.label,
-        symbol: spec.symbol,
-        value: state.settings[spec.key],
-        min: spec.min,
-        max: spec.max,
-        step: spec.step,
-        decimals: spec.decimals,
-        unit: spec.unit,
-        options: spec.options,
-        help: `${spec.section} ${spec.help}`.trim(),
-        klass: spec.klass,
-        bipolar: spec.min < 0 && spec.max > 0,
-        onInput: (v) => setSetting(spec.key, v),
-        onSettle: () => requestModel(true),
-      }),
-    );
+  // Group by group, in the order GROUPS declares, with each group's authored
+  // title above it. Iterating CONTROLS in declaration order instead produced one
+  // flat run of eight sliders on the Install tab with the ceiling height wedged
+  // between two lens controls, and appended "What went wrong" — a different
+  // group with a different meaning — to the end of it with nothing said.
+  for (const g of GROUPS) {
+    if (!groups.includes(g.id)) continue;
+    const specs = CONTROLS.filter((c) => c.group === g.id && !skip.includes(c.key));
+    if (specs.length === 0) continue;
+    out.push(el('span', { className: 'lab', textContent: g.title }));
+    out.push(el('p', { className: 'grouphelp', textContent: g.blurb }));
+    for (const spec of specs) {
+      out.push(
+        slider({
+          label: spec.label,
+          symbol: spec.symbol,
+          value: state.settings[spec.key],
+          min: spec.min,
+          max: spec.max,
+          step: spec.step,
+          decimals: spec.decimals,
+          unit: spec.unit,
+          displayScale: spec.displayScale,
+          options: spec.options,
+          // The section is a TAG beside the label, not the first word of the
+          // sentence: the one surface built to be plain language used to open
+          // every note with a document symbol — and for a control whose section
+          // is '—' it opened with a bare dash and no referent.
+          help: spec.help,
+          section: spec.section,
+          klass: spec.klass,
+          bipolar: spec.min < 0 && spec.max > 0,
+          onInput: (v) => setSetting(spec.key, v),
+          onSettle: () => requestModel(true),
+        }),
+      );
+    }
   }
   return out;
 }
 
 function installSection(): HTMLElement[] {
   const out: HTMLElement[] = [];
+  // The one paragraph in the panel that is not gated on the notes toggle: it
+  // says what rig every number below it describes, and a first-time reader who
+  // has not found the toggle needs that more than anyone.
   out.push(
     el('p', {
-      className: 'grouphelp',
+      className: 'note',
       textContent:
         "Everything here starts at the NOAA Boulder reference install — four BenQ LK935 projectors " +
         'on a 68-inch sphere, 211 inches out and 8 inches above an 84-inch equator, from that ' +
@@ -997,15 +1217,35 @@ function installSection(): HTMLElement[] {
       presets.map((p) => ({
         label: p.label,
         title: p.title,
-        on: false,
+        // Lit when the install matches, which is a comparison over the install
+        // keys only. These chips could never light up before, so the panel
+        // never said which of the three rigs you were looking at.
+        on: matchesInstall(state.settings, p.s),
         onPick: () => {
-          state.settings = { ...p.s, nudge: p.s.nudge.map((n) => ({ ...n })) };
+          // A preset is an INSTALL, not a viewpoint and not a choice of what is
+          // playing. Spreading the whole struct also teleported the camera back
+          // across the room and switched the sphere off a dropped-in image, so
+          // "restore Boulder" after walking in to look at a seam threw away two
+          // things nobody asked it to touch.
+          state.settings = {
+            ...p.s,
+            nudge: p.s.nudge.map((n) => ({ ...n })),
+            viewAzDeg: state.settings.viewAzDeg,
+            viewElDeg: state.settings.viewElDeg,
+            viewRangeM: state.settings.viewRangeM,
+            viewFovDeg: state.settings.viewFovDeg,
+            content: state.settings.content,
+            gridOn: state.settings.gridOn,
+          };
           invalidateCalibration();
           markDirty();
           renderControls();
           requestModel(true);
         },
       })),
+      'The three rigs this project can be asked to simulate. They differ in the sphere, the mount ' +
+        'and the lens — not in where you are standing or what is playing, which is why picking one ' +
+        'leaves both alone.',
     ),
   );
 
@@ -1019,6 +1259,7 @@ function installSection(): HTMLElement[] {
         on: Math.round(state.settings.resolution) === i,
         onPick: () => setSetting('resolution', i),
       })),
+      helpFor('resolution'),
     ),
   );
   out.push(el('span', { className: 'lab', textContent: 'Projectors' }));
@@ -1045,7 +1286,7 @@ function installSection(): HTMLElement[] {
         on: false,
         onPick: () => {},
       },
-    ]),
+    ], helpFor('projectorCount')),
   );
   out.push(...controlsFor(['install', 'lens', 'error'], ['resolution', 'projectorCount']));
   return out;
@@ -1054,18 +1295,14 @@ function installSection(): HTMLElement[] {
 function roomSection(): HTMLElement[] {
   const out: HTMLElement[] = [];
 
+  // The base field is one-of-N. "Grid lines" is an independent on/off and used
+  // to sit first in this row, so the default state lit two chips in a row that
+  // otherwise behaves as a radio group — which reads as a multi-select and makes
+  // the four fields look combinable. It lives with the other toggles now.
   out.push(el('span', { className: 'lab', textContent: 'On the sphere' }));
   out.push(
-    chipRow([
-      {
-        label: 'Grid lines',
-        title:
-          'The alignment graticule, over whatever the base field is. This is the pattern the ' +
-          'grid-displacement gate measures and the one a misalignment shows up in.',
-        on: Math.round(state.settings.gridOn) === 1,
-        onPick: () => setSetting('gridOn', Math.round(state.settings.gridOn) === 1 ? 0 : 1),
-      },
-      ...CONTENTS.map((c, i) => ({
+    chipRow(
+      CONTENTS.map((c, i) => ({
         label: c.label,
         title: c.help,
         on: Math.round(state.settings.content) === i,
@@ -1077,7 +1314,8 @@ function roomSection(): HTMLElement[] {
           setSetting('content', i);
         },
       })),
-    ]),
+      'What is playing on the ball, under the alignment grid. One at a time.',
+    ),
   );
   const chosen = CONTENTS[Math.round(state.settings.content)] ?? CONTENTS[1];
   out.push(el('p', { className: 'grouphelp', textContent: chosen.help }));
@@ -1197,6 +1435,14 @@ function roomSection(): HTMLElement[] {
   out.push(
     chipRow([
       {
+        label: 'Grid lines',
+        title:
+          'The alignment graticule, over whatever the base field is. This is the pattern the ' +
+          'grid-displacement gate measures and the one a misalignment shows up in.',
+        on: Math.round(state.settings.gridOn) === 1,
+        onPick: () => setSetting('gridOn', Math.round(state.settings.gridOn) === 1 ? 0 : 1),
+      },
+      {
         label: 'Projectors',
         title:
           'The four projectors on their hangers, and the rod the sphere hangs from. Each lens ' +
@@ -1282,6 +1528,7 @@ function renderControls(): void {
   });
   explain.addEventListener('click', () => {
     state.explain = !state.explain;
+    rememberExplain();
     renderControls();
   });
   head.append(explain);
@@ -1364,6 +1611,23 @@ function renderTopButtons(): void {
  */
 const HELP_SEEN_KEY = 'sphere-sim.help.seen.v1';
 
+/**
+ * The notes toggle, remembered.
+ *
+ * The help sheet promises the notes "stay on until you turn it off", and every
+ * reload turned them off. Same failure handling as the help flag: a browser with
+ * storage disabled loses the preference rather than breaking.
+ */
+const EXPLAIN_KEY = 'sphere-sim.explain.v1';
+
+function rememberExplain(): void {
+  try {
+    localStorage.setItem(EXPLAIN_KEY, state.explain ? '1' : '0');
+  } catch {
+    /* storage disabled */
+  }
+}
+
 function openHelp(): void {
   const sheet = helpEl.querySelector('.sheet');
   if (!sheet) return;
@@ -1372,43 +1636,84 @@ function openHelp(): void {
   const h = (tag: 'h2' | 'h3' | 'p', text: string, cls = ''): HTMLElement =>
     el(tag, { textContent: text, className: cls });
 
-  sheet.append(h('h2', 'What this is'));
+  sheet.append(h('h2', 'A sphere you can knock out of alignment'));
   sheet.append(
     h(
       'p',
       'A Science On a Sphere theatre, simulated. Four projectors ring a 68-inch ball and paint ' +
-        'one image between them. Getting them to agree — so a coastline drawn by two projectors ' +
-        'lands in one place rather than two — is the whole problem, and this page lets you break ' +
-        'it and then fix it.',
+        'one image between them. Where two of them overlap they have to draw the same coastline ' +
+        'in the same place. When one gets knocked they do not — and you see a doubled line.',
     ),
   );
+
+  sheet.append(h('h3', 'Try this first'));
+  const list = el('ol');
+  for (const [lead, rest] of [
+    [
+      'Press "Bump this one"',
+      ' — or "Another install", where every projector moves a little because the building did. ' +
+        'Watch the number on the left jump and turn red.',
+    ],
+    [
+      'Zoom right in on a seam',
+      ' — scroll, or pinch on a touchscreen — and you can see the grid lines sitting apart. Click ' +
+        'a projector to see the frame it is sending. Bump it again and that frame does not ' +
+        'change: the software has not been told, so only where the light lands has moved.',
+    ],
+    [
+      'Press Recalibrate',
+      ' and watch it work. It does not undo the bump — it photographs the sphere with structured ' +
+        'light, works out where the lenses really are from those photographs alone, and lists ' +
+        'what it found. The three photos appear with the results. Five seconds or so.',
+    ],
+  ]) {
+    // One element per grid cell: the counter is the first column and everything
+    // else has to be the second. Appending the bold lead and the rest as two
+    // siblings made them two cells, and the sentence wrapped one word per line
+    // down a 22px column.
+    const body = el('span');
+    body.append(el('strong', { textContent: lead }), rest);
+    const li = el('li');
+    li.append(body);
+    list.append(li);
+  }
+  sheet.append(list);
 
   sheet.append(h('h3', 'The one thing worth understanding'));
   sheet.append(
     h(
       'p',
-      'There are two rigs, not one. Where the lenses ACTUALLY are, and where the software BELIEVES ' +
-        'they are. Move a projector and only the first changes — which is why the frame that ' +
-        'projector is sending does not move, and why the picture on the ball goes wrong. ' +
-        'Recalibrating is what updates the second one.',
+      'There are two rigs, not one: where the lenses actually are, and where the software ' +
+        'believes they are. Moving a projector changes only the first, which is why the frame it ' +
+        'is sending does not move and why the picture on the ball goes wrong. Recalibrating is ' +
+        'what updates the second.',
     ),
   );
 
-  sheet.append(h('h3', 'Try this'));
-  const list = el('ul');
+  sheet.append(h('h3', 'The number on the left'));
+  sheet.append(
+    h(
+      'p',
+      'Millimetres of disagreement between projectors where they overlap, at the worst point on ' +
+        'the sphere. Under a millimetre is good — a visitor would never notice. This is the whole ' +
+        'point: today that judgement is made by eye, with no number to check.',
+    ),
+  );
+
+  sheet.append(h('h3', 'Anything else'));
+  const more = el('ul');
   for (const item of [
-    'Drag to walk around the sphere — the orbit passes underneath it. Scroll, or pinch on a ' +
-      'touchscreen, to move closer. Tap a projector to see the frame it is sending; tap the room ' +
-      'to put that card away.',
-    'On the Room tab, press "Whole room" to step outside the ring — all four projectors, each in its own colour. Click a lens to see only its light and the frame going down its cable.',
-    'On the Projectors tab, drag "Aim left / right" and watch the grid lines double at the seams — the number on the left climbs past its 1 mm gate.',
-    'Press Recalibrate. The simulator photographs the sphere with structured light, the solver works out where the lenses really are from those photographs alone, and the sphere converges as it goes. Five seconds or so.',
-    'Open "What it found" to see which axis it moved and how close it landed to the truth it never saw.',
-    'On the Room tab, turn the grid off and drop any 2:1 equirectangular image on the page — a NOAA dataset, Blue Marble, a test chart.',
+    'Drag to walk around the sphere — the orbit passes underneath it, which is the only way to ' +
+      'see the unlit cap at the bottom.',
+    'On the Room tab, press "Whole room" to step outside the ring — all four projectors, each in ' +
+      'its own colour — or turn the grid off and drop any 2:1 equirectangular image on the page.',
+    'The "what do these do?" link above the sliders turns on a plain-language note under every ' +
+      'control, and stays on until you turn it off.',
+    'This sheet is always one press of "?" away, top right.',
   ]) {
-    list.append(el('li', { textContent: item }));
+    more.append(el('li', { textContent: item }));
   }
-  sheet.append(list);
+  sheet.append(more);
 
   sheet.append(h('h3', 'Where the numbers come from'));
   sheet.append(
@@ -1432,7 +1737,7 @@ function openHelp(): void {
   );
 
   const close = el('div', { className: 'close' });
-  const btn = el('button', { className: 'btn primary', textContent: 'Start' });
+  const btn = el('button', { className: 'btn primary', textContent: 'Start bumping things' });
   btn.dataset.smoke = 'help-close';
   btn.addEventListener('click', closeHelp);
   close.append(btn);
@@ -1544,8 +1849,14 @@ function renderInspect(): void {
   const subject = state.inspectOpen && (state.section === 'projectors' || state.highlight >= 0);
   // The class is on the column, not the card: on a phone it is what tells the
   // readout to stand down while a projector is the subject.
-  leftEl.classList.toggle('inspecting', subject && frame !== null);
-  if (!subject || !frame) {
+  leftEl.classList.toggle('inspecting', subject);
+  // A missing frame is no longer a reason to hide the card. Switching a
+  // projector off drops it out of the rig, so its frame, config and mesh all
+  // come back null — and returning early here meant the click that switched it
+  // off was also the click that made its card vanish, which reads as the page
+  // losing track of it. The "Currently switched off" line was unreachable code
+  // for the same reason.
+  if (!subject) {
     inspectEl.classList.remove('on');
     return;
   }
@@ -1554,7 +1865,9 @@ function renderInspect(): void {
   const on = state.settings.nudge[state.selected]?.on !== false;
 
   const head = el('div', { className: 'rowline' });
-  const name = el('p', { className: 'eyebrow-sm', textContent: `P${state.selected + 1}` });
+  // Says what the picture is, not just whose it is: "P3" over a picture of the
+  // world is an identifier, "P3 is sending" is a sentence about the thing below.
+  const name = el('p', { className: 'eyebrow-sm', textContent: `P${state.selected + 1} is sending` });
   name.style.color = tint;
   // Walk round to this projector's side.
   //
@@ -1562,7 +1875,10 @@ function renderInspect(): void {
   // looking at the unlit back of it, which is the truth and reads as a fault.
   // The azimuth comes off the drawn uniforms rather than being recomputed, so
   // the link goes exactly where the marker is.
-  let caption: HTMLElement = el('span', { className: 'note tiny', textContent: frame.caption });
+  let caption: HTMLElement = el('span', {
+    className: 'note tiny',
+    textContent: frame ? frame.caption : 'switched off',
+  });
   if (state.highlight === state.selected && lastUniforms) {
     const lx = lastUniforms.physical.lens[3 * state.selected];
     const ly = lastUniforms.physical.lens[3 * state.selected + 1];
@@ -1612,20 +1928,54 @@ function renderInspect(): void {
   inspectEl.append(seg);
 
   if (inspectView === 'frame') {
-    const c = el('canvas', { className: 'framepic' });
-    paintFrame(c, frame);
-    c.addEventListener('click', () => openLightbox(frame, `P${state.selected + 1} — ${frame.caption}`));
-    inspectEl.append(c);
-    inspectEl.append(
-      el('p', {
-        className: 'note',
-        textContent:
-          'The image this projector is sending down the cable. It fades out at the left and right ' +
-          'where it hands over to its neighbours — widest across the equator, pinching shut toward ' +
-          'the poles. Moving the projector does NOT change this picture, because the software has ' +
-          'not been told. Recalibrating is what rewrites it.',
-      }),
-    );
+    if (frame) {
+      // Kept, greyed, when the projector is switched off: this is still exactly
+      // the frame the compositor is generating for it — the signal is there, the
+      // lamp is not.
+      const c = el('canvas', { className: on ? 'framepic' : 'framepic dark' });
+      const slot = state.selected;
+      if (beforeFrames[slot] && solveResult) paintFramePair(c, beforeFrames[slot]!, frame);
+      else paintFrame(c, frame);
+      c.addEventListener('click', () =>
+        openLightbox(frame, `P${slot + 1} — ${frame.caption}`, slot),
+      );
+      inspectEl.append(c);
+      inspectEl.append(
+        el('p', {
+          className: 'note',
+          textContent:
+            beforeFrames[slot] && solveResult
+              ? 'Red is where the old warp drew the grid; cyan is where it draws it now. The ' +
+                'recalibration rewrote this frame — the projector has not moved since, and the ' +
+                'light now lands where the software thinks it does.'
+              : 'The image this projector is sending down the cable. It fades out at the left and ' +
+                'right where it hands over to its neighbours — widest across the equator, pinching ' +
+                'shut toward the poles. Moving the projector does NOT change this picture, because ' +
+                'the software has not been told. Recalibrating is what rewrites it.',
+        }),
+      );
+      // The zoom cursor is a mouse affordance and this card is now the phone's
+      // main surface, so the affordance gets said out loud.
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent: coarsePointer()
+            ? 'Tap the frame to see it full size.'
+            : 'Click the frame to see it full size.',
+        }),
+      );
+    } else {
+      inspectEl.append(
+        el('p', {
+          className: 'note',
+          textContent:
+            'Nothing is going down this cable. The compositor generates a frame for each ' +
+            'projector it believes is in the room, and this one is switched off — so it is not ' +
+            'in the rig, its quadrant of the sphere is dark, and the neighbours do not widen to ' +
+            'cover the gap.',
+        }),
+      );
+    }
     if (!on) {
       const off = el('p', { className: 'note', textContent: 'Currently switched off at the wall.' });
       off.style.color = 'var(--warn)';
@@ -1634,6 +1984,17 @@ function renderInspect(): void {
   }
 
   const cfg = model?.projectorConfig[state.selected] ?? null;
+  if (inspectView === 'where' && !cfg) {
+    inspectEl.append(
+      el('p', {
+        className: 'note',
+        textContent:
+          'A switched-off projector has no row in the compositor’s calibration, so there is ' +
+          'nothing here to compare against where the lens actually is. Switch it back on to see ' +
+          'the two columns.',
+      }),
+    );
+  }
   if (inspectView === 'where' && cfg) {
     const table = el('table', { className: 'rec' });
     const head = el('tr');
@@ -1672,6 +2033,16 @@ function renderInspect(): void {
   }
 
   const mesh = model?.meshes[state.selected] ?? null;
+  if (inspectView === 'mesh' && !mesh) {
+    inspectEl.append(
+      el('p', {
+        className: 'note',
+        textContent:
+          'No warp mesh: this projector is switched off, so the compositor is not generating a ' +
+          'frame for it and there is nothing to bend.',
+      }),
+    );
+  }
   if (inspectView === 'mesh' && mesh) {
     // Magnified so the shape is legible. At true scale a 1 mm error and a 100 mm
     // error are both a straight grid, so the factor is chosen to put the worst
@@ -1918,11 +2289,20 @@ function solveSection(): HTMLElement | null {
   const box = el('div', { className: 'sect' });
 
   const head = el('div', { className: 'rowline' });
+  // The heading is derived from the same reading the badge above it is derived
+  // from, so the two can never disagree. It used to be green unconditionally:
+  // a solve that landed over the gate — high capture noise, say — printed a
+  // green "Calibration result" directly under a red DRIFTED badge.
+  const passed = model?.readings.find((r) => r.id === 'grid_displacement')?.status === 'PASS';
   const title = el('p', {
     className: 'eyebrow-sm',
-    textContent: solveRunning ? 'Calibrating' : 'Calibration result',
+    textContent: solveRunning ? 'Calibrating' : passed ? 'Converged' : 'Still over the gate',
   });
-  title.style.color = solveRunning ? 'var(--accent)' : 'var(--good)';
+  title.style.color = solveRunning
+    ? 'var(--accent)'
+    : passed
+      ? 'var(--good)'
+      : 'var(--warn)';
   const right = el('span', {
     className: 'note tiny num',
     textContent: solveRunning
@@ -1934,6 +2314,27 @@ function solveSection(): HTMLElement | null {
         : '',
   });
   head.append(title, right);
+  // Put the analysis away without throwing the calibration away. The only
+  // control that used to clear this section was "Forget it", which drops the
+  // recovered rig and changes the picture on the sphere.
+  if (!solveRunning) {
+    const shut = el('button', {
+      className: 'linkish',
+      textContent: '✕',
+      title: 'Hide this analysis. The calibration stays applied.',
+      ariaLabel: 'Hide the calibration analysis',
+    });
+    shut.addEventListener('click', () => {
+      solveResult = null;
+      solveShots = [];
+      solveTrace = [];
+      solveStep = null;
+      solveStage = '';
+      renderReadout();
+      renderInspect();
+    });
+    head.append(shut);
+  }
   box.append(head);
 
   const spark = sparkline(solveTrace);
@@ -2009,6 +2410,21 @@ function solveSection(): HTMLElement | null {
             'grid line.',
         }),
       );
+      // A sentence that names a picture ought to be able to show it. The mesh
+      // lives in the projector card's third tab, which a reader following this
+      // paragraph had no way to reach.
+      const toMesh = el('button', {
+        className: 'linkish',
+        textContent: `show me P${state.selected + 1}’s warp mesh`,
+      });
+      toMesh.addEventListener('click', () => {
+        inspectView = 'mesh';
+        state.inspectOpen = true;
+        state.section = 'projectors';
+        renderControls();
+        renderInspect();
+      });
+      box.append(toMesh);
     }
   }
   return box;
@@ -2129,31 +2545,55 @@ function renderReadout(): void {
   // shader compile and did the worker reply", and it would break silently.
   value.dataset.smoke = 'grid-mm';
   value.style.color = grid ? (grid.status === 'PASS' ? 'var(--good)' : 'var(--bad)') : 'var(--muted)';
-  const unit = el('div', { className: 'note unit', textContent: `mm  / gate ${grid?.gate || '1.000'}` });
+  const unit = el('div', {
+    className: 'note unit',
+    textContent: `mm  / gate ${grid?.gateShort || '1.00 mm'}`,
+  });
   big.append(value, unit);
   readoutEl.append(big);
 
   readoutEl.append(
     el('p', {
-      className: 'note',
+      className: 'note phone-hide',
       textContent:
         'How far a line on the alignment grid lands from where it belongs, at the worst point on ' +
-        'the sphere. This is the doubled or kinked line an operator sees.',
+        'the sphere. This is the doubled or kinked line an operator sees. Under a millimetre is ' +
+        'good — a visitor would never see it; the gate is the number §7 says it has to beat.',
     }),
   );
+
+  // The typical seam beside the worst point. `sim` computes this — RMS over
+  // every point at least two projectors reach, area-weighted — and the page
+  // never printed it, so a rig with one bad corner and three clean seams read
+  // the same as a rig that was out everywhere.
+  const seam = model?.readings.find((r) => r.id === 'registration_error');
+  if (seam) {
+    readoutEl.append(
+      el('p', {
+        className: 'note tiny',
+        textContent: `Across every blend band, RMS: ${seam.valueShort}.`,
+        title: seam.means,
+      }),
+    );
+  }
 
   if (model?.gridBaselineMm !== null && model !== null && solveResult) {
     const from = model.gridBaselineMm as number;
     const to = model.gridWorstMm;
-    const factor = to > 0 ? from / to : Infinity;
+    // Which way it went, said out loud. `from / to` printed as "N× better"
+    // regardless of direction, so a solve that landed worse than it started
+    // reported "0.4× better" in green — a number that is both wrong and
+    // reassuring.
+    const better = to <= from;
+    const factor = better ? (to > 0 ? from / to : Infinity) : from > 0 ? to / from : Infinity;
     const d = el('p', { className: 'note num' });
     d.innerHTML = '';
     d.append(
       `${fmtMm(from)} mm before  →  `,
       el('strong', { textContent: `${fmtMm(to)} mm now` }),
-      Number.isFinite(factor) ? `   (${factor.toFixed(1)}× better)` : '',
+      Number.isFinite(factor) ? `   (${factor.toFixed(1)}× ${better ? 'better' : 'worse'})` : '',
     );
-    d.style.color = 'var(--good)';
+    d.style.color = better ? 'var(--good)' : 'var(--bad)';
     d.dataset.smoke = 'improvement';
     readoutEl.append(d);
   } else if (model) {
@@ -2163,10 +2603,25 @@ function renderReadout(): void {
     const parts: string[] = [];
     if (place && place.displacementMm > 0) parts.push(`${place.projectorId} ${place.what} (${place.amount})`);
     if (aim && aim.displacementMm > 0) parts.push(`${aim.projectorId} ${aim.what} (${aim.amount})`);
-    if (!nudgesAreClear(state.settings.nudge)) parts.push('plus what you moved by hand');
+    const byHand = !nudgesAreClear(state.settings.nudge);
+    // "Biggest faults: plus what you moved by hand." is what the old phrasing
+    // produced on a perfectly-mounted rig that has only been bumped, which is
+    // the state one press of "Bump this one" leaves the page in.
     if (parts.length > 0) {
       readoutEl.append(
-        el('p', { className: 'note tiny', textContent: `Biggest faults: ${parts.join('; ')}.` }),
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `Biggest faults: ${parts.join('; ')}` +
+            `${byHand ? ', plus what you moved by hand' : ''}.`,
+        }),
+      );
+    } else if (byHand) {
+      readoutEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent: 'The mount is true; this is what you moved by hand.',
+        }),
       );
     }
   }
@@ -2183,23 +2638,46 @@ function renderReadout(): void {
     };
     const unlit = model.readings.find((r) => r.id === 'unlit_in_mask');
     const spill = model.readings.find((r) => r.id === 'off_sphere_flux_excess');
+    // The gap between where the lenses are and where the software thinks they
+    // are, live. These two cells used to read "— not solved" until a solve had
+    // run, which is precisely the moment they both go back to nearly zero: a
+    // bump was never quantified, only its consequence on the grid was. After a
+    // solve the solver's own residual is the better number, because it has had
+    // the unobservable global rotation removed.
     g.append(
       cell(
         'Lens position',
-        solveResult ? `${fmtMm(solveResult.posePositionMm)} mm` : '— not solved',
-        'Worst lens position error after removing the unobservable global rotation. Ground truth; the solver never saw it.',
+        solveResult
+          ? `${fmtMm(solveResult.posePositionMm)} mm`
+          : `${fmtMm(model.driftPositionMm)} mm`,
+        solveResult
+          ? 'Worst lens position error after removing the unobservable global rotation. Ground truth; the solver never saw it.'
+          : 'How far the worst lens has moved from where the software believes it is. Ground truth — recalibrating is what closes it.',
       ),
     );
     g.append(
       cell(
         'Lens aim',
-        solveResult ? `${solveResult.poseRotationDeg.toFixed(3)}°` : '— not solved',
-        'Worst aim error, same basis.',
+        solveResult ? `${solveResult.poseRotationDeg.toFixed(3)}°` : `${model.driftAimDeg.toFixed(3)}°`,
+        solveResult ? 'Worst aim error, same basis.' : 'Worst aim difference between the two rigs.',
       ),
     );
     g.append(cell('Unlit above mask', unlit ? unlit.value : '—', unlit?.means ?? ''));
     g.append(cell('Excess spill', spill ? spill.value : '—', spill?.means ?? ''));
     readoutEl.append(g);
+    // Four cells whose only explanation used to be a hover tooltip — which does
+    // not exist on a touchscreen, and which the notes toggle never revealed. Two
+    // of the four use words ("mask", "spill") the page defines nowhere visible.
+    readoutEl.append(
+      el('p', {
+        className: 'note tiny phone-hide',
+        textContent:
+          'The first two are how far the software’s idea of a projector has fallen behind where ' +
+          'it really is; both drop to the solver’s own residual when you recalibrate. Unlit is ' +
+          'how much of the protected band gets no light at all — four projectors on one ring can ' +
+          'never quite reach the poles. Spill is light that misses the ball and lands on the wall.',
+      }),
+    );
 
     readoutEl.append(factsList(model.facts));
     readoutEl.append(coverageBar(model.multiplicityAreaFraction));
@@ -2254,7 +2732,16 @@ function markerUnder(e: PointerEvent, slopPx = PICK_SLOP_PX[e.pointerType] ?? 3)
   if (r.width <= 0 || r.height <= 0) return -1;
   const ndcX = ((e.clientX - r.left) / r.width) * 2 - 1;
   const ndcY = 1 - ((e.clientY - r.top) / r.height) * 2;
-  return pickMarkerNear(lastUniforms, ndcX, ndcY, (2 * slopPx) / r.width, (2 * slopPx) / r.height);
+  const hit = pickMarkerNear(
+    lastUniforms,
+    ndcX,
+    ndcY,
+    (2 * slopPx) / r.width,
+    (2 * slopPx) / r.height,
+  );
+  // Back to a panel slot: with one projector switched off the rig is shorter
+  // than the panel, and clicking the last marker used to select its neighbour.
+  return slotOfRigIndex(hit, lastSlots);
 }
 
 /**
@@ -2288,11 +2775,45 @@ function orbitGain(): number {
   return Math.min(1, (state.settings.viewRangeM / 10.2) * 0.75 + 0.25);
 }
 
+/**
+ * Move the eye, and put the panel back in step with it.
+ *
+ * The view sliders and the "Where you stand" chips read the same settings the
+ * canvas gestures write, so a drag that only called `markDirty` left the Room
+ * tab showing where you used to be — and left a viewpoint chip lit for a view
+ * you had already orbited away from. `renderControls` runs on the settle timer
+ * rather than per pointermove: rebuilding thirty rows at 60 Hz would cost more
+ * than the picture.
+ */
+function viewSettled(): void {
+  window.clearTimeout(settleTimer);
+  settleTimer = window.setTimeout(() => {
+    requestModel(true);
+    renderControls();
+  }, 260);
+}
+
 function zoomTo(range: number): void {
   state.settings = withSetting(state.settings, 'viewRangeM', range);
   markDirty();
-  window.clearTimeout(settleTimer);
-  settleTimer = window.setTimeout(() => requestModel(true), 260);
+  viewSettled();
+}
+
+/**
+ * One wheel notch, in the units `deltaY` is actually reported in.
+ *
+ * `deltaMode` is not decoration. Chrome reports pixels (100 per notch) and
+ * Firefox reports LINES — `deltaY` of 3 — so a handler that multiplies raw
+ * `deltaY` zooms 33 times slower there: about 380 notches to get from the
+ * opening 10.2 m to the seam, which reads as "scrolling does nothing" rather
+ * than as a units bug.
+ */
+const WHEEL_LINE_PX = 16;
+
+function wheelPixels(e: WheelEvent): number {
+  if (e.deltaMode === 1) return e.deltaY * WHEEL_LINE_PX;
+  if (e.deltaMode === 2) return e.deltaY * window.innerHeight;
+  return e.deltaY;
 }
 
 function installPointer(): void {
@@ -2426,6 +2947,7 @@ function installPointer(): void {
       state.settings.viewElDeg + dy * 0.3 * gain,
     );
     markDirty();
+    viewSettled();
   });
 
   canvas.addEventListener(
@@ -2436,7 +2958,7 @@ function installPointer(): void {
       // larger deltaY than a scroll notch. Treating the two the same made a
       // two-finger pinch on a laptop fly straight to the near limit.
       const k = e.ctrlKey ? 0.0004 : 0.0012;
-      zoomTo(state.settings.viewRangeM * Math.exp(e.deltaY * k));
+      zoomTo(state.settings.viewRangeM * Math.exp(wheelPixels(e) * k));
     },
     { passive: false },
   );
@@ -2445,7 +2967,7 @@ function installPointer(): void {
     if (e.key !== 'Escape') return;
     // Innermost first: the sheet over the lightbox over the card.
     if (helpEl.classList.contains('on')) closeHelp();
-    else if (lightboxEl.classList.contains('on')) lightboxEl.classList.remove('on');
+    else if (lightboxEl.classList.contains('on')) closeLightbox();
     else if (state.inspectOpen) {
       state.inspectOpen = false;
       renderInspect();
@@ -2470,6 +2992,14 @@ function fitFirstScreen(): void {
   state.inspectOpen = false;
   rightEl.classList.add('collapsed');
   state.settings = withSetting(state.settings, 'viewFovDeg', portraitFovDeg());
+  // The bottom hint line is hidden below 900px, so on a phone this is the only
+  // sentence naming the gestures. It says what you can do here rather than how
+  // the numbers are produced, which is what the desktop subtitle is for and
+  // what a reader on a 390-pixel screen has no room to care about yet.
+  const sub = document.querySelector('.brand .sub');
+  if (sub) {
+    sub.textContent = 'Drag to rotate · pinch to zoom · tap a projector to see the frame it sends.';
+  }
 }
 
 /**
@@ -2486,6 +3016,11 @@ function fitFirstScreen(): void {
  * Clamped to the slider's own range so this can never set a value the Range
  * control cannot show, and so a landscape phone gets the desktop framing back.
  */
+/** Is the primary pointer a finger? Decides "tap" from "click". */
+function coarsePointer(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+}
+
 function portraitFovDeg(): number {
   const aspect = window.innerWidth / Math.max(window.innerHeight, 1);
   const halfV = Math.tan((78 / 2) * (Math.PI / 180));
@@ -2514,6 +3049,11 @@ function boot(): void {
         'Each one is a term of the model that has stopped being applied, and the picture would ' +
         'still look like a sphere.',
     );
+  }
+  try {
+    state.explain = localStorage.getItem(EXPLAIN_KEY) === '1';
+  } catch {
+    /* storage disabled */
   }
   fitFirstScreen();
   installPointer();

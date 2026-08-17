@@ -28,7 +28,7 @@
  */
 
 import type { RigCalibration } from '../../calibration/src/index.ts';
-import { raySphereIntersect } from '../../sim/src/geometry.ts';
+import { angleBetweenDeg, projectorBasis, raySphereIntersect } from '../../sim/src/geometry.ts';
 import { pixelToRay, prepareRig, worldToPixelUnbounded } from '../../sim/src/optics.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
@@ -77,6 +77,47 @@ function metricsFor(
 /** Vertices across and down. Odd, so a vertex sits on the optical axis. */
 const MESH_COLS = 17;
 const MESH_ROWS = 11;
+
+/**
+ * How far the compositor's idea of the rig has fallen behind the rig itself:
+ * the worst lens displacement in millimetres and the worst aim difference in
+ * degrees, over the projectors both rigs contain.
+ *
+ * This is the drift, not a solver residual. It rises the moment a projector is
+ * bumped and falls to the recovery error after a solve, which is exactly the
+ * pair of numbers "pose off by / aim off by" wants to show — and it is ground
+ * truth, so it is reported and never fed back into anything the solver sees.
+ *
+ * The aim comparison is between the two forward axes, which is the part of the
+ * orientation a viewer can point at. Roll about the axis is a real degree of
+ * freedom and it is not what "aim" means.
+ */
+function poseDrift(
+  truth: RigCalibration,
+  compositor: RigCalibration,
+  slots: readonly number[],
+): { positionMm: number; aimDeg: number } {
+  let positionMm = 0;
+  let aimDeg = 0;
+  const n = Math.min(truth.projectors.length, compositor.projectors.length, slots.length);
+  for (let i = 0; i < n; i++) {
+    const a = truth.projectors[i].pose;
+    const b = compositor.projectors[i].pose;
+    positionMm = Math.max(
+      positionMm,
+      Math.hypot(
+        a.position.x - b.position.x,
+        a.position.y - b.position.y,
+        a.position.z - b.position.z,
+      ) * 1000,
+    );
+    aimDeg = Math.max(
+      aimDeg,
+      angleBetweenDeg(projectorBasis(a).axis, projectorBasis(b).axis),
+    );
+  }
+  return { positionMm, aimDeg };
+}
 
 /**
  * The warp mesh for every projector. See {@link WarpMesh} for what it means.
@@ -258,10 +299,19 @@ export function computeModel(req: ModelRequest): ModelResponse {
     }
   }
 
+  // How far the compositor's idea of the rig has fallen behind the rig. This is
+  // ground truth and the solver never sees it; it is here so that a bump is
+  // quantified the moment it happens rather than only after a recalibration —
+  // the two cells that print it used to read "— not solved" until you solved,
+  // which is the one moment they both go back to nearly zero.
+  const drift = poseDrift(world.truthRig, world.compositorRig, world.slots);
+
   return {
     kind: 'model',
     id: req.id,
     ok: true,
+    driftPositionMm: drift.positionMm,
+    driftAimDeg: drift.aimDeg,
     projectorFrames,
     meshes: warpMeshes(
       prepareRig(world.truthRig),

@@ -43,6 +43,7 @@ import {
   IN_TO_M,
   NOMINAL_BLACK_PCT,
   NOMINAL_LUMENS,
+  SHIFT_PCT_PER_UNIT,
   RESOLUTIONS,
 } from './settings.ts';
 
@@ -216,8 +217,10 @@ function applyNudges(rig: RigCalibration, nudges: readonly ProjectorNudge[]): Nu
         intrinsics: {
           ...p.intrinsics,
           fovHDeg: Math.max(0.5, p.intrinsics.fovHDeg + n.fovDeltaDeg),
-          shiftH: p.intrinsics.shiftH + n.shiftH,
-          shiftV: p.intrinsics.shiftV + n.shiftV,
+          // The panel's shift is a percentage of the full image; the
+          // calibration's is a fraction of the half-extent (§3.1).
+          shiftH: p.intrinsics.shiftH + n.shiftH / SHIFT_PCT_PER_UNIT,
+          shiftV: p.intrinsics.shiftV + n.shiftV / SHIFT_PCT_PER_UNIT,
         },
         transfer: {
           ...t,

@@ -23,7 +23,13 @@ import {
   glslFunctionNames,
   glslUniformNames,
 } from '../src/glsl.ts';
-import { buildDisplayUniforms, packRig, pickMarker, pickMarkerNear } from '../src/uniforms.ts';
+import {
+  buildDisplayUniforms,
+  packRig,
+  pickMarker,
+  pickMarkerNear,
+  slotOfRigIndex,
+} from '../src/uniforms.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import { BOULDER_PRESET } from '../src/settings.ts';
 import { buildViewer, buildWorld } from '../src/rigs.ts';
@@ -345,6 +351,20 @@ test('a fingertip-wide tap finds the projector it landed beside, and still not o
       `P${i + 1} was picked through the sphere by a wide tap`,
     );
   }
+
+  // A pick answers in RIG indices, and the rig omits every projector that is
+  // switched off. Turning P2 off leaves the rig [P1, P3, P4]: the third marker
+  // on screen is rig index 2 and panel slot 3, and a page that used the rig
+  // index directly put the sliders on P3 while the viewer was looking at P4.
+  const slots = [0, 2, 3];
+  assert.equal(slotOfRigIndex(2, slots), 3, 'the last marker is P4, not P3');
+  assert.equal(slotOfRigIndex(1, slots), 2);
+  assert.equal(slotOfRigIndex(0, slots), 0);
+  assert.equal(slotOfRigIndex(-1, slots), -1, 'a miss stays a miss');
+  // With nothing switched off the two indices are the same thing, which is why
+  // the bug survived: every test rig has all four on.
+  assert.equal(slotOfRigIndex(2, [0, 1, 2, 3]), 2);
+  assert.equal(slotOfRigIndex(2, undefined), 2);
 
   // Zero tolerance is exactly the old behaviour, and empty room is still empty.
   const u = buildDisplayUniforms(physical, prepareRig(world.compositorRig), world.scene, camera, {

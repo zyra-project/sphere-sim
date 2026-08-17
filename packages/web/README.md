@@ -90,6 +90,41 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   finishes: what it moved and whether it moved to the right place, plus the
   geometry as `sos_stream_control.config` would carry it.
 
+## On a phone
+
+The page is one canvas with floating cards over it, and below 820px those cards
+were the whole screen. Measured on a 390×844 Safari: controls from 12 to 417, the
+projector card from 417 to 791, the readout crushed into the remaining 31 — zero
+visible pixels of room. Every desktop check was green throughout, which is why
+`tools/smoke-app.ts` now ends with a pass in an emulated phone that asserts the
+room is visible between the sheets and that a pinch moves the camera.
+
+What a narrow screen gets instead:
+
+- **Two sheets, pinned to the top and bottom edges**, with the room between them.
+  The control sheet opens collapsed under 760px and the action bar stays — a page
+  that hides "Recalibrate" in order to show the sphere has hidden the point. The
+  projector card stands the readout down rather than stacking on it, because
+  stacked they come to more than the screen and the sphere then has nowhere left
+  to be tapped, which is also the only way to dismiss them.
+- **Gestures that exist.** One pointer orbits, two pinch. The hint line has
+  promised "scroll or pinch to zoom" since it was written and a phone has no
+  scroll wheel, so until this there was no way to zoom at all. A trackpad pinch
+  arrives as `ctrl+wheel` at a much larger `deltaY` and is scaled separately;
+  Firefox reports wheels in LINES, so `deltaMode` is normalised — without it one
+  notch moved the camera 0.36% and scroll-to-zoom looked broken rather than
+  mis-scaled.
+- **A hit test the size of a fingertip.** `pickMarkerNear` samples rings outward
+  from the contact point and takes the nearest hit. A projector body is about ten
+  CSS pixels across on a phone, so an exact ray answers "nothing" for taps that
+  visibly landed on one. It cannot pick the far projector of a close pair and it
+  cannot see through the sphere; both are asserted.
+- **A field of view chosen from the aspect.** `viewFovDeg` is horizontal and the
+  renderer derives the vertical half-angle from the raster, so 71° across a
+  portrait phone is a 114° vertical field: the room stretches away at top and
+  bottom and the sphere in the middle is forty pixels wide. A narrow screen opens
+  at whatever horizontal angle holds the vertical one at 78°.
+
 ## What is actually happening
 
 Three things run at once, and the division between them is the whole design.

@@ -81,6 +81,17 @@ export interface ModelResponse {
   gridWorstMm: number;
   /** The same number with the compositor believing the config as written. */
   gridBaselineMm: number | null;
+  /**
+   * How far the compositor's idea of the rig has fallen behind the rig: worst
+   * lens displacement in millimetres, worst aim difference in degrees.
+   *
+   * GROUND TRUTH, and the page says so where it prints them. Both rise the
+   * moment a projector is bumped and drop to the recovery error after a solve —
+   * which is why they are computed here on every pass rather than only being
+   * available in a solve reply.
+   */
+  driftPositionMm: number;
+  driftAimDeg: number;
   /** Fraction of the sphere lit by 0, 1, 2 … projectors. */
   multiplicityAreaFraction: number[];
   /** §4.3's unlit polar region, north and south, as area fractions. */

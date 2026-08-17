@@ -39,8 +39,20 @@ export interface Reading {
   label: string;
   /** Formatted value, with unit. */
   value: string;
+  /** The same value with the sampling basis dropped, for running text. */
+  valueShort: string;
   /** Formatted gate, or `''`. */
   gate: string;
+  /**
+   * The same gate with the sampling basis dropped, for the line under a 44px
+   * number where it has to fit.
+   *
+   * `sim`'s units say what a number was measured over — "mm on sphere surface",
+   * "fraction of the protected region" — which is right in a table and wrong as
+   * a caption: the headline read "mm / gate 1.000 mm on sphere surface" and
+   * wrapped onto three lines beside the figure it was captioning.
+   */
+  gateShort: string;
   status: ReadingStatus;
   /** One sentence: what this number means. */
   means: string;
@@ -137,6 +149,17 @@ const COPY: Record<string, { label: string; means: string; lever: string }> = {
   },
 };
 
+/**
+ * The unit with its sampling basis removed: "mm on sphere surface" → "mm".
+ *
+ * Only the leading token survives, and only when the unit starts with one — a
+ * fraction unit has no short form and keeps its percentage formatting.
+ */
+function shortUnit(unit: string): string {
+  if (unit.startsWith('fraction')) return unit;
+  return unit.split(' ')[0] ?? unit;
+}
+
 export function readingsFrom(set: MetricSet): Reading[] {
   const out: Reading[] = [];
   for (const m of set.metrics) {
@@ -145,7 +168,9 @@ export function readingsFrom(set: MetricSet): Reading[] {
       id: m.id,
       label: copy ? copy.label : m.label,
       value: fmt(m.value, m.unit),
+      valueShort: fmt(m.value, shortUnit(m.unit)),
       gate: m.gateMax === null ? '' : fmt(m.gateMax, m.unit),
+      gateShort: m.gateMax === null ? '' : fmt(m.gateMax, shortUnit(m.unit)),
       status: statusOf(m),
       means: copy ? copy.means : m.note,
       lever: copy ? copy.lever : '',

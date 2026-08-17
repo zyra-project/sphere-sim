@@ -430,6 +430,22 @@ export function pickMarkerNear(
 const PICK_RINGS = [0.5, 1] as const;
 const PICK_RING_SAMPLES = 8;
 
+/**
+ * The panel slot a picked projector belongs to.
+ *
+ * Both pick functions answer in RIG indices, because that is what the packed
+ * uniforms are indexed by — and the rig only contains the projectors that are
+ * switched on. With P2 off the rig is [P1, P3, P4], so clicking the last marker
+ * answers 2, and a caller that treats 2 as a panel slot selects P3 while the
+ * viewer is looking at P4. This is the inverse of `rigIndexOf`, and the reason
+ * neither direction is done by hand at the call site.
+ */
+export function slotOfRigIndex(rigIndex: number, slots: readonly number[] | undefined): number {
+  if (rigIndex < 0) return -1;
+  if (!slots) return rigIndex;
+  return slots[rigIndex] ?? rigIndex;
+}
+
 /** `glsl.ts` `sdProjector`, in the frame where the lens is the origin. */
 function projectorDistance(
   u: DisplayUniforms,
