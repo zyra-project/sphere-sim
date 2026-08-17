@@ -536,7 +536,20 @@ const ROOM_STEPS = 72;
 
 const CHUNK_ROOM = `
 const int ROOM_STEPS = ${ROOM_STEPS};
-const float RAIL_RADIUS_M = 1.9;
+/**
+ * The guard rail's radius, as a multiple of the sphere's.
+ *
+ * 2.2 is 1.9 m at PARAMETERS.md §1's 68-inch ball, which is what this was as a
+ * constant. Scaling it rather than fixing it is the point: a 130-inch sphere in
+ * a room whose handrail stayed at 1.9 m would have visitors standing inside the
+ * silhouette, and the rail is what §6's viewing band is bounded below BY.
+ *
+ * The rail's HEIGHTS do not scale — a handrail is 1.04 m because of the people
+ * leaning on it, not because of the ball — and they are measured off the floor,
+ * so raising the sphere leaves them where they are.
+ */
+const float RAIL_RADIUS_FRAC = 2.2;
+#define RAIL_RADIUS_M (uRadius * RAIL_RADIUS_FRAC)
 const float RAIL_TOP_M = 1.04;
 const float RAIL_MID_M = 0.62;
 

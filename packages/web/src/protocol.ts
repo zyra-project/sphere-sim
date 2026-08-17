@@ -236,8 +236,16 @@ export interface FramesRequest {
   settings: Settings;
   /** The compositor calibration to render FROM. `null` is the config as written. */
   compositorRig: RigCalibration | null;
-  /** Panel slot. */
+  /** Panel slot for a projector's frame. `-1` when {@link FramesRequest.camera} is set. */
   slot: number;
+  /**
+   * Render the ROOM from this camera instead of one projector's frame.
+   *
+   * Same renderer the solve's own preview uses — two rigs, so a misregistration
+   * shows — which is what makes this a bigger version of the picture rather than
+   * a different picture that happens to be sharper.
+   */
+  camera?: { position: { x: number; y: number; z: number }; fovHDeg: number } | null;
   /** Target width in pixels. */
   width: number;
   /** Identifies the supplied image the worker already holds. `''` when there is none. */
@@ -350,6 +358,16 @@ export interface SolveProgress {
    * from while it works, not afterwards.
    */
   shots?: FrameImage[];
+  /**
+   * Where each of those photographs was taken from, so the page can render the
+   * same view again at the size of a screen.
+   *
+   * The thumbnails are 200 px wide because three CPU room traces are not free
+   * and most solves are watched rather than inspected. Sending the POSE as well
+   * costs nothing and means enlarging one is a re-render rather than a blow-up
+   * of a thumbnail — the same trade the projector frames make.
+   */
+  shotCameras?: { id: string; position: { x: number; y: number; z: number }; fovHDeg: number }[];
   /**
    * One accepted optimiser step, for the convergence trace.
    *

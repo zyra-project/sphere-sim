@@ -146,6 +146,45 @@ export function computeFrames(req: FramesRequest): FramesResponse {
     cachedImage && cachedImageId === req.customImageId ? cachedImage : undefined,
   );
   const compositor = prepareRig(world.compositorRig);
+
+  // A camera's view of the room rather than a projector's frame: the same
+  // two-rig trace the solve's own thumbnail used, at whatever width was asked
+  // for. Both rigs, so what comes back shows the misregistration the capture was
+  // photographing rather than a clean render of the compositor's idea of it.
+  if (req.camera) {
+    const w = Math.max(16, Math.round(req.width));
+    const h = Math.max(1, Math.round((w * 3) / 4));
+    const image = renderTwoRigRoomView(
+      prepareRig(world.truthRig),
+      compositor,
+      world.scene,
+      {
+        position: req.camera.position,
+        target: { x: 0, y: 0, z: 0 },
+        upHint: { x: 0, y: 0, z: 1 },
+        fovHDeg: req.camera.fovHDeg,
+        width: w,
+        height: h,
+      },
+      { samplesPerPixel: 1 },
+    );
+    return {
+      kind: 'frames',
+      id: req.id,
+      ok: true,
+      slot: req.slot,
+      tag: req.tag,
+      frame: {
+        width: image.width,
+        height: image.height,
+        data: image.data,
+        caption: req.tag,
+        // A camera sees radiance. Only a projector's frame is a video signal.
+        space: 'linear',
+      },
+    };
+  }
+
   const i = world.slots.indexOf(req.slot);
   if (i < 0) return { kind: 'frames', id: req.id, ok: true, slot: req.slot, tag: req.tag, frame: null };
 

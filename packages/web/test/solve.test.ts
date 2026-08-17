@@ -13,9 +13,9 @@ import { test } from 'node:test';
 
 import type { RigCalibration } from '../../calibration/src/index.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
-import { BOULDER_PRESET } from '../src/settings.ts';
+import { BOULDER_PRESET, IN_TO_M } from '../src/settings.ts';
 import { buildWorld } from '../src/rigs.ts';
-import { runSolve } from '../src/pipeline.ts';
+import { cameraDistanceM, runSolve } from '../src/pipeline.ts';
 import type { SolvePhase, SolveRequest } from '../src/protocol.ts';
 
 function request(overrides: Partial<SolveRequest> = {}): SolveRequest {
@@ -136,4 +136,26 @@ test('a handheld capture localises worse than a tripod', { timeout: 600_000 }, (
     `handheld ${hand.residualRmsPx.toFixed(3)} px should exceed tripod ` +
       `${tripod.residualRmsPx.toFixed(3)} px`,
   );
+});
+
+test('the operator stands back further for a bigger ball, and at the same height', () => {
+  // The capture geometry is quoted for §1's 68-inch sphere: 2.6 m from the
+  // centre, inside §6's 2.0–3.5 m band, bounded below by a guard rail at 1.9 m.
+  // None of that survives a 130-inch ball at a fixed distance — the camera would
+  // be 0.95 m off the surface, inside the rail, seeing a fraction of the
+  // silhouette — so the distance scales with the radius.
+  const nominal = (68 * IN_TO_M) / 2;
+  assert.ok(
+    Math.abs(cameraDistanceM(nominal) - 2.6) < 1e-9,
+    'the default sphere must place the cameras exactly where it always did',
+  );
+
+  const big = (130 * IN_TO_M) / 2;
+  assert.ok(cameraDistanceM(big) > big + 1.2, 'a big ball needs the camera outside the rail');
+  // Proportional, so the silhouette subtends the same angle in every capture —
+  // which is the property the solve actually depends on.
+  assert.ok(Math.abs(cameraDistanceM(big) / big - cameraDistanceM(nominal) / nominal) < 1e-9);
+
+  const small = (40 * IN_TO_M) / 2;
+  assert.ok(cameraDistanceM(small) < 2.6, 'and a small one lets the operator come in');
 });

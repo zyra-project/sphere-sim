@@ -143,6 +143,22 @@ function cameraViews(
   });
 }
 
+/**
+ * How far back an operator stands, for a sphere of this radius.
+ *
+ * §6's band and the rail are both quoted for the 68-inch ball; the ratio is what
+ * carries to another one. The bench does NOT use this — `packages/bench` places
+ * its own cameras from its own constants, and every published number came from
+ * those — so this is the page's answer to "what would a person do here", not a
+ * change to a scored quantity.
+ */
+export function cameraDistanceM(radiusM: number): number {
+  return (2.6 * radiusM) / NOMINAL_RADIUS_M;
+}
+
+/** PARAMETERS.md §1's 68-inch sphere, in metres. */
+const NOMINAL_RADIUS_M = (68 * 0.0254) / 2;
+
 function planPatternFor(
   truthRig: RigCalibration,
   cameras: ReturnType<typeof placeCameras>,
@@ -273,11 +289,20 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
   const rng = makeBenchRng(req.seed);
 
   // §6 bounds the viewing distance at 2.0–3.5 m, the low end by the guard rail.
-  // An operator photographing the sphere stands where a viewer stands.
+  // An operator photographing the sphere stands where a viewer stands — and
+  // "where a viewer stands" is set by the size of the ball. On a 130-inch sphere
+  // a camera 2.6 m from the centre is 0.95 m off the surface, inside the rail,
+  // photographing a fraction of the silhouette; the solve would then be handed a
+  // geometry no operator could have produced. So the distance scales with the
+  // radius and the HEIGHT does not: 1.5 m is an operator's eye, whatever the
+  // ball is doing, and `placeCameras` already measures it off the floor.
+  //
+  // At §1's 68-inch sphere the factor is 1 and the placement is unchanged, so
+  // every number this page has ever printed at the default is untouched.
   const cameras = placeCameras(
     {
       count: Math.max(1, Math.round(req.cameraCount)),
-      distanceM: 2.6,
+      distanceM: cameraDistanceM(world.truthRig.sphere.radiusM),
       heightM: 1.5,
       resX: req.cameraResX,
       resY: req.cameraResY,
@@ -332,6 +357,13 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
   const captureMs = performance.now() - t0;
 
   const shots = cameraViews(world, cameras, planFrames(plan).length);
+  // The poses beside the pictures, so enlarging one is a re-render rather than a
+  // blow-up of a 200-pixel thumbnail.
+  const shotCameras = cameras.map((cam, i) => ({
+    id: cam.id || `C${i + 1}`,
+    position: cam.pose.position,
+    fovHDeg: 2 * Math.atan(cam.intrinsics.resX / 2 / cam.intrinsics.fx) * (180 / Math.PI),
+  }));
 
   report(
     'decode',
@@ -340,7 +372,7 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
       `${capture.stats.considered.toLocaleString()} candidates. ` +
       `${(capture.stats.considered - capture.stats.accepted).toLocaleString()} rejected — ` +
       `too dim, ambiguous, or the two axes disagreed.`,
-    { shots },
+    { shots, shotCameras },
   );
 
   // The nominal the operator hands the solver: built by the SOLVER's own

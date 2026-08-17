@@ -102,11 +102,12 @@ interface PageState {
   /**
    * Whether the projector card is up.
    *
-   * Separate from `selected` because on a phone the card is 30% of the screen
-   * and the Projectors tab is the one that opens by default: tying the card to
-   * the tab meant it covered the sphere before anyone had asked to see it, with
-   * no way to put it away. Clicking a projector opens it; clicking past them, or
-   * the card's own ✕, closes it.
+   * Separate from `selected`, and CLOSED until somebody asks for it. The card
+   * describes one projector, and on first sight there is no reason to think the
+   * page is about P1 rather than about the sphere — showing it unprompted
+   * answers a question nobody has asked yet and, on a phone, does it over the
+   * top of the thing they came to look at. Clicking a projector opens it;
+   * clicking past them, or the card's own ✕, closes it again.
    */
   inspectOpen: boolean;
   overlay: OverlayMode;
@@ -138,9 +139,7 @@ const state: PageState = {
   compositorRig: null,
   section: 'projectors',
   selected: 0,
-  // Open on a wide screen, where it sits beside the room and answers "what is
-  // this page about" without a click. `boot` closes it on a phone.
-  inspectOpen: true,
+  inspectOpen: false,
   overlay: 'none',
   highlight: -1,
   markersOn: true,
@@ -164,6 +163,8 @@ let solveStage = '';
 let solveTrace: { pass: number; cost: number }[] = [];
 let solveStep: { step: number; rmsPx: number } | null = null;
 let solveShots: FrameImage[] = [];
+/** Where each of those was taken from, so the lightbox can re-render it bigger. */
+let solveCameras: { id: string; position: { x: number; y: number; z: number }; fovHDeg: number }[] = [];
 let solveStartedAt = 0;
 let modelPending = false;
 let lastError = '';
@@ -375,13 +376,21 @@ type LightboxMode = 'overlay' | 'blink' | 'pair';
 let lightbox: {
   slot: number;
   caption: string;
+  /**
+   * What the pending "after" render is tagged with. A capture preview and a
+   * projector frame both open a lightbox and both ask for a bigger render, so a
+   * reply has to say which picture it is — matching on the panel slot alone put
+   * a camera's view of the room into a projector's frame the moment both used
+   * slot −1.
+   */
+  wants: string;
   after: FrameImage | null;
   before: FrameImage | null;
   mode: LightboxMode;
 } | null = null;
 
-function openLightbox(frame: FrameImage, caption: string, slot = -1): void {
-  lightbox = { slot, caption, after: frame, before: null, mode: 'overlay' };
+function openLightbox(frame: FrameImage, caption: string, slot = -1, wants = 'after'): void {
+  lightbox = { slot, caption, wants, after: frame, before: null, mode: 'overlay' };
   lightboxEl.classList.add('on');
   renderLightbox();
   if (slot < 0) return;
@@ -402,6 +411,7 @@ function askFrames(
   compositorRig: RigCalibration | null,
   width: number,
   tag: string,
+  camera?: { position: { x: number; y: number; z: number }; fovHDeg: number },
 ): void {
   const req: FramesRequest = {
     kind: 'frames',
@@ -411,6 +421,7 @@ function askFrames(
     slot,
     width,
     tag,
+    camera: camera ?? null,
     customImageId: suppliedName(),
   };
   modelWorker.postMessage(req);
@@ -490,13 +501,27 @@ function renderLightbox(): void {
   }
 }
 
-/** A thumbnail that opens full size when clicked. */
-function thumb(frame: FrameImage, caption: string): HTMLElement {
+/**
+ * A thumbnail that opens full size when clicked.
+ *
+ * `camera` is where the shot was taken from. With it, clicking asks for the same
+ * view again at the size of the screen — the capture previews are rendered at
+ * 200 px because three CPU room traces during a solve are not free, and blowing
+ * that up is four times the smoothing and none of the detail.
+ */
+function thumb(
+  frame: FrameImage,
+  caption: string,
+  camera?: { position: { x: number; y: number; z: number }; fovHDeg: number },
+): HTMLElement {
   const fig = el('figure');
   const c = el('canvas');
   paintFrame(c, frame);
   fig.append(c, el('figcaption', { textContent: caption }));
-  fig.addEventListener('click', () => openLightbox(frame, caption));
+  fig.addEventListener('click', () => {
+    openLightbox(frame, caption, -1, caption);
+    if (camera) askFrames(-1, state.compositorRig, zoomWidth(), caption, camera);
+  });
   return fig;
 }
 
@@ -836,7 +861,8 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage>): voi
   if (msg.kind === 'frames') {
     if (!msg.ok || !lightbox || msg.slot !== lightbox.slot) return;
     if (msg.tag === 'before') lightbox.before = msg.frame;
-    else if (msg.frame) lightbox.after = msg.frame;
+    else if (msg.tag === lightbox.wants && msg.frame) lightbox.after = msg.frame;
+    else return;
     renderLightbox();
     return;
   }
@@ -876,6 +902,7 @@ solveWorker.onmessage = (event: MessageEvent<SolveMessage>): void => {
   if (msg.kind === 'solve-progress') {
     solveStage = msg.message;
     if (msg.shots) solveShots = msg.shots;
+    if (msg.shotCameras) solveCameras = msg.shotCameras;
     if (msg.step) {
       solveTrace.push({ pass: msg.step.pass, cost: msg.step.cost });
       solveStep = { step: msg.step.step, rmsPx: msg.step.rmsPx };
@@ -1231,19 +1258,31 @@ function projectorTabs(): HTMLElement {
   const n = Math.round(state.settings.projectorCount);
   for (let i = 0; i < n; i++) {
     const on = state.settings.nudge[i]?.on !== false;
+    const selected = state.selected === i;
     const b = el('button', {
-      className: `${state.selected === i ? 'on' : ''}${on ? '' : ' dark'}`,
-      title: on
-        ? 'Edit this projector.'
-        : 'Switched off at the wall — its quadrant of the framebuffer is dark.',
+      className: `${selected ? 'on' : ''}${on ? '' : ' dark'}`,
+      title: !selected
+        ? `Edit P${i + 1}.`
+        : on
+          ? 'Click again to switch it off at the wall.'
+          : 'Switched off at the wall — its quadrant of the framebuffer is dark. Click to switch it back on.',
     });
     const dot = el('span', { className: 'dot' });
     dot.style.background = PROJECTOR_TINTS[i] ?? '#888';
     b.append(dot, el('span', { textContent: `P${i + 1}` }));
-    // Select, and only select. A second click on the selected tab used to switch
-    // the projector off at the wall: a hidden gesture on the same target as the
-    // most-used one, so the way you found it was by accident.
-    b.addEventListener('click', () => selectProjector(i));
+    // First click selects, second click switches it off at the wall — and the
+    // On / Off pair below says which state it is in, so the gesture is a
+    // shortcut for a control that is visible rather than the only way to reach
+    // it. Clicking a lens in the ROOM never toggles: an accidental double-click
+    // on the sphere should not change the installation.
+    b.addEventListener('click', () => {
+      if (!selected) {
+        selectProjector(i);
+        return;
+      }
+      state.settings = withNudge(state.settings, i, { on: !on });
+      touched(true);
+    });
     row.append(b);
   }
   return row;
@@ -1257,7 +1296,9 @@ function projectorSection(): HTMLElement[] {
       textContent:
         'Pick a projector to move it — here, or by clicking its lens in the room. These are its ' +
         'real position and aim; what the software believes only changes when you recalibrate, ' +
-        'which is why the frame below does not move when you drag these.',
+        'which is why the frame below does not move when you drag these. Clicking the tab of the ' +
+        'projector already selected switches it off at the wall, which is what the pair below is ' +
+        'showing you.',
     }),
   );
   {
@@ -2867,7 +2908,9 @@ function solveSection(): HTMLElement | null {
   if (solveShots.length > 0) {
     box.append(el('p', { className: 'eyebrow-sm', textContent: 'Where it shot from' }));
     const row = el('div', { className: 'shots' });
-    for (const s of solveShots) row.append(thumb(s, s.caption.split('—')[0].trim()));
+    solveShots.forEach((s, i) =>
+      row.append(thumb(s, s.caption.split('—')[0].trim(), solveCameras[i])),
+    );
     box.append(row);
     box.append(
       el('p', {
@@ -3518,7 +3561,6 @@ const NARROW_PX = 760;
 function fitFirstScreen(): void {
   if (window.innerWidth >= NARROW_PX) return;
   state.panelOpen = false;
-  state.inspectOpen = false;
   rightEl.classList.add('collapsed');
   state.settings = withSetting(state.settings, 'viewFovDeg', portraitFovDeg());
   // The bottom hint line is hidden below 900px, so on a phone this is the only

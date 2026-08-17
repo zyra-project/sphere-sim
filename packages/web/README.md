@@ -80,6 +80,11 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   keeps the pre-solve RIG rather than a snapshot image: a picture can only be
   blown up, a calibration can be re-rendered.
 
+  The capture previews work the same way. Three CPU room traces during a solve
+  are not free, so they are rendered at 200 px — and clicking one now re-renders
+  that camera's view at screen size from the pose the solve sent back beside the
+  picture, instead of smoothing a thumbnail up sixfold.
+
   Three ways to read it, because a shift of a few per cent on a repeating grid
   fails differently in each: **overlay** (old in red, new in cyan, grey where
   they agree) is readable at a glance, **blink** is the only one that survives a
@@ -113,10 +118,11 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   PARAMETERS.md gives no absolute lumen figure anywhere and §3.2 holds the gains
   at 1 and classes them unmeasured. An On / Off pair beside the tabs switches one
   off at the wall — its quadrant goes dark, the framebuffer keeps its size (§2),
-  and the unlit figure jumps. That pair is the only control on the page that
-  turns a projector on or off: it used to be a second click on the selected tab,
-  a hidden gesture on the same target as the most-used one, so the way you found
-  it was by accident. Clicking a lens in the room SELECTS it and nothing more —
+  and the unlit figure jumps. Clicking the tab of the projector already selected
+  does the same thing, which is a shortcut for a control that is on screen rather
+  than the only way to reach it — that distinction is the whole point of the
+  pair, since the gesture on its own was a hidden toggle on the same target as
+  the most-used control. Clicking a lens in the room SELECTS it and nothing more —
   it used to isolate as well, putting the other three out, which reads as having
   switched them off. "Show only" on the Room tab is the isolating control, and
   it is a filter on the picture: the rig is untouched and every number below is
@@ -137,6 +143,11 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   brightness" on the Room tab is a viewing gain — class `PANEL`, applied on the
   way to the canvas, excluded from the linear readback the parity check reads,
   and invisible to every metric. It opens at 1.8×.
+- **A first screen with nothing open on it.** The projector card starts closed.
+  It describes ONE projector, and on first sight there is no reason to think the
+  page is about P1 rather than about the sphere; showing it unprompted answers a
+  question nobody has asked, and on a phone it does so over the top of the thing
+  they came to look at. Clicking a projector opens it.
 - **A rig that starts aligned.** The page opens at Boulder's three constants with
   the §2 mount shake at zero, reading `0.01 mm · ALIGNED`. "Another install" draws
   the tolerances, "Bump this one" knocks the selected lens a quarter of a degree,
