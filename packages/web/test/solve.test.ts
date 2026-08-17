@@ -28,6 +28,8 @@ function request(overrides: Partial<SolveRequest> = {}): SolveRequest {
     cameraResY: 240,
     handheld: false,
     sensorNoise: true,
+    customImage: null,
+    customImageId: '',
     ambient: 0.04,
     seed: 20260817,
     ...overrides,

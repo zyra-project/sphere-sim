@@ -143,6 +143,14 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   and then there is a before to compare the calibration against. A page that opens
   at 127 mm in red has already happened to you and gives you no way to tell
   whether that is the simulator or the room.
+- **Captures that are of THIS installation.** The three "where it shot from"
+  previews are renders of the room from each camera's own pose, and the solve
+  worker was building its world without the image playing on the sphere — so
+  they showed a grey graticule while the ball on screen showed Blue Marble.
+  Three pictures of a different installation, captioned as this one. The solve
+  request carries the image now, cached by id in the worker exactly as the model
+  worker caches it. Nothing the solver recovers can depend on it: a
+  structured-light capture photographs Gray code, not content.
 - **Recalibrate**, which photographs the sphere and solves. While it runs you see
   the actual camera frames it is working from, the optimiser's cost falling, and
   the sphere itself converging — the partial calibration is drawn as it arrives.

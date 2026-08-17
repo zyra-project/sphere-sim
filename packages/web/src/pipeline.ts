@@ -66,6 +66,7 @@ import { nominalRig as solverNominalRig, solve } from '../../solver/src/index.ts
 // must not silently re-default the seven it is not touching.
 import { DEFAULT_FREE_FLAGS } from '../../solver/src/bundle.ts';
 import { buildWorld } from './rigs.ts';
+import type { EquirectImage } from '../../sim/src/equirect.ts';
 import { RESOLUTIONS } from './settings.ts';
 import type {
   FrameImage,
@@ -239,7 +240,22 @@ function recoveryTable(
  * only exists inside a worker is a calibration pipeline nothing can check, and
  * this one is the reason the page can claim anything at all.
  */
+/**
+ * The image playing on the sphere, held across solves.
+ *
+ * The same arrangement `model.ts` uses and for the same reason: a megabyte of
+ * float per request is not worth resending when it changes once. Kept here
+ * rather than in the worker shell so `test/solve.test.ts` exercises the same
+ * path the page does.
+ */
+let cachedImage: EquirectImage | null = null;
+let cachedImageId = '';
+
 export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {}): SolveResponse {
+  if (req.customImage) {
+    cachedImage = req.customImage;
+    cachedImageId = req.customImageId;
+  }
   const report = (
     phase: SolveProgress['phase'],
     fraction: number,
@@ -248,7 +264,12 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
   ): void => {
     onProgress({ kind: 'solve-progress', id: req.id, phase, fraction, message, ...extra });
   };
-  const world = buildWorld(req.settings);
+  // The content matters to the camera previews and to nothing else in here.
+  const world = buildWorld(
+    req.settings,
+    undefined,
+    cachedImageId === req.customImageId ? (cachedImage ?? undefined) : undefined,
+  );
   const rng = makeBenchRng(req.seed);
 
   // §6 bounds the viewing distance at 2.0–3.5 m, the low end by the guard rail.

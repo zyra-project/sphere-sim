@@ -287,6 +287,20 @@ export interface SolveRequest {
   handheld: boolean;
   /** The bench's `DEFAULT_SENSOR`. Off renders a noiseless camera — a canary. */
   sensorNoise: boolean;
+  /**
+   * The equirectangular image playing on the sphere, in linear light, when there
+   * is one — and `null` when the page believes this worker already holds it.
+   *
+   * The solve does not READ it: a structured-light capture photographs Gray-code
+   * patterns, not the content, so nothing the solver recovers can depend on what
+   * is playing. What depends on it is the three "where it shot from" previews,
+   * which are renders of the room from each camera pose — and with no image they
+   * fell back to a grey graticule while the sphere on screen was showing Blue
+   * Marble. Three pictures of a different installation, captioned as this one.
+   */
+  customImage: { width: number; height: number; data: Float32Array } | null;
+  /** Identifies it. `''` when there is none. Cached in the worker by id. */
+  customImageId: string;
   /** Room light during the capture. §5 `E_amb`, nominal 0.04, range 0.01–0.15. */
   ambient: number;
   /** Draw for the capture. Separate from the rig's own seed. */

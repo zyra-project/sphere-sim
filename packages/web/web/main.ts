@@ -216,12 +216,15 @@ async function loadMarble(): Promise<void> {
   }
   contentKey = '';
   sentImageId = '';
+  solveSentImageId = '';
   touched(false);
   requestModel(true);
 }
 let customError = '';
 /** Which image the model worker has been sent, so it is sent exactly once. */
 let sentImageId = '';
+/** The same, for the solve worker: separate process, separate cache. */
+let solveSentImageId = '';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const controlsEl = document.getElementById('controls') as HTMLDivElement;
@@ -713,6 +716,7 @@ async function loadCustomImage(file: File): Promise<void> {
     customImage = await readEquirect(file);
     customName = `${file.name}:${file.size}`;
     sentImageId = '';
+  solveSentImageId = '';
     state.settings = withSetting(state.settings, 'content', CONTENT_CUSTOM);
     contentKey = '';
     touched(false);
@@ -964,7 +968,22 @@ function startSolve(): void {
     sensorNoise: true,
     ambient: state.ambient,
     seed: (state.settings.errorSeed * 2654435761) % 2147483647,
+    // The two workers hold their own caches, so this has its own "have you seen
+    // it" flag. The solve does not read the image — a capture photographs Gray
+    // code, not content — but the three camera previews are renders of the room,
+    // and without it they showed a grey graticule while the sphere on screen was
+    // showing Blue Marble.
+    customImage:
+      suppliedImage() !== null && suppliedName() !== solveSentImageId
+        ? {
+            width: suppliedImage()!.width,
+            height: suppliedImage()!.height,
+            data: suppliedImage()!.data,
+          }
+        : null,
+    customImageId: suppliedName(),
   };
+  solveSentImageId = suppliedName();
   solveWorker.postMessage(req);
   renderActions();
   renderReadout();
@@ -1532,6 +1551,7 @@ function roomSection(): HTMLElement[] {
         customImage = null;
         customName = '';
         sentImageId = '';
+  solveSentImageId = '';
         contentKey = '';
         setSetting('content', CONTENT_MARBLE);
       });
