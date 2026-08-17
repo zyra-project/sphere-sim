@@ -145,6 +145,7 @@ let solveResult: SolveResponse | null = null;
 let solveRunning = false;
 let solveStage = '';
 let solveTrace: { pass: number; cost: number }[] = [];
+let solveStep: { step: number; rmsPx: number } | null = null;
 let solveShots: FrameImage[] = [];
 let solveStartedAt = 0;
 let modelPending = false;
@@ -589,7 +590,10 @@ solveWorker.onmessage = (event: MessageEvent<SolveMessage>): void => {
   if (msg.kind === 'solve-progress') {
     solveStage = msg.message;
     if (msg.shots) solveShots = msg.shots;
-    if (msg.step) solveTrace.push({ pass: msg.step.pass, cost: msg.step.cost });
+    if (msg.step) {
+      solveTrace.push({ pass: msg.step.pass, cost: msg.step.cost });
+      solveStep = { step: msg.step.step, rmsPx: msg.step.rmsPx };
+    }
     if (msg.partialRig) {
       // Draw with it; compute nothing from it. The readout keeps showing the
       // pre-calibration numbers until the real result lands, because an
@@ -622,6 +626,7 @@ function startSolve(): void {
   if (solveRunning) return;
   solveRunning = true;
   solveTrace = [];
+  solveStep = null;
   solveShots = [];
   solveResult = null;
   solveStartedAt = performance.now();
@@ -650,6 +655,7 @@ function forgetCalibration(): void {
   state.compositorRig = null;
   solveResult = null;
   solveTrace = [];
+  solveStep = null;
   solveShots = [];
   markDirty();
   requestModel(true);
@@ -662,6 +668,7 @@ function invalidateCalibration(): void {
   state.compositorRig = null;
   solveResult = null;
   solveTrace = [];
+  solveStep = null;
   solveShots = [];
 }
 
@@ -1886,7 +1893,9 @@ function solveSection(): HTMLElement | null {
   const right = el('span', {
     className: 'note tiny num',
     textContent: solveRunning
-      ? `${((performance.now() - solveStartedAt) / 1000).toFixed(0)} s`
+      ? solveStep
+        ? `step ${solveStep.step} · ${solveStep.rmsPx.toFixed(2)} px`
+        : `${((performance.now() - solveStartedAt) / 1000).toFixed(0)} s`
       : solveResult
         ? `${((solveResult.captureMs + solveResult.solveMs) / 1000).toFixed(1)} s`
         : '',

@@ -385,15 +385,20 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     options: { seed: req.seed, bundle: { free: { ...DEFAULT_FREE_FLAGS } } },
     onStep: (s) => {
       stepCount++;
+      // The optimiser's cost is a robustified sum of squares in its own units.
+      // An RMS in PIXELS is the same information in the unit the residual is
+      // reported in at the end, so the number a reader watches fall is the same
+      // number they are handed when it stops.
+      const rmsPx = Math.sqrt(Math.max(0, s.cost) / Math.max(1, capture.correspondences.length));
       report(
         'bundle',
         // The optimiser's own budget is 100 iterations and it almost never uses
         // them, so a bar driven by `iteration / maxIterations` would crawl and
         // then jump. This saturates instead: honest about being an estimate.
         0.6 + 0.35 * (1 - Math.exp(-stepCount / 12)),
-        `Fitting: pass ${s.pass + 1}, step ${s.iteration}, cost ${s.cost.toPrecision(4)}`,
+        `Fitting — step ${stepCount}, residual ${rmsPx.toFixed(2)} px`,
         {
-          step: { pass: s.pass, iteration: s.iteration, cost: s.cost },
+          step: { pass: s.pass, iteration: s.iteration, cost: s.cost, rmsPx, step: stepCount },
           // Every step, so the sphere moves as the optimiser does. It is a few
           // hundred bytes of JSON against a step that costs milliseconds, and
           // watching the doubled grid lines walk back together is the clearest

@@ -239,8 +239,14 @@ export interface SolveProgress {
    * from while it works, not afterwards.
    */
   shots?: FrameImage[];
-  /** One accepted optimiser step, for the convergence trace. */
-  step?: { pass: number; iteration: number; cost: number };
+  /**
+   * One accepted optimiser step, for the convergence trace.
+   *
+   * `rmsPx` is the cost expressed as a reprojection RMS in projector pixels —
+   * the same unit the final residual is reported in, so the number a reader
+   * watches fall is the number they are handed when it stops.
+   */
+  step?: { pass: number; iteration: number; cost: number; rmsPx: number; step: number };
   /**
    * The answer so far, so the sphere can be seen converging rather than
    * snapping into place at the end.
