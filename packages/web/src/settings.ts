@@ -122,6 +122,14 @@ export interface Settings {
   distanceM: number;
   /** Lens height above the equator, metres. Boulder +0.2032; the spec says 0. */
   lensRiseM: number;
+  /**
+   * Floor to ceiling, metres.
+   *
+   * Not a model constant — nothing in PARAMETERS.md depends on it and no metric
+   * reads it. It is here because the projectors and the sphere hang from the
+   * ceiling and the room reads as a room only when they reach something.
+   */
+  ceilingM: number;
   /** Silhouette headroom in the minor raster dimension, percent. See A-01. */
   overfillPct: number;
 
@@ -223,6 +231,14 @@ export const CONTENTS: readonly {
       'behind — the thing the field card goes to photograph.',
   },
   {
+    label: 'Blue marble',
+    background: 0.18,
+    help:
+      'NASA’s Blue Marble on the sphere, so a misalignment doubles a real coastline instead of an ' +
+      'abstract grid line. The grid is what the §7 gate measures and this is what a person ' +
+      'recognises; both are one click apart, and no metric reads either.',
+  },
+  {
     label: 'Your own image',
     background: 0.18,
     help:
@@ -233,7 +249,10 @@ export const CONTENTS: readonly {
 ];
 
 /** Index into {@link CONTENTS} for the drop-in image. */
-export const CONTENT_CUSTOM = 3;
+/** The shipped Blue Marble. See `assets/README.md` on where the file came from. */
+export const CONTENT_MARBLE = 3;
+
+export const CONTENT_CUSTOM = 4;
 
 /** Per-projector rasters. §3.4: the X screen is twice this in each dimension. */
 export const RESOLUTIONS: readonly { label: string; resX: number; resY: number }[] = [
@@ -259,6 +278,7 @@ export const BOULDER_PRESET: Settings = {
   resolution: 3,
   distanceM: 211 * IN_TO_M,
   lensRiseM: 8 * IN_TO_M,
+  ceilingM: 14 * 12 * IN_TO_M,
   overfillPct: NOMINAL_SILHOUETTE_MARGIN_FRAC * 100,
   mountError: 1,
   errorSeed: 771003,
@@ -267,12 +287,12 @@ export const BOULDER_PRESET: Settings = {
   maskLoDeg: 60,
   maskHiDeg: 70,
   viewAzDeg: 35,
-  viewElDeg: 12,
-  viewRangeM: 6.2,
-  viewFovDeg: 50,
+  viewElDeg: 14,
+  viewRangeM: 10.2,
+  viewFovDeg: 71,
   gridDeg: 15,
   ambient: 0.04,
-  content: 1,
+  content: CONTENT_MARBLE,
   gridOn: 1,
   nudge: [noNudge(), noNudge(), noNudge(), noNudge()],
 };
@@ -306,12 +326,15 @@ export const PERFECT_PRESET: Settings = {
  * installation means stepping outside it, which is what an installer's drawing
  * does too.
  *
- * The close view stays the default for a reason that is not aesthetic: the
- * parity check renders whatever the viewer is looking at, and its sensitivity
- * scales with how much of the frame the sphere fills. `test/parity.test.ts`
- * pins that a complete mount error fails the check at these values — with the
- * ball at a fifth of the width it would not. Widening the default would quietly
- * blunt the page's own self-check.
+ * The page opens at the room view, which for a while it could not: the parity
+ * check renders whatever the viewer is looking at, and while its allowance was a
+ * fraction of the WHOLE FRAME its sensitivity scaled with how much of the window
+ * the sphere filled. Measured, a complete mount error moved 4.65% of the frame
+ * standing at the ball and 0.70% from across the room — under the 1% allowance,
+ * so the page's own self-check would have passed a rig in pieces at exactly the
+ * framing that shows the room best. `src/parity.ts` now measures against the LIT
+ * pixels, where the same error moves 41-49% at every framing, and
+ * `test/parity.test.ts` pins both halves of that.
  */
 export const VIEWPOINTS: readonly {
   id: string;
@@ -320,18 +343,20 @@ export const VIEWPOINTS: readonly {
   view: Pick<Settings, 'viewAzDeg' | 'viewElDeg' | 'viewRangeM' | 'viewFovDeg'>;
 }[] = [
   {
-    id: 'close',
-    label: 'Standing at it',
-    help: 'Where a visitor stands — inside the ring of projectors, with two of them behind you.',
-    view: { viewAzDeg: 35, viewElDeg: 12, viewRangeM: 6.2, viewFovDeg: 50 },
-  },
-  {
     id: 'room',
     label: 'Whole room',
     help:
-      'Outside the ring, looking down slightly: the ball and all four projectors at once, each ' +
-      'in its own colour. This is the view to click a lens in.',
-    view: { viewAzDeg: 35, viewElDeg: 16, viewRangeM: 10.5, viewFovDeg: 65 },
+      'Outside the ring, looking down slightly: the ball, the rail, and all four projectors on ' +
+      'their hangers. Where the page opens, and the view to click a lens in.',
+    view: { viewAzDeg: 35, viewElDeg: 14, viewRangeM: 10.2, viewFovDeg: 71 },
+  },
+  {
+    id: 'close',
+    label: 'Standing at it',
+    help:
+      'Where a visitor stands — inside the ring of projectors, at the rail, with two of them ' +
+      'behind you. You cannot see all four from in here, and neither can a visitor.',
+    view: { viewAzDeg: 35, viewElDeg: 12, viewRangeM: 6.2, viewFovDeg: 50 },
   },
   {
     id: 'seam',
@@ -574,6 +599,24 @@ export const CONTROLS: readonly ControlSpec[] = [
       'config says 211 inches — 5.359 m — which falls between them. §2 does not even say whether it ' +
       'means the horizontal radius or the true 3-D distance to the lens, and at Boulder’s raised ' +
       'mount those two readings differ by 3.85 mm against a 2 mm gate (A-36).',
+  },
+  {
+    key: 'ceilingM',
+    label: 'Ceiling height',
+    symbol: '',
+    section: '—',
+    klass: 'PANEL',
+    min: 2.8,
+    max: 7,
+    step: 0.05,
+    unit: ' m',
+    decimals: 2,
+    group: 'install',
+    help:
+      'How high the ceiling is. Nothing in the model reads this and no metric moves with it — the ' +
+      'sphere hangs from it and the projectors hang from it, and a room with no ceiling reads as a ' +
+      'void. PARAMETERS.md §4.4 does lean on the ceiling mount for one thing: it is why the north ' +
+      'polar cap needs no software mask and the south does.',
   },
   {
     key: 'lensRiseM',

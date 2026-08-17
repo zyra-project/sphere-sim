@@ -153,13 +153,16 @@ uniform float uOverlayMix;
 uniform int   uHighlight;             // -1 none, else a projector index to isolate
 
 // Which projector is which, everywhere on the page: the panel tab, the inspect
-// card, the overlay and the marker in the room all read the same colour.
+// card, the overlay and the projector in the room all read the same colour.
 uniform vec3  uTint[MAX_PROJ];
-// Lens markers, drawn in the room so a viewer can see where the light is coming
-// from and click on one. A drawing aid — no light is emitted from them, and the
-// trace below is not told they exist.
-uniform float uMarkerRadius;          // metres; 0 hides them
+// The room's furniture: projector bodies on their ceiling hangers, the guard
+// rail, the sphere's suspension rod. A drawing aid — none of it emits light, none
+// of it occludes the light, and the trace below is not told it exists.
+uniform float uMarkerRadius;          // metres; 0 draws no furniture at all
 uniform int   uMarkerSelected;        // -1 none
+uniform float uCeilingM;              // floor to ceiling, metres
+uniform int   uRailOn;
+uniform int   uAimGuides;
 
 uniform sampler2D uEquirect;
 
@@ -492,44 +495,214 @@ vec3 overlayTint(int overlapCount, int litCount, int strongest, float strongestW
   }
   return litCount == 0 ? vec3(0.85, 0.20, 0.35) : vec3(0.10, 0.10, 0.13);
 }
+`;
 
 /**
- * The lens markers.
+ * The room's furniture — the objects a photograph of a real SOS gallery contains
+ * and a bare ball on a plane does not: four projectors hanging from the ceiling,
+ * the guard rail visitors stand behind, and the rod the sphere hangs from.
  *
- * Returns -1 for a miss, otherwise the projector index, and writes the hit
- * distance. They are drawn AFTER the sphere and only when nearer than it, so a
- * projector behind the ball is correctly hidden by it.
+ * ## None of this is part of the model
+ *
+ * The trace above is not told any of it exists. Nothing here emits light, casts a
+ * shadow, or occludes a projector — a projector body that blocked its own beam
+ * would be a physical claim, and this file is not allowed to make one. It is set
+ * dressing that makes the geometry legible, and `uMarkerRadius = 0` removes it
+ * entirely, which is what the parity pass does.
+ *
+ * ## Why sphere tracing rather than analytic intersections
+ *
+ * Everything else in this shader is an analytic intersection because everything
+ * else is a sphere or a plane. A box, a capped cylinder and a torus are not, and
+ * a ray-torus intersection is a quartic that float32 cannot be trusted with. A
+ * signed distance field costs one loop and is exact enough for scenery.
+ *
+ * Dimensions follow a BenQ LK935 in a NOAA gallery: a 0.34 x 0.15 x 0.40 m body,
+ * a 0.13 m lens barrel, a rail at 1.9 m radius with its top at 1.04 m — waist
+ * height on the far side of a 68-inch ball.
  */
-int markerHit(vec3 origin, vec3 dir, float maxT, out float hitT) {
-  int which = -1;
-  hitT = maxT;
-  if (uMarkerRadius <= 0.0) return -1;
-  for (int i = 0; i < MAX_PROJ; i++) {
-    if (i >= uProjCount) continue;
-    vec3 oc = origin - uLens[i];
-    float h = dot(oc, dir);
-    vec3 m = oc - h * dir;
-    float disc = uMarkerRadius * uMarkerRadius - dot(m, m);
-    if (disc < 0.0) continue;
-    float t = -h - sqrt(disc);
-    if (t > 1e-4 && t < hitT) {
-      hitT = t;
-      which = i;
-    }
-  }
-  return which;
+const ROOM_STEPS = 72;
+
+const CHUNK_ROOM = `
+const int ROOM_STEPS = ${ROOM_STEPS};
+const float RAIL_RADIUS_M = 1.9;
+const float RAIL_TOP_M = 1.04;
+const float RAIL_MID_M = 0.62;
+
+float sdBox(vec3 p, vec3 b) {
+  vec3 q = abs(p) - b;
+  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
 }
 
-vec3 shadeMarker(int i, vec3 point, vec3 dir) {
-  vec3 n = normalize(point - uLens[i]);
-  // A plain wrapped-diffuse ball lit from the viewer, so it reads as a solid
-  // object without pretending to be part of the photometric model.
-  float k = 0.35 + 0.65 * max(dot(n, -dir), 0.0);
-  vec3 base = uTint[i] * k;
-  if (uMarkerSelected == i) base += vec3(0.22);
-  // A dark band toward the sphere, so the marker reads as pointing at it.
-  float aim = max(-dot(n, normalize(-uLens[i])), 0.0);
-  return base * (1.0 - 0.45 * pow(aim, 6.0));
+/** Capped cylinder along +z, half-height h, radius r. */
+float sdCylinderZ(vec3 p, float h, float r) {
+  vec2 d = vec2(length(p.xy) - r, abs(p.z) - h);
+  return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
+}
+
+/** Torus in the xy plane (the floor plane here is xy; z is up). */
+float sdTorusZ(vec3 p, float major, float minor) {
+  vec2 q = vec2(length(p.xy) - major, p.z);
+  return length(q) - minor;
+}
+
+/**
+ * One projector, in the frame where the lens point is the origin and +z points
+ * at the sphere. The barrel's front face lands exactly on the calibration's lens
+ * point, so dragging a projector in the panel moves the object a viewer sees
+ * rather than a proxy for it.
+ */
+float sdProjector(vec3 q) {
+  float barrel = sdCylinderZ(q - vec3(0.0, 0.0, -0.065), 0.065, 0.068);
+  float body = sdBox(q - vec3(0.0, 0.0, -0.33), vec3(0.17, 0.075, 0.20));
+  return min(body, barrel);
+}
+
+/** Where {@link sdProjector}'s body sits, for the hanger and the click target. */
+vec3 projectorBodyCentre(int i) {
+  vec3 lens = uLens[i];
+  return lens - normalize(-lens) * 0.33;
+}
+
+/** Floor-plane z, in the same frame the sphere centre is the origin of. */
+float roomFloorZ() { return -uCenterHeight; }
+
+/**
+ * The whole scene's distance, with the nearest projector index written out.
+ *
+ * The out parameter is -1 for the rail and the rod, which are not pickable and
+ * carry no tint.
+ */
+float roomDistance(vec3 p, out int which) {
+  which = -1;
+  float floorZ = roomFloorZ();
+  float ceilZ = floorZ + uCeilingM;
+  float d = 1e9;
+
+  if (uRailOn == 1) {
+    d = min(d, sdTorusZ(p - vec3(0.0, 0.0, floorZ + RAIL_TOP_M), RAIL_RADIUS_M, 0.021));
+    d = min(d, sdTorusZ(p - vec3(0.0, 0.0, floorZ + RAIL_MID_M), RAIL_RADIUS_M, 0.013));
+    // Ten posts, by folding the angle into one of them rather than looping.
+    float step = 6.2831853 / 10.0;
+    float a = atan(p.y, p.x) - 0.31;
+    float folded = a - step * floor(a / step + 0.5);
+    float rad = length(p.xy);
+    vec3 q = vec3(rad * cos(folded) - RAIL_RADIUS_M, rad * sin(folded), p.z - floorZ - 0.52);
+    d = min(d, sdCylinderZ(q, 0.52, 0.021));
+  }
+
+  // The rod the sphere hangs from. PARAMETERS.md section 4.4: the ceiling mount is
+  // why the north cap needs no software mask and the south does.
+  float rodTop = ceilZ;
+  float rodBot = uRadius * 0.96;
+  d = min(d, sdCylinderZ(vec3(p.xy, p.z - 0.5 * (rodTop + rodBot)), max(0.5 * (rodTop - rodBot), 0.0), 0.018));
+
+  for (int i = 0; i < MAX_PROJ; i++) {
+    if (i >= uProjCount) continue;
+    vec3 lens = uLens[i];
+    // The projector points at the sphere centre, which is the origin.
+    vec3 fwd = normalize(-lens);
+    vec3 up0 = abs(fwd.z) > 0.98 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0);
+    vec3 right = normalize(cross(fwd, up0));
+    vec3 up = cross(right, fwd);
+    vec3 rel = p - lens;
+    vec3 q = vec3(dot(rel, right), dot(rel, up), dot(rel, fwd));
+    float dp = sdProjector(q);
+    if (dp < d) { d = dp; which = i; }
+
+    // The hanger, from the ceiling straight down to the top of the body.
+    vec3 top = projectorBodyCentre(i);
+    float hangTop = ceilZ;
+    float hangBot = top.z + 0.075;
+    float dh = sdCylinderZ(
+      vec3(p.x - top.x, p.y - top.y, p.z - 0.5 * (hangTop + hangBot)),
+      max(0.5 * (hangTop - hangBot), 0.0), 0.013);
+    if (dh < d) { d = dh; which = -1; }
+  }
+  return d;
+}
+
+vec3 roomNormal(vec3 p) {
+  vec2 e = vec2(1.0, -1.0) * 0.0015;
+  int ignore;
+  return normalize(
+    e.xyy * roomDistance(p + e.xyy, ignore) + e.yyx * roomDistance(p + e.yyx, ignore) +
+    e.yxy * roomDistance(p + e.yxy, ignore) + e.xxx * roomDistance(p + e.xxx, ignore));
+}
+
+/**
+ * March the furniture. Returns -2 for a miss, -1 for untinted scenery, otherwise
+ * a projector index; writes the hit distance.
+ */
+int roomHit(vec3 origin, vec3 dir, float maxT, out float hitT) {
+  hitT = maxT;
+  if (uMarkerRadius <= 0.0) return -2;
+  float t = 0.02;
+  int which = -1;
+  for (int s = 0; s < ROOM_STEPS; s++) {
+    if (t >= maxT) return -2;
+    int w;
+    float d = roomDistance(origin + dir * t, w);
+    if (d < 0.0015) { hitT = t; return w; }
+    t += max(d, 0.004);
+  }
+  return -2;
+}
+
+vec3 shadeRoom(int which, vec3 point, vec3 dir) {
+  vec3 n = roomNormal(point);
+  // A key light from above and behind the viewer plus the room's own ambient.
+  // Deliberately NOT the projectors: scenery lit by the model would read as a
+  // photometric result, and it is not one. Kept dark on purpose — a sphere
+  // gallery is a dark room, and furniture brighter than the sphere would be a
+  // lie about where the light in the picture comes from.
+  float key = 0.25 + 0.75 * max(dot(n, normalize(vec3(-dir.x, -dir.y, 1.2))), 0.0);
+  vec3 base = vec3(0.016, 0.019, 0.025) * key;
+  if (which >= 0) {
+    base = vec3(0.026, 0.029, 0.035) * key;
+    // The lens glows in the projector's own colour, so the object in the room and
+    // the tab in the panel are recognisably the same projector.
+    vec3 lens = uLens[which];
+    float atLens = 1.0 - smoothstep(0.050, 0.105, length(point - lens));
+    base += uTint[which] * atLens * 0.55;
+    if (uMarkerSelected == which) base += uTint[which] * 0.055 + vec3(0.008);
+  }
+  return base + uAmbient * 0.18;
+}
+
+/**
+ * The aim guide: a faint cone of light from each lens to the ball.
+ *
+ * Additive along the view ray, so it reads as haze rather than as a surface. It
+ * is drawn from the PHYSICAL lens, which is what makes a bumped projector's cone
+ * visibly miss where the others converge.
+ */
+vec3 aimGuides(vec3 origin, vec3 dir, float maxT) {
+  vec3 acc = vec3(0.0);
+  if (uAimGuides != 1) return acc;
+  for (int i = 0; i < MAX_PROJ; i++) {
+    if (i >= uProjCount) continue;
+    vec3 lens = uLens[i];
+    vec3 axis = normalize(-lens);
+    float len = length(lens);
+    // Closest approach of the view ray to the beam's axis segment.
+    vec3 w0 = origin - lens;
+    float a = dot(dir, dir), b = dot(dir, axis), c = dot(axis, axis);
+    float d0 = dot(dir, w0), e0 = dot(axis, w0);
+    float den = a * c - b * b;
+    if (abs(den) < 1e-6) continue;
+    float s = (b * e0 - c * d0) / den;
+    float u = (a * e0 - b * d0) / den;
+    if (s < 0.0 || s > maxT) continue;
+    u = clamp(u, 0.0, len);
+    vec3 pv = origin + dir * s;
+    vec3 pa = lens + axis * u;
+    // The beam narrows toward the ball, so the tube it sweeps is a cone.
+    float radius = mix(0.10, uRadius, u / max(len, 1e-6));
+    float k = 1.0 - smoothstep(radius * 0.55, radius, length(pv - pa));
+    acc += uTint[i] * k * 0.09;
+  }
+  return acc;
 }
 `;
 
@@ -558,14 +731,24 @@ void main() {
       if (length(p.xy) <= uFloorRadius) {
         c = shadeFloor(p);
         sceneT = tf;
+        // The rail's footprint, so the room has a floor plan rather than a
+        // circle of grey. Presentation, like the rail itself.
+        if (uMarkerRadius > 0.0 && uRailOn == 1) {
+          float ring = abs(length(p.xy) - RAIL_RADIUS_M);
+          c = mix(c, c * 1.9 + vec3(0.010, 0.012, 0.016), 1.0 - smoothstep(0.02, 0.05, ring));
+        }
       }
     }
   }
 
-  // Markers last, and only where they are in front of whatever was drawn.
-  float markerT;
-  int marker = markerHit(uCamPos, dir, sceneT, markerT);
-  if (marker >= 0) c = shadeMarker(marker, uCamPos + dir * markerT, dir);
+  // The furniture last, and only where it is in front of whatever was drawn.
+  float roomT;
+  int room = roomHit(uCamPos, dir, sceneT, roomT);
+  if (room > -2) {
+    c = shadeRoom(room, uCamPos + dir * roomT, dir);
+    sceneT = roomT;
+  }
+  c += aimGuides(uCamPos, dir, sceneT);
 
   c *= uExposure;
   if (uDisplayGamma > 0.0) c = pow(max(c, vec3(0.0)), vec3(1.0 / uDisplayGamma));
@@ -584,6 +767,7 @@ export const FRAGMENT_CHUNKS: readonly { name: string; mirrors: string; source: 
   { name: 'transfer', mirrors: 'sim/src/photometry.ts + render.ts', source: CHUNK_TRANSFER },
   { name: 'trace', mirrors: 'sim/src/misregistration.ts', source: CHUNK_TRACE },
   { name: 'overlay', mirrors: '(presentation only)', source: CHUNK_OVERLAY },
+  { name: 'room', mirrors: '(presentation only — no model reads it)', source: CHUNK_ROOM },
   { name: 'main', mirrors: 'sim/src/misregistration.ts', source: CHUNK_MAIN },
 ];
 

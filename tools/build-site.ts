@@ -52,6 +52,7 @@ const PAGES: Page[] = [
     sources: [
       { from: 'packages/web/index.html', to: 'index.html' },
       { from: 'packages/web/dist', to: 'dist' },
+      { from: 'packages/web/assets', to: 'assets' },
     ],
     requires: 'packages/web/dist/web/web/main.js',
   },

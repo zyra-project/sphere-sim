@@ -203,6 +203,9 @@ export function setUniforms(h: DisplayGl, u: DisplayUniforms): void {
   gl.uniform3fv(loc('uTint'), u.tint);
   gl.uniform1f(loc('uMarkerRadius'), u.markerRadius);
   gl.uniform1i(loc('uMarkerSelected'), u.markerSelected);
+  gl.uniform1f(loc('uCeilingM'), u.ceiling);
+  gl.uniform1i(loc('uRailOn'), u.rail);
+  gl.uniform1i(loc('uAimGuides'), u.aimGuides);
 
   gl.uniform1i(loc('uEquirect'), 0);
 }

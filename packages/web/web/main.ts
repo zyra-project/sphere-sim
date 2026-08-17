@@ -42,6 +42,7 @@ import {
   BOULDER_PRESET,
   CONTENTS,
   CONTENT_CUSTOM,
+  CONTENT_MARBLE,
   CONTROLS,
   IN_TO_M,
   NUDGE_CONTROLS,
@@ -66,7 +67,7 @@ import type { Reading, RigFact } from '../src/readout.ts';
 import { buildDisplayUniforms, pickMarker } from '../src/uniforms.ts';
 import type { DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
 import type { ParityVerdict } from '../src/parity.ts';
-import { BOUNDARY_PIXEL_ALLOWANCE, PARITY_HEIGHT, PARITY_WIDTH, judgeParity } from '../src/parity.ts';
+import { BOUNDARY_LIT_ALLOWANCE, PARITY_HEIGHT, PARITY_WIDTH, judgeParity } from '../src/parity.ts';
 import type {
   FrameImage,
   ModelMessage,
@@ -97,8 +98,10 @@ interface PageState {
   overlay: OverlayMode;
   /** `-1` shows every projector; otherwise isolate one. */
   highlight: number;
-  /** Draw the lens markers in the room. They are also what a click hits. */
+  /** Draw the room's furniture. The projector bodies are also what a click hits. */
   markersOn: boolean;
+  railOn: boolean;
+  aimGuides: boolean;
   explain: boolean;
   panelOpen: boolean;
   readoutOpen: boolean;
@@ -116,6 +119,8 @@ const state: PageState = {
   overlay: 'none',
   highlight: -1,
   markersOn: true,
+  railOn: true,
+  aimGuides: false,
   // Off by default: with every note expanded the control panel is taller than
   // most screens, and a person who wants the reasoning is one click from it.
   explain: false,
@@ -143,6 +148,51 @@ let contentKey = '';
 /** A supplied equirectangular image, in linear light. Never leaves the page. */
 let customImage: EquirectImage | null = null;
 let customName = '';
+/**
+ * The shipped Blue Marble, once. Two slots rather than one so that picking Blue
+ * marble does not throw away an image somebody dropped, and dropping one does not
+ * mean re-fetching a megabyte to get the marble back.
+ */
+let marbleImage: EquirectImage | null = null;
+let marbleError = '';
+
+/** Whichever supplied image the current base field selects, and its identity. */
+function suppliedImage(): EquirectImage | null {
+  const c = Math.round(state.settings.content);
+  if (c === CONTENT_MARBLE) return marbleImage;
+  if (c === CONTENT_CUSTOM) return customImage;
+  return null;
+}
+
+function suppliedName(): string {
+  const c = Math.round(state.settings.content);
+  if (c === CONTENT_MARBLE) return marbleImage ? 'blue-marble-4096' : '';
+  if (c === CONTENT_CUSTOM) return customImage ? customName : '';
+  return '';
+}
+
+/**
+ * Fetch the shipped map and put it through exactly the path a dropped file takes
+ * — same 2:1 check, same sRGB decode, same downscale. A second loader would be a
+ * second place for the colour conversion to be wrong.
+ */
+async function loadMarble(): Promise<void> {
+  try {
+    const res = await fetch('./assets/blue-marble-4096.jpg');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    marbleImage = await readEquirect(new File([blob], 'blue-marble-4096.jpg', { type: blob.type }));
+  } catch (err) {
+    // Not fatal: the flat fields and the drop target still work, and the chip
+    // says why rather than silently showing grey.
+    marbleError = err instanceof Error ? err.message : String(err);
+    marbleImage = null;
+  }
+  contentKey = '';
+  sentImageId = '';
+  touched(false);
+  requestModel(true);
+}
 let customError = '';
 /** Which image the model worker has been sent, so it is sent exactly once. */
 let sentImageId = '';
@@ -472,12 +522,16 @@ function requestModel(fine: boolean): void {
     // A copy rather than a transfer, because the main thread still needs it for
     // the GPU upload.
     customImage:
-      customImage !== null && customName !== sentImageId
-        ? { width: customImage.width, height: customImage.height, data: customImage.data }
+      suppliedImage() !== null && suppliedName() !== sentImageId
+        ? {
+            width: suppliedImage()!.width,
+            height: suppliedImage()!.height,
+            data: suppliedImage()!.data,
+          }
         : null,
-    customImageId: customImage === null ? '' : customName,
+    customImageId: suppliedName(),
   };
-  sentImageId = customImage === null ? '' : customName;
+  sentImageId = suppliedName();
   if (fine) {
     const camera = buildViewer(state.settings, PARITY_WIDTH, PARITY_HEIGHT);
     req.parity = {
@@ -607,7 +661,7 @@ function markDirty(): void {
 }
 
 function ensureContent(image: { width: number; height: number; data: Float32Array }): void {
-  const key = `${state.settings.gridDeg}|${state.settings.content}|${state.settings.gridOn}|${customName}`;
+  const key = `${state.settings.gridDeg}|${state.settings.content}|${state.settings.gridOn}|${suppliedName()}`;
   if (gl && key !== contentKey) {
     uploadEquirect(gl, image);
     contentKey = key;
@@ -640,7 +694,7 @@ function draw(): void {
     canvas.height = h;
   }
 
-  const world = buildWorld(state.settings, state.compositorRig ?? undefined, customImage);
+  const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
   ensureContent(world.image);
   const camera = buildViewer(state.settings, w, h);
   const uniforms = buildDisplayUniforms(
@@ -652,10 +706,13 @@ function draw(): void {
       overlay: state.overlay,
       highlight: state.highlight,
       drawFloor: true,
-      floorRadiusM: 8,
+      floorRadiusM: 13,
       displayGamma: 2.2,
       markerRadiusM: state.markersOn ? MARKER_RADIUS_M : 0,
       markerSelected: state.selected,
+      ceilingM: state.settings.ceilingM,
+      rail: state.railOn,
+      aimGuides: state.aimGuides,
     },
   );
   lastUniforms = uniforms;
@@ -677,7 +734,7 @@ function checkParity(
     return;
   }
   try {
-    const world = buildWorld(state.settings, state.compositorRig ?? undefined, customImage);
+    const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
     // Not merely defensive: a worker reply that landed before the first animation
     // frame would find the content texture never uploaded, and an incomplete
     // texture samples as black — indistinguishable from the shader getting the
@@ -969,11 +1026,16 @@ function roomSection(): HTMLElement[] {
   const chosen = CONTENTS[Math.round(state.settings.content)] ?? CONTENTS[1];
   out.push(el('p', { className: 'grouphelp', textContent: chosen.help }));
 
-  if (Math.round(state.settings.content) === CONTENT_CUSTOM || customImage !== null) {
+  // Always offered, never conditional on already having one. The previous
+  // version showed the button only once an image was loaded or the "Your own
+  // image" chip was selected, which meant the one control that answers "can I put
+  // MY data on this?" was invisible until you had already found it.
+  {
     const row = el('div', { className: 'chips' });
     const pick = el('button', {
       className: 'chip',
-      textContent: customImage ? `Replace “${customName.split(':')[0]}”` : 'Choose an image…',
+      textContent: customImage ? `Replace “${customName.split(':')[0]}”` : 'Use your own image…',
+      title: 'Any 2:1 equirectangular map. Read in the page and never sent anywhere.',
     });
     pick.addEventListener('click', pickImage);
     row.append(pick);
@@ -984,7 +1046,7 @@ function roomSection(): HTMLElement[] {
         customName = '';
         sentImageId = '';
         contentKey = '';
-        setSetting('content', 1);
+        setSetting('content', CONTENT_MARBLE);
       });
       row.append(drop);
     }
@@ -993,11 +1055,19 @@ function roomSection(): HTMLElement[] {
       el('p', {
         className: 'note tiny',
         textContent:
-          'Or drop a file anywhere on the page. Any 2:1 equirectangular map — a NOAA dataset, Blue ' +
-          'Marble, a test chart. It is read in the page, converted out of sRGB into the linear ' +
+          'Or drop a file anywhere on the page. Any 2:1 equirectangular map — a NOAA dataset, a ' +
+          'test chart, your own. It is read in the page, converted out of sRGB into the linear ' +
           'light the model works in, and never sent anywhere.',
       }),
     );
+  }
+  if (marbleError) {
+    const err = el('p', {
+      className: 'note tiny',
+      textContent: `Blue marble did not load (${marbleError}). The other fields still work.`,
+    });
+    err.style.color = 'var(--warn)';
+    out.push(err);
   }
   if (customError) {
     const err = el('p', { className: 'note', textContent: customError });
@@ -1838,7 +1908,7 @@ function solveSection(): HTMLElement | null {
 function parityLine(): HTMLElement {
   const wrap = el('div', { className: 'sect' });
   wrap.dataset.smoke = 'parity';
-  wrap.dataset.state = parity ? (parity.pass ? 'ok' : 'bad') : 'pending';
+  wrap.dataset.state = parity ? (parity.blind ? 'blind' : parity.pass ? 'ok' : 'bad') : 'pending';
   wrap.append(el('p', { className: 'eyebrow-sm', textContent: 'Picture vs model' }));
   if (!parity) {
     wrap.append(
@@ -1852,15 +1922,16 @@ function parityLine(): HTMLElement {
     return wrap;
   }
   const line = el('p', { className: 'note', textContent: parity.summary });
-  line.style.color = parity.pass ? 'var(--good)' : 'var(--bad)';
+  line.style.color = parity.blind ? 'var(--warn)' : parity.pass ? 'var(--good)' : 'var(--bad)';
   wrap.append(line);
   wrap.append(
     el('p', {
       className: 'note tiny num',
       textContent:
         `worst pixel ${parity.delta.maxAbs.toExponential(1)} · ` +
-        `${(parity.delta.fractionOverTolerance * 100).toFixed(2)}% over tolerance ` +
-        `(${(BOUNDARY_PIXEL_ALLOWANCE * 100).toFixed(0)}% allowed for edges) · ` +
+        `${(parity.delta.fractionOfLitOverTolerance * 100).toFixed(1)}% of lit pixels over ` +
+        `tolerance (${(BOUNDARY_LIT_ALLOWANCE * 100).toFixed(0)}% allowed for edges) · ` +
+        `${parity.delta.litPixelCount.toLocaleString()} lit of ` +
         `${parity.delta.pixelCount.toLocaleString()} px · CPU ${parity.cpuMs.toFixed(0)} ms`,
     }),
   );
@@ -2183,6 +2254,7 @@ function boot(): void {
   }
   installPointer();
   installDropTarget();
+  void loadMarble();
   helpEl.addEventListener('click', (e) => {
     if (e.target === helpEl) closeHelp();
   });

@@ -55,8 +55,14 @@ export interface DisplayOptions {
    * `drawFloor` already taught this lesson once.
    */
   markerRadiusM?: number;
-  /** Which marker reads as selected. `-1` none. */
+  /** Which projector reads as selected. `-1` none. */
   markerSelected?: number;
+  /** Floor to ceiling, metres. The hangers and the sphere's rod reach it. */
+  ceilingM?: number;
+  /** Draw the guard rail. */
+  rail?: boolean;
+  /** Draw a faint cone of light from each lens to the ball. */
+  aimGuides?: boolean;
 }
 
 /** One rig's arrays, in the layout the shader declares. */
@@ -191,6 +197,9 @@ export interface DisplayUniforms {
   tint: Float32Array;
   markerRadius: number;
   markerSelected: number;
+  ceiling: number;
+  rail: number;
+  aimGuides: number;
 }
 
 /** One copy, since the colours never change. */
@@ -291,6 +300,9 @@ export function buildDisplayUniforms(
     tint: TINTS,
     markerRadius: options.markerRadiusM ?? 0,
     markerSelected: options.markerSelected ?? -1,
+    ceiling: options.ceilingM ?? 4.27,
+    rail: (options.rail ?? true) ? 1 : 0,
+    aimGuides: (options.aimGuides ?? false) ? 1 : 0,
   };
 }
 

@@ -36,7 +36,7 @@ import { DEFAULT_MISALIGNMENT, injectMisalignment, nominalRig } from '../../sim/
 import { DEG2RAD } from '../../sim/src/vec.ts';
 import { aimAtSphereCenter } from '../../sim/src/geometry.ts';
 import type { ProjectorNudge, Settings } from './settings.ts';
-import { CONTENTS, CONTENT_CUSTOM, IN_TO_M, RESOLUTIONS } from './settings.ts';
+import { CONTENTS, CONTENT_CUSTOM, CONTENT_MARBLE, IN_TO_M, RESOLUTIONS } from './settings.ts';
 
 /** Equirectangular content raster. Big enough that the grid is not the limit. */
 const CONTENT_WIDTH = 1024;
@@ -217,10 +217,15 @@ export function buildContent(s: Settings, custom: EquirectImage | null): Equirec
   const grid = Math.round(s.gridOn) === 1;
   const spacingDeg = Math.round(s.gridDeg);
 
+  // Two fields are a supplied image rather than a flat colour: the shipped Blue
+  // Marble and whatever the reader dropped. Both arrive here the same way — the
+  // page decides which slot is live and hands it over — so there is one code path
+  // and one sRGB conversion, not one per source.
+  const wantsImage = choice === CONTENT_CUSTOM || choice === CONTENT_MARBLE;
   // A supplied image that has not arrived yet falls back to the grey field
   // rather than to black: an empty sphere reads as a broken page.
-  const supplied = choice === CONTENT_CUSTOM ? custom : null;
-  if (choice === CONTENT_CUSTOM && supplied === null) {
+  const supplied = wantsImage ? custom : null;
+  if (wantsImage && supplied === null) {
     return gridAlignmentPattern({
       width: CONTENT_WIDTH,
       height: CONTENT_HEIGHT,

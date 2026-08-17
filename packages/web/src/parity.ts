@@ -46,45 +46,62 @@ import type { RgbImage } from '../../sim/src/equirect.ts';
 export const DISPLAY_TOLERANCE = 2e-3;
 
 /**
- * Fraction of pixels allowed past the tolerance because a geometric boundary
+ * Fraction of LIT pixels allowed past the tolerance because a geometric boundary
  * landed between two samples.
  *
- * **Measured, then set — not estimated.** The first version of this file
- * reasoned its way to 2% from the sphere's perimeter in pixels, and the estimate
- * was four times too large. The measurement that replaced it is in
- * `test/parity.test.ts`: render the scene, render it again with the camera
- * nudged by a hundredth of a degree, and count the pixels that changed by more
- * than the tolerance. Only pixels straddling a discontinuity can — a limb, a
- * coverage edge, the mask edge, the floor disc. The answer is **0.2% to 0.6%**
- * at both 128×96 and 256×192, and it barely moves with raster size because the
- * count scales with perimeter while the total scales with area.
+ * **Of lit pixels, and that word is the whole point.** This started as a fraction
+ * of the whole frame, and as a fraction of the whole frame it is not a property
+ * of the renderers at all — it is a property of how much of the window the sphere
+ * happens to fill. Measured at three framings, from a 2.6 m seam close-up to a
+ * 10.2 m room shot, against the frame:
  *
- * 1% is twice the measured worst case. That headroom matters in the other
- * direction too: at 2% the check could not distinguish edge noise from a
- * misalignment, because a full 1× mount error moves 1.7% of pixels past
- * tolerance at this raster. The over-generous allowance would have made the
- * check unable to fail for a difference the size of the entire problem this
- * project exists to solve. Both facts are pinned by tests.
+ * | framing | boundary | a full 1x mount error |
+ * | --- | --- | --- |
+ * | 2.6 m, 34 deg | 6.0% | 40.1% |
+ * | 6.2 m, 50 deg | 0.50% | 4.65% |
+ * | 10.2 m, 71 deg | 0.073% | 0.70% |
+ *
+ * Two orders of magnitude, for the same two renderers disagreeing by the same
+ * amount. A 1%-of-frame allowance happens to sit between the two columns at 6.2 m
+ * and nowhere else: at the room shot a COMPLETE misalignment moves 0.70% of the
+ * frame and would have passed. The check was silently blind at any wide view.
+ *
+ * The same measurements against the count of lit pixels:
+ *
+ * | framing | boundary | a full 1x mount error |
+ * | --- | --- | --- |
+ * | 2.6 m, 34 deg | 6.0% | 40.6% |
+ * | 6.2 m, 50 deg | 5.2% | 48.6% |
+ * | 10.2 m, 71 deg | 5.0% | 47.8% |
+ *
+ * Flat, at a factor of eight apart, because both quantities scale with the image
+ * of the sphere and so does the denominator. 12% is twice the measured worst
+ * case, the same doubling rule the frame-fraction version used, and it now means
+ * the same thing at every zoom. `test/parity.test.ts` pins all six numbers.
  */
-export const BOUNDARY_PIXEL_ALLOWANCE = 0.01;
+export const BOUNDARY_LIT_ALLOWANCE = 0.12;
 
 /**
- * The percentile the verdict is taken at — and it is DERIVED from the allowance
- * rather than chosen beside it.
+ * A pixel counts as lit when either image puts anything there at all.
  *
- * Two criteria that both look reasonable can be quietly inconsistent, and this
- * pair was. An allowance saying "up to 2% of pixels may be over tolerance" and a
- * verdict taken at the 99.5th percentile cannot both bind: once 2% of pixels are
- * over, the 98th percentile is already over, so the percentile fires first and
- * the allowance can never be the reason for anything. One of the two criteria
- * would be dead code that reads like a safeguard. `test/parity.test.ts` catches
- * it by spoiling half the allowance and requiring a pass.
- *
- * So the two are one statement with two halves: *everything outside the allowed
- * boundary fraction is within tolerance, AND the boundary fraction is inside its
- * allowance.* The percentile is therefore `1 - allowance` exactly.
+ * Deliberately either and not both: a difference that turns a lit pixel black, or
+ * a black one lit, is exactly the kind the check exists to catch, and requiring
+ * both to be lit would drop it from the denominator AND from the numerator.
  */
-export const VERDICT_PERCENTILE = 1 - BOUNDARY_PIXEL_ALLOWANCE;
+export const LIT_THRESHOLD = 2e-3;
+
+/**
+ * Below this many lit pixels the patch cannot support a percentile and the
+ * verdict is withheld rather than granted.
+ *
+ * A check that cannot see anything must not report agreement. At the widest view
+ * the sphere covers about 180 of the patch's 12 288 pixels, which is enough; a
+ * viewer who zooms out past that gets "too little on screen to judge" instead of
+ * a green tick earned by a frame full of matching black.
+ */
+export const MIN_LIT_PIXELS = 60;
+
+export const VERDICT_PERCENTILE = 1 - BOUNDARY_LIT_ALLOWANCE;
 
 export interface ParityDelta {
   /** Worst single-channel absolute difference anywhere in the patch. */
@@ -99,6 +116,11 @@ export interface ParityDelta {
   pixelsOverTolerance: number;
   pixelCount: number;
   fractionOverTolerance: number;
+  /** Pixels either image puts light in. The denominator that matters. */
+  litPixelCount: number;
+  /** Of those, how many are over tolerance. */
+  litOverTolerance: number;
+  fractionOfLitOverTolerance: number;
 }
 
 export interface ParityVerdict {
@@ -107,6 +129,8 @@ export interface ParityVerdict {
   pass: boolean;
   /** Why it failed, or `''`. */
   reason: string;
+  /** True when there was too little on screen to judge. Never a pass. */
+  blind: boolean;
   /** One sentence ready to print. */
   summary: string;
   /** True when the read-back was float rather than 8-bit. */
@@ -128,34 +152,50 @@ export function compareImages(
   }
   const n = a.width * a.height;
   const perPixel = new Float64Array(n);
+  const litDeltas: number[] = [];
   let maxAbs = 0;
   let sumAbs = 0;
   let over = 0;
+  let litOver = 0;
 
   for (let i = 0; i < n; i++) {
     let pixelMax = 0;
+    let lit = false;
     for (let c = 0; c < 3; c++) {
-      const d = Math.abs(a.data[3 * i + c] - b.data[3 * i + c]);
+      const x = a.data[3 * i + c];
+      const y = b.data[3 * i + c];
+      const d = Math.abs(x - y);
       sumAbs += d;
       if (d > pixelMax) pixelMax = d;
       if (d > maxAbs) maxAbs = d;
+      if (x > LIT_THRESHOLD || y > LIT_THRESHOLD) lit = true;
     }
     perPixel[i] = pixelMax;
     if (pixelMax > tolerance) over++;
+    if (lit) {
+      litDeltas.push(pixelMax);
+      if (pixelMax > tolerance) litOver++;
+    }
   }
 
-  const sorted = Float64Array.from(perPixel).sort();
-  const at = (q: number): number =>
-    n === 0 ? 0 : sorted[Math.min(n - 1, Math.max(0, Math.floor(q * (n - 1))))];
+  const sortedLit = Float64Array.from(litDeltas).sort();
+  const m = sortedLit.length;
+  // The verdict percentile is taken over the lit pixels only; see the note on
+  // VERDICT_PERCENTILE for why the whole frame is the wrong denominator.
+  const atLit = (q: number): number =>
+    m === 0 ? 0 : sortedLit[Math.min(m - 1, Math.max(0, Math.floor(q * (m - 1))))];
 
   return {
     maxAbs,
     meanAbs: n === 0 ? 0 : sumAbs / (3 * n),
-    verdictPercentileValue: at(VERDICT_PERCENTILE),
-    median: at(0.5),
+    verdictPercentileValue: atLit(VERDICT_PERCENTILE),
+    median: atLit(0.5),
     pixelsOverTolerance: over,
     pixelCount: n,
     fractionOverTolerance: n === 0 ? 0 : over / n,
+    litPixelCount: m,
+    litOverTolerance: litOver,
+    fractionOfLitOverTolerance: m === 0 ? 0 : litOver / m,
   };
 }
 
@@ -171,33 +211,56 @@ export function judgeParity(
   const tolerance = options.tolerance ?? (floatReadback ? DISPLAY_TOLERANCE : 1 / 255);
   const delta = compareImages(gpu, cpu, tolerance);
 
-  const percentileOk = delta.verdictPercentileValue <= tolerance;
-  const boundaryOk = delta.fractionOverTolerance <= BOUNDARY_PIXEL_ALLOWANCE;
   const pct = (VERDICT_PERCENTILE * 100).toFixed(0);
+  const readback = floatReadback ? '' : ' (8-bit read-back — this device has no float framebuffer)';
+
+  // Too little on screen to judge is not agreement. Reported as its own state so
+  // a viewer who has zoomed the sphere down to nothing gets told the check went
+  // blind rather than handed a tick earned by matching black.
+  if (delta.litPixelCount < MIN_LIT_PIXELS) {
+    return {
+      delta,
+      tolerance,
+      pass: false,
+      blind: true,
+      reason: `only ${delta.litPixelCount} of ${delta.pixelCount} pixels show anything`,
+      summary:
+        `Too little of the sphere is on screen to compare — ${delta.litPixelCount} lit pixels ` +
+        `in the ${delta.pixelCount}-pixel patch, under the ${MIN_LIT_PIXELS} this needs. ` +
+        `Move closer${readback}.`,
+      floatReadback,
+      cpuMs: options.cpuMs ?? 0,
+    };
+  }
+
+  const percentileOk = delta.verdictPercentileValue <= tolerance;
+  const boundaryOk = delta.fractionOfLitOverTolerance <= BOUNDARY_LIT_ALLOWANCE;
   const reasons: string[] = [];
   if (!percentileOk) {
     reasons.push(
-      `p${pct} delta ${delta.verdictPercentileValue.toExponential(2)} exceeds ` +
+      `p${pct} of the lit pixels differs by ${delta.verdictPercentileValue.toExponential(2)}, over ` +
         `${tolerance.toExponential(1)}`,
     );
   }
   if (!boundaryOk) {
     reasons.push(
-      `${(delta.fractionOverTolerance * 100).toFixed(2)}% of pixels are over tolerance, above the ` +
-        `${(BOUNDARY_PIXEL_ALLOWANCE * 100).toFixed(0)}% allowance for geometric boundaries`,
+      `${(delta.fractionOfLitOverTolerance * 100).toFixed(1)}% of the lit pixels are over ` +
+        `tolerance, above the ${(BOUNDARY_LIT_ALLOWANCE * 100).toFixed(0)}% allowance for ` +
+        `geometric boundaries`,
     );
   }
   const pass = percentileOk && boundaryOk;
-  const readback = floatReadback ? '' : ' (8-bit read-back — this device has no float framebuffer)';
   return {
     delta,
     tolerance,
     pass,
+    blind: false,
     reason: reasons.join('; '),
     summary: pass
       ? `The picture and the model agree to ${delta.verdictPercentileValue.toExponential(2)} of ` +
-        `relative radiance across all but the outer ${(BOUNDARY_PIXEL_ALLOWANCE * 100).toFixed(0)}% ` +
-        `of pixels${readback}.`
+        `relative radiance across all but the outer ` +
+        `${(BOUNDARY_LIT_ALLOWANCE * 100).toFixed(0)}% of the ${delta.litPixelCount} lit ` +
+        `pixels${readback}.`
       : `The picture and the model DISAGREE: ${reasons.join('; ')}${readback}.`,
     floatReadback,
     cpuMs: options.cpuMs ?? 0,
