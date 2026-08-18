@@ -45,6 +45,7 @@ import {
   CONTENT_MARBLE,
   CONTROLS,
   GROUPS,
+  cameraDistanceM,
   IN_TO_M,
   NUDGE_CONTROLS,
   PERFECT_PRESET,
@@ -128,6 +129,8 @@ interface PageState {
    */
   cameraCount: number;
   handheld: boolean;
+  /** Index into {@link CAPTURE_RASTERS}. */
+  cameraRes: number;
 }
 
 const state: PageState = {
@@ -156,6 +159,7 @@ const state: PageState = {
   readoutOpen: true,
   cameraCount: 3,
   handheld: false,
+  cameraRes: 0,
 };
 
 let model: ModelResponse | null = null;
@@ -1035,16 +1039,18 @@ function startSolve(): void {
   };
   solveStartedAt = performance.now();
   solveStage = 'Placing the cameras…';
+  const raster = CAPTURE_RASTERS[state.cameraRes] ?? CAPTURE_RASTERS[0];
   const req: SolveRequest = {
     kind: 'solve',
     id: ++solveSeq,
     settings: state.settings,
     cameraCount: state.cameraCount,
-    // The bench's own corpus runs at 320×240 and every number this project has
-    // published was measured there. Matching it means the page and the report
-    // are talking about the same thing.
-    cameraResX: 320,
-    cameraResY: 240,
+    // Defaults to the bench's own 320×240, because every number this project has
+    // published was measured there and the page and the report have to be
+    // talking about the same capture. It is a choice now rather than a constant:
+    // `scenarios.ts` says outright that it is coarser than a phone.
+    cameraResX: raster.resX,
+    cameraResY: raster.resY,
     handheld: state.handheld,
     sensorNoise: true,
     // The Room light slider, not a second constant beside it. `state.ambient`
@@ -1793,6 +1799,42 @@ function installSection(): HTMLElement[] {
  * Every solve used to run the same fixed best case: three tripod positions, and
  * the fields were declared, initialised, sent, and never written to by anything.
  */
+/**
+ * Camera rasters the page will photograph at.
+ *
+ * 320×240 is the bench's own corpus and every number this project has published
+ * was measured there, so it stays the default: the report and the page have to
+ * be talking about the same capture. `packages/bench/src/scenarios.ts` is blunt
+ * about what that number is, though — "coarser than a phone, and the recovered
+ * numbers are correspondingly pessimistic", with 640×480 named as "the honest
+ * comparison for 'does a phone suffice'". The page promised more in
+ * `protocol.ts` and offered none.
+ *
+ * It stops at 1280×960. Cost is linear in pixels and the capture is a full pixel
+ * loop per camera per projector per pattern, so this is already over a minute in
+ * a worker; the rung above would be several, and a page nobody waits for teaches
+ * nothing. The seconds are measured on this machine at three positions and are
+ * there to set an expectation, not as a promise.
+ */
+const CAPTURE_RASTERS: readonly {
+  label: string;
+  resX: number;
+  resY: number;
+  seconds: number;
+  note: string;
+}[] = [
+  { label: '320 × 240', resX: 320, resY: 240, seconds: 10, note: "the bench's corpus, pessimistic" },
+  { label: '640 × 480', resX: 640, resY: 480, seconds: 22, note: 'the honest phone comparison' },
+  { label: '1280 × 960', resX: 1280, resY: 960, seconds: 75, note: 'slow, and barely better than 640' },
+];
+
+/** Millimetres of sphere surface per camera pixel, at the distance §6 puts the operator. */
+function capturePxMm(resX: number, radiusM: number): number {
+  // The capture camera's 62° horizontal field, from `pipeline.ts`.
+  const halfTan = Math.tan((62 / 2) * (Math.PI / 180));
+  return ((cameraDistanceM(radiusM) * 2 * halfTan) / resX) * 1000;
+}
+
 function captureControls(): HTMLElement[] {
   const out: HTMLElement[] = [];
   out.push(el('span', { className: 'lab', textContent: 'How you photograph it' }));
@@ -1825,6 +1867,31 @@ function captureControls(): HTMLElement[] {
         'the hands hurt it is measured, not chosen. Experiment 1 put tripod runs between 0.04 ' +
         'and 0.73 mm and the same camera handheld near 9 mm — about 170× worse. Press ' +
         'Recalibrate on each and read the residual.',
+    ),
+  );
+  out.push(el('span', { className: 'lab', textContent: 'Camera' }));
+  const radiusM = (state.settings.sphereDiaIn * IN_TO_M) / 2;
+  out.push(
+    chipRow(
+      CAPTURE_RASTERS.map((r, i) => ({
+        label: r.label,
+        title: `${r.resX} × ${r.resY} — ${r.note}`,
+        on: state.cameraRes === i,
+        onPick: () => {
+          if (state.cameraRes === i) return;
+          state.cameraRes = i;
+          renderControls();
+        },
+      })),
+      `What the operator is holding. The bench's published corpus runs at 320×240 because a ` +
+        `twenty-scenario sweep has to finish, and that is COARSER than a phone — about ` +
+        `${capturePxMm(CAPTURE_RASTERS[0].resX, radiusM).toFixed(1)} mm of sphere per pixel here, ` +
+        `against ${capturePxMm(CAPTURE_RASTERS[1].resX, radiusM).toFixed(1)} mm at 640×480, which ` +
+        `is the honest setting for "would a phone do". Raising it sharpens the reprojection ` +
+        `residual and costs time in proportion to the pixels: roughly ` +
+        CAPTURE_RASTERS.map((r) => `${r.label} ${r.seconds}s`).join(', ') +
+        ' for three positions. What it does NOT buy is much pose accuracy — the tripod ' +
+        'question above outweighs it.',
     ),
   );
   out.push(el('span', { className: 'lab', textContent: 'Camera positions' }));

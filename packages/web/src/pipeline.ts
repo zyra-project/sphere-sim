@@ -64,7 +64,7 @@ import { nominalRig as solverNominalRig, solve } from '../../solver/src/index.ts
 import { DEFAULT_FREE_FLAGS } from '../../solver/src/bundle.ts';
 import { buildWorld } from './rigs.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
-import { RESOLUTIONS } from './settings.ts';
+import { cameraDistanceM, RESOLUTIONS } from './settings.ts';
 import type {
   RecoveredAxis,
   SolveProgress,
@@ -86,22 +86,6 @@ export type ProgressSink = (progress: SolveProgress) => void;
  * way, and the two must agree or the page would be photographing a different
  * pattern from the bench at the same settings.
  */
-
-/**
- * How far back an operator stands, for a sphere of this radius.
- *
- * §6's band and the rail are both quoted for the 68-inch ball; the ratio is what
- * carries to another one. The bench does NOT use this — `packages/bench` places
- * its own cameras from its own constants, and every published number came from
- * those — so this is the page's answer to "what would a person do here", not a
- * change to a scored quantity.
- */
-export function cameraDistanceM(radiusM: number): number {
-  return (2.6 * radiusM) / NOMINAL_RADIUS_M;
-}
-
-/** PARAMETERS.md §1's 68-inch sphere, in metres. */
-const NOMINAL_RADIUS_M = (68 * 0.0254) / 2;
 
 function planPatternFor(
   truthRig: RigCalibration,

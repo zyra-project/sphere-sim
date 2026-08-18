@@ -764,8 +764,15 @@ async function main(): Promise<void> {
       failures.push('clicking "Handheld" did not select it — the capture control is not wired');
     } else if (!['1', '2', '3', '4'].every((n) => capture.chips.includes(n))) {
       failures.push('the panel offers no choice of how many camera positions to photograph from');
+    } else if (!capture.chips.some((c) => /^640\s*.\s*480$/.test(c))) {
+      failures.push(
+        'the panel offers no camera raster above the bench corpus — 320x240 is coarser than a ' +
+          'phone and the page would have no way to say so',
+      );
     } else {
-      process.stdout.write('  capture: tripod / handheld and 1-4 camera positions, both live\n');
+      process.stdout.write(
+        '  capture: tripod / handheld, 1-4 positions, and a camera raster, all live\n',
+      );
     }
 
     // Last, because both of these move the rig or the eye, and every check above

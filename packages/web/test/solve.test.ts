@@ -13,9 +13,9 @@ import { test } from 'node:test';
 
 import type { RigCalibration } from '../../calibration/src/index.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
-import { BOULDER_PRESET, IN_TO_M } from '../src/settings.ts';
+import { BOULDER_PRESET, cameraDistanceM, IN_TO_M } from '../src/settings.ts';
 import { buildWorld } from '../src/rigs.ts';
-import { cameraDistanceM, runSolve } from '../src/pipeline.ts';
+import { runSolve } from '../src/pipeline.ts';
 import type { SolvePhase, SolveRequest } from '../src/protocol.ts';
 
 function request(overrides: Partial<SolveRequest> = {}): SolveRequest {

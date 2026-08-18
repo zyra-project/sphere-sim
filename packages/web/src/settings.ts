@@ -296,6 +296,26 @@ export const CONTENT_MARBLE = 3;
 export const CONTENT_CUSTOM = 4;
 
 /** Per-projector rasters. §3.4: the X screen is twice this in each dimension. */
+/**
+ * How far back an operator stands, for a sphere of this radius.
+ *
+ * §6's band and the rail are both quoted for the 68-inch ball; the ratio is what
+ * carries to another one. The bench does NOT use this — `packages/bench` places
+ * its own cameras from its own constants, and every published number came from
+ * those — so this is the page's answer to "what would a person do here", not a
+ * change to a scored quantity.
+ *
+ * Here rather than in `pipeline.ts` because the panel needs it too: how much
+ * sphere one camera pixel covers is a fact about the distance, and a second copy
+ * of the ratio beside the first is a pair that drifts.
+ */
+export function cameraDistanceM(radiusM: number): number {
+  return (2.6 * radiusM) / NOMINAL_RADIUS_M;
+}
+
+/** PARAMETERS.md §1's 68-inch sphere, in metres. */
+const NOMINAL_RADIUS_M = (68 * IN_TO_M) / 2;
+
 export const RESOLUTIONS: readonly { label: string; resX: number; resY: number }[] = [
   { label: '1024 × 768 · 4:3', resX: 1024, resY: 768 },
   { label: '1920 × 1080 · 16:9', resX: 1920, resY: 1080 },
