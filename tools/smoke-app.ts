@@ -781,9 +781,31 @@ async function main(): Promise<void> {
     // What the software BELIEVES survives everything except being told to forget
     // it. Two controls used to throw it away silently.
     if (opts.solve) {
-      const solved = await cdp.evaluate<string>(
-        "document.querySelector('[data-smoke=\"grid-mm\"]')?.textContent?.trim() ?? ''",
-      );
+      /**
+       * The headline number, once it has stopped moving.
+       *
+       * A coarse pass and a fine one disagree in the hundredths — that is what
+       * the density difference is FOR — so reading the instant a click returns
+       * catches whichever happened to have landed, and the same run passes or
+       * fails by timing. Both checks below ask whether a whole calibration
+       * survived, which is a change of TENS of millimetres, so they wait for
+       * quiet and then compare magnitudes rather than strings.
+       */
+      const settled = async (): Promise<number> => {
+        let last = '';
+        let stable = 0;
+        for (let i = 0; i < 60; i++) {
+          const now = await cdp.evaluate<string>(
+            "document.querySelector('[data-smoke=\"grid-mm\"]')?.textContent?.trim() ?? ''",
+          );
+          stable = now === last ? stable + 1 : 0;
+          last = now;
+          if (stable >= 5) break;
+          await sleep(200);
+        }
+        return Number.parseFloat(last);
+      };
+      const solved = await settled();
 
       // Walking round the ball is the first. A viewpoint chip moves the eye and
       // nothing else, and it was discarding the calibration — so going to look at
@@ -797,17 +819,16 @@ async function main(): Promise<void> {
         if (chip) chip.click();
         return !!chip;
       })()`);
-      await sleep(1000);
-      const afterView = await cdp.evaluate<string>(
-        "document.querySelector('[data-smoke=\"grid-mm\"]')?.textContent?.trim() ?? ''",
-      );
-      if (afterView !== solved) {
+      const afterView = await settled();
+      if (Math.abs(afterView - solved) > 1) {
         failures.push(
           `moving the eye changed the measurement: ${solved} mm before the viewpoint chip, ` +
             `${afterView} mm after — a view control has discarded the calibration`,
         );
       } else {
-        process.stdout.write(`  walking to a seam left the calibration alone (${afterView} mm)\n`);
+        process.stdout.write(
+          `  walking to a seam left the calibration alone (${solved} → ${afterView} mm)\n`,
+        );
       }
 
       // Knocking a lens is the second, and it is the page's own headline
@@ -842,18 +863,7 @@ async function main(): Promise<void> {
         return 'ok';
       })()`);
       if (!bumped.startsWith('ok')) failures.push(bumped);
-      // Poll rather than sleep. The model worker is still carrying the 1200px
-      // enlarged frame and the seam patches from the checks above, so the
-      // recompute this bump asks for can land well over a second later — a fixed
-      // wait made this read the pre-bump number and call it a regression.
-      let nowMm = solved;
-      for (let i = 0; i < 40; i++) {
-        await sleep(250);
-        nowMm = await cdp.evaluate<string>(
-          "document.querySelector('[data-smoke=\"grid-mm\"]')?.textContent?.trim() ?? ''",
-        );
-        if (nowMm !== solved) break;
-      }
+      const nowMm = await settled();
       // Read something the WORKER computes, not a button. `gridBaselineMm` — and
       // so the improvement line built from it — exists only while the compositor
       // is a recovered rig rather than the config as written, so its presence is
@@ -868,14 +878,15 @@ async function main(): Promise<void> {
           'bumping a projector after a recalibration threw the recovered rig away — the ' +
             'compositor is back on the drawing and the frame will have changed',
         );
-      } else if (nowMm === solved) {
+      } else if (!(nowMm > afterView + 5)) {
         failures.push(
-          `bumping a projector did not move the measurement at all (${nowMm} mm before and ` +
-            `after 10 s, aimed at ${aimed}) — the bump never reached the model`,
+          `bumping a projector barely moved the measurement (${afterView} → ${nowMm} mm, aimed ` +
+            `at ${aimed}) — a quarter-degree knock is worth tens of millimetres on the sphere, ` +
+            'so the bump is saturated against its clamp or it never reached the model',
         );
       } else {
         process.stdout.write(
-          `  bumping again kept the recovered rig (${solved} → ${nowMm} mm)\n`,
+          `  bumping again kept the recovered rig (${afterView} → ${nowMm} mm)\n`,
         );
       }
     }

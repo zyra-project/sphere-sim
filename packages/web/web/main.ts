@@ -839,6 +839,8 @@ const modelWorker = new Worker(new URL('../worker/model.js', import.meta.url), {
 const solveWorker = new Worker(new URL('../worker/solve.js', import.meta.url), { type: 'module' });
 
 let modelSeq = 0;
+/** Metrics passes that have landed. Exposed for `tools/smoke-app.ts`. */
+let modelPasses = 0;
 let modelWanted = -1;
 let parityRequestKey = '';
 
@@ -847,10 +849,60 @@ function viewKey(): string {
   return `${s.viewAzDeg}|${s.viewElDeg}|${s.viewRangeM}|${s.viewFovDeg}`;
 }
 
+/**
+ * Ask the metrics worker for a fresh pass, at most one at a time.
+ *
+ * `modelWanted` only ever discarded stale REPLIES; every call still posted, so a
+ * slider drag queued one full metrics pass per pointer event and the worker
+ * ground through all of them, every one but the last already superseded. On a
+ * phone that is the same core the page is drawing on.
+ *
+ * So: while one is in flight, remember what was wanted and send it when the
+ * reply lands. The picture still tracks the slider — it just tracks it at the
+ * rate the worker can actually answer, which is what the reader sees anyway.
+ * `fine` sticks if either the pending or the queued request asked for it: the
+ * settle timer's full-density pass must not be swallowed by a coarse one
+ * arriving a millisecond later.
+ */
 function requestModel(fine: boolean): void {
+  if (modelPending) {
+    queuedModel = { fine: fine || (queuedModel?.fine ?? false) };
+    return;
+  }
+  postModel(fine);
+}
+
+/** A pass asked for while the worker was busy. See `requestModel`. */
+let queuedModel: { fine: boolean } | null = null;
+
+/** Send whatever was asked for while the last pass was running. */
+function drainModel(): void {
+  const next = queuedModel;
+  queuedModel = null;
+  if (next) postModel(next.fine);
+}
+
+/**
+ * Let go of the one-in-flight lock if a reply never comes.
+ *
+ * The lock is what stops the flood, and a lock nothing releases is a page that
+ * stops answering. A worker that dies, or a request that throws somewhere with
+ * no reply path, would otherwise leave every later slider silently inert. Ten
+ * seconds is far longer than the slowest full-density pass and far shorter than
+ * a reader's patience.
+ */
+let modelWatchdog = 0;
+
+function postModel(fine: boolean): void {
   const id = ++modelSeq;
   modelWanted = id;
   modelPending = true;
+  window.clearTimeout(modelWatchdog);
+  modelWatchdog = window.setTimeout(() => {
+    if (!modelPending) return;
+    modelPending = false;
+    drainModel();
+  }, 10_000);
   const req: ModelRequest = {
     kind: 'model',
     id,
@@ -908,6 +960,11 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage>): voi
   // backwards for no visible reason.
   if (msg.id !== modelWanted) return;
   modelPending = false;
+  window.clearTimeout(modelWatchdog);
+  // Before any early return below. A reply that released the lock without
+  // draining would leave a queued pass unsent and the page frozen on the last
+  // answer, which is a worse failure than the flood this replaced.
+  drainModel();
   bootEl.classList.add('off');
   if (!msg.ok) {
     lastError = msg.error;
@@ -915,6 +972,12 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage>): voi
     return;
   }
   lastError = '';
+  // How many metrics passes have actually landed. A drag used to post one per
+  // pointer event and the worker ground through every superseded one, so the
+  // count is the flood, and it is the only thing that distinguishes "keeping up"
+  // from "hopelessly behind" from outside the page.
+  modelPasses++;
+  readoutEl.dataset.smokePasses = String(modelPasses);
   // A coarse pass carries no projector frames; keep the last good ones rather
   // than blanking the inspect card on every drag.
   //

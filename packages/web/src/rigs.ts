@@ -294,7 +294,34 @@ export function nudgesAreClear(nudges: readonly ProjectorNudge[]): boolean {
  * grid-displacement metric evaluates, so the lines a reader sees and the lines
  * the gate measures are the same lines.
  */
+/**
+ * The last field built, and what it was built from.
+ *
+ * `buildContent` fills a 1024x512 float image — about 1.5 million writes, and
+ * around 40 ms — and `buildWorld` calls it every time. `buildWorld` in turn runs
+ * once per animation frame in `draw()` and once per `renderReadout()`, so
+ * dragging any slider at all cost two full regenerations of the texture per
+ * pointer event: measured at 86 ms of blocked main thread per move, which is
+ * five frames' worth for a control that had not touched the content at all.
+ *
+ * What the field actually depends on is four things, and geometry is none of
+ * them. One entry is enough — nothing alternates between two fields — and the
+ * result is already shared rather than copied on the `!grid` path below, so
+ * handing back the same object is not a new kind of aliasing.
+ */
+let lastContent: { key: string; custom: EquirectImage | null; image: EquirectImage } | null = null;
+
 export function buildContent(s: Settings, custom: EquirectImage | null): EquirectImage {
+  const key = `${Math.round(s.content)}|${Math.round(s.gridOn)}|${Math.round(s.gridDeg)}`;
+  if (lastContent && lastContent.key === key && lastContent.custom === custom) {
+    return lastContent.image;
+  }
+  const image = buildContentUncached(s, custom);
+  lastContent = { key, custom, image };
+  return image;
+}
+
+function buildContentUncached(s: Settings, custom: EquirectImage | null): EquirectImage {
   const choice = Math.round(s.content);
   const base = CONTENTS[choice] ?? CONTENTS[1];
   const grid = Math.round(s.gridOn) === 1;
