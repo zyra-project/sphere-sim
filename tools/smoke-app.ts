@@ -587,26 +587,55 @@ async function main(): Promise<void> {
     }
 
     // The inspect card shows one view at a time; the mesh is the third.
-    await cdp.evaluate(`(() => {
-      const b = [...document.querySelectorAll('#inspect .seg button')]
-        .find((x) => /Warp mesh/.test(x.textContent ?? ''));
-      if (b) b.click();
-      return !!b;
-    })()`);
-    await sleep(200);
-
-    // The warp mesh is the one diagram computed by composing the two rigs, and a
-    // flex column will happily squash an SVG to nothing while its caption goes on
-    // claiming a picture is there — which is what it did. Check it has height.
-    const mesh = await cdp.evaluate<{ h: number; grey: number; tinted: number } | null>(`(() => {
-      const svg = document.querySelector('#inspect svg');
-      if (!svg) return null;
-      const groups = [...svg.querySelectorAll('g')];
-      const count = (i) => groups[i] ? groups[i].querySelectorAll('polyline').length : 0;
-      return { h: Math.round(svg.getBoundingClientRect().height), grey: count(0), tinted: count(1) };
-    })()`);
+    //
+    // Opened by name rather than assumed. The card is opened by clicking a lens
+    // in the room, and which lens is in the clickable band depends on where the
+    // renderer put the markers — CI picks a different one from this machine —
+    // so this makes sure a projector is selected and the card is up before
+    // asking it for a picture, instead of inheriting whatever the pick left.
+    //
+    // And polled rather than slept on: the mesh arrives with a model reply, and
+    // a fixed 200 ms is a race that this machine wins and a slower one loses.
+    const mesh = await (async () => {
+      for (let i = 0; i < 40; i++) {
+        const got = await cdp.evaluate<{
+          h: number; grey: number; tinted: number; state: string;
+        } | null>(`(() => {
+          const card = document.getElementById('inspect');
+          if (!card || !card.classList.contains('on') || card.children.length === 0) {
+            const tab = [...document.querySelectorAll('#controls button')]
+              .find((b) => (b.textContent ?? '').trim() === 'Projectors');
+            if (tab) tab.click();
+            const p = [...document.querySelectorAll('.ptabs button')]
+              .find((b) => !b.className.includes('on') && !b.className.includes('dark'));
+            if (p) p.click();
+            return null;
+          }
+          const b = [...card.querySelectorAll('.seg button')]
+            .find((x) => /Warp mesh/.test(x.textContent ?? ''));
+          if (b && !b.className.includes('on')) b.click();
+          const svg = card.querySelector('svg');
+          if (!svg) {
+            return { h: 0, grey: 0, tinted: 0, state: 'card up, no svg: ' +
+              [...card.querySelectorAll('.seg button')].map((x) => x.textContent).join('/') };
+          }
+          const groups = [...svg.querySelectorAll('g')];
+          const count = (n) => groups[n] ? groups[n].querySelectorAll('polyline').length : 0;
+          return {
+            h: Math.round(svg.getBoundingClientRect().height),
+            grey: count(0), tinted: count(1), state: 'ok',
+          };
+        })()`);
+        if (got && got.h >= 40 && got.grey >= 8 && got.tinted >= 8) return got;
+        await sleep(250);
+        if (i === 39) return got;
+      }
+      return null;
+    })();
     if (!mesh) {
-      failures.push('the selected projector shows no warp mesh');
+      failures.push('the projector card never opened, so there was nothing to show a mesh in');
+    } else if (mesh.state !== 'ok') {
+      failures.push(`the selected projector shows no warp mesh — ${mesh.state}`);
     } else if (mesh.h < 40) {
       failures.push(`the warp mesh drew at ${mesh.h} px tall — it has been squashed away`);
     } else if (mesh.grey < 8 || mesh.tinted < 8) {

@@ -2143,8 +2143,12 @@ function roomSection(): HTMLElement[] {
       id: 'byprojector',
       label: 'By projector',
       title:
-        'Tinted by whichever projector is contributing most, in the four panel colours. The line ' +
-        'between two tints is the middle of the blend band — and it moves when a projector moves.',
+        'Each projector\u2019s panel colour, mixed in proportion to what it is contributing. Where ' +
+        'one projector has the surface to itself you get its colour flat; across a seam the two ' +
+        'colours cross-fade, and the WIDTH of that gradient is the blend band \u2014 the ' +
+        '\u201cSeam blend width\u201d slider stretches and narrows it in front of you. It used to ' +
+        'tint by whichever projector was winning, which put a razor edge at the halfway line and ' +
+        'hid the hand-over entirely.',
     },
     {
       id: 'unlit',

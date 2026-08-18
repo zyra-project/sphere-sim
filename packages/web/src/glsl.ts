@@ -406,7 +406,8 @@ vec3 shadeTwoRig(
   out int overlapCount,
   out int litCount,
   out int strongest,
-  out float strongestWeight
+  out float strongestWeight,
+  out vec3 blendTint
 ) {
   vec3 normal = point / uRadius;
   vec3 diffuse = uAmbient;
@@ -414,6 +415,13 @@ vec3 shadeTwoRig(
   litCount = 0;
   strongest = -1;
   strongestWeight = 0.0;
+  // Every projector's colour, in proportion to what it is contributing here.
+  // The argmax alone cannot show a blend band: the strongest projector flips at
+  // the 50/50 line, so a 20-degree band of genuine overlap drew as a razor edge
+  // between two flat colours and the one thing the view exists to show — how
+  // wide the hand-over is — was invisible.
+  vec3 tintAcc = vec3(0.0);
+  float tintW = 0.0;
 
   for (int i = 0; i < MAX_PROJ; i++) {
     if (i >= uProjCount) continue;
@@ -459,6 +467,8 @@ vec3 shadeTwoRig(
         strongestWeight = weight;
         strongest = i;
       }
+      tintAcc += uTint[i] * (weight * w);
+      tintW += weight * w;
       signal += w * blendedSignal(sampleEquirect(ll.x, wrapDeg180(ll.y - uCRotOffset)), weight);
     }
 
@@ -478,6 +488,7 @@ vec3 shadeTwoRig(
     float falloff = (ref * ref) / (distanceM * distanceM);
     diffuse += emittedRadianceRgb(signal, i) * (nDotL * falloff);
   }
+  blendTint = tintW > 0.0 ? tintAcc / tintW : vec3(0.0);
   return diffuse * uReflectance;
 }
 
@@ -515,7 +526,7 @@ vec3 shadeFloor(vec3 point) {
  * not as a round cap.
  */
 const CHUNK_OVERLAY = `
-vec3 overlayTint(int overlapCount, int litCount, int strongest, float strongestWeight) {
+vec3 overlayTint(int overlapCount, int litCount, int strongest, float strongestWeight, vec3 blendTint) {
   if (uOverlay == 1) {
     if (litCount == 0) return vec3(0.10, 0.10, 0.13);
     if (litCount == 1) return vec3(0.16, 0.38, 0.62);
@@ -526,14 +537,13 @@ vec3 overlayTint(int overlapCount, int litCount, int strongest, float strongestW
     return litCount >= 2 ? vec3(0.95, 0.72, 0.20) : vec3(0.10, 0.10, 0.13);
   }
   if (uOverlay == 4) {
-    // Which projector is doing most of the work here. Inside a blend band the two
-    // weights approach each other, so the boundary between two tints IS the seam
-    // — and it moves when a projector moves, which is the point.
+    // Every projector's colour in proportion to what it is contributing, so a
+    // blend band reads as a GRADIENT between two tints and its width is the
+    // width of the hand-over. Tinting by the strongest projector instead drew
+    // the band as a razor edge, because the argmax flips at the 50/50 line
+    // however wide the overlap is.
     if (litCount == 0 || strongest < 0) return vec3(0.10, 0.10, 0.13);
-    for (int i = 0; i < MAX_PROJ; i++) {
-      if (i == strongest) return uTint[i] * (0.45 + 0.55 * strongestWeight);
-    }
-    return vec3(0.5);
+    return blendTint * (0.45 + 0.55 * strongestWeight);
   }
   return litCount == 0 ? vec3(0.85, 0.20, 0.35) : vec3(0.10, 0.10, 0.13);
 }
@@ -782,9 +792,10 @@ void main() {
     int litCount;
     int strongest;
     float strongestWeight;
-    c = shadeTwoRig(uCamPos + dir * t, overlapCount, litCount, strongest, strongestWeight);
+    vec3 blendTint;
+    c = shadeTwoRig(uCamPos + dir * t, overlapCount, litCount, strongest, strongestWeight, blendTint);
     if (uOverlay > 0) {
-      c = mix(c, overlayTint(overlapCount, litCount, strongest, strongestWeight), uOverlayMix);
+      c = mix(c, overlayTint(overlapCount, litCount, strongest, strongestWeight, blendTint), uOverlayMix);
     }
   } else if (uDrawFloor == 1 && dir.z < 0.0) {
     float floorZ = -uCenterHeight;
