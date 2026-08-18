@@ -159,37 +159,70 @@ function recoveryTable(
     Math.hypot(p.pose.position.x, p.pose.position.y, p.pose.position.z);
   const azDeg = (p: Proj): number =>
     (Math.atan2(p.pose.position.y, p.pose.position.x) * 180) / Math.PI;
-  const axes: { axis: string; unit: string; of: (p: Proj) => number }[] = [
+  /**
+   * The short way round.
+   *
+   * `atan2` comes back in (-180, 180], so a projector sitting near the cut has a
+   * documented azimuth of +179.9 and a recovered one of -179.9 — a tenth of a
+   * degree apart in the room and 359.8 apart by subtraction. That row then sorted
+   * to the top and told a reader the solver had spun a projector most of the way
+   * round the ring.
+   */
+  const wrap = (d: number): number => d - 360 * Math.round(d / 360);
+  const axes: {
+    axis: string;
+    unit: string;
+    of: (p: Proj) => number;
+    cyclic?: boolean;
+  }[] = [
     { axis: 'distance to sphere', unit: 'mm', of: (p) => dist(p) * 1000 },
     { axis: 'height', unit: 'mm', of: (p) => p.pose.position.z * 1000 },
-    { axis: 'azimuth', unit: '\u00b0', of: azDeg },
-    { axis: 'aim yaw', unit: '\u00b0', of: (p) => p.pose.yawDeg },
-    { axis: 'aim pitch', unit: '\u00b0', of: (p) => p.pose.pitchDeg },
-    { axis: 'roll', unit: '\u00b0', of: (p) => p.pose.rollDeg },
+    { axis: 'azimuth', unit: '\u00b0', of: azDeg, cyclic: true },
+    { axis: 'aim yaw', unit: '\u00b0', of: (p) => p.pose.yawDeg, cyclic: true },
+    { axis: 'aim pitch', unit: '\u00b0', of: (p) => p.pose.pitchDeg, cyclic: true },
+    { axis: 'roll', unit: '\u00b0', of: (p) => p.pose.rollDeg, cyclic: true },
     { axis: 'field of view', unit: '\u00b0', of: (p) => p.intrinsics.fovHDeg },
   ];
 
+  /**
+   * How far a movement carries the picture, in millimetres on the sphere.
+   *
+   * The rows are millimetres and degrees together, and ranking them by raw
+   * magnitude means 60 mm always beats 0.3 degrees — so the sort promised
+   * "largest movements first" and then showed six distances and heights, never
+   * once an angle, however badly the aim had been out. A degree at this throw
+   * moves the image about 94 mm across the ball, which is the number a reader
+   * cares about and the one that makes the two units comparable.
+   */
+  const ranked: { row: RecoveredAxis; rank: number }[] = [];
+
   for (let i = 0; i < n; i++) {
+    const throwM = dist(recovered.projectors[i]);
+    const mmPerDeg = throwM * (Math.PI / 180) * 1000;
     for (const a of axes) {
       const documentedV = a.of(documented.projectors[i]);
       const recoveredV = a.of(recovered.projectors[i]);
       const truthV = a.of(truth.projectors[i]);
-      rows.push({
+      const moved = a.cyclic ? wrap(recoveredV - documentedV) : recoveredV - documentedV;
+      const errorFromTruth = a.cyclic ? wrap(recoveredV - truthV) : recoveredV - truthV;
+      const row: RecoveredAxis = {
         projectorId: truth.projectors[i].id,
         axis: a.axis,
         unit: a.unit,
         documented: documentedV,
         recovered: recoveredV,
         truth: truthV,
-        errorFromTruth: recoveredV - truthV,
-        moved: recoveredV - documentedV,
-      });
+        errorFromTruth,
+        moved,
+      };
+      rows.push(row);
+      ranked.push({ row, rank: Math.abs(moved) * (a.unit === 'mm' ? 1 : mmPerDeg) });
     }
   }
-  // Largest movement first: the page shows the top handful, and what a reader
-  // wants to see is what the solve actually did rather than the axes it left
-  // alone.
-  return rows.sort((a, b) => Math.abs(b.moved) - Math.abs(a.moved));
+  // Largest movement first, measured on the sphere: the page shows the top
+  // handful, and what a reader wants to see is what the solve actually did
+  // rather than the axes it left alone.
+  return ranked.sort((a, b) => b.rank - a.rank).map((r) => r.row);
 }
 
 /**

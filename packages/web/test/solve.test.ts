@@ -66,10 +66,36 @@ test('a solve recovers the rig from photographs and improves the alignment', { t
     assert.ok(Number.isFinite(row.errorFromTruth), `${row.projectorId} ${row.axis} has no error`);
     assert.ok(/^P[1-4]$/.test(row.projectorId));
   }
-  // Sorted by how far the solve moved each axis, largest first: the page shows
-  // the top handful and what a reader wants is what it actually did.
-  const moves = result.recovery.map((r) => Math.abs(r.moved));
-  assert.deepEqual(moves, [...moves].sort((a, b) => b - a));
+  // Azimuth comes from `atan2`, which cuts at 180 degrees. A projector sitting
+  // on that cut reported a tenth of a degree of real movement as 359.8, and the
+  // sort put that fiction at the top of the table.
+  for (const row of result.recovery) {
+    if (row.unit !== '\u00b0') continue;
+    assert.ok(
+      Math.abs(row.moved) <= 180 && Math.abs(row.errorFromTruth) <= 180,
+      `${row.projectorId} ${row.axis} reports ${row.moved.toFixed(1)}deg of movement — ` +
+        'an angle difference has not been wrapped to the short way round',
+    );
+  }
+
+  // Sorted by how far the solve moved each axis MEASURED ON THE SPHERE, largest
+  // first. Raw magnitude put 60 mm above 0.3 degrees every time, so the six rows
+  // the page prints under "largest movements first" were six distances and
+  // heights and never an angle, however far the aim had been knocked.
+  const throwMm = new Map<string, number>();
+  for (const r of result.recovery) {
+    if (r.axis === 'distance to sphere') throwMm.set(r.projectorId, r.recovered);
+  }
+  const rank = (r: (typeof result.recovery)[number]): number =>
+    Math.abs(r.moved) *
+    (r.unit === 'mm' ? 1 : ((throwMm.get(r.projectorId) ?? 0) * Math.PI) / 180);
+  const ranks = result.recovery.map(rank);
+  for (let i = 1; i < ranks.length; i++) {
+    assert.ok(
+      ranks[i - 1] >= ranks[i] - 1e-9,
+      `row ${i} ranks ${ranks[i].toFixed(3)} above row ${i - 1}'s ${ranks[i - 1].toFixed(3)}`,
+    );
+  }
 
   // And it converged to something with a small residual.
   assert.ok(result.converged, 'the bundle adjustment hit its iteration cap');

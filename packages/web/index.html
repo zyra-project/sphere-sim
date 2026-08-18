@@ -327,15 +327,25 @@ pre.cfg { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font
    indistinguishable side by side and obvious when they alternate, which is why
    this mode exists at all. `steps(1, end)` makes it a switch, not a crossfade —
    a fade would read as motion in the image rather than as a difference. */
-#lightbox .stage.blink canvas + canvas { position: absolute; inset: 0; width: 100%; height: 100%;
+#lightbox .stage.blink .pane + .pane { position: absolute; inset: 0; }
+#lightbox .stage.blink .pane + .pane canvas { width: 100%; height: 100%;
   animation: lbBlink 1.3s steps(1, end) infinite; }
 @keyframes lbBlink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
 @media (prefers-reduced-motion: reduce) {
-  #lightbox .stage.blink canvas + canvas { animation: none !important; opacity: 0.5 !important; }
+  #lightbox .stage.blink .pane + .pane canvas { animation: none !important; opacity: 0.5 !important; }
 }
+/* Which pane is which. Side by side, the two frames differ by a sub-percent warp
+   shift and the only thing distinguishing them was one grey sentence under both.
+   Coloured to match the seam diagrams: red is the state that was wrong. */
 #lightbox .lbl { position: absolute; top: -18px; left: 0; right: 0; text-align: center;
   font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+#lightbox .lbl:empty { display: none; }
+#lightbox .lbl.was { color: var(--bad); }
+#lightbox .lbl.now { color: var(--good); }
 #lightbox .pane { position: relative; display: flex; min-width: 0; flex: 0 1 auto; }
+#lightbox .pane.hidden { display: none; }
+/* Room for the labels above the frames, which sit outside the pane box. */
+#lightbox .stage { margin-top: 18px; }
 #lightbox .cap { flex: 0 0 auto; text-align: center; max-width: 74ch;
   font-size: 12px; line-height: 1.5; color: var(--muted); }
 
@@ -437,7 +447,10 @@ body.dropping #dropzone { display: flex; }
 
 <div id="lightbox">
   <div class="modes"></div>
-  <div class="stage"><canvas id="lightbox-canvas"></canvas><canvas id="lightbox-canvas-b"></canvas></div>
+  <div class="stage">
+    <div class="pane"><span class="lbl"></span><canvas id="lightbox-canvas"></canvas></div>
+    <div class="pane"><span class="lbl"></span><canvas id="lightbox-canvas-b"></canvas></div>
+  </div>
   <div class="cap"></div>
 </div>
 <div id="fatal"></div>

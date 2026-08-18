@@ -459,11 +459,29 @@ function renderLightbox(): void {
   modes.replaceChildren();
   stage.classList.toggle('blink', before !== null && mode === 'blink');
   const second = document.getElementById('lightbox-canvas-b') as HTMLCanvasElement;
+  const panes = Array.from(stage.querySelectorAll('.pane')) as HTMLElement[];
+  const labels = panes.map((p) => p.querySelector('.lbl') as HTMLElement);
+  /**
+   * Name the panes.
+   *
+   * Side by side, the two frames differ by a sub-percent warp shift, and which
+   * one was which was asserted once in 12px grey under both of them — the first
+   * thing to go when the window is short enough to clip the caption.
+   */
+  const label = (i: number, text: string, kind: '' | 'was' | 'now'): void => {
+    const l = labels[i];
+    if (!l) return;
+    l.textContent = text;
+    l.className = `lbl${kind ? ` ${kind}` : ''}`;
+  };
 
   if (!before) {
     paintFrame(lightboxCanvas, after);
     second.classList.add('hidden');
+    panes[1]?.classList.add('hidden');
     lightboxCanvas.classList.remove('hidden');
+    panes[0]?.classList.remove('hidden');
+    label(0, '', '');
     cap.textContent = `${lightbox.caption} · click anywhere to close`;
     return;
   }
@@ -483,21 +501,30 @@ function renderLightbox(): void {
   }
 
   lightboxCanvas.classList.remove('hidden');
+  panes[0]?.classList.remove('hidden');
   second.classList.toggle('hidden', mode === 'overlay');
+  panes[1]?.classList.toggle('hidden', mode === 'overlay');
   if (mode === 'overlay') {
     paintFramePair(lightboxCanvas, before, after);
+    label(0, 'before + after', '');
     cap.textContent =
       'Red is where the old warp drew the grid, cyan where it draws it now; grey is where the ' +
       'two agree. The projector has not moved between them — the recalibration rewrote the frame.';
   } else if (mode === 'blink') {
     paintFrame(lightboxCanvas, after);
     paintFrame(second, before);
+    // One label, because the two are stacked and only one of them is showing at
+    // any instant. Naming either would be wrong half the time.
+    label(0, 'alternating', '');
+    label(1, '', '');
     cap.textContent =
       'The same frame before and after, alternating. A shift of a few per cent on a repeating ' +
       'grid is invisible side by side and obvious when it blinks.';
   } else {
     paintFrame(lightboxCanvas, before);
     paintFrame(second, after);
+    label(0, 'before', 'was');
+    label(1, 'after', 'now');
     cap.textContent = 'Left: what it was sending. Right: what it sends now. Click anywhere to close.';
   }
 }
@@ -2719,21 +2746,25 @@ function renderInspect(): void {
     const worst = Math.max(mesh.worstPx, was?.worstPx ?? 0);
     const gain = worst > 1e-9 ? Math.min(400, Math.max(1, (0.07 * mesh.resX) / worst)) : 1;
     if (was) {
-      inspectEl.append(
-        el('p', {
-          className: 'note tiny',
-          textContent: `Before — the bend the compositor was applying, ${was.worstPx.toFixed(1)} px at worst`,
-        }),
-      );
-      inspectEl.append(meshDiagram(was, 'rgba(255,107,107,0.85)', gain));
-      inspectEl.append(
-        el('p', {
-          className: 'note tiny',
-          textContent: `After — ${mesh.worstPx.toFixed(2)} px, at the same magnification`,
-        }),
-      );
+      const wasCap = el('p', {
+        className: 'note tiny',
+        textContent: `Before — the bend the compositor was applying, ${was.worstPx.toFixed(1)} px at worst`,
+      });
+      wasCap.style.color = 'var(--bad)';
+      inspectEl.append(wasCap);
+      inspectEl.append(meshDiagram(was, MESH_BEFORE_COLOR, gain));
+      const nowCap = el('p', {
+        className: 'note tiny',
+        textContent: `After — ${mesh.worstPx.toFixed(2)} px, at the same magnification`,
+      });
+      nowCap.style.color = 'var(--good)';
+      inspectEl.append(nowCap);
     }
     inspectEl.append(meshDiagram(mesh, tint, gain));
+    // The mesh drawings are two overlapping grids in colours explained three
+    // lines further down, in a paragraph that also covers the magnification and
+    // the vertex count. The seam diagram beneath has a legend; this did not.
+    inspectEl.append(meshLegend(tint, was !== null));
     inspectEl.append(
       el('p', {
         className: 'note tiny num',
@@ -2863,7 +2894,7 @@ function meshDiagram(mesh: WarpMesh, tint: string, gain: number): HTMLElement {
   for (const warped of [false, true]) {
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('fill', 'none');
-    g.setAttribute('stroke', warped ? tint : 'rgba(255,255,255,0.16)');
+    g.setAttribute('stroke', warped ? tint : MESH_RASTER_COLOR);
     g.setAttribute('stroke-width', warped ? '1.3' : '1');
     // Rows then columns, each broken wherever a vertex missed the sphere: a
     // segment drawn straight through a gap would assert a correction nobody
@@ -2983,6 +3014,33 @@ function seamDiagram(patch: SeamPatch, gain: number): HTMLElement {
 }
 
 /** Which colour is which projector, said once under the picture. */
+/** The red the "before" mesh is drawn in. Named so the legend cannot drift. */
+const MESH_BEFORE_COLOR = 'rgba(255,107,107,0.85)';
+/** The unbent raster, ditto. `meshDiagram` draws it and `meshLegend` names it. */
+const MESH_RASTER_COLOR = 'rgba(255,255,255,0.16)';
+
+/**
+ * What the two grids in a warp-mesh drawing are.
+ *
+ * The faint one is the projector's own raster, undistorted; the tinted one is
+ * where the correction sends each vertex. After a solve there is a third, in the
+ * same red the seam diagrams use for the state that was wrong.
+ */
+function meshLegend(tint: string, hasBefore: boolean): HTMLElement {
+  const row = el('div', { className: 'legend' });
+  const item = (color: string, text: string): void => {
+    const span = el('span');
+    const swatch = el('i');
+    swatch.style.background = color;
+    span.append(swatch, text);
+    row.append(span);
+  };
+  item(MESH_RASTER_COLOR, 'the raster, unbent');
+  if (hasBefore) item(MESH_BEFORE_COLOR, 'the old correction');
+  item(tint, hasBefore ? 'the new one' : 'the correction');
+  return row;
+}
+
 function seamLegend(patch: SeamPatch): HTMLElement {
   const row = el('div', { className: 'legend' });
   for (const slot of [patch.a, patch.b]) {
@@ -3019,6 +3077,9 @@ function flushRun(g: SVGElement, run: string[]): string[] {
   return [];
 }
 
+/** How many rows of the recovery table are printed. See `recoveryRestEl`. */
+const RECOVERY_ROWS = 6;
+
 function recoveryTableEl(rows: readonly RecoveredAxis[]): HTMLElement {
   const table = el('table', { className: 'rec' });
   const head = el('tr');
@@ -3026,7 +3087,7 @@ function recoveryTableEl(rows: readonly RecoveredAxis[]): HTMLElement {
     head.append(el('th', { textContent: h }));
   }
   table.append(head);
-  for (const r of rows.slice(0, 6)) {
+  for (const r of rows.slice(0, RECOVERY_ROWS)) {
     const tr = el('tr');
     const idx = Number(r.projectorId.replace(/\D/g, '')) - 1;
     const id = el('td', { textContent: r.projectorId });
@@ -3051,6 +3112,24 @@ function recoveryTableEl(rows: readonly RecoveredAxis[]): HTMLElement {
     table.append(tr);
   }
   return table;
+}
+
+/**
+ * What the table did not show.
+ *
+ * Seven axes on four projectors is twenty-eight rows and the table prints six,
+ * which is the right call — but it printed them under "Largest movements first"
+ * with nothing saying there was a rest, so a reader concluded the solve had
+ * touched six things. Naming the number is the difference between a summary and
+ * a claim.
+ */
+function recoveryRestEl(rows: readonly RecoveredAxis[], shown: number): HTMLElement | null {
+  const rest = rows.length - shown;
+  if (rest <= 0) return null;
+  return el('p', {
+    className: 'note tiny',
+    textContent: `${rest} more axes moved less, across every projector — the solver frees all of them at once.`,
+  });
 }
 
 /**
@@ -3148,22 +3227,26 @@ function seamSection(): HTMLElement | null {
     // The caption follows the numbers. "They draw the same lines in different
     // places" is the usual case and is false for a seam that was already clean —
     // which happens whenever the bump was on the other side of the ring.
-    box.append(
-      el('p', {
-        className: 'note tiny',
-        textContent:
-          before.worstMm >= 0.5
-            ? `Before — P${before.a + 1} and P${before.b + 1} draw the same lines in different places`
-            : `Before — P${before.a + 1} and P${before.b + 1} already agreed here`,
-      }),
-    );
+    // Coloured, because the two drawings are the same size and the same palette
+    // and the readout scrolls: a diagram can appear without its heading, and
+    // then which one is the problem and which the fix is unknowable. Red and
+    // green are already the page's words for those two things.
+    const was = el('p', {
+      className: 'note tiny',
+      textContent:
+        before.worstMm >= 0.5
+          ? `Before — P${before.a + 1} and P${before.b + 1} draw the same lines in different places`
+          : `Before — P${before.a + 1} and P${before.b + 1} already agreed here`,
+    });
+    was.style.color = 'var(--bad)';
+    box.append(was);
     box.append(seamDiagram(before, gain));
-    box.append(
-      el('p', {
-        className: 'note tiny',
-        textContent: `After — ${fmtMm(before.worstMm)} mm apart became ${fmtMm(patch.worstMm)} mm`,
-      }),
-    );
+    const now = el('p', {
+      className: 'note tiny',
+      textContent: `After — ${fmtMm(before.worstMm)} mm apart became ${fmtMm(patch.worstMm)} mm`,
+    });
+    now.style.color = 'var(--good)';
+    box.append(now);
   }
   box.append(seamDiagram(patch, gain));
   box.append(seamLegend(patch));
@@ -3318,11 +3401,15 @@ function solveSection(): HTMLElement | null {
 
     if (resultView === 'axes') {
       box.append(recoveryTableEl(r.recovery));
+      const rest = recoveryRestEl(r.recovery, RECOVERY_ROWS);
+      if (rest) box.append(rest);
       box.append(
         el('p', {
           className: 'note',
           textContent:
-            'Largest movements first. The last column is against ground truth the solver never ' +
+            'Largest movements first, ranked by how far each one carries the picture across the ' +
+            'sphere — a degree of aim moves it about as far as 90 mm of throw, so the two units ' +
+            'can be compared. The last column is against ground truth the solver never ' +
             'saw — small there with a large movement is a good result, because it means the ' +
             'calibration moved a long way and landed in the right place.',
         }),

@@ -655,6 +655,46 @@ async function main(): Promise<void> {
       } else {
         process.stdout.write(`  enlarged frame: ${lb.w} px · ${lb.modes.join(' / ')}\n`);
       }
+
+      // Side by side, the two frames differ by a sub-percent warp shift, so
+      // which is which has to be written on them. Blink stacks the same two
+      // panes exactly, and that congruence is the mode: a few pixels of offset
+      // between them would read as the difference it exists to show.
+      const pair = await cdp.evaluate<{
+        labels: string[];
+        pair: number[][];
+        blink: number[][];
+      } | null>(`(() => {
+        const box = document.getElementById('lightbox');
+        if (!box || !box.classList.contains('on')) return null;
+        const chip = (t) => [...box.querySelectorAll('.modes .chip')]
+          .find((c) => (c.textContent ?? '').trim() === t);
+        const rects = () => [...box.querySelectorAll('.pane')].map((p) => {
+          const r = p.getBoundingClientRect();
+          return [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)];
+        });
+        chip('Side by side')?.click();
+        const labels = [...box.querySelectorAll('.lbl')].map((l) => (l.textContent ?? '').trim());
+        const pair = rects();
+        chip('Blink')?.click();
+        const blink = rects();
+        return { labels, pair, blink };
+      })()`);
+      if (!pair) {
+        failures.push('the enlarged comparison closed before its modes could be read');
+      } else if (pair.labels[0] !== 'before' || pair.labels[1] !== 'after') {
+        failures.push(
+          `side by side labels its panes ${JSON.stringify(pair.labels)} — a reader cannot tell ` +
+            'the recalibrated frame from the one it replaced',
+        );
+      } else if (JSON.stringify(pair.blink[0]) !== JSON.stringify(pair.blink[1])) {
+        failures.push(
+          `blink draws its two frames at ${JSON.stringify(pair.blink)} — they must be congruent, ` +
+            'or the offset between them reads as the difference',
+        );
+      } else {
+        process.stdout.write('  comparison: panes labelled before/after, blink congruent\n');
+      }
       await cdp.evaluate("document.getElementById('lightbox')?.click()");
       await sleep(300);
     }
