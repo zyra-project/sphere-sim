@@ -48,7 +48,6 @@
 import type { RigCalibration } from '../../calibration/src/index.ts';
 import { PARAMETER_TABLE } from '../../calibration/src/parameters.ts';
 import { placeCameras } from '../../bench/src/camera.ts';
-import type { SimulatedCamera } from '../../bench/src/camera.ts';
 import { DEFAULT_CLOCK, DEFAULT_HANDHELD } from '../../bench/src/camera.ts';
 import { captureAndDecode, DEFAULT_SENSOR } from '../../bench/src/capture.ts';
 import {
@@ -57,8 +56,6 @@ import {
   planFrames,
 } from '../../bench/src/patterns.ts';
 import { makeBenchRng } from '../../bench/src/random.ts';
-import { prepareRig } from '../../sim/src/optics.ts';
-import { renderTwoRigRoomView } from '../../sim/src/misregistration.ts';
 import { scoreRecovery } from '../../bench/src/score.ts';
 import { nominalRig as solverNominalRig, solve } from '../../solver/src/index.ts';
 // Reached past the barrel deliberately: `DEFAULT_FREE_FLAGS` is the solver's own
@@ -69,7 +66,6 @@ import { buildWorld } from './rigs.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
 import { RESOLUTIONS } from './settings.ts';
 import type {
-  FrameImage,
   RecoveredAxis,
   SolveProgress,
   SolveRequest,
@@ -90,58 +86,6 @@ export type ProgressSink = (progress: SolveProgress) => void;
  * way, and the two must agree or the page would be photographing a different
  * pattern from the bench at the same settings.
  */
-/**
- * What each camera position sees of the sphere, with every projector running.
- *
- * NOT a frame from the capture, and the caption says so. The capture patterns one
- * projector at a time — `packages/bench/src/capture.ts` is explicit about why, and
- * it is the right thing for a decoder — but a single projector's frame is a
- * crescent of light on one side of the ball. Three of those read as two crescents
- * and a grey disc, which is a picture of nothing and tells a reader nothing about
- * where the operator stood.
- *
- * So this renders the room from each camera's own pose, through the two-rig
- * renderer, at the field of view the camera actually has. Same rig, same
- * misregistration, same content — what somebody standing there would see before
- * they started photographing patterns.
- */
-function cameraViews(
-  world: ReturnType<typeof buildWorld>,
-  cameras: readonly SimulatedCamera[],
-  frameCount: number,
-): FrameImage[] {
-  const truth = prepareRig(world.truthRig);
-  const compositor = prepareRig(world.compositorRig);
-  const width = 200;
-  const height = Math.max(1, Math.round((width * 3) / 4));
-  return cameras.map((cam, i) => {
-    const image = renderTwoRigRoomView(
-      truth,
-      compositor,
-      world.scene,
-      {
-        position: cam.pose.position,
-        // Every camera is aimed at the sphere centre, which is the world origin.
-        target: { x: 0, y: 0, z: 0 },
-        upHint: { x: 0, y: 0, z: 1 },
-        // The camera carries fx, not a field of view. Deriving it here rather
-        // than restating 62°: a camera whose focal length changed and whose
-        // preview did not would be a picture of a different lens.
-        fovHDeg: 2 * Math.atan(cam.intrinsics.resX / 2 / cam.intrinsics.fx) * (180 / Math.PI),
-        width,
-        height,
-      },
-      { samplesPerPixel: 1 },
-    );
-    return {
-      width: image.width,
-      height: image.height,
-      data: image.data,
-      caption: `${cam.id || `C${i + 1}`} — ${frameCount} frames from here`,
-      space: 'linear' as const,
-    };
-  });
-}
 
 /**
  * How far back an operator stands, for a sphere of this radius.
@@ -350,15 +294,24 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     },
     seed: req.seed,
     decode: { pixelStride: 1, maxCorrespondences: 4000 },
-    // No frames kept from the capture itself. See `cameraViews` below.
+    // No frames kept from the capture itself: a single structured-light frame is
+    // a crescent of one projector's light on one side of the ball and tells a
+    // reader nothing about where anybody stood. The page draws the CAMERAS
+    // instead, from the poses reported below.
     previewPairs: [],
     previewFrame: 0,
   });
   const captureMs = performance.now() - t0;
 
-  const shots = cameraViews(world, cameras, planFrames(plan).length);
-  // The poses beside the pictures, so enlarging one is a re-render rather than a
-  // blow-up of a 200-pixel thumbnail.
+  // Poses, not pictures. The page renders these itself through the display
+  // shader, which is the renderer that knows the room has projectors and a
+  // handrail standing in it — `renderTwoRigRoomView` draws neither, deliberately,
+  // because neither is in the model. That also takes three CPU room traces out
+  // of every solve.
+  //
+  // The field of view is derived from the camera rather than restated: a camera
+  // whose focal length changed and whose preview did not would be a picture of a
+  // different lens.
   const shotCameras = cameras.map((cam, i) => ({
     id: cam.id || `C${i + 1}`,
     position: cam.pose.position,
@@ -372,7 +325,7 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
       `${capture.stats.considered.toLocaleString()} candidates. ` +
       `${(capture.stats.considered - capture.stats.accepted).toLocaleString()} rejected — ` +
       `too dim, ambiguous, or the two axes disagreed.`,
-    { shots, shotCameras },
+    { shotCameras },
   );
 
   // The nominal the operator hands the solver: built by the SOLVER's own

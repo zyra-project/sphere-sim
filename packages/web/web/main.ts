@@ -411,7 +411,6 @@ function askFrames(
   compositorRig: RigCalibration | null,
   width: number,
   tag: string,
-  camera?: { position: { x: number; y: number; z: number }; fovHDeg: number },
 ): void {
   const req: FramesRequest = {
     kind: 'frames',
@@ -421,7 +420,6 @@ function askFrames(
     slot,
     width,
     tag,
-    camera: camera ?? null,
     customImageId: suppliedName(),
   };
   modelWorker.postMessage(req);
@@ -512,15 +510,17 @@ function renderLightbox(): void {
 function thumb(
   frame: FrameImage,
   caption: string,
-  camera?: { position: { x: number; y: number; z: number }; fovHDeg: number },
+  camera?: { id: string; position: { x: number; y: number; z: number }; fovHDeg: number },
 ): HTMLElement {
   const fig = el('figure');
   const c = el('canvas');
   paintFrame(c, frame);
   fig.append(c, el('figcaption', { textContent: caption }));
   fig.addEventListener('click', () => {
-    openLightbox(frame, caption, -1, caption);
-    if (camera) askFrames(-1, state.compositorRig, zoomWidth(), caption, camera);
+    // Re-rendered rather than blown up, and on the GPU, so it is instant and
+    // carries the same room the thumbnail does.
+    const bigger = camera ? renderCameraShot(camera, zoomWidth()) : null;
+    openLightbox(bigger ?? frame, caption, -1, caption);
   });
   return fig;
 }
@@ -901,8 +901,16 @@ solveWorker.onmessage = (event: MessageEvent<SolveMessage>): void => {
   const msg = event.data;
   if (msg.kind === 'solve-progress') {
     solveStage = msg.message;
-    if (msg.shots) solveShots = msg.shots;
-    if (msg.shotCameras) solveCameras = msg.shotCameras;
+    if (msg.shotCameras) {
+      solveCameras = msg.shotCameras;
+      // Rendered on the page, by the shader that knows about the room. The
+      // worker used to send pictures; it now sends the poses, which is both
+      // three CPU room traces cheaper per solve and the only way the projectors
+      // and the rail can be in them.
+      solveShots = msg.shotCameras
+        .map((c) => renderCameraShot(c, SHOT_THUMB_PX))
+        .filter((f): f is FrameImage => f !== null);
+    }
     if (msg.step) {
       solveTrace.push({ pass: msg.step.pass, cost: msg.step.cost });
       solveStep = { step: msg.step.step, rmsPx: msg.step.rmsPx };
@@ -966,6 +974,15 @@ let beforeMeshes: (WarpMesh | null)[] = [];
 let beforeRig: RigCalibration | null | undefined;
 let seamPick = 0;
 
+/**
+ * The world the running solve is photographing, snapshotted when it starts.
+ *
+ * The capture previews are rendered from this rather than from live settings, so
+ * a slider moved while the capture runs cannot redraw the photographs as a rig
+ * the camera never saw.
+ */
+let solveWorld: { world: ReturnType<typeof buildWorld>; ceilingM: number } | null = null;
+
 function startSolve(): void {
   if (solveRunning) return;
   solveRunning = true;
@@ -979,6 +996,10 @@ function startSolve(): void {
   beforeSeams = (model?.seams ?? []).slice();
   beforeMeshes = (model?.meshes ?? []).slice();
   beforeRig = state.compositorRig;
+  solveWorld = {
+    world: buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage()),
+    ceilingM: state.settings.ceilingM,
+  };
   solveStartedAt = performance.now();
   solveStage = 'Placing the cameras…';
   const req: SolveRequest = {
@@ -1133,6 +1154,74 @@ function draw(): void {
   canvas.dataset.az = state.settings.viewAzDeg.toFixed(2);
   drawToCanvas(gl, uniforms, w, h);
 }
+
+/**
+ * One capture camera's view of the room, as a picture.
+ *
+ * This is what an operator's photograph would actually contain: the sphere, the
+ * projectors on their hangers, the guard rail they are standing behind, the
+ * floor. The CPU renderer in `packages/sim` draws none of that — deliberately,
+ * because none of it is in the model — so these are rendered by the DISPLAY
+ * shader instead, which is the one that knows about furniture.
+ *
+ * Which makes the caption under them load-bearing, and it says so: the room is
+ * in the picture and is NOT in the capture. The solver's input is structured
+ * light on a sphere, from a forward model where nothing occludes a beam, emits
+ * light or casts a shadow. A visitor who thinks the rail is being photographed
+ * would draw the wrong conclusion about what the solve had to work with.
+ *
+ * Rendered from the rig the solve is PHOTOGRAPHING rather than from live
+ * settings: a slider moved while the capture runs would otherwise redraw the
+ * photographs as a rig the camera never saw.
+ */
+function renderCameraShot(
+  camera: { id: string; position: { x: number; y: number; z: number }; fovHDeg: number },
+  width: number,
+): FrameImage | null {
+  if (!gl || !solveWorld) return null;
+  const w = Math.max(16, Math.round(width));
+  const h = Math.max(1, Math.round((w * 3) / 4));
+  const { world, ceilingM } = solveWorld;
+  const uniforms = buildDisplayUniforms(
+    prepareRig(world.truthRig),
+    prepareRig(world.compositorRig),
+    world.scene,
+    {
+      position: camera.position,
+      target: { x: 0, y: 0, z: 0 },
+      upHint: { x: 0, y: 0, z: 1 },
+      fovHDeg: camera.fovHDeg,
+      width: w,
+      height: h,
+    },
+    {
+      slots: world.slots,
+      drawFloor: true,
+      floorRadiusM: 13,
+      displayGamma: 2.2,
+      exposure: state.settings.viewExposure,
+      // The room, as photographed. No selection ring and no aim guides: those
+      // are the page talking to you, not things in front of a lens.
+      markerRadiusM: MARKER_RADIUS_M,
+      markerSelected: -1,
+      ceilingM,
+      rail: true,
+      aimGuides: false,
+    },
+  );
+  const image = renderAndRead(gl, uniforms, w, h);
+  return {
+    width: image.width,
+    height: image.height,
+    data: image.data,
+    caption: `${camera.id} — where the camera stood`,
+    // `displayGamma: 2.2` above means the read-back is already encoded.
+    space: 'display',
+  };
+}
+
+/** How wide the capture thumbnails are rendered. They display at about 120. */
+const SHOT_THUMB_PX = 480;
 
 function checkParity(
   cpu: { width: number; height: number; data: Float32Array },
@@ -2916,13 +3005,16 @@ function solveSection(): HTMLElement | null {
       el('p', {
         className: 'note',
         textContent:
-          'The sphere from each spot the camera was moved to. These are renders of the same rig, ' +
-          'not frames from the capture: the capture patterns one projector at a time, so a single ' +
-          'frame is a crescent of light on one side of the ball and tells you nothing about where ' +
-          'anybody stood. The frames themselves go through a sensor with read noise and ' +
-          'quantization, and those pixels are the solver’s entire input — it has never seen where ' +
-          'the projectors are. Spread matters more than exact position: from one spot alone, a ' +
-          'near projector zoomed in looks identical to a far one zoomed out.',
+          'The room from each spot the camera was moved to — the sphere, the projectors on their ' +
+          'hangers, the rail a visitor stands behind. That furniture is in the PICTURE and not in ' +
+          'the capture: nothing in the model emits light, occludes a beam or casts a shadow, so ' +
+          'what the solver actually received was structured light on a sphere and nothing else. ' +
+          'These are renders of the same rig for the same reason: the capture patterns one ' +
+          'projector at a time, so a single frame of it is a crescent of light on one side of the ' +
+          'ball and tells you nothing about where anybody stood. Those frames go through a sensor ' +
+          'with read noise and quantization, and those pixels are the solver’s entire input — it ' +
+          'has never seen where the projectors are. Spread matters more than exact position: from ' +
+          'one spot alone, a near projector zoomed in looks identical to a far one zoomed out.',
       }),
     );
   }

@@ -236,16 +236,8 @@ export interface FramesRequest {
   settings: Settings;
   /** The compositor calibration to render FROM. `null` is the config as written. */
   compositorRig: RigCalibration | null;
-  /** Panel slot for a projector's frame. `-1` when {@link FramesRequest.camera} is set. */
+  /** Panel slot for a projector's frame. */
   slot: number;
-  /**
-   * Render the ROOM from this camera instead of one projector's frame.
-   *
-   * Same renderer the solve's own preview uses — two rigs, so a misregistration
-   * shows — which is what makes this a bigger version of the picture rather than
-   * a different picture that happens to be sharper.
-   */
-  camera?: { position: { x: number; y: number; z: number }; fovHDeg: number } | null;
   /** Target width in pixels. */
   width: number;
   /** Identifies the supplied image the worker already holds. `''` when there is none. */
@@ -357,15 +349,16 @@ export interface SolveProgress {
    * result. A person watching a five-second solve should see what it is working
    * from while it works, not afterwards.
    */
-  shots?: FrameImage[];
   /**
-   * Where each of those photographs was taken from, so the page can render the
-   * same view again at the size of a screen.
+   * Where the capture cameras stood, sent as soon as the capture finishes rather
+   * than with the result: a person watching a five-second solve should see what
+   * it is working from while it works.
    *
-   * The thumbnails are 200 px wide because three CPU room traces are not free
-   * and most solves are watched rather than inspected. Sending the POSE as well
-   * costs nothing and means enlarging one is a re-render rather than a blow-up
-   * of a thumbnail — the same trade the projector frames make.
+   * Poses rather than pictures. The page renders them itself, through the
+   * display shader, because that is the renderer that knows the room has
+   * projectors and a handrail in it — `packages/sim` draws neither, deliberately,
+   * since neither is in the model. Sending poses is also three CPU room traces
+   * cheaper per solve, and lets the page re-render one at any size.
    */
   shotCameras?: { id: string; position: { x: number; y: number; z: number }; fovHDeg: number }[];
   /**

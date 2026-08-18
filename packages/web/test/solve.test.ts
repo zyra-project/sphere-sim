@@ -45,7 +45,7 @@ test('a solve recovers the rig from photographs and improves the alignment', { t
   // one already carries.
   const result = runSolve(req, (p) => {
     phases.push(p.phase);
-    if (p.shots) shots = p.shots.length;
+    if (p.shotCameras) shots = p.shotCameras.length;
   });
 
   // It really did photograph something.
@@ -58,7 +58,7 @@ test('a solve recovers the rig from photographs and improves the alignment', { t
 
   // The page shows one photograph per camera position. Zero of them would leave
   // "what it worked from" empty with no indication that anything was wrong.
-  assert.equal(shots, req.cameraCount, `expected one preview per camera, got ${shots}`);
+  assert.equal(shots, req.cameraCount, `expected one camera pose per camera, got ${shots}`);
 
   // And it can say what it moved and whether it moved to the right place.
   assert.ok(result.recovery.length > 0, 'the recovery table is empty');
