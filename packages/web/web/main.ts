@@ -120,10 +120,14 @@ interface PageState {
   explain: boolean;
   panelOpen: boolean;
   readoutOpen: boolean;
-  /** Solve inputs. Deliberately few — see `protocol.ts` on why there is no noise slider. */
+  /**
+   * Solve inputs. Deliberately few, and deliberately not a noise magnitude —
+   * see `protocol.ts` and `captureControls` on why the millimetres are an
+   * output. Room light is NOT here: there is one of those, and it is the slider
+   * in `Settings`.
+   */
   cameraCount: number;
   handheld: boolean;
-  ambient: number;
 }
 
 const state: PageState = {
@@ -152,7 +156,6 @@ const state: PageState = {
   readoutOpen: true,
   cameraCount: 3,
   handheld: false,
-  ambient: 0.04,
 };
 
 let model: ModelResponse | null = null;
@@ -744,6 +747,9 @@ async function loadCustomImage(file: File): Promise<void> {
   solveSentImageId = '';
     state.settings = withSetting(state.settings, 'content', CONTENT_CUSTOM);
     contentKey = '';
+    // A different picture on the sphere, so the snapshotted frames are of a
+    // different picture. Same reason as the content chips in `setSetting`.
+    staleFrames();
     touched(false);
     requestModel(true);
   } catch (err) {
@@ -1014,7 +1020,11 @@ function startSolve(): void {
     cameraResY: 240,
     handheld: state.handheld,
     sensorNoise: true,
-    ambient: state.ambient,
+    // The Room light slider, not a second constant beside it. `state.ambient`
+    // was a private 0.04 that nothing could reach, so the slider washed the
+    // sphere out on screen and the capture went on photographing a darker room
+    // than the one being drawn — §5 `E_amb` having two values at once.
+    ambient: state.settings.ambient,
     seed: (state.settings.errorSeed * 2654435761) % 2147483647,
     // The two workers hold their own caches, so this has its own "have you seen
     // it" flag. The solve does not read the image — a capture photographs Gray
@@ -1085,11 +1095,43 @@ function forgetCalibration(): void {
  * under a caption that blames the recalibration for a movement the operator
  * just made by hand.
  */
-function staleComparison(): void {
+/**
+ * Throw away the before/after FRAMES.
+ *
+ * They are pixels, rendered from whatever was playing at the start of the last
+ * solve, so changing what is playing makes them a picture of something else.
+ * Change the base field after a solve and the card composited an old-content
+ * "before" against a new-content "after": every graticule line saturated red
+ * against a blue marble, under a caption blaming the recalibration for it.
+ *
+ * Only the frames. A seam diagram is grid lines projected through two rigs and
+ * does not care what is playing behind them, and that comparison is the clearest
+ * thing the page draws — dropping it because somebody switched the sphere to
+ * grey would be throwing away the demonstration to fix the picture beside it.
+ */
+function staleFrames(): void {
   beforeFrames = [];
+  beforeRig = undefined;
+}
+
+/**
+ * Throw away every before/after snapshot, frames and geometry alike.
+ *
+ * For changes that move the lines themselves: the graticule's spacing, or
+ * turning it off. The seam diagram IS those lines.
+ */
+function staleSnapshots(): void {
+  staleFrames();
   beforeSeams = [];
   beforeMeshes = [];
-  beforeRig = undefined;
+}
+
+/**
+ * The rig itself moved: every snapshot goes, and so does the claim that the
+ * solver's residual still describes the room. See `rigMovedSinceSolve`.
+ */
+function staleComparison(): void {
+  staleSnapshots();
   rigMovedSinceSolve = true;
 }
 
@@ -1367,6 +1409,13 @@ function setSetting(key: SettingKey, value: number): void {
   if (key === 'projectorCount') clearCalibration();
   state.settings = withSetting(state.settings, key, value);
   const spec = CONTROLS.find((c) => c.key === key);
+  // What is PLAYING moves no lens, so it must not touch the calibration or the
+  // solver's residual — but the before/after pictures were rendered from it, and
+  // comparing a graticule against a blue marble is a red smear with a caption
+  // blaming the solve for it. Moving the eye is exempt: the frames are the
+  // projector's output, not the view of it.
+  if (key === 'content') staleFrames();
+  else if (key === 'gridOn' || key === 'gridDeg') staleSnapshots();
   touched(spec ? spec.group !== 'view' : true);
 }
 
@@ -1698,6 +1747,81 @@ function installSection(): HTMLElement[] {
     ], helpFor('projectorCount')),
   );
   out.push(...controlsFor(['install', 'lens', 'error'], ['resolution', 'projectorCount']));
+  out.push(...captureControls());
+  return out;
+}
+
+/**
+ * How the operator photographs the room, which is the other half of what a
+ * recalibration costs.
+ *
+ * There is no noise slider here and there is not going to be one. The reference
+ * offers "Capture noise" in millimetres, and that number is the one thing on
+ * this page the simulator exists to PRODUCE: how precisely a calibration pins a
+ * point down is an output of the capture, not a dial. What goes in is the two
+ * facts an operator actually decides — whether the camera is on a tripod, and
+ * how many spots they walk it to. Experiment 1 says those two outweigh sensor
+ * noise, room light and camera resolution put together.
+ *
+ * Every solve used to run the same fixed best case: three tripod positions, and
+ * the fields were declared, initialised, sent, and never written to by anything.
+ */
+function captureControls(): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  out.push(el('span', { className: 'lab', textContent: 'How you photograph it' }));
+  out.push(
+    chipRow(
+      [
+        {
+          label: 'Tripod',
+          title: 'The camera does not move between the frames of one pattern sequence.',
+          on: !state.handheld,
+          onPick: () => {
+            if (!state.handheld) return;
+            state.handheld = false;
+            renderControls();
+          },
+        },
+        {
+          label: 'Handheld',
+          title: 'Held in the hands, with the drift and the tremor that implies.',
+          on: state.handheld,
+          onPick: () => {
+            if (state.handheld) return;
+            state.handheld = true;
+            renderControls();
+          },
+        },
+      ],
+      'The single most consequential thing about a calibration, and the cheapest to fix. This ' +
+        'switches on the bench’s own motion model rather than dialling in an error: how badly ' +
+        'the hands hurt it is measured, not chosen. Experiment 1 put tripod runs between 0.04 ' +
+        'and 0.73 mm and the same camera handheld near 9 mm — about 170× worse. Press ' +
+        'Recalibrate on each and read the residual.',
+    ),
+  );
+  out.push(el('span', { className: 'lab', textContent: 'Camera positions' }));
+  out.push(
+    chipRow(
+      [1, 2, 3, 4].map((n) => ({
+        label: String(n),
+        title:
+          n === 1
+            ? 'One spot. A near projector zoomed in looks exactly like a far one zoomed out.'
+            : `${n} spots, spread round the ring.`,
+        on: state.cameraCount === n,
+        onPick: () => {
+          if (state.cameraCount === n) return;
+          state.cameraCount = n;
+          renderControls();
+        },
+      })),
+      'How many places the operator carries the camera to. Spread is what breaks the near/far ' +
+        'ambiguity: from one spot a projector close in and zoomed tight is indistinguishable ' +
+        'from one far out and zoomed wide. Going from one position to two is worth about 418×; ' +
+        'two to three about another 1.7×.',
+    ),
+  );
   return out;
 }
 

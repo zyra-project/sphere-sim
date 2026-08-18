@@ -301,7 +301,14 @@ export interface SolveRequest {
   customImage: { width: number; height: number; data: Float32Array } | null;
   /** Identifies it. `''` when there is none. Cached in the worker by id. */
   customImageId: string;
-  /** Room light during the capture. §5 `E_amb`, nominal 0.04, range 0.01–0.15. */
+  /**
+   * Room light during the capture. §5 `E_amb`, nominal 0.04.
+   *
+   * The same quantity as the panel's "Room light" slider and taken from it. The
+   * page used to hold a second, private 0.04 and send that instead, so raising
+   * the slider washed the sphere out on screen while the capture went on
+   * photographing a darker room.
+   */
   ambient: number;
   /** Draw for the capture. Separate from the rig's own seed. */
   seed: number;

@@ -698,6 +698,36 @@ async function main(): Promise<void> {
       }
     }
 
+    // The two capture inputs. There is no noise slider on purpose — the
+    // millimetres are what the simulator produces — so these are what an
+    // operator actually decides, and every one of them was declared, sent and
+    // never written to by anything before.
+    const capture = await cdp.evaluate<{ chips: string[]; flipped: boolean } | null>(`(() => {
+      const tab = [...document.querySelectorAll('#controls button')]
+        .find((b) => (b.textContent ?? '').trim() === 'Install');
+      if (!tab) return null;
+      tab.click();
+      const named = (t) => [...document.querySelectorAll('#controls .chip')]
+        .find((c) => (c.textContent ?? '').trim() === t);
+      const hand = named('Handheld');
+      if (!hand) return null;
+      hand.click();
+      return {
+        chips: [...document.querySelectorAll('#controls .chip')]
+          .map((c) => (c.textContent ?? '').trim()),
+        flipped: (named('Handheld')?.className ?? '').includes('on'),
+      };
+    })()`);
+    if (!capture) {
+      failures.push('the panel offers no tripod-or-handheld choice for the capture');
+    } else if (!capture.flipped) {
+      failures.push('clicking "Handheld" did not select it — the capture control is not wired');
+    } else if (!['1', '2', '3', '4'].every((n) => capture.chips.includes(n))) {
+      failures.push('the panel offers no choice of how many camera positions to photograph from');
+    } else {
+      process.stdout.write('  capture: tripod / handheld and 1-4 camera positions, both live\n');
+    }
+
     // Last, because both of these move the rig or the eye, and every check above
     // reads the before-and-after snapshots that a movement is meant to void.
     //
