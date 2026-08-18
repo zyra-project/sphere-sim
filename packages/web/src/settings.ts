@@ -364,7 +364,7 @@ export const BOULDER_PRESET: Settings = {
   // look at beside a demo that draws the map as an emissive texture. This is the
   // only place the two are reconciled, and it is a display term.
   viewExposure: 1.8,
-  viewLift: 0.78,
+  viewLift: 0.5,
   gridDeg: 15,
   ambient: 0.04,
   content: CONTENT_MARBLE,

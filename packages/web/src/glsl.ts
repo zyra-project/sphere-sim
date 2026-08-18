@@ -462,6 +462,14 @@ vec3 shadeTwoRig(
       signal += w * blendedSignal(sampleEquirect(ll.x, wrapDeg180(ll.y - uCRotOffset)), weight);
     }
 
+    // A display tone curve on what the PROJECTOR is drawing, and nothing else.
+    // Applied to the finished frame instead, it lifted the floor and the guard
+    // rail out of the dark along with the map and the room came up grey — the
+    // sample app grades its map sample for exactly this reason and leaves its
+    // room alone. Held at 1.0 for the linear readback, so the parity check
+    // still compares the model's own radiance; glsl.test asserts it.
+    if (uLift != 1.0) signal = pow(max(signal, vec3(0.0)), vec3(uLift));
+
     vec3 toLensVec = uLens[i] - point;
     float distanceM = length(toLensVec);
     float nDotL = max(dot(normal, toLensVec) / distanceM, 0.0);
@@ -806,12 +814,6 @@ void main() {
   c += aimGuides(uCamPos, dir, sceneT);
 
   c *= uExposure;
-  // A display tone curve, and the LAST thing that happens. Everything above it
-  // is radiance the model computed and every metric reads; this is the knob
-  // between that and an eye. Below 1.0 it opens the shadows, which is the whole
-  // difference between this picture and a demo that draws the map as if it
-  // glowed. Held at 1.0 for the linear readback, and asserted so in glsl.test.
-  if (uLift != 1.0) c = pow(max(c, vec3(0.0)), vec3(uLift));
   if (uDisplayGamma > 0.0) c = pow(max(c, vec3(0.0)), vec3(1.0 / uDisplayGamma));
   fragColor = vec4(c, 1.0);
 }
