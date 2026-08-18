@@ -161,19 +161,45 @@ export function traceTwoRig(
     let signal: ChannelTriplet = BLACK;
     let weight = 0;
     if (cProj !== undefined) {
-      const back = raySphereIntersect(cProj.lens, pixelToRay(cProj, px.u, px.v), content.radiusM);
-      if (back !== null) {
+      // Reconstructed over the projector's PIXEL GRID, not resampled
+      // continuously. The compositor writes one value per pixel, at its centre,
+      // and a projector cannot draw anything finer; sampling the content at a
+      // continuous coordinate gave every projector infinite resolution, so a
+      // 1024x768 rig and a 4K one drew the same picture.
+      //
+      // Bilinear over the four surrounding centres — the same reconstruction
+      // `metrics/grid.ts` uses, and for the same stated reason: it is what a
+      // real projector does with its grid. The lens spot, which overlaps its
+      // neighbours and would soften this further, is still not modelled.
+      const fu = px.u - 0.5;
+      const fv = px.v - 0.5;
+      const i0 = Math.floor(fu);
+      const j0 = Math.floor(fv);
+      const tu = fu - i0;
+      const tv = fv - j0;
+      let acc: ChannelTriplet = BLACK;
+      for (let c = 0; c < 4; c++) {
+        const du = c === 1 || c === 3 ? 1 : 0;
+        const dv = c >= 2 ? 1 : 0;
+        const w = (du ? tu : 1 - tu) * (dv ? tv : 1 - tv);
+        if (w <= 0) continue;
+        const ray = pixelToRay(cProj, i0 + du + 0.5, j0 + dv + 0.5);
+        const back = raySphereIntersect(cProj.lens, ray, content.radiusM);
+        if (back === null) continue;
         const ll = worldToLatLon(back.point);
         const target = sampleEquirect(
           scene.image,
           ll.latDeg,
           worldLonToTextureLon(ll.lonDeg, content.rotationOffsetDeg),
         );
-        weight =
+        const wHere =
           coverageAndWeights(back.point, content).weights[i] *
           polarMask(ll.latDeg, content.blend, scene.maskInterpretation);
-        signal = blendedSignal(target, weight, scene.encodeGamma);
+        if (wHere > weight) weight = wHere;
+        const s = blendedSignal(target, wHere, scene.encodeGamma);
+        acc = { r: acc.r + w * s.r, g: acc.g + w * s.g, b: acc.b + w * s.b };
       }
+      signal = acc;
     }
 
     const toLensVec = sub(phys.lens, point);

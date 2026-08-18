@@ -791,7 +791,7 @@ async function main(): Promise<void> {
        * survived, which is a change of TENS of millimetres, so they wait for
        * quiet and then compare magnitudes rather than strings.
        */
-      const settled = async (): Promise<number> => {
+      const settled = async (from?: number): Promise<number> => {
         let last = '';
         let stable = 0;
         for (let i = 0; i < 60; i++) {
@@ -800,7 +800,11 @@ async function main(): Promise<void> {
           );
           stable = now === last ? stable + 1 : 0;
           last = now;
-          if (stable >= 5) break;
+          // `from` is the value this is expected to move AWAY from. Without it,
+          // a quiet second before the worker's answer arrives reads as settled,
+          // and the check reports the pre-change number as the outcome.
+          const moved = from === undefined || Number.parseFloat(now) !== from;
+          if (stable >= 5 && moved) break;
           await sleep(200);
         }
         return Number.parseFloat(last);
@@ -863,7 +867,21 @@ async function main(): Promise<void> {
         return 'ok';
       })()`);
       if (!bumped.startsWith('ok')) failures.push(bumped);
-      const nowMm = await settled();
+      // Poll for the OUTCOME, not for quiet. A quarter-degree knock is worth tens
+      // of millimetres; the difference between a coarse pass and a fine one is
+      // worth hundredths. Waiting for "it changed" cannot tell those apart and
+      // returned whichever landed first, so this waits for the number to clear
+      // the threshold the claim is actually about.
+      let nowMm = afterView;
+      for (let i = 0; i < 100; i++) {
+        nowMm = Number.parseFloat(
+          await cdp.evaluate<string>(
+            "document.querySelector('[data-smoke=\"grid-mm\"]')?.textContent?.trim() ?? ''",
+          ),
+        );
+        if (nowMm > afterView + 5) break;
+        await sleep(200);
+      }
       // Read something the WORKER computes, not a button. `gridBaselineMm` — and
       // so the improvement line built from it — exists only while the compositor
       // is a recovered rig rather than the config as written, so its presence is

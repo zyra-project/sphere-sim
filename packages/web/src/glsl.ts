@@ -423,10 +423,32 @@ vec3 shadeTwoRig(
 
     // Step 3: what the compositor wrote into that pixel, found by sending the
     // pixel back out through the calibration the compositor believed it had.
+    //
+    // Reconstructed over the projector's PIXEL GRID rather than resampled
+    // continuously. The compositor writes one value per pixel, at its centre,
+    // and a projector cannot draw anything finer than that; a continuous
+    // resample gave every projector infinite resolution, so the panel's
+    // Resolution control changed the readout — the grid metric has modelled the
+    // pixel grid all along — and left the sphere looking identical at 1024x768
+    // and at 4K.
+    //
+    // Bilinear over the four surrounding centres, which is the same
+    // reconstruction packages/sim/src/metrics/grid.ts uses and its reason is
+    // the same: it is what a real projector does with its grid. The softness
+    // that comes out at low resolution is the point. What is still NOT modelled
+    // is the lens spot, which overlaps its neighbours and would soften it
+    // further.
     vec3 signal = vec3(0.0);
-    vec3 dir = rayFrom(uCRot[i], uCIntr[i], uCRaster[i].zw, px.x, px.y);
-    float t = raySphereIntersect(uCLens[i], dir, uCRadius, 1e-9);
-    if (t > 0.0) {
+    vec2 f = px - 0.5;
+    vec2 i0 = floor(f);
+    vec2 tf = f - i0;
+    for (int c = 0; c < 4; c++) {
+      vec2 corner = i0 + vec2(float(c == 1 || c == 3), float(c >= 2)) + 0.5;
+      float w = (c == 1 || c == 3 ? tf.x : 1.0 - tf.x) * (c >= 2 ? tf.y : 1.0 - tf.y);
+      if (w <= 0.0) continue;
+      vec3 dir = rayFrom(uCRot[i], uCIntr[i], uCRaster[i].zw, corner.x, corner.y);
+      float t = raySphereIntersect(uCLens[i], dir, uCRadius, 1e-9);
+      if (t <= 0.0) continue;
       vec3 xp = uCLens[i] + dir * t;
       vec2 ll = worldToLatLon(xp);
       int count;
@@ -436,7 +458,7 @@ vec3 shadeTwoRig(
         strongestWeight = weight;
         strongest = i;
       }
-      signal = blendedSignal(sampleEquirect(ll.x, wrapDeg180(ll.y - uCRotOffset)), weight);
+      signal += w * blendedSignal(sampleEquirect(ll.x, wrapDeg180(ll.y - uCRotOffset)), weight);
     }
 
     vec3 toLensVec = uLens[i] - point;
