@@ -891,6 +891,71 @@ async function main(): Promise<void> {
       }
     }
 
+    // A slider has to survive being dragged. LAST, because it leaves the sphere
+    // at a different diameter and every check above reads a number that depends
+    // on it.
+    //
+    // Every value change rebuilds the control panel, which replaces the very
+    // element the pointer is on; a listener on a detached node never fires
+    // again, so the drag used to die after the first step while a click carried
+    // on working — the one gesture the page cannot function without, broken in
+    // the way least likely to be noticed by anything checking state rather than
+    // input. Real Input events, because pointer capture only behaves like the
+    // browser's when the browser is delivering them.
+    const dragged = await (async (): Promise<string[] | null> => {
+      const box = await cdp.evaluate<{ x: number; y: number; w: number } | null>(`(() => {
+        const tab = [...document.querySelectorAll('#controls button')]
+          .find((b) => (b.textContent ?? '').trim() === 'Install');
+        if (tab) tab.click();
+        const rail = document.querySelector('#controls .sl .rail');
+        if (!rail) return null;
+        const r = rail.getBoundingClientRect();
+        return { x: r.left, y: r.top + r.height / 2, w: r.width };
+      })()`);
+      if (!box) return null;
+      const read = (): Promise<string> =>
+        cdp.evaluate<string>(
+          "document.querySelector('#controls .sl .val')?.textContent?.trim() ?? ''",
+        );
+      const x0 = box.x + box.w * 0.15;
+      const x1 = box.x + box.w * 0.75;
+      await cdp.send('Input.dispatchMouseEvent', {
+        type: 'mousePressed', x: x0, y: box.y, button: 'left', buttons: 1, clickCount: 1,
+        pointerType: 'mouse',
+      });
+      const seen: string[] = [];
+      for (let i = 1; i <= 6; i++) {
+        await cdp.send('Input.dispatchMouseEvent', {
+          type: 'mouseMoved', x: x0 + ((x1 - x0) * i) / 6, y: box.y, button: 'left', buttons: 1,
+          pointerType: 'mouse',
+        });
+        await sleep(90);
+        seen.push(await read());
+      }
+      await cdp.send('Input.dispatchMouseEvent', {
+        type: 'mouseReleased', x: x1, y: box.y, button: 'left', buttons: 0, clickCount: 1,
+        pointerType: 'mouse',
+      });
+      await sleep(400);
+      seen.push(await read());
+      return seen;
+    })();
+    if (!dragged) {
+      failures.push('found no slider to drag on the Install tab');
+    } else {
+      const distinct = new Set(dragged).size;
+      if (distinct < 4) {
+        failures.push(
+          `dragging a slider produced ${distinct} distinct values across 6 steps ` +
+            `(${dragged.join(', ')}) — the drag stops tracking the pointer`,
+        );
+      } else {
+        process.stdout.write(
+          `  slider drag tracked ${distinct} values (${dragged[0]} → ${dragged[dragged.length - 1]})\n`,
+        );
+      }
+    }
+
     if (opts.screenshot) {
       const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
       fs.writeFileSync(opts.screenshot, Buffer.from(shot.data, 'base64'));

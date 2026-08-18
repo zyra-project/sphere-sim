@@ -579,8 +579,27 @@ interface SliderOptions {
   bipolar?: boolean;
   klass?: string;
   onInput: (v: number) => void;
+  /**
+   * What the setting reads AFTER `onInput`. Optional; without it the row paints
+   * what it asked for, which is right for anything `coerce` does not clamp.
+   */
+  readBack?: () => number;
   onSettle?: () => void;
 }
+
+/**
+ * Is a slider being dragged right now?
+ *
+ * `touched` rebuilds the whole control panel, and rebuilding it under a drag is
+ * how the drag died: the `track` the pointer was captured on gets detached, the
+ * browser drops the capture with it, and the `pointermove` listener that lived
+ * on that node never hears another event. Click-to-position kept working because
+ * it only needs the one `pointerdown`.
+ *
+ * So the panel holds still while a slider is held. The row paints itself in
+ * place — it is three DOM writes — and everything else catches up on release.
+ */
+let sliderDragging = false;
 
 /**
  * A pointer-drag slider.
@@ -643,24 +662,64 @@ function slider(o: SliderOptions): HTMLElement {
   wrap.append(track);
   wrap.append(el('p', { className: 'help', textContent: o.help }));
 
+  /** Move the thumb and the number without going through a panel rebuild. */
+  const paint = (v: number): void => {
+    value.textContent = formatSetting(
+      {
+        decimals: o.decimals,
+        unit: o.unit,
+        options: o.options,
+        signed: o.bipolar,
+        displayScale: o.displayScale,
+      },
+      v,
+    );
+    const at = ((v - o.min) / span) * 100;
+    if (o.bipolar) {
+      const zero = ((0 - o.min) / span) * 100;
+      fill.style.left = `${Math.min(zero, at)}%`;
+      fill.style.width = `${Math.abs(at - zero)}%`;
+    } else {
+      fill.style.width = `${at}%`;
+    }
+    knob.style.left = `${at}%`;
+  };
+
   const setFromClientX = (clientX: number): void => {
     const r = rail.getBoundingClientRect();
     const t = Math.min(1, Math.max(0, (clientX - r.left) / Math.max(1, r.width)));
     const raw = o.min + t * span;
     const stepped = o.step > 0 ? Math.round(raw / o.step) * o.step : raw;
-    o.onInput(Math.min(o.max, Math.max(o.min, stepped)));
+    const asked = Math.min(o.max, Math.max(o.min, stepped));
+    o.onInput(asked);
+    // What the settings ACTUALLY hold: `coerce` clamps some controls against
+    // others — the near zoom limit tracks the sphere radius — and a thumb that
+    // kept sliding past a value the model had refused would be lying.
+    paint(o.readBack ? o.readBack() : asked);
   };
+
   track.addEventListener('pointerdown', (e) => {
-    track.setPointerCapture(e.pointerId);
+    // On the window, not the track. The track is replaced the moment anything
+    // re-renders the panel, and a listener on a detached node never fires again;
+    // that is what made a drag stop dead after the first step while a click
+    // carried on working.
+    e.preventDefault();
+    sliderDragging = true;
     setFromClientX(e.clientX);
     const move = (ev: PointerEvent): void => setFromClientX(ev.clientX);
     const up = (): void => {
-      track.removeEventListener('pointermove', move);
-      track.removeEventListener('pointerup', up);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      sliderDragging = false;
+      // The panel held still for the whole drag, so this is where every other
+      // row that reads the value it changed gets to catch up.
+      renderControls();
       if (o.onSettle) o.onSettle();
     };
-    track.addEventListener('pointermove', move);
-    track.addEventListener('pointerup', up);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   });
   return wrap;
 }
@@ -1471,7 +1530,9 @@ function touched(invalidates: boolean): void {
   if (invalidates) staleComparison();
   clampSelection();
   markDirty();
-  renderControls();
+  // Not while a slider is held: see `sliderDragging`. The row paints itself and
+  // the rest of the panel catches up when the pointer comes up.
+  if (!sliderDragging) renderControls();
   // The bar reads the projector count for its "Bump all N" label and the
   // calibration for whether "Forget it" is there, and both of those move under
   // it. It is five buttons — cheaper than the thirty rows above it.
@@ -1663,6 +1724,7 @@ function projectorSection(): HTMLElement[] {
         tint,
         bipolar: !spec.provisional,
         onInput: (v) => setNudge(spec.key, v),
+        readBack: () => state.settings.nudge[state.selected]?.[spec.key] ?? 0,
         onSettle: () => requestModel(true),
       }),
     );
@@ -1735,6 +1797,7 @@ function controlsFor(groups: readonly string[], skip: readonly SettingKey[] = []
           klass: spec.klass,
           bipolar: spec.min < 0 && spec.max > 0,
           onInput: (v) => setSetting(spec.key, v),
+          readBack: () => state.settings[spec.key],
           onSettle: () => requestModel(true),
         }),
       );
