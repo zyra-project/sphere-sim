@@ -145,6 +145,7 @@ uniform vec2  uCamHalf;               // tan(fov/2) horizontal, and vertical
 uniform int   uDrawFloor;
 uniform float uFloorRadius;
 uniform float uExposure;
+uniform float uLift;                  // display tone curve; 1.0 is off
 uniform float uDisplayGamma;          // 0 disables the final encode (linear readback)
 
 // Diagnostic overlays. Each is a way of LOOKING at the same trace, never a
@@ -805,6 +806,12 @@ void main() {
   c += aimGuides(uCamPos, dir, sceneT);
 
   c *= uExposure;
+  // A display tone curve, and the LAST thing that happens. Everything above it
+  // is radiance the model computed and every metric reads; this is the knob
+  // between that and an eye. Below 1.0 it opens the shadows, which is the whole
+  // difference between this picture and a demo that draws the map as if it
+  // glowed. Held at 1.0 for the linear readback, and asserted so in glsl.test.
+  if (uLift != 1.0) c = pow(max(c, vec3(0.0)), vec3(uLift));
   if (uDisplayGamma > 0.0) c = pow(max(c, vec3(0.0)), vec3(1.0 / uDisplayGamma));
   fragColor = vec4(c, 1.0);
 }

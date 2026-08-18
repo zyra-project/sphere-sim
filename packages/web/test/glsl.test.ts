@@ -244,6 +244,7 @@ test('the markers are off unless asked for, so the parity check never sees one',
   assert.equal(u.aimGuides, 0);
   assert.equal(u.drawFloor, 1, 'the floor is the one piece of scenery that is opt-OUT');
   assert.equal(u.exposure, 1, 'a linear readback must not be scaled by a viewing gain');
+  assert.equal(u.lift, 1, 'a linear readback must not be bent by a viewing tone curve');
 });
 
 test('a click picks the projector under it, and never one behind the sphere', () => {

@@ -44,6 +44,8 @@ export interface DisplayOptions {
   drawFloor?: boolean;
   floorRadiusM?: number;
   exposure?: number;
+  /** Display tone curve. 1 is off, and must be 1 for a linear readback. */
+  lift?: number;
   /** `0` disables the final encode, for a linear readback the parity check can use. */
   displayGamma?: number;
   /**
@@ -215,6 +217,7 @@ export interface DisplayUniforms {
    * render it reads back is the model's own radiance. No metric can see it.
    */
   exposure: number;
+  lift: number;
   displayGamma: number;
 
   /** `3 * MAX_PROJECTORS` floats, linear light. */
@@ -329,6 +332,7 @@ export function buildDisplayUniforms(
     drawFloor: (options.drawFloor ?? true) ? 1 : 0,
     floorRadius: options.floorRadiusM ?? 8,
     exposure: options.exposure ?? 1,
+    lift: options.lift ?? 1,
     displayGamma: options.displayGamma ?? 2.2,
 
     tint: tintsFor(options.slots),

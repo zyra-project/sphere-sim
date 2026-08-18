@@ -199,6 +199,7 @@ export function setUniforms(h: DisplayGl, u: DisplayUniforms): void {
   gl.uniform1i(loc('uDrawFloor'), u.drawFloor);
   gl.uniform1f(loc('uFloorRadius'), u.floorRadius);
   gl.uniform1f(loc('uExposure'), u.exposure);
+  gl.uniform1f(loc('uLift'), u.lift);
   gl.uniform1f(loc('uDisplayGamma'), u.displayGamma);
 
   gl.uniform3fv(loc('uTint'), u.tint);

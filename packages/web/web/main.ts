@@ -1372,9 +1372,10 @@ function draw(): void {
       drawFloor: true,
       floorRadiusM: 13,
       displayGamma: 2.2,
-      // Display only. `checkParity` builds its own uniforms and does not pass
-      // this, so what the parity check reads back is the model's own radiance.
+      // Display only. `checkParity` builds its own uniforms and passes neither,
+      // so what the parity check reads back is the model's own radiance.
       exposure: state.settings.viewExposure,
+      lift: state.settings.viewLift,
       markerRadiusM: state.markersOn ? MARKER_RADIUS_M : 0,
       markerSelected: state.selected,
       ceilingM: state.settings.ceilingM,
@@ -1440,7 +1441,10 @@ function renderCameraShot(
       drawFloor: true,
       floorRadiusM: 13,
       displayGamma: 2.2,
+      // The same grade the sphere on screen is under, so a capture preview and
+      // the room behind it are not two different-looking pictures of one rig.
       exposure: state.settings.viewExposure,
+      lift: state.settings.viewLift,
       // The room, as photographed. No selection ring and no aim guides: those
       // are the page talking to you, not things in front of a lens.
       markerRadiusM: MARKER_RADIUS_M,

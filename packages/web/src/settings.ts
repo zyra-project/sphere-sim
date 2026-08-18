@@ -198,6 +198,8 @@ export interface Settings {
    * monitor.
    */
   viewExposure: number;
+  /** Display-only shadow lift. See its ControlSpec. */
+  viewLift: number;
   /** Grid spacing on the alignment pattern, degrees. */
   gridDeg: number;
   /**
@@ -362,6 +364,7 @@ export const BOULDER_PRESET: Settings = {
   // look at beside a demo that draws the map as an emissive texture. This is the
   // only place the two are reconciled, and it is a display term.
   viewExposure: 1.8,
+  viewLift: 0.78,
   gridDeg: 15,
   ambient: 0.04,
   content: CONTENT_MARBLE,
@@ -1080,6 +1083,28 @@ export const CONTROLS: readonly ControlSpec[] = [
       'projectors brighter — Lamp output on the Projectors tab does that. It opens above 1 because ' +
       'the sphere is a painted ball at 0.9 reflectance lit at an angle, so the honest picture is ' +
       'darker than a demo that draws the map as if it glowed.',
+  },
+  {
+    key: 'viewLift',
+    label: 'Shadow lift',
+    symbol: '',
+    section: '§6',
+    klass: 'PANEL',
+    min: 0.5,
+    max: 1,
+    step: 0.02,
+    unit: '',
+    decimals: 2,
+    group: 'view',
+    help:
+      'How much the dark end of the picture is opened up on the way to your screen — a tone ' +
+      'curve, applied after everything the model computes and before nothing at all. At 1.00 you ' +
+      'are looking at the radiance the model actually produced, which is a painted ball at 0.9 ' +
+      'reflectance lit at an angle and is genuinely this dark; deep ocean leaves the projector at ' +
+      'about a tenth of full and arrives on your screen at about a tenth. Below 1.00 the shadows ' +
+      'come up without the highlights moving much, which is what a display demo does and why one ' +
+      'looks vivid beside this. Like Screen brightness it multiplies nothing the model reads: no ' +
+      'metric can see it and the parity check asserts it is off.',
   },
   {
     key: 'viewFovDeg',
