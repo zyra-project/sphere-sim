@@ -58,6 +58,15 @@ export interface WebWorld {
   truthRig: RigCalibration;
   /** What the compositor believes. The drawing, or a recovered calibration. */
   compositorRig: RigCalibration;
+  /**
+   * Is {@link WebWorld.compositorRig} a RECOVERED rig rather than the drawing?
+   *
+   * Not the same question as "was one supplied": a recovered rig is a belief
+   * about a specific set of projectors, and one that no longer matches the room
+   * is refused. Anything reporting what a calibration bought has to ask this
+   * rather than ask whether it passed one in.
+   */
+  calibrated: boolean;
   /** Exactly what was done to the rig, so the page can name the worst offender. */
   perturbation: Perturbation;
   scene: Scene;
@@ -373,7 +382,19 @@ export function buildWorld(
   // from the panel in both cases. Without this the projector frames silently
   // changed shape after a solve, because the recovered rig's blend had no A-37
   // region and fell back to the default.
-  const compositor = compositorRig
+  // A recovered rig is a belief about a SPECIFIC set of projectors. If the room
+  // no longer holds that set — the count moved, or one was switched off at the
+  // wall — the two lists stop lining up, and `metrics/registration.ts` indexes
+  // one by the other's length. That throws inside `pixelToRay` rather than
+  // degrading, the worker posts `ok: false`, and the page keeps the last good
+  // model on screen under a red banner: every number still describing a rig that
+  // is no longer in the room.
+  //
+  // The page clears the calibration on both of those controls, so this should be
+  // unreachable. It is here because "should be unreachable" and "is checked" are
+  // different things, and the failure mode is a readout that looks live.
+  const usable = compositorRig && compositorRig.projectors.length === truth.rig.projectors.length;
+  const compositor = usable
     ? { ...compositorRig, blend: { ...compositorRig.blend, ...blendFrom(s) } }
     : drawing;
   return {
@@ -381,6 +402,15 @@ export function buildWorld(
     truthRig: truth.rig,
     slots: truth.slots,
     compositorRig: compositor,
+    /**
+     * Is the compositor a RECOVERED rig, or the config as written?
+     *
+     * Callers used to answer this by testing the `compositorRig` argument they
+     * passed in, which is the question one step too early: a rig that does not
+     * match the room is refused above, and "what the calibration bought" then
+     * had a baseline to compare against and no calibration in force.
+     */
+    calibrated: Boolean(usable),
     perturbation: misaligned.perturbation,
     scene,
     image,

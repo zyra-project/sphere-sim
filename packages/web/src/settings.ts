@@ -398,8 +398,9 @@ export const VIEWPOINTS: readonly {
     id: 'room',
     label: 'Whole room',
     help:
-      'Outside the ring, looking down slightly: the ball, the rail, and all four projectors on ' +
-      'their hangers. Where the page opens, and the view to click a lens in.',
+      'Outside the ring, looking down slightly: the ball, the rail, and the projectors on their ' +
+      'hangers. Where the page opens, and the view to click a lens in. On a phone the field of ' +
+      'view stays as the screen shape requires, so this moves the eye without stretching the room.',
     view: { viewAzDeg: 35, viewElDeg: 14, viewRangeM: 10.2, viewFovDeg: 71 },
   },
   {

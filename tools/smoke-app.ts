@@ -698,6 +698,111 @@ async function main(): Promise<void> {
       }
     }
 
+    // Last, because both of these move the rig or the eye, and every check above
+    // reads the before-and-after snapshots that a movement is meant to void.
+    //
+    // What the software BELIEVES survives everything except being told to forget
+    // it. Two controls used to throw it away silently.
+    if (opts.solve) {
+      const solved = await cdp.evaluate<string>(
+        "document.querySelector('[data-smoke=\"grid-mm\"]')?.textContent?.trim() ?? ''",
+      );
+
+      // Walking round the ball is the first. A viewpoint chip moves the eye and
+      // nothing else, and it was discarding the calibration — so going to look at
+      // the seam you had just fixed un-fixed it.
+      await cdp.evaluate(`(() => {
+        const room = [...document.querySelectorAll('#controls button')]
+          .find((b) => (b.textContent ?? '').trim() === 'Room');
+        if (room) room.click();
+        const chip = [...document.querySelectorAll('#controls .chip')]
+          .find((c) => (c.textContent ?? '').trim() === 'At a seam');
+        if (chip) chip.click();
+        return !!chip;
+      })()`);
+      await sleep(1000);
+      const afterView = await cdp.evaluate<string>(
+        "document.querySelector('[data-smoke=\"grid-mm\"]')?.textContent?.trim() ?? ''",
+      );
+      if (afterView !== solved) {
+        failures.push(
+          `moving the eye changed the measurement: ${solved} mm before the viewpoint chip, ` +
+            `${afterView} mm after — a view control has discarded the calibration`,
+        );
+      } else {
+        process.stdout.write(`  walking to a seam left the calibration alone (${afterView} mm)\n`);
+      }
+
+      // Knocking a lens is the second, and it is the page's own headline
+      // demonstration: the software goes on sending exactly what it sent before,
+      // so the error grows and the frame does not change. That only holds if the
+      // recovered rig outlives the bump.
+      // Aim it at a projector that is actually lit. Bumping one that is switched
+      // off at the wall moves a lens the model is not drawing, so nothing on the
+      // page changes and the check below would fail for the wrong reason.
+      const aimed = await cdp.evaluate<string>(`(() => {
+        const proj = [...document.querySelectorAll('#controls button')]
+          .find((b) => (b.textContent ?? '').trim() === 'Projectors');
+        if (proj) proj.click();
+        const tabs = [...document.querySelectorAll('.ptabs button')];
+        if (!tabs.length) return 'no projector tabs';
+        const lit = tabs.find((t) => !t.className.includes('dark'));
+        if (!lit) return 'every projector is switched off';
+        // Only if it is not already the selected one. A second click on the
+        // SELECTED tab is the shortcut that switches that projector off at the
+        // wall, which would silently make the bump below a no-op.
+        if (!lit.className.includes('on')) lit.click();
+        return 'ok ' + (lit.textContent ?? '').trim();
+      })()`);
+      if (!aimed.startsWith('ok')) failures.push(`could not pick a lit projector: ${aimed}`);
+      await sleep(500);
+      const bumped = await cdp.evaluate<string>(`(() => {
+        const b = [...document.querySelectorAll('#actions .btn')]
+          .find((x) => /Bump this one/.test(x.textContent ?? ''));
+        if (!b) return 'no bump button: ' + [...document.querySelectorAll('#actions .btn')]
+          .map((x) => (x.textContent ?? '').trim()).join('/');
+        b.click();
+        return 'ok';
+      })()`);
+      if (!bumped.startsWith('ok')) failures.push(bumped);
+      // Poll rather than sleep. The model worker is still carrying the 1200px
+      // enlarged frame and the seam patches from the checks above, so the
+      // recompute this bump asks for can land well over a second later — a fixed
+      // wait made this read the pre-bump number and call it a regression.
+      let nowMm = solved;
+      for (let i = 0; i < 40; i++) {
+        await sleep(250);
+        nowMm = await cdp.evaluate<string>(
+          "document.querySelector('[data-smoke=\"grid-mm\"]')?.textContent?.trim() ?? ''",
+        );
+        if (nowMm !== solved) break;
+      }
+      // Read something the WORKER computes, not a button. `gridBaselineMm` — and
+      // so the improvement line built from it — exists only while the compositor
+      // is a recovered rig rather than the config as written, so its presence is
+      // the model's own answer to "is there still a calibration". Keying off the
+      // "Forget it" button instead would have passed either way: nothing
+      // re-rendered the action bar, so the stale node was still in the DOM.
+      const stillCalibrated = await cdp.evaluate<boolean>(
+        "document.querySelector('[data-smoke=\"improvement\"]') !== null",
+      );
+      if (!stillCalibrated) {
+        failures.push(
+          'bumping a projector after a recalibration threw the recovered rig away — the ' +
+            'compositor is back on the drawing and the frame will have changed',
+        );
+      } else if (nowMm === solved) {
+        failures.push(
+          `bumping a projector did not move the measurement at all (${nowMm} mm before and ` +
+            `after 10 s, aimed at ${aimed}) — the bump never reached the model`,
+        );
+      } else {
+        process.stdout.write(
+          `  bumping again kept the recovered rig (${solved} → ${nowMm} mm)\n`,
+        );
+      }
+    }
+
     if (opts.screenshot) {
       const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
       fs.writeFileSync(opts.screenshot, Buffer.from(shot.data, 'base64'));

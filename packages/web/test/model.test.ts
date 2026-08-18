@@ -20,6 +20,7 @@ import { test } from 'node:test';
 import { createImage } from '../../sim/src/equirect.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
 import { BOULDER_PRESET, CONTENT_CUSTOM, PERFECT_PRESET, withNudge } from '../src/settings.ts';
+import { buildWorld } from '../src/rigs.ts';
 import { computeModel } from '../src/model.ts';
 import type { ModelRequest } from '../src/protocol.ts';
 
@@ -181,4 +182,39 @@ test('the seam patch has both projectors drawing the same lines, and closes when
   assert.ok(at(0, 1)!.worstMm > 5, 'the bumped projector should disagree with its neighbour');
   assert.ok(at(3, 0)!.worstMm > 5, 'and with its other neighbour');
   assert.ok(at(1, 2)!.worstMm < 0.5, 'the seam on the far side of the ring is untouched');
+});
+
+/**
+ * A recovered calibration outlives a bump, on purpose — the whole demonstration
+ * is that the software goes on sending what it sent before. It must NOT outlive
+ * a change to which projectors are in the room.
+ *
+ * The two rigs are flat lists, and `metrics/registration.ts` indexes one by the
+ * other's length. Hand it a four-projector belief about a three-projector room
+ * and it reads past the end of the array and dies inside `pixelToRay`, which the
+ * worker turns into `ok: false` — and the page, which keeps the last good model
+ * on screen under the error, goes on showing every number from a rig that is no
+ * longer there. A readout that looks live is worse than one that is blank.
+ *
+ * The page clears the calibration on both controls that can cause this. This
+ * checks the layer underneath, because "should be unreachable" is not a check.
+ */
+test('a compositor rig for a different set of projectors is refused, not indexed past', () => {
+  const four = buildWorld({ ...PERFECT_PRESET }).compositorRig;
+  assert.equal(four.projectors.length, 4, 'the fixture is a four-projector rig');
+
+  for (const [what, settings] of [
+    ['the count dropped to three', { ...PERFECT_PRESET, projectorCount: 3 }],
+    ['one was switched off at the wall', withNudge(PERFECT_PRESET, 1, { on: false })],
+  ] as const) {
+    const reply = computeModel(request({ settings, compositorRig: four, parity: null }));
+    assert.ok(
+      Number.isFinite(reply.gridWorstMm),
+      `${what}: the model should still produce a number, got ${reply.gridWorstMm}`,
+    );
+    // Refused means "fall back to the config as written", which is exactly the
+    // state a page with no calibration is in — so there is nothing to compare
+    // the calibration against.
+    assert.equal(reply.gridBaselineMm, null, `${what}: the stale rig was used anyway`);
+  }
 });

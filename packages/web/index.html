@@ -131,8 +131,21 @@ button { font-family: inherit; }
  */
 @media (max-width: 820px) {
   #left, #right { left: 8px; right: 8px; width: auto; }
-  /* Clear of the wordmark: the sheet starts below it rather than over it. */
-  #right { top: 56px; bottom: auto; max-height: 58vh; }
+  /* Clear of the WHOLE wordmark block, subtitle included. `top: 56px` cleared
+     the h1 and landed 1.5px into the subtitle — which on a phone is the only
+     sentence naming the gestures, so a 92%-opaque backdrop-blurred card at
+     z-index 6 was drawn straight over the one line telling a first-time visitor
+     the sphere can be touched. `elementFromPoint` at the middle of that
+     sentence returned the "Bump this one" button. The fallback is a measured
+     worst case; `fitFirstScreen` overwrites it with the brand's real height. */
+  #right { top: var(--sheet-top, 96px); bottom: auto;
+    /* Capped so it cannot reach the readout. `#left` is bottom-anchored and may
+       stand 52vh tall, and 58vh + 52vh does not fit in a screen — with the sheet
+       starting below the wordmark instead of over it, the two began to overlap
+       and the readout's own toggle lost the top third of its 44px to a card at a
+       higher z-index. `#controls` scrolls inside itself, which is what the rest
+       of this block already relies on. */
+    max-height: calc(100vh - var(--sheet-top, 96px) - 54vh); }
   #left { top: auto; height: auto; max-height: 52vh;
     bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
   #inspect { max-height: 40vh; }
@@ -142,7 +155,10 @@ button { font-family: inherit; }
      nowhere left to be tapped, which is also the only way to dismiss them. */
   #left.inspecting #readout { display: none; }
   #left.collapsed, #right.collapsed { height: auto; }
-  .brand { padding: 10px 12px; }
+  /* Room on the right for the fixed icon buttons. At 44px each — the touch
+     floor — the row is 94px wide, and without this the wordmark ran underneath
+     the "?" instead of wrapping before it. */
+  .brand { padding: 10px 100px 10px 12px; }
   .brand h1 { font-size: 15px; letter-spacing: 0.1em; }
   .brand .eyebrow { font-size: 10px; margin: 0 0 3px; }
   /* The subtitle STAYS, with its text swapped to the gestures (see
@@ -153,20 +169,6 @@ button { font-family: inherit; }
   .phone-hide { display: none; }
   /* The buttons sit beside the wordmark, not under the sheet they open. */
   #topbtns { position: fixed; top: 10px; right: 10px; z-index: 7; }
-}
-
-/* A 28px icon button is under every touch-target guideline going, and on a
-   phone those two buttons are the only way to get the panels off the sphere.
-   Keyed on the pointer rather than on the width, because the constraint is the
-   finger: a touchscreen laptop has the same problem at 1400px. */
-@media (pointer: coarse) {
-  .btn.icon { width: 44px; height: 44px; font-size: 18px; }
-  .btn { padding: 10px 14px; }
-  .chip { padding: 10px 13px; }
-  .seg button { padding: 11px 0; }
-  .ptabs button { padding: 11px 0; }
-  .sl .track { height: 30px; }
-  .sl .knob { width: 16px; height: 16px; }
 }
 
 /* ---- buttons ------------------------------------------------------------- */
@@ -234,6 +236,41 @@ button { font-family: inherit; }
 .kpill { font-size: 9px; font-weight: 700; letter-spacing: 0.05em; padding: 1px 5px;
   border-radius: 999px; margin-left: 6px; color: var(--assume);
   border: 1px solid rgba(217,168,0,0.45); }
+
+/* Below about 360px the wordmark and the sheet under it are competing for a
+   screen that has no room for both. The eyebrow is a label for a thing whose
+   name is written directly beneath it, so it is the first to go. */
+@media (max-width: 380px) {
+  .brand .eyebrow { display: none; }
+  .brand h1 { font-size: 13px; letter-spacing: 0.1em; }
+}
+
+/* ---- touch targets ------------------------------------------------------- */
+/* A 28px icon button is under every touch-target guideline going, and on a
+   phone those two buttons are the only way to get the panels off the sphere.
+   Keyed on the pointer rather than on the width, because the constraint is the
+   finger: a touchscreen laptop has the same problem at 1400px.
+
+   This block has to sit AFTER the component rules it raises. It used to be
+   declared above them, and a media query adds no specificity — so every one of
+   these seven declarations lost the cascade to the identical selector further
+   down the file and the whole block was dead. It measured as dead too: on a
+   390x844 phone with `(pointer: coarse)` matching, `.btn.icon` came back 28x28
+   and `.btn` came back with the desktop `6px 12px`. */
+@media (pointer: coarse) {
+  .btn.icon { width: 44px; height: 44px; font-size: 18px; }
+  .btn { padding: 10px 14px; }
+  .chip { padding: 10px 13px; }
+  .seg button { padding: 11px 0; }
+  .ptabs button { padding: 11px 0; }
+  .sl .track { height: 30px; }
+  .sl .knob { width: 16px; height: 16px; }
+  /* The underlined links are 10px type with no padding at all, and two of them
+     are load-bearing on a phone: the card's own close control, and the notes
+     toggle. Padded out to the floor and pulled back by the same amount, so the
+     hit area grows and nothing moves. */
+  .linkish { padding: 12px 8px; margin: -12px -8px; }
+}
 
 /* ---- readout ------------------------------------------------------------- */
 .badge { font-size: 10px; font-weight: 600; letter-spacing: 0.12em; border-radius: 999px;

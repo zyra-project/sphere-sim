@@ -493,7 +493,10 @@ export function computeModel(req: ModelRequest): ModelResponse {
   // compositor IS the config as written there is nothing to compare against and
   // the field is null rather than a duplicate of the headline number.
   let gridBaselineMm: number | null = null;
-  if (req.compositorRig !== null) {
+  // What the WORLD ended up using, not what the request asked for — a rig that
+  // no longer matches the room is refused in `buildWorld`, and asking the request
+  // would print a comparison against a calibration that is not in force.
+  if (world.calibrated) {
     const baseline = metricsFor(
       world.truthRig,
       world.asBuiltRig,

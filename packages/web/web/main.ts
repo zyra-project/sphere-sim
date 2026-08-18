@@ -1037,34 +1037,78 @@ function startSolve(): void {
   renderReadout();
 }
 
-function forgetCalibration(): void {
+/**
+ * Drop the calibration itself: the recovered geometry, the report, and the
+ * comparison that went with them.
+ *
+ * Reachable three ways, and all of them are the operator saying so. "Forget it"
+ * and "Reset" are buttons. Restoring a preset is the third: a preset is a different
+ * INSTALLATION, and geometry solved for the old room is not a belief about the
+ * new one — it is a wrong answer that would quietly survive the change.
+ *
+ * Moving a lens is NOT one of these. See `staleComparison`.
+ */
+function clearCalibration(): void {
   state.compositorRig = null;
-  beforeFrames = [];
-  beforeSeams = [];
-  beforeMeshes = [];
-  beforeRig = undefined;
   solveResult = null;
   solveTrace = [];
   solveStep = null;
   solveShots = [];
+  staleComparison();
+}
+
+function forgetCalibration(): void {
+  clearCalibration();
   markDirty();
   requestModel(true);
   renderActions();
 }
 
-/** Anything that moves the LENSES invalidates a calibration solved for the old rig. */
-function invalidateCalibration(): void {
-  if (state.compositorRig === null) return;
-  state.compositorRig = null;
+/**
+ * Moving a lens makes the last BEFORE/AFTER comparison stale. It does not make
+ * the software forget where it thinks the lenses are.
+ *
+ * This used to null `state.compositorRig`, which reads as the same thing and is
+ * not: null means "the config as written", so a bump after a recalibration
+ * silently threw the recovered geometry away and reverted the compositor to the
+ * drawing. That is the exact opposite of the point the page is making three
+ * different ways — the projector tab's own text ("what the software believes
+ * only changes when you recalibrate, which is why the frame below does not
+ * move"), the help sheet's "bump it again and that frame does not change", and
+ * the inspect caption's "moving the projector does not change this picture".
+ * All three were true on the first lap and false on the second.
+ *
+ * So the belief survives, and so does the report of how it was arrived at. What
+ * goes is the comparison: the frames, seams and meshes snapshotted at the start
+ * of the last solve describe a rig that is no longer the one in the room, and
+ * compositing them against the current pictures would put a red/cyan overlay
+ * under a caption that blames the recalibration for a movement the operator
+ * just made by hand.
+ */
+function staleComparison(): void {
   beforeFrames = [];
   beforeSeams = [];
   beforeMeshes = [];
   beforeRig = undefined;
-  solveResult = null;
-  solveTrace = [];
-  solveStep = null;
-  solveShots = [];
+  rigMovedSinceSolve = true;
 }
+
+/**
+ * Has a lens moved since the last solve finished?
+ *
+ * The solver's own residual is the better number for "how far has the software
+ * fallen behind" — it has the unobservable global rotation removed, which the
+ * live two-rig difference cannot do. But it is a number about the rig the solve
+ * PHOTOGRAPHED, and now that a bump no longer discards the solve, that rig and
+ * the one in the room stop being the same thing. Reporting 0.14 mm of lens error
+ * next to a headline that just jumped to 66 mm is the same class of lie this
+ * whole change set is about.
+ *
+ * Not cleared when a result lands mid-movement: a bump while the solve is in
+ * flight leaves this true, which is right — the reply describes a rig the
+ * operator has already moved.
+ */
+let rigMovedSinceSolve = false;
 
 // ---------------------------------------------------------------------------
 // Rendering
@@ -1286,10 +1330,14 @@ function frame(): void {
 let settleTimer = 0;
 
 function touched(invalidates: boolean): void {
-  if (invalidates) invalidateCalibration();
+  if (invalidates) staleComparison();
   clampSelection();
   markDirty();
   renderControls();
+  // The bar reads the projector count for its "Bump all N" label and the
+  // calibration for whether "Forget it" is there, and both of those move under
+  // it. It is five buttons — cheaper than the thirty rows above it.
+  renderActions();
   renderReadout();
   requestModel(false);
   window.clearTimeout(settleTimer);
@@ -1311,6 +1359,12 @@ function clampSelection(): void {
 }
 
 function setSetting(key: SettingKey, value: number): void {
+  // Which projectors EXIST is not a movement, it is a different installation:
+  // the four redistribute round the ring the moment the count changes, so a rig
+  // recovered for four is not a belief about three. It also has to go for a
+  // blunter reason — the recovered rig is a flat list indexed alongside the lit
+  // set, and changing the membership slides the two out of step.
+  if (key === 'projectorCount') clearCalibration();
   state.settings = withSetting(state.settings, key, value);
   const spec = CONTROLS.find((c) => c.key === key);
   touched(spec ? spec.group !== 'view' : true);
@@ -1369,6 +1423,10 @@ function projectorTabs(): HTMLElement {
         selectProjector(i);
         return;
       }
+      // Switching one off changes the MEMBERSHIP of the rig, not a lens's
+      // position, and the recovered rig is indexed alongside the lit set — so
+      // it has to go with it. See `setSetting`.
+      clearCalibration();
       state.settings = withNudge(state.settings, i, { on: !on });
       touched(true);
     });
@@ -1404,6 +1462,7 @@ function projectorSection(): HTMLElement[] {
             on: lit,
             onPick: () => {
               if (lit) return;
+              clearCalibration();
               state.settings = withNudge(state.settings, state.selected, { on: true });
               touched(true);
             },
@@ -1413,6 +1472,7 @@ function projectorSection(): HTMLElement[] {
             on: !lit,
             onPick: () => {
               if (!lit) return;
+              clearCalibration();
               state.settings = withNudge(state.settings, state.selected, { on: false });
               touched(true);
             },
@@ -1470,8 +1530,14 @@ function projectorSection(): HTMLElement[] {
       });
       all.addEventListener('click', () => {
         const v = nudge?.[spec.key] ?? 0;
+        // The projectors in the ROOM, not every slot in the array: the label
+        // already says "all 3", and writing the other slot too left a value
+        // waiting to appear the moment the count went back up.
+        const n = Math.round(state.settings.projectorCount);
         let next = state.settings;
-        for (let i = 0; i < next.nudge.length; i++) next = withNudge(next, i, { [spec.key]: v });
+        for (let i = 0; i < Math.min(n, next.nudge.length); i++) {
+          next = withNudge(next, i, { [spec.key]: v });
+        }
         state.settings = next;
         touched(true);
       });
@@ -1579,9 +1645,10 @@ function installSection(): HTMLElement[] {
             content: state.settings.content,
             gridOn: state.settings.gridOn,
           };
-          invalidateCalibration();
+          clearCalibration();
           markDirty();
           renderControls();
+          renderActions();
           requestModel(true);
         },
       })),
@@ -1756,10 +1823,15 @@ function roomSection(): HTMLElement[] {
   out.push(el('span', { className: 'lab', textContent: 'Where you stand' }));
   // Which chip is lit, if any: dragging the sphere leaves none of them lit,
   // which is correct — the viewpoint is then wherever you put it.
+  // The field of view is excluded on a narrow viewport, because that is the one
+  // key the chip deliberately does NOT write there — `fitFirstScreen` owns it,
+  // and comparing against the desktop 71 would mean no chip could ever light up
+  // on a phone however exactly you had landed on its viewpoint.
+  const skipFov = narrowViewport();
   const here = VIEWPOINTS.findIndex((v) =>
-    (Object.keys(v.view) as (keyof typeof v.view)[]).every(
-      (k) => Math.abs(state.settings[k] - v.view[k]) < 1e-6,
-    ),
+    (Object.keys(v.view) as (keyof typeof v.view)[])
+      .filter((k) => !(skipFov && k === 'viewFovDeg'))
+      .every((k) => Math.abs(state.settings[k] - v.view[k]) < 1e-6),
   );
   out.push(
     chipRow(
@@ -1768,8 +1840,18 @@ function roomSection(): HTMLElement[] {
         title: v.help,
         on: here === i,
         onPick: () => {
-          state.settings = { ...state.settings, ...v.view };
-          touched(true);
+          // Where you STAND. Not what is installed, so it must not mark the
+          // comparison stale — and on a narrow viewport it must not undo the
+          // portrait field `fitFirstScreen` chose, or one tap on "Whole room"
+          // puts a 390 px phone back to a ~114 degree vertical frustum with no
+          // way back except the field-of-view slider.
+          const { viewFovDeg, ...rest } = v.view;
+          state.settings = {
+            ...state.settings,
+            ...rest,
+            viewFovDeg: narrowViewport() ? portraitFovDeg() : viewFovDeg,
+          };
+          touched(false);
         },
       })),
     ),
@@ -2116,22 +2198,61 @@ function closeHelp(): void {
   }
 }
 
+/**
+ * Add a step, and turn round at the wall rather than pressing into it.
+ *
+ * The nudges are clamped to the slider's own range, and a step that only ever
+ * added meant about a dozen presses of "Bump this one" pinned yaw at 3.00 deg
+ * and every press after that changed nothing at all — a button that reads as
+ * broken, with no message saying why.
+ *
+ * Reflecting keeps every press doing something without giving up the property
+ * the fixed step was chosen for: this is a pure function of the current value,
+ * so the same clicks from the same state give the same rig, and every number on
+ * the page depends on that.
+ *
+ * It does not random-walk. Once it reaches the wall it wobbles between the last
+ * two positions, which is the honest thing for it to do — the range is the range
+ * a mount can actually be knocked through, and there is nothing further out to
+ * show. What matters is that the seams keep moving and the button never goes
+ * quietly dead.
+ */
+function bumpBy(current: number, step: number, limit: number): number {
+  const up = current + step;
+  if (up <= limit && up >= -limit) return up;
+  const down = current - step;
+  return Math.max(-limit, Math.min(limit, down));
+}
+
+/** The nudge ranges the bump buttons have to stay inside. See `NUDGE_CONTROLS`. */
+const BUMP_ANGLE_LIMIT = 3;
+const BUMP_METRE_LIMIT = 0.4;
+
 function renderActions(): void {
   actionsEl.replaceChildren();
 
   const bump = el('button', {
     className: 'btn',
     textContent: 'Bump this one',
-    title: 'Knock the selected projector by about a quarter of a degree, the way a ladder does.',
+    title:
+      'Knock the selected projector by about a quarter of a degree and a few centimetres, the ' +
+      'way a ladder does.',
   });
   bump.addEventListener('click', () => {
     const i = state.selected;
     const n = state.settings.nudge[i];
     // A fixed step rather than a random one: the same click twice does the same
     // thing, and every number this page shows depends on that.
+    //
+    // Position as well as aim. A ladder that catches a projector shifts it as
+    // well as turning it, and with aim alone the readout's "Lens position" cell
+    // sat at 0.00 mm however many times you pressed — beside a sentence
+    // promising it was how far the software's idea had fallen behind the room.
     state.settings = withNudge(state.settings, i, {
-      yawDeg: Math.max(-3, Math.min(3, (n?.yawDeg ?? 0) + 0.25)),
-      rollDeg: Math.max(-3, Math.min(3, (n?.rollDeg ?? 0) + 0.15)),
+      yawDeg: bumpBy(n?.yawDeg ?? 0, 0.25, BUMP_ANGLE_LIMIT),
+      rollDeg: bumpBy(n?.rollDeg ?? 0, 0.15, BUMP_ANGLE_LIMIT),
+      distanceM: bumpBy(n?.distanceM ?? 0, 0.06, BUMP_METRE_LIMIT),
+      heightM: bumpBy(n?.heightM ?? 0, 0.02, BUMP_METRE_LIMIT),
     });
     touched(true);
   });
@@ -2141,25 +2262,33 @@ function renderActions(): void {
   // "another install": this knocks every lens by hand, on top of whatever the
   // mount already did, without redrawing the mount error or changing the seed.
   // A building settling moves all four; a ladder moves one.
+  //
+  // Counted from the room rather than from the array. The label said "four" and
+  // the loop wrote four slots whatever the projector count was, so a two-lens
+  // room mislabelled the button and quietly accumulated aim error in the two
+  // slots nothing was reading — which then appeared, already knocked, the moment
+  // the count went back up.
+  const lit = Math.round(state.settings.projectorCount);
   const bumpAll = el('button', {
     className: 'btn',
-    textContent: 'Bump all four',
+    textContent: `Bump all ${lit}`,
     title:
       'Knock every projector by the same amount in a different direction. A fixed step, not a ' +
       'random one — the same click twice does the same thing.',
   });
   bumpAll.addEventListener('click', () => {
     let next = state.settings;
-    for (let i = 0; i < next.nudge.length; i++) {
+    for (let i = 0; i < Math.min(lit, next.nudge.length); i++) {
       const n = next.nudge[i];
       // Deterministic and different per projector: alternating signs, so the four
       // do not all move the same way and cancel at every seam.
       const sy = i % 2 === 0 ? 1 : -1;
       const sr = i < 2 ? 1 : -1;
       next = withNudge(next, i, {
-        yawDeg: Math.max(-3, Math.min(3, (n?.yawDeg ?? 0) + 0.18 * sy)),
-        pitchDeg: Math.max(-3, Math.min(3, (n?.pitchDeg ?? 0) + 0.12 * sr)),
-        rollDeg: Math.max(-3, Math.min(3, (n?.rollDeg ?? 0) + 0.1 * sy * sr)),
+        yawDeg: bumpBy(n?.yawDeg ?? 0, 0.18 * sy, BUMP_ANGLE_LIMIT),
+        pitchDeg: bumpBy(n?.pitchDeg ?? 0, 0.12 * sr, BUMP_ANGLE_LIMIT),
+        rollDeg: bumpBy(n?.rollDeg ?? 0, 0.1 * sy * sr, BUMP_ANGLE_LIMIT),
+        distanceM: bumpBy(n?.distanceM ?? 0, 0.035 * sy, BUMP_METRE_LIMIT),
       });
     }
     state.settings = next;
@@ -2175,6 +2304,9 @@ function renderActions(): void {
       'Install tab, and the same seed always gives the same rig.',
   });
   drift.addEventListener('click', () => {
+    // A different INSTALLATION, so the calibration goes with it — geometry
+    // recovered for the old mount error is not a belief about the new one.
+    clearCalibration();
     // Also turns the mount shake ON, because the page opens with it off. A button
     // labelled "another install" that produced the same perfectly-mounted rig
     // every time would be a button that does nothing.
@@ -2291,8 +2423,9 @@ function renderInspect(): void {
         title: 'This projector lights the side of the ball you are not looking at.',
       });
       walk.addEventListener('click', () => {
+        // Walking round the ball is a view change, not an installation change.
         state.settings = withSetting(state.settings, 'viewAzDeg', az);
-        touched(true);
+        touched(false);
       });
       caption = walk;
     }
@@ -2947,15 +3080,29 @@ function solveSection(): HTMLElement | null {
   // a solve that landed over the gate — high capture noise, say — printed a
   // green "Calibration result" directly under a red DRIFTED badge.
   const passed = model?.readings.find((r) => r.id === 'grid_displacement')?.status === 'PASS';
+  // Three states, not two. The verdict is read live so a solve that landed over
+  // the gate cannot print green under a red badge — but "live" and "what this
+  // solve did" are the same thing only while nothing has moved since. Once a
+  // lens has been knocked, this card is a record rather than a verdict, and
+  // saying so beats re-judging a finished solve by a number it never saw.
+  const stale = !solveRunning && rigMovedSinceSolve;
   const title = el('p', {
     className: 'eyebrow-sm',
-    textContent: solveRunning ? 'Calibrating' : passed ? 'Converged' : 'Still over the gate',
+    textContent: solveRunning
+      ? 'Calibrating'
+      : stale
+        ? 'Last calibration — a lens has moved since'
+        : passed
+          ? 'Converged'
+          : 'Still over the gate',
   });
   title.style.color = solveRunning
     ? 'var(--accent)'
-    : passed
-      ? 'var(--good)'
-      : 'var(--warn)';
+    : stale
+      ? 'var(--muted)'
+      : passed
+        ? 'var(--good)'
+        : 'var(--warn)';
   const right = el('span', {
     className: 'note tiny num',
     textContent: solveRunning
@@ -3305,13 +3452,16 @@ function renderReadout(): void {
     // bump was never quantified, only its consequence on the grid was. After a
     // solve the solver's own residual is the better number, because it has had
     // the unobservable global rotation removed.
+    // The solver's residual only while it still describes the rig in the room.
+    // See `rigMovedSinceSolve`.
+    const fresh = rigMovedSinceSolve ? null : solveResult;
     g.append(
       cell(
         'Lens position',
-        solveResult
-          ? `${fmtMm(solveResult.posePositionMm)} mm`
+        fresh
+          ? `${fmtMm(fresh.posePositionMm)} mm`
           : `${fmtMm(model.driftPositionMm)} mm`,
-        solveResult
+        fresh
           ? 'Worst lens position error after removing the unobservable global rotation. Ground truth; the solver never saw it.'
           : 'How far the worst lens has moved from where the software believes it is. Ground truth — recalibrating is what closes it.',
       ),
@@ -3319,8 +3469,8 @@ function renderReadout(): void {
     g.append(
       cell(
         'Lens aim',
-        solveResult ? `${solveResult.poseRotationDeg.toFixed(3)}°` : `${model.driftAimDeg.toFixed(3)}°`,
-        solveResult ? 'Worst aim error, same basis.' : 'Worst aim difference between the two rigs.',
+        fresh ? `${fresh.poseRotationDeg.toFixed(3)}°` : `${model.driftAimDeg.toFixed(3)}°`,
+        fresh ? 'Worst aim error, same basis.' : 'Worst aim difference between the two rigs.',
       ),
     );
     g.append(cell('Unlit above mask', unlit ? unlit.value : '—', unlit?.means ?? ''));
@@ -3645,24 +3795,137 @@ function installPointer(): void {
  * Not a different page — the same controls, the same numbers — but the panels
  * open on a wide screen would cover every pixel of the room on a narrow one, and
  * the sphere is the subject. So the control sheet and the projector card start
- * closed, leaving the action bar, the readout and the room. The threshold is the
- * width at which two 330px columns plus a sphere between them stop fitting.
+ * closed, leaving the action bar, the readout and the room.
+ *
+ * The threshold is the stylesheet's own: `@media (max-width: 820px)` is where it
+ * stops putting two columns beside the sphere and starts stacking a sheet above
+ * and a sheet below. These two used to disagree — 760 here, 820 there — which
+ * left a 60-pixel band (iPad portrait sits in it) with the stacked layout and
+ * both sheets open over a sphere still framed for a desktop.
  */
-const NARROW_PX = 760;
+const NARROW_PX = 820;
 
-function fitFirstScreen(): void {
-  if (window.innerWidth >= NARROW_PX) return;
-  state.panelOpen = false;
-  rightEl.classList.add('collapsed');
-  state.settings = withSetting(state.settings, 'viewFovDeg', portraitFovDeg());
-  // The bottom hint line is hidden below 900px, so on a phone this is the only
-  // sentence naming the gestures. It says what you can do here rather than how
-  // the numbers are produced, which is what the desktop subtitle is for and
-  // what a reader on a 390-pixel screen has no room to care about yet.
+/**
+ * Where the bottom hint bar disappears (`@media (max-width: 900px)`). Below this
+ * the subtitle is the only place a gesture can be named — a wider band than the
+ * layout change, because it answers a different stylesheet rule.
+ */
+const HINT_PX = 900;
+
+function narrowViewport(): boolean {
+  return window.innerWidth < NARROW_PX;
+}
+
+/**
+ * The bottom hint line is hidden below 900px, so on a phone the subtitle is the
+ * only sentence naming the gestures. It says what you can DO here rather than
+ * how the numbers are produced, which is what the desktop line is for and what a
+ * reader on a 390-pixel screen has no room to care about yet.
+ */
+function gestureSub(): string {
+  // The band this sentence covers reaches 900px, which on a laptop is a mouse.
+  // Naming the wrong gesture is worse than naming none.
+  return coarsePointer()
+    ? 'Drag to rotate · pinch to zoom · tap a projector to see the frame it sends.'
+    : 'Drag to rotate · scroll to zoom · click a projector to see the frame it sends.';
+}
+const DESKTOP_SUB =
+  'Four projectors, one sphere. Knock one out of true and watch the seams double — then ' +
+  'recalibrate and watch a solver find it from photographs alone.';
+
+/**
+ * What the fit last wrote into `viewFovDeg`, so a refit can tell its own value
+ * from one the reader chose.
+ *
+ * The field of view is a slider on the Room tab, not an internal. Recomputing it
+ * on every resize would be a page that argues with you; never recomputing it is
+ * a phone that loaded in landscape and kept a 114-degree vertical frustum after
+ * you turned it upright. So: refit only while the value is still the one the fit
+ * put there.
+ */
+let fittedFov: number | null = null;
+/** Which side of `NARROW_PX` the layout was last arranged for. */
+let fittedNarrow: boolean | null = null;
+/** Which side of `HINT_PX` the subtitle was last written for. */
+let fittedGestures: boolean | null = null;
+
+/** Returns true when something the panel draws actually moved. */
+function fitFirstScreen(): boolean {
+  const narrow = narrowViewport();
+  // Two boundaries, and crossing either changes something drawn. The panel state
+  // below follows only the layout one.
+  const gesturesNow = window.innerWidth < HINT_PX;
+  const crossed = fittedNarrow !== narrow || fittedGestures !== gesturesNow;
+  const layoutCrossed = fittedNarrow !== narrow;
+  fittedNarrow = narrow;
+  fittedGestures = gesturesNow;
+
+  const gestures = window.innerWidth < HINT_PX;
   const sub = document.querySelector('.brand .sub');
-  if (sub) {
-    sub.textContent = 'Drag to rotate · pinch to zoom · tap a projector to see the frame it sends.';
+  if (sub) sub.textContent = gestures ? gestureSub() : DESKTOP_SUB;
+
+  // Where the top sheet may start. The stylesheet cannot ask how tall the
+  // wordmark came out — it wraps differently at 320px and at 430px, and the
+  // subtitle's text changes with the viewport a few lines above — so the one
+  // number that depends on it is measured and handed over.
+  const brand = document.querySelector('.brand');
+  if (brand) {
+    const bottom = Math.ceil(brand.getBoundingClientRect().bottom);
+    document.documentElement.style.setProperty('--sheet-top', `${bottom + 6}px`);
   }
+
+  // Only on crossing the threshold: re-collapsing on every resize would slam the
+  // panel shut under a reader who had just opened it, and a phone fires resize
+  // for the address bar sliding away.
+  if (layoutCrossed) {
+    state.panelOpen = !narrow;
+    rightEl.classList.toggle('collapsed', narrow);
+  }
+
+  // Only ever overwrite our own value. On the first call there is none, so the
+  // fit takes it; after that a reader who moved the Field-of-view slider keeps
+  // what they set, and crossing the threshold does not quietly undo it.
+  const ours = fittedFov === null || Math.abs(state.settings.viewFovDeg - fittedFov) < 1e-6;
+  let movedFov = false;
+  if (ours) {
+    const fov = narrow ? portraitFovDeg() : PERFECT_PRESET.viewFovDeg;
+    movedFov = Math.abs(state.settings.viewFovDeg - fov) > 1e-6;
+    state.settings = withSetting(state.settings, 'viewFovDeg', fov);
+    fittedFov = state.settings.viewFovDeg;
+  }
+  return crossed || movedFov;
+}
+
+/**
+ * Follow the viewport.
+ *
+ * The fit used to run once at boot, so a phone that loaded in landscape and was
+ * then turned upright kept the desktop framing: both panels over the sphere and
+ * a 71-degree horizontal field stretched to about 114 vertical, which is the
+ * precise failure `portraitFovDeg` exists to prevent. Orientation changes are
+ * the common case and they arrive as a resize; `orientationchange` is listened
+ * for as well because iOS has historically fired it first.
+ */
+function watchViewport(): void {
+  let timer = 0;
+  const refit = (): void => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      // Only redraw the panel when the fit actually moved something. A phone
+      // fires resize for the address bar sliding away, and `renderControls`
+      // replaces the slider you are dragging — which drops its pointer capture
+      // and leaves the knob stuck under your finger.
+      if (!fitFirstScreen()) return;
+      renderTopButtons();
+      renderControls();
+      markDirty();
+      // The field of view moved, so the readings computed against the old one —
+      // the parity check above all — are for a camera that is no longer there.
+      requestModel(true);
+    }, 120);
+  };
+  window.addEventListener('resize', refit);
+  window.addEventListener('orientationchange', refit);
 }
 
 /**
@@ -3719,6 +3982,7 @@ function boot(): void {
     /* storage disabled */
   }
   fitFirstScreen();
+  watchViewport();
   installPointer();
   installDropTarget();
   void loadMarble();
