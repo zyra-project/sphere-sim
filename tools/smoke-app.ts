@@ -862,6 +862,78 @@ async function main(): Promise<void> {
       }
     }
 
+    // The Room tab is ordered by how often a control is reached for, not by how
+    // important the constant behind it is. That is easy to say and easy to undo,
+    // so it is asserted: the grid — which a reader toggles on every look — must
+    // come before the compositor's constants, which are class ASSUME and are set
+    // once if ever, and those constants must start put away.
+    const panel = await cdp.evaluate<{
+      order: string[];
+      constantsShowing: number;
+      afterOpen: number;
+      caret: string;
+    } | null>(`(() => {
+      const tab = [...document.querySelectorAll('#controls .seg button')]
+        .find((b) => /Room/.test(b.textContent ?? ''));
+      if (!tab) return null;
+      tab.click();
+      const marks = () => {
+        const kids = [...document.getElementById('controls').children];
+        const at = (test) => kids.findIndex((n) => test((n.textContent ?? '').trim()));
+        return {
+          grid: at((t) => /^Grid lines/.test(t)),
+          looking: at((t) => /^What you are looking at/.test(t)),
+          discl: kids.findIndex((n) => n.classList && n.classList.contains('discl')),
+        };
+      };
+      const countConstants = () =>
+        [...document.querySelectorAll('#controls .sl .lab')]
+          .filter((l) => /Seam blend width|Blend ramp|Bottom mask/.test(l.textContent ?? ''))
+          .length;
+      const m = marks();
+      const before = countConstants();
+      const caret = (document.querySelector('#controls .discl')?.textContent ?? '').trim().slice(0, 1);
+      document.querySelector('#controls .discl')?.click();
+      return {
+        order: [String(m.grid), String(m.looking), String(m.discl)],
+        constantsShowing: before,
+        afterOpen: countConstants(),
+        caret,
+      };
+    })()`);
+    if (!panel) {
+      failures.push('the Room tab has no segmented tab to click');
+    } else {
+      const [grid, looking, discl] = panel.order.map(Number);
+      if (grid < 0 || looking < 0 || discl < 0) {
+        failures.push(
+          `the Room tab is missing one of its landmarks (grid ${grid}, display block ${looking}, ` +
+            `disclosure ${discl})`,
+        );
+      } else if (!(grid < looking && looking < discl)) {
+        failures.push(
+          `the Room tab is out of order: grid at ${grid}, the display block at ${looking}, the ` +
+            `compositor's constants at ${discl}. The controls a reader touches on every look must ` +
+            'come before the ones nobody moves twice.',
+        );
+      } else if (panel.constantsShowing !== 0) {
+        failures.push(
+          `${panel.constantsShowing} ASSUME-class constants are showing before anybody asked — ` +
+            'they are meant to start behind the caret',
+        );
+      } else if (panel.afterOpen < 4) {
+        failures.push(
+          `opening the disclosure revealed ${panel.afterOpen} constants, expected the four §4.4/` +
+            '§4.5 sliders — the caret is not connected to anything',
+        );
+      } else {
+        process.stdout.write(
+          `  panel: grid at ${grid}, display block at ${looking}, ${panel.afterOpen} constants ` +
+            `behind the caret\n`,
+        );
+      }
+    }
+
     // The two capture inputs. There is no noise slider on purpose — the
     // millimetres are what the simulator produces — so these are what an
     // operator actually decides, and every one of them was declared, sent and

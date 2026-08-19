@@ -133,6 +133,17 @@ interface PageState {
   railOn: boolean;
   aimGuides: boolean;
   explain: boolean;
+  /**
+   * Whether the compositor's own constants are showing on the Room tab.
+   *
+   * Closed by default and remembered, like `explain`. The blend width, the ramp
+   * exponent and the two mask angles are class ASSUME — nobody has measured
+   * them — and they are set once, if ever. They were sitting above the controls
+   * a reader touches on every look, which is the wrong way round: a panel is
+   * ordered by how often a control is used, not by how important the constant
+   * behind it is.
+   */
+  seamsOpen: boolean;
   panelOpen: boolean;
   readoutOpen: boolean;
   /**
@@ -169,6 +180,7 @@ const state: PageState = {
   // Off by default: with every note expanded the control panel is taller than
   // most screens, and a person who wants the reasoning is one click from it.
   explain: false,
+  seamsOpen: false,
   panelOpen: true,
   readoutOpen: true,
   cameraCount: 3,
@@ -1983,9 +1995,11 @@ function setNudge(key: NudgeSpec['key'], value: number): void {
 const SECTIONS: { id: SectionId; label: string; title: string }[] = [
   { id: 'projectors', label: 'Projectors', title: 'The lenses, one at a time' },
   { id: 'install', label: 'Install', title: 'The installation' },
-  // "Seams, mask and the view" named a term — mask — that no visible sentence on
-  // the page defines, in a heading whose job is to say what is underneath it.
-  { id: 'room', label: 'Room', title: 'Seams, the polar hole and where you stand' },
+  // A heading's job is to say what is underneath it, and what is underneath it
+  // has moved. "Seams, mask and the view" named a term — mask — that no visible
+  // sentence on the page defines; "Seams, the polar hole and where you stand"
+  // then led on the one block that is now last and behind a caret.
+  { id: 'room', label: 'Room', title: 'What is on the ball, and how you look at it' },
 ];
 
 function sectionTabs(): HTMLElement {
@@ -2161,6 +2175,83 @@ function projectorSection(): HTMLElement[] {
  * between are real. Those are rendered by their section and named here so they
  * cannot also appear as a slider.
  */
+/**
+ * One control's slider, from its spec.
+ *
+ * Lifted out of `controlsFor` so a tab can also lay controls out by NAME. The
+ * two orders are not the same question: `GROUPS` says what a control is about,
+ * and a panel is ordered by how often it is reached for.
+ */
+function sliderFor(spec: (typeof CONTROLS)[number]): HTMLElement {
+  return slider({
+    label: spec.label,
+    symbol: spec.symbol,
+    value: state.settings[spec.key],
+    min: spec.min,
+    max: spec.max,
+    step: spec.step,
+    decimals: spec.decimals,
+    unit: spec.unit,
+    displayScale: spec.displayScale,
+    options: spec.options,
+    // The section is a TAG beside the label, not the first word of the
+    // sentence: the one surface built to be plain language used to open
+    // every note with a document symbol — and for a control whose section
+    // is '—' it opened with a bare dash and no referent.
+    help: spec.help,
+    section: spec.section,
+    klass: spec.klass,
+    bipolar: spec.min < 0 && spec.max > 0,
+    onInput: (v) => setSetting(spec.key, v),
+    readBack: () => state.settings[spec.key],
+    onSettle: () => requestModel(true),
+  });
+}
+
+/**
+ * Named controls, in the order asked for, with no group heading.
+ *
+ * The Room tab needs this because its groups and its usage do not line up:
+ * `view` holds both the display terms somebody touches on every look and the
+ * camera sliders that restate a drag, and `blend` holds four constants nobody
+ * moves twice. Sorting a tab by frequency means naming the controls, and naming
+ * them here rather than reshuffling `GROUPS` keeps the data saying what each
+ * control is ABOUT — which is what the Install and Projectors tabs read it for,
+ * and what the readout's provenance tags mean.
+ */
+function controlsByKey(keys: readonly SettingKey[]): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  for (const key of keys) {
+    const spec = CONTROLS.find((c) => c.key === key);
+    // Silent omission would be a control that vanished from the panel while
+    // every test that only counts sliders carried on passing.
+    if (!spec) throw new Error(`no control declared for '${key}'`);
+    out.push(sliderFor(spec));
+  }
+  return out;
+}
+
+/**
+ * A heading that opens and shuts what follows it.
+ *
+ * `#controls` is rebuilt wholesale on every change, so a native
+ * `<details>` would snap closed under the reader on each keystroke. The open
+ * state therefore lives in `PageState` and is remembered, exactly as the
+ * "what do these do?" notes are.
+ */
+function disclosure(title: string, open: boolean, onToggle: () => void): HTMLElement {
+  const b = el('button', {
+    className: open ? 'lab discl on' : 'lab discl',
+    // A real caret rather than a rotating glyph: it has to read as
+    // open-or-shut at 11px on a phone.
+    textContent: `${open ? '\u25be' : '\u25b8'}  ${title}`,
+    title: open ? 'Put these away' : 'Show these',
+  });
+  b.setAttribute('aria-expanded', open ? 'true' : 'false');
+  b.addEventListener('click', onToggle);
+  return b;
+}
+
 function controlsFor(groups: readonly string[], skip: readonly SettingKey[] = []): HTMLElement[] {
   const out: HTMLElement[] = [];
   // Group by group, in the order GROUPS declares, with each group's authored
@@ -2174,33 +2265,7 @@ function controlsFor(groups: readonly string[], skip: readonly SettingKey[] = []
     if (specs.length === 0) continue;
     out.push(el('span', { className: 'lab', textContent: g.title }));
     out.push(el('p', { className: 'grouphelp', textContent: g.blurb }));
-    for (const spec of specs) {
-      out.push(
-        slider({
-          label: spec.label,
-          symbol: spec.symbol,
-          value: state.settings[spec.key],
-          min: spec.min,
-          max: spec.max,
-          step: spec.step,
-          decimals: spec.decimals,
-          unit: spec.unit,
-          displayScale: spec.displayScale,
-          options: spec.options,
-          // The section is a TAG beside the label, not the first word of the
-          // sentence: the one surface built to be plain language used to open
-          // every note with a document symbol — and for a control whose section
-          // is '—' it opened with a bare dash and no referent.
-          help: spec.help,
-          section: spec.section,
-          klass: spec.klass,
-          bipolar: spec.min < 0 && spec.max > 0,
-          onInput: (v) => setSetting(spec.key, v),
-          readBack: () => state.settings[spec.key],
-          onSettle: () => requestModel(true),
-        }),
-      );
-    }
+    for (const spec of specs) out.push(sliderFor(spec));
   }
   return out;
 }
@@ -2503,12 +2568,8 @@ function roomSection(): HTMLElement[] {
     el('p', {
       className: 'note tiny',
       textContent:
-        'Drop a file anywhere on the page, or use the chip. Any 2:1 equirectangular map — a NOAA ' +
-        'dataset, a test chart, your own — still or an .mp4, which loops. It is read in the page, ' +
-        'converted out of sRGB into the linear light the model works in, and never sent ' +
-        'anywhere. A video is decoded on the GPU straight onto the sphere; the model is handed ' +
-        'one frame every couple of seconds, and the parity check compares the two renderers on ' +
-        'that frame rather than on two moments a tenth of a second apart.',
+        'Drop a file anywhere on the page, or use the chip. Any 2:1 equirectangular map, still or ' +
+        'an .mp4 — which loops. Read in the page, never sent anywhere.',
     }),
   );
 
@@ -2540,7 +2601,56 @@ function roomSection(): HTMLElement[] {
     out.push(err);
   }
 
-  out.push(...controlsFor(['blend', 'view'], ['content', 'gridOn']));
+  // The graticule is part of what is ON the sphere, so it belongs here rather
+  // than at the bottom of a slider list two headings away — which is where the
+  // spacing was, dead last on the tab, under four constants nobody moves.
+  //
+  // Still not IN the chip row above. That row is one-of-N and the grid is an
+  // independent on/off; a lit chip in a radio group reads as a multi-select and
+  // made the four fields look combinable. Its own row, immediately under, says
+  // both things: separate control, same subject.
+  out.push(
+    chipRow([
+      {
+        label: 'Grid lines',
+        title:
+          'The alignment graticule, over whatever the base field is. This is the pattern the ' +
+          'grid-displacement gate measures and the one a misalignment shows up in.',
+        on: Math.round(state.settings.gridOn) === 1,
+        onPick: () => setSetting('gridOn', Math.round(state.settings.gridOn) === 1 ? 0 : 1),
+      },
+    ]),
+  );
+  if (Math.round(state.settings.gridOn) === 1) out.push(...controlsByKey(['gridDeg']));
+
+  // Everything a reader touches on every look, and not one of them can move a
+  // number. That is not a convenience claim — every control in this block is
+  // class PANEL, which is the same fact the readout's provenance tags carry, and
+  // it is worth saying where the controls are rather than only in a document.
+  out.push(el('span', { className: 'lab', textContent: 'What you are looking at' }));
+  // Always visible, not a note. `.grouphelp` is `display: none` until somebody
+  // turns on "what do these do?", and this sentence is the point of the grouping
+  // rather than a gloss on it: it is what makes the block safe to play with, and
+  // a reader who has to switch the notes on to find that out has already been
+  // careful for no reason. One line, because the block below it is the thing a
+  // phone reader came here to reach.
+  out.push(
+    el('p', {
+      className: 'note tiny',
+      textContent: 'Display only — nothing here can move a number.',
+    }),
+  );
+  out.push(
+    el('p', {
+      className: 'grouphelp',
+      textContent:
+        'Overlays, scenery and the grade on the way to your screen. Every control in this block ' +
+        'is class PANEL, which is the same fact the provenance tags in the readout carry: the ' +
+        'metrics are computed from the rig and the content, so none of these reaches one. The ' +
+        'parity check goes further and asserts the two display curves are OFF when it reads the ' +
+        'render back, so the number it prints is the model’s own radiance underneath them.',
+    }),
+  );
   out.push(el('span', { className: 'lab', textContent: 'Show me' }));
   const overlays: { id: OverlayMode; label: string; title: string }[] = [
     { id: 'none', label: 'Plain', title: 'The sphere as a visitor sees it.' },
@@ -2585,53 +2695,9 @@ function roomSection(): HTMLElement[] {
       })),
     ),
   );
-  out.push(el('span', { className: 'lab', textContent: 'Where you stand' }));
-  // Which chip is lit, if any: dragging the sphere leaves none of them lit,
-  // which is correct — the viewpoint is then wherever you put it.
-  // The field of view is excluded on a narrow viewport, because that is the one
-  // key the chip deliberately does NOT write there — `fitFirstScreen` owns it,
-  // and comparing against the desktop 71 would mean no chip could ever light up
-  // on a phone however exactly you had landed on its viewpoint.
-  const skipFov = narrowViewport();
-  const here = VIEWPOINTS.findIndex((v) =>
-    (Object.keys(v.view) as (keyof typeof v.view)[])
-      .filter((k) => !(skipFov && k === 'viewFovDeg'))
-      .every((k) => Math.abs(state.settings[k] - v.view[k]) < 1e-6),
-  );
-  out.push(
-    chipRow(
-      VIEWPOINTS.map((v, i) => ({
-        label: v.label,
-        title: v.help,
-        on: here === i,
-        onPick: () => {
-          // Where you STAND. Not what is installed, so it must not mark the
-          // comparison stale — and on a narrow viewport it must not undo the
-          // portrait field `fitFirstScreen` chose, or one tap on "Whole room"
-          // puts a 390 px phone back to a ~114 degree vertical frustum with no
-          // way back except the field-of-view slider.
-          const { viewFovDeg, ...rest } = v.view;
-          state.settings = {
-            ...state.settings,
-            ...rest,
-            viewFovDeg: narrowViewport() ? portraitFovDeg() : viewFovDeg,
-          };
-          touched(false);
-        },
-      })),
-    ),
-  );
   out.push(el('span', { className: 'lab', textContent: 'In the room' }));
   out.push(
     chipRow([
-      {
-        label: 'Grid lines',
-        title:
-          'The alignment graticule, over whatever the base field is. This is the pattern the ' +
-          'grid-displacement gate measures and the one a misalignment shows up in.',
-        on: Math.round(state.settings.gridOn) === 1,
-        onPick: () => setSetting('gridOn', Math.round(state.settings.gridOn) === 1 ? 0 : 1),
-      },
       {
         label: 'Projectors',
         title:
@@ -2673,6 +2739,51 @@ function roomSection(): HTMLElement[] {
       },
     ]),
   );
+  // The grade on the way to the screen. Three PANEL sliders, here rather than in
+  // the middle of the camera controls they used to sit among.
+  out.push(...controlsByKey(['viewExposure', 'viewLift', 'viewSamples']));
+
+  out.push(el('span', { className: 'lab', textContent: 'Where you stand' }));
+  // Which chip is lit, if any: dragging the sphere leaves none of them lit,
+  // which is correct — the viewpoint is then wherever you put it.
+  // The field of view is excluded on a narrow viewport, because that is the one
+  // key the chip deliberately does NOT write there — `fitFirstScreen` owns it,
+  // and comparing against the desktop 71 would mean no chip could ever light up
+  // on a phone however exactly you had landed on its viewpoint.
+  const skipFov = narrowViewport();
+  const here = VIEWPOINTS.findIndex((v) =>
+    (Object.keys(v.view) as (keyof typeof v.view)[])
+      .filter((k) => !(skipFov && k === 'viewFovDeg'))
+      .every((k) => Math.abs(state.settings[k] - v.view[k]) < 1e-6),
+  );
+  out.push(
+    chipRow(
+      VIEWPOINTS.map((v, i) => ({
+        label: v.label,
+        title: v.help,
+        on: here === i,
+        onPick: () => {
+          // Where you STAND. Not what is installed, so it must not mark the
+          // comparison stale — and on a narrow viewport it must not undo the
+          // portrait field `fitFirstScreen` chose, or one tap on "Whole room"
+          // puts a 390 px phone back to a ~114 degree vertical frustum with no
+          // way back except the field-of-view slider.
+          const { viewFovDeg, ...rest } = v.view;
+          state.settings = {
+            ...state.settings,
+            ...rest,
+            viewFovDeg: narrowViewport() ? portraitFovDeg() : viewFovDeg,
+          };
+          touched(false);
+        },
+      })),
+    ),
+  );
+  // The camera, under the chips that set it. These four restate a drag and a
+  // pinch, which is why the chips come first: they are what a reader actually
+  // clicks, and the sliders are for saying a number out loud.
+  out.push(...controlsByKey(['viewAzDeg', 'viewElDeg', 'viewRangeM', 'viewFovDeg']));
+
   out.push(el('span', { className: 'lab', textContent: 'Show only' }));
   const n = Math.round(state.settings.projectorCount);
   out.push(
@@ -2708,6 +2819,36 @@ function roomSection(): HTMLElement[] {
         'switching a projector off is on the Projectors tab.',
     ),
   );
+
+  // LAST, and shut. These are the compositor's constants — §4.5's blend width and
+  // ramp exponent, §4.4's two mask angles, §5's ambient — and four of the five
+  // are class ASSUME: nobody has measured them. They are also the only controls
+  // on this tab that CAN move a number, which is exactly why they should not be
+  // the first thing under a reader's thumb.
+  //
+  // They used to sit above everything: a phone reader scrolled past four
+  // constants they will never touch to reach the grid toggle they touch every
+  // time. Behind a caret they are one tap away and no longer in the road.
+  out.push(
+    disclosure('Seams and the polar hole', state.seamsOpen, () => {
+      state.seamsOpen = !state.seamsOpen;
+      rememberSeamsOpen();
+      renderControls();
+    }),
+  );
+  if (state.seamsOpen) {
+    out.push(
+      el('p', {
+        className: 'grouphelp',
+        textContent:
+          'What the compositor is told to do where two projectors meet, and where it stops ' +
+          'painting toward the south pole. These are the only controls on this tab a metric can ' +
+          'see. Four of them are class ASSUME — the shape of the ramp and the two mask angles are ' +
+          'nobody’s measurement — so moving them changes the answer and the readout will say so.',
+      }),
+    );
+    out.push(...controlsByKey(['blendDeg', 'rampGamma', 'maskLoDeg', 'maskHiDeg', 'ambient']));
+  }
   return out;
 }
 
@@ -2821,10 +2962,19 @@ const HELP_SEEN_KEY = 'sphere-sim.help.seen.v1';
  * storage disabled loses the preference rather than breaking.
  */
 const EXPLAIN_KEY = 'sphere-sim.explain.v1';
+const SEAMS_KEY = 'sphere-sim.seams-open.v1';
 
 function rememberExplain(): void {
   try {
     localStorage.setItem(EXPLAIN_KEY, state.explain ? '1' : '0');
+  } catch {
+    /* storage disabled */
+  }
+}
+
+function rememberSeamsOpen(): void {
+  try {
+    localStorage.setItem(SEAMS_KEY, state.seamsOpen ? '1' : '0');
   } catch {
     /* storage disabled */
   }
@@ -5012,6 +5162,7 @@ function boot(): void {
   }
   try {
     state.explain = localStorage.getItem(EXPLAIN_KEY) === '1';
+    state.seamsOpen = localStorage.getItem(SEAMS_KEY) === '1';
   } catch {
     /* storage disabled */
   }

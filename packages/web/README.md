@@ -219,6 +219,23 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   term and the parity check runs them at the same value — which is how the
   missing half of it was found, at 100% of lit pixels over tolerance, the moment
   a phone layout first pushed it off zero.
+- **The Room tab is ordered by how often a control is reached for.** It used to
+  be ordered by subject, which put §4.5's blend width and ramp exponent and
+  §4.4's two mask angles — class ASSUME, set once if ever — above the grid
+  toggle, and left "Grid spacing" as the last row of the last group. On a phone a
+  reader scrolled past four constants they will never touch to reach the one they
+  toggle on every look. Now: what is on the ball (content, then the grid) → what
+  you are looking at (overlays, scenery, the display grade) → where you stand →
+  and the compositor's constants last, behind a caret that remembers whether it
+  was open, the same way the notes toggle does.
+
+  The display block carries one always-visible line — *display only, nothing here
+  can move a number* — and that is not a convenience claim: every control in it
+  is class `PANEL`, the same fact the readout's provenance tags carry. Grouping
+  by frequency and grouping by "can this move a number" turned out to be the same
+  cut, which is why the block can say so. `tools/smoke-app.ts` asserts the order
+  and that the constants start put away, because an ordering is exactly the kind
+  of thing that comes undone without anything failing.
 - **A first screen with nothing open on it.** The projector card starts closed.
   It describes ONE projector, and on first sight there is no reason to think the
   page is about P1 rather than about the sphere; showing it unprompted answers a

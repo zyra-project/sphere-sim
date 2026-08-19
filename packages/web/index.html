@@ -220,6 +220,15 @@ button { font-family: inherit; }
   color: var(--muted); transition: background .15s, border-color .15s, color .15s; }
 .chip:hover { color: var(--fg); }
 .chip.on { background: rgba(77,166,255,0.16); border-color: rgba(77,166,255,0.5); color: var(--accent); }
+/* A group heading that opens and shuts what follows it. Same type as the other
+   headings — it is one of them, not a new kind of control — with a caret and a
+   hit area big enough for a thumb. */
+#controls > .lab.discl { display: block; width: 100%; text-align: left; cursor: pointer;
+  background: none; border: none; padding: 6px 0; margin: 2px 0 0; font: inherit;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--dim); }
+#controls > .lab.discl:hover { color: var(--fg-2); }
+#controls > .lab.discl.on { color: var(--fg-2); }
 .linkish { padding: 0; background: none; border: none; font-size: 10px; letter-spacing: 0.03em;
   cursor: pointer; text-decoration: underline; text-underline-offset: 2px; color: var(--dim); }
 .linkish:hover { color: var(--accent); }
