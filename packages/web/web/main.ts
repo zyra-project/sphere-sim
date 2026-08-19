@@ -1330,6 +1330,14 @@ function ensureContent(image: { width: number; height: number; data: Float32Arra
  * small enough that it does not read as an object the light comes out of the
  * middle of.
  */
+/**
+ * A visitor's eye off the floor, metres.
+ *
+ * The same 1.5 m `pipeline.ts` stands its capture cameras at, and for the same
+ * reason: it is where a person's head is, whatever the room is doing.
+ */
+const VISITOR_EYE_M = 1.5;
+
 const MARKER_RADIUS_M = 0.12;
 
 /**
@@ -2772,11 +2780,32 @@ function renderInspect(): void {
       const walk = el('button', {
         className: 'linkish',
         textContent: `stand where P${state.selected + 1} does`,
-        title: 'This projector lights the side of the ball you are not looking at.',
+        title:
+          'Walk round to this projector\u2019s side of the room and look up at the ball from ' +
+          'under its beam, where a visitor stands.',
       });
       walk.addEventListener('click', () => {
         // Walking round the ball is a view change, not an installation change.
         state.settings = withSetting(state.settings, 'viewAzDeg', az);
+        // And UNDER the projector, not above it.
+        //
+        // Azimuth alone put the eye at the default 14 degrees and 10.2 m, which
+        // is above a lens sitting at about 2 degrees and 5.36 m — so walking
+        // round to a projector's side parked its body squarely between you and
+        // the sphere, filling the frame with the back of a box. The lens hangs
+        // just above the equator and a visitor's eye is well below it, so
+        // standing where the projector throws from means standing under it and
+        // looking slightly up, which is also what §6 describes.
+        //
+        // Derived from the room rather than fixed: the sphere centre sits at the
+        // equator height and that is a slider, so a 108-inch equator has to move
+        // the eye with it or this stops being a viewer's eye and becomes a
+        // number that used to be one.
+        const centreM = state.settings.equatorIn * IN_TO_M;
+        const rise = VISITOR_EYE_M - centreM;
+        const r = Math.max(state.settings.viewRangeM, 1e-6);
+        const el = (Math.asin(Math.max(-1, Math.min(1, rise / r))) * 180) / Math.PI;
+        state.settings = withSetting(state.settings, 'viewElDeg', el);
         touched(false);
       });
       caption = walk;
