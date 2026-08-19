@@ -862,6 +862,52 @@ async function main(): Promise<void> {
       }
     }
 
+    // Switching a projector off at the wall is now done by clicking the tab of
+    // the projector you are already on, and there is no other control that does
+    // it — the labelled On / "Off at the wall" pair that used to sit under these
+    // tabs is gone. A gesture that is the ONLY way to reach a state has to be
+    // asserted, because nothing else on the page will notice if it stops working.
+    const wall = await cdp.evaluate<string[] | null>(`(() => {
+      const tab = [...document.querySelectorAll('#controls .seg button')]
+        .find((b) => /Projectors/.test(b.textContent ?? ''));
+      if (!tab) return null;
+      tab.click();
+      const first = () => [...document.querySelectorAll('#controls .ptabs button')][0];
+      const state = () => (first()?.className ?? '(none)');
+      const seen = [state()];
+      // Selected already, so this is the switch.
+      first()?.click();
+      seen.push(state());
+      first()?.click();
+      seen.push(state());
+      // And nothing else on the tab offers the same thing.
+      const strays = [...document.querySelectorAll('#controls .chip')]
+        .filter((c) => /^(On|Off at the wall)$/.test((c.textContent ?? '').trim())).length;
+      seen.push('strays=' + strays);
+      return seen;
+    })()`);
+    if (!wall) {
+      failures.push('the Projectors tab has no projector tabs');
+    } else {
+      const [start, off, back, strays] = wall;
+      if (!start.includes('on')) {
+        failures.push(`the first projector tab does not start selected (class '${start}')`);
+      } else if (!off.includes('dark')) {
+        failures.push(
+          `clicking the selected projector tab did not switch it off at the wall (class '${off}')`,
+        );
+      } else if (back.includes('dark')) {
+        failures.push(`clicking it again did not switch it back on (class '${back}')`);
+      } else if (strays !== 'strays=0') {
+        failures.push(
+          `the Projectors tab still carries a separate On / Off pair (${strays}) — two controls ` +
+            'for one action',
+        );
+      } else {
+        process.stdout.write('  projector tab: select, off at the wall, back on\n');
+      }
+    }
+
     // The Room tab is ordered by how often a control is reached for, not by how
     // important the constant behind it is. That is easy to say and easy to undo,
     // so it is asserted: the grid — which a reader toggles on every look — must

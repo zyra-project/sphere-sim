@@ -2023,20 +2023,31 @@ function projectorTabs(): HTMLElement {
     const selected = state.selected === i;
     const b = el('button', {
       className: `${selected ? 'on' : ''}${on ? '' : ' dark'}`,
+      // This tab is now the ONLY switch, so its tooltip carries the whole state
+      // rather than pointing at a labelled control underneath it.
       title: !selected
-        ? `Edit P${i + 1}.`
+        ? on
+          ? `Edit P${i + 1}. Click it again to switch it off at the wall.`
+          : `P${i + 1} is switched off at the wall. Select it, then click again to switch it back on.`
         : on
-          ? 'Click again to switch it off at the wall.'
+          ? 'Click again to switch it off at the wall — its quadrant of the framebuffer goes dark.'
           : 'Switched off at the wall — its quadrant of the framebuffer is dark. Click to switch it back on.',
     });
     const dot = el('span', { className: 'dot' });
     dot.style.background = PROJECTOR_TINTS[i] ?? '#888';
     b.append(dot, el('span', { textContent: `P${i + 1}` }));
-    // First click selects, second click switches it off at the wall — and the
-    // On / Off pair below says which state it is in, so the gesture is a
-    // shortcut for a control that is visible rather than the only way to reach
-    // it. Clicking a lens in the ROOM never toggles: an accidental double-click
-    // on the sphere should not change the installation.
+    // First click selects, second click switches it off at the wall.
+    //
+    // There used to be a labelled On / "Off at the wall" pair under these tabs
+    // as well, on the argument that switching a projector off is a change to the
+    // installation and deserves a control that says which state it is in. It
+    // does — but the tab already says it, twice: it is struck through and it
+    // carries a warning border, which is what the CSS beside `.ptabs
+    // button.dark` is for. Two controls for one action, one under the other,
+    // reads as a mistake rather than as care.
+    //
+    // Clicking a lens in the ROOM still never toggles: an accidental
+    // double-click on the sphere should not change the installation.
     b.addEventListener('click', () => {
       if (!selected) {
         selectProjector(i);
@@ -2062,48 +2073,11 @@ function projectorSection(): HTMLElement[] {
       textContent:
         'Pick a projector to move it — here, or by clicking its lens in the room. These are its ' +
         'real position and aim; what the software believes only changes when you recalibrate, ' +
-        'which is why the frame below does not move when you drag these. Clicking the tab of the ' +
-        'projector already selected switches it off at the wall, which is what the pair below is ' +
-        'showing you.',
+        'which is why the frame below does not move when you drag these. Click the tab of the ' +
+        'projector you are already on to switch it off at the wall, and again to switch it back; ' +
+        'a struck-through tab is a dark quadrant.',
     }),
   );
-  {
-    // The only switch on the page. Switching a projector off is a change to the
-    // installation — a dark quadrant, a hole in the coverage, a different unlit
-    // figure — so it gets a labelled control that says which state it is in,
-    // rather than a second click on the tab you use to select things.
-    const lit = state.settings.nudge[state.selected]?.on !== false;
-    out.push(
-      chipRow(
-        [
-          {
-            label: 'On',
-            on: lit,
-            onPick: () => {
-              if (lit) return;
-              clearCalibration();
-              state.settings = withNudge(state.settings, state.selected, { on: true });
-              touched(true);
-            },
-          },
-          {
-            label: 'Off at the wall',
-            on: !lit,
-            onPick: () => {
-              if (!lit) return;
-              clearCalibration();
-              state.settings = withNudge(state.settings, state.selected, { on: false });
-              touched(true);
-            },
-          },
-        ],
-        'Switching one off is what an operator does when a lamp fails. Its quadrant of the ' +
-          'framebuffer goes dark and the framebuffer keeps its size (§2), so the sphere loses that ' +
-          'share of its light entirely and the neighbours do not widen to cover the gap — watch the ' +
-          'unlit figure. Nothing else on this page turns a projector on or off.',
-      ),
-    );
-  }
   const nudge = state.settings.nudge[state.selected];
   const tint = PROJECTOR_TINTS[state.selected] ?? '#888';
   const live = model?.live[state.selected] ?? true;
@@ -2113,8 +2087,9 @@ function projectorSection(): HTMLElement[] {
       textContent:
         `P${state.selected + 1} is switched off at the wall. Its quadrant of the framebuffer is ` +
         'dark and the framebuffer keeps its size — PARAMETERS.md §2\u2019s "quadrants go dark". ' +
-        'The sphere loses that share of its light entirely; watch the unlit figure. The On / Off ' +
-        'pair above puts it back.',
+        'The sphere loses that share of its light entirely, and the neighbours do not widen to ' +
+        'cover the gap; watch the unlit figure. Click its tab above to switch it back on. This is ' +
+        'the only control on the page that does it.',
     });
     off.style.color = 'var(--warn)';
     out.push(off);
