@@ -2801,10 +2801,17 @@ function renderInspect(): void {
         // equator height and that is a slider, so a 108-inch equator has to move
         // the eye with it or this stops being a viewer's eye and becomes a
         // number that used to be one.
+        //
+        // And at the projector's own distance, which is what the label says and
+        // also the only realistic place to put a person: the lens ring is 5.36 m
+        // out and the ceiling is 14 feet, so a gallery holding this is about
+        // twelve metres across. The default 10.2 m viewpoint is a fine way to
+        // see the whole installation and it is standing outside the building.
         const centreM = state.settings.equatorIn * IN_TO_M;
         const rise = VISITOR_EYE_M - centreM;
-        const r = Math.max(state.settings.viewRangeM, 1e-6);
+        const r = Math.max(Math.hypot(lx, ly), Math.abs(rise) + 0.5);
         const el = (Math.asin(Math.max(-1, Math.min(1, rise / r))) * 180) / Math.PI;
+        state.settings = withSetting(state.settings, 'viewRangeM', r);
         state.settings = withSetting(state.settings, 'viewElDeg', el);
         touched(false);
       });
