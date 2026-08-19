@@ -171,6 +171,26 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   different angles: no metric reads this path, and the parity check runs the CPU
   model on the SAME grid so it keeps comparing two renderers rather than two
   sampling patterns.
+- **A dropped .mp4, looping on the sphere.** The SOS datasets ship as 2048×1024
+  equirect mp4s, so a still was the wrong shape for the thing this page is about.
+  The image path is useless at video rates — `createImageBitmap`, a canvas
+  downscale, `getImageData`, six million `Math.pow` calls and a 25 MB float array
+  is 150 ms a frame — so a video is decoded on the GPU instead: one pass per
+  frame writing `pow(c, 2.2)` into exactly the linear-light texture a dropped
+  image would have produced. Everything downstream is untouched, because what it
+  samples is the same thing it always was. Sampling the 8-bit video texture
+  directly would have been simpler and is wrong: the hardware would interpolate
+  ENCODED values where the CPU model interpolates linear ones, and
+  decode-then-filter is not filter-then-decode.
+
+  No metric reads the content — `metrics/grid.ts` is analytic, the photometric
+  set generates its own flat field, and the solve is structured light — so a
+  video moves no gate and no calibration. What it does touch is the parity check,
+  and there the model is handed one frame every couple of seconds, read back off
+  the GPU rather than decoded a second way, with a copy held so the shader and
+  `renderTwoRigRoomView` are compared on ONE frame rather than on two moments a
+  tenth of a second apart. Measured with a clip playing: 1.1e-5 of relative
+  radiance, no lit pixel over tolerance.
 - **A phone sizes its sheets from what the other one took.** The narrow layout
   is two sheets pinned to the top and bottom edges with the room visible between
   them, and the top sheet's height is what is left over — which means something
@@ -388,6 +408,9 @@ node --test "packages/web/test/**/*.test.ts"
   needs no correction on a perfect rig, wants pixels on a knocked one, and
   vanishes when the compositor is handed the truth — which is what proves it is
   composing two rigs rather than reading one twice
+- `media.test.ts` — which loader a dropped file goes to, including the empty MIME
+  type some drag sources send; and one 2:1 rule shared by both loaders, because a
+  16:9 clip stretched onto a sphere still looks like a planet
 - `parity.test.ts` — the two calibration facts above, measured
 - `supersample.test.ts` — the sample grid tiles the pixel and one sample is its
   centre; a feature wider than 1/n of a pixel cannot fall between an n × n set,

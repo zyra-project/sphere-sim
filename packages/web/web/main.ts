@@ -63,6 +63,7 @@ import {
 import {
   buildViewer,
   buildWorld,
+  CONTENT_DECODE_GAMMA,
   framingRangeM,
   nudgesAreClear,
   worstAimOffender,
@@ -88,7 +89,17 @@ import type {
   WarpMesh,
 } from '../src/protocol.ts';
 import type { DisplayGl } from './gl.ts';
-import { createDisplayGl, drawToCanvas, renderAndRead, uploadEquirect } from './gl.ts';
+import {
+  createDisplayGl,
+  drawToCanvas,
+  freezeContent,
+  releaseVideoTarget,
+  renderAndRead,
+  uploadEquirect,
+  uploadVideoFrame,
+  withFrozenContent,
+} from './gl.ts';
+import { equirectAspectError, mediaKind } from '../src/media.ts';
 
 // ---------------------------------------------------------------------------
 // State
@@ -182,9 +193,77 @@ let resultView: 'axes' | 'config' = 'axes';
 
 let gl: DisplayGl | null = null;
 let contentKey = '';
-/** A supplied equirectangular image, in linear light. Never leaves the page. */
+/**
+ * A supplied equirectangular image, in linear light. Never leaves the page.
+ *
+ * When a VIDEO is playing this holds the last frame the model was given — see
+ * `snapshotVideo`. The display is not drawn from it; the GPU has its own decoded
+ * copy and is a tenth of a second ahead.
+ */
 let customImage: EquirectImage | null = null;
 let customName = '';
+
+/**
+ * The dropped video, if there is one, and the object URL it is playing from.
+ *
+ * The file never leaves the page: an object URL is a handle to the reader's own
+ * blob, exactly as `readEquirect` reads a dropped image in the tab. Nothing is
+ * fetched and nothing is uploaded.
+ */
+let customVideo: HTMLVideoElement | null = null;
+let customVideoUrl = '';
+/** The raster the video decodes into. See `videoRasterFor`. */
+let videoRaster = { width: 0, height: 0 };
+/**
+ * `currentTime` at the last upload, so a 30 fps video costs 30 draws a second
+ * and not 60. There is a `requestVideoFrameCallback` that would answer this
+ * exactly; it is not in every browser this page runs in, and the clock is.
+ */
+let lastVideoTime = -1;
+/** Counts the frames handed to the model, so each one is a new cache key. */
+let videoFrameSeq = 0;
+/**
+ * Why the last snapshot failed, if it did.
+ *
+ * Its own field rather than `lastError`, which the next model reply clears — so
+ * a read-back that failed every time still reported nothing, and the CPU model
+ * sat on a black frame while the sphere played.
+ */
+let snapshotError = '';
+
+/**
+ * How often the model is handed a fresh frame while a video plays, in ms.
+ *
+ * A video is the only content that changes with nobody touching the page, so the
+ * settle timer — which follows the CONTROLS — never fires and the model would
+ * keep whatever frame happened to be up when the file was dropped. That is the
+ * discrepancy this repository has already been caught by once: a sphere showing
+ * one thing and the picture captioned "what the projector is sending" showing
+ * another.
+ *
+ * Two seconds rather than every frame because of what is actually downstream. No
+ * metric reads the content — `metrics/grid.ts` is analytic and the photometric
+ * set generates its own flat field — so this feeds exactly two things: the parity
+ * check, and the projector frame previews. Both want a frame from the last few
+ * seconds; neither wants thirty a second, which would be a full-density metrics
+ * pass and a 25 MB read-back per frame for numbers that cannot move.
+ */
+const VIDEO_MODEL_INTERVAL_MS = 2000;
+
+/** Is a dropped video the content the sphere is currently showing? */
+function videoActive(): boolean {
+  return customVideo !== null && Math.round(state.settings.content) === CONTENT_CUSTOM;
+}
+
+/** Has the video moved on since the texture was last written? */
+function videoAdvanced(): boolean {
+  const v = customVideo;
+  if (!v || !videoActive()) return false;
+  // HAVE_CURRENT_DATA. Below this there is no frame to upload and `texImage2D`
+  // would throw or upload a black one.
+  if (v.readyState < 2) return false;
+  return v.currentTime !== lastVideoTime;
+}
 /**
  * The shipped Blue Marble, once. Two slots rather than one so that picking Blue
  * marble does not throw away an image somebody dropped, and dropping one does not
@@ -799,14 +878,9 @@ function matchesInstall(a: Settings, b: Settings): boolean {
 async function readEquirect(file: File): Promise<EquirectImage> {
   const bitmap = await createImageBitmap(file);
   try {
-    const ratio = bitmap.width / bitmap.height;
-    if (Math.abs(ratio - 2) > 0.08) {
-      throw new Error(
-        `that image is ${bitmap.width}×${bitmap.height}, a ${ratio.toFixed(2)}:1 aspect. An ` +
-          'equirectangular sphere map is 2:1 — stretching this one would put the poles in the ' +
-          'wrong place.',
-      );
-    }
+    // One rule, shared with the video loader. See `media.ts`.
+    const wrong = equirectAspectError(bitmap.width, bitmap.height, 'image');
+    if (wrong) throw new Error(wrong);
     // Downscale to the raster the rest of the page uses.
     //
     // This is the binding limit on how much detail the sphere can show, and the
@@ -840,7 +914,7 @@ async function readEquirect(file: File): Promise<EquirectImage> {
     const out = createImage(w, h);
     for (let i = 0; i < w * h; i++) {
       for (let c = 0; c < 3; c++) {
-        out.data[3 * i + c] = Math.pow(px[4 * i + c] / 255, 2.2);
+        out.data[3 * i + c] = Math.pow(px[4 * i + c] / 255, CONTENT_DECODE_GAMMA);
       }
     }
     return out;
@@ -849,13 +923,31 @@ async function readEquirect(file: File): Promise<EquirectImage> {
   }
 }
 
+/**
+ * A dropped file, to whichever loader its type names.
+ *
+ * One entry point for the button and the drop target, because "the page takes
+ * video too" has to be true of both or it is a feature nobody finds.
+ */
+async function loadCustomMedia(file: File): Promise<void> {
+  if (mediaKind(file.type, file.name) === 'video') {
+    await loadCustomVideo(file);
+    return;
+  }
+  await loadCustomImage(file);
+}
+
 async function loadCustomImage(file: File): Promise<void> {
   customError = '';
   try {
-    customImage = await readEquirect(file);
+    const image = await readEquirect(file);
+    // Only after it decoded: a file that fails the aspect check must leave
+    // whatever was playing exactly where it was.
+    stopVideo();
+    customImage = image;
     customName = `${file.name}:${file.size}`;
     sentImageId = '';
-  solveSentImageId = '';
+    solveSentImageId = '';
     state.settings = withSetting(state.settings, 'content', CONTENT_CUSTOM);
     contentKey = '';
     // A different picture on the sphere, so the snapshotted frames are of a
@@ -868,6 +960,174 @@ async function loadCustomImage(file: File): Promise<void> {
     customName = '';
     customError = err instanceof Error ? err.message : String(err);
     renderControls();
+  }
+}
+
+/**
+ * The raster a video decodes into.
+ *
+ * Its own, up to the 2048 a dropped image is held to — so the usual SOS dataset,
+ * which is 2048x1024, is copied one texel to one texel rather than resampled to
+ * a raster it already has. Above that it comes down, for the reason
+ * `readEquirect` gives: 2048 is 2.65 mm of sphere per texel against 0.687 mm for
+ * a projector pixel, and 4096 costs four times the memory in three places to be
+ * twice as coarse as the thing drawing it instead of eight times.
+ *
+ * Even, because the height is half the width and a half-texel is not a thing.
+ */
+function videoRasterFor(videoWidth: number): { width: number; height: number } {
+  const width = Math.max(2, 2 * Math.round(Math.min(2048, videoWidth) / 2));
+  return { width, height: Math.round(width / 2) };
+}
+
+let videoModelTimer = 0;
+
+/**
+ * Keep the model's copy of the frame from falling behind the sphere's.
+ *
+ * Hung off the same `requestModel` the settle timer uses, so it obeys the
+ * one-in-flight lock and cannot pile up behind a slow worker. Skipped while the
+ * tab is hidden: a backgrounded page decodes nothing worth measuring and the
+ * whole point of the interval is to not be a background job.
+ */
+function watchVideoFrames(): void {
+  window.clearInterval(videoModelTimer);
+  videoModelTimer = window.setInterval(() => {
+    if (!videoActive() || document.hidden) return;
+    requestModel(true);
+  }, VIDEO_MODEL_INTERVAL_MS);
+}
+
+/** Put the video down: stop it, release the object URL, give the texture back. */
+function stopVideo(): void {
+  window.clearInterval(videoModelTimer);
+  videoModelTimer = 0;
+  if (customVideo) {
+    customVideo.pause();
+    customVideo.removeAttribute('src');
+    customVideo.load();
+    customVideo.remove();
+  }
+  if (customVideoUrl) URL.revokeObjectURL(customVideoUrl);
+  customVideo = null;
+  customVideoUrl = '';
+  videoRaster = { width: 0, height: 0 };
+  lastVideoTime = -1;
+  if (gl) releaseVideoTarget(gl);
+  contentKey = '';
+}
+
+/**
+ * A dropped mp4, looping on the sphere.
+ *
+ * `muted` and `playsInline` are not preferences: without both, iOS refuses to
+ * autoplay and refuses to play inline, and the page gets a full-screen video
+ * player instead of a planet.
+ *
+ * What this does NOT do is decode anything on the CPU. The frames go straight
+ * from the element to a GPU texture and are turned into linear light by one
+ * draw call — see `CONTENT_DECODE_FRAGMENT`. The CPU model gets one frame per
+ * settled pass, from `snapshotVideo`, which reads back what the GPU has rather
+ * than decoding the file a second way.
+ */
+async function loadCustomVideo(file: File): Promise<void> {
+  customError = '';
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.muted = true;
+  video.loop = true;
+  video.playsInline = true;
+  video.preload = 'auto';
+  video.crossOrigin = 'anonymous';
+  // In the document, and hidden. A detached element decodes and uploads fine in
+  // a desktop browser, but iOS treats inline playback as a property of an
+  // element that is IN a page, and a test cannot pause what it cannot select.
+  // `aria-hidden` because it is a texture source, not something to announce.
+  video.style.position = 'fixed';
+  video.style.width = '1px';
+  video.style.height = '1px';
+  video.style.opacity = '0';
+  video.style.pointerEvents = 'none';
+  video.style.left = '-10px';
+  video.style.top = '-10px';
+  video.setAttribute('aria-hidden', 'true');
+  video.dataset.smoke = 'content-video';
+  try {
+    await new Promise<void>((resolve, reject) => {
+      video.addEventListener('loadeddata', () => resolve(), { once: true });
+      video.addEventListener(
+        'error',
+        () =>
+          reject(
+            new Error(
+              `that file did not decode as video. ${file.name} may use a codec this browser ` +
+                'does not have — H.264 in an .mp4 works everywhere.',
+            ),
+          ),
+        { once: true },
+      );
+      video.src = url;
+      document.body.append(video);
+    });
+    const wrong = equirectAspectError(video.videoWidth, video.videoHeight, 'video');
+    if (wrong) throw new Error(wrong);
+
+    // Only now is the old content given up.
+    stopVideo();
+    customVideo = video;
+    customVideoUrl = url;
+    videoRaster = videoRasterFor(video.videoWidth);
+    lastVideoTime = -1;
+    videoFrameSeq = 0;
+    // A still, until the first frame is handed over on the next settled pass:
+    // `buildWorld` needs an image, and a black one for a few hundred
+    // milliseconds is better than the last file's.
+    customImage = createImage(videoRaster.width, videoRaster.height);
+    customName = `${file.name}:${file.size}#0`;
+    sentImageId = '';
+    solveSentImageId = '';
+    state.settings = withSetting(state.settings, 'content', CONTENT_CUSTOM);
+    contentKey = '';
+    staleFrames();
+    // Autoplay can still be refused — a browser that has never seen a gesture on
+    // this page, say. Not fatal: the first frame is already decoded and on the
+    // sphere, so a refusal shows a still instead of nothing.
+    void video.play().catch(() => {});
+    watchVideoFrames();
+    touched(false);
+    requestModel(true);
+  } catch (err) {
+    video.remove();
+    URL.revokeObjectURL(url);
+    customError = err instanceof Error ? err.message : String(err);
+    renderControls();
+  }
+}
+
+/**
+ * Hand the model the frame the display is showing.
+ *
+ * Read back off the GPU rather than decoded again on the CPU, and that is the
+ * whole point: the shader and `renderTwoRigRoomView` then work from ONE frame
+ * rather than from two derivations of one file, which is a stronger guarantee
+ * than the still path has ever had. `freezeContent` also holds a copy for the
+ * parity draw, because by the time the worker answers the video has moved on.
+ *
+ * Only on the settled pass. It is a 25 MB read-back at the full raster, and the
+ * numbers it feeds do not read the content at all — no metric on this page does.
+ * What it feeds is the parity check and the projector frame previews.
+ */
+function snapshotVideo(): void {
+  if (!gl || !videoActive()) return;
+  try {
+    const frame = freezeContent(gl);
+    customImage = frame;
+    videoFrameSeq++;
+    customName = `${customName.split('#')[0]}#${videoFrameSeq}`;
+  } catch (err) {
+    // A read-back that fails must not take the page with it: the sphere is still
+    // being drawn from a texture that works.
+    snapshotError = err instanceof Error ? err.message : String(err);
   }
 }
 
@@ -907,7 +1167,7 @@ function installDropTarget(): void {
     depth = 0;
     show(false);
     const file = e.dataTransfer?.files?.[0];
-    if (file) void loadCustomImage(file);
+    if (file) void loadCustomMedia(file);
   });
 }
 
@@ -931,6 +1191,10 @@ function viewKey(): string {
   // the reply in flight the same way orbiting does. So does the layout shift —
   // opening a sheet on a phone re-aims the camera, and a reply computed for the
   // old aim would be compared against a frame drawn with the new one.
+  // And the CONTENT. With a video, the frame the worker rendered is superseded
+  // every couple of seconds; comparing its answer against the frame now on the
+  // GPU would report the video's own motion as a disagreement between two
+  // renderers. For a still this is a constant and changes nothing.
   return [
     s.viewAzDeg,
     s.viewElDeg,
@@ -938,6 +1202,7 @@ function viewKey(): string {
     s.viewFovDeg,
     s.viewSamples,
     viewShiftFrac().toFixed(3),
+    suppliedName(),
   ].join('|');
 }
 
@@ -998,6 +1263,10 @@ function drainModel(): void {
 let modelWatchdog = 0;
 
 function postModel(fine: boolean): void {
+  // Before the request is built, because the request carries the frame. Only on
+  // the settled pass: this is a full-raster read-back off the GPU, and a coarse
+  // pass during a drag neither needs it nor could afford it.
+  if (fine) snapshotVideo();
   const id = ++modelSeq;
   modelWanted = id;
   modelPending = true;
@@ -1032,7 +1301,10 @@ function postModel(fine: boolean): void {
     customImageId: suppliedName(),
   };
   sentImageId = suppliedName();
-  if (fine) {
+  // Not until a real frame has been through the GPU. Until then the model holds
+  // the black placeholder `loadCustomVideo` left it, and a comparison against
+  // whatever the texture happens to contain is a disagreement about nothing.
+  if (fine && !(videoActive() && videoFrameSeq === 0)) {
     const camera = buildViewer(state.settings, PARITY_WIDTH, PARITY_HEIGHT, viewShiftFrac());
     req.parity = {
       width: PARITY_WIDTH,
@@ -1067,14 +1339,14 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage>): voi
   if (msg.id !== modelWanted) return;
   modelPending = false;
   window.clearTimeout(modelWatchdog);
-  // Before any early return below. A reply that released the lock without
-  // draining would leave a queued pass unsent and the page frozen on the last
-  // answer, which is a worse failure than the flood this replaced.
-  drainModel();
   bootEl.classList.add('off');
   if (!msg.ok) {
     lastError = msg.error;
     renderReadout();
+    // On EVERY path out of here, including this one. A reply that released the
+    // lock without draining would leave a queued pass unsent and the page frozen
+    // on the last answer, which is a worse failure than the flood this replaced.
+    drainModel();
     return;
   }
   lastError = '';
@@ -1101,6 +1373,16 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage>): voi
   if (msg.parityImage) checkParity(msg.parityImage, msg.parityMs);
   renderReadout();
   renderInspect();
+  // LAST, and this is not tidiness.
+  //
+  // Draining posts the next request, and with a video that request takes a fresh
+  // frame off the GPU — which replaces the frozen copy `checkParity` above needs
+  // and the id it checks itself against. Draining first therefore invalidated
+  // every parity reply the moment before it was judged: the readout sat on the
+  // verdict from the black placeholder frame, reporting a disagreement between
+  // two renderers that were never given the same picture. The lock is already
+  // released, so nothing is lost by posting a few milliseconds later.
+  drainModel();
 };
 
 solveWorker.onmessage = (event: MessageEvent<SolveMessage>): void => {
@@ -1364,8 +1646,19 @@ function markDirty(): void {
 }
 
 function ensureContent(image: { width: number; height: number; data: Float32Array }): void {
+  // A playing video OWNS the content texture: it is written every frame by the
+  // decode pass, and `world.image` here is the snapshot the model was given,
+  // which is a tenth of a second behind. Uploading it would drop the sphere back
+  // to the last settled frame on every draw, which reads as a stutter nobody can
+  // account for.
+  if (videoActive()) return;
   const key = `${state.settings.gridDeg}|${state.settings.content}|${state.settings.gridOn}|${suppliedName()}`;
   if (gl && key !== contentKey) {
+    // The decode target holds the content texture at the VIDEO's raster and a
+    // framebuffer pointing at it. Uploading a still re-specifies that texture at
+    // a different size behind the framebuffer's back, so the target goes first
+    // and is rebuilt from scratch if the reader switches back.
+    if (gl.video) releaseVideoTarget(gl);
     uploadEquirect(gl, image);
     contentKey = key;
   }
@@ -1410,6 +1703,19 @@ function draw(): void {
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;
+  }
+
+  // The video first, so the uniforms below are built for the frame that is
+  // about to be drawn rather than the one before it.
+  if (videoAdvanced() && customVideo) {
+    uploadVideoFrame(gl, customVideo, videoRaster.width, videoRaster.height);
+    lastVideoTime = customVideo.currentTime;
+    // The model is holding the black placeholder `loadCustomVideo` left it until
+    // a frame has been through the GPU — and the passes it asked for at load ran
+    // BEFORE this, when there was no decode target to read back from. So the
+    // first frame asks for its own pass. Once one has landed the interval above
+    // takes over, and this cannot fire again.
+    if (videoFrameSeq === 0) requestModel(true);
   }
 
   const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
@@ -1567,7 +1873,14 @@ function checkParity(
         slots: world.slots,
       },
     );
-    const gpu = renderAndRead(gl, uniforms, cpu.width, cpu.height);
+    // The frame the worker was given, not the one on screen. With a video
+    // playing the live texture is a tenth of a second further on, and comparing
+    // against it would report the video's own motion as a disagreement between
+    // two renderers. `withFrozenContent` is a no-op when there is no video.
+    let gpu!: ReturnType<typeof renderAndRead>;
+    withFrozenContent(gl, () => {
+      gpu = renderAndRead(gl!, uniforms, cpu.width, cpu.height);
+    });
     parity = judgeParity(gpu, { width: cpu.width, height: cpu.height, data: cpu.data }, {
       floatReadback: gpu.float,
       cpuMs,
@@ -1580,6 +1893,20 @@ function checkParity(
 }
 
 function frame(): void {
+  // A video that is not on the sphere is a decoder running for nothing, and on a
+  // phone that is the battery. The content chips can switch away from it at any
+  // time, so the play state follows what is being shown rather than being
+  // toggled at each of the places that can change it.
+  if (customVideo) {
+    const wanted = videoActive();
+    if (wanted && customVideo.paused) void customVideo.play().catch(() => {});
+    else if (!wanted && !customVideo.paused) customVideo.pause();
+  }
+  // A playing video is the one thing on this page that changes without anybody
+  // touching it. Gated on the clock rather than repainting every animation
+  // frame: a 30 fps file then costs thirty draws a second and not sixty, and a
+  // paused or buffering one costs none.
+  if (videoAdvanced()) dirty = true;
   if (dirty) {
     dirty = false;
     try {
@@ -2145,42 +2472,46 @@ function roomSection(): HTMLElement[] {
   const chosen = CONTENTS[Math.round(state.settings.content)] ?? CONTENTS[1];
   out.push(el('p', { className: 'grouphelp', textContent: chosen.help }));
 
-  // Always offered, never conditional on already having one. The previous
-  // version showed the button only once an image was loaded or the "Your own
-  // image" chip was selected, which meant the one control that answers "can I put
-  // MY data on this?" was invisible until you had already found it.
-  {
+  // Only once there is one. The chip above already opens the picker when the
+  // slot is empty — see its `onPick` — so a second button saying the same thing
+  // was two controls for one action, sitting one under the other and reading as
+  // a mistake. What is left is what the chip cannot do: swap the file, or give
+  // the slot back.
+  if (customImage) {
     const row = el('div', { className: 'chips' });
     const pick = el('button', {
       className: 'chip',
-      textContent: customImage ? `Replace “${customName.split(':')[0]}”` : 'Use your own image…',
-      title: 'Any 2:1 equirectangular map. Read in the page and never sent anywhere.',
+      textContent: `Replace “${customName.split(':')[0].split('#')[0]}”`,
+      title: 'Any 2:1 equirectangular map, still or moving. Read in the page and never sent anywhere.',
     });
     pick.addEventListener('click', pickImage);
     row.append(pick);
-    if (customImage) {
-      const drop = el('button', { className: 'chip', textContent: 'Remove' });
-      drop.addEventListener('click', () => {
-        customImage = null;
-        customName = '';
-        sentImageId = '';
-  solveSentImageId = '';
-        contentKey = '';
-        setSetting('content', CONTENT_MARBLE);
-      });
-      row.append(drop);
-    }
+    const drop = el('button', { className: 'chip', textContent: 'Remove' });
+    drop.addEventListener('click', () => {
+      stopVideo();
+      customImage = null;
+      customName = '';
+      sentImageId = '';
+      solveSentImageId = '';
+      contentKey = '';
+      setSetting('content', CONTENT_MARBLE);
+    });
+    row.append(drop);
     out.push(row);
-    out.push(
-      el('p', {
-        className: 'note tiny',
-        textContent:
-          'Or drop a file anywhere on the page. Any 2:1 equirectangular map — a NOAA dataset, a ' +
-          'test chart, your own. It is read in the page, converted out of sRGB into the linear ' +
-          'light the model works in, and never sent anywhere.',
-      }),
-    );
   }
+  out.push(
+    el('p', {
+      className: 'note tiny',
+      textContent:
+        'Drop a file anywhere on the page, or use the chip. Any 2:1 equirectangular map — a NOAA ' +
+        'dataset, a test chart, your own — still or an .mp4, which loops. It is read in the page, ' +
+        'converted out of sRGB into the linear light the model works in, and never sent ' +
+        'anywhere. A video is decoded on the GPU straight onto the sphere; the model is handed ' +
+        'one frame every couple of seconds, and the parity check compares the two renderers on ' +
+        'that frame rather than on two moments a tenth of a second apart.',
+    }),
+  );
+
   if (marbleError) {
     const err = el('p', {
       className: 'note tiny',
@@ -2191,6 +2522,20 @@ function roomSection(): HTMLElement[] {
   }
   if (customError) {
     const err = el('p', { className: 'note', textContent: customError });
+    err.style.color = 'var(--warn)';
+    out.push(err);
+  }
+  // Said out loud, because the failure it reports is otherwise silent: the
+  // sphere keeps playing from a texture that works while the model sits on a
+  // frame that never arrived, and the only symptom is a parity number nobody can
+  // account for. It cost an afternoon to find once.
+  if (snapshotError) {
+    const err = el('p', {
+      className: 'note tiny',
+      textContent:
+        `The model could not be given a video frame (${snapshotError}). The sphere is still ` +
+        'being drawn correctly; the readout and the parity check are describing an older frame.',
+    });
     err.style.color = 'var(--warn)';
     out.push(err);
   }
@@ -2403,10 +2748,10 @@ function renderControls(): void {
 function pickImage(): void {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'image/*';
+  input.accept = 'image/*,video/*';
   input.addEventListener('change', () => {
     const file = input.files?.[0];
-    if (file) void loadCustomImage(file);
+    if (file) void loadCustomMedia(file);
   });
   input.click();
 }

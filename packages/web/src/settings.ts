@@ -284,12 +284,15 @@ export const CONTENTS: readonly {
       'recognises; both are one click apart, and no metric reads either.',
   },
   {
-    label: 'Your own image',
+    label: 'Your own image or video',
     background: 0.18,
     help:
-      'Drop an equirectangular image on the sphere, or use the button. Any 2:1 map works — a NOAA ' +
-      'dataset, Blue Marble, a test chart. Nothing is uploaded: the file is read in the page and ' +
-      'never leaves it, which is also why none is shipped with the site.',
+      'Drop an equirectangular file on the sphere, or use the button. Any 2:1 map works — a NOAA ' +
+      'dataset, Blue Marble, a test chart — and an .mp4 works too and loops, which is the form ' +
+      'the SOS datasets actually ship in. Nothing is uploaded: the file is read in the page and ' +
+      'never leaves it, which is also why none is shipped with the site. A video is decoded on ' +
+      'the GPU straight into the same linear-light texture a still ends up in, so the optics ' +
+      'below it are identical; no metric on this page reads the content either way.',
   },
 ];
 

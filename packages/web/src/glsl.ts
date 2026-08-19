@@ -937,6 +937,52 @@ void main() {
 }
 `;
 
+/**
+ * The video decode pass: one frame of a dropped mp4, into the linear-light
+ * equirect texture everything else already samples.
+ *
+ * ## Why the video is not sampled directly
+ *
+ * A dropped IMAGE takes the CPU path — `createImageBitmap`, a canvas downscale,
+ * `getImageData`, then six million calls to `Math.pow` and a 25 MB float array.
+ * That is fine once. At thirty frames a second it is a hundred and fifty
+ * milliseconds a frame and the page stops being a page.
+ *
+ * The obvious shortcut is to hand the shader an 8-bit video texture and decode
+ * per sample. It is wrong, and wrong in a way this page can measure: the
+ * hardware would then interpolate ENCODED values and the CPU model interpolates
+ * LINEAR ones, and decode-then-filter is not filter-then-decode. The difference
+ * lands at every texel boundary on the sphere, and the parity readout would go
+ * red across the whole ball — correctly.
+ *
+ * So the video is decoded once per frame into exactly the texture a dropped
+ * image would have produced: one draw call, on the GPU, writing linear light.
+ * Everything downstream — the sampler, the wrap modes, `contentAt`, the parity
+ * check — is untouched, because what it samples is the same thing it always was.
+ *
+ * The exponent is `CONTENT_DECODE_GAMMA`, the same number `readEquirect` applies
+ * on the CPU, and `test/glsl.test.ts` asserts the two have not drifted apart.
+ */
+export const CONTENT_DECODE_FRAGMENT = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+uniform sampler2D uFrame;
+
+in vec2 vUv;
+out vec4 fragColor;
+
+void main() {
+  // No flip. This target IS the equirect texture, whose row 0 is the north row
+  // (see sampleEquirect), and a video frame uploaded with UNPACK_FLIP_Y_WEBGL
+  // off puts its first row -- the top of the picture, which is north -- at the
+  // same end. Getting this wrong renders the map upside down, which is at least
+  // the one content bug nobody has to be told about.
+  vec3 c = texture(uFrame, vUv).rgb;
+  fragColor = vec4(pow(max(c, vec3(0.0)), vec3(2.2)), 1.0);
+}
+`;
+
 export const FRAGMENT_CHUNKS: readonly { name: string; mirrors: string; source: string }[] = [
   { name: 'header', mirrors: '(uniforms)', source: HEADER },
   { name: 'wrap', mirrors: 'sim/src/vec.ts', source: CHUNK_WRAP },

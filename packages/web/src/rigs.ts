@@ -47,6 +47,21 @@ import {
   RESOLUTIONS,
 } from './settings.ts';
 
+/**
+ * The exponent a supplied file's pixels are decoded with, on the way from
+ * whatever the file stores to the linear light the model works in.
+ *
+ * PARAMETERS.md §3.2's nominal display gamma, used as an approximation of sRGB —
+ * the two differ by a percent or so in the toe, and this is the one that appears
+ * everywhere else in the pipeline. It matters that there is a NAME for it,
+ * because it is now applied in two places by two different processors: on the
+ * CPU by `readEquirect` for a dropped image, and on the GPU by
+ * `CONTENT_DECODE_FRAGMENT` for every frame of a dropped video. Two spellings of
+ * one number is how the sphere ends up a different brightness depending on which
+ * kind of file you handed it.
+ */
+export const CONTENT_DECODE_GAMMA = 2.2;
+
 /** Equirectangular content raster. Big enough that the grid is not the limit. */
 const CONTENT_WIDTH = 2048;
 const CONTENT_HEIGHT = 1024;

@@ -15,6 +15,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  CONTENT_DECODE_FRAGMENT,
   FRAGMENT_CHUNKS,
   FRAGMENT_SHADER,
   MAX_PROJECTORS,
@@ -32,6 +33,7 @@ import {
 } from '../src/uniforms.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import { BOULDER_PRESET } from '../src/settings.ts';
+import { CONTENT_DECODE_GAMMA } from '../src/rigs.ts';
 import { buildViewer, buildWorld } from '../src/rigs.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -455,6 +457,30 @@ test('the viewer lens shift moves the frame, not the aim', () => {
     !basis.slice(0, basis.indexOf('void main(')).includes('uCamShift'),
     'traceScene must take an image coordinate that already carries the shift, not apply it',
   );
+});
+
+test('the video decode pass writes linear light with the same exponent the CPU uses', () => {
+  // A dropped IMAGE is decoded on the CPU by `readEquirect`; a dropped VIDEO is
+  // decoded on the GPU, once per frame, by this. Two processors applying one
+  // convention — and if they drift, the sphere is a different brightness
+  // depending on which kind of file it was handed, which nothing else would
+  // catch: the parity check compares the two RENDERERS against one texture and
+  // is blind to how that texture was made.
+  assert.ok(
+    CONTENT_DECODE_FRAGMENT.includes(`pow(max(c, vec3(0.0)), vec3(${CONTENT_DECODE_GAMMA}))`),
+    `the decode pass must raise the frame to ${CONTENT_DECODE_GAMMA}, as readEquirect does`,
+  );
+  // Straight into the equirect texture, no flip. Its row 0 is the north row and
+  // a frame uploaded with UNPACK_FLIP_Y_WEBGL off puts the top of the picture at
+  // the same end; a flip here would render every map upside down.
+  assert.ok(
+    CONTENT_DECODE_FRAGMENT.includes('texture(uFrame, vUv)'),
+    'the decode pass must sample the frame at the target coordinate, unflipped',
+  );
+  // It is a PASS, not a sample-time decode. A shader that decoded per sample
+  // would interpolate encoded values where the CPU model interpolates linear
+  // ones, and the two are not the same function.
+  assert.ok(!FRAGMENT_SHADER.includes('uFrame'), 'the display shader must not sample a video');
 });
 
 test('every declared function is reachable from the entry point', () => {
