@@ -200,6 +200,11 @@ export function setUniforms(h: DisplayGl, u: DisplayUniforms): void {
   gl.uniform1f(loc('uFloorRadius'), u.floorRadius);
   gl.uniform1f(loc('uExposure'), u.exposure);
   gl.uniform1f(loc('uLift'), u.lift);
+  gl.uniform1f(loc('uGridDeg'), u.gridDeg);
+  gl.uniform1f(loc('uGridWidthDeg'), u.gridWidthDeg);
+  gl.uniform1f(loc('uGridFeather'), u.gridFeather);
+  gl.uniform1f(loc('uGridAxes'), u.gridAxes);
+  gl.uniform3fv(loc('uGridColor'), u.gridColor);
   gl.uniform1f(loc('uDisplayGamma'), u.displayGamma);
 
   gl.uniform3fv(loc('uTint'), u.tint);

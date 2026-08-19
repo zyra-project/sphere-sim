@@ -1,10 +1,11 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
-import { createImage } from '../../sim/src/equirect.ts';
+import { createImage, sampleEquirect } from '../../sim/src/equirect.ts';
 import { aimAtSphereCenter } from '../../sim/src/geometry.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
 import { DEFAULT_MISALIGNMENT } from '../../sim/src/scene.ts';
+import { contentAt } from '../../sim/src/render.ts';
 import {
   BOULDER_PRESET,
   CONTENTS,
@@ -21,6 +22,7 @@ import type { Settings } from '../src/settings.ts';
 import {
   buildAsBuilt,
   buildContent,
+  buildGraticule,
   buildViewer,
   buildWorld,
   scaledMagnitudes,
@@ -290,27 +292,54 @@ test('switching a projector off removes it and leaves the framebuffer alone', ()
   assert.deepEqual(world.truthRig.framebuffer, full);
 });
 
-test('the grid toggle turns the graticule on and off without changing the field', () => {
-  const on = buildContent({ ...BOULDER_PRESET, gridOn: 1, content: 1 }, null);
-  const off = buildContent({ ...BOULDER_PRESET, gridOn: 0, content: 1 }, null);
-
-  // With the grid off the field is flat: every texel is the same value, and that
-  // value is the base field's.
-  const first = off.data[0];
-  let flat = true;
-  for (let i = 0; i < off.data.length; i++) {
-    if (Math.abs(off.data[i] - first) > 1e-6) flat = false;
+test('the field is only ever the field; the graticule is drawn over it', () => {
+  // The content texture carries NO lines now, at either toggle setting. The
+  // graticule is evaluated per sample by both renderers instead, so the pattern
+  // the §7 gate measures is not displayed at whatever raster the image has. See
+  // `Scene.graticule`.
+  for (const gridOn of [0, 1]) {
+    const field = buildContent({ ...BOULDER_PRESET, gridOn, content: 1 }, null);
+    const first = field.data[0];
+    let flat = true;
+    for (let i = 0; i < field.data.length; i++) {
+      if (Math.abs(field.data[i] - first) > 1e-6) flat = false;
+    }
+    assert.ok(flat, `grid ${gridOn}: the field is not flat, so a line has been baked into it`);
+    // 1e-6, not 1e-9: `RgbImage` is a Float32Array, so 0.18 stores as
+    // 0.18000000715255737 and a tighter bound would be a statement about the
+    // storage format rather than about the field.
+    assert.ok(Math.abs(first - 0.18) < 1e-6, `expected the mid-grey field, got ${first}`);
   }
-  assert.ok(flat, 'the grid is off and the field is not flat');
-  // 1e-6, not 1e-9: `RgbImage` is a Float32Array, so 0.18 stores as
-  // 0.18000000715255737 and a tighter bound would be a statement about the
-  // storage format rather than about the field.
-  assert.ok(Math.abs(first - 0.18) < 1e-6, `expected the mid-grey field, got ${first}`);
 
-  // With it on, the lines are brighter than the field somewhere.
-  let brightest = 0;
-  for (let i = 0; i < on.data.length; i++) brightest = Math.max(brightest, on.data[i]);
-  assert.ok(brightest > 0.5, `the graticule is not visible over the field; brightest ${brightest}`);
+  // And the toggle is what decides whether there is a graticule at all.
+  assert.equal(buildGraticule({ ...BOULDER_PRESET, gridOn: 0 }), null);
+  const g = buildGraticule({ ...BOULDER_PRESET, gridOn: 1 });
+  assert.ok(g, 'the grid is on and there is no graticule to draw');
+  assert.equal(g.spacingDeg, Math.round(BOULDER_PRESET.gridDeg));
+});
+
+test('the graticule composites over the field, at full precision and only on the lines', () => {
+  const world = buildWorld({ ...BOULDER_PRESET, gridOn: 1, content: 1 });
+  const field = world.scene.image.data[0];
+
+  // On a line — the equator is one — the sample is white. A quarter of a degree
+  // off it, at a longitude nowhere near a meridian, it is the bare field. That
+  // second half is the point: the line has an edge, and it is where the formula
+  // says rather than where a texel boundary happens to fall.
+  const on = contentAt(world.scene, 0, 7.5);
+  const off = contentAt(world.scene, 0.6, 7.5);
+  assert.ok(on.r > 0.9, `the equator should be a white line, got ${on.r}`);
+  assert.ok(Math.abs(off.r - field) < 1e-6, `just off the line should be bare field, got ${off.r}`);
+
+  // Resolution-independent: halfway between two texels of the 2048-wide raster
+  // is still exactly on the line, which a baked pattern could not promise.
+  const sub = contentAt(world.scene, 0, 7.5 + 360 / 2048 / 2);
+  assert.ok(sub.r > 0.9, `a sub-texel step along the equator left the line, got ${sub.r}`);
+
+  // And with the graticule off there is nothing to composite.
+  const plain = buildWorld({ ...BOULDER_PRESET, gridOn: 0, content: 1 });
+  assert.equal(plain.scene.graticule, null);
+  assert.ok(Math.abs(contentAt(plain.scene, 0, 7.5).r - field) < 1e-6);
 });
 
 test('every base field renders, and each is a different brightness', () => {
@@ -337,17 +366,21 @@ test('a supplied image is used as-is, and the grid composites over it', () => {
       supplied.data[i] = supplied.data[i + 1] = supplied.data[i + 2] = x / 63;
     }
   }
-  const plain = buildContent({ ...BOULDER_PRESET, content: CONTENT_CUSTOM, gridOn: 0 }, supplied);
-  assert.equal(plain, supplied, 'the image should be passed through untouched with the grid off');
+  // Passed through untouched at BOTH settings now: the grid is no longer copied
+  // into a second buffer to have lines painted on it.
+  for (const gridOn of [0, 1]) {
+    const out = buildContent({ ...BOULDER_PRESET, content: CONTENT_CUSTOM, gridOn }, supplied);
+    assert.equal(out, supplied, `grid ${gridOn}: the image should be passed through untouched`);
+  }
 
-  const withGrid = buildContent({ ...BOULDER_PRESET, content: CONTENT_CUSTOM, gridOn: 1 }, supplied);
-  assert.equal(withGrid.width, supplied.width);
-  assert.equal(withGrid.height, supplied.height);
   // The composite is a blend toward white, so it can never darken the source and
   // can never leave the display range.
-  for (let i = 0; i < supplied.data.length; i++) {
-    assert.ok(withGrid.data[i] >= supplied.data[i] - 1e-9, `the grid darkened the image at ${i}`);
-    assert.ok(withGrid.data[i] <= 1 + 1e-9, `the composite clipped past white at ${i}`);
+  const scene = buildWorld({ ...BOULDER_PRESET, content: CONTENT_CUSTOM, gridOn: 1 }, undefined, supplied).scene;
+  for (const [lat, lon] of [[0, 0], [12, 33], [-47, 128], [80, -170]] as const) {
+    const base = sampleEquirect(supplied, lat, lon);
+    const out = contentAt(scene, lat, lon);
+    assert.ok(out.r >= base.r - 1e-9, `the grid darkened the image at ${lat},${lon}`);
+    assert.ok(out.r <= 1 + 1e-9, `the composite clipped past white at ${lat},${lon}`);
   }
 });
 

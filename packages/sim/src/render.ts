@@ -21,7 +21,7 @@
 
 import type { ChannelTriplet, Vec3 } from '../../calibration/src/index.ts';
 import type { EquirectImage, RgbImage } from './equirect.ts';
-import { createImage, sampleEquirect } from './equirect.ts';
+import { createImage, graticuleCoverage, sampleEquirect } from './equirect.ts';
 import { latLonToWorld, raySphereIntersect, worldLonToTextureLon, worldToLatLon } from './geometry.ts';
 import type { PreparedRig } from './optics.ts';
 import { pixelToRay, worldToPixel } from './optics.ts';
@@ -58,6 +58,55 @@ export interface Scene {
   roomAlbedo: number;
   /** How `set bottommask 60,70` is read. docs/AMENDMENTS.md A-02. */
   maskInterpretation: MaskInterpretation;
+  /**
+   * The alignment graticule, drawn ANALYTICALLY over {@link Scene.image} rather
+   * than baked into it. `null` for no graticule.
+   *
+   * It used to be rasterised into the image, which made the line an artefact of
+   * whatever raster that image happened to have: at 1024 texels round a 5.43 m
+   * equator one texel is 5.30 mm of sphere, against 0.687 mm for one pixel of a
+   * 3840-wide projector — so the pattern the page measures was DISPLAYED about
+   * eight times coarser than the thing drawing it, and zooming in showed the
+   * texture's own bilinear reconstruction as a diamond lattice.
+   *
+   * `metrics/grid.ts` has always evaluated it analytically, and says why: the
+   * gate is 1.0 mm on a sphere whose projector pixels are ~1.3 mm across, so the
+   * metric "cannot afford to inherit the resolution of whatever texture the
+   * raster happened to be baked into". The renderers now agree with it. The
+   * projector raster is the only quantization left in the chain, which is the
+   * same thing a real installation gets.
+   */
+  graticule: Graticule | null;
+}
+
+/** {@link Scene.graticule}. Angles in degrees; see `graticuleCoverage`. */
+export interface Graticule {
+  spacingDeg: number;
+  lineWidthDeg: number;
+  emphasizeAxes: boolean;
+  /** Linear light, composited over the image by coverage. */
+  color: ChannelTriplet;
+}
+
+/**
+ * The content a projector is sending for one point of the sphere: the image,
+ * with the graticule drawn over it at full precision.
+ *
+ * One function, both renderers — `traceTwoRig` here and `shadeTwoRig` in the
+ * page's shader, which ports it line for line. The GPU/CPU parity check is what
+ * keeps the port honest.
+ */
+export function contentAt(scene: Scene, latDeg: number, textureLonDeg: number): ChannelTriplet {
+  const base = sampleEquirect(scene.image, latDeg, textureLonDeg);
+  const g = scene.graticule;
+  if (g === null) return base;
+  const c = graticuleCoverage(latDeg, textureLonDeg, g.spacingDeg, g.lineWidthDeg, g.emphasizeAxes);
+  if (c <= 0) return base;
+  return {
+    r: base.r + (g.color.r - base.r) * c,
+    g: base.g + (g.color.g - base.g) * c,
+    b: base.b + (g.color.b - base.b) * c,
+  };
 }
 
 /** PARAMETERS.md §1 and §5 nominals, as a ready-made scene. */
@@ -69,6 +118,7 @@ export function defaultScene(image: EquirectImage, overrides: Partial<Scene> = {
     ambient: overrides.ambient ?? { r: 0.04, g: 0.04, b: 0.04 },
     roomAlbedo: overrides.roomAlbedo ?? 0.3,
     maskInterpretation: overrides.maskInterpretation ?? 'latitude',
+    graticule: overrides.graticule ?? null,
   };
 }
 

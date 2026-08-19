@@ -18,6 +18,7 @@
  *     must never do.
  */
 
+import { DEFAULT_FEATHER_FRAC } from '../../sim/src/equirect.ts';
 import { raySphereIntersect } from '../../sim/src/geometry.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import type { Scene, ViewerCamera } from '../../sim/src/render.ts';
@@ -218,6 +219,12 @@ export interface DisplayUniforms {
    */
   exposure: number;
   lift: number;
+  /** {@link Scene.graticule}, flattened. `gridDeg` 0 means no graticule. */
+  gridDeg: number;
+  gridWidthDeg: number;
+  gridFeather: number;
+  gridAxes: number;
+  gridColor: Float32Array;
   displayGamma: number;
 
   /** `3 * MAX_PROJECTORS` floats, linear light. */
@@ -333,6 +340,15 @@ export function buildDisplayUniforms(
     floorRadius: options.floorRadiusM ?? 8,
     exposure: options.exposure ?? 1,
     lift: options.lift ?? 1,
+    // Straight off the scene, so the shader and `traceTwoRig` are drawing the
+    // same pattern from the same numbers rather than two copies of a constant.
+    gridDeg: scene.graticule ? scene.graticule.spacingDeg : 0,
+    gridWidthDeg: scene.graticule ? scene.graticule.lineWidthDeg : 0,
+    gridFeather: DEFAULT_FEATHER_FRAC,
+    gridAxes: scene.graticule && scene.graticule.emphasizeAxes ? 1 : 0,
+    gridColor: scene.graticule
+      ? new Float32Array([scene.graticule.color.r, scene.graticule.color.g, scene.graticule.color.b])
+      : new Float32Array([1, 1, 1]),
     displayGamma: options.displayGamma ?? 2.2,
 
     tint: tintsFor(options.slots),

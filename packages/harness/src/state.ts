@@ -181,6 +181,9 @@ export function buildImage(pattern: PatternId, width: number, height: number): E
 export function buildScene(s: HarnessState, image: EquirectImage): Scene {
   return {
     image,
+    // The harness draws whatever field it was asked for, graticule included when
+    // that is the field. Nothing here overlays a second one.
+    graticule: null,
     encodeGamma: triplet(s.encode_gamma, s.encode_gamma, s.encode_gamma),
     reflectance: triplet(s.rho_R, s.rho_G, s.rho_B),
     // §5 `E_amb_chroma`: exhibit lighting is rarely daylight-balanced, and the

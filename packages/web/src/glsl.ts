@@ -146,6 +146,11 @@ uniform int   uDrawFloor;
 uniform float uFloorRadius;
 uniform float uExposure;
 uniform float uLift;                  // display tone curve; 1.0 is off
+uniform float uGridDeg;               // graticule spacing; 0 disables it
+uniform float uGridWidthDeg;
+uniform float uGridFeather;
+uniform float uGridAxes;
+uniform vec3  uGridColor;
 uniform float uDisplayGamma;          // 0 disables the final encode (linear readback)
 
 // Diagnostic overlays. Each is a way of LOOKING at the same trace, never a
@@ -227,6 +232,46 @@ vec3 sampleEquirect(float latDeg, float lonDeg) {
   float u = (lon + 180.0) / 360.0;
   float v = (90.0 - clamp(latDeg, -90.0, 90.0)) / 180.0;
   return texture(uEquirect, vec2(u, v)).rgb;
+}
+
+// equirect.ts distanceToNearestMultiple.
+float distanceToNearestMultiple(float value, float step_) {
+  return abs(value - round(value / step_) * step_);
+}
+
+// equirect.ts lineCoverage. The ramp is exactly LINEAR and metrics/grid.ts
+// depends on that, so this is a clamp and not a smoothstep.
+float lineCoverage(float distanceDeg, float halfWidthDeg, float featherFrac) {
+  float feather = max(1e-6, halfWidthDeg * featherFrac);
+  return clamp((halfWidthDeg - distanceDeg) / feather, 0.0, 1.0);
+}
+
+// equirect.ts graticuleCoverage, ported line for line. The CPU renderer calls
+// the original through contentAt(); the parity check is what keeps the two
+// honest, so nothing here may be "tidied" independently of that file.
+float graticuleCoverage(float latDeg, float lonDeg) {
+  float half_ = uGridWidthDeg * 0.5;
+  float cosLat = max(1e-6, cos(radians(latDeg)));
+  float dLat = distanceToNearestMultiple(latDeg, uGridDeg);
+  float dLon = distanceToNearestMultiple(wrapDeg180(lonDeg), uGridDeg) * cosLat;
+  float cover = max(
+    lineCoverage(dLat, half_, uGridFeather),
+    lineCoverage(dLon, half_, uGridFeather)
+  );
+  if (uGridAxes > 0.5) {
+    cover = max(cover, lineCoverage(abs(latDeg), half_ * 2.0, uGridFeather));
+    cover = max(cover, lineCoverage(abs(wrapDeg180(lonDeg)) * cosLat, half_ * 2.0, uGridFeather));
+  }
+  return cover;
+}
+
+// render.ts contentAt: the image with the graticule drawn over it at full
+// precision, rather than baked into whatever raster the image happens to have.
+vec3 contentAt(float latDeg, float lonDeg) {
+  vec3 base = sampleEquirect(latDeg, lonDeg);
+  if (uGridDeg <= 0.0) return base;
+  float c = graticuleCoverage(latDeg, lonDeg);
+  return c <= 0.0 ? base : base + (uGridColor - base) * c;
 }
 `;
 
@@ -469,7 +514,7 @@ vec3 shadeTwoRig(
       }
       tintAcc += uTint[i] * (weight * w);
       tintW += weight * w;
-      signal += w * blendedSignal(sampleEquirect(ll.x, wrapDeg180(ll.y - uCRotOffset)), weight);
+      signal += w * blendedSignal(contentAt(ll.x, wrapDeg180(ll.y - uCRotOffset)), weight);
     }
 
     // A display tone curve on what the PROJECTOR is drawing, and nothing else.

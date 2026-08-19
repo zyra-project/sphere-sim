@@ -816,12 +816,17 @@ async function readEquirect(file: File): Promise<EquirectImage> {
     // doing, which is a thing that cannot happen on a real sphere fed imagery at
     // the projectors' resolution.
     //
-    // It stays at 1024 because the alternatives are expensive rather than
-    // because it is sufficient: as a float triple this is 6 MB, 2048 is 25 MB
-    // and 4096 is 101 MB, on the CPU and again on the GPU, with the model worker
-    // holding its own copy. Raising it is a real option and a real cost.
-    const w = 1024;
-    const h = 512;
+    // 2048 is the compromise: 2.65 mm per texel, 25 MB as a float triple on the
+    // CPU and again on the GPU and again in the model worker. 4096 would match
+    // the source JPEG and still be twice as coarse as a projector pixel, for
+    // 101 MB a copy, which is not a trade worth making on a phone.
+    //
+    // The GRATICULE is no longer in here — it is drawn analytically by both
+    // renderers, so the pattern the gate measures is not limited by this at all.
+    // What this bounds now is photographic imagery, which has no fine structure
+    // to lose in the way a one-pixel line does.
+    const w = 2048;
+    const h = 1024;
     const off = document.createElement('canvas');
     off.width = w;
     off.height = h;

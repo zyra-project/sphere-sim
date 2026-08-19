@@ -70,16 +70,23 @@ export const DISPLAY_TOLERANCE = 2e-3;
  *
  * | framing | boundary | a full 1x mount error |
  * | --- | --- | --- |
- * | 2.6 m, 34 deg | 6.0% | 40.6% |
- * | 6.2 m, 50 deg | 5.2% | 48.6% |
- * | 10.2 m, 71 deg | 5.0% | 47.8% |
+ * | 2.6 m, 34 deg | 2.4% | 40.6% |
+ * | 6.2 m, 50 deg | 2.4% | 48.6% |
+ * | 10.2 m, 71 deg | 2.0% | 47.8% |
  *
- * Flat, at a factor of eight apart, because both quantities scale with the image
- * of the sphere and so does the denominator. 12% is twice the measured worst
- * case, the same doubling rule the frame-fraction version used, and it now means
- * the same thing at every zoom. `test/parity.test.ts` pins all six numbers.
+ * Flat, because both quantities scale with the image of the sphere and so does
+ * the denominator. 6% is more than twice the measured worst case, the same
+ * doubling rule the frame-fraction version used, and it means the same thing at
+ * every zoom. `test/parity.test.ts` pins all six numbers.
+ *
+ * The boundary column used to read 5-6% and the allowance 12%. What halved it
+ * was moving the graticule out of the content texture: a line rasterised into an
+ * equirect is reconstructed by two different bilinear samplers on the two sides
+ * — a GPU texture unit and `sampleEquirect` — and every pixel of every line was
+ * a place they could disagree. Evaluated analytically from the same formula on
+ * both sides, the only disagreement left is the geometry the check is for.
  */
-export const BOUNDARY_LIT_ALLOWANCE = 0.12;
+export const BOUNDARY_LIT_ALLOWANCE = 0.06;
 
 /**
  * A pixel counts as lit when either image puts anything there at all.

@@ -27,10 +27,10 @@
  */
 
 import type { BlendCalibration, RigCalibration } from '../../calibration/src/index.ts';
-import { createImage, graticuleCoverage, gridAlignmentPattern } from '../../sim/src/equirect.ts';
+import { flatField } from '../../sim/src/equirect.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
 import { defaultScene } from '../../sim/src/render.ts';
-import type { Scene, ViewerCamera } from '../../sim/src/render.ts';
+import type { Graticule, Scene, ViewerCamera } from '../../sim/src/render.ts';
 import type { MisalignmentMagnitudes, Perturbation } from '../../sim/src/scene.ts';
 import { DEFAULT_MISALIGNMENT, injectMisalignment, nominalRig } from '../../sim/src/scene.ts';
 import { DEG2RAD } from '../../sim/src/vec.ts';
@@ -48,8 +48,8 @@ import {
 } from './settings.ts';
 
 /** Equirectangular content raster. Big enough that the grid is not the limit. */
-const CONTENT_WIDTH = 1024;
-const CONTENT_HEIGHT = 512;
+const CONTENT_WIDTH = 2048;
+const CONTENT_HEIGHT = 1024;
 
 export interface WebWorld {
   /** The drawing: the rig as specified, before anyone picked up a wrench. */
@@ -335,48 +335,27 @@ function buildContentUncached(s: Settings, custom: EquirectImage | null): Equire
   // A supplied image that has not arrived yet falls back to the grey field
   // rather than to black: an empty sphere reads as a broken page.
   const supplied = wantsImage ? custom : null;
-  if (wantsImage && supplied === null) {
-    return gridAlignmentPattern({
-      width: CONTENT_WIDTH,
-      height: CONTENT_HEIGHT,
-      spacingDeg,
-      lineWidthDeg: 0.35,
-      emphasizeAxes: grid,
-      lineColor: grid ? { r: 1, g: 1, b: 1 } : { r: 0.18, g: 0.18, b: 0.18 },
-      backgroundColor: { r: 0.18, g: 0.18, b: 0.18 },
-    });
-  }
+  if (supplied !== null) return supplied;
+  const v = wantsImage ? 0.18 : base.background;
+  return flatField(CONTENT_WIDTH, CONTENT_HEIGHT, { r: v, g: v, b: v });
+}
 
-  if (supplied === null) {
-    const v = base.background;
-    return gridAlignmentPattern({
-      width: CONTENT_WIDTH,
-      height: CONTENT_HEIGHT,
-      spacingDeg,
-      lineWidthDeg: 0.35,
-      emphasizeAxes: grid,
-      // With the grid off, the line colour IS the background: the generator then
-      // paints a flat field, and there is no second code path to keep in step.
-      lineColor: grid ? { r: 1, g: 1, b: 1 } : { r: v, g: v, b: v },
-      backgroundColor: { r: v, g: v, b: v },
-    });
-  }
-
-  if (!grid) return supplied;
-
-  const out = createImage(supplied.width, supplied.height);
-  for (let y = 0; y < supplied.height; y++) {
-    const latDeg = 90 - ((y + 0.5) / supplied.height) * 180;
-    for (let x = 0; x < supplied.width; x++) {
-      const lonDeg = ((x + 0.5) / supplied.width) * 360 - 180;
-      const cover = graticuleCoverage(latDeg, lonDeg, spacingDeg, 0.35, true);
-      const i = 3 * (y * supplied.width + x);
-      for (let c = 0; c < 3; c++) {
-        out.data[i + c] = supplied.data[i + c] * (1 - cover) + cover;
-      }
-    }
-  }
-  return out;
+/**
+ * The graticule the renderers draw over the field, or `null` for none.
+ *
+ * A quarter of a degree of line on a 68-inch ball is about two millimetres, and
+ * it is the pattern the §7 gate measures — so it is evaluated per sample rather
+ * than rasterised into the content. See `Scene.graticule` for the arithmetic
+ * that made the old way visible.
+ */
+export function buildGraticule(s: Settings): Graticule | null {
+  if (Math.round(s.gridOn) !== 1) return null;
+  return {
+    spacingDeg: Math.round(s.gridDeg),
+    lineWidthDeg: 0.35,
+    emphasizeAxes: true,
+    color: { r: 1, g: 1, b: 1 },
+  };
 }
 
 export function buildWorld(
@@ -392,6 +371,7 @@ export function buildWorld(
   );
   const image = buildContent(s, custom);
   const scene = defaultScene(image, {
+    graticule: buildGraticule(s),
     maskInterpretation: 'latitude',
     ambient: { r: s.ambient, g: s.ambient, b: s.ambient },
   });

@@ -42,8 +42,9 @@
 
 import type { ChannelTriplet, Vec3 } from '../../calibration/src/index.ts';
 import type { RgbImage } from './equirect.ts';
-import { createImage, sampleEquirect } from './equirect.ts';
+import { createImage } from './equirect.ts';
 import { raySphereIntersect, worldLonToTextureLon, worldToLatLon } from './geometry.ts';
+import { contentAt } from './render.ts';
 import type { PreparedRig } from './optics.ts';
 import { pixelToRay, worldToPixel } from './optics.ts';
 import { coverageAndWeights, isIlluminatedAt, polarMask } from './coverage.ts';
@@ -187,8 +188,11 @@ export function traceTwoRig(
         const back = raySphereIntersect(cProj.lens, ray, content.radiusM);
         if (back === null) continue;
         const ll = worldToLatLon(back.point);
-        const target = sampleEquirect(
-          scene.image,
+        // Image plus the analytic graticule. See `Scene.graticule`: the pattern
+        // the gate measures must not be displayed at the resolution of whatever
+        // texture it was baked into.
+        const target = contentAt(
+          scene,
           ll.latDeg,
           worldLonToTextureLon(ll.lonDeg, content.rotationOffsetDeg),
         );
