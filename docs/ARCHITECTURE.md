@@ -150,13 +150,21 @@ something better is how a measurement becomes an advertisement.
 | 1 | Camera positions, 1→8, with noise / ambient / rolling shutter as separate conditions | How many photos does a real calibration need, and does a phone suffice? |
 | 2 | Blend softness vs geometric tolerance | Does soft blending buy geometric tolerance? If yes, the value proposition inverts |
 | 3 | Photometric sensitivity across every ASSUME constant's plausible range | Which unmeasured constants actually matter — i.e. what gets measured on the real-sphere visit |
+| 4 | The room the light that misses the sphere lands on, against the decoder's own rejection floor | What does the wall behind the ball cost a calibration, and can a threshold reject it? |
 
 Experiment 2's hypothesis is the commercially interesting one, and it is
 testable entirely in simulation. Experiment 3's output is a work order for the
 ground-truth visit in PARAMETERS.md §8.
 
 Experiments 2 and 3 depend on Phase 2 photometry, so their outputs inherit the
-PROVISIONAL marking. Experiment 1 is purely geometric and does not.
+PROVISIONAL marking. Experiments 1 and 4 are purely geometric and do not.
+
+Experiment 4 came from a reader looking at a capture preview and saying the
+background would never be that black. It would not; and the reason the bench's
+was is that an off-sphere pixel had no geometry behind it at all. The condition
+it added is off by default, so no published number moved, and what it measures is
+the one thing the bench had never been asked: what happens when the pixels that
+are not the sphere stop being a constant.
 
 ## Three interfaces, same core
 

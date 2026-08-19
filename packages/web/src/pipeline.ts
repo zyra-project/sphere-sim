@@ -308,6 +308,10 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
       // those points receive ambient only and the decoder rejects them on
       // modulation exactly as it would in the room.
       minIncidenceCos: 0.2,
+    // Off. The page has no control for it and the numbers it prints are the
+    // bench's own conditions; a browser solve that quietly ran a harder capture
+    // than the bench would make the two incomparable.
+    roomSpill: null,
     },
     seed: req.seed,
     decode: { pixelStride: 1, maxCorrespondences: 4000 },

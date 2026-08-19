@@ -32,6 +32,13 @@ const first = argv[0] ?? '';
 
 if (first === '2' || first === '3') {
   photometricMain(first);
+} else if (first === '4' || first === 'spill') {
+  // Its own branch rather than joining `all`, deliberately. `all` means
+  // Experiments 2 and 3, which are seconds of arithmetic; Experiment 4 is nine
+  // minutes of real solves, and folding it in would change what a familiar
+  // command costs without anybody asking for it.
+  const { main: spillMain } = await import('./spill/cli.ts');
+  spillMain();
 } else if (first === 'photometry' || first === 'all') {
   photometricMain('all');
 } else {

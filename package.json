@@ -15,6 +15,7 @@
     "gate": "node packages/bench/src/gate.ts",
     "experiments": "node packages/experiments/src/cli.ts",
     "experiment1": "node packages/experiments/src/experiment1/cli.ts",
+    "experiment4": "node packages/experiments/src/spill/cli.ts",
     "loop": "node packages/bench/src/loop.ts",
     "build:web": "tsc -p tsconfig.web.json",
     "build:app": "tsc -p tsconfig.app.json",

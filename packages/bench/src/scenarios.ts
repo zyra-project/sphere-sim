@@ -41,7 +41,7 @@ import { DEFAULT_MISALIGNMENT, defaultSlotsFor } from '../../sim/src/scene.ts';
 import type { MaskInterpretation } from '../../sim/src/coverage.ts';
 import type { CameraPlacementOptions, FrameClock, HandheldMotion } from './camera.ts';
 import { DEFAULT_CLOCK, DEFAULT_HANDHELD } from './camera.ts';
-import type { SensorModel } from './capture.ts';
+import type { RoomSpill, SensorModel } from './capture.ts';
 import { DEFAULT_SENSOR } from './capture.ts';
 import type { PatternPlan } from './patterns.ts';
 import { DEFAULT_PATTERN_PLAN } from './patterns.ts';
@@ -137,6 +137,13 @@ export interface DegradationSettings {
   /** null holds the camera perfectly still. See camera.ts. */
   handheld: HandheldMotion | null;
   clock: FrameClock;
+  /**
+   * The room the light that misses the sphere lands on. `null` — the default,
+   * and every archetype — is the old behaviour. See `capture.ts`'s
+   * {@link RoomSpill}: nothing here is bundled, so this is switchable on its own
+   * exactly as ambient, the sensor and the motion are.
+   */
+  roomSpill: RoomSpill | null;
 }
 
 export interface Scenario {
@@ -430,6 +437,10 @@ export function makeScenario(rootSeed: number, index: number, preset: BenchPrese
       sensor: { ...DEFAULT_SENSOR },
       handheld: { ...DEFAULT_HANDHELD },
       clock: { ...DEFAULT_CLOCK },
+      // Off, here and in every archetype. Every published number in
+      // bench-results.json was produced without it, and turning it on by default
+      // would move all of them silently.
+      roomSpill: null,
     },
     pattern: { ...DEFAULT_PATTERN_PLAN },
     floorReferenceCount: 4,

@@ -28,7 +28,8 @@ import {
   poseAt,
   rowTimeSec,
 } from '../src/camera.ts';
-import { DEFAULT_SENSOR, captureAndDecode } from '../src/capture.ts';
+import type { RoomSpill } from '../src/capture.ts';
+import { DEFAULT_ROOM_SPILL, DEFAULT_SENSOR, captureAndDecode, roomHit } from '../src/capture.ts';
 import { DEFAULT_PATTERN_PLAN } from '../src/patterns.ts';
 import { makeBenchRng } from '../src/random.ts';
 
@@ -61,6 +62,7 @@ interface CaptureArgs {
   rollingShutter: boolean;
   sensor: typeof DEFAULT_SENSOR | null;
   ambient: number;
+  roomSpill: RoomSpill | null;
 }
 
 function capture(cams: SimulatedCamera[], args: Partial<CaptureArgs> = {}) {
@@ -74,6 +76,7 @@ function capture(cams: SimulatedCamera[], args: Partial<CaptureArgs> = {}) {
       handheld: args.handheld ?? null,
       clock: { ...DEFAULT_CLOCK, rollingShutter: args.rollingShutter ?? true },
       minIncidenceCos: 0.2,
+      roomSpill: args.roomSpill ?? null,
     },
     seed: 4242,
     decode: { pixelStride: 1, maxCorrespondences: 0 },
@@ -339,3 +342,134 @@ function planLength(): number {
   // white + black + 2 axes x grayBits x 2 + 2 axes x phaseSteps.
   return 2 + 4 * PLAN.grayBits + 2 * PLAN.phaseSteps;
 }
+
+// ---------------------------------------------------------------------------
+// Room spill, proven inert and proven not
+// ---------------------------------------------------------------------------
+
+test('room spill off is EXACTLY the capture that was there before it existed', () => {
+  // The claim every published number rests on. `bench-results.json` was produced
+  // without this condition, and a switch that is not exactly inert when off has
+  // moved all of them. Bit-for-bit, not closely.
+  const cams = cameras(1);
+  const a = capture(cams, { sensor: null, roomSpill: null });
+  const b = capture(cams, { sensor: null });
+  assert.equal(a.correspondences.length, b.correspondences.length);
+  for (let i = 0; i < a.correspondences.length; i++) {
+    assert.equal(a.correspondences[i].projU, b.correspondences[i].projU);
+    assert.equal(a.correspondences[i].projV, b.correspondences[i].projV);
+    assert.equal(a.correspondences[i].camU, b.correspondences[i].camU);
+  }
+  assert.deepEqual(a.stats, b.stats);
+});
+
+test('room spill puts modulated light on pixels that miss the sphere', () => {
+  // And the other half, which is the one a false negative hides behind. The
+  // condition has to be measurably NOT inert when it is on, or an experiment
+  // reporting that spill costs nothing is reporting a property of the apparatus.
+  //
+  // The signature is specific: off-sphere pixels stop being frame-invariant, so
+  // pixels that were rejected on modulation are now considered and either
+  // accepted or rejected for a different reason. `considered` counts every pixel
+  // either way, so what moves is the split.
+  const cams = cameras(1);
+  const clean = capture(cams, { sensor: null, roomSpill: null });
+  const spilt = capture(cams, { sensor: null, roomSpill: DEFAULT_ROOM_SPILL });
+
+  assert.equal(clean.stats.considered, spilt.stats.considered, 'the raster did not change');
+  assert.ok(
+    spilt.stats.rejectedLowModulation < clean.stats.rejectedLowModulation,
+    `spill must lift pixels over the modulation floor: ${clean.stats.rejectedLowModulation} ` +
+      `rejected clean, ${spilt.stats.rejectedLowModulation} with spill`,
+  );
+  assert.ok(
+    spilt.correspondences.length > clean.correspondences.length,
+    `spill must produce correspondences the clean capture did not: ` +
+      `${clean.correspondences.length} vs ${spilt.correspondences.length}`,
+  );
+});
+
+test('the correspondences room spill adds are off the sphere, which is what makes them wrong', () => {
+  // Not merely "more points". The points spill adds decode to a real projector
+  // coordinate from a camera ray that never touched the ball, so back-projecting
+  // them against the sphere fails — which is exactly the lie the solver is being
+  // asked to absorb, and the reason this is worth measuring at all.
+  const cams = cameras(1);
+  const clean = capture(cams, { sensor: null, roomSpill: null });
+  const spilt = capture(cams, { sensor: null, roomSpill: DEFAULT_ROOM_SPILL });
+
+  const key = (c: { camU: number; camV: number }): string => `${c.camU},${c.camV}`;
+  const cleanKeys = new Set(clean.correspondences.map(key));
+  const added = spilt.correspondences.filter((c) => !cleanKeys.has(key(c)));
+  assert.ok(added.length > 0, 'spill added no new camera pixels');
+
+  let missedTheSphere = 0;
+  for (const c of added) {
+    const cam = cams[c.camera];
+    const dir = cameraPixelToRay(cam, c.camU, c.camV);
+    if (raySphereIntersect(cam.pose.position, dir, RIG.sphere.radiusM) === null) missedTheSphere++;
+  }
+  assert.equal(
+    missedTheSphere,
+    added.length,
+    `${added.length - missedTheSphere} of ${added.length} added correspondences were on the ` +
+      'sphere — spill is meant to add ONLY room pixels, so this is a leak into the sphere path',
+  );
+});
+
+test('the room is a closed box: every ray from inside it lands on a surface', () => {
+  // The geometry on its own, because a miss here is silent — the pixel simply
+  // falls back to the constant background and the condition quietly does less
+  // than it says.
+  const spill = { wallRadiusM: 6, ceilingM: 4.27 };
+  const floorZ = -2.13;
+  const origin = { x: 0.4, y: -0.2, z: 0.1 };
+  const rr = spill.wallRadiusM * spill.wallRadiusM;
+  let wall = 0;
+  let floor = 0;
+  let ceiling = 0;
+  for (let i = 0; i < 400; i++) {
+    // A deterministic spray over the whole sphere of directions.
+    const u = (i + 0.5) / 400;
+    const z = 1 - 2 * u;
+    const r = Math.sqrt(Math.max(0, 1 - z * z));
+    const phi = i * 2.399963;
+    const dir = { x: r * Math.cos(phi), y: r * Math.sin(phi), z };
+    const p = roomHit(origin, dir, spill, floorZ);
+    assert.ok(p !== null, `direction ${i} left the room`);
+    assert.ok(p.z >= floorZ - 1e-9 && p.z <= floorZ + spill.ceilingM + 1e-9, 'outside the walls');
+    assert.ok(p.x * p.x + p.y * p.y <= rr + 1e-6, 'outside the cylinder');
+    // The normal points INTO the room, or the surface is lit from behind.
+    const toCentre = { x: origin.x - p.x, y: origin.y - p.y, z: origin.z - p.z };
+    const len = Math.hypot(toCentre.x, toCentre.y, toCentre.z);
+    assert.ok(
+      (p.nx * toCentre.x + p.ny * toCentre.y + p.nz * toCentre.z) / len > -1e-9,
+      `the normal at direction ${i} faces out of the room`,
+    );
+    if (Math.abs(p.z - floorZ) < 1e-9) floor++;
+    else if (Math.abs(p.z - (floorZ + spill.ceilingM)) < 1e-9) ceiling++;
+    else wall++;
+  }
+  // All three surfaces are reachable, or one of them is dead code.
+  assert.ok(wall > 0 && floor > 0 && ceiling > 0, `wall ${wall}, floor ${floor}, ceiling ${ceiling}`);
+});
+
+test('spill does not light the whole room: the shadow and the frustum still reject', () => {
+  // The half that would go missing if the sphere-shadow test or the raster test
+  // were dropped. If every off-sphere pixel came back modulated, the condition
+  // would be a flood rather than a model, and it would be easy to mistake the
+  // resulting collapse for a solver result.
+  const cams = cameras(1);
+  const spilt = capture(cams, { sensor: null, roomSpill: DEFAULT_ROOM_SPILL });
+  assert.ok(
+    spilt.stats.rejectedLowModulation > 0,
+    'every pixel in the frame carried modulation — nothing is shadowed or outside a raster',
+  );
+  // And it is a large share: one projector covers a wedge of the room, not all
+  // of it, and the ball stands in front of part of that wedge.
+  assert.ok(
+    spilt.stats.rejectedLowModulation > spilt.correspondences.length,
+    `${spilt.stats.rejectedLowModulation} rejected against ${spilt.correspondences.length} ` +
+      'accepted — one projector should not be lighting most of what one camera sees',
+  );
+});

@@ -872,14 +872,19 @@ async function main(): Promise<void> {
         .find((b) => /Projectors/.test(b.textContent ?? ''));
       if (!tab) return null;
       tab.click();
-      const first = () => [...document.querySelectorAll('#controls .ptabs button')][0];
-      const state = () => (first()?.className ?? '(none)');
-      const seen = [state()];
-      // Selected already, so this is the switch.
-      first()?.click();
-      seen.push(state());
-      first()?.click();
-      seen.push(state());
+      // The SELECTED tab, not the first: an earlier check clicks a lens in the
+      // room, which selects whichever projector it hit. Keying off position
+      // would fail here for a reason that has nothing to do with the switch.
+      const tabs = () => [...document.querySelectorAll('#controls .ptabs button')];
+      const chosen = tabs().findIndex((b) => b.className.includes('on'));
+      if (chosen < 0) return ['no tab is selected'];
+      const at = () => tabs()[chosen]?.className ?? '(none)';
+      const seen = [at()];
+      // Selected already, so this click is the switch.
+      tabs()[chosen]?.click();
+      seen.push(at());
+      tabs()[chosen]?.click();
+      seen.push(at());
       // And nothing else on the tab offers the same thing.
       const strays = [...document.querySelectorAll('#controls .chip')]
         .filter((c) => /^(On|Off at the wall)$/.test((c.textContent ?? '').trim())).length;
@@ -890,8 +895,10 @@ async function main(): Promise<void> {
       failures.push('the Projectors tab has no projector tabs');
     } else {
       const [start, off, back, strays] = wall;
-      if (!start.includes('on')) {
-        failures.push(`the first projector tab does not start selected (class '${start}')`);
+      if (wall.length === 1) {
+        failures.push(`the projector tab check could not run: ${start}`);
+      } else if (!start.includes('on')) {
+        failures.push(`the selected projector tab is not marked selected (class '${start}')`);
       } else if (!off.includes('dark')) {
         failures.push(
           `clicking the selected projector tab did not switch it off at the wall (class '${off}')`,

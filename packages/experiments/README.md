@@ -1,13 +1,20 @@
 # packages/experiments — the measurements
 
-**Input:** one documented root seed.
-**Output:** `progress/experiment-1.json` and four SVG figures beside it.
+**Input:** one documented root seed per experiment.
+**Output:** `progress/experiment-1.json` and four SVG figures beside it;
+`experiments/experiment-{2,3,4}.{json,svg}`.
 
 ```
 node packages/experiments/src/cli.ts --list        # the plan and the budget, runs nothing
 node packages/experiments/src/cli.ts               # the published run, ~2 h
 node packages/experiments/src/cli.ts --plots-only  # re-render the figures from the raw runs
+node packages/experiments/src/cli.ts 2|3|photometry  # the photometric pair, seconds
+node packages/experiments/src/cli.ts 4               # the room behind the sphere, ~9 min
 ```
+
+`4` has its own branch rather than joining `all` deliberately: `all` means the
+photometric pair, which is seconds of arithmetic, and folding eighty real solves
+into it would change what a familiar command costs without anybody asking.
 
 docs/ARCHITECTURE.md draws this package downstream of `bench`, and the reason is
 the whole design of it: an experiment measures the pipeline the scorer scores,

@@ -358,6 +358,31 @@ better than it is. PARAMETERS.md has no section for a camera, so all four sensor
 constants are class ASSUME in the spec's sense and are echoed into
 `scenarios[].inputs` rather than buried in the code.
 
+**Room spill** — where the light that misses the sphere lands, and the only one
+of these that is OFF by default. Every published number was produced without it.
+
+With it off, an off-sphere pixel is one constant, hoisted above both the frame
+loop and the pixel loop, so it is frame-invariant: `white − black` there is
+exactly zero plus two sensor draws and the decoder rejects it on modulation
+without being asked a hard question. That is not what a real capture looks like.
+PARAMETERS.md §7 gates off-sphere flux at 52% and amendment A-03 measures the
+floor on a 16:9 chip near 56%, so more than half of every projector's light
+lands on the room — and what lands is the pattern.
+
+Switching it on puts a cylinder about the sphere's axis, with a floor and a
+ceiling, into the trace: a room point receives `cos(incidence)` times the same
+inverse-square falloff a sphere point receives, gated by the projector's raster
+and by whether the ball stands between the lens and the point, then scaled by
+§5's `rho_room`. The sphere's own shadow on the wall therefore appears,
+unmodulated. Both room constants are class ASSUME.
+
+`test/capture.test.ts` pins both halves, which is the rule this section is about:
+that the condition off is bit-for-bit the capture that existed before it, and
+that on it measurably lifts pixels over the modulation floor and the
+correspondences it adds are all off the sphere. docs/EXPERIMENT-4.md measures
+what it costs — briefly, three orders of magnitude, and no decoder threshold
+recovers it.
+
 **Rolling shutter** — and here is the part that would otherwise produce a false
 negative. A rolling shutter on a static scene photographed by a static camera is
 *provably* invisible: every row sees the same world. A bench offering "rolling

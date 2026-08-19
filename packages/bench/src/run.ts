@@ -33,7 +33,7 @@ import { defaultScene, viewerAt } from '../../sim/src/render.ts';
 import type { Scene } from '../../sim/src/render.ts';
 import type { MetricSet } from '../../sim/src/metrics/index.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
-import type { SolverResult } from '../../solver/src/index.ts';
+import type { DecodeOptions, SolverResult } from '../../solver/src/index.ts';
 import { nominalRig as solverNominalRig, solve } from '../../solver/src/index.ts';
 // Reached past the barrel deliberately: `DEFAULT_FREE_FLAGS` is the solver's own
 // statement of which parameters PARAMETERS.md §3.1 says to free, and the
@@ -240,6 +240,16 @@ export interface RunOptions {
   writeArtifacts: boolean;
   /** Compute the documented-calibration baseline metrics. */
   baseline: boolean;
+  /**
+   * Decoder thresholds, on top of the bench's own two.
+   *
+   * For experiments that ask what a threshold can and cannot reject. Undefined
+   * everywhere in the bench itself, so every published number was produced with
+   * `DEFAULT_DECODE_OPTIONS` plus the preset's correspondence cap and nothing
+   * else — and a run that overrode one is visible in the experiment's own
+   * `generatedFrom` rather than hidden in a default.
+   */
+  decode?: Partial<DecodeOptions>;
 }
 
 export function runScenario(scenario: Scenario, options: RunOptions): ScenarioResult {
@@ -258,11 +268,17 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
       handheld: scenario.degradation.handheld,
       clock: scenario.degradation.clock,
       minIncidenceCos: 0.2,
+    roomSpill: scenario.degradation.roomSpill,
     },
     seed: scenario.seed,
     decode: {
       pixelStride: 1,
       maxCorrespondences: options.preset.maxCorrespondencesPerPair,
+      // Last, so a caller can raise the decoder's own rejection thresholds. The
+      // bench never does; an experiment that is asking whether a threshold could
+      // reject something needs to be able to move it, and moving it by editing
+      // `DEFAULT_DECODE_OPTIONS` would move every published number with it.
+      ...(options.decode ?? {}),
     },
     // One frame kept as an artifact: the fourth Gray plane of the u axis, which
     // is coarse enough to read as a pattern in a thumbnail and fine enough to

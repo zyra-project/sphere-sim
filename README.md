@@ -50,6 +50,8 @@ npm run gate               # judge bench-results.json against §7; exits non-zer
 npm run experiments        # experiments 2 and 3, each run once
 npm run experiment1        # experiment 1: camera count, resolution, floor reference,
                            # and each degradation on its own. ~2 h; --list prints the budget
+npm run experiment4        # experiment 4: what the room behind the sphere costs the
+                           # solve, and whether a decoder threshold can reject it. ~9 min
 npm run build:web          # compile sim + calibration + harness to browser ESM
 npm run harness            # developer harness on http://localhost:8173/
 npm run build:app          # compile sim + solver + bench + the app to browser ESM

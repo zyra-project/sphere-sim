@@ -32,6 +32,14 @@
  * reports an optimistic decode. That is worth saying out loud in a document that
  * exists to be audited.
  *
+ * One of those omissions is now switchable rather than absent: `roomSpill` puts
+ * the light that MISSES the sphere onto the room and lets the pattern modulate
+ * it. PARAMETERS.md §7 gates off-sphere flux at 52% and amendment A-03 measures
+ * the floor on a 16:9 chip near 56%, so the wall behind the sphere is being
+ * patterned in every real capture and an off-sphere pixel there is not a
+ * constant. It is OFF by default and every published number was produced with it
+ * off. See {@link RoomSpill}.
+ *
  * ## One projector at a time
  *
  * Not a simplification — the capture protocol. `decode.ts` explains it:
@@ -142,6 +150,65 @@ export const DEFAULT_SENSOR: SensorModel = {
  * §5's `rho_room`. The sensor and the motion have no section, and that is
  * recorded rather than hidden.
  */
+/**
+ * The room the light that misses the sphere lands on.
+ *
+ * ## Why this exists
+ *
+ * With it `null` — the default, and how every published number was produced —
+ * an off-sphere pixel is one constant, `ambient * lum(rho) * rho_room`, hoisted
+ * above both the frame loop and the pixel loop. It is therefore FRAME-INVARIANT,
+ * so `white - black` there is exactly zero plus two sensor draws, and the
+ * decoder rejects it on modulation without ever being asked a hard question.
+ *
+ * A real capture is not like that. PARAMETERS.md §7 gates off-sphere flux at 52%
+ * and amendment A-03 measures the floor on a 16:9 chip near 56%, so more than
+ * half of every projector's light lands on the room — and what lands is the
+ * structured-light pattern. Those pixels carry real modulation, decode to a real
+ * projector coordinate, and are at the wrong depth. That is a failure mode
+ * `minModulation` and the solver's robust loss have never been shown.
+ *
+ * ## The room, and what it assumes
+ *
+ * A closed cylinder about the sphere's own axis: a wall at `wallRadiusM`, the
+ * floor at the sphere's `-h_center`, a ceiling `ceilingM` above it. That is the
+ * shape the page already draws, and the shape a gallery holding a 5.36 m lens
+ * ring is. Both numbers are class ASSUME — PARAMETERS.md describes a sphere and
+ * a rig, not a building — and neither has been measured.
+ *
+ * A room point receives exactly what a sphere point receives: `cos(incidence)`
+ * times the same inverse-square falloff against the same reference distance,
+ * gated by the projector's raster and by whether the sphere stands between the
+ * lens and the point, then scaled by §5's `rho_room`. The sphere's own shadow on
+ * the wall therefore appears, unmodulated, which is a thing a real capture has
+ * and a thing the decoder should have to cope with.
+ *
+ * Two things it still does not model. There is no second bounce: light reaches
+ * the room and stops, so inter-reflection back onto the ball — the omission the
+ * header names — is untouched. And the room takes the SPHERE's paint
+ * reflectance scaled by `rho_room`, because that is the reflectance convention
+ * the ambient background already uses and inventing a second one would make the
+ * two backgrounds disagree about what a wall is.
+ */
+export interface RoomSpill {
+  /** Cylindrical wall radius about the sphere's axis, metres. ASSUME. */
+  wallRadiusM: number;
+  /** Floor to ceiling, metres. ASSUME. */
+  ceilingM: number;
+}
+
+/**
+ * A gallery that holds the rig with room to walk round it.
+ *
+ * 6.0 m of wall radius puts the wall 0.64 m outside the §2 lens ring at 5.36 m,
+ * which is about the tightest a room can be and still have the projectors hang
+ * in it. 4.27 m is fourteen feet, the ceiling the Boulder install assumes and the
+ * one the page's own room is drawn at. Both are ASSUME: nobody has measured a
+ * gallery, and a tighter room means MORE spill, not less — so this default is
+ * not a conservative one and should not be read as a bound.
+ */
+export const DEFAULT_ROOM_SPILL: RoomSpill = { wallRadiusM: 6.0, ceilingM: 4.27 };
+
 export interface CaptureConditions {
   /** `E_amb`, relative irradiance on the sphere. §5 nominal 0.04, range 0.01-0.15. */
   ambient: number;
@@ -161,6 +228,12 @@ export interface CaptureConditions {
    * the decoder rejects them on modulation exactly as it would in the room.
    */
   minIncidenceCos: number;
+  /**
+   * Where the light that misses the sphere lands. `null` — the default, and how
+   * every published number was produced — leaves off-sphere pixels a constant.
+   * See {@link RoomSpill}.
+   */
+  roomSpill: RoomSpill | null;
 }
 
 export interface CaptureOptions {
@@ -256,6 +329,12 @@ interface Geometry {
   k: Float32Array;
   /** 1 where the camera ray hit the sphere at all (lit or not). */
   onSphere: Uint8Array;
+  /**
+   * 1 where the ray MISSED the sphere, hit the room, and this projector's
+   * pattern reaches that point. `u`, `v` and `k` are then the room point's, and
+   * mean exactly what they mean on the sphere. Always 0 when `roomSpill` is off.
+   */
+  onRoom: Uint8Array;
 }
 
 function makeGeometry(width: number, height: number): Geometry {
@@ -268,7 +347,63 @@ function makeGeometry(width: number, height: number): Geometry {
     v: new Float32Array(n),
     k: new Float32Array(n),
     onSphere: new Uint8Array(n),
+    onRoom: new Uint8Array(n),
   };
+}
+
+/**
+ * Where a ray that missed the sphere meets the room, and the surface normal
+ * there.
+ *
+ * A closed cylinder about the sphere's axis: wall, floor, ceiling. The wall root
+ * taken is the POSITIVE one — the camera is inside the room, so `c < 0` and
+ * there is exactly one — and it counts only between the floor and the ceiling;
+ * otherwise the ray leaves through one of the caps. `null` is a ray that reaches
+ * none of the three, which a closed room only produces for a direction almost
+ * exactly along the axis at the axis, and for numerically degenerate input.
+ */
+export function roomHit(
+  origin: { x: number; y: number; z: number },
+  dir: { x: number; y: number; z: number },
+  spill: RoomSpill,
+  floorZ: number,
+): { x: number; y: number; z: number; nx: number; ny: number; nz: number } | null {
+  const ceilZ = floorZ + spill.ceilingM;
+  const rr = spill.wallRadiusM * spill.wallRadiusM;
+  let best = Infinity;
+  let out: { x: number; y: number; z: number; nx: number; ny: number; nz: number } | null = null;
+
+  const a = dir.x * dir.x + dir.y * dir.y;
+  if (a > 1e-12) {
+    const b = 2 * (origin.x * dir.x + origin.y * dir.y);
+    const c = origin.x * origin.x + origin.y * origin.y - rr;
+    const disc = b * b - 4 * a * c;
+    if (disc > 0) {
+      const t = (-b + Math.sqrt(disc)) / (2 * a);
+      const z = origin.z + dir.z * t;
+      if (t > 1e-6 && z >= floorZ && z <= ceilZ) {
+        const x = origin.x + dir.x * t;
+        const y = origin.y + dir.y * t;
+        const inv = 1 / spill.wallRadiusM;
+        // Inward: the room is lit from inside.
+        best = t;
+        out = { x, y, z, nx: -x * inv, ny: -y * inv, nz: 0 };
+      }
+    }
+  }
+
+  if (Math.abs(dir.z) > 1e-12) {
+    for (const planeZ of [floorZ, ceilZ]) {
+      const t = (planeZ - origin.z) / dir.z;
+      if (!(t > 1e-6) || t >= best) continue;
+      const x = origin.x + dir.x * t;
+      const y = origin.y + dir.y * t;
+      if (x * x + y * y > rr) continue;
+      best = t;
+      out = { x, y, z: planeZ, nx: 0, ny: 0, nz: planeZ === floorZ ? 1 : -1 };
+    }
+  }
+  return out;
 }
 
 /**
@@ -292,6 +427,8 @@ function traceGeometry(
   proj: PreparedProjector,
   radiusM: number,
   minIncidenceCos: number,
+  spill: RoomSpill | null,
+  floorZ: number,
 ): number {
   const { width, height } = geom;
   const refDist = proj.distanceM - radiusM;
@@ -320,9 +457,41 @@ function traceGeometry(
       if (hit === null) {
         geom.onSphere[i] = 0;
         geom.lit[i] = 0;
+        geom.onRoom[i] = 0;
+        if (spill !== null) {
+          const rp = roomHit(origin, dir, spill, floorZ);
+          if (rp !== null) {
+            const lx = proj.lens.x - rp.x;
+            const ly = proj.lens.y - rp.y;
+            const lz = proj.lens.z - rp.z;
+            const dist = Math.hypot(lx, ly, lz);
+            const cos = (rp.nx * lx + rp.ny * ly + rp.nz * lz) / dist;
+            // Facing the lens at all. NOT §4.3's usability threshold: that is a
+            // statement about whether a fringe on the SPHERE can be decoded, and
+            // applying it here would delete grazing spill the decoder is
+            // perfectly capable of accepting — which is the thing being measured.
+            if (cos > 0) {
+              // The sphere in the way. Its shadow on the wall is unmodulated,
+              // and a real capture has one.
+              const inv = 1 / dist;
+              const toward = { x: -lx * inv, y: -ly * inv, z: -lz * inv };
+              const blocked = raySphereIntersect(proj.lens, toward, radiusM);
+              if (blocked === null || blocked.t >= dist) {
+                const px = worldToPixel(proj, rp);
+                if (px !== null) {
+                  geom.onRoom[i] = 1;
+                  geom.u[i] = px.u;
+                  geom.v[i] = px.v;
+                  geom.k[i] = cos * (refDistSq / (dist * dist));
+                }
+              }
+            }
+          }
+        }
         continue;
       }
       geom.onSphere[i] = 1;
+      geom.onRoom[i] = 0;
 
       const p = hit.point;
       const nx = p.x * invR;
@@ -470,6 +639,11 @@ function renderPair(
 
   const response = luminanceResponse(proj.cal.transfer, cond.reflectance, cond.ambient);
   const background = response.ambientLum * cond.roomAlbedo;
+  // The room reflects the pattern with the same reflectance the ambient
+  // background already assumes for it: the sphere's paint, scaled by §5's
+  // rho_room. `emitted` carries the paint already, so this is the scale left.
+  const roomAlbedo = cond.roomAlbedo;
+  const floorZ = -prepared.centerHeightM;
   const specs = planFrames(opts.plan);
   const geom = makeGeometry(width, height);
 
@@ -531,6 +705,8 @@ function renderPair(
         proj,
         prepared.radiusM,
         cond.minIncidenceCos,
+        cond.roomSpill,
+        floorZ,
       );
       geometryValid = true;
     }
@@ -549,7 +725,9 @@ function renderPair(
             ? ambientLum + emitted * geom.k[i]
             : geom.onSphere[i] === 1
               ? ambientLum
-              : background;
+              : geom.onRoom[i] === 1
+                ? background + emitted * geom.k[i] * roomAlbedo
+                : background;
         data[i] = noisy(value);
       }
     } else {
@@ -565,6 +743,14 @@ function renderPair(
           value = ambientLum + emitted * geom.k[i];
         } else if (geom.onSphere[i] === 1) {
           value = ambientLum;
+        } else if (geom.onRoom[i] === 1) {
+          // The wall, carrying the same pattern at its own projector coordinate.
+          // This is the whole point of `roomSpill`: the pixel is no longer
+          // frame-invariant, so `white - black` is a real modulation and the
+          // decoder has to decide about it rather than reject it for free.
+          const target = frame.at(coord[i]);
+          const emitted = binary ? (target >= 0.5 ? emitOn : emitOff) : response.emit(target);
+          value = background + emitted * geom.k[i] * roomAlbedo;
         } else {
           value = background;
         }
