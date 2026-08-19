@@ -70,6 +70,18 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   The ring is anchored at the lowest slot rather than at whichever projector
   sorts first by azimuth, because a solve moves the recovered azimuths by a hair
   and that was enough to renumber the seams under the picker.
+
+  Clicking a seam also **walks the camera round to it**. The diagram is a
+  measurement drawn at a stated exaggeration; the sphere is the thing itself, and
+  a reader who has just read "74.3 mm apart" should be able to go and look at
+  74.3 mm — until this, nothing on the page said which way to drag. Azimuth is
+  the seam's own world longitude, elevation is zero because a meridian seen from
+  anywhere else is foreshortened, and the distance is SOLVED by `framingRangeM`
+  rather than picked, so one rule holds at any sphere diameter and any field of
+  view: a phone's field is chosen from its aspect and is about half a desktop's,
+  and the same call backs the eye off on its own. It frames on the horizontal
+  field even in portrait, because the seam is a vertical feature and the doubling
+  is a horizontal distance.
 - **The comparison, enlarged, three ways.** Clicking the projector's frame used
   to blow up the 296-pixel thumbnail, and after a recalibration it dropped the
   before-and-after entirely and showed the current frame alone. Both halves are
@@ -360,7 +372,9 @@ node --test "packages/web/test/**/*.test.ts"
   the grid metric's own floor is about 0.01 mm, 1% of its gate); the A-36 `d_proj`
   ambiguity is 3.85 mm at Boulder and exactly zero at the spec's level rig; the
   viewer's lens shift moves the ball down the frame by exactly what it says and
-  does not change its shape, where aiming above it would
+  does not change its shape, where aiming above it would; the seam picker's
+  framing distance puts the patch where it claims to, checked by putting the
+  answer back through the forward projection rather than by reusing the solve
 - `glsl.test.ts` — the shader carries two complete rigs field for field; the
   optics functions take a rig explicitly rather than reading a global; every
   uniform the shader declares is set by the binder and vice versa

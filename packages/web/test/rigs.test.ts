@@ -27,6 +27,7 @@ import {
   buildGraticule,
   buildViewer,
   buildWorld,
+  framingRangeM,
   scaledMagnitudes,
   worstAimOffender,
   worstPlacementOffender,
@@ -549,4 +550,70 @@ test('a lens shift does not stretch the ball, and aiming above it would', () => 
     aimed.lit > flat.lit * 1.2,
     `aiming was expected to inflate the ball; ${aimed.lit} px against ${flat.lit}`,
   );
+});
+
+/**
+ * The framing solve behind the seam picker.
+ *
+ * Clicking a seam walks the camera round to it and comes in until the patch the
+ * diagram covers fills a stated fraction of the frame. The distance is solved,
+ * not picked, so it has to be right at any sphere diameter and any field of
+ * view — a phone's is chosen from the aspect and is roughly half a desktop's.
+ */
+test('the framing distance really does put the patch where it says', () => {
+  // The inversion, checked by putting the answer back through the FORWARD
+  // formula, written out here rather than reused: an algebra slip in
+  // `framingRangeM` would otherwise agree with itself.
+  const forwardHalfAngleDeg = (radiusM: number, halfSpanDeg: number, rangeM: number): number => {
+    const phi = (halfSpanDeg * Math.PI) / 180;
+    return (
+      (Math.atan2(radiusM * Math.sin(phi), rangeM - radiusM * Math.cos(phi)) * 180) / Math.PI
+    );
+  };
+
+  for (const radiusM of [0.5, 0.864, 1.65]) {
+    for (const halfSpanDeg of [8, 15, 30]) {
+      for (const fovHDeg of [30, 41, 71]) {
+        for (const fill of [0.5, 0.7, 0.95]) {
+          const r = framingRangeM(radiusM, halfSpanDeg, fovHDeg, fill);
+          assert.ok(
+            r > radiusM,
+            `radius ${radiusM}, span ${halfSpanDeg}, fov ${fovHDeg}, fill ${fill} put the eye ` +
+              `inside the sphere at ${r}`,
+          );
+          const got = forwardHalfAngleDeg(radiusM, halfSpanDeg, r);
+          const want = (fovHDeg / 2) * fill;
+          assert.ok(
+            Math.abs(got - want) < 1e-9,
+            `the patch subtends ${got}° of half-frame where ${want}° was asked for`,
+          );
+        }
+      }
+    }
+  }
+});
+
+test('the framing distance scales with the ball and closes with the field', () => {
+  // The two properties a reader would predict, so a plausible-looking formula
+  // that got them backwards cannot pass the round-trip above by coincidence.
+  const a = framingRangeM(0.864, 15, 71, 0.7);
+  const twice = framingRangeM(1.728, 15, 71, 0.7);
+  assert.ok(
+    Math.abs(twice - 2 * a) < 1e-9,
+    `a sphere twice the size wants twice the distance: ${twice} against ${2 * a}`,
+  );
+  // A narrower field — a phone's — has to stand further back to hold the same
+  // patch across the frame.
+  assert.ok(framingRangeM(0.864, 15, 41, 0.7) > a);
+  // And filling more of the frame means coming closer.
+  assert.ok(framingRangeM(0.864, 15, 71, 0.95) < a);
+});
+
+test('the framing distance survives a degenerate field of view', () => {
+  // `viewFovDeg` is a slider and `halfSpanDeg` comes off a worker message. A
+  // zero in either used to be a division by approximately zero.
+  for (const [span, fov] of [[0, 71], [15, 0], [0, 0], [-4, -4]] as const) {
+    const r = framingRangeM(0.864, span, fov, 0.7);
+    assert.ok(Number.isFinite(r) && r > 0.864, `span ${span}, fov ${fov} gave ${r}`);
+  }
 });

@@ -475,6 +475,42 @@ export function buildViewer(
 }
 
 /**
+ * How far back to stand to frame a patch of sphere `halfSpanDeg` wide.
+ *
+ * Used by the seam picker: clicking a seam walks the camera round to it and
+ * comes in until the patch the diagram covers fills `fill` of the frame's width.
+ *
+ * Solved rather than picked, so one rule holds at any sphere diameter and any
+ * field of view — including a phone's, which is chosen from the aspect and is
+ * much narrower than a desktop's, so the same call backs the eye off on its own.
+ *
+ * The geometry: from an eye at `r` on the equatorial plane looking at the sphere
+ * centre, a surface point `φ` of longitude away from the point facing the eye is
+ * at `(R cos φ, R sin φ)` while the eye is at `(r, 0)`, so it subtends
+ *
+ *     θ = atan2(R sin φ, r − R cos φ)
+ *
+ * from the view axis. Setting `θ` to `fill` of the half-field and solving for `r`
+ * gives the line below. `test/rigs.test.ts` checks the inversion by putting the
+ * answer back through the forward formula.
+ *
+ * The caller is expected to clamp: at a wide enough field this asks for an eye
+ * inside the ball, and `withSetting` floors `viewRangeM` against the radius.
+ */
+export function framingRangeM(
+  radiusM: number,
+  halfSpanDeg: number,
+  fovHDeg: number,
+  fill: number,
+): number {
+  const phi = Math.max(0.5, halfSpanDeg) * DEG2RAD;
+  // A degenerate field would divide by approximately zero and put the eye in the
+  // next county; the floor is a fifth of a degree of half-field.
+  const theta = Math.max(0.005, ((fovHDeg * DEG2RAD) / 2) * fill);
+  return radiusM * Math.cos(phi) + (radiusM * Math.sin(phi)) / Math.tan(theta);
+}
+
+/**
  * Which perturbed degree of freedom moved the lens furthest, so the page can say
  * *what* went wrong rather than only *how much*.
  *

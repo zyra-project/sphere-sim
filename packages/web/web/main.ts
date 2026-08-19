@@ -37,6 +37,7 @@ import type { RigCalibration } from '../../calibration/src/index.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
 import { createImage } from '../../sim/src/equirect.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
+import { wrapDeg180 } from '../../sim/src/vec.ts';
 import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
   BOULDER_PRESET,
@@ -62,6 +63,7 @@ import {
 import {
   buildViewer,
   buildWorld,
+  framingRangeM,
   nudgesAreClear,
   worstAimOffender,
   worstPlacementOffender,
@@ -3484,6 +3486,66 @@ function configText(recovered: RigCalibration, documented: RigCalibration): stri
  * same magnification — a comparison at two different scales would be worthless
  * and is the easiest way to accidentally overstate a result.
  */
+/**
+ * How much of the frame's width the seam patch is framed to fill.
+ *
+ * Not 1: the patch is `±halfSpanDeg` of longitude and the two graticule
+ * meridians either side of the seam sit at its edges, which are what make a
+ * doubled line read as doubled rather than as a line drawn crooked. Filling the
+ * frame exactly would put them on the frame's edge, where the sphere's limb is
+ * already crowding them and where a desktop's side panels are.
+ */
+const SEAM_FRAME_FILL = 0.7;
+
+/**
+ * Walk round to a seam and look straight at it.
+ *
+ * The diagram beside these chips is a MEASUREMENT, drawn at a stated
+ * exaggeration because a tenth of a degree is a fifth of a pixel at any honest
+ * scale. The sphere is the thing itself. A reader looking at "74.3 mm apart"
+ * should be able to see 74.3 mm, and until this they had to find the seam by
+ * dragging, with nothing on screen saying which way to drag.
+ *
+ * Three settings, all of them PANEL class — this moves a camera and touches
+ * nothing the model reads:
+ *
+ *   - Azimuth is the seam's own world longitude. `SeamPatch.seamLonDeg` is
+ *     half way round from one lens to the next through the gap between them, and
+ *     the viewer's azimuth is a world longitude too, so the two are the same
+ *     number.
+ *   - Elevation is ZERO, which is the one choice here that is not forced. The
+ *     seam is a meridian; from anywhere else it is foreshortened, and the
+ *     equator crossing — where the blend band is widest and the doubling worst —
+ *     is what a reader wants in the middle of the frame. This is an inspection,
+ *     not a visitor: "stand where P1 does" on the projector card is the other
+ *     thing and it puts the eye at 1.5 m, below the ball, on purpose.
+ *   - The distance comes from `framingRangeM`, which solves for it rather than
+ *     picking one, so the same framing holds at any sphere diameter and any
+ *     field of view. On a phone, where the field is chosen from the aspect, it
+ *     backs the eye off on its own.
+ *
+ * Framed on the HORIZONTAL field even on a portrait screen. The seam is a
+ * vertical feature and the doubling is a horizontal distance, so width is the
+ * dimension that has to fit; the latitude band overflowing the top and bottom of
+ * a tall frame costs nothing. It also lands right: the sphere is drawn at the
+ * middle of the room the two sheets leave, so the equator crossing arrives in
+ * the middle of the band a phone reader can actually see.
+ */
+function lookAtSeam(patch: SeamPatch): void {
+  const r = framingRangeM(
+    (state.settings.sphereDiaIn * IN_TO_M) / 2,
+    patch.halfSpanDeg,
+    state.settings.viewFovDeg,
+    SEAM_FRAME_FILL,
+  );
+  state.settings = withSetting(state.settings, 'viewAzDeg', wrapDeg180(patch.seamLonDeg));
+  state.settings = withSetting(state.settings, 'viewElDeg', 0);
+  // `withSetting` floors this against the sphere's own radius, so a wide field
+  // asking for an eye inside the ball gets the closest it can stand instead.
+  state.settings = withSetting(state.settings, 'viewRangeM', r);
+  touched(false);
+}
+
 function seamSection(): HTMLElement | null {
   const seams = model?.seams ?? [];
   if (seams.length === 0) return null;
@@ -3509,9 +3571,14 @@ function seamSection(): HTMLElement | null {
       seams.map((s, i) => ({
         label: `P${s.a + 1}–P${s.b + 1}`,
         on: i === pick,
+        title:
+          `Draw the P${s.a + 1}–P${s.b + 1} seam below, and walk round to it — the ball turns to ` +
+          'this seam and comes in close enough to see the doubling at full size.',
         onPick: () => {
           seamPick = i;
-          renderReadout();
+          // The picture and the diagram are the same subject, so the chip moves
+          // both. `lookAtSeam` ends in `touched`, which redraws the readout.
+          lookAtSeam(s);
         },
       })),
     ),

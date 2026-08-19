@@ -767,6 +767,101 @@ async function main(): Promise<void> {
       }
     }
 
+    // The seam chips are a picker AND a camera move: the diagram is a
+    // measurement drawn at a stated exaggeration, the sphere is the thing
+    // itself, and a reader who has just read "74.3 mm apart" should be able to
+    // go and look at 74.3 mm. Nothing on the page said which way to drag.
+    //
+    // Checked geometrically rather than against a stored number: on a ring of
+    // four the seams are the four midpoints between neighbouring lenses, so they
+    // are 90 degrees apart, and a bug that walked to the LENS instead would
+    // still be 90 degrees apart but would not be idempotent under a re-click if
+    // it were accumulating, nor land between two of them.
+    if (seam && seam.chips.length >= 2) {
+      const walk = async (label: string): Promise<{ az: number; range: number }> => {
+        const before = await cdp.evaluate<string>(
+          "document.getElementById('view').dataset.az + '|' + document.getElementById('view').dataset.range",
+        );
+        const hit = await cdp.evaluate<string>(`(() => {
+          const s = [...document.querySelectorAll('#readout .sect')]
+            .find((x) => /At the seams/i.test(x.textContent ?? ''));
+          if (!s) return 'no section';
+          const all = [...s.querySelectorAll('.chip')];
+          const c = all.find((b) => (b.textContent ?? '').trim() === ${JSON.stringify(label)});
+          if (c) c.click();
+          return c ? 'ok' : 'no chip; had ' + all.map((b) => (b.textContent||'').trim()).join('/');
+        })()`);
+        if (hit !== 'ok') failures.push(`the seam picker lost its ${label} chip: ${hit}`);
+        // Wait for the value to MOVE, not merely to hold still.
+        //
+        // `dataset.az` is written by `draw()`, so it is a frame behind the click,
+        // and under a software rasteriser a supersampled redraw of a full window
+        // takes long enough to matter. Polling for two identical readings is not
+        // enough and fails in the direction that looks like a bug: the previous
+        // seam's azimuth is perfectly stable until the redraw lands, so the check
+        // read it four times and reported four chips walking to one place. Every
+        // call here is a move to a different seam, so a value equal to the one
+        // before the click has not arrived yet.
+        const read = (): Promise<string> =>
+          cdp.evaluate<string>(
+            "document.getElementById('view').dataset.az + '|' + document.getElementById('view').dataset.range",
+          );
+        let last = before;
+        for (let i = 0; i < 25 && last === before; i++) {
+          await sleep(400);
+          last = await read();
+        }
+        const [az, range] = last.split('|');
+        return { az: Number.parseFloat(az), range: Number.parseFloat(range) };
+      };
+
+      const names = seam.chips.map((c) => (c ?? '').trim());
+      const stops: { az: number; range: number }[] = [];
+      for (const name of names) stops.push(await walk(name));
+      // Back to the first one, which must be exactly where it was.
+      const again = await walk(names[0]);
+
+      const radiusM = 0.8636; // the default 68-inch ball
+      const tooFar = stops.filter((s) => !(s.range > radiusM && s.range < 4));
+      const gaps = stops.map((s, i) => {
+        const d = Math.abs(((s.az - stops[(i + 1) % stops.length].az + 540) % 360) - 180);
+        return Math.round(d);
+      });
+      const spread = new Set(stops.map((s) => Math.round(s.az))).size;
+
+      if (tooFar.length > 0) {
+        failures.push(
+          `a seam chip left the camera at ${tooFar.map((s) => s.range.toFixed(2)).join(', ')} m — ` +
+            'it is meant to come in close enough to see the doubling at full size, and to stay ' +
+            'outside the ball',
+        );
+      } else if (spread !== stops.length) {
+        failures.push(
+          `${stops.length} seam chips moved the camera to ${spread} distinct azimuths ` +
+            `(${stops.map((s) => s.az.toFixed(0)).join(', ')}) — they are not walking to their own seam`,
+        );
+      } else if (stops.length === 4 && gaps.some((g) => Math.abs(g - 90) > 12)) {
+        failures.push(
+          `the four seams of a four-projector ring must be about 90° apart; the chips walked to ` +
+            `${stops.map((s) => s.az.toFixed(0)).join(', ')}, with gaps ${gaps.join(', ')}`,
+        );
+      } else if (
+        Math.abs(again.az - stops[0].az) > 0.5 ||
+        Math.abs(again.range - stops[0].range) > 0.02
+      ) {
+        failures.push(
+          `going back to ${names[0]} landed somewhere else: ${again.az.toFixed(1)}°, ` +
+            `${again.range.toFixed(2)} m against ${stops[0].az.toFixed(1)}°, ` +
+            `${stops[0].range.toFixed(2)} m — the camera move is accumulating`,
+        );
+      } else {
+        process.stdout.write(
+          `  seam chips walked to ${stops.map((s) => `${s.az.toFixed(0)}°`).join(' ')} ` +
+            `at ${stops[0].range.toFixed(2)} m\n`,
+        );
+      }
+    }
+
     // The two capture inputs. There is no noise slider on purpose — the
     // millimetres are what the simulator produces — so these are what an
     // operator actually decides, and every one of them was declared, sent and
