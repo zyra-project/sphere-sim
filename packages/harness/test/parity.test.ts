@@ -164,6 +164,27 @@ test('the projector-track shortcut is the tracer’s own inner loop', () => {
   assert.equal(delta.maxAbs, 0, 'the shortcut is not the same calculation as renderProjectorView');
 });
 
+test('the harness scene carries no analytic graticule, because its shader cannot draw one', () => {
+  // `Scene.graticule` is drawn by `sim`'s `contentAt`, at full precision, over
+  // the image. The harness's GLSL predates it and samples the texture directly —
+  // which is correct here only because this harness bakes whatever pattern it
+  // was asked for INTO the image and leaves this field null.
+  //
+  // Stated as a test rather than left as a comment because the failure would be
+  // quiet in the direction that matters: `sim` would draw a grid, the shader
+  // would not, and the number this whole package exists to publish would report
+  // the difference as a disagreement about optics. `packages/sim`'s
+  // `test/content.test.ts` makes the same guarantee from the other side.
+  for (const pattern of ['graticule', 'mid-gray', 'white', 'black'] as const) {
+    const w = world({}, pattern as 'graticule' | 'mid-gray');
+    assert.equal(
+      w.scene.graticule,
+      null,
+      `the ${pattern} scene asks for an analytic graticule the harness shader cannot draw`,
+    );
+  }
+});
+
 test('comparePixels refuses to compare rasters of different size', () => {
   const a = { width: 4, height: 4, data: new Float32Array(48) };
   const b = { width: 8, height: 4, data: new Float32Array(96) };

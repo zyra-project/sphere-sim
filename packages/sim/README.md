@@ -81,3 +81,27 @@ docs/AMENDMENTS.md **A-37** has the evidence, the measurements, and the four
 things that have to happen before the default can move. `test/blend-region.test.ts`
 pins that opting out changes nothing — including that a rig which never mentions
 the field serializes exactly as it did before the field existed.
+
+## Everything on the sphere is read through one function
+
+`contentAt` is the image plus the analytic graticule, and it is the ONLY place
+in this package that samples `Scene.image`. `test/content.test.ts` asserts that
+by reading the source, because the alternative was found the hard way.
+
+The graticule used to be rasterised into the image. When it became analytic —
+so the line the §7 gate measures would stop being displayed at the resolution of
+whatever texture it had been baked into — `traceTwoRig` and the browser's shader
+were moved onto `contentAt` and `sampleSurface` was not. `sampleSurface` is what
+`renderProjectorView` and `renderRoomView` read, so the room view drew a grid on
+the ball and the picture captioned *the image this projector is sending down the
+cable* drew none. A sphere lit by four projectors sending no grid, with a grid on
+it.
+
+No metric was ever wrong: `metrics/grid.ts` evaluates the graticule analytically
+and reads no rendered image. That is exactly why nothing failed — the whole
+bench was green, and the disagreement existed only in pictures, which is the one
+place this repository had no assertion. It has four now, and they are about the
+class rather than the instance: the source-level rule above, that `sampleSurface`
+returns what `contentAt` returns, that a graticule scene renders a graticule in
+every one of the three renderers, and that a scene without one renders nothing
+bright in any of them.

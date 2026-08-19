@@ -116,6 +116,26 @@ test('the content trace evaluates blend, mask and content in the CONTENT rig', (
   assert.ok(trace.source.includes('emittedRadianceRgb(signal, i)'));
 });
 
+test('the trace reads the content through contentAt, never the texture directly', () => {
+  // The same rule `packages/sim`'s `test/content.test.ts` enforces on the CPU
+  // side, on this side. The graticule is drawn analytically over the image, so a
+  // trace that samples the texture is drawing content the sphere does not have —
+  // and unlike a metric, nothing would fail. It would simply be a different
+  // picture, and the parity check would agree with it, because the CPU renderer
+  // it is compared against reads `contentAt` too only as long as somebody keeps
+  // it that way.
+  const trace = FRAGMENT_CHUNKS.find((c) => c.name === 'trace');
+  assert.ok(trace);
+  assert.ok(trace.source.includes('contentAt('), 'the trace must read the content through contentAt');
+  assert.ok(
+    !trace.source.includes('sampleEquirect('),
+    'the trace samples the equirect directly; the analytic graticule would be missing from it',
+  );
+  // And contentAt is the one place that does sample it.
+  const equirect = FRAGMENT_CHUNKS.find((c) => c.name === 'equirect');
+  assert.ok(equirect && equirect.source.includes('vec3 contentAt(float latDeg, float lonDeg)'));
+});
+
 test('the blend weight is normalised inside the content rig only', () => {
   // `contentWeight` decides how the compositor SPLIT the signal between
   // projectors. That is a property of the calibration the content was generated

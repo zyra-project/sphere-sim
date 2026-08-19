@@ -207,7 +207,14 @@ export function sampleSurface(point: Vec3, rig: PreparedRig, scene: Scene): Surf
   const normal = { x: point.x * inv, y: point.y * inv, z: point.z * inv };
   const ll = worldToLatLon(point);
   const texLon = worldLonToTextureLon(ll.lonDeg, rig.rotationOffsetDeg);
-  const target = sampleEquirect(scene.image, ll.latDeg, texLon);
+  // `contentAt`, never `sampleEquirect` directly: the graticule is drawn
+  // analytically over the image, so a renderer that reads the texture is
+  // reading the content with the pattern missing. This is exactly what happened
+  // when the graticule stopped being baked in — `traceTwoRig` and the page's
+  // shader were moved onto `contentAt` and this was not, so the sphere showed a
+  // grid and the frame the projector was supposedly sending had none. See
+  // `test/content.test.ts`, which now refuses to let the two disagree.
+  const target = contentAt(scene, ll.latDeg, texLon);
   const mask = polarMask(ll.latDeg, rig.blend, scene.maskInterpretation);
   const { weights, lit } = coverageAndWeights(point, rig);
   for (let i = 0; i < weights.length; i++) weights[i] *= mask;
