@@ -11,10 +11,13 @@
  * user.
  *
  * So this drives Chromium over the DevTools protocol, using nothing but Node 22's
- * built-in `WebSocket` — no Playwright, no Puppeteer, no dependency. It is not in
- * `npm test` because it needs a browser binary that CI may not have; it is in the
- * repository because "does the shader compile" is a question somebody has to ask
- * before every deploy, and asking it by hand is how it stops being asked.
+ * built-in `WebSocket` — no Playwright, no Puppeteer, no dependency. It stays out
+ * of `npm test`, which has to run anywhere, and runs instead as its own step in
+ * `npm run ci` and in the GitHub workflow, after the bundles it needs are built.
+ * That does cost CI a browser binary, and the trade was made deliberately: "does
+ * the shader compile" is a question somebody has to ask before every deploy,
+ * asking it by hand is how it stops being asked, and it cannot be answered in
+ * Node at all.
  *
  * ## What it asserts
  *

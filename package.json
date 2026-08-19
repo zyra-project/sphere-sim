@@ -26,7 +26,7 @@
     "progress": "node packages/bench/src/progress.ts",
     "progress:reference": "node packages/bench/src/reference.ts",
     "progress:reference:check": "node packages/bench/src/reference.ts --check",
-    "ci": "npm run lint:boundary && npm run typecheck && npm test"
+    "ci": "npm run lint:boundary && npm run typecheck && npm test && npm run build:app && npm run smoke:app"
   },
   "devDependencies": {
     "typescript": "5.9.3",

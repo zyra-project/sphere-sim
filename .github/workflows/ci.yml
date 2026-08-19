@@ -40,6 +40,17 @@ jobs:
           npm run build:web
           npm run build:app
 
+      # Nothing above this line has ever compiled the GLSL. Every test in the
+      # suite runs without a GPU, so a shader that fails to compile — or one
+      # whose uniform block the linker drops — passes all of them and reaches
+      # the user as a black rectangle. This drives headless Chromium over
+      # swiftshader, serving the app itself, and needs the bundles above.
+      #
+      # It costs the runner a browser binary. That is the price of asking the
+      # question at all: it cannot be answered in Node.
+      - name: Smoke the app in a browser (the shader compiles, the workers reply)
+        run: npm run smoke:app
+
       # The bench MEASURES. It does not judge, which is why both runs carry
       # --allow-failure: a failing gate must not stop the determinism check from
       # running, and a step that both measures and judges makes it ambiguous
