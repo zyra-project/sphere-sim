@@ -208,6 +208,8 @@ export interface DisplayUniforms {
   camRight: [number, number, number];
   camUp: [number, number, number];
   camHalf: [number, number];
+  /** {@link ViewerCamera.imageShift}, in halves of the frame height. */
+  camShift: number;
 
   overlay: number;
   overlayMix: number;
@@ -346,6 +348,9 @@ export function buildDisplayUniforms(
     camRight: basis.right,
     camUp: basis.up,
     camHalf: basis.half,
+    // See `ViewerCamera.imageShift`. Straight off the camera, so the shader and
+    // `renderTwoRigRoomView` cannot be handed different framings.
+    camShift: camera.imageShift ?? 0,
 
     overlay: OVERLAY_CODE[options.overlay ?? 'none'],
     overlayMix: options.overlayMix ?? 0.75,

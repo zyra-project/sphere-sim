@@ -147,6 +147,10 @@ uniform vec3  uCamForward;
 uniform vec3  uCamRight;
 uniform vec3  uCamUp;
 uniform vec2  uCamHalf;               // tan(fov/2) horizontal, and vertical
+// Lens shift on the viewer's camera, in halves of the frame height, positive
+// DOWN. See ViewerCamera.imageShift: a principal-point offset, not an aim, so
+// the ball stays on the optical axis and does not stretch.
+uniform float uCamShift;
 // Supersampling: the side of the regular sample grid, and the size of one pixel
 // in uv. 1 is one sample at the pixel centre, which is where a GPU rasterizes
 // and where sim's offsets are.
@@ -922,7 +926,7 @@ void main() {
       // CPU raster it has to match, runs down it.
       vec2 off = (vec2(float(i), float(j)) + 0.5) / float(n) - 0.5;
       vec2 uv = vUv + vec2(off.x, -off.y) * uPixelUv;
-      c += traceScene(uv * 2.0 - 1.0);
+      c += traceScene((uv * 2.0 - 1.0) + vec2(0.0, uCamShift));
     }
   }
   c /= float(n * n);

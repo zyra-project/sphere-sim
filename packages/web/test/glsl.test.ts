@@ -417,6 +417,26 @@ test('the shader places the same sample grid the model does, and averages before
   assert.ok(divide < encode, 'the samples are averaged after the display encode');
 });
 
+test('the viewer lens shift moves the frame, not the aim', () => {
+  // `ViewerCamera.imageShift` is a principal-point offset: it is added to the
+  // IMAGE coordinate and must never touch the camera basis. A shader that
+  // implemented it by tilting `uCamForward` would compose the same picture and
+  // stretch the sphere, which is the whole thing this term exists to avoid — and
+  // it would still pass the parity check, because the CPU camera would be built
+  // from the same numbers.
+  const main = FRAGMENT_CHUNKS.find((c) => c.name === 'main');
+  assert.ok(main);
+  assert.ok(
+    main.source.includes('vec2(0.0, uCamShift)'),
+    'uCamShift must be added to the image coordinate the sample loop passes to traceScene',
+  );
+  const basis = FRAGMENT_SHADER.slice(FRAGMENT_SHADER.indexOf('vec3 traceScene('));
+  assert.ok(
+    !basis.slice(0, basis.indexOf('void main(')).includes('uCamShift'),
+    'traceScene must take an image coordinate that already carries the shift, not apply it',
+  );
+});
+
 test('every declared function is reachable from the entry point', () => {
   // A function nobody calls is a term that was removed from the model and left
   // behind, which reads as coverage it no longer provides.

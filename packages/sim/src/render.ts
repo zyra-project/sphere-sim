@@ -316,6 +316,26 @@ export interface ViewerCamera {
   fovHDeg: number;
   width: number;
   height: number;
+  /**
+   * Lens shift, in halves of the frame height. Positive moves the subject DOWN
+   * the picture. Zero — the default — is a centred principal point.
+   *
+   * The same thing PARAMETERS.md §3.1 gives every projector, on the viewer's
+   * camera: the optical axis stays where it is pointing and the frame moves
+   * across it. It is here rather than in a caller because the alternative is
+   * worse. A caller that wants its subject low in the frame can also get there by
+   * AIMING above it, and that is not the same picture: the subject then sits off
+   * the optical axis, where a rectilinear projection stretches it. At the shift a
+   * phone layout wants — about two thirds of a half-frame, in a portrait
+   * frustum — that is a 27 degree tilt and it renders the sphere as a visible
+   * egg. A shifted principal point keeps the ball on the axis and moves only the
+   * window, which is why real projection optics have the control.
+   *
+   * No metric reads it: like the rest of this struct it exists to decide what a
+   * picture contains. The browser's shader carries the same term and its parity
+   * check runs both at the same value.
+   */
+  imageShift?: number;
 }
 
 /**
@@ -398,6 +418,9 @@ export function renderRoomView(
   const halfW = Math.tan((camera.fovHDeg * DEG2RAD) / 2);
   // Square pixels: the vertical half-extent follows from the aspect ratio.
   const halfH = (halfW * camera.height) / camera.width;
+  // See `ViewerCamera.imageShift`. Added to the image coordinate, not to the
+  // aim: the axis stays put and the frame slides along it.
+  const shift = camera.imageShift ?? 0;
   const floorZ = -rig.centerHeightM;
 
   const img = createImage(camera.width, camera.height);
@@ -409,7 +432,7 @@ export function renderRoomView(
       for (let s = 0; s < samples; s++) {
         const [ox, oy] = sampleOffset(x, y, s, samples, seed);
         const sx = ((x + ox) / camera.width) * 2 - 1;
-        const sy = 1 - ((y + oy) / camera.height) * 2;
+        const sy = 1 - ((y + oy) / camera.height) * 2 + shift;
         const dir = normalize(
           add(forward, add(scale(right, sx * halfW), scale(up, sy * halfH))),
         );

@@ -517,6 +517,7 @@ export function computeModel(req: ModelRequest): ModelResponse {
       fovHDeg: req.parity.fovHDeg,
       width: req.parity.width,
       height: req.parity.height,
+      imageShift: req.parity.imageShift,
     };
     // The SAME sample count the display shader drew with, on the SAME regular
     // grid — that is what `sampleLattice: 'grid'` is for. At one sample the

@@ -192,6 +192,7 @@ export function setUniforms(h: DisplayGl, u: DisplayUniforms): void {
   gl.uniform3f(loc('uCamRight'), u.camRight[0], u.camRight[1], u.camRight[2]);
   gl.uniform3f(loc('uCamUp'), u.camUp[0], u.camUp[1], u.camUp[2]);
   gl.uniform2f(loc('uCamHalf'), u.camHalf[0], u.camHalf[1]);
+  gl.uniform1f(loc('uCamShift'), u.camShift);
 
   gl.uniform1i(loc('uOverlay'), u.overlay);
   gl.uniform1f(loc('uOverlayMix'), u.overlayMix);

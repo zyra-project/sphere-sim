@@ -121,6 +121,8 @@ export function renderTwoRigRoomView(
   const up = cross(right, forward);
   const halfW = Math.tan((camera.fovHDeg * DEG2RAD) / 2);
   const halfH = (halfW * camera.height) / camera.width;
+  // See `ViewerCamera.imageShift`: a principal-point offset, not an aim.
+  const shift = camera.imageShift ?? 0;
 
   const img = createImage(camera.width, camera.height);
   for (let y = 0; y < camera.height; y++) {
@@ -133,7 +135,7 @@ export function renderTwoRigRoomView(
           ? gridSampleOffset(s, samples)
           : sampleOffset(x, y, s, samples, seed);
         const sx = ((x + ox) / camera.width) * 2 - 1;
-        const sy = 1 - ((y + oy) / camera.height) * 2;
+        const sy = 1 - ((y + oy) / camera.height) * 2 + shift;
         const dir = normalize(add(forward, add(scale(right, sx * halfW), scale(up, sy * halfH))));
         const c = traceTwoRig(camera.position, dir, physical, content, scene, shading);
         r += c.r;

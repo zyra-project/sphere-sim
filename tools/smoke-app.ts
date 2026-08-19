@@ -1057,6 +1057,138 @@ async function main(): Promise<void> {
       process.stdout.write(`  phone: ${phone.band} px of room between the sheets\n`);
     }
 
+    // Now open the settings, which is what a phone visitor does about ten seconds
+    // in, and check the two things that used to be wrong at the same time: the
+    // sheet had room for a tab row and half a slider, and the ball it was meant
+    // to be controlling was behind the buttons.
+    //
+    // The sheet's cap used to reserve a flat 54vh for the readout column whether
+    // the readout was on the screen or not, so with it collapsed to its 44px
+    // button four hundred pixels were held for nothing. Reclaiming them is only
+    // an improvement if the picture does not then go under the panel that
+    // reclaimed them, which is what the camera's lens shift is for — hence both
+    // halves of this check, not one.
+    const tapPanel = `(() => {
+      const b = [...document.querySelectorAll('#topbtns button')]
+        .filter((x) => (x.textContent ?? '').trim() !== '?')[0];
+      if (b) b.click();
+      return !!b;
+    })()`;
+    const tapReadout = "document.querySelector('#leftbtns button')?.click()";
+    /**
+     * Where the sheets are, and where the ball actually is — off the CANVAS,
+     * not off the settings, so this cannot pass by agreeing with itself.
+     */
+    const SHEETS = `(() => {
+      const box = (sel) => document.querySelector(sel).getBoundingClientRect();
+      const right = box('#right');
+      const left = box('#left');
+      const c = document.getElementById('view');
+      const off = document.createElement('canvas');
+      off.width = 130; off.height = 280;
+      const ctx = off.getContext('2d');
+      ctx.drawImage(c, 0, 0, off.width, off.height);
+      const d = ctx.getImageData(0, 0, off.width, off.height).data;
+      let first = -1, last = -1;
+      for (let y = 0; y < off.height; y++) {
+        for (let x = 0; x < off.width; x++) {
+          const p = 4 * (y * off.width + x);
+          const mx = Math.max(d[p], d[p + 1], d[p + 2]);
+          const mn = Math.min(d[p], d[p + 1], d[p + 2]);
+          // By COLOUR, not by brightness. Brightness finds the floor: it is a mid
+          // grey and it runs down the middle of the frame, so a "the ball is the
+          // bright thing" test reported the centre of the floor and this check
+          // failed against a layout that was correct. The room is neutral —
+          // grey floor, black ceiling, grey rail — and the map on the ball is
+          // the only thing in the picture that is not.
+          if (mx > 40 && mx - mn > 24) { if (first < 0) first = y; last = y; }
+        }
+      }
+      const toPage = (i) => Math.round(((i + 0.5) / off.height) * window.innerHeight);
+      return {
+        controls: Math.round(box('#controls').height),
+        top: Math.round(right.bottom),
+        bottom: Math.round(left.top),
+        ballTop: first < 0 ? -1 : toPage(first),
+        ballBottom: last < 0 ? -1 : toPage(last),
+      };
+    })()`;
+    type Sheets = {
+      controls: number; top: number; bottom: number; ballTop: number; ballBottom: number;
+    };
+
+    /**
+     * Take the measurement once the picture has caught up with the layout.
+     *
+     * Not a fixed sleep. This runs under a software rasteriser, where a
+     * full-screen supersampled redraw at a phone's device pixel ratio is several
+     * million fragments and takes the better part of a second — so a 900 ms wait
+     * measured the ball where it was before the tap, and reported a layout that
+     * was right as a layout that was wrong. Polling for two identical readings
+     * asks the question the check is actually about: where did this end up.
+     */
+    const settled = async (): Promise<Sheets> => {
+      let last = await cdp.evaluate<Sheets>(SHEETS);
+      for (let i = 0; i < 20; i++) {
+        await sleep(400);
+        const now = await cdp.evaluate<Sheets>(SHEETS);
+        if (now.ballTop === last.ballTop && now.ballBottom === last.ballBottom) return now;
+        last = now;
+      }
+      return last;
+    };
+
+    await cdp.evaluate(tapPanel);
+    const withReadout = await settled();
+    const band = withReadout.bottom - withReadout.top;
+    if (band < 180) {
+      failures.push(
+        `with the settings open the room is ${band} px between the sheets — the sheet grew into ` +
+          'the picture instead of into the space nothing was using',
+      );
+    } else if (withReadout.ballTop < 0) {
+      failures.push('with the settings open there is no sphere down the middle of the screen');
+    } else {
+      // Centred in the ROOM, not in the window. The ball can be taller than the
+      // band at a close framing and then it overlaps both sheets, which is the
+      // best a band that size allows; what must never happen again is the ball
+      // sitting at the middle of the WINDOW with its top behind the buttons.
+      const ballMid = (withReadout.ballTop + withReadout.ballBottom) / 2;
+      const roomMid = (withReadout.top + withReadout.bottom) / 2;
+      if (Math.abs(ballMid - roomMid) > 24) {
+        failures.push(
+          `the sphere is centred at ${Math.round(ballMid)} px and the room the sheets left runs ` +
+            `${withReadout.top}–${withReadout.bottom}, centred at ${Math.round(roomMid)}. The ` +
+            "camera's lens shift is meant to put the picture where the room is.",
+        );
+      } else {
+        process.stdout.write(
+          `  phone: settings open, ball centred at ${Math.round(ballMid)} in the ` +
+            `${withReadout.top}–${withReadout.bottom} room\n`,
+        );
+      }
+    }
+
+    // And with the readout put away — the state the sheet was starved in, because
+    // the space it was starved of was the space the readout was not using.
+    await cdp.evaluate(tapReadout);
+    const alone = await settled();
+    // 300px is a tab row, a chip row and two full sliders. Below that the sheet
+    // is a viewport onto a control rather than a control.
+    if (alone.controls < 300) {
+      failures.push(
+        `with the readout closed the settings sheet is still ${alone.controls} px tall on a ` +
+          `${PHONE_W}×${PHONE_H} screen — it fits a tab row and half a slider, so every control ` +
+          'is reached by scrolling a window smaller than the thing inside it',
+      );
+    } else {
+      process.stdout.write(`  phone: readout closed, settings sheet ${alone.controls} px tall\n`);
+    }
+    // Put both back, so the pinch below happens on the layout it was written for.
+    await cdp.evaluate(tapReadout);
+    await cdp.evaluate(tapPanel);
+    await sleep(600);
+
     // Two fingers, drawn apart, at the middle of that visible band.
     const midY = Math.round(PHONE_H / 2);
     const finger = (x: number, id: number): unknown => ({ x, y: midY, id, radiusX: 12, radiusY: 12, force: 1 });

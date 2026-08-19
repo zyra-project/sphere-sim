@@ -428,8 +428,30 @@ export function buildWorld(
  * The eye. Orbits the sphere centre, which sits at world origin — the world
  * frame's origin is the sphere centre and +Z is up (conventions.ts §W), so the
  * floor is at `-h_center`.
+ *
+ * `imageShift` moves the BALL down the frame, in halves of the frame height: 0
+ * puts it in the middle of the window, 1 puts it a full half-frame lower. It
+ * exists for the phone, where the panels are sheets pinned to the top and bottom
+ * edges and the room a reader can actually see is the band between them — which
+ * is not centred on the window, so neither should the sphere be. See
+ * `viewShiftFrac` in `web/main.ts`, which measures the band and is the only
+ * caller that passes anything but zero.
+ *
+ * It is a LENS SHIFT — {@link ViewerCamera.imageShift} — and not an aim above
+ * the ball, which is the other way to get the same composition and is wrong. An
+ * aimed camera puts the sphere off its own optical axis, where a rectilinear
+ * projection stretches it; at the two thirds of a half-frame a phone layout
+ * wants, in a portrait frustum, that is a 27 degree tilt and the ball renders as
+ * a visible egg. Shifting the principal point moves the window and leaves the
+ * axis on the ball. It is measured, both renderers carry the term, and the
+ * parity check runs them at the same value.
  */
-export function buildViewer(s: Settings, width: number, height: number): ViewerCamera {
+export function buildViewer(
+  s: Settings,
+  width: number,
+  height: number,
+  imageShift = 0,
+): ViewerCamera {
   const az = s.viewAzDeg * DEG2RAD;
   const el = s.viewElDeg * DEG2RAD;
   const r = s.viewRangeM;
@@ -448,6 +470,7 @@ export function buildViewer(s: Settings, width: number, height: number): ViewerC
     fovHDeg: s.viewFovDeg,
     width,
     height,
+    imageShift,
   };
 }
 

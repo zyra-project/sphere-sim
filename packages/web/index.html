@@ -131,6 +131,13 @@ button { font-family: inherit; }
  */
 @media (max-width: 820px) {
   #left, #right { left: 8px; right: 8px; width: auto; }
+  /* The band of room the two sheets may never close over. It is not a margin:
+     it is where the sphere is drawn, and `viewShiftFrac` aims the camera at the
+     middle of it so the ball follows the room rather than the window. 23vh is
+     what the band measured before any of this — 192px on a 390x844 screen
+     against a sphere 167px across — so the picture a reader had is the floor,
+     not the target. */
+  :root { --room-band: 23vh; }
   /* Clear of the WHOLE wordmark block, subtitle included. `top: 56px` cleared
      the h1 and landed 1.5px into the subtitle — which on a phone is the only
      sentence naming the gestures, so a 92%-opaque backdrop-blurred card at
@@ -139,13 +146,39 @@ button { font-family: inherit; }
      sentence returned the "Bump this one" button. The fallback is a measured
      worst case; `fitFirstScreen` overwrites it with the brand's real height. */
   #right { top: var(--sheet-top, 96px); bottom: auto;
-    /* Capped so it cannot reach the readout. `#left` is bottom-anchored and may
-       stand 52vh tall, and 58vh + 52vh does not fit in a screen — with the sheet
-       starting below the wordmark instead of over it, the two began to overlap
-       and the readout's own toggle lost the top third of its 44px to a card at a
-       higher z-index. `#controls` scrolls inside itself, which is what the rest
-       of this block already relies on. */
-    max-height: calc(100vh - var(--sheet-top, 96px) - 54vh); }
+    /* Capped so it cannot reach the readout, and so a band of room survives
+       between them. `#left` is bottom-anchored and may stand 52vh tall; with the
+       sheet starting below the wordmark instead of over it, the two began to
+       overlap and the readout's own toggle lost the top third of its 44px to a
+       card at a higher z-index. `#controls` scrolls inside itself, which is what
+       the rest of this block already relies on.
+
+       `--left-h` is what the readout column is ACTUALLY taking, measured and
+       published by `publishLeftHeight`. It used to be a flat 54vh, which is the
+       readout at full height plus the band — so a phone with the readout
+       collapsed to its 44px button reserved four hundred pixels for a panel that
+       was not on the screen, and spent them on nothing. Measured at 390x844 that
+       left the settings sheet 172px: a tab row, a chip row, and a slider cut in
+       half. The fallback keeps the old constant for the frame before the
+       measurement lands.
+
+       The `max()` is a floor, and the page's own phone check is why it is there:
+       measured against a readout at FULL height the honest arithmetic leaves the
+       settings sheet 51px, which is less than the flat constant ever gave it. A
+       390x844 screen genuinely cannot hold a wordmark, a full readout, the
+       actions and a usable settings sheet at once — so the rule takes whichever
+       is larger and the reader collapses one of the two. Never worse than it
+       was; much better whenever the bottom sheet is not standing at its cap. */
+    max-height: max(
+      calc(100vh - var(--sheet-top, 96px) - 54vh),
+      calc(100vh - var(--sheet-top, 96px) - var(--left-h, 31vh) - var(--room-band, 23vh))); }
+  /* One subject at a time, which this stylesheet already says about the
+     projector card and the readout, for the same arithmetic. With the settings
+     sheet open the readout at its 38vh cap closes the band to 73px — narrower
+     than the sphere — and the picture goes behind a panel again. Capped rather
+     than hidden, because the number a reader is watching move while they drag a
+     slider is the first thing in it, and `#readout` scrolls inside itself. */
+  #right:not(.collapsed) ~ #left #readout { max-height: 22vh; }
   #left { top: auto; height: auto; max-height: 52vh;
     bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
   #inspect { max-height: 40vh; }

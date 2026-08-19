@@ -159,6 +159,34 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   different angles: no metric reads this path, and the parity check runs the CPU
   model on the SAME grid so it keeps comparing two renderers rather than two
   sampling patterns.
+- **A phone sizes its sheets from what the other one took.** The narrow layout
+  is two sheets pinned to the top and bottom edges with the room visible between
+  them, and the top sheet's height is what is left over — which means something
+  has to know what the bottom one took. It used to guess, with a flat 54vh, and
+  the guess was the readout at full height: with the readout collapsed to its
+  44-pixel button that held about four hundred pixels for a panel that was not on
+  the screen, visible as a wide empty band under the sphere, while the settings
+  sheet above was 172px — a tab row, a chip row and a slider cut in half.
+  Measured now, and published as `--left-h`, the same sheet is 382px on a 390×844
+  screen. The cap is a `max()` against the old constant, because a phone
+  genuinely cannot hold a wordmark, a readout at full height, the actions and a
+  usable settings sheet at once, and the rule must never be worse than what it
+  replaced; with the settings open the readout is capped so the band cannot close
+  over the ball, the same "one subject at a time" the projector card already
+  obeyed.
+- **The ball is drawn where the room is, not where the window is.** Reclaiming
+  that space is only an improvement if the picture does not then disappear under
+  the panel that reclaimed it, so the viewer's camera has a LENS SHIFT —
+  `ViewerCamera.imageShift`, in halves of the frame height — and the page aims it
+  at the middle of the band the two sheets left. It is a principal-point offset
+  and not an aim above the ball, which is the other way to compose the same
+  picture and is wrong: an aimed camera puts the sphere off its own optical axis,
+  where a rectilinear projection stretches it. Measured, at the two thirds of a
+  half-frame a phone layout wants: the shift draws the ball 70×70 at every value,
+  and the aim draws it 76×83. `rigs.test.ts` pins both. Both renderers carry the
+  term and the parity check runs them at the same value — which is how the
+  missing half of it was found, at 100% of lit pixels over tolerance, the moment
+  a phone layout first pushed it off zero.
 - **A first screen with nothing open on it.** The projector card starts closed.
   It describes ONE projector, and on first sight there is no reason to think the
   page is about P1 rather than about the sphere; showing it unprompted answers a
@@ -193,7 +221,9 @@ were the whole screen. Measured on a 390×844 Safari: controls from 12 to 417, t
 projector card from 417 to 791, the readout crushed into the remaining 31 — zero
 visible pixels of room. Every desktop check was green throughout, which is why
 `tools/smoke-app.ts` now ends with a pass in an emulated phone that asserts the
-room is visible between the sheets and that a pinch moves the camera.
+room is visible between the sheets, that a pinch moves the camera, that the
+settings sheet is a control rather than a viewport onto one, and that the ball is
+drawn in the band the sheets left.
 
 What a narrow screen gets instead:
 
@@ -215,6 +245,17 @@ What a narrow screen gets instead:
   CSS pixels across on a phone, so an exact ray answers "nothing" for taps that
   visibly landed on one. It cannot pick the far projector of a close pair and it
   cannot see through the sphere; both are asserted.
+- **A top sheet sized by what the bottom one took, and a ball that follows the
+  room.** The reservation is measured (`--left-h`), not a constant, so a
+  collapsed readout gives its space to the settings sheet instead of leaving it
+  empty: 172px to 382px on a 390×844 screen. And because a bigger sheet would
+  otherwise cover the picture, the viewer's camera carries a lens shift and the
+  page aims it at the middle of the band. A lens shift and not an aim — an aimed
+  camera puts the sphere off-axis, where the projection stretches it into an egg.
+  Both are asserted by the phone pass, and the ball is found by COLOUR: the room
+  is a neutral grey floor under a black ceiling, and a "the ball is the bright
+  thing" test finds the floor, which is how this check first failed against a
+  layout that was correct.
 - **A field of view chosen from the aspect.** `viewFovDeg` is horizontal and the
   renderer derives the vertical half-angle from the raster, so 71° across a
   portrait phone is a 114° vertical field: the room stretches away at top and
@@ -317,7 +358,9 @@ node --test "packages/web/test/**/*.test.ts"
   names, and on those values
 - `rigs.test.ts` — a perfect rig scores essentially zero (and *how* essentially:
   the grid metric's own floor is about 0.01 mm, 1% of its gate); the A-36 `d_proj`
-  ambiguity is 3.85 mm at Boulder and exactly zero at the spec's level rig
+  ambiguity is 3.85 mm at Boulder and exactly zero at the spec's level rig; the
+  viewer's lens shift moves the ball down the frame by exactly what it says and
+  does not change its shape, where aiming above it would
 - `glsl.test.ts` — the shader carries two complete rigs field for field; the
   optics functions take a rig explicitly rather than reading a global; every
   uniform the shader declares is set by the binder and vice versa

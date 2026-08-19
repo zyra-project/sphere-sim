@@ -926,8 +926,17 @@ function viewKey(): string {
   const s = state.settings;
   // The sample count belongs in here with the camera: the CPU half is rendered
   // at whatever it was when the request went out, so changing it has to retire
-  // the reply in flight the same way orbiting does.
-  return `${s.viewAzDeg}|${s.viewElDeg}|${s.viewRangeM}|${s.viewFovDeg}|${s.viewSamples}`;
+  // the reply in flight the same way orbiting does. So does the layout shift —
+  // opening a sheet on a phone re-aims the camera, and a reply computed for the
+  // old aim would be compared against a frame drawn with the new one.
+  return [
+    s.viewAzDeg,
+    s.viewElDeg,
+    s.viewRangeM,
+    s.viewFovDeg,
+    s.viewSamples,
+    viewShiftFrac().toFixed(3),
+  ].join('|');
 }
 
 /**
@@ -1022,7 +1031,7 @@ function postModel(fine: boolean): void {
   };
   sentImageId = suppliedName();
   if (fine) {
-    const camera = buildViewer(state.settings, PARITY_WIDTH, PARITY_HEIGHT);
+    const camera = buildViewer(state.settings, PARITY_WIDTH, PARITY_HEIGHT, viewShiftFrac());
     req.parity = {
       width: PARITY_WIDTH,
       height: PARITY_HEIGHT,
@@ -1030,6 +1039,7 @@ function postModel(fine: boolean): void {
       position: camera.position,
       target: camera.target,
       samplesPerPixel: paritySamples(),
+      imageShift: camera.imageShift ?? 0,
     };
     parityRequestKey = viewKey();
   }
@@ -1402,7 +1412,7 @@ function draw(): void {
 
   const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
   ensureContent(world.image);
-  const camera = buildViewer(state.settings, w, h);
+  const camera = buildViewer(state.settings, w, h, viewShiftFrac());
   const uniforms = buildDisplayUniforms(
     prepareRig(world.truthRig),
     prepareRig(world.compositorRig),
@@ -1528,7 +1538,7 @@ function checkParity(
     // texture samples as black — indistinguishable from the shader getting the
     // model wrong. `ensureContent` is a no-op when it is current.
     ensureContent(world.image);
-    const camera = buildViewer(state.settings, cpu.width, cpu.height);
+    const camera = buildViewer(state.settings, cpu.width, cpu.height, viewShiftFrac());
     const uniforms = buildDisplayUniforms(
       prepareRig(world.truthRig),
       prepareRig(world.compositorRig),
@@ -2419,6 +2429,10 @@ function renderTopButtons(): void {
   toggle.addEventListener('click', () => {
     state.panelOpen = !state.panelOpen;
     rightEl.classList.toggle('collapsed', !state.panelOpen);
+    // Now, not when the observer gets round to it: this button is the one that
+    // changes how much room the sheets leave, and the picture has to be in the
+    // room they left before the next frame rather than half a second later.
+    settleSheets();
     renderTopButtons();
   });
   topBtnsEl.append(toggle);
@@ -2433,6 +2447,7 @@ function renderTopButtons(): void {
   readout.addEventListener('click', () => {
     state.readoutOpen = !state.readoutOpen;
     leftEl.classList.toggle('collapsed', !state.readoutOpen);
+    settleSheets();
     renderTopButtons();
   });
   leftBtnsEl.append(readout);
@@ -2781,6 +2796,9 @@ function renderInspect(): void {
   // The class is on the column, not the card: on a phone it is what tells the
   // readout to stand down while a projector is the subject.
   leftEl.classList.toggle('inspecting', subject);
+  // The projector card replaces the readout on a phone, and the two are not the
+  // same height, so the room between the sheets moves when it opens.
+  settleSheets();
   // A missing frame is no longer a reason to hide the card. Switching a
   // projector off drops it out of the rig, so its frame, config and mesh all
   // come back null — and returning early here meant the click that switched it
@@ -4393,6 +4411,114 @@ function fitFirstScreen(): boolean {
 }
 
 /**
+ * Tell the stylesheet how much of the bottom of the screen the readout column is
+ * actually taking.
+ *
+ * The phone layout is two sheets pinned to the top and bottom edges with the
+ * room visible between them, and the top sheet's height has to be "what is left"
+ * — which means somebody has to know what the bottom one took. The stylesheet
+ * cannot ask: `#left` is bottom-anchored, its height is its content's, and its
+ * content is a button, or a button and a readout, or a button and a projector
+ * card, depending on what the reader has open.
+ *
+ * It used to guess, with a constant 54vh, and the guess was the readout at full
+ * height. With the readout collapsed to its 44-pixel button that reserved about
+ * four hundred pixels for a panel that was not on the screen — visible as a wide
+ * empty band under the sphere — and it spent them on nothing, while the settings
+ * sheet above was cut off mid-slider.
+ *
+ * Measured from the TOP of the column to the bottom of the window rather than
+ * from its own box, so the 8px the card floats above the edge is counted too.
+ */
+function publishLeftHeight(): void {
+  const top = leftEl.getBoundingClientRect().top;
+  const h = Math.max(0, Math.round(window.innerHeight - top));
+  document.documentElement.style.setProperty('--left-h', `${h}px`);
+}
+
+/**
+ * Where the sphere belongs in the frame, in halves of the frame height, positive
+ * DOWN. Zero on any viewport wide enough to put the panels beside the sphere.
+ *
+ * On a phone the two sheets are pinned to the top and bottom edges, so the room
+ * a reader can see is the band between them — and that band is not centred on
+ * the window. Drawing the ball at the middle of the WINDOW put it behind the
+ * settings sheet the moment the sheet was allowed to be a useful size, which is
+ * the other half of `publishLeftHeight`: reclaiming the space is only an
+ * improvement if the picture does not go under the panel that reclaimed it.
+ *
+ * Measured from the two cards rather than from the CSS constants, because the
+ * cards are what a reader can see and the constants are only their caps.
+ */
+function viewShiftFrac(): number {
+  if (!narrowViewport()) return 0;
+  const top = rightEl.getBoundingClientRect().bottom;
+  const bottom = leftEl.getBoundingClientRect().top;
+  const h = window.innerHeight;
+  if (!(bottom > top) || h < 1) return 0;
+  // Half-frames, which is the unit `buildViewer` takes: the middle of the window
+  // is 0 and the bottom edge is 1.
+  const shift = ((top + bottom) / 2 - h / 2) / (h / 2);
+  // A band smaller than the ball cannot be aimed at usefully, and a runaway
+  // value would swing the camera off the sphere entirely.
+  return Math.max(-1, Math.min(1, shift));
+}
+
+/** The last shift the picture was drawn with, so a re-layout can tell if it moved. */
+let drawnShift = 0;
+let sheetTimer = 0;
+
+/**
+ * Re-measure the sheets and, if the room between them moved, redraw and re-check.
+ *
+ * Order matters and is not incidental: `publishLeftHeight` writes the variable
+ * `#right`'s cap is computed from, and `viewShiftFrac` then reads a bounding
+ * rectangle — which forces the layout the write invalidated. So one synchronous
+ * call sees the whole chain settle, rather than measuring `#right` at the height
+ * it had a moment ago.
+ */
+function settleSheets(): void {
+  publishLeftHeight();
+  const shift = viewShiftFrac();
+  if (Math.abs(shift - drawnShift) < 0.002) return;
+  drawnShift = shift;
+  markDirty();
+  // The camera moved, so the parity check's CPU half is for a view that is no
+  // longer on the screen. Debounced, because a sheet opening settles over
+  // several frames.
+  window.clearTimeout(sheetTimer);
+  sheetTimer = window.setTimeout(() => requestModel(true), 200);
+}
+
+/**
+ * Keep `settleSheets` running whenever a panel changes shape on its own.
+ *
+ * A `ResizeObserver` rather than a hook on every control that can change a
+ * panel's height: the readout grows when a solve lands, the projector card
+ * appears on a tap, the settings sheet changes with the tab. One observer sees
+ * all of it and cannot be forgotten by the next thing that changes a height.
+ *
+ * It is a BACKSTOP and not the mechanism, which the page's own phone check
+ * insisted on. Delivery is asynchronous and, on a busy main thread — a panel
+ * opening re-renders thirty rows and redraws the canvas — it was measured
+ * arriving somewhere between 400 ms and a second after the toggle that caused
+ * it. For most of a second the sheet was sized against the panel heights from
+ * before the tap. The three buttons that deliberately change a panel's height
+ * therefore call `settleSheets` themselves, synchronously; this catches
+ * everything else.
+ *
+ * There is no feedback loop in it. `--left-h` is computed from `#left` alone and
+ * only `#right`'s cap reads it, so the write can move `#right` and stops there.
+ */
+function watchSheets(): void {
+  settleSheets();
+  if (typeof ResizeObserver === 'undefined') return;
+  const ro = new ResizeObserver(() => settleSheets());
+  ro.observe(leftEl);
+  ro.observe(rightEl);
+}
+
+/**
  * Follow the viewport.
  *
  * The fit used to run once at boot, so a phone that loaded in landscape and was
@@ -4479,6 +4605,7 @@ function boot(): void {
   }
   fitFirstScreen();
   watchViewport();
+  watchSheets();
   installPointer();
   installDropTarget();
   void loadMarble();

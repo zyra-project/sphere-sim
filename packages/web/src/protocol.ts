@@ -37,6 +37,18 @@ export interface ParityCameraRequest {
    * `sim/src/misregistration.ts`.
    */
   samplesPerPixel: number;
+  /**
+   * {@link ViewerCamera.imageShift} — the viewer camera's lens shift, in halves
+   * of the frame height.
+   *
+   * Sent for the same reason `samplesPerPixel` is: the display applies it and
+   * the model has to apply the identical value or the check reports a framing
+   * difference as a disagreement about optics. It is not implied by `position`
+   * and `target`, because a lens shift deliberately is NOT an aim. Leaving it
+   * out was caught by the readout itself — 100% of lit pixels over tolerance,
+   * the moment a phone layout first pushed it off zero.
+   */
+  imageShift: number;
 }
 
 export interface ModelRequest {

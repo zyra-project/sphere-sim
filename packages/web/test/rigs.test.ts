@@ -6,6 +6,8 @@ import { aimAtSphereCenter } from '../../sim/src/geometry.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
 import { DEFAULT_MISALIGNMENT } from '../../sim/src/scene.ts';
 import { contentAt } from '../../sim/src/render.ts';
+import { renderTwoRigRoomView } from '../../sim/src/misregistration.ts';
+import { prepareRig } from '../../sim/src/optics.ts';
 import {
   BOULDER_PRESET,
   CONTENTS,
@@ -421,4 +423,130 @@ test('the panel states lens shift the way a spec sheet does, and the calibration
   // 60% of the image is 1.2 half-extents: past the edge of the frame, which is
   // exactly what a ceiling mount does and what the old ±0.3 could not express.
   assert.ok(shifted.shiftV - base.shiftV > 1, 'the ceiling-mount case is still unreachable');
+});
+
+/**
+ * The viewer's lens shift.
+ *
+ * The phone layout puts a sheet at the top of the screen and one at the bottom,
+ * so the room a reader can see is the band between them — and that band is not
+ * centred on the window. `viewShiftFrac` in `web/main.ts` measures it and the
+ * camera moves the picture to match.
+ *
+ * There are two ways to put a subject low in the frame and only one of them is
+ * right, which is what these two tests are for.
+ */
+const SHIFT_VIEW: Settings = {
+  ...BOULDER_PRESET,
+  // Nothing but the sphere in the frame: this renderer draws no floor, so with a
+  // black field the silhouette is exactly the pixels that are not zero.
+  content: 0,
+  mountError: 0,
+  viewRangeM: 6.2,
+  viewFovDeg: 40,
+};
+const SHIFT_W = 180;
+const SHIFT_H = 320;
+
+/** The bounding box of everything the renderer lit. */
+function silhouetteOf(camera: ReturnType<typeof buildViewer>): {
+  w: number;
+  h: number;
+  cy: number;
+  lit: number;
+} {
+  const world = buildWorld(SHIFT_VIEW);
+  const img = renderTwoRigRoomView(
+    prepareRig(world.truthRig),
+    prepareRig(world.compositorRig),
+    world.scene,
+    camera,
+    { samplesPerPixel: 1 },
+  );
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  let lit = 0;
+  for (let y = 0; y < SHIFT_H; y++) {
+    for (let x = 0; x < SHIFT_W; x++) {
+      const i = 3 * (y * SHIFT_W + x);
+      if (img.data[i] + img.data[i + 1] + img.data[i + 2] <= 0) continue;
+      lit++;
+      x0 = Math.min(x0, x);
+      x1 = Math.max(x1, x);
+      y0 = Math.min(y0, y);
+      y1 = Math.max(y1, y);
+    }
+  }
+  return { w: x1 - x0 + 1, h: y1 - y0 + 1, cy: (y0 + y1) / 2, lit };
+}
+
+test('a lens shift moves the ball down the frame by exactly what it says', () => {
+  // The unit is halves of the frame height, so a shift of s moves the subject
+  // s * H / 2 pixels down. Anything else and the page cannot aim at a band it
+  // measured in pixels.
+  for (const shift of [0, 0.3, 0.65]) {
+    const s = silhouetteOf(buildViewer(SHIFT_VIEW, SHIFT_W, SHIFT_H, shift));
+    const expected = SHIFT_H / 2 + (shift * SHIFT_H) / 2;
+    assert.ok(
+      Math.abs(s.cy - expected) < 1.5,
+      `shift ${shift} put the ball at row ${s.cy}, expected ${expected}`,
+    );
+  }
+});
+
+test('a lens shift does not stretch the ball, and aiming above it would', () => {
+  // The whole reason this is a principal-point offset rather than a re-aim. An
+  // aimed camera puts the sphere off its own optical axis, and a rectilinear
+  // projection stretches whatever sits off-axis — in a portrait frustum at the
+  // shift a phone layout wants, into a visible egg.
+  const flat = silhouetteOf(buildViewer(SHIFT_VIEW, SHIFT_W, SHIFT_H, 0));
+  assert.equal(flat.w, flat.h, 'the unshifted ball is not round; the rest of this proves nothing');
+
+  for (const shift of [0.3, 0.65]) {
+    const s = silhouetteOf(buildViewer(SHIFT_VIEW, SHIFT_W, SHIFT_H, shift));
+    assert.equal(s.w, flat.w, `shift ${shift} changed the ball's width`);
+    assert.equal(s.h, flat.h, `shift ${shift} changed the ball's height`);
+    assert.equal(s.lit, flat.lit, `shift ${shift} changed how many pixels the ball covers`);
+  }
+
+  // And the same composition reached by aiming, which is what this is instead
+  // of. `buildViewer` cannot produce it, so it is constructed here: tilt the
+  // forward axis up by `shift * halfH` and look there.
+  const base = buildViewer(SHIFT_VIEW, SHIFT_W, SHIFT_H, 0);
+  const p = base.position;
+  const r = Math.hypot(p.x, p.y, p.z);
+  const f = { x: -p.x / r, y: -p.y / r, z: -p.z / r };
+  const rl = Math.hypot(f.y, -f.x);
+  const right = { x: f.y / rl, y: -f.x / rl, z: 0 };
+  const up = {
+    x: right.y * f.z - right.z * f.y,
+    y: right.z * f.x - right.x * f.z,
+    z: right.x * f.y - right.y * f.x,
+  };
+  const halfH = (Math.tan(((SHIFT_VIEW.viewFovDeg * Math.PI) / 180) / 2) * SHIFT_H) / SHIFT_W;
+  const k = 0.65 * halfH;
+  const a = { x: f.x + up.x * k, y: f.y + up.y * k, z: f.z + up.z * k };
+  const al = Math.hypot(a.x, a.y, a.z);
+  const aimed = silhouetteOf({
+    ...base,
+    target: { x: p.x + (a.x / al) * r, y: p.y + (a.y / al) * r, z: p.z + (a.z / al) * r },
+  });
+
+  // It lands in the same place — that is what makes it the alternative — and it
+  // is a different shape when it gets there.
+  const shifted = silhouetteOf(buildViewer(SHIFT_VIEW, SHIFT_W, SHIFT_H, 0.65));
+  assert.ok(
+    Math.abs(aimed.cy - shifted.cy) < 4,
+    `the aimed camera was meant to compose the same picture: ${aimed.cy} vs ${shifted.cy}`,
+  );
+  assert.ok(
+    aimed.h > flat.h + 8,
+    `aiming was expected to stretch the ball; it drew ${aimed.w}x${aimed.h} against ${flat.w}x${flat.h}`,
+  );
+  assert.ok(
+    aimed.lit > flat.lit * 1.2,
+    `aiming was expected to inflate the ball; ${aimed.lit} px against ${flat.lit}`,
+  );
 });
