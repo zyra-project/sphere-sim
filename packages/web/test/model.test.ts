@@ -44,6 +44,7 @@ function request(over: Partial<ModelRequest> = {}): ModelRequest {
       fovHDeg: 50,
       position: { x: 6.2, y: 0, z: 1 },
       target: { x: 0, y: 0, z: 0 },
+      samplesPerPixel: 1,
     },
     projectorPreviewWidth: 0,
     customImage: null,

@@ -143,6 +143,22 @@ node tools/smoke-app.ts   # load it in a real browser and check the shader compi
   brightness" on the Room tab is a viewing gain — class `PANEL`, applied on the
   way to the canvas, excluded from the linear readback the parity check reads,
   and invisible to every metric. It opens at 1.8×.
+- **Sampling the pixel rather than a point in it.** A graticule line on this rig
+  is 0.35° of arc — 5.3 mm on the ball, and about ONE screen pixel at a normal
+  standing distance. One sample per pixel does not draw a thin line badly, it
+  draws it intermittently: where a parallel runs closest to horizontal its
+  sub-pixel position drifts slowly across the row, the sample lands on it in some
+  columns and beside it in others, and a continuous line renders as a dashed one.
+  Nothing about the sphere is dashed and no exposure setting recovers it, because
+  the information was never in the frame. So the shader averages n × n samples
+  across each pixel — the rendering integral, in linear light, before the display
+  encode — and "Edge smoothing" on the Room tab picks n. It opens at 2 × 2, where
+  the samples are half a pixel apart and a one-pixel line can dim but never
+  vanish; 3 × 3 is there for a thinner line and off is there so the difference can
+  be seen rather than described. The samples are the same trace at slightly
+  different angles: no metric reads this path, and the parity check runs the CPU
+  model on the SAME grid so it keeps comparing two renderers rather than two
+  sampling patterns.
 - **A first screen with nothing open on it.** The projector card starts closed.
   It describes ONE projector, and on first sight there is no reason to think the
   page is about P1 rather than about the sphere; showing it unprompted answers a
@@ -244,8 +260,9 @@ side may grow a function the other lacks, and a headless comparison against
 misregistration, because it has one rig.
 
 So `src/glsl.ts` is its own file with its own runtime check. It is allowed to be
-approximate — float32, eight fixed Newton steps in the distortion inversion, one
-sample per pixel — and it is not allowed to be a source of numbers.
+approximate — float32, eight fixed Newton steps in the distortion inversion, a
+regular sample grid where `sim` prefers a rotated Halton set — and it is not
+allowed to be a source of numbers.
 
 ## The parity readout
 
@@ -274,6 +291,15 @@ right and each of which was wrong first:
   with boundary noise flat at 5–6%, so one allowance means one thing at every
   zoom. A patch with fewer than 60 lit pixels reads BLIND rather than passing.
   All six measurements are pinned in `test/parity.test.ts`.
+
+The check runs at whatever sample count the display is using, on the regular
+grid of `gridSampleOffset` — the one lattice both renderers can place exactly.
+The patch stays 128 × 96 at every count, which is not an oversight: this view is
+a room shot, the sphere is 1.5% of the frame, and a patch scaled down to hold the
+trace budget fixed drops under the 60-lit-pixel floor and reports itself BLIND.
+The cost it would have saved is not there either — measured, 32 ms at one sample
+and 42 ms at 3 × 3, because the trace is dominated by the rays that miss the
+sphere and a miss costs the same either way.
 
 What it does **not** cover: `shadeFloor`. The CPU two-rig renderer draws no
 floor, so the parity pass turns the floor off on the GPU too. The floor shares
@@ -306,6 +332,12 @@ node --test "packages/web/test/**/*.test.ts"
   vanishes when the compositor is handed the truth — which is what proves it is
   composing two rigs rather than reading one twice
 - `parity.test.ts` — the two calibration facts above, measured
+- `supersample.test.ts` — the sample grid tiles the pixel and one sample is its
+  centre; a feature wider than 1/n of a pixel cannot fall between an n × n set,
+  swept rather than argued; supersampling turns a dashed graticule line back into
+  a line, on the renderer; naming the grid lattice at one sample reproduces the
+  old render byte for byte; and the parity patch still holds enough lit pixels to
+  see the sphere at every sample count
 - `solve.test.ts` — a real capture and a real bundle adjustment, asserting the
   calibration improves the alignment by more than 2× and that the same seed gives
   the same answer

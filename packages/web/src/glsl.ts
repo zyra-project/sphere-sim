@@ -54,8 +54,14 @@
  *    1e-14. float32 cannot reach 1e-14 and a tolerance test it can never satisfy
  *    just burns the loop. Eight steps of a quadratically convergent iteration is
  *    far past float32 at any coefficient this rig carries.
- *  - **One sample per pixel.** A live window supersamples by being looked at for
- *    more than one frame.
+ *  - **A regular sample grid, not a stratified one.** The fragment averages n x n
+ *    samples across the pixel, because a graticule line here is about one screen
+ *    pixel wide and point sampling draws it as a dashed line. `sim` prefers a
+ *    rotated Halton set, which converges faster and decorrelates the residual
+ *    between pixels; a GPU cannot follow it without transliterating a hash and a
+ *    radical inverse, and then parity would be comparing two PRNGs. See
+ *    `gridSampleOffset`. The parity check runs the CPU model on the same grid,
+ *    so this is measured rather than assumed.
  *  - **`p1`, `p2` dropped.** PARAMETERS.md §3.1 holds tangential distortion at
  *    zero and this page offers no control that moves it, so the terms are absent
  *    rather than carried as dead uniforms.
@@ -141,6 +147,11 @@ uniform vec3  uCamForward;
 uniform vec3  uCamRight;
 uniform vec3  uCamUp;
 uniform vec2  uCamHalf;               // tan(fov/2) horizontal, and vertical
+// Supersampling: the side of the regular sample grid, and the size of one pixel
+// in uv. 1 is one sample at the pixel centre, which is where a GPU rasterizes
+// and where sim's offsets are.
+uniform int   uSampleGrid;
+uniform vec2  uPixelUv;
 
 uniform int   uDrawFloor;
 uniform float uFloorRadius;
@@ -825,8 +836,13 @@ vec3 aimGuides(vec3 origin, vec3 dir, float maxT) {
 `;
 
 const CHUNK_MAIN = `
-void main() {
-  vec2 s = vUv * 2.0 - 1.0;
+/**
+ * One eye ray, from a point on the image plane in [-1, 1]^2, to a colour.
+ *
+ * This is the whole of what main() used to be, lifted out so it can be called
+ * more than once per fragment. See main() for why it is.
+ */
+vec3 traceScene(vec2 s) {
   vec3 dir = normalize(uCamForward + uCamRight * (s.x * uCamHalf.x) + uCamUp * (s.y * uCamHalf.y));
 
   vec3 c = vec3(0.0);
@@ -868,6 +884,48 @@ void main() {
     sceneT = roomT;
   }
   c += aimGuides(uCamPos, dir, sceneT);
+  return c;
+}
+
+void main() {
+  // Supersampling, on a regular grid, averaged in LINEAR LIGHT.
+  //
+  // A graticule line at this rig is about 0.35 degrees of arc, which at a normal
+  // standing distance is roughly ONE screen pixel wide. One sample per pixel
+  // therefore does not draw a thin line badly, it draws it intermittently: the
+  // sample lands on the line in some pixels and beside it in others, and a
+  // continuous parallel renders as a dashed one that fades out wherever it runs
+  // closest to horizontal. That is not a property of the sphere, and no exposure
+  // setting recovers it, because the information was never in the frame.
+  //
+  // The fix is the rendering integral itself: a pixel is not a point, it is an
+  // area, and its value is the average of the scene over that area. n x n samples
+  // estimate that average. Nothing about the model changes -- every sample is the
+  // same trace traceScene() always ran -- and no metric reads this path at all;
+  // packages/sim computes every number the page prints.
+  //
+  // Two details are load-bearing:
+  //
+  //  - The offsets are (i + 0.5) / n, exactly gridSampleOffset's, so
+  //    renderTwoRigRoomView in grid mode integrates the same point set and the
+  //    parity check keeps comparing two renderers rather than two sampling
+  //    patterns.
+  //  - The average is taken BEFORE exposure and the display encode, because
+  //    radiance is what adds. Averaging after the gamma would make a half-covered
+  //    pixel the wrong brightness -- the classic too-dark antialiased edge.
+  int n = uSampleGrid < 1 ? 1 : uSampleGrid;
+  vec3 c = vec3(0.0);
+  for (int j = 0; j < n; j++) {
+    for (int i = 0; i < n; i++) {
+      // uv is at the pixel CENTRE, so the offsets are measured from it. y is
+      // negated because uv runs up the screen and the sample row index, like the
+      // CPU raster it has to match, runs down it.
+      vec2 off = (vec2(float(i), float(j)) + 0.5) / float(n) - 0.5;
+      vec2 uv = vUv + vec2(off.x, -off.y) * uPixelUv;
+      c += traceScene(uv * 2.0 - 1.0);
+    }
+  }
+  c /= float(n * n);
 
   c *= uExposure;
   if (uDisplayGamma > 0.0) c = pow(max(c, vec3(0.0)), vec3(1.0 / uDisplayGamma));

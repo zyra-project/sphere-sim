@@ -55,6 +55,7 @@ import {
   VIEWPOINTS,
   clearNudges,
   formatSetting,
+  viewSampleSide,
   withNudge,
   withSetting,
 } from '../src/settings.ts';
@@ -923,7 +924,22 @@ let parityRequestKey = '';
 
 function viewKey(): string {
   const s = state.settings;
-  return `${s.viewAzDeg}|${s.viewElDeg}|${s.viewRangeM}|${s.viewFovDeg}`;
+  // The sample count belongs in here with the camera: the CPU half is rendered
+  // at whatever it was when the request went out, so changing it has to retire
+  // the reply in flight the same way orbiting does.
+  return `${s.viewAzDeg}|${s.viewElDeg}|${s.viewRangeM}|${s.viewFovDeg}|${s.viewSamples}`;
+}
+
+/**
+ * Samples per pixel for the display AND for the parity check's CPU render.
+ *
+ * One function, read by both, because the whole value of the parity number rests
+ * on the two halves using the same one. Two call sites reading the setting
+ * separately is how they end up a version apart during a drag.
+ */
+function paritySamples(): number {
+  const n = viewSampleSide(state.settings);
+  return n * n;
 }
 
 /**
@@ -1013,6 +1029,7 @@ function postModel(fine: boolean): void {
       fovHDeg: camera.fovHDeg,
       position: camera.position,
       target: camera.target,
+      samplesPerPixel: paritySamples(),
     };
     parityRequestKey = viewKey();
   }
@@ -1402,6 +1419,7 @@ function draw(): void {
       // so what the parity check reads back is the model's own radiance.
       exposure: state.settings.viewExposure,
       lift: state.settings.viewLift,
+      samplesPerPixel: paritySamples(),
       markerRadiusM: state.markersOn ? MARKER_RADIUS_M : 0,
       markerSelected: state.selected,
       ceilingM: state.settings.ceilingM,
@@ -1523,7 +1541,19 @@ function checkParity(
       // the viewing gain can exist without touching this check. The cost is that
       // `shadeFloor` — its occlusion test and the room albedo — is the one part
       // of the shader this check does not cover.
-      { overlay: 'none', highlight: -1, drawFloor: false, displayGamma: 0, slots: world.slots },
+      //
+      // The sample count IS passed, and it is the one display setting that must
+      // be: the CPU image that just arrived was rendered on the same grid, and a
+      // shader reading a different one would report the difference as a model
+      // disagreement. `viewKey` carries it for exactly that reason.
+      {
+        overlay: 'none',
+        highlight: -1,
+        drawFloor: false,
+        displayGamma: 0,
+        samplesPerPixel: paritySamples(),
+        slots: world.slots,
+      },
     );
     const gpu = renderAndRead(gl, uniforms, cpu.width, cpu.height);
     parity = judgeParity(gpu, { width: cpu.width, height: cpu.height, data: cpu.data }, {

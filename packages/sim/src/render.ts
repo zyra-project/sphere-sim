@@ -565,6 +565,52 @@ export function sampleOffset(
 }
 
 /**
+ * Sub-pixel sample offsets on a regular n x n grid, `samples = n * n`.
+ *
+ * The alternative to `sampleOffset` above, and it exists for exactly one
+ * reason: a GPU has to be able to place the identical samples.
+ *
+ * The Halton set is the better estimator — decorrelating the offsets between
+ * pixels turns residual aliasing into noise instead of into a structured moire
+ * that looks like the registration error the grid metric is measuring — and it
+ * stays the default for anything rendered offline. But it is built out of a
+ * radical inverse and an integer hash, and transliterating both into GLSL would
+ * mean the browser's shader-versus-model check was comparing two independent
+ * PRNG implementations. A disagreement there would be a disagreement about
+ * hashing, reported as a disagreement about optics.
+ *
+ * A regular grid has no such term. `(i + 0.5) / n` is the same rational number
+ * in float32 and in float64, so the two renderers integrate the SAME point set
+ * and the parity number keeps measuring what it claims to. What it costs is the
+ * usual price of an ordered grid: it is a box-filter quadrature, so it converges
+ * more slowly than a stratified stochastic set and it can still beat against a
+ * periodic pattern. At the 2x2 and 3x3 this is used at, against a graticule line
+ * about one screen pixel wide, that is not the binding term — point sampling
+ * dropping the line entirely is.
+ *
+ * With `samples === 1` this is the pixel centre, identical to `sampleOffset`.
+ */
+export function gridSampleOffset(s: number, samples: number): [number, number] {
+  const n = Math.max(1, Math.round(Math.sqrt(samples)));
+  const i = s % n;
+  const j = Math.floor(s / n) % n;
+  return [(i + 0.5) / n, (j + 0.5) / n];
+}
+
+/**
+ * The sample count a regular grid can actually deliver: the nearest perfect
+ * square, never below one.
+ *
+ * A caller that asks for five gets four rather than a grid with a hole in it,
+ * and — the part that matters — the CPU and the GPU round identically because
+ * they both round here.
+ */
+export function gridSampleCount(requested: number): number {
+  const n = Math.max(1, Math.round(Math.sqrt(Math.max(1, requested))));
+  return n * n;
+}
+
+/**
  * Where a surface point lands in each projector's raster — the raw material for
  * the grid-displacement metric of PARAMETERS.md §7.
  *

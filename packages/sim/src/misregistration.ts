@@ -51,7 +51,7 @@ import { coverageAndWeights, isIlluminatedAt, polarMask } from './coverage.ts';
 import type { ProjectorContribution } from './shading.ts';
 import { lambertianShading } from './shading.ts';
 import type { Scene, ViewerCamera } from './render.ts';
-import { blendedSignal, sampleOffset } from './render.ts';
+import { blendedSignal, gridSampleCount, gridSampleOffset, sampleOffset } from './render.ts';
 import { add, cross, dot, normalize, scale, sub } from './vec.ts';
 import { DEG2RAD } from './vec.ts';
 
@@ -78,6 +78,20 @@ const BLACK: ChannelTriplet = { r: 0, g: 0, b: 0 };
 export interface RoomViewOptions {
   samplesPerPixel?: number;
   seed?: number;
+  /**
+   * Where inside the pixel the samples go.
+   *
+   * `halton` — the default, and what an offline render wants — is the
+   * Cranley-Patterson rotated set of `sampleOffset`: better convergence, and
+   * decorrelated between pixels so what is left reads as noise rather than as a
+   * moire that could be mistaken for misregistration.
+   *
+   * `grid` is the regular n x n set of `gridSampleOffset`, and it exists so the
+   * browser's display shader can place the identical samples. `seed` is unused
+   * in that mode; the offsets are the same in every pixel by construction. See
+   * `gridSampleOffset` for why parity forces the choice.
+   */
+  sampleLattice?: 'halton' | 'grid';
 }
 
 /**
@@ -91,7 +105,11 @@ export function renderTwoRigRoomView(
   camera: ViewerCamera,
   options: RoomViewOptions = {},
 ): RgbImage {
-  const samples = Math.max(1, Math.floor(options.samplesPerPixel ?? 1));
+  const grid = options.sampleLattice === 'grid';
+  const asked = Math.max(1, Math.floor(options.samplesPerPixel ?? 1));
+  // A grid renders the nearest perfect square, because a grid with a hole in it
+  // is not a grid. `gridSampleCount` is where both renderers round.
+  const samples = grid ? gridSampleCount(asked) : asked;
   const seed = options.seed ?? 0;
   const shading = lambertianShading();
 
@@ -111,7 +129,9 @@ export function renderTwoRigRoomView(
       let g = 0;
       let b = 0;
       for (let s = 0; s < samples; s++) {
-        const [ox, oy] = sampleOffset(x, y, s, samples, seed);
+        const [ox, oy] = grid
+          ? gridSampleOffset(s, samples)
+          : sampleOffset(x, y, s, samples, seed);
         const sx = ((x + ox) / camera.width) * 2 - 1;
         const sy = 1 - ((y + oy) / camera.height) * 2;
         const dir = normalize(add(forward, add(scale(right, sx * halfW), scale(up, sy * halfH))));

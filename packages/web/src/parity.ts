@@ -288,3 +288,22 @@ export function judgeParity(
  */
 export const PARITY_WIDTH = 128;
 export const PARITY_HEIGHT = 96;
+
+/**
+ * Supersampling does NOT shrink this patch, and the first attempt at it did.
+ *
+ * The check runs the CPU model at whatever sample count the display shader is
+ * using — anything else and the number measures the sampling pattern instead of
+ * the two renderers — and the obvious worry is that the count multiplies the CPU
+ * side directly. Rescaling the raster to hold the trace budget fixed looks like
+ * the careful move and is the wrong one: this view is a room shot, the sphere is
+ * 1.5% of the frame, and 12 288 pixels contain only about 180 LIT ones. Quarter
+ * the raster and that is 52, under {@link MIN_LIT_PIXELS}, and the check reports
+ * itself blind rather than reporting a comparison. The browser smoke run said so
+ * out loud.
+ *
+ * The cost it was protecting against is not there either. Measured on this rig,
+ * the patch takes 32 ms at one sample and 42 ms at 3 x 3 — the trace is dominated
+ * by the pixels that MISS the sphere, and a miss costs the same whatever the
+ * sample count. So the patch is fixed and the sample count rides on top of it.
+ */

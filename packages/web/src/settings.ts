@@ -200,6 +200,8 @@ export interface Settings {
   viewExposure: number;
   /** Display-only shadow lift. See its ControlSpec. */
   viewLift: number;
+  /** Index into {@link VIEW_SAMPLE_GRIDS}. Display-only, and PANEL class. */
+  viewSamples: number;
   /** Grid spacing on the alignment pattern, degrees. */
   gridDeg: number;
   /**
@@ -332,6 +334,30 @@ export const RESOLUTIONS: readonly { label: string; resX: number; resY: number }
 ];
 
 /**
+ * Samples per screen pixel, as the side of a regular grid. The setting stores an
+ * INDEX into this, exactly like {@link RESOLUTIONS}.
+ *
+ * Why there is a control at all rather than a constant: the cost is n² traces
+ * per pixel, of the most expensive shader on the page, and a phone drawing a
+ * full-screen sphere at 3 × 3 is doing nine times the work. The default is 2,
+ * which is where a one-pixel graticule line stops disappearing — with samples at
+ * 0.25 and 0.75 across the pixel, a line 1.02 px wide always covers at least one
+ * of them, so it can dim but never vanish. 1 is the old behaviour and is kept so
+ * the difference can be seen rather than described.
+ */
+export const VIEW_SAMPLE_GRIDS: readonly { label: string; side: number }[] = [
+  { label: 'off · 1 per pixel', side: 1 },
+  { label: '2 × 2 per pixel', side: 2 },
+  { label: '3 × 3 per pixel', side: 3 },
+];
+
+/** The chosen grid side. Clamped, because the setting is a slider. */
+export function viewSampleSide(s: Settings): number {
+  const i = Math.min(VIEW_SAMPLE_GRIDS.length - 1, Math.max(0, Math.round(s.viewSamples)));
+  return VIEW_SAMPLE_GRIDS[i].side;
+}
+
+/**
  * NOAA Boulder, from its own `sos_stream_control.config`. See A-36 and the
  * module note: this is where the page opens, and it is not what PARAMETERS.md
  * says.
@@ -365,6 +391,7 @@ export const BOULDER_PRESET: Settings = {
   // only place the two are reconciled, and it is a display term.
   viewExposure: 1.8,
   viewLift: 0.5,
+  viewSamples: 1,
   gridDeg: 15,
   ambient: 0.04,
   content: CONTENT_MARBLE,
@@ -1105,6 +1132,29 @@ export const CONTROLS: readonly ControlSpec[] = [
       'come up without the highlights moving much, which is what a display demo does and why one ' +
       'looks vivid beside this. Like Screen brightness it multiplies nothing the model reads: no ' +
       'metric can see it and the parity check asserts it is off.',
+  },
+  {
+    key: 'viewSamples',
+    label: 'Edge smoothing',
+    symbol: '',
+    section: '§6',
+    klass: 'PANEL',
+    min: 0,
+    max: VIEW_SAMPLE_GRIDS.length - 1,
+    step: 1,
+    unit: '',
+    decimals: 0,
+    options: VIEW_SAMPLE_GRIDS.map((g) => g.label),
+    group: 'view',
+    help:
+      'How many times the picture is sampled inside each screen pixel. A pixel is an area, not a ' +
+      'point, and its honest value is the average of the scene across it — with one sample per ' +
+      'pixel a graticule line about one pixel wide is hit in some pixels and missed in others, so ' +
+      'a continuous parallel draws as a dashed one. This is display cost only: the samples are ' +
+      'the same trace at slightly different angles, every number on the page still comes from the ' +
+      'CPU model, and the parity check runs the model at the SAME setting so it keeps comparing ' +
+      'two renderers rather than two sampling patterns. Turn it off if the sphere is not keeping ' +
+      'up with your finger.',
   },
   {
     key: 'viewFovDeg',

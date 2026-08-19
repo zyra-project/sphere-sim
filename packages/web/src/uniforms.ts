@@ -44,6 +44,16 @@ export interface DisplayOptions {
   highlight?: number;
   drawFloor?: boolean;
   floorRadiusM?: number;
+  /**
+   * Samples per pixel, rounded to the nearest perfect square and laid out on a
+   * regular grid. `1` — the default — is one sample at the pixel centre, which
+   * is where a GPU rasterizes and where `sim`'s offsets are.
+   *
+   * Whatever the display uses, the parity check's CPU render must use the same
+   * number in `sampleLattice: 'grid'` mode, or the number on screen measures the
+   * sampling pattern instead of the two renderers.
+   */
+  samplesPerPixel?: number;
   exposure?: number;
   /** Display tone curve. 1 is off, and must be 1 for a linear readback. */
   lift?: number;
@@ -204,6 +214,10 @@ export interface DisplayUniforms {
   highlight: number;
   drawFloor: number;
   floorRadius: number;
+  /** Side of the regular sample grid: `sampleGrid * sampleGrid` samples. */
+  sampleGrid: number;
+  /** One pixel in uv, so the shader can place a sub-pixel offset. */
+  pixelUv: [number, number];
   /**
    * Viewing gain on the picture, and on nothing else.
    *
@@ -338,6 +352,11 @@ export function buildDisplayUniforms(
     highlight: rigIndexOf(options.highlight ?? -1, options.slots),
     drawFloor: (options.drawFloor ?? true) ? 1 : 0,
     floorRadius: options.floorRadiusM ?? 8,
+    // The nearest perfect square, rounded HERE and in `gridSampleCount` by the
+    // same arithmetic, so a caller that asks both renderers for five samples
+    // gets four from both.
+    sampleGrid: Math.max(1, Math.round(Math.sqrt(Math.max(1, options.samplesPerPixel ?? 1)))),
+    pixelUv: [1 / Math.max(1, camera.width), 1 / Math.max(1, camera.height)],
     exposure: options.exposure ?? 1,
     lift: options.lift ?? 1,
     // Straight off the scene, so the shader and `traceTwoRig` are drawing the

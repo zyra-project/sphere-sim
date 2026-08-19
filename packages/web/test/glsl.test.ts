@@ -394,6 +394,29 @@ test('every chunk names the sim module it mirrors', () => {
   );
 });
 
+test('the shader places the same sample grid the model does, and averages before the encode', () => {
+  // `gridSampleOffset` in `sim/src/render.ts` puts sample (i, j) of an n x n set
+  // at ((i + 0.5) / n, (j + 0.5) / n). The shader has to place the SAME points or
+  // the parity readout is comparing sampling patterns instead of renderers, and
+  // this is the one term of it no CPU test can reach.
+  const main = FRAGMENT_CHUNKS.find((c) => c.name === 'main');
+  assert.ok(main, 'the shader has no entry point');
+  assert.ok(
+    /\(vec2\(float\(i\), float\(j\)\) \+ 0\.5\) \/ float\(n\)/.test(main.source),
+    'the shader must place samples at (i + 0.5) / n, as gridSampleOffset does',
+  );
+
+  // Radiance is what adds. The average has to be taken while the values are
+  // still linear — after the display encode a half-covered pixel comes out the
+  // wrong brightness, which is the classic too-dark antialiased edge.
+  const divide = main.source.indexOf('c /= float(n * n)');
+  const exposure = main.source.indexOf('c *= uExposure');
+  const encode = main.source.indexOf('uDisplayGamma');
+  assert.ok(divide > 0, 'the samples are never averaged');
+  assert.ok(divide < exposure, 'the samples are averaged after exposure');
+  assert.ok(divide < encode, 'the samples are averaged after the display encode');
+});
+
 test('every declared function is reachable from the entry point', () => {
   // A function nobody calls is a term that was removed from the model and left
   // behind, which reads as coverage it no longer provides.

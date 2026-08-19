@@ -28,6 +28,15 @@ export interface ParityCameraRequest {
   fovHDeg: number;
   position: { x: number; y: number; z: number };
   target: { x: number; y: number; z: number };
+  /**
+   * Samples per pixel, on the regular grid the display shader also uses.
+   *
+   * Carried in the request rather than read from the settings so the two halves
+   * of the comparison cannot be configured apart: whatever the page drew with,
+   * the CPU integrates the same point set. See `sampleLattice` in
+   * `sim/src/misregistration.ts`.
+   */
+  samplesPerPixel: number;
 }
 
 export interface ModelRequest {

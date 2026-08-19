@@ -518,9 +518,15 @@ export function computeModel(req: ModelRequest): ModelResponse {
       width: req.parity.width,
       height: req.parity.height,
     };
-    // One sample per pixel, because that puts `sim`'s sub-pixel offset at exactly
-    // the pixel centre — which is where the GPU rasterizes. Anything else would
-    // make the parity number measure the sampling pattern.
+    // The SAME sample count the display shader drew with, on the SAME regular
+    // grid — that is what `sampleLattice: 'grid'` is for. At one sample the
+    // offset is the pixel centre, which is where a GPU rasterizes; above one,
+    // both sides place samples at (i + 0.5) / n and integrate the same point
+    // set. Letting the two differ would make the parity number measure the
+    // sampling pattern rather than the two renderers.
+    //
+    // The Halton set stays the default everywhere else — see `gridSampleOffset`
+    // for why a GPU cannot follow it.
     //
     // This renderer draws no floor (see its `RoomViewOptions`), so the GPU side
     // must not draw one either; `web/main.ts` turns it off for the parity pass
@@ -530,7 +536,7 @@ export function computeModel(req: ModelRequest): ModelResponse {
       prepareRig(world.compositorRig),
       world.scene,
       camera,
-      { samplesPerPixel: 1 },
+      { samplesPerPixel: Math.max(1, req.parity.samplesPerPixel), sampleLattice: 'grid' },
     );
     parityMs = performance.now() - p1;
     parityImage = { width: img.width, height: img.height, data: img.data };
