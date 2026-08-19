@@ -20,6 +20,12 @@
    0.2,
    0.4
   ],
+  "segmentMargins": [
+   null,
+   0,
+   0.05,
+   0.15
+  ],
   "defaultRoomSpill": {
    "wallRadiusM": 6,
    "ceilingM": 4.27
@@ -29,11 +35,13 @@
   {
    "wallRadiusM": null,
    "minModulation": 0.02,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": null,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 11899,
@@ -43,14 +51,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 783091,
+     "rejectedOffSphere": 0,
      "posePositionMm": 20.6369,
      "poseRotationDeg": 0.04054,
      "gridMm": 0.2205,
-     "seconds": 8.2
+     "seconds": 8.631
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 11722,
@@ -60,14 +70,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 769170,
+     "rejectedOffSphere": 0,
      "posePositionMm": 51.4823,
      "poseRotationDeg": 0.06366,
      "gridMm": 0.3884,
-     "seconds": 7.536
+     "seconds": 8.048
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 11738,
@@ -77,14 +89,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 829384,
+     "rejectedOffSphere": 0,
      "posePositionMm": 18.7191,
      "poseRotationDeg": 0.0406,
      "gridMm": 0.1797,
-     "seconds": 6.604
+     "seconds": 7.142
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 11465,
@@ -94,14 +108,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 794639,
+     "rejectedOffSphere": 0,
      "posePositionMm": 12.891,
      "poseRotationDeg": 0.03961,
      "gridMm": 0.2199,
-     "seconds": 6.647
+     "seconds": 7.292
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 11966,
@@ -111,10 +127,11 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 817691,
+     "rejectedOffSphere": 0,
      "posePositionMm": 28.5569,
      "poseRotationDeg": 0.03325,
      "gridMm": 0.1743,
-     "seconds": 6.714
+     "seconds": 7.131
     }
    ],
    "posePositionMm": {
@@ -175,11 +192,13 @@
   {
    "wallRadiusM": null,
    "minModulation": 0.1,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": null,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 11899,
@@ -189,14 +208,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 783091,
+     "rejectedOffSphere": 0,
      "posePositionMm": 20.6369,
      "poseRotationDeg": 0.04054,
      "gridMm": 0.2205,
-     "seconds": 7.53
+     "seconds": 8.171
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 11722,
@@ -206,14 +227,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 769170,
+     "rejectedOffSphere": 0,
      "posePositionMm": 51.4823,
      "poseRotationDeg": 0.06366,
      "gridMm": 0.3884,
-     "seconds": 7.672
+     "seconds": 7.723
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 11738,
@@ -223,14 +246,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 829384,
+     "rejectedOffSphere": 0,
      "posePositionMm": 18.7191,
      "poseRotationDeg": 0.0406,
      "gridMm": 0.1797,
-     "seconds": 6.661
+     "seconds": 7.149
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 11465,
@@ -240,14 +265,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 794639,
+     "rejectedOffSphere": 0,
      "posePositionMm": 12.891,
      "poseRotationDeg": 0.03961,
      "gridMm": 0.2199,
-     "seconds": 6.567
+     "seconds": 7.189
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 11966,
@@ -257,10 +284,11 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 817691,
+     "rejectedOffSphere": 0,
      "posePositionMm": 28.5569,
      "poseRotationDeg": 0.03325,
      "gridMm": 0.1743,
-     "seconds": 6.654
+     "seconds": 6.984
     }
    ],
    "posePositionMm": {
@@ -321,11 +349,13 @@
   {
    "wallRadiusM": null,
    "minModulation": 0.2,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": null,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 11195,
@@ -335,14 +365,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 795332,
+     "rejectedOffSphere": 0,
      "posePositionMm": 12.0764,
      "poseRotationDeg": 0.01775,
      "gridMm": 0.283,
-     "seconds": 7.342
+     "seconds": 7.502
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 11065,
@@ -352,14 +384,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 783061,
+     "rejectedOffSphere": 0,
      "posePositionMm": 42.6686,
      "poseRotationDeg": 0.03524,
      "gridMm": 0.2921,
-     "seconds": 7.22
+     "seconds": 7.759
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 11165,
@@ -369,14 +403,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 837603,
+     "rejectedOffSphere": 0,
      "posePositionMm": 21.3846,
      "poseRotationDeg": 0.02291,
      "gridMm": 0.2492,
-     "seconds": 6.407
+     "seconds": 6.816
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 10923,
@@ -386,14 +422,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 806405,
+     "rejectedOffSphere": 0,
      "posePositionMm": 33.1672,
      "poseRotationDeg": 0.03263,
      "gridMm": 0.5128,
-     "seconds": 6.467
+     "seconds": 6.657
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 11310,
@@ -403,10 +441,11 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 826819,
+     "rejectedOffSphere": 0,
      "posePositionMm": 47.4407,
      "poseRotationDeg": 0.04179,
      "gridMm": 0.2576,
-     "seconds": 7.011
+     "seconds": 7.463
     }
    ],
    "posePositionMm": {
@@ -467,11 +506,13 @@
   {
    "wallRadiusM": null,
    "minModulation": 0.4,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": null,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 10321,
@@ -481,14 +522,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 832404,
+     "rejectedOffSphere": 0,
      "posePositionMm": 60.7729,
      "poseRotationDeg": 0.05016,
      "gridMm": 1.3284,
-     "seconds": 7.998
+     "seconds": 8.642
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 10506,
@@ -498,14 +541,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 825094,
+     "rejectedOffSphere": 0,
      "posePositionMm": 62.8979,
      "poseRotationDeg": 0.04183,
      "gridMm": 0.9761,
-     "seconds": 7.247
+     "seconds": 7.937
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 9955,
@@ -515,14 +560,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 862726,
+     "rejectedOffSphere": 0,
      "posePositionMm": 53.9212,
      "poseRotationDeg": 0.08126,
      "gridMm": 0.8887,
-     "seconds": 7.417
+     "seconds": 8.214
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 10216,
@@ -532,14 +579,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 841868,
+     "rejectedOffSphere": 0,
      "posePositionMm": 46.3501,
      "poseRotationDeg": 0.04701,
      "gridMm": 0.8763,
-     "seconds": 7.278
+     "seconds": 7.453
     },
     {
      "wallRadiusM": null,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 10330,
@@ -549,10 +598,11 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 854694,
+     "rejectedOffSphere": 0,
      "posePositionMm": 63.2982,
      "poseRotationDeg": 0.04894,
      "gridMm": 1.14761,
-     "seconds": 8.615
+     "seconds": 9.29
     }
    ],
    "posePositionMm": {
@@ -613,11 +663,13 @@
   {
    "wallRadiusM": 9,
    "minModulation": 0.02,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": 9,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 11973,
@@ -627,14 +679,16 @@
      "offSphereFloor": 6,
      "offSphereCeiling": 9,
      "rejectedLowModulation": 767906,
+     "rejectedOffSphere": 0,
      "posePositionMm": 104.738,
      "poseRotationDeg": 1.15849,
      "gridMm": 0.7601,
-     "seconds": 6.239
+     "seconds": 6.723
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 12256,
@@ -644,14 +698,16 @@
      "offSphereFloor": 73,
      "offSphereCeiling": 91,
      "rejectedLowModulation": 755621,
+     "rejectedOffSphere": 0,
      "posePositionMm": 394.793,
      "poseRotationDeg": 4.40512,
      "gridMm": 0.9045,
-     "seconds": 6.074
+     "seconds": 6.186
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 11738,
@@ -661,14 +717,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 811599,
+     "rejectedOffSphere": 0,
      "posePositionMm": 146.914,
      "poseRotationDeg": 1.58277,
      "gridMm": 0.4814,
-     "seconds": 8.284
+     "seconds": 8.543
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 11651,
@@ -678,14 +736,16 @@
      "offSphereFloor": 54,
      "offSphereCeiling": 26,
      "rejectedLowModulation": 775735,
+     "rejectedOffSphere": 0,
      "posePositionMm": 80952.9,
      "poseRotationDeg": 21.7991,
      "gridMm": 101.32,
-     "seconds": 7.758
+     "seconds": 8.057
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 12061,
@@ -695,10 +755,11 @@
      "offSphereFloor": 57,
      "offSphereCeiling": 38,
      "rejectedLowModulation": 802715,
+     "rejectedOffSphere": 0,
      "posePositionMm": 24.6027,
      "poseRotationDeg": 0.02874,
      "gridMm": 0.3483,
-     "seconds": 6.361
+     "seconds": 6.765
     }
    ],
    "posePositionMm": {
@@ -759,11 +820,13 @@
   {
    "wallRadiusM": 9,
    "minModulation": 0.1,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": 9,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 11902,
@@ -773,14 +836,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 3,
      "rejectedLowModulation": 783088,
+     "rejectedOffSphere": 0,
      "posePositionMm": 20.6369,
      "poseRotationDeg": 0.04054,
      "gridMm": 0.2205,
-     "seconds": 6.776
+     "seconds": 7.238
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 11798,
@@ -790,14 +855,16 @@
      "offSphereFloor": 32,
      "offSphereCeiling": 44,
      "rejectedLowModulation": 769094,
+     "rejectedOffSphere": 0,
      "posePositionMm": 51.4784,
      "poseRotationDeg": 0.06409,
      "gridMm": 0.3917,
-     "seconds": 7.169
+     "seconds": 7.581
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 11738,
@@ -807,14 +874,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 829384,
+     "rejectedOffSphere": 0,
      "posePositionMm": 18.7191,
      "poseRotationDeg": 0.0406,
      "gridMm": 0.1797,
-     "seconds": 6.601
+     "seconds": 6.949
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 11500,
@@ -824,14 +893,16 @@
      "offSphereFloor": 19,
      "offSphereCeiling": 20,
      "rejectedLowModulation": 794597,
+     "rejectedOffSphere": 0,
      "posePositionMm": 14.1204,
      "poseRotationDeg": 0.03442,
      "gridMm": 0.2164,
-     "seconds": 6.715
+     "seconds": 7.371
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 12047,
@@ -841,10 +912,11 @@
      "offSphereFloor": 43,
      "offSphereCeiling": 38,
      "rejectedLowModulation": 817610,
+     "rejectedOffSphere": 0,
      "posePositionMm": 863.937,
      "poseRotationDeg": 9.60819,
      "gridMm": 0.2604,
-     "seconds": 6.054
+     "seconds": 6.44
     }
    ],
    "posePositionMm": {
@@ -905,11 +977,13 @@
   {
    "wallRadiusM": 9,
    "minModulation": 0.2,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": 9,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 11198,
@@ -919,14 +993,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 3,
      "rejectedLowModulation": 795329,
+     "rejectedOffSphere": 0,
      "posePositionMm": 12.0764,
      "poseRotationDeg": 0.01775,
      "gridMm": 0.283,
-     "seconds": 6.935
+     "seconds": 7.719
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 11111,
@@ -936,14 +1012,16 @@
      "offSphereFloor": 17,
      "offSphereCeiling": 29,
      "rejectedLowModulation": 783015,
+     "rejectedOffSphere": 0,
      "posePositionMm": 994.683,
      "poseRotationDeg": 11.0189,
      "gridMm": 0.2147,
-     "seconds": 6.328
+     "seconds": 6.841
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 11165,
@@ -953,14 +1031,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 837603,
+     "rejectedOffSphere": 0,
      "posePositionMm": 21.3846,
      "poseRotationDeg": 0.02291,
      "gridMm": 0.2492,
-     "seconds": 6.633
+     "seconds": 6.611
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 10950,
@@ -970,14 +1050,16 @@
      "offSphereFloor": 11,
      "offSphereCeiling": 16,
      "rejectedLowModulation": 806378,
+     "rejectedOffSphere": 0,
      "posePositionMm": 172442,
      "poseRotationDeg": 7.3205,
      "gridMm": 0.5654,
-     "seconds": 5.618
+     "seconds": 5.811
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 11359,
@@ -987,10 +1069,11 @@
      "offSphereFloor": 22,
      "offSphereCeiling": 27,
      "rejectedLowModulation": 826770,
+     "rejectedOffSphere": 0,
      "posePositionMm": 515.61,
      "poseRotationDeg": 5.68057,
      "gridMm": 0.3875,
-     "seconds": 6.458
+     "seconds": 6.514
     }
    ],
    "posePositionMm": {
@@ -1051,11 +1134,13 @@
   {
    "wallRadiusM": 9,
    "minModulation": 0.4,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": 9,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 10324,
@@ -1065,14 +1150,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 3,
      "rejectedLowModulation": 832401,
+     "rejectedOffSphere": 0,
      "posePositionMm": 60.7729,
      "poseRotationDeg": 0.05016,
      "gridMm": 1.3284,
-     "seconds": 7.651
+     "seconds": 7.96
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 10533,
@@ -1082,14 +1169,16 @@
      "offSphereFloor": 6,
      "offSphereCeiling": 21,
      "rejectedLowModulation": 825067,
+     "rejectedOffSphere": 0,
      "posePositionMm": 62.898,
      "poseRotationDeg": 0.04183,
      "gridMm": 0.9761,
-     "seconds": 7.956
+     "seconds": 8.586
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 9955,
@@ -1099,14 +1188,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 862726,
+     "rejectedOffSphere": 0,
      "posePositionMm": 53.9212,
      "poseRotationDeg": 0.08126,
      "gridMm": 0.8887,
-     "seconds": 7.414
+     "seconds": 7.92
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 10234,
@@ -1116,14 +1207,16 @@
      "offSphereFloor": 4,
      "offSphereCeiling": 14,
      "rejectedLowModulation": 841850,
+     "rejectedOffSphere": 0,
      "posePositionMm": 15249.2,
      "poseRotationDeg": 55.5121,
      "gridMm": null,
-     "seconds": 8.695
+     "seconds": 9.078
     },
     {
      "wallRadiusM": 9,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 10349,
@@ -1133,10 +1226,11 @@
      "offSphereFloor": 8,
      "offSphereCeiling": 11,
      "rejectedLowModulation": 854675,
+     "rejectedOffSphere": 0,
      "posePositionMm": 1064.81,
      "poseRotationDeg": 11.8148,
      "gridMm": 0.2502,
-     "seconds": 6.116
+     "seconds": 6.462
     }
    ],
    "posePositionMm": {
@@ -1197,11 +1291,13 @@
   {
    "wallRadiusM": 6,
    "minModulation": 0.02,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": 6,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 11911,
@@ -1211,14 +1307,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 3,
      "rejectedLowModulation": 755827,
+     "rejectedOffSphere": 0,
      "posePositionMm": 15.1101,
      "poseRotationDeg": 0.02253,
      "gridMm": 0.2916,
-     "seconds": 7.081
+     "seconds": 7.303
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 12046,
@@ -1228,14 +1326,16 @@
      "offSphereFloor": 31,
      "offSphereCeiling": 44,
      "rejectedLowModulation": 748052,
+     "rejectedOffSphere": 0,
      "posePositionMm": 7840.59,
      "poseRotationDeg": 64.0895,
      "gridMm": 0.3642,
-     "seconds": 5.985
+     "seconds": 6.725
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 11738,
@@ -1245,14 +1345,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 799038,
+     "rejectedOffSphere": 0,
      "posePositionMm": 40638.1,
      "poseRotationDeg": 3.38355,
      "gridMm": 22.311,
-     "seconds": 6.432
+     "seconds": 6.9
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 11605,
@@ -1262,14 +1364,16 @@
      "offSphereFloor": 16,
      "offSphereCeiling": 18,
      "rejectedLowModulation": 766901,
+     "rejectedOffSphere": 0,
      "posePositionMm": 2499.79,
      "poseRotationDeg": 8.82883,
      "gridMm": null,
-     "seconds": 4.875
+     "seconds": 5.057
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 12119,
@@ -1279,10 +1383,11 @@
      "offSphereFloor": 44,
      "offSphereCeiling": 38,
      "rejectedLowModulation": 788794,
+     "rejectedOffSphere": 0,
      "posePositionMm": 40349.2,
      "poseRotationDeg": 7.62712,
      "gridMm": 0.5101,
-     "seconds": 5.732
+     "seconds": 6.092
     }
    ],
    "posePositionMm": {
@@ -1343,11 +1448,13 @@
   {
    "wallRadiusM": 6,
    "minModulation": 0.1,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": 6,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 11911,
@@ -1357,14 +1464,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 3,
      "rejectedLowModulation": 783079,
+     "rejectedOffSphere": 0,
      "posePositionMm": 20.6369,
      "poseRotationDeg": 0.04054,
      "gridMm": 0.2205,
-     "seconds": 6.896
+     "seconds": 7.463
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 12039,
@@ -1374,14 +1483,16 @@
      "offSphereFloor": 30,
      "offSphereCeiling": 44,
      "rejectedLowModulation": 768832,
+     "rejectedOffSphere": 0,
      "posePositionMm": 49.1342,
      "poseRotationDeg": 0.06315,
      "gridMm": 0.3273,
-     "seconds": 7.502
+     "seconds": 8.057
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 11738,
@@ -1391,14 +1502,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 829384,
+     "rejectedOffSphere": 0,
      "posePositionMm": 18.7191,
      "poseRotationDeg": 0.0406,
      "gridMm": 0.1797,
-     "seconds": 6.583
+     "seconds": 7.15
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 11605,
@@ -1408,14 +1521,16 @@
      "offSphereFloor": 16,
      "offSphereCeiling": 18,
      "rejectedLowModulation": 794458,
+     "rejectedOffSphere": 0,
      "posePositionMm": 89537.7,
      "poseRotationDeg": 9.61443,
      "gridMm": 87.652,
-     "seconds": 7.041
+     "seconds": 7.831
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 12111,
@@ -1425,10 +1540,11 @@
      "offSphereFloor": 43,
      "offSphereCeiling": 38,
      "rejectedLowModulation": 817546,
+     "rejectedOffSphere": 0,
      "posePositionMm": 749.453,
      "poseRotationDeg": 8.37967,
      "gridMm": 0.628,
-     "seconds": 6.238
+     "seconds": 6.748
     }
    ],
    "posePositionMm": {
@@ -1489,11 +1605,13 @@
   {
    "wallRadiusM": 6,
    "minModulation": 0.2,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": 6,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 11198,
@@ -1503,14 +1621,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 3,
      "rejectedLowModulation": 795329,
+     "rejectedOffSphere": 0,
      "posePositionMm": 12.0764,
      "poseRotationDeg": 0.01775,
      "gridMm": 0.283,
-     "seconds": 7.125
+     "seconds": 7.797
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 11111,
@@ -1520,14 +1640,16 @@
      "offSphereFloor": 17,
      "offSphereCeiling": 29,
      "rejectedLowModulation": 783015,
+     "rejectedOffSphere": 0,
      "posePositionMm": 994.683,
      "poseRotationDeg": 11.0189,
      "gridMm": 0.2147,
-     "seconds": 6.597
+     "seconds": 6.721
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 11165,
@@ -1537,14 +1659,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 837603,
+     "rejectedOffSphere": 0,
      "posePositionMm": 21.3846,
      "poseRotationDeg": 0.02291,
      "gridMm": 0.2492,
-     "seconds": 6.447
+     "seconds": 6.805
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 10950,
@@ -1554,14 +1678,16 @@
      "offSphereFloor": 11,
      "offSphereCeiling": 16,
      "rejectedLowModulation": 806378,
+     "rejectedOffSphere": 0,
      "posePositionMm": 172442,
      "poseRotationDeg": 7.3205,
      "gridMm": 0.5654,
-     "seconds": 5.513
+     "seconds": 5.872
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 11359,
@@ -1571,10 +1697,11 @@
      "offSphereFloor": 22,
      "offSphereCeiling": 27,
      "rejectedLowModulation": 826770,
+     "rejectedOffSphere": 0,
      "posePositionMm": 515.61,
      "poseRotationDeg": 5.68057,
      "gridMm": 0.3875,
-     "seconds": 6.581
+     "seconds": 6.741
     }
    ],
    "posePositionMm": {
@@ -1635,11 +1762,13 @@
   {
    "wallRadiusM": 6,
    "minModulation": 0.4,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": 6,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 10324,
@@ -1649,14 +1778,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 3,
      "rejectedLowModulation": 832401,
+     "rejectedOffSphere": 0,
      "posePositionMm": 60.7729,
      "poseRotationDeg": 0.05016,
      "gridMm": 1.3284,
-     "seconds": 7.57
+     "seconds": 7.95
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 10533,
@@ -1666,14 +1797,16 @@
      "offSphereFloor": 6,
      "offSphereCeiling": 21,
      "rejectedLowModulation": 825067,
+     "rejectedOffSphere": 0,
      "posePositionMm": 62.898,
      "poseRotationDeg": 0.04183,
      "gridMm": 0.9761,
-     "seconds": 7.775
+     "seconds": 8.569
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 9955,
@@ -1683,14 +1816,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 862726,
+     "rejectedOffSphere": 0,
      "posePositionMm": 53.9212,
      "poseRotationDeg": 0.08126,
      "gridMm": 0.8887,
-     "seconds": 7.668
+     "seconds": 8.072
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 10234,
@@ -1700,14 +1835,16 @@
      "offSphereFloor": 4,
      "offSphereCeiling": 14,
      "rejectedLowModulation": 841850,
+     "rejectedOffSphere": 0,
      "posePositionMm": 15249.2,
      "poseRotationDeg": 55.5121,
      "gridMm": null,
-     "seconds": 8.62
+     "seconds": 9.417
     },
     {
      "wallRadiusM": 6,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 10349,
@@ -1717,10 +1854,11 @@
      "offSphereFloor": 8,
      "offSphereCeiling": 11,
      "rejectedLowModulation": 854675,
+     "rejectedOffSphere": 0,
      "posePositionMm": 1064.81,
      "poseRotationDeg": 11.8148,
      "gridMm": 0.2502,
-     "seconds": 6.154
+     "seconds": 6.392
     }
    ],
    "posePositionMm": {
@@ -1781,11 +1919,13 @@
   {
    "wallRadiusM": 4,
    "minModulation": 0.02,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": 4,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 11899,
@@ -1795,14 +1935,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 752843,
+     "rejectedOffSphere": 0,
      "posePositionMm": 21.5499,
      "poseRotationDeg": 0.03005,
      "gridMm": 0.2287,
-     "seconds": 6.63
+     "seconds": 7.266
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 11722,
@@ -1812,14 +1954,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 746925,
+     "rejectedOffSphere": 0,
      "posePositionMm": 346932,
      "poseRotationDeg": 4.38012,
      "gridMm": 0.4513,
-     "seconds": 5.523
+     "seconds": 5.852
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 11738,
@@ -1829,14 +1973,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 789394,
+     "rejectedOffSphere": 0,
      "posePositionMm": 3451.75,
      "poseRotationDeg": 7.24081,
      "gridMm": null,
-     "seconds": 4.576
+     "seconds": 4.62
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 11465,
@@ -1846,14 +1992,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 764516,
+     "rejectedOffSphere": 0,
      "posePositionMm": 4802.64,
      "poseRotationDeg": 22.0975,
      "gridMm": null,
-     "seconds": 5.745
+     "seconds": 5.782
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.02,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 11966,
@@ -1863,10 +2011,11 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 782873,
+     "rejectedOffSphere": 0,
      "posePositionMm": 203.205,
      "poseRotationDeg": 2.22434,
      "gridMm": 0.4066,
-     "seconds": 5.877
+     "seconds": 6.364
     }
    ],
    "posePositionMm": {
@@ -1927,11 +2076,13 @@
   {
    "wallRadiusM": 4,
    "minModulation": 0.1,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": 4,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 11899,
@@ -1941,14 +2092,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 783091,
+     "rejectedOffSphere": 0,
      "posePositionMm": 20.6369,
      "poseRotationDeg": 0.04054,
      "gridMm": 0.2205,
-     "seconds": 7.371
+     "seconds": 7.736
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 11722,
@@ -1958,14 +2111,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 769170,
+     "rejectedOffSphere": 0,
      "posePositionMm": 51.4823,
      "poseRotationDeg": 0.06366,
      "gridMm": 0.3884,
-     "seconds": 7.411
+     "seconds": 7.835
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 11738,
@@ -1975,14 +2130,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 829384,
+     "rejectedOffSphere": 0,
      "posePositionMm": 18.7191,
      "poseRotationDeg": 0.0406,
      "gridMm": 0.1797,
-     "seconds": 6.676
+     "seconds": 7.083
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 11465,
@@ -1992,14 +2149,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 794639,
+     "rejectedOffSphere": 0,
      "posePositionMm": 12.891,
      "poseRotationDeg": 0.03961,
      "gridMm": 0.2199,
-     "seconds": 6.934
+     "seconds": 7.045
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.1,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 11966,
@@ -2009,10 +2168,11 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 817691,
+     "rejectedOffSphere": 0,
      "posePositionMm": 28.5569,
      "poseRotationDeg": 0.03325,
      "gridMm": 0.1743,
-     "seconds": 6.588
+     "seconds": 7.073
     }
    ],
    "posePositionMm": {
@@ -2073,11 +2233,13 @@
   {
    "wallRadiusM": 4,
    "minModulation": 0.2,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": 4,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 11195,
@@ -2087,14 +2249,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 795332,
+     "rejectedOffSphere": 0,
      "posePositionMm": 12.0764,
      "poseRotationDeg": 0.01775,
      "gridMm": 0.283,
-     "seconds": 7.108
+     "seconds": 7.714
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 11065,
@@ -2104,14 +2268,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 783061,
+     "rejectedOffSphere": 0,
      "posePositionMm": 42.6686,
      "poseRotationDeg": 0.03524,
      "gridMm": 0.2921,
-     "seconds": 7.102
+     "seconds": 7.66
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 11165,
@@ -2121,14 +2287,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 837603,
+     "rejectedOffSphere": 0,
      "posePositionMm": 21.3846,
      "poseRotationDeg": 0.02291,
      "gridMm": 0.2492,
-     "seconds": 6.736
+     "seconds": 6.962
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 10923,
@@ -2138,14 +2306,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 806405,
+     "rejectedOffSphere": 0,
      "posePositionMm": 33.1672,
      "poseRotationDeg": 0.03263,
      "gridMm": 0.5128,
-     "seconds": 6.8
+     "seconds": 7.031
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.2,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 11310,
@@ -2155,10 +2325,11 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 826819,
+     "rejectedOffSphere": 0,
      "posePositionMm": 47.4407,
      "poseRotationDeg": 0.04179,
      "gridMm": 0.2576,
-     "seconds": 6.879
+     "seconds": 7.689
     }
    ],
    "posePositionMm": {
@@ -2219,11 +2390,13 @@
   {
    "wallRadiusM": 4,
    "minModulation": 0.4,
+   "segmentMarginFrac": null,
    "n": 5,
    "runs": [
     {
      "wallRadiusM": 4,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 0,
      "seed": 996363000,
      "correspondences": 10321,
@@ -2233,14 +2406,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 832404,
+     "rejectedOffSphere": 0,
      "posePositionMm": 60.7729,
      "poseRotationDeg": 0.05016,
      "gridMm": 1.3284,
-     "seconds": 7.638
+     "seconds": 8.555
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 1,
      "seed": 2004720000,
      "correspondences": 10506,
@@ -2250,14 +2425,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 825094,
+     "rejectedOffSphere": 0,
      "posePositionMm": 62.8979,
      "poseRotationDeg": 0.04183,
      "gridMm": 0.9761,
-     "seconds": 7.545
+     "seconds": 7.707
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 2,
      "seed": 25331700,
      "correspondences": 9955,
@@ -2267,14 +2444,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 862726,
+     "rejectedOffSphere": 0,
      "posePositionMm": 53.9212,
      "poseRotationDeg": 0.08126,
      "gridMm": 0.8887,
-     "seconds": 7.635
+     "seconds": 7.875
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 3,
      "seed": 1139550000,
      "correspondences": 10216,
@@ -2284,14 +2463,16 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 841868,
+     "rejectedOffSphere": 0,
      "posePositionMm": 46.3501,
      "poseRotationDeg": 0.04701,
      "gridMm": 0.8763,
-     "seconds": 7.38
+     "seconds": 7.399
     },
     {
      "wallRadiusM": 4,
      "minModulation": 0.4,
+     "segmentMarginFrac": null,
      "seedIndex": 4,
      "seed": 1953960000,
      "correspondences": 10330,
@@ -2301,10 +2482,11 @@
      "offSphereFloor": 0,
      "offSphereCeiling": 0,
      "rejectedLowModulation": 854694,
+     "rejectedOffSphere": 0,
      "posePositionMm": 63.2982,
      "poseRotationDeg": 0.04894,
      "gridMm": 1.14761,
-     "seconds": 8.573
+     "seconds": 8.928
     }
    ],
    "posePositionMm": {
@@ -2361,6 +2543,1890 @@
     "ceiling": 0
    },
    "gridUsable": 5
+  },
+  {
+   "wallRadiusM": null,
+   "minModulation": 0.02,
+   "segmentMarginFrac": 0,
+   "n": 5,
+   "runs": [
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 0,
+     "seed": 996363000,
+     "correspondences": 11899,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 783091,
+     "rejectedOffSphere": 2349,
+     "posePositionMm": 9.24439,
+     "poseRotationDeg": 0.036,
+     "gridMm": 0.3323,
+     "seconds": 7.732
+    },
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 1,
+     "seed": 2004720000,
+     "correspondences": 11205,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 769170,
+     "rejectedOffSphere": 6850,
+     "posePositionMm": 42.6052,
+     "poseRotationDeg": 0.04391,
+     "gridMm": 0.233,
+     "seconds": 7.645
+    },
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 2,
+     "seed": 25331700,
+     "correspondences": 11428,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 829384,
+     "rejectedOffSphere": 3555,
+     "posePositionMm": 21.4225,
+     "poseRotationDeg": 0.03667,
+     "gridMm": 0.178,
+     "seconds": 7.09
+    },
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 3,
+     "seed": 1139550000,
+     "correspondences": 11433,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 794639,
+     "rejectedOffSphere": 2886,
+     "posePositionMm": 12.7997,
+     "poseRotationDeg": 0.04065,
+     "gridMm": 0.2089,
+     "seconds": 7.115
+    },
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 4,
+     "seed": 1953960000,
+     "correspondences": 11856,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 817691,
+     "rejectedOffSphere": 1127,
+     "posePositionMm": 32.1432,
+     "poseRotationDeg": 0.03625,
+     "gridMm": 0.2565,
+     "seconds": 6.871
+    }
+   ],
+   "posePositionMm": {
+    "median": 21.4225,
+    "min": 9.24439,
+    "max": 42.6052,
+    "values": [
+     9.24439,
+     42.6052,
+     21.4225,
+     12.7997,
+     32.1432
+    ]
+   },
+   "poseRotationDeg": {
+    "median": 0.03667,
+    "min": 0.036,
+    "max": 0.04391,
+    "values": [
+     0.036,
+     0.04391,
+     0.03667,
+     0.04065,
+     0.03625
+    ]
+   },
+   "offSphereFrac": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "values": [
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   },
+   "correspondences": {
+    "median": 11433,
+    "min": 11205,
+    "max": 11899,
+    "values": [
+     11899,
+     11205,
+     11428,
+     11433,
+     11856
+    ]
+   },
+   "offSphereBySurface": {
+    "wall": 0,
+    "floor": 0,
+    "ceiling": 0
+   },
+   "gridUsable": 5
+  },
+  {
+   "wallRadiusM": null,
+   "minModulation": 0.02,
+   "segmentMarginFrac": 0.05,
+   "n": 5,
+   "runs": [
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 0,
+     "seed": 996363000,
+     "correspondences": 11899,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 783091,
+     "rejectedOffSphere": 0,
+     "posePositionMm": 20.6369,
+     "poseRotationDeg": 0.04054,
+     "gridMm": 0.2205,
+     "seconds": 7.939
+    },
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 1,
+     "seed": 2004720000,
+     "correspondences": 11713,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 769170,
+     "rejectedOffSphere": 1015,
+     "posePositionMm": 42.2523,
+     "poseRotationDeg": 0.03967,
+     "gridMm": 0.3518,
+     "seconds": 7.671
+    },
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 2,
+     "seed": 25331700,
+     "correspondences": 11738,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 829384,
+     "rejectedOffSphere": 0,
+     "posePositionMm": 18.7191,
+     "poseRotationDeg": 0.0406,
+     "gridMm": 0.1797,
+     "seconds": 6.893
+    },
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 3,
+     "seed": 1139550000,
+     "correspondences": 11465,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 794639,
+     "rejectedOffSphere": 0,
+     "posePositionMm": 12.891,
+     "poseRotationDeg": 0.03961,
+     "gridMm": 0.2199,
+     "seconds": 6.951
+    },
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 4,
+     "seed": 1953960000,
+     "correspondences": 11966,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 817691,
+     "rejectedOffSphere": 0,
+     "posePositionMm": 28.5569,
+     "poseRotationDeg": 0.03325,
+     "gridMm": 0.1743,
+     "seconds": 6.878
+    }
+   ],
+   "posePositionMm": {
+    "median": 20.6369,
+    "min": 12.891,
+    "max": 42.2523,
+    "values": [
+     20.6369,
+     42.2523,
+     18.7191,
+     12.891,
+     28.5569
+    ]
+   },
+   "poseRotationDeg": {
+    "median": 0.03967,
+    "min": 0.03325,
+    "max": 0.0406,
+    "values": [
+     0.04054,
+     0.03967,
+     0.0406,
+     0.03961,
+     0.03325
+    ]
+   },
+   "offSphereFrac": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "values": [
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   },
+   "correspondences": {
+    "median": 11738,
+    "min": 11465,
+    "max": 11966,
+    "values": [
+     11899,
+     11713,
+     11738,
+     11465,
+     11966
+    ]
+   },
+   "offSphereBySurface": {
+    "wall": 0,
+    "floor": 0,
+    "ceiling": 0
+   },
+   "gridUsable": 5
+  },
+  {
+   "wallRadiusM": null,
+   "minModulation": 0.02,
+   "segmentMarginFrac": 0.15,
+   "n": 5,
+   "runs": [
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 0,
+     "seed": 996363000,
+     "correspondences": 11899,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 783091,
+     "rejectedOffSphere": 0,
+     "posePositionMm": 20.6369,
+     "poseRotationDeg": 0.04054,
+     "gridMm": 0.2205,
+     "seconds": 8.022
+    },
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 1,
+     "seed": 2004720000,
+     "correspondences": 11722,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 769170,
+     "rejectedOffSphere": 0,
+     "posePositionMm": 51.4823,
+     "poseRotationDeg": 0.06366,
+     "gridMm": 0.3884,
+     "seconds": 7.695
+    },
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 2,
+     "seed": 25331700,
+     "correspondences": 11738,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 829384,
+     "rejectedOffSphere": 0,
+     "posePositionMm": 18.7191,
+     "poseRotationDeg": 0.0406,
+     "gridMm": 0.1797,
+     "seconds": 7.184
+    },
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 3,
+     "seed": 1139550000,
+     "correspondences": 11465,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 794639,
+     "rejectedOffSphere": 0,
+     "posePositionMm": 12.891,
+     "poseRotationDeg": 0.03961,
+     "gridMm": 0.2199,
+     "seconds": 7.023
+    },
+    {
+     "wallRadiusM": null,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 4,
+     "seed": 1953960000,
+     "correspondences": 11966,
+     "offSphere": 0,
+     "offSphereFrac": 0,
+     "offSphereWall": 0,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 817691,
+     "rejectedOffSphere": 0,
+     "posePositionMm": 28.5569,
+     "poseRotationDeg": 0.03325,
+     "gridMm": 0.1743,
+     "seconds": 6.963
+    }
+   ],
+   "posePositionMm": {
+    "median": 20.6369,
+    "min": 12.891,
+    "max": 51.4823,
+    "values": [
+     20.6369,
+     51.4823,
+     18.7191,
+     12.891,
+     28.5569
+    ]
+   },
+   "poseRotationDeg": {
+    "median": 0.04054,
+    "min": 0.03325,
+    "max": 0.06366,
+    "values": [
+     0.04054,
+     0.06366,
+     0.0406,
+     0.03961,
+     0.03325
+    ]
+   },
+   "offSphereFrac": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "values": [
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   },
+   "correspondences": {
+    "median": 11738,
+    "min": 11465,
+    "max": 11966,
+    "values": [
+     11899,
+     11722,
+     11738,
+     11465,
+     11966
+    ]
+   },
+   "offSphereBySurface": {
+    "wall": 0,
+    "floor": 0,
+    "ceiling": 0
+   },
+   "gridUsable": 5
+  },
+  {
+   "wallRadiusM": 9,
+   "minModulation": 0.02,
+   "segmentMarginFrac": 0,
+   "n": 5,
+   "runs": [
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 0,
+     "seed": 996363000,
+     "correspondences": 11946,
+     "offSphere": 66,
+     "offSphereFrac": 0.005525,
+     "offSphereWall": 57,
+     "offSphereFloor": 4,
+     "offSphereCeiling": 5,
+     "rejectedLowModulation": 767906,
+     "rejectedOffSphere": 17185,
+     "posePositionMm": 25.7648,
+     "poseRotationDeg": 0.02914,
+     "gridMm": 0.3019,
+     "seconds": 8.018
+    },
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 1,
+     "seed": 2004720000,
+     "correspondences": 11513,
+     "offSphere": 348,
+     "offSphereFrac": 0.03023,
+     "offSphereWall": 247,
+     "offSphereFloor": 42,
+     "offSphereCeiling": 59,
+     "rejectedLowModulation": 755621,
+     "rejectedOffSphere": 19922,
+     "posePositionMm": 135.278,
+     "poseRotationDeg": 1.42327,
+     "gridMm": 0.8475,
+     "seconds": 6.952
+    },
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 2,
+     "seed": 25331700,
+     "correspondences": 11428,
+     "offSphere": 12,
+     "offSphereFrac": 0.00105,
+     "offSphereWall": 12,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 811599,
+     "rejectedOffSphere": 21157,
+     "posePositionMm": 40.4261,
+     "poseRotationDeg": 0.06538,
+     "gridMm": 0.2567,
+     "seconds": 7.602
+    },
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 3,
+     "seed": 1139550000,
+     "correspondences": 11534,
+     "offSphere": 125,
+     "offSphereFrac": 0.01084,
+     "offSphereWall": 86,
+     "offSphereFloor": 23,
+     "offSphereCeiling": 16,
+     "rejectedLowModulation": 775735,
+     "rejectedOffSphere": 21500,
+     "posePositionMm": 7281.68,
+     "poseRotationDeg": 87.3028,
+     "gridMm": null,
+     "seconds": 7.479
+    },
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 4,
+     "seed": 1953960000,
+     "correspondences": 11915,
+     "offSphere": 83,
+     "offSphereFrac": 0.006966,
+     "offSphereWall": 24,
+     "offSphereFloor": 34,
+     "offSphereCeiling": 25,
+     "rejectedLowModulation": 802715,
+     "rejectedOffSphere": 15697,
+     "posePositionMm": 102.781,
+     "poseRotationDeg": 1.1497,
+     "gridMm": 1.07458,
+     "seconds": 6.669
+    }
+   ],
+   "posePositionMm": {
+    "median": 102.781,
+    "min": 25.7648,
+    "max": 7281.68,
+    "values": [
+     25.7648,
+     135.278,
+     40.4261,
+     7281.68,
+     102.781
+    ]
+   },
+   "poseRotationDeg": {
+    "median": 1.1497,
+    "min": 0.02914,
+    "max": 87.3028,
+    "values": [
+     0.02914,
+     1.42327,
+     0.06538,
+     87.3028,
+     1.1497
+    ]
+   },
+   "offSphereFrac": {
+    "median": 0.006966,
+    "min": 0.00105,
+    "max": 0.03023,
+    "values": [
+     0.005525,
+     0.03023,
+     0.00105,
+     0.01084,
+     0.006966
+    ]
+   },
+   "correspondences": {
+    "median": 11534,
+    "min": 11428,
+    "max": 11946,
+    "values": [
+     11946,
+     11513,
+     11428,
+     11534,
+     11915
+    ]
+   },
+   "offSphereBySurface": {
+    "wall": 426,
+    "floor": 103,
+    "ceiling": 105
+   },
+   "gridUsable": 4
+  },
+  {
+   "wallRadiusM": 9,
+   "minModulation": 0.02,
+   "segmentMarginFrac": 0.05,
+   "n": 5,
+   "runs": [
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 0,
+     "seed": 996363000,
+     "correspondences": 11946,
+     "offSphere": 100,
+     "offSphereFrac": 0.008371,
+     "offSphereWall": 91,
+     "offSphereFloor": 4,
+     "offSphereCeiling": 5,
+     "rejectedLowModulation": 767906,
+     "rejectedOffSphere": 14367,
+     "posePositionMm": 7.04425,
+     "poseRotationDeg": 0.01693,
+     "gridMm": 0.212,
+     "seconds": 7.418
+    },
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 1,
+     "seed": 2004720000,
+     "correspondences": 12030,
+     "offSphere": 368,
+     "offSphereFrac": 0.03059,
+     "offSphereWall": 262,
+     "offSphereFloor": 45,
+     "offSphereCeiling": 61,
+     "rejectedLowModulation": 755621,
+     "rejectedOffSphere": 13752,
+     "posePositionMm": 36454.5,
+     "poseRotationDeg": 42.8258,
+     "gridMm": 14.4027,
+     "seconds": 8.892
+    },
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 2,
+     "seed": 25331700,
+     "correspondences": 11738,
+     "offSphere": 39,
+     "offSphereFrac": 0.003323,
+     "offSphereWall": 39,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 811599,
+     "rejectedOffSphere": 17228,
+     "posePositionMm": 813.474,
+     "poseRotationDeg": 27.6525,
+     "gridMm": 65.5265,
+     "seconds": 6.083
+    },
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 3,
+     "seed": 1139550000,
+     "correspondences": 11576,
+     "offSphere": 174,
+     "offSphereFrac": 0.01503,
+     "offSphereWall": 131,
+     "offSphereFloor": 27,
+     "offSphereCeiling": 16,
+     "rejectedLowModulation": 775735,
+     "rejectedOffSphere": 17935,
+     "posePositionMm": 3517.11,
+     "poseRotationDeg": 59.0528,
+     "gridMm": 19.6856,
+     "seconds": 6.384
+    },
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 4,
+     "seed": 1953960000,
+     "correspondences": 12031,
+     "offSphere": 125,
+     "offSphereFrac": 0.01039,
+     "offSphereWall": 60,
+     "offSphereFloor": 36,
+     "offSphereCeiling": 29,
+     "rejectedLowModulation": 802715,
+     "rejectedOffSphere": 13995,
+     "posePositionMm": 4772.21,
+     "poseRotationDeg": 27.0938,
+     "gridMm": 0.1083,
+     "seconds": 5.926
+    }
+   ],
+   "posePositionMm": {
+    "median": 3517.11,
+    "min": 7.04425,
+    "max": 36454.5,
+    "values": [
+     7.04425,
+     36454.5,
+     813.474,
+     3517.11,
+     4772.21
+    ]
+   },
+   "poseRotationDeg": {
+    "median": 27.6525,
+    "min": 0.01693,
+    "max": 59.0528,
+    "values": [
+     0.01693,
+     42.8258,
+     27.6525,
+     59.0528,
+     27.0938
+    ]
+   },
+   "offSphereFrac": {
+    "median": 0.01039,
+    "min": 0.003323,
+    "max": 0.03059,
+    "values": [
+     0.008371,
+     0.03059,
+     0.003323,
+     0.01503,
+     0.01039
+    ]
+   },
+   "correspondences": {
+    "median": 11946,
+    "min": 11576,
+    "max": 12031,
+    "values": [
+     11946,
+     12030,
+     11738,
+     11576,
+     12031
+    ]
+   },
+   "offSphereBySurface": {
+    "wall": 583,
+    "floor": 112,
+    "ceiling": 111
+   },
+   "gridUsable": 5
+  },
+  {
+   "wallRadiusM": 9,
+   "minModulation": 0.02,
+   "segmentMarginFrac": 0.15,
+   "n": 5,
+   "runs": [
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 0,
+     "seed": 996363000,
+     "correspondences": 11950,
+     "offSphere": 145,
+     "offSphereFrac": 0.01213,
+     "offSphereWall": 135,
+     "offSphereFloor": 4,
+     "offSphereCeiling": 6,
+     "rejectedLowModulation": 767906,
+     "rejectedOffSphere": 13394,
+     "posePositionMm": 14.7813,
+     "poseRotationDeg": 0.04031,
+     "gridMm": 0.1727,
+     "seconds": 7.711
+    },
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 1,
+     "seed": 2004720000,
+     "correspondences": 12070,
+     "offSphere": 462,
+     "offSphereFrac": 0.03828,
+     "offSphereWall": 349,
+     "offSphereFloor": 46,
+     "offSphereCeiling": 67,
+     "rejectedLowModulation": 755621,
+     "rejectedOffSphere": 11594,
+     "posePositionMm": 3033.49,
+     "poseRotationDeg": 74.71,
+     "gridMm": 0.5661,
+     "seconds": 6.21
+    },
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 2,
+     "seed": 25331700,
+     "correspondences": 11738,
+     "offSphere": 203,
+     "offSphereFrac": 0.01729,
+     "offSphereWall": 203,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 811599,
+     "rejectedOffSphere": 15097,
+     "posePositionMm": 376452,
+     "poseRotationDeg": 1.52674,
+     "gridMm": 0.5032,
+     "seconds": 6.094
+    },
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 3,
+     "seed": 1139550000,
+     "correspondences": 11586,
+     "offSphere": 290,
+     "offSphereFrac": 0.02503,
+     "offSphereWall": 244,
+     "offSphereFloor": 32,
+     "offSphereCeiling": 14,
+     "rejectedLowModulation": 775735,
+     "rejectedOffSphere": 16272,
+     "posePositionMm": 1036.94,
+     "poseRotationDeg": 11.4085,
+     "gridMm": 0.2926,
+     "seconds": 7.207
+    },
+    {
+     "wallRadiusM": 9,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 4,
+     "seed": 1953960000,
+     "correspondences": 12040,
+     "offSphere": 235,
+     "offSphereFrac": 0.01952,
+     "offSphereWall": 161,
+     "offSphereFloor": 43,
+     "offSphereCeiling": 31,
+     "rejectedLowModulation": 802715,
+     "rejectedOffSphere": 12612,
+     "posePositionMm": 50.0438,
+     "poseRotationDeg": 0.4794,
+     "gridMm": 0.4829,
+     "seconds": 7.082
+    }
+   ],
+   "posePositionMm": {
+    "median": 1036.94,
+    "min": 14.7813,
+    "max": 376452,
+    "values": [
+     14.7813,
+     3033.49,
+     376452,
+     1036.94,
+     50.0438
+    ]
+   },
+   "poseRotationDeg": {
+    "median": 1.52674,
+    "min": 0.04031,
+    "max": 74.71,
+    "values": [
+     0.04031,
+     74.71,
+     1.52674,
+     11.4085,
+     0.4794
+    ]
+   },
+   "offSphereFrac": {
+    "median": 0.01952,
+    "min": 0.01213,
+    "max": 0.03828,
+    "values": [
+     0.01213,
+     0.03828,
+     0.01729,
+     0.02503,
+     0.01952
+    ]
+   },
+   "correspondences": {
+    "median": 11950,
+    "min": 11586,
+    "max": 12070,
+    "values": [
+     11950,
+     12070,
+     11738,
+     11586,
+     12040
+    ]
+   },
+   "offSphereBySurface": {
+    "wall": 1092,
+    "floor": 125,
+    "ceiling": 118
+   },
+   "gridUsable": 5
+  },
+  {
+   "wallRadiusM": 6,
+   "minModulation": 0.02,
+   "segmentMarginFrac": 0,
+   "n": 5,
+   "runs": [
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 0,
+     "seed": 996363000,
+     "correspondences": 11908,
+     "offSphere": 46,
+     "offSphereFrac": 0.003863,
+     "offSphereWall": 43,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 3,
+     "rejectedLowModulation": 755827,
+     "rejectedOffSphere": 28949,
+     "posePositionMm": 21.5498,
+     "poseRotationDeg": 0.03457,
+     "gridMm": 0.1464,
+     "seconds": 7.784
+    },
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 1,
+     "seed": 2004720000,
+     "correspondences": 11390,
+     "offSphere": 215,
+     "offSphereFrac": 0.01888,
+     "offSphereWall": 159,
+     "offSphereFloor": 24,
+     "offSphereCeiling": 32,
+     "rejectedLowModulation": 748052,
+     "rejectedOffSphere": 27401,
+     "posePositionMm": 44.0098,
+     "poseRotationDeg": 0.04773,
+     "gridMm": 0.2789,
+     "seconds": 10.417
+    },
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 2,
+     "seed": 25331700,
+     "correspondences": 11428,
+     "offSphere": 45,
+     "offSphereFrac": 0.003938,
+     "offSphereWall": 45,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 799038,
+     "rejectedOffSphere": 33285,
+     "posePositionMm": 18.7665,
+     "poseRotationDeg": 0.0387,
+     "gridMm": 0.1712,
+     "seconds": 7.333
+    },
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 3,
+     "seed": 1139550000,
+     "correspondences": 11506,
+     "offSphere": 92,
+     "offSphereFrac": 0.007996,
+     "offSphereWall": 75,
+     "offSphereFloor": 7,
+     "offSphereCeiling": 10,
+     "rejectedLowModulation": 766901,
+     "rejectedOffSphere": 30243,
+     "posePositionMm": 352389,
+     "poseRotationDeg": 71.8418,
+     "gridMm": 70.5026,
+     "seconds": 8.368
+    },
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 4,
+     "seed": 1953960000,
+     "correspondences": 11945,
+     "offSphere": 132,
+     "offSphereFrac": 0.01105,
+     "offSphereWall": 80,
+     "offSphereFloor": 27,
+     "offSphereCeiling": 25,
+     "rejectedLowModulation": 788794,
+     "rejectedOffSphere": 29239,
+     "posePositionMm": 166.762,
+     "poseRotationDeg": 1.88448,
+     "gridMm": 1.2069,
+     "seconds": 6.814
+    }
+   ],
+   "posePositionMm": {
+    "median": 44.0098,
+    "min": 18.7665,
+    "max": 352389,
+    "values": [
+     21.5498,
+     44.0098,
+     18.7665,
+     352389,
+     166.762
+    ]
+   },
+   "poseRotationDeg": {
+    "median": 0.04773,
+    "min": 0.03457,
+    "max": 71.8418,
+    "values": [
+     0.03457,
+     0.04773,
+     0.0387,
+     71.8418,
+     1.88448
+    ]
+   },
+   "offSphereFrac": {
+    "median": 0.007996,
+    "min": 0.003863,
+    "max": 0.01888,
+    "values": [
+     0.003863,
+     0.01888,
+     0.003938,
+     0.007996,
+     0.01105
+    ]
+   },
+   "correspondences": {
+    "median": 11506,
+    "min": 11390,
+    "max": 11945,
+    "values": [
+     11908,
+     11390,
+     11428,
+     11506,
+     11945
+    ]
+   },
+   "offSphereBySurface": {
+    "wall": 402,
+    "floor": 58,
+    "ceiling": 70
+   },
+   "gridUsable": 5
+  },
+  {
+   "wallRadiusM": 6,
+   "minModulation": 0.02,
+   "segmentMarginFrac": 0.05,
+   "n": 5,
+   "runs": [
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 0,
+     "seed": 996363000,
+     "correspondences": 11908,
+     "offSphere": 139,
+     "offSphereFrac": 0.01167,
+     "offSphereWall": 136,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 3,
+     "rejectedLowModulation": 755827,
+     "rejectedOffSphere": 24973,
+     "posePositionMm": 7.02294,
+     "poseRotationDeg": 0.03022,
+     "gridMm": 0.3398,
+     "seconds": 7.859
+    },
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 1,
+     "seed": 2004720000,
+     "correspondences": 11909,
+     "offSphere": 261,
+     "offSphereFrac": 0.02192,
+     "offSphereWall": 205,
+     "offSphereFloor": 24,
+     "offSphereCeiling": 32,
+     "rejectedLowModulation": 748052,
+     "rejectedOffSphere": 20656,
+     "posePositionMm": 52.8032,
+     "poseRotationDeg": 0.05834,
+     "gridMm": 0.4327,
+     "seconds": 7.63
+    },
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 2,
+     "seed": 25331700,
+     "correspondences": 11738,
+     "offSphere": 127,
+     "offSphereFrac": 0.01082,
+     "offSphereWall": 127,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 799038,
+     "rejectedOffSphere": 28640,
+     "posePositionMm": 9193.87,
+     "poseRotationDeg": 138.102,
+     "gridMm": 0.1188,
+     "seconds": 6.032
+    },
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 3,
+     "seed": 1139550000,
+     "correspondences": 11542,
+     "offSphere": 205,
+     "offSphereFrac": 0.01776,
+     "offSphereWall": 186,
+     "offSphereFloor": 9,
+     "offSphereCeiling": 10,
+     "rejectedLowModulation": 766901,
+     "rejectedOffSphere": 25571,
+     "posePositionMm": 109639,
+     "poseRotationDeg": 40.7821,
+     "gridMm": 121.693,
+     "seconds": 7.698
+    },
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 4,
+     "seed": 1953960000,
+     "correspondences": 12065,
+     "offSphere": 274,
+     "offSphereFrac": 0.02271,
+     "offSphereWall": 216,
+     "offSphereFloor": 29,
+     "offSphereCeiling": 29,
+     "rejectedLowModulation": 788794,
+     "rejectedOffSphere": 26375,
+     "posePositionMm": 24.501,
+     "poseRotationDeg": 0.02984,
+     "gridMm": 0.2527,
+     "seconds": 7.412
+    }
+   ],
+   "posePositionMm": {
+    "median": 52.8032,
+    "min": 7.02294,
+    "max": 109639,
+    "values": [
+     7.02294,
+     52.8032,
+     9193.87,
+     109639,
+     24.501
+    ]
+   },
+   "poseRotationDeg": {
+    "median": 0.05834,
+    "min": 0.02984,
+    "max": 138.102,
+    "values": [
+     0.03022,
+     0.05834,
+     138.102,
+     40.7821,
+     0.02984
+    ]
+   },
+   "offSphereFrac": {
+    "median": 0.01776,
+    "min": 0.01082,
+    "max": 0.02271,
+    "values": [
+     0.01167,
+     0.02192,
+     0.01082,
+     0.01776,
+     0.02271
+    ]
+   },
+   "correspondences": {
+    "median": 11908,
+    "min": 11542,
+    "max": 12065,
+    "values": [
+     11908,
+     11909,
+     11738,
+     11542,
+     12065
+    ]
+   },
+   "offSphereBySurface": {
+    "wall": 870,
+    "floor": 62,
+    "ceiling": 74
+   },
+   "gridUsable": 5
+  },
+  {
+   "wallRadiusM": 6,
+   "minModulation": 0.02,
+   "segmentMarginFrac": 0.15,
+   "n": 5,
+   "runs": [
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 0,
+     "seed": 996363000,
+     "correspondences": 11908,
+     "offSphere": 324,
+     "offSphereFrac": 0.02721,
+     "offSphereWall": 321,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 3,
+     "rejectedLowModulation": 755827,
+     "rejectedOffSphere": 21588,
+     "posePositionMm": 17.7891,
+     "poseRotationDeg": 0.04269,
+     "gridMm": 0.4034,
+     "seconds": 7.997
+    },
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 1,
+     "seed": 2004720000,
+     "correspondences": 11933,
+     "offSphere": 410,
+     "offSphereFrac": 0.03436,
+     "offSphereWall": 349,
+     "offSphereFloor": 25,
+     "offSphereCeiling": 36,
+     "rejectedLowModulation": 748052,
+     "rejectedOffSphere": 17246,
+     "posePositionMm": 45.3065,
+     "poseRotationDeg": 0.05337,
+     "gridMm": 0.2873,
+     "seconds": 7.68
+    },
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 2,
+     "seed": 25331700,
+     "correspondences": 11738,
+     "offSphere": 459,
+     "offSphereFrac": 0.0391,
+     "offSphereWall": 459,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 799038,
+     "rejectedOffSphere": 24859,
+     "posePositionMm": 155988,
+     "poseRotationDeg": 4.23612,
+     "gridMm": 0.4432,
+     "seconds": 5.636
+    },
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 3,
+     "seed": 1139550000,
+     "correspondences": 11551,
+     "offSphere": 471,
+     "offSphereFrac": 0.04078,
+     "offSphereWall": 449,
+     "offSphereFloor": 11,
+     "offSphereCeiling": 11,
+     "rejectedLowModulation": 766901,
+     "rejectedOffSphere": 21928,
+     "posePositionMm": 1921.86,
+     "poseRotationDeg": 32.1502,
+     "gridMm": 68.9132,
+     "seconds": 11.998
+    },
+    {
+     "wallRadiusM": 6,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 4,
+     "seed": 1953960000,
+     "correspondences": 12075,
+     "offSphere": 558,
+     "offSphereFrac": 0.04621,
+     "offSphereWall": 492,
+     "offSphereFloor": 35,
+     "offSphereCeiling": 31,
+     "rejectedLowModulation": 788794,
+     "rejectedOffSphere": 22622,
+     "posePositionMm": 282.487,
+     "poseRotationDeg": 3.18764,
+     "gridMm": 0.8125,
+     "seconds": 6.791
+    }
+   ],
+   "posePositionMm": {
+    "median": 282.487,
+    "min": 17.7891,
+    "max": 155988,
+    "values": [
+     17.7891,
+     45.3065,
+     155988,
+     1921.86,
+     282.487
+    ]
+   },
+   "poseRotationDeg": {
+    "median": 3.18764,
+    "min": 0.04269,
+    "max": 32.1502,
+    "values": [
+     0.04269,
+     0.05337,
+     4.23612,
+     32.1502,
+     3.18764
+    ]
+   },
+   "offSphereFrac": {
+    "median": 0.0391,
+    "min": 0.02721,
+    "max": 0.04621,
+    "values": [
+     0.02721,
+     0.03436,
+     0.0391,
+     0.04078,
+     0.04621
+    ]
+   },
+   "correspondences": {
+    "median": 11908,
+    "min": 11551,
+    "max": 12075,
+    "values": [
+     11908,
+     11933,
+     11738,
+     11551,
+     12075
+    ]
+   },
+   "offSphereBySurface": {
+    "wall": 2070,
+    "floor": 71,
+    "ceiling": 81
+   },
+   "gridUsable": 5
+  },
+  {
+   "wallRadiusM": 4,
+   "minModulation": 0.02,
+   "segmentMarginFrac": 0,
+   "n": 5,
+   "runs": [
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 0,
+     "seed": 996363000,
+     "correspondences": 11899,
+     "offSphere": 78,
+     "offSphereFrac": 0.006555,
+     "offSphereWall": 78,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 752843,
+     "rejectedOffSphere": 31189,
+     "posePositionMm": 24.2322,
+     "poseRotationDeg": 0.03003,
+     "gridMm": 0.273,
+     "seconds": 8.269
+    },
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 1,
+     "seed": 2004720000,
+     "correspondences": 11205,
+     "offSphere": 41,
+     "offSphereFrac": 0.003659,
+     "offSphereWall": 41,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 746925,
+     "rejectedOffSphere": 28347,
+     "posePositionMm": 41.998,
+     "poseRotationDeg": 0.04233,
+     "gridMm": 0.3104,
+     "seconds": 7.903
+    },
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 2,
+     "seed": 25331700,
+     "correspondences": 11428,
+     "offSphere": 89,
+     "offSphereFrac": 0.007788,
+     "offSphereWall": 89,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 789394,
+     "rejectedOffSphere": 42588,
+     "posePositionMm": 917.033,
+     "poseRotationDeg": 10.0138,
+     "gridMm": 0.2263,
+     "seconds": 7.197
+    },
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 3,
+     "seed": 1139550000,
+     "correspondences": 11433,
+     "offSphere": 32,
+     "offSphereFrac": 0.002799,
+     "offSphereWall": 32,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 764516,
+     "rejectedOffSphere": 32503,
+     "posePositionMm": 15.1167,
+     "poseRotationDeg": 0.02716,
+     "gridMm": 0.3348,
+     "seconds": 7.323
+    },
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0,
+     "seedIndex": 4,
+     "seed": 1953960000,
+     "correspondences": 11856,
+     "offSphere": 58,
+     "offSphereFrac": 0.004892,
+     "offSphereWall": 58,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 782873,
+     "rejectedOffSphere": 35192,
+     "posePositionMm": 544.29,
+     "poseRotationDeg": 6.04704,
+     "gridMm": 0.9502,
+     "seconds": 6.588
+    }
+   ],
+   "posePositionMm": {
+    "median": 41.998,
+    "min": 15.1167,
+    "max": 917.033,
+    "values": [
+     24.2322,
+     41.998,
+     917.033,
+     15.1167,
+     544.29
+    ]
+   },
+   "poseRotationDeg": {
+    "median": 0.04233,
+    "min": 0.02716,
+    "max": 10.0138,
+    "values": [
+     0.03003,
+     0.04233,
+     10.0138,
+     0.02716,
+     6.04704
+    ]
+   },
+   "offSphereFrac": {
+    "median": 0.004892,
+    "min": 0.002799,
+    "max": 0.007788,
+    "values": [
+     0.006555,
+     0.003659,
+     0.007788,
+     0.002799,
+     0.004892
+    ]
+   },
+   "correspondences": {
+    "median": 11433,
+    "min": 11205,
+    "max": 11899,
+    "values": [
+     11899,
+     11205,
+     11428,
+     11433,
+     11856
+    ]
+   },
+   "offSphereBySurface": {
+    "wall": 298,
+    "floor": 0,
+    "ceiling": 0
+   },
+   "gridUsable": 5
+  },
+  {
+   "wallRadiusM": 4,
+   "minModulation": 0.02,
+   "segmentMarginFrac": 0.05,
+   "n": 5,
+   "runs": [
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 0,
+     "seed": 996363000,
+     "correspondences": 11899,
+     "offSphere": 234,
+     "offSphereFrac": 0.01967,
+     "offSphereWall": 234,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 752843,
+     "rejectedOffSphere": 26089,
+     "posePositionMm": 21.4105,
+     "poseRotationDeg": 0.03936,
+     "gridMm": 0.5369,
+     "seconds": 7.913
+    },
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 1,
+     "seed": 2004720000,
+     "correspondences": 11713,
+     "offSphere": 138,
+     "offSphereFrac": 0.01178,
+     "offSphereWall": 138,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 746925,
+     "rejectedOffSphere": 20939,
+     "posePositionMm": 47.6768,
+     "poseRotationDeg": 0.04939,
+     "gridMm": 0.3267,
+     "seconds": 7.673
+    },
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 2,
+     "seed": 25331700,
+     "correspondences": 11738,
+     "offSphere": 264,
+     "offSphereFrac": 0.02249,
+     "offSphereWall": 264,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 789394,
+     "rejectedOffSphere": 37065,
+     "posePositionMm": 23326,
+     "poseRotationDeg": 77.2479,
+     "gridMm": 0.4,
+     "seconds": 5.966
+    },
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 3,
+     "seed": 1139550000,
+     "correspondences": 11465,
+     "offSphere": 219,
+     "offSphereFrac": 0.0191,
+     "offSphereWall": 219,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 764516,
+     "rejectedOffSphere": 26955,
+     "posePositionMm": 64474.2,
+     "poseRotationDeg": 10.0479,
+     "gridMm": 0.3491,
+     "seconds": 6.189
+    },
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.05,
+     "seedIndex": 4,
+     "seed": 1953960000,
+     "correspondences": 11966,
+     "offSphere": 248,
+     "offSphereFrac": 0.02073,
+     "offSphereWall": 248,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 782873,
+     "rejectedOffSphere": 31465,
+     "posePositionMm": 410.091,
+     "poseRotationDeg": 4.57673,
+     "gridMm": 0.5523,
+     "seconds": 7.034
+    }
+   ],
+   "posePositionMm": {
+    "median": 410.091,
+    "min": 21.4105,
+    "max": 64474.2,
+    "values": [
+     21.4105,
+     47.6768,
+     23326,
+     64474.2,
+     410.091
+    ]
+   },
+   "poseRotationDeg": {
+    "median": 4.57673,
+    "min": 0.03936,
+    "max": 77.2479,
+    "values": [
+     0.03936,
+     0.04939,
+     77.2479,
+     10.0479,
+     4.57673
+    ]
+   },
+   "offSphereFrac": {
+    "median": 0.01967,
+    "min": 0.01178,
+    "max": 0.02249,
+    "values": [
+     0.01967,
+     0.01178,
+     0.02249,
+     0.0191,
+     0.02073
+    ]
+   },
+   "correspondences": {
+    "median": 11738,
+    "min": 11465,
+    "max": 11966,
+    "values": [
+     11899,
+     11713,
+     11738,
+     11465,
+     11966
+    ]
+   },
+   "offSphereBySurface": {
+    "wall": 1103,
+    "floor": 0,
+    "ceiling": 0
+   },
+   "gridUsable": 5
+  },
+  {
+   "wallRadiusM": 4,
+   "minModulation": 0.02,
+   "segmentMarginFrac": 0.15,
+   "n": 5,
+   "runs": [
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 0,
+     "seed": 996363000,
+     "correspondences": 11899,
+     "offSphere": 582,
+     "offSphereFrac": 0.04891,
+     "offSphereWall": 582,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 752843,
+     "rejectedOffSphere": 20826,
+     "posePositionMm": 1299,
+     "poseRotationDeg": 14.2651,
+     "gridMm": 0.845,
+     "seconds": 6.557
+    },
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 1,
+     "seed": 2004720000,
+     "correspondences": 11722,
+     "offSphere": 344,
+     "offSphereFrac": 0.02935,
+     "offSphereWall": 344,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 746925,
+     "rejectedOffSphere": 16309,
+     "posePositionMm": 41.3003,
+     "poseRotationDeg": 0.04169,
+     "gridMm": 0.1934,
+     "seconds": 7.782
+    },
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 2,
+     "seed": 25331700,
+     "correspondences": 11738,
+     "offSphere": 744,
+     "offSphereFrac": 0.06338,
+     "offSphereWall": 744,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 789394,
+     "rejectedOffSphere": 31590,
+     "posePositionMm": 20.8227,
+     "poseRotationDeg": 0.04514,
+     "gridMm": 0.2176,
+     "seconds": 7.383
+    },
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 3,
+     "seed": 1139550000,
+     "correspondences": 11465,
+     "offSphere": 525,
+     "offSphereFrac": 0.04579,
+     "offSphereWall": 525,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 764516,
+     "rejectedOffSphere": 21889,
+     "posePositionMm": 24.7261,
+     "poseRotationDeg": 0.05892,
+     "gridMm": 0.2278,
+     "seconds": 7.163
+    },
+    {
+     "wallRadiusM": 4,
+     "minModulation": 0.02,
+     "segmentMarginFrac": 0.15,
+     "seedIndex": 4,
+     "seed": 1953960000,
+     "correspondences": 11966,
+     "offSphere": 686,
+     "offSphereFrac": 0.05733,
+     "offSphereWall": 686,
+     "offSphereFloor": 0,
+     "offSphereCeiling": 0,
+     "rejectedLowModulation": 782873,
+     "rejectedOffSphere": 25986,
+     "posePositionMm": 525.355,
+     "poseRotationDeg": 5.84261,
+     "gridMm": 0.781,
+     "seconds": 6.64
+    }
+   ],
+   "posePositionMm": {
+    "median": 41.3003,
+    "min": 20.8227,
+    "max": 1299,
+    "values": [
+     1299,
+     41.3003,
+     20.8227,
+     24.7261,
+     525.355
+    ]
+   },
+   "poseRotationDeg": {
+    "median": 0.05892,
+    "min": 0.04169,
+    "max": 14.2651,
+    "values": [
+     14.2651,
+     0.04169,
+     0.04514,
+     0.05892,
+     5.84261
+    ]
+   },
+   "offSphereFrac": {
+    "median": 0.04891,
+    "min": 0.02935,
+    "max": 0.06338,
+    "values": [
+     0.04891,
+     0.02935,
+     0.06338,
+     0.04579,
+     0.05733
+    ]
+   },
+   "correspondences": {
+    "median": 11738,
+    "min": 11465,
+    "max": 11966,
+    "values": [
+     11899,
+     11722,
+     11738,
+     11465,
+     11966
+    ]
+   },
+   "offSphereBySurface": {
+    "wall": 2881,
+    "floor": 0,
+    "ceiling": 0
+   },
+   "gridUsable": 5
   }
  ],
  "cuts": [
@@ -2380,9 +4446,14 @@
    "costsTheConclusion": "Light that reaches the room and comes back onto the ball would raise the sphere’s own floor and narrow whatever threshold window this finds."
   },
   {
-   "what": "The mitigation swept is the decoder’s modulation floor and nothing else.",
-   "why": "It is the one rejection threshold that is already in the pipeline, so it can be measured without inventing a component this project has not built.",
-   "costsTheConclusion": "Segmentation — masking the sphere in the camera image before decoding — is what a real implementation would do, and this experiment cannot say how well it would work because there is nothing here that does it."
+   "what": "The segmentation tested is geometric, not image-space.",
+   "why": "It asks whether a decoded projector pixel’s own ray reaches the nominal sphere, which uses only what the solver already holds — §1’s radius, §W’s origin, and the nominal rig. An image-space silhouette detector would be a component this project has not built.",
+   "costsTheConclusion": "It inherits a dependence on the nominal being roughly right, and this design never tests a rig whose documented calibration is badly wrong. A capture where the nominal is a metre out — the bench’s own `long-throw` archetype — could segment much worse, and is untested."
+  },
+  {
+   "what": "The two mitigations are swept in separate arms, not crossed.",
+   "why": "Crossing four rooms by four thresholds by four margins is 320 solves, and the cross terms answer a question nobody asked: each arm holds the other axis at its shipped value so every comparison stays a one-axis comparison.",
+   "costsTheConclusion": "If a raised modulation floor and a segmentation margin interact — if, say, the floor removes exactly the annulus the margin admits — this design cannot see it."
   }
  ],
  "verdict": {
@@ -2392,6 +4463,12 @@
   "aThresholdSeparatesThem": false,
   "separatingModulation": null,
   "costToACleanCapture": null,
-  "statement": "The room puts 14.1% of the accepted correspondences off the sphere, and that is enough to destroy the solve: recovered pose goes from 20.6 mm to 7841 mm, a factor of 380. No modulation floor in the sweep separated the room from the sphere. A floor is a brightness test, and what survives the high floors is not the far wall but the FLOOR and the CEILING, which are nearer their projectors than the sphere is and come back at least as bright — so the two populations do not differ in the quantity the threshold measures. This pipeline needs segmentation, not a tuned threshold."
+  "segmentationRecoversIt": false,
+  "recoveringMargin": null,
+  "segmentationCostToACleanCapture": null,
+  "segmentationMedianFactor": 178.155,
+  "segmentationWorstSeedMm": 352389,
+  "bestMargin": 0,
+  "statement": "The room puts 14.1% of the accepted correspondences off the sphere, and that is enough to destroy the solve: recovered pose goes from 20.6 mm to 7841 mm, a factor of 380. No modulation floor in the sweep separated the room from the sphere. A floor is a brightness test, and what survives the high floors is not the far wall but the FLOOR and the CEILING, which are nearer their projectors than the sphere is and come back at least as bright — so the two populations do not differ in the quantity the threshold measures. This pipeline needs segmentation, not a tuned threshold. Segmentation at a margin of 0 does not clear the two-times bar either, but it is not a null result: it takes the median from 7841 mm to 44.0 mm, a factor of 178, against a clean baseline of 20.6 mm. What it does not fix is the tail: the worst of 5 seeds is still 352389 mm. The residue is the correspondences that miss the TRUE sphere and hit the NOMINAL one, which is the dependence on the answer that this test was always going to carry."
  }
 }

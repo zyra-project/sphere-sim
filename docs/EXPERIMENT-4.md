@@ -7,7 +7,7 @@ class ASSUME and are stated as such throughout.
 
 - **Figure** — [`experiments/experiment-4.svg`](../experiments/experiment-4.svg)
 - **Data** — [`experiments/experiment-4.json`](../experiments/experiment-4.json)
-- **Reproduce** — `npm run experiment4` (140 solves)
+- **Reproduce** — `npm run experiment4` (140 solves, about 17 minutes)
 
 ---
 
