@@ -804,9 +804,22 @@ async function readEquirect(file: File): Promise<EquirectImage> {
           'wrong place.',
       );
     }
-    // Downscale to the raster the rest of the page uses. A 4096-wide map is four
-    // times the content the projectors can resolve at this geometry and sixteen
-    // times the memory.
+    // Downscale to the raster the rest of the page uses.
+    //
+    // This is the binding limit on how much detail the sphere can show, and the
+    // note that used to be here had it backwards. Measured at Boulder's
+    // geometry: 1024 texels round a 5.43 m equator is 5.30 mm of sphere per
+    // texel, against 0.687 mm for one pixel of a 3840-wide projector at a
+    // 5.31 m throw. The content is 7.7 times COARSER than the pixel drawing it,
+    // not four times finer — so zoom in far enough and what you are looking at
+    // is this texture's own reconstruction rather than anything the rig is
+    // doing, which is a thing that cannot happen on a real sphere fed imagery at
+    // the projectors' resolution.
+    //
+    // It stays at 1024 because the alternatives are expensive rather than
+    // because it is sufficient: as a float triple this is 6 MB, 2048 is 25 MB
+    // and 4096 is 101 MB, on the CPU and again on the GPU, with the model worker
+    // holding its own copy. Raising it is a real option and a real cost.
     const w = 1024;
     const h = 512;
     const off = document.createElement('canvas');
