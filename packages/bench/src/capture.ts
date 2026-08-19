@@ -858,6 +858,7 @@ export function captureAndDecode(
     considered: 0,
     accepted: 0,
     rejectedLowModulation: 0,
+    rejectedOffSphere: 0,
     rejectedGrayAmbiguous: 0,
     rejectedPhaseWeak: 0,
     rejectedDisagreement: 0,
@@ -896,6 +897,7 @@ export function captureAndDecode(
       stats.considered += decoded.stats.considered;
       stats.accepted += decoded.stats.accepted;
       stats.rejectedLowModulation += decoded.stats.rejectedLowModulation;
+      stats.rejectedOffSphere += decoded.stats.rejectedOffSphere;
       stats.rejectedGrayAmbiguous += decoded.stats.rejectedGrayAmbiguous;
       stats.rejectedPhaseWeak += decoded.stats.rejectedPhaseWeak;
       stats.rejectedDisagreement += decoded.stats.rejectedDisagreement;

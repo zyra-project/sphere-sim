@@ -36,8 +36,17 @@
  *       spill.
  *   F4  No modulation floor separates the two populations. If every threshold
  *       that rejects the wall also rejects the sphere, the finding has no
- *       mitigation and the honest conclusion is that this pipeline needs
- *       segmentation rather than a threshold.
+ *       mitigation from the decoder's own gates and the conclusion is that this
+ *       pipeline needs segmentation rather than a threshold.
+ *   F5  Segmentation does not recover the solve either. If rejecting the
+ *       correspondences whose projector ray misses the nominal sphere still
+ *       leaves the room costing more than twice the clean baseline, then the
+ *       conclusion of F4 was wrong too and the problem is not one the geometry
+ *       can be asked about.
+ *   F6  Segmentation costs a clean capture. If it makes the no-room case worse
+ *       — by rejecting genuine points at the limb, where the nominal silhouette
+ *       and the true one differ most — then it is a trade rather than a fix and
+ *       has to be reported as one.
  *
  * ## What this is not
  *
@@ -90,16 +99,52 @@ export const WALL_RADII: readonly (number | null)[] = [null, 9, 6, 4];
  */
 export const MIN_MODULATION: readonly number[] = [0.02, 0.1, 0.2, 0.4];
 
+/** The decoder's shipped floor, and the threshold every segmentation cell holds. */
+export const SHIPPED_MODULATION = 0.02;
+
+/**
+ * How far the segmentation inflates its test sphere. `null` is segmentation off.
+ *
+ * Swept rather than chosen, because the obvious reasoning and the measurement
+ * disagree: inflating buys back genuine points at the limb, and it admits the
+ * rays that graze past the ball and land on the far wall. Which of those
+ * dominates is the question, and a single seed cannot answer it — every axis in
+ * this experiment has produced a seed-to-seed range spanning four orders of
+ * magnitude.
+ */
+export const SEGMENT_MARGINS: readonly (number | null)[] = [null, 0, 0.05, 0.15];
+
 export interface CellSpec {
   wallRadiusM: number | null;
   minModulation: number;
+  /** `null` is segmentation off. Otherwise the test sphere's inflation. */
+  segmentMarginFrac: number | null;
 }
 
-/** Every cell, enumerated up front. Nothing downstream chooses what to run. */
+/**
+ * Every cell, enumerated up front. Nothing downstream chooses what to run.
+ *
+ * Two arms rather than one full factorial. Crossing four rooms by four
+ * thresholds by four margins is 320 solves and most of it answers nothing: the
+ * threshold sweep is about whether the DECODER's own gates can separate the two
+ * populations, and the margin sweep is about whether the GEOMETRY can. Holding
+ * the other axis at its shipped value in each arm keeps every comparison a
+ * one-axis comparison, which is the rule the rest of this design follows.
+ */
 export function buildDesign(): CellSpec[] {
   const out: CellSpec[] = [];
+  // Arm 1: what the room costs, and whether the decoder's own floor can help.
   for (const wallRadiusM of WALL_RADII) {
-    for (const minModulation of MIN_MODULATION) out.push({ wallRadiusM, minModulation });
+    for (const minModulation of MIN_MODULATION) {
+      out.push({ wallRadiusM, minModulation, segmentMarginFrac: null });
+    }
+  }
+  // Arm 2: whether segmentation can, at the shipped floor.
+  for (const wallRadiusM of WALL_RADII) {
+    for (const segmentMarginFrac of SEGMENT_MARGINS) {
+      if (segmentMarginFrac === null) continue; // already in arm 1
+      out.push({ wallRadiusM, minModulation: SHIPPED_MODULATION, segmentMarginFrac });
+    }
   }
   return out;
 }
@@ -109,7 +154,9 @@ export function spillFor(spec: CellSpec): RoomSpill | null {
 }
 
 export function cellKey(spec: CellSpec): string {
-  return `${spec.wallRadiusM === null ? 'off' : spec.wallRadiusM}|${spec.minModulation}`;
+  const room = spec.wallRadiusM === null ? 'off' : spec.wallRadiusM;
+  const seg = spec.segmentMarginFrac === null ? 'noseg' : `seg${spec.segmentMarginFrac}`;
+  return `${room}|${spec.minModulation}|${seg}`;
 }
 
 /**
@@ -146,13 +193,24 @@ export const CUTS: { what: string; why: string; costsTheConclusion: string }[] =
       'floor and narrow whatever threshold window this finds.',
   },
   {
-    what: 'The mitigation swept is the decoder’s modulation floor and nothing else.',
+    what: 'The segmentation tested is geometric, not image-space.',
     why:
-      'It is the one rejection threshold that is already in the pipeline, so it can be measured ' +
-      'without inventing a component this project has not built.',
+      'It asks whether a decoded projector pixel’s own ray reaches the nominal sphere, which uses ' +
+      'only what the solver already holds — §1’s radius, §W’s origin, and the nominal rig. An ' +
+      'image-space silhouette detector would be a component this project has not built.',
     costsTheConclusion:
-      'Segmentation — masking the sphere in the camera image before decoding — is what ' +
-      'a real implementation would do, and this experiment cannot say how well it would work ' +
-      'because there is nothing here that does it.',
+      'It inherits a dependence on the nominal being roughly right, and this design never tests ' +
+      'a rig whose documented calibration is badly wrong. A capture where the nominal is a metre ' +
+      'out — the bench’s own `long-throw` archetype — could segment much worse, and is untested.',
+  },
+  {
+    what: 'The two mitigations are swept in separate arms, not crossed.',
+    why:
+      'Crossing four rooms by four thresholds by four margins is 320 solves, and the cross terms ' +
+      'answer a question nobody asked: each arm holds the other axis at its shipped value so ' +
+      'every comparison stays a one-axis comparison.',
+    costsTheConclusion:
+      'If a raised modulation floor and a segmentation margin interact — if, say, the floor ' +
+      'removes exactly the annulus the margin admits — this design cannot see it.',
   },
 ];

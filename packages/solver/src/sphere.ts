@@ -42,10 +42,12 @@ import {
 } from './linalg.ts';
 import {
   frameAxes,
+  projectorPixelToRay,
   rotationMatrix,
   rotationWithDerivatives,
   undistortNormalized,
   type FrameAxes,
+  type ProjectorModel,
   type RotationWithDerivatives,
 } from './project.ts';
 import { mat3MulVec } from './linalg.ts';
@@ -429,6 +431,107 @@ export function intersectSphereJacobian(
 }
 
 /** The camera's frame axes, for callers that want to reason about where it looks. */
+/**
+ * Which decoded pixels are the ball.
+ *
+ * ## The test
+ *
+ * A structured-light correspondence says: projector pixel `(u, v)` was seen at
+ * camera pixel `(x, y)`. Run the projector pixel back out as a ray from that
+ * projector's own lens and ask whether it reaches the sphere at all. If it does
+ * not, whatever the camera saw was not the ball — it was the wall, the floor,
+ * the ceiling, or a visitor — and the correspondence is a confident, precise
+ * statement about a surface nobody is solving for. docs/EXPERIMENT-4.md
+ * measures what a tenth of those costs: three orders of magnitude.
+ *
+ * ## Why it is allowed to know this
+ *
+ * Everything it uses is in the solver's hands before a pixel is decoded:
+ * PARAMETERS.md §1's sphere radius (class DOC), conventions.ts §W's placement of
+ * the sphere centre at the world origin, and the NOMINAL projector calibration
+ * the operator starts from. Nothing comes from the perturbed rig. That
+ * distinction is the discipline `packages/bench/src/run.ts` is built around and
+ * it is worth being explicit about here: a segmentation that used the true rig
+ * would be an oracle, and every number downstream of it would be worthless.
+ *
+ * ## The chicken-and-egg in it, stated
+ *
+ * The test is only as good as the nominal it runs against. A projector a degree
+ * off its documented aim moves the silhouette by a degree, so a genuine point
+ * near the limb can fail and a room point just outside can pass. `marginFrac`
+ * inflates the test sphere to buy the limb back, and that is a real trade: it
+ * admits a thin annulus of room just outside the true silhouette.
+ *
+ * So this is a dependence on the answer, inside the step that produces the input
+ * to finding it. It is a mild one — the sphere subtends about 19 degrees from a
+ * projector at §2's throw and the §2 mount tolerances are near a degree — but it
+ * is real, and it means this cannot rescue a rig whose documented calibration is
+ * wildly wrong. It is not a substitute for knowing roughly where the projectors
+ * are; it is a way of not being destroyed by the room once you do.
+ */
+export interface SphereSegmentation {
+  /** PARAMETERS.md §1's sphere radius, metres. Class DOC. */
+  radiusM: number;
+  /**
+   * The projector calibration to test against, indexed by the correspondence's
+   * projector index. The NOMINAL one — what the operator starts from — never
+   * the truth.
+   */
+  projectors: readonly ProjectorModel[];
+  /**
+   * How far to inflate the test sphere, as a fraction of its radius.
+   *
+   * The obvious reasoning says inflate it: a projector a degree off its
+   * documented aim moves the silhouette by a degree, and a margin buys the
+   * genuine limb points back. docs/EXPERIMENT-4.md measured that reasoning and
+   * it is wrong, decisively — see {@link DEFAULT_SEGMENTATION_MARGIN}.
+   *
+   * A ray that passes between `R` and `(1 + margin) R` misses the real sphere
+   * and travels on to the room, so it lands metres away while its projector
+   * coordinate sits right at the silhouette edge. That is the most damaging
+   * outlier available: geometrically plausible, systematically placed at the
+   * limb, and wrong by the width of the room. The margin that protects the limb
+   * is exactly the margin that admits it.
+   */
+  marginFrac: number;
+}
+
+/**
+ * Zero, and it is a measurement rather than a default nobody thought about.
+ *
+ * docs/EXPERIMENT-4.md sweeps this. Any inflation at all admits the annulus of
+ * rays that graze past the ball and land on the far wall, and those cost more
+ * than the limb points an inflation keeps. Trimming the limb is not even a loss
+ * on a clean capture: the points a zero margin removes are the grazing-incidence
+ * decodes, which are the least certain ones in the set.
+ */
+export const DEFAULT_SEGMENTATION_MARGIN = 0;
+
+/**
+ * Build the predicate `DecodeOptions.segmentation` expects.
+ *
+ * The rotation matrix and pixel intrinsics of every projector are computed once,
+ * here, rather than per correspondence: this runs on every pixel that survived
+ * the modulation and decode gates, which is millions of them on a real frame.
+ */
+export function sphereSegmenter(seg: SphereSegmentation): (
+  projector: number,
+  u: number,
+  v: number,
+) => boolean {
+  const testRadius = seg.radiusM * (1 + seg.marginFrac);
+  return (projector: number, u: number, v: number): boolean => {
+    const model = seg.projectors[projector];
+    // A correspondence naming a projector the caller did not describe cannot be
+    // tested, and passing it would make the option silently partial. Rejecting
+    // is the safe direction: the alternative is admitting exactly the points
+    // this exists to remove.
+    if (model === undefined) return false;
+    const dir = projectorPixelToRay(model, u, v);
+    return intersectSphere(model.position, dir, testRadius).hit;
+  };
+}
+
 export function cameraAxes(cam: CameraModel): FrameAxes {
   return frameAxes(rotationMatrix(cam.yawDeg, cam.pitchDeg, cam.rollDeg));
 }

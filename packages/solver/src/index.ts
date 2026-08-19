@@ -74,7 +74,8 @@ export type {
   PatternCapture,
   PhaseSequence,
 } from './decode.ts';
-export type { CameraIntrinsics, CameraModel } from './sphere.ts';
+export type { CameraIntrinsics, CameraModel, SphereSegmentation } from './sphere.ts';
+export { DEFAULT_SEGMENTATION_MARGIN, sphereSegmenter } from './sphere.ts';
 export type { ProjectorModel } from './project.ts';
 export type {
   BundleOptions,

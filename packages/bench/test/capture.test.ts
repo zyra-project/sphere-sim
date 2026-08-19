@@ -32,6 +32,7 @@ import type { RoomSpill } from '../src/capture.ts';
 import { DEFAULT_ROOM_SPILL, DEFAULT_SENSOR, captureAndDecode, roomHit } from '../src/capture.ts';
 import { DEFAULT_PATTERN_PLAN } from '../src/patterns.ts';
 import { makeBenchRng } from '../src/random.ts';
+import { bundleStateFromCalibration, sphereSegmenter } from '../../solver/src/index.ts';
 
 const RIG = nominalRig({ projectorCount: 4 });
 const PLAN = { ...DEFAULT_PATTERN_PLAN, grayBits: 5 };
@@ -63,6 +64,31 @@ interface CaptureArgs {
   sensor: typeof DEFAULT_SENSOR | null;
   ambient: number;
   roomSpill: RoomSpill | null;
+  /**
+   * Segment against a nominal rig built here in the test, so the test controls
+   * exactly what the segmenter is told. `nominalOffsetM` moves every projector
+   * away from where it actually is, which is how the second test below proves
+   * the segmentation is reading the nominal rather than the truth.
+   */
+  segmentation: { marginFrac: number; nominalOffsetM?: number } | null;
+}
+
+/**
+ * A segmenter over a rig this test builds, so a test can hand it a nominal that
+ * is deliberately wrong. `RIG` is the same object the capture is rendered from,
+ * which is exactly the leak the production path must never have — here it is
+ * the control, and `nominalOffsetM` is how the leak is proved absent.
+ */
+function segmenterFor(args: { marginFrac: number; nominalOffsetM?: number }) {
+  const off = args.nominalOffsetM ?? 0;
+  return sphereSegmenter({
+    radiusM: RIG.sphere.radiusM,
+    projectors: bundleStateFromCalibration(RIG, []).projectors.map((p) => ({
+      ...p,
+      position: { x: p.position.x + off, y: p.position.y, z: p.position.z },
+    })),
+    marginFrac: args.marginFrac,
+  });
 }
 
 function capture(cams: SimulatedCamera[], args: Partial<CaptureArgs> = {}) {
@@ -79,7 +105,11 @@ function capture(cams: SimulatedCamera[], args: Partial<CaptureArgs> = {}) {
       roomSpill: args.roomSpill ?? null,
     },
     seed: 4242,
-    decode: { pixelStride: 1, maxCorrespondences: 0 },
+    decode: {
+      pixelStride: 1,
+      maxCorrespondences: 0,
+      segmentation: args.segmentation ? segmenterFor(args.segmentation) : null,
+    },
     previewPairs: [],
     previewFrame: -1,
   });
@@ -471,5 +501,79 @@ test('spill does not light the whole room: the shadow and the frustum still reje
     spilt.stats.rejectedLowModulation > spilt.correspondences.length,
     `${spilt.stats.rejectedLowModulation} rejected against ${spilt.correspondences.length} ` +
       'accepted — one projector should not be lighting most of what one camera sees',
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Sphere segmentation
+// ---------------------------------------------------------------------------
+
+test('segmentation keeps the sphere and throws away the room', () => {
+  // The claim, end to end and against ground truth — which is available HERE,
+  // in the test, and is not available to the thing being tested.
+  const cams = cameras(1);
+  const spilt = capture(cams, { sensor: null, roomSpill: DEFAULT_ROOM_SPILL });
+  const segmented = capture(cams, {
+    sensor: null,
+    roomSpill: DEFAULT_ROOM_SPILL,
+    segmentation: { marginFrac: 0 },
+  });
+
+  const offSphere = (r: ReturnType<typeof capture>): number => {
+    let n = 0;
+    for (const c of r.correspondences) {
+      const cam = cams[c.camera];
+      const dir = cameraPixelToRay(cam, c.camU, c.camV);
+      if (raySphereIntersect(cam.pose.position, dir, RIG.sphere.radiusM) === null) n++;
+    }
+    return n;
+  };
+
+  const before = offSphere(spilt);
+  const after = offSphere(segmented);
+  assert.ok(before > 0, 'the unsegmented capture had no room correspondences to remove');
+  assert.ok(
+    after < before / 10,
+    `segmentation left ${after} room correspondences of ${before} — it is not removing them`,
+  );
+  assert.ok(
+    segmented.stats.rejectedOffSphere > 0,
+    'nothing was counted as rejected off-sphere, so the gate never fired',
+  );
+  // And it kept the ball: most of the sphere survives, or it is a mask rather
+  // than a segmentation.
+  const keptSphere = segmented.correspondences.length - after;
+  const hadSphere = spilt.correspondences.length - before;
+  assert.ok(
+    keptSphere > hadSphere * 0.7,
+    `segmentation kept ${keptSphere} of ${hadSphere} sphere correspondences`,
+  );
+});
+
+test('segmentation is driven by the NOMINAL rig, and a wrong nominal degrades it gracefully', () => {
+  // The property that makes it honest: it is a function of the calibration the
+  // operator starts from, so mis-stating that calibration must change what it
+  // rejects. If it did not, it would be reading something it is not entitled to.
+  const cams = cameras(1);
+  const truthful = capture(cams, {
+    sensor: null,
+    roomSpill: DEFAULT_ROOM_SPILL,
+    segmentation: { marginFrac: 0 },
+  });
+  const wrong = capture(cams, {
+    sensor: null,
+    roomSpill: DEFAULT_ROOM_SPILL,
+    // A nominal that puts every projector a long way from where it is. Nothing
+    // about the CAPTURE changes; only what the segmenter is told.
+    segmentation: { marginFrac: 0, nominalOffsetM: 0.6 },
+  });
+  assert.notEqual(
+    wrong.stats.rejectedOffSphere,
+    truthful.stats.rejectedOffSphere,
+    'moving the nominal changed nothing, so the segmentation is not reading it',
+  );
+  assert.ok(
+    wrong.stats.rejectedOffSphere > 0,
+    'a wrong nominal should still reject something, not fall over',
   );
 });

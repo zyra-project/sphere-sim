@@ -34,7 +34,13 @@ import type { Scene } from '../../sim/src/render.ts';
 import type { MetricSet } from '../../sim/src/metrics/index.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
 import type { DecodeOptions, SolverResult } from '../../solver/src/index.ts';
-import { nominalRig as solverNominalRig, solve } from '../../solver/src/index.ts';
+import {
+  DEFAULT_SEGMENTATION_MARGIN,
+  bundleStateFromCalibration,
+  nominalRig as solverNominalRig,
+  solve,
+  sphereSegmenter,
+} from '../../solver/src/index.ts';
 // Reached past the barrel deliberately: `DEFAULT_FREE_FLAGS` is the solver's own
 // statement of which parameters PARAMETERS.md §3.1 says to free, and the
 // `fov-held` archetype needs to change exactly one of them without silently
@@ -250,6 +256,27 @@ export interface RunOptions {
    * `generatedFrom` rather than hidden in a default.
    */
   decode?: Partial<DecodeOptions>;
+  /**
+   * Reject decoded correspondences that cannot be on the sphere, using the
+   * NOMINAL rig the solver is about to start from.
+   *
+   * Off everywhere in the bench, so every published number is unsegmented. It
+   * exists for docs/EXPERIMENT-4.md, which measures what the room costs and
+   * whether this recovers it, and it is built here rather than by the caller
+   * because the nominal it must be tested against is built here — a caller
+   * assembling its own would be one refactor away from handing the decoder the
+   * truth rig, which would make every number downstream of it worthless.
+   */
+  segmentSphere?: boolean;
+  /**
+   * How far to inflate the segmentation's test sphere. Defaults to
+   * `DEFAULT_SEGMENTATION_MARGIN`. Inert unless `segmentSphere` is on.
+   *
+   * Separable because it is the parameter the whole idea turns on: the margin
+   * that keeps genuine points at the limb is the same margin that admits room
+   * points just outside it, and which of those dominates is a measurement.
+   */
+  segmentMarginFrac?: number;
 }
 
 export function runScenario(scenario: Scenario, options: RunOptions): ScenarioResult {
@@ -274,6 +301,15 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
     decode: {
       pixelStride: 1,
       maxCorrespondences: options.preset.maxCorrespondencesPerPair,
+      // Built from the NOMINAL rig — what the operator starts from — and never
+      // from `world.truthRig`, which is two lines above and is ground truth.
+      segmentation: options.segmentSphere === true
+        ? sphereSegmenter({
+            radiusM: world.solverNominal.sphere.radiusM,
+            projectors: bundleStateFromCalibration(world.solverNominal, []).projectors,
+            marginFrac: options.segmentMarginFrac ?? DEFAULT_SEGMENTATION_MARGIN,
+          })
+        : null,
       // Last, so a caller can raise the decoder's own rejection thresholds. The
       // bench never does; an experiment that is asking whether a threshold could
       // reject something needs to be able to move it, and moving it by editing

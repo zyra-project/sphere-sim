@@ -17,6 +17,8 @@ import {
   CEILING_M,
   CUTS,
   MIN_MODULATION,
+  SEGMENT_MARGINS,
+  SHIPPED_MODULATION,
   WALL_RADII,
   buildDesign,
   cellKey,
@@ -26,23 +28,42 @@ import type { Cell, Dispersion } from '../src/spill/run.ts';
 import { judge } from '../src/spill/run.ts';
 import { renderSpillSvg } from '../src/spill/plot.ts';
 
-test('the design is a full grid and every cell is distinct', () => {
+test('the design is two one-axis arms and every cell is distinct', () => {
   const design = buildDesign();
-  assert.equal(design.length, WALL_RADII.length * MIN_MODULATION.length);
+  const margins = SEGMENT_MARGINS.filter((m) => m !== null);
+  assert.equal(design.length, WALL_RADII.length * (MIN_MODULATION.length + margins.length));
   assert.equal(new Set(design.map(cellKey)).size, design.length);
+
+  // Each arm varies ONE thing. The threshold arm is unsegmented throughout; the
+  // segmentation arm holds the shipped threshold throughout. A cell that varied
+  // both would make its comparison uninterpretable and nothing else would fail.
+  const armA = design.filter((c) => c.segmentMarginFrac === null);
+  const armB = design.filter((c) => c.segmentMarginFrac !== null);
+  assert.equal(new Set(armB.map((c) => c.minModulation)).size, 1);
+  assert.equal(armB[0].minModulation, SHIPPED_MODULATION);
+  assert.equal(armA.length, WALL_RADII.length * MIN_MODULATION.length);
+
   // The baseline the verdict is defined against has to be in it, or `judge`
   // silently answers "the grid did not contain the cells".
-  assert.ok(design.some((c) => c.wallRadiusM === null && c.minModulation === 0.02));
   assert.ok(
     design.some(
-      (c) => c.wallRadiusM === DEFAULT_ROOM_SPILL.wallRadiusM && c.minModulation === 0.02,
+      (c) =>
+        c.wallRadiusM === null && c.minModulation === 0.02 && c.segmentMarginFrac === null,
+    ),
+  );
+  assert.ok(
+    design.some(
+      (c) =>
+        c.wallRadiusM === DEFAULT_ROOM_SPILL.wallRadiusM &&
+        c.minModulation === 0.02 &&
+        c.segmentMarginFrac === null,
     ),
   );
 });
 
 test('the room the design builds is the room the design describes', () => {
-  assert.equal(spillFor({ wallRadiusM: null, minModulation: 0.02 }), null);
-  const six = spillFor({ wallRadiusM: 6, minModulation: 0.02 });
+  assert.equal(spillFor({ wallRadiusM: null, minModulation: 0.02, segmentMarginFrac: null }), null);
+  const six = spillFor({ wallRadiusM: 6, minModulation: 0.02, segmentMarginFrac: null });
   assert.deepEqual(six, { wallRadiusM: 6, ceilingM: CEILING_M });
   // And the level called "the default room" IS the shipped default, or the
   // experiment is measuring a room nothing else uses.
@@ -77,10 +98,12 @@ function cell(
   poseMm: number,
   offFrac: number,
   poseValues?: number[],
+  segmentMarginFrac: number | null = null,
 ): Cell {
   return {
     wallRadiusM,
     minModulation,
+    segmentMarginFrac,
     n: poseValues?.length ?? 1,
     runs: [],
     posePositionMm: d(poseMm, poseValues),
@@ -145,6 +168,58 @@ test('F4 does not trigger when every floor leaves the solve broken', () => {
   assert.match(v.statement, /segmentation/);
 });
 
+test('F5 triggers when a segmentation margin recovers the solve, and F6 prices it', () => {
+  const cells = [
+    cell(null, 0.02, 20, 0),
+    cell(6, 0.02, 8000, 0.14),
+    // Segmentation arm: margin 0 recovers, margin 0.15 does not.
+    cell(6, 0.02, 30, 0.001, undefined, 0),
+    cell(6, 0.02, 9000, 0.02, undefined, 0.15),
+    cell(null, 0.02, 24, 0, undefined, 0),
+  ];
+  const v = judge(cells);
+  assert.equal(v.segmentationRecoversIt, true);
+  assert.equal(v.recoveringMargin, 0);
+  assert.ok(
+    v.segmentationCostToACleanCapture !== null &&
+      Math.abs(v.segmentationCostToACleanCapture - 24 / 20) < 1e-9,
+  );
+  assert.match(v.statement, /Segmentation at a margin of 0 recovers it/);
+});
+
+test('F5 does not trigger when no margin recovers the solve', () => {
+  const cells = [
+    cell(null, 0.02, 20, 0),
+    cell(6, 0.02, 8000, 0.14),
+    cell(6, 0.02, 5000, 0.01, undefined, 0),
+    cell(6, 0.02, 9000, 0.02, undefined, 0.15),
+  ];
+  const v = judge(cells);
+  assert.equal(v.segmentationRecoversIt, false);
+  assert.equal(v.recoveringMargin, null);
+  // Not a null result, and the statement must say so: the boolean is a
+  // threshold and the factor is the size of the effect.
+  assert.equal(v.bestMargin, 0);
+  assert.ok(v.segmentationMedianFactor !== null && Math.abs(v.segmentationMedianFactor - 8000 / 5000) < 1e-9);
+  assert.match(v.statement, /does not clear the two-times bar/);
+  assert.match(v.statement, /What it does not fix is the tail/);
+});
+
+test('the verdict never reads a segmentation cell as an unsegmented one', () => {
+  // Every lookup in `judge` pins the arm. Without that, a segmented cell at the
+  // same room and threshold could be picked up as the baseline or as the
+  // room's cost, and the headline would compare a mitigation against itself.
+  const withDecoys = [
+    cell(null, 0.02, 20, 0),
+    cell(6, 0.02, 8000, 0.14),
+    // Decoys: same room, same threshold, but segmented.
+    cell(null, 0.02, 1, 0, undefined, 0),
+    cell(6, 0.02, 2, 0, undefined, 0),
+  ];
+  const v = judge(withDecoys);
+  assert.match(v.statement, /20\.0 mm to 8000 mm/);
+});
+
 test('the verdict refuses rather than invents when the grid is missing its baseline', () => {
   const v = judge([cell(6, 0.02, 8000, 0.14)]);
   assert.match(v.statement, /did not contain the cells/);
@@ -167,6 +242,7 @@ test('the figure is well-formed, self-contained, and carries no non-finite coord
       wallRadiiM: [null, 6],
       ceilingM: CEILING_M,
       minModulation: [0.02, 0.2],
+      segmentMargins: [null, 0],
       defaultRoomSpill: { ...DEFAULT_ROOM_SPILL },
     },
     cells: [

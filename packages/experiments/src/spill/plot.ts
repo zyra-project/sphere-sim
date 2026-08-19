@@ -25,18 +25,20 @@ function roomLabel(wallRadiusM: number | null): string {
 function seriesForRooms(
   cells: Cell[],
   value: (c: Cell) => { median: number; min: number; max: number; values: number[] },
+  x: (c: Cell) => number,
+  keep: (c: Cell) => boolean,
 ): PlotSeries[] {
-  const rooms = [...new Set(cells.map((c) => c.wallRadiusM))];
+  const rooms = [...new Set(cells.filter(keep).map((c) => c.wallRadiusM))];
   return rooms.map((room, i) => {
     const mine = cells
-      .filter((c) => c.wallRadiusM === room)
-      .sort((a, b) => a.minModulation - b.minModulation);
+      .filter((c) => c.wallRadiusM === room && keep(c))
+      .sort((a, b) => x(a) - x(b));
     return {
       label: roomLabel(room),
       color: ROOM_COLORS[i % ROOM_COLORS.length],
       points: mine.map((c) => {
         const d = value(c);
-        return { x: c.minModulation, y: d.median, lo: d.min, hi: d.max, values: d.values, n: c.n };
+        return { x: x(c), y: d.median, lo: d.min, hi: d.max, values: d.values, n: c.n };
       }),
     };
   });
@@ -44,7 +46,15 @@ function seriesForRooms(
 
 export function renderSpillSvg(result: SpillExperimentResult): string {
   const { cells } = result;
-  const base = cells.find((c) => c.wallRadiusM === null && c.minModulation === 0.02);
+  const base = cells.find(
+    (c) => c.wallRadiusM === null && c.minModulation === 0.02 && c.segmentMarginFrac === null,
+  );
+  const unsegmented = (c: Cell): boolean => c.segmentMarginFrac === null;
+  const segmented = (c: Cell): boolean => c.segmentMarginFrac !== null;
+  const byModulation = (c: Cell): number => c.minModulation;
+  // Zero is a real level and a log axis cannot draw it, so the margin panel is
+  // linear and the levels are what they are.
+  const byMargin = (c: Cell): number => c.segmentMarginFrac ?? 0;
 
   const pose: Panel = {
     title: 'What the room costs the recovered pose',
@@ -52,7 +62,7 @@ export function renderSpillSvg(result: SpillExperimentResult): string {
     xLabel: 'decoder modulation floor (minModulation)',
     yLabel: 'pose error, mm (log)',
     xKind: 'log',
-    series: seriesForRooms(cells, (c) => c.posePositionMm),
+    series: seriesForRooms(cells, (c) => c.posePositionMm, byModulation, unsegmented),
     refLines:
       base === undefined
         ? []
@@ -74,10 +84,32 @@ export function renderSpillSvg(result: SpillExperimentResult): string {
     xLabel: 'decoder modulation floor (minModulation)',
     yLabel: 'off-sphere share of accepted correspondences',
     xKind: 'log',
-    series: seriesForRooms(cells, (c) => c.offSphereFrac),
+    series: seriesForRooms(cells, (c) => c.offSphereFrac, byModulation, unsegmented),
     footnote:
       'Measured against ground truth and reported only — the solver never sees it. This is the ' +
       'mechanism the panel on the left is explained by; without it the finding is a correlation.',
+  };
+
+  const segmentation: Panel = {
+    title: 'And what segmentation costs it',
+    subtitle: 'rejecting correspondences whose projector ray misses the nominal sphere',
+    xLabel: 'segmentation margin (fraction of the sphere radius)',
+    yLabel: 'pose error, mm (log)',
+    xKind: 'linear',
+    series: seriesForRooms(cells, (c) => c.posePositionMm, byMargin, segmented),
+    refLines:
+      base === undefined
+        ? []
+        : [
+            {
+              value: base.posePositionMm.median,
+              label: `no room, no segmentation: ${base.posePositionMm.median.toFixed(0)} mm`,
+              color: PALETTE.tripod,
+            },
+          ],
+    footnote:
+      'Margin 0 tests against the nominal sphere exactly. Inflating it buys back genuine points ' +
+      'at the limb and admits the rays that graze past the ball and land on the far wall.',
   };
 
   const spec: FigureSpec = {
@@ -86,7 +118,7 @@ export function renderSpillSvg(result: SpillExperimentResult): string {
       `${result.generatedFrom.seedCount} seeds per cell · archetype ` +
       `${result.generatedFrom.archetypeIndex} · ${result.generatedFrom.preset} preset · ` +
       `ceiling ${result.generatedFrom.ceilingM} m · root seed ${result.generatedFrom.rootSeed}`,
-    panels: [pose, contamination],
+    panels: [pose, contamination, segmentation],
     legend: [...new Set(cells.map((c) => c.wallRadiusM))].map((room, i) => ({
       label: roomLabel(room),
       color: ROOM_COLORS[i % ROOM_COLORS.length],

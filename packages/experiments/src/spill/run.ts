@@ -23,6 +23,7 @@ import {
   EXPERIMENT_ROOT_SEED,
   MIN_MODULATION,
   SEED_COUNT,
+  SEGMENT_MARGINS,
   WALL_RADII,
   buildDesign,
   cellKey,
@@ -33,6 +34,7 @@ import {
 export interface PointRun {
   wallRadiusM: number | null;
   minModulation: number;
+  segmentMarginFrac: number | null;
   seedIndex: number;
   seed: number;
   /** Correspondences the decoder accepted. */
@@ -60,6 +62,8 @@ export interface PointRun {
   offSphereFloor: number;
   offSphereCeiling: number;
   rejectedLowModulation: number;
+  /** Correspondences the segmentation threw away. Zero when it is off. */
+  rejectedOffSphere: number;
   posePositionMm: number;
   poseRotationDeg: number;
   /** `null` when the solve threw or the metric came back NaN. */
@@ -70,6 +74,7 @@ export interface PointRun {
 export interface Cell {
   wallRadiusM: number | null;
   minModulation: number;
+  segmentMarginFrac: number | null;
   n: number;
   runs: PointRun[];
   /** Median, and the observed range over seeds. A mean would hide a bimodal failure. */
@@ -115,6 +120,26 @@ export interface Verdict {
   separatingModulation: number | null;
   /** What that floor costs a capture with no room in it, as a ratio to 0.02. */
   costToACleanCapture: number | null;
+  /** F5: some segmentation margin recovered the solve with the room present. */
+  segmentationRecoversIt: boolean;
+  /** The margin that did it, or null. */
+  recoveringMargin: number | null;
+  /** F6: what that margin does to a capture with no room, as a ratio. */
+  segmentationCostToACleanCapture: number | null;
+  /**
+   * The best margin's median, as a factor on the unsegmented room.
+   *
+   * Reported beside the F5 boolean because the boolean is a threshold and this
+   * is the size of the effect. A pre-registered criterion that fires at 2.0x
+   * says nothing about whether the number moved by a percent or by two orders
+   * of magnitude, and refusing to report the second because the first came out
+   * "no" is how a measurement becomes a slogan.
+   */
+  segmentationMedianFactor: number | null;
+  /** The worst single seed at the best margin. The tail the median hides. */
+  segmentationWorstSeedMm: number | null;
+  /** The margin with the lowest median, whether or not it cleared F5. */
+  bestMargin: number | null;
   statement: string;
 }
 
@@ -130,6 +155,7 @@ export interface SpillExperimentResult {
     wallRadiiM: readonly (number | null)[];
     ceilingM: number;
     minModulation: readonly number[];
+    segmentMargins: readonly (number | null)[];
     defaultRoomSpill: { wallRadiusM: number; ceilingM: number };
   };
   cells: Cell[];
@@ -168,6 +194,8 @@ export function runPoint(spec: CellSpec, seedIndex: number): PointRun {
     writeArtifacts: false,
     baseline: false,
     decode: { minModulation: spec.minModulation },
+    segmentSphere: spec.segmentMarginFrac !== null,
+    segmentMarginFrac: spec.segmentMarginFrac ?? undefined,
   });
 
   // The mechanism, measured against ground truth and reported only. Rebuilding
@@ -199,6 +227,7 @@ export function runPoint(spec: CellSpec, seedIndex: number): PointRun {
   return {
     wallRadiusM: spec.wallRadiusM,
     minModulation: spec.minModulation,
+    segmentMarginFrac: spec.segmentMarginFrac,
     seedIndex,
     seed,
     correspondences: n,
@@ -208,6 +237,7 @@ export function runPoint(spec: CellSpec, seedIndex: number): PointRun {
     offSphereFloor: offFloor,
     offSphereCeiling: offCeiling,
     rejectedLowModulation: result.capture.stats.rejectedLowModulation,
+    rejectedOffSphere: result.capture.stats.rejectedOffSphere,
     posePositionMm: result.recovery?.aligned.maxPositionMm ?? NaN,
     poseRotationDeg: result.recovery?.aligned.maxRotationDeg ?? NaN,
     gridMm: grid !== undefined && Number.isFinite(grid) ? grid : null,
@@ -219,7 +249,12 @@ const BASELINE_MODULATION = 0.02;
 
 /** The cell every other cell is compared against: no room, the shipped floor. */
 function baselineOf(cells: Cell[]): Cell | undefined {
-  return cells.find((c) => c.wallRadiusM === null && c.minModulation === BASELINE_MODULATION);
+  return cells.find(
+    (c) =>
+      c.wallRadiusM === null &&
+      c.minModulation === BASELINE_MODULATION &&
+      c.segmentMarginFrac === null,
+  );
 }
 
 /**
@@ -229,7 +264,10 @@ function baselineOf(cells: Cell[]): Cell | undefined {
 export function judge(cells: Cell[]): Verdict {
   const base = baselineOf(cells);
   const spiltAtDefault = cells.find(
-    (c) => c.wallRadiusM === DEFAULT_ROOM_SPILL.wallRadiusM && c.minModulation === BASELINE_MODULATION,
+    (c) =>
+      c.wallRadiusM === DEFAULT_ROOM_SPILL.wallRadiusM &&
+      c.minModulation === BASELINE_MODULATION &&
+      c.segmentMarginFrac === null,
   );
   if (!base || !spiltAtDefault) {
     return {
@@ -239,6 +277,12 @@ export function judge(cells: Cell[]): Verdict {
       aThresholdSeparatesThem: false,
       separatingModulation: null,
       costToACleanCapture: null,
+      segmentationRecoversIt: false,
+      recoveringMargin: null,
+      segmentationCostToACleanCapture: null,
+      segmentationMedianFactor: null,
+      segmentationWorstSeedMm: null,
+      bestMargin: null,
       statement: 'The grid did not contain the cells the verdict is defined against.',
     };
   }
@@ -253,7 +297,12 @@ export function judge(cells: Cell[]): Verdict {
 
   // F3: a tighter room must not help. Compared at the shipped floor.
   const byRoom = cells
-    .filter((c) => c.minModulation === BASELINE_MODULATION && c.wallRadiusM !== null)
+    .filter(
+      (c) =>
+        c.minModulation === BASELINE_MODULATION &&
+        c.wallRadiusM !== null &&
+        c.segmentMarginFrac === null,
+    )
     .sort((a, b) => (b.wallRadiusM ?? 0) - (a.wallRadiusM ?? 0));
   let monotoneInRoomSize = true;
   for (let i = 1; i < byRoom.length; i++) {
@@ -268,7 +317,7 @@ export function judge(cells: Cell[]): Verdict {
 
   // F4: is there a floor that recovers the solve with the room present?
   const atDefaultRoom = cells
-    .filter((c) => c.wallRadiusM === DEFAULT_ROOM_SPILL.wallRadiusM)
+    .filter((c) => c.wallRadiusM === DEFAULT_ROOM_SPILL.wallRadiusM && c.segmentMarginFrac === null)
     .sort((a, b) => a.minModulation - b.minModulation);
   const recovered = atDefaultRoom.find(
     (c) => c.posePositionMm.median < 2 * base.posePositionMm.median,
@@ -278,13 +327,73 @@ export function judge(cells: Cell[]): Verdict {
   const cleanAtThatFloor =
     separatingModulation === null
       ? undefined
-      : cells.find((c) => c.wallRadiusM === null && c.minModulation === separatingModulation);
+      : cells.find(
+          (c) =>
+            c.wallRadiusM === null &&
+            c.minModulation === separatingModulation &&
+            c.segmentMarginFrac === null,
+        );
   const costToACleanCapture =
     cleanAtThatFloor === undefined
       ? null
       : cleanAtThatFloor.posePositionMm.median / base.posePositionMm.median;
 
-  const statement = isInert
+  // F5 and F6: the geometric mitigation, at the shipped decoder floor.
+  const segmented = cells
+    .filter(
+      (c) =>
+        c.wallRadiusM === DEFAULT_ROOM_SPILL.wallRadiusM &&
+        c.minModulation === BASELINE_MODULATION &&
+        c.segmentMarginFrac !== null,
+    )
+    .sort((a, b) => (a.segmentMarginFrac ?? 0) - (b.segmentMarginFrac ?? 0));
+  const recovered2 = segmented.find(
+    (c) => c.posePositionMm.median < 2 * base.posePositionMm.median,
+  );
+  const recoveringMargin = recovered2?.segmentMarginFrac ?? null;
+  // The best margin regardless of whether it cleared the criterion, so the
+  // statement can report the size of the effect as well as the verdict on it.
+  const best = segmented.reduce<Cell | undefined>(
+    (a, c) => (a === undefined || c.posePositionMm.median < a.posePositionMm.median ? c : a),
+    undefined,
+  );
+  const segmentationMedianFactor =
+    best === undefined ? null : spiltAtDefault.posePositionMm.median / best.posePositionMm.median;
+  const segmentationWorstSeedMm = best?.posePositionMm.max ?? null;
+  const bestMargin = best?.segmentMarginFrac ?? null;
+  const cleanSegmented =
+    recoveringMargin === null
+      ? undefined
+      : cells.find(
+          (c) =>
+            c.wallRadiusM === null &&
+            c.minModulation === BASELINE_MODULATION &&
+            c.segmentMarginFrac === recoveringMargin,
+        );
+  const segmentationCostToACleanCapture =
+    cleanSegmented === undefined
+      ? null
+      : cleanSegmented.posePositionMm.median / base.posePositionMm.median;
+
+  const segmentationLine =
+    best === undefined
+      ? ' No segmentation cell was in the grid.'
+      : recoveringMargin !== null
+        ? ` Segmentation at a margin of ${recoveringMargin} recovers it, to ` +
+          `${(recovered2?.posePositionMm.median ?? NaN).toFixed(1)} mm, and on a capture with no ` +
+          `room in it the same setting costs a factor of ` +
+          `${(segmentationCostToACleanCapture ?? NaN).toFixed(2)}.`
+        : ` Segmentation at a margin of ${bestMargin} does not clear the two-times bar either, ` +
+          `but it is not a null result: it takes the median from ` +
+          `${spiltAtDefault.posePositionMm.median.toFixed(0)} mm to ` +
+          `${best.posePositionMm.median.toFixed(1)} mm, a factor of ` +
+          `${(segmentationMedianFactor ?? NaN).toFixed(0)}, against a clean baseline of ` +
+          `${base.posePositionMm.median.toFixed(1)} mm. What it does not fix is the tail: the ` +
+          `worst of ${best.n} seeds is still ${(segmentationWorstSeedMm ?? NaN).toFixed(0)} mm. ` +
+          'The residue is the correspondences that miss the TRUE sphere and hit the NOMINAL one, ' +
+          'which is the dependence on the answer that this test was always going to carry.';
+
+  const headline = isInert
     ? 'The room is inert: no correspondence came from off the sphere, so this condition changes ' +
       'nothing and should be deleted rather than shipped.'
     : lossAbsorbsIt
@@ -308,6 +417,11 @@ export function judge(cells: Cell[]): Verdict {
             `${separatingModulation} recovers it, and costs a capture with no room in it a ` +
             `factor of ${(costToACleanCapture ?? NaN).toFixed(2)} on the same measure.`);
 
+  // Appended to whichever headline fired, because the geometric mitigation is
+  // worth reporting in every case — including the ones where the room turned out
+  // not to matter, where "and segmentation was not needed" is the finding.
+  const statement = headline + segmentationLine;
+
   return {
     isInert,
     lossAbsorbsIt,
@@ -315,6 +429,12 @@ export function judge(cells: Cell[]): Verdict {
     aThresholdSeparatesThem: separatingModulation !== null,
     separatingModulation,
     costToACleanCapture,
+    segmentationRecoversIt: recoveringMargin !== null,
+    recoveringMargin,
+    segmentationCostToACleanCapture,
+    segmentationMedianFactor,
+    segmentationWorstSeedMm,
+    bestMargin,
     statement,
   };
 }
@@ -337,6 +457,7 @@ export function runSpillExperiment(options: RunOptions = {}): SpillExperimentRes
     cells.push({
       wallRadiusM: spec.wallRadiusM,
       minModulation: spec.minModulation,
+      segmentMarginFrac: spec.segmentMarginFrac,
       n: runs.length,
       runs,
       posePositionMm: dispersion(runs.map((r) => r.posePositionMm)),
@@ -369,6 +490,9 @@ export function runSpillExperiment(options: RunOptions = {}): SpillExperimentRes
       minModulation: options.reduced
         ? [...new Set(specs.map((s) => s.minModulation))]
         : MIN_MODULATION,
+      segmentMargins: options.reduced
+        ? [...new Set(specs.map((s) => s.segmentMarginFrac))]
+        : SEGMENT_MARGINS,
       defaultRoomSpill: { ...DEFAULT_ROOM_SPILL },
     },
     cells,

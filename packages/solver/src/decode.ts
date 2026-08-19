@@ -193,7 +193,37 @@ export interface DecodeOptions {
    * than assert.
    */
   frameEpochs: 'off' | 'perCapture' | 'sequential';
+
+  /**
+   * Reject a decoded correspondence that cannot be on the sphere. `null` — the
+   * default — keeps every pixel that decoded, which is what every published
+   * number was produced with.
+   *
+   * A PREDICATE rather than a geometry, on purpose. This file turns images into
+   * correspondences and does not know what a sphere is: it has no imports at
+   * all, and the one thing it would have to import to answer this question is
+   * the ray-sphere intersection that `sphere.ts` owns. `sphereSegmenter` there
+   * builds the test this option expects, and is the only implementation of it
+   * in the repository.
+   *
+   * It runs INSIDE the decode loop rather than over the returned array, and
+   * that ordering is the point. `decimate` thins the accepted set to
+   * {@link DecodeOptions.maxCorrespondences} by a fixed stride; filtering
+   * afterwards would mean the room's correspondences had already displaced
+   * good ones from the retained set, and the segmentation would recover the
+   * points' honesty without recovering their number.
+   */
+  segmentation: SegmentationTest | null;
 }
+
+/**
+ * `true` when a decoded correspondence could be on the sphere.
+ *
+ * `projector` is {@link PatternCapture.projector}; `u` and `v` are the decoded
+ * projector-raster coordinates, at the same half-integer convention everything
+ * else here uses.
+ */
+export type SegmentationTest = (projector: number, u: number, v: number) => boolean;
 
 export const DEFAULT_DECODE_OPTIONS: DecodeOptions = {
   channel: 'luminance',
@@ -218,6 +248,9 @@ export const DEFAULT_DECODE_OPTIONS: DecodeOptions = {
   pixelStride: 1,
   maxCorrespondences: 0,
   frameEpochs: 'perCapture',
+  // Off. Every published number was produced without it, and a segmentation
+  // that switched itself on would move all of them.
+  segmentation: null,
 };
 
 /** One decoded camera-pixel-to-projector-pixel correspondence. */
@@ -275,6 +308,14 @@ export interface DecodeStats {
   rejectedDisagreement: number;
   rejectedOutOfRange: number;
   rejectedMissingAxis: number;
+  /**
+   * Decoded cleanly and then rejected because it cannot be on the sphere. Zero
+   * unless {@link DecodeOptions.segmentation} is on. Counted separately from
+   * every other rejection because it is the only one that is about GEOMETRY
+   * rather than about signal, and conflating the two would hide whether a
+   * capture was dim or full of room.
+   */
+  rejectedOffSphere: number;
 }
 
 export function emptyStats(): DecodeStats {
@@ -287,6 +328,7 @@ export function emptyStats(): DecodeStats {
     rejectedDisagreement: 0,
     rejectedOutOfRange: 0,
     rejectedMissingAxis: 0,
+    rejectedOffSphere: 0,
   };
 }
 
@@ -837,6 +879,14 @@ export function decodeCapture(
         continue;
       }
 
+      // Geometry, last: a pixel that decoded cleanly and cannot be on the ball.
+      // See `DecodeOptions.segmentation` for why this is here rather than over
+      // the returned array.
+      if (opts.segmentation !== null && !opts.segmentation(capture.projector, ru.coord, rv.coord)) {
+        stats.rejectedOffSphere++;
+        continue;
+      }
+
       out.push({
         camera: capture.camera,
         projector: capture.projector,
@@ -910,6 +960,7 @@ export function decodeAll(
     stats.rejectedDisagreement += r.stats.rejectedDisagreement;
     stats.rejectedOutOfRange += r.stats.rejectedOutOfRange;
     stats.rejectedMissingAxis += r.stats.rejectedMissingAxis;
+    stats.rejectedOffSphere += r.stats.rejectedOffSphere;
   }
   return { correspondences: all, stats, frames: elapsed };
 }
