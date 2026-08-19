@@ -1364,6 +1364,19 @@ async function main(): Promise<void> {
       if (lit !== '') break;
       await sleep(500);
     }
+    // The phone pass navigates a second time, so the precondition has to hold a
+    // second time. A reload that did not land — a server that went away between
+    // the two navigations, most easily — leaves every lookup below returning
+    // null, and the first one to be dereferenced throws a stack trace from a
+    // one-line arrow function instead of naming the cause.
+    if (!(await cdp.evaluate<boolean>("!!document.getElementById('view')"))) {
+      failures.push(
+        'the page has no #view canvas after reloading it at phone size — the ' +
+          'reload did not land (is the server this run was pointed at still up?)',
+      );
+      report(failures);
+      return;
+    }
     await cdp.evaluate("document.querySelector('[data-smoke=\"help-close\"]')?.click()");
     await sleep(400);
 
