@@ -30,7 +30,8 @@ import { contentTypeOf, resolveRequest } from '../harness/serve.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
-const BUNDLE = path.join(HERE, 'dist', 'web', 'web', 'main.js');
+/** The browser bundle the page loads. Exported so tools can say why a page is blank. */
+export const BUNDLE = path.join(HERE, 'dist', 'web', 'web', 'main.js');
 
 export function createServer(appRoot: string = HERE, repoRoot: string = REPO_ROOT): http.Server {
   return http.createServer((req, res) => {

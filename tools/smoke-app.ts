@@ -25,6 +25,11 @@
  *   4. The canvas is not uniformly black, which is the symptom a working shader
  *      with a broken uniform block produces.
  *
+ * It serves the app itself when nothing is already listening, so the whole
+ * command is `node tools/smoke-app.ts`. Pass `--url` to point it at a server you
+ * are already running; it will then never start one of its own, and says so
+ * rather than navigating into a connection-error page.
+ *
  * Usage:
  *   node tools/smoke-app.ts [--url http://localhost:8174/] [--browser PATH]
  *                           [--timeout MS] [--keep] [--solve]
@@ -33,12 +38,20 @@
 
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { BUNDLE, createServer } from '../packages/web/serve.ts';
 
 /** The phone the last pass emulates: an iPhone 14/15 in portrait, in CSS pixels. */
 const PHONE_W = 390;
 const PHONE_H = 844;
+
+/**
+ * Where the app is expected to be. The tool serves this itself when nothing
+ * answers, so `node tools/smoke-app.ts` is the whole command.
+ */
+const DEFAULT_URL = 'http://localhost:8174/';
 
 const CANDIDATE_BROWSERS = [
   process.env.CHROME_PATH,
@@ -58,20 +71,26 @@ interface Options {
   solve: boolean;
   /** Write a PNG of the page here. */
   screenshot: string | null;
+  /** The caller named a URL, so it is their server and this tool must not start one. */
+  urlGiven: boolean;
 }
 
 function parseArgs(argv: readonly string[]): Options {
   const opts: Options = {
-    url: 'http://localhost:8174/',
+    url: DEFAULT_URL,
     browser: null,
     timeoutMs: 90_000,
     keep: false,
     solve: false,
     screenshot: null,
+    urlGiven: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const next = argv[i + 1];
-    if (argv[i] === '--url' && next) opts.url = next;
+    if (argv[i] === '--url' && next) {
+      opts.url = next;
+      opts.urlGiven = true;
+    }
     else if (argv[i] === '--browser' && next) opts.browser = next;
     else if (argv[i] === '--timeout' && next) opts.timeoutMs = Number(next);
     else if (argv[i] === '--keep') opts.keep = true;
@@ -79,6 +98,75 @@ function parseArgs(argv: readonly string[]): Options {
     else if (argv[i] === '--screenshot' && next) opts.screenshot = next;
   }
   return opts;
+}
+
+/**
+ * Is something already answering at `url`?
+ *
+ * This tool never started a server; it navigated straight at one and trusted it
+ * to be there. With nothing listening, Chromium renders its own connection-error
+ * page, every `getElementById` below returns null, the guarded checks quietly
+ * record failures, and the first unguarded one dies on a null dereference some
+ * hundreds of lines in. That reads exactly like an app regression and is not
+ * one. Ask the question first, and answer it in one line.
+ */
+async function isServing(url: string, ms = 2000): Promise<boolean> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(ms) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Host the app in this process, on the port the URL names. */
+function startServer(url: string): Promise<http.Server> {
+  const port = Number(new URL(url).port || 80);
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.listen(port, () => resolve(server));
+  });
+}
+
+/**
+ * Make sure the app is reachable, serving it here if it is not.
+ *
+ * A caller who named a `--url` gets told rather than overridden: that is their
+ * server, and quietly starting a different one on top of it would answer a
+ * question they did not ask.
+ */
+async function ensureServed(opts: Options): Promise<http.Server | null> {
+  if (await isServing(opts.url)) {
+    process.stdout.write(`smoke-app: using the server already on ${opts.url}\n`);
+    return null;
+  }
+  if (opts.urlGiven) {
+    throw new Error(
+      `nothing is answering at ${opts.url}.\n` +
+        `  start it:   npm run app\n` +
+        `  or:         drop --url and this tool will serve the app itself`,
+    );
+  }
+  // Serving a page with no bundle in it produces a blank app and a wall of
+  // downstream failures, none of which say "you did not build it".
+  if (!fs.existsSync(BUNDLE)) {
+    throw new Error(
+      `the browser bundle is missing, so the page would load with no app in it.\n` +
+        `  expected: ${path.relative(process.cwd(), BUNDLE)}\n` +
+        `  build it: npm run build:app`,
+    );
+  }
+  let server: http.Server;
+  try {
+    server = await startServer(opts.url);
+  } catch (err) {
+    throw new Error(
+      `could not serve the app on ${opts.url}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  process.stdout.write(`smoke-app: serving the app on ${opts.url}\n`);
+  return server;
 }
 
 function findBrowser(explicit: string | null): string {
@@ -198,9 +286,21 @@ async function findPageTarget(port: number, attempts = 40): Promise<any> {
   throw new Error(`could not reach ${url}: ${lastError}`);
 }
 
+function report(failures: readonly string[]): void {
+  if (failures.length > 0) {
+    process.stderr.write(`\nsmoke-app FAILED\n`);
+    for (const f of failures) process.stderr.write(`  - ${f}\n`);
+    process.stderr.write('\n');
+    process.exitCode = 1;
+    return;
+  }
+  process.stdout.write('smoke-app: the shader compiled, the workers replied, the picture is lit.\n');
+}
+
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
   const browser = findBrowser(opts.browser);
+  const server = await ensureServed(opts);
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'sphere-smoke-'));
   const failures: string[] = [];
 
@@ -302,8 +402,15 @@ async function main(): Promise<void> {
       return { nonBlack, total: d.length / 4 };
     })()`);
     if (!ink) {
-      failures.push('there is no canvas on the page');
-    } else if (ink.nonBlack === 0) {
+      // Every check below dereferences this canvas. Carrying on turns a plain
+      // "the app did not initialise" into a null dereference several hundred
+      // lines away, which is what this used to do and it reads like a
+      // regression in the app rather than an unstarted one.
+      failures.push('there is no #view canvas on the page — the app did not initialise');
+      report(failures);
+      return;
+    }
+    if (ink.nonBlack === 0) {
       failures.push('the canvas is uniformly black — the shader ran and drew nothing');
     } else {
       process.stdout.write(
@@ -1444,6 +1551,12 @@ async function main(): Promise<void> {
     cdp.close();
   } finally {
     child.kill('SIGKILL');
+    // Chromium's keep-alive sockets would hold the listener open and the process
+    // with it, so drop them rather than waiting on a close that cannot finish.
+    if (server) {
+      server.closeAllConnections();
+      await new Promise<void>((r) => server.close(() => r()));
+    }
     // Chromium's own teardown races the delete and re-creates files under the
     // profile as it goes, so a single rm can fail with ENOTEMPTY on a directory
     // that is about to be empty. A temporary directory left behind is noise; a
@@ -1460,14 +1573,13 @@ async function main(): Promise<void> {
     }
   }
 
-  if (failures.length > 0) {
-    process.stderr.write(`\nsmoke-app FAILED\n`);
-    for (const f of failures) process.stderr.write(`  - ${f}\n`);
-    process.stderr.write('\n');
-    process.exitCode = 1;
-    return;
-  }
-  process.stdout.write('smoke-app: the shader compiled, the workers replied, the picture is lit.\n');
+  report(failures);
 }
 
-void main();
+void main().catch((err) => {
+  // Every throw above this point is a precondition the operator can fix — no
+  // browser, no server, no bundle. A stack trace buries the sentence that says
+  // which one.
+  process.stderr.write(`\nsmoke-app: ${err instanceof Error ? err.message : String(err)}\n\n`);
+  process.exitCode = 1;
+});
