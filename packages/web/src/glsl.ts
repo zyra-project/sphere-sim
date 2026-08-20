@@ -554,8 +554,36 @@ vec3 shadeTwoRig(
   return diffuse * uReflectance;
 }
 
+/**
+ * How much of the room's own light a point can actually see.
+ *
+ * Ambient here is a uniform hemisphere, which gives every surface the same
+ * irradiance no matter which way it faces -- so wall, floor and ceiling came out
+ * within one level of 255 of each other and the room rendered as a single flat
+ * grey field with no corner anywhere in it. That is not a lighting bug, it is
+ * what a uniform hemisphere means; the missing term is that a point in a corner
+ * sees LESS of that hemisphere, because the adjoining surface is in the way.
+ *
+ * So: fade toward the junctions. Cheap, one-sided, and physical in origin rather
+ * than a shading trick to make a picture pretty -- without it the room is drawn
+ * correctly and communicates nothing.
+ */
+float roomOpenness(vec3 point) {
+  if (uRoomOn != 1) return 1.0;
+  // -uCenterHeight rather than roomFloorZ(): that helper is declared further
+  // down with the furniture, and GLSL wants a definition before its use.
+  float floorZ = -uCenterHeight;
+  float ceilZ = floorZ + uCeilingM;
+  float toFloor = point.z - floorZ;
+  float toCeil = ceilZ - point.z;
+  float toWall = uWallRadius - length(point.xy);
+  float near = min(min(toFloor, toCeil), toWall);
+  // Over the first metre, and never below a third: a corner is darker, not black.
+  return mix(0.34, 1.0, smoothstep(0.0, 1.0, max(near, 0.0)));
+}
+
 vec3 shadeSurface(vec3 point, vec3 normal) {
-  vec3 acc = uAmbient;
+  vec3 acc = uAmbient * roomOpenness(point);
   for (int i = 0; i < MAX_PROJ; i++) {
     if (i >= uProjCount) continue;
     vec3 toLensVec = uLens[i] - point;
