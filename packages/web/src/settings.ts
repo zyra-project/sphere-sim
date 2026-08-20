@@ -184,6 +184,14 @@ export interface Settings {
    * calibration being solved for.
    */
   segmentSphere: number;
+  /**
+   * Sphere axis to the wall, metres. §5 `r_wall`, class ASSUME.
+   *
+   * Read by BOTH the render and the capture when the room is on, so the drawn
+   * room and the photographed one are the same room by construction rather than
+   * by two constants that happen to agree.
+   */
+  wallRadiusM: number;
 
   // ---- the lenses ---------------------------------------------------------
   /** Lens to sphere centre, metres. §2 `d_proj`, CONFLICTED. Boulder 5.3594. */
@@ -409,6 +417,7 @@ export const BOULDER_PRESET: Settings = {
   // either on takes this page out of comparability with the report on purpose.
   roomSpill: 0,
   segmentSphere: 0,
+  wallRadiusM: 6.0,
   sphereDiaIn: 68,
   equatorIn: 84,
   projectorCount: 4,
@@ -876,10 +885,13 @@ export const CONTROLS: readonly ControlSpec[] = [
     decimals: 2,
     group: 'install',
     help:
-      'How high the ceiling is. Nothing in the model reads this and no metric moves with it — the ' +
-      'sphere hangs from it and the projectors hang from it, and a room with no ceiling reads as a ' +
-      'void. PARAMETERS.md §4.4 does lean on the ceiling mount for one thing: it is why the north ' +
-      'polar cap needs no software mask and the south does.',
+      'How high the ceiling is. The sphere hangs from it and the projectors hang from it, and a ' +
+      'room with no ceiling reads as a void. PARAMETERS.md §4.4 leans on the ceiling mount for ' +
+      'one thing: it is why the north polar cap needs no software mask and the south does. ' +
+      'This used to read "nothing in the model reads this and no metric moves with it", which ' +
+      'stopped being true when the room became switchable — with Room behind it ON this is ' +
+      '§5 `h_ceiling`, it is a surface the pattern lands on, and the recovered numbers move ' +
+      'with it. With the room off it is still only scenery.',
   },
   {
     key: 'lensRiseM',
@@ -1105,6 +1117,25 @@ export const CONTROLS: readonly ControlSpec[] = [
       'and costs a clean capture nothing. It reads pixels only: no rig, no pose, no radius, so ' +
       'unlike a geometric test it cannot lean on the calibration being solved for. It refuses ' +
       'rather than guessing when no framed object is found, which costs that camera entirely.',
+  },
+  {
+    key: 'wallRadiusM',
+    label: 'Wall distance',
+    symbol: 'r_wall',
+    section: '§5',
+    klass: 'ASSUME',
+    min: 3,
+    max: 12,
+    step: 0.25,
+    unit: ' m',
+    decimals: 2,
+    group: 'capture',
+    help:
+      'Sphere axis to the wall, and the ceiling slider above it is the other half of the same ' +
+      'room. Both are read by the render AND by the capture, so the room you can see is the room ' +
+      'being photographed — not two constants that happen to agree. Class ASSUME: nobody has ' +
+      'measured a gallery, and PARAMETERS.md §8 item 19 is the tape measure that would. A tighter ' +
+      'room means MORE spill, not less.',
   },
   {
     key: 'gridOn',

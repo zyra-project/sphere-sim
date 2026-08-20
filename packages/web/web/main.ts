@@ -1753,6 +1753,10 @@ function draw(): void {
       markerRadiusM: state.markersOn ? MARKER_RADIUS_M : 0,
       markerSelected: state.selected,
       ceilingM: state.settings.ceilingM,
+      // The same switch that puts the room in the capture puts it on screen, so
+      // the picture and the photograph agree about whether a room exists.
+      roomOn: state.settings.roomSpill === 1,
+      wallRadiusM: state.settings.wallRadiusM,
       rail: state.railOn,
       aimGuides: state.aimGuides,
     },

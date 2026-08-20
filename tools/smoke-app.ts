@@ -1178,6 +1178,80 @@ async function main(): Promise<void> {
       process.stdout.write('  capture: room spill and sphere segmentation both switch, and reset\n');
     }
 
+    // The room is drawn as well as photographed, and this measures the PICTURE
+    // rather than the flag. A uniform that reaches the shader and a shader that
+    // draws something are different claims, and only the second is the reason
+    // this exists: the page showed a black void behind the ball while the
+    // capture had a wall, a floor and a ceiling in it.
+    //
+    // A pixel DIFFERENCE rather than a brightness, because by this point in the
+    // run the camera has been walked to a seam and the frame is full of sphere
+    // and floor — an outer-band brightness reads 100% either way and the first
+    // version of this check compared 100.0% against 100.0% and called it a
+    // regression.
+    const fingerprint = `(() => {
+      const c = document.getElementById('view');
+      const r = c.getBoundingClientRect();
+      const off = document.createElement('canvas'); off.width = 64; off.height = 48;
+      const x = off.getContext('2d');
+      x.drawImage(c, 0, 0, 64, 48);
+      const d = x.getImageData(0, 0, 64, 48).data;
+      const out = [];
+      for (let i = 0; i < d.length; i += 4) out.push((d[i] + d[i+1] + d[i+2]) / 3);
+      return out;
+    })()`;
+    const pickRoom = (label: string): string => `(() => {
+      const tab = [...document.querySelectorAll('#controls .seg button')]
+        .find((b) => (b.textContent ?? '').trim() === 'Install');
+      if (!tab) return false;
+      tab.click();
+      const chip = [...document.querySelectorAll('#controls .chip')]
+        .find((c) => (c.textContent ?? '').trim() === ${JSON.stringify(label)});
+      if (!chip) return false;
+      chip.click();
+      return true;
+    })()`;
+    // Stand back first. By this point the seam walk has the eye 1.3 m from the
+    // ball and the sphere fills the frame edge to edge, so no room is visible at
+    // any setting and the difference below is exactly zero — which the previous
+    // version of this check reported as the render having no room in it.
+    await cdp.evaluate(`(() => {
+      const tab = [...document.querySelectorAll('#controls .seg button')]
+        .find((b) => /Room/.test(b.textContent ?? ''));
+      if (!tab) return false;
+      tab.click();
+      const chip = [...document.querySelectorAll('#controls button')]
+        .find((b) => /Whole room/.test(b.textContent ?? ''));
+      if (!chip) return false;
+      chip.click();
+      return true;
+    })()`);
+    await sleep(1400);
+
+    await cdp.evaluate(pickRoom('Empty room'));
+    await sleep(1400);
+    const withoutRoom = await cdp.evaluate<number[]>(fingerprint);
+    await cdp.evaluate(pickRoom('Room behind it'));
+    await sleep(1800);
+    const withRoom = await cdp.evaluate<number[]>(fingerprint);
+    await cdp.evaluate(pickRoom('Empty room'));
+    await sleep(1000);
+    let diff = 0;
+    for (let i = 0; i < Math.min(withoutRoom.length, withRoom.length); i++) {
+      diff += Math.abs(withRoom[i] - withoutRoom[i]);
+    }
+    diff = withRoom.length > 0 ? diff / withRoom.length : 0;
+    if (!(diff > 1.5)) {
+      failures.push(
+        `switching the room on changed the picture by a mean of ${diff.toFixed(2)} levels per ` +
+          'pixel, which is nothing — the capture has a room in it and the render still shows a void',
+      );
+    } else {
+      process.stdout.write(
+        `  room: drawn as well as photographed (${diff.toFixed(1)} levels per pixel changed)\n`,
+      );
+    }
+
     // Last, because both of these move the rig or the eye, and every check above
     // reads the before-and-after snapshots that a movement is meant to void.
     //

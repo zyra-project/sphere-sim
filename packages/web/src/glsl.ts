@@ -183,6 +183,8 @@ uniform vec3  uTint[MAX_PROJ];
 uniform float uMarkerRadius;          // metres; 0 draws no furniture at all
 uniform int   uMarkerSelected;        // -1 none
 uniform float uCeilingM;              // floor to ceiling, metres
+uniform int   uRoomOn;                // draw the wall, the ceiling and a floor out to the wall
+uniform float uWallRadius;            // sphere axis to the wall, metres
 uniform int   uRailOn;
 uniform int   uAimGuides;
 
@@ -552,8 +554,7 @@ vec3 shadeTwoRig(
   return diffuse * uReflectance;
 }
 
-vec3 shadeFloor(vec3 point) {
-  vec3 normal = vec3(0.0, 0.0, 1.0);
+vec3 shadeSurface(vec3 point, vec3 normal) {
   vec3 acc = uAmbient;
   for (int i = 0; i < MAX_PROJ; i++) {
     if (i >= uProjCount) continue;
@@ -575,6 +576,8 @@ vec3 shadeFloor(vec3 point) {
   }
   return acc * uRoomAlbedo;
 }
+
+vec3 shadeFloor(vec3 point) { return shadeSurface(point, vec3(0.0, 0.0, 1.0)); }
 `;
 
 /**
@@ -691,6 +694,67 @@ vec3 projectorBodyCentre(int i) {
 
 /** Floor-plane z, in the same frame the sphere centre is the origin of. */
 float roomFloorZ() { return -uCenterHeight; }
+
+/**
+ * Where a ray leaves the room: the cylinder wall, the ceiling, or the floor.
+ *
+ * The camera stands inside, so exactly one of the three is hit and the smallest
+ * positive root wins. This is the same closed box the CAPTURE models in
+ * packages/bench/src/capture.ts, written a second time here on purpose: the
+ * render and the capture are two implementations of one room, and if they ever
+ * disagree that is a finding rather than a bug to paper over. The two share the
+ * wall radius and the ceiling height through the panel, so a disagreement can
+ * only come from the geometry itself.
+ *
+ * Normals point INWARD, because the surfaces are being looked at from inside.
+ *
+ * The viewer usually is NOT inside: section 6 puts the eye about ten metres out
+ * and the wall defaults to six, so the ray starts outside the cylinder. Taking
+ * the far root rather than the near one is deliberate and is a CUTAWAY: the near
+ * wall is not drawn, so the room can be looked into instead of presenting a flat
+ * grey panel two metres from the eye. What a camera standing inside would see is
+ * the near wall, and that is what the capture models. This is presentation; the
+ * capture is the measurement.
+ */
+float roomShell(vec3 origin, vec3 dir, out vec3 normal) {
+  float floorZ = roomFloorZ();
+  float ceilZ = floorZ + uCeilingM;
+  float best = 1e9;
+  normal = vec3(0.0, 0.0, 1.0);
+
+  // The wall, as an infinite cylinder clipped to the slab between floor and
+  // ceiling. We are inside it, so the exit root is the one with the plus sign.
+  float a = dot(dir.xy, dir.xy);
+  if (a > 1e-12) {
+    float b = dot(origin.xy, dir.xy);
+    float c = dot(origin.xy, origin.xy) - uWallRadius * uWallRadius;
+    float disc = b * b - a * c;
+    if (disc > 0.0) {
+      float t = (-b + sqrt(disc)) / a;
+      float z = origin.z + dir.z * t;
+      if (t > 0.0 && z >= floorZ && z <= ceilZ) {
+        best = t;
+        vec2 radial = origin.xy + dir.xy * t;
+        normal = vec3(-normalize(radial), 0.0);
+      }
+    }
+  }
+
+  if (dir.z > 0.0) {
+    float t = (ceilZ - origin.z) / dir.z;
+    if (t > 0.0 && t < best && length(origin.xy + dir.xy * t) <= uWallRadius) {
+      best = t;
+      normal = vec3(0.0, 0.0, -1.0);
+    }
+  } else if (dir.z < 0.0) {
+    float t = (floorZ - origin.z) / dir.z;
+    if (t > 0.0 && t < best && length(origin.xy + dir.xy * t) <= uWallRadius) {
+      best = t;
+      normal = vec3(0.0, 0.0, 1.0);
+    }
+  }
+  return best < 1e9 ? best : -1.0;
+}
 
 /**
  * The whole scene's distance, with the nearest projector index written out.
@@ -861,6 +925,22 @@ vec3 traceScene(vec2 s) {
     c = shadeTwoRig(uCamPos + dir * t, overlapCount, litCount, strongest, strongestWeight, blendTint);
     if (uOverlay > 0) {
       c = mix(c, overlayTint(overlapCount, litCount, strongest, strongestWeight, blendTint), uOverlayMix);
+    }
+  } else if (uRoomOn == 1) {
+    // The room the capture is modelling, drawn. Without this the page showed a
+    // black void behind the ball while the capture had a wall, a floor and a
+    // ceiling in it, and only a caption reconciled the two.
+    vec3 rn;
+    float tr = roomShell(uCamPos, dir, rn);
+    if (tr > 0.0) {
+      vec3 p = uCamPos + dir * tr;
+      c = shadeSurface(p, rn);
+      sceneT = tr;
+      // The rail's footprint, on the floor only.
+      if (uRailOn == 1 && rn.z > 0.5) {
+        float ring = abs(length(p.xy) - RAIL_RADIUS_M);
+        c = mix(c, c * 1.9 + vec3(0.010, 0.012, 0.016), 1.0 - smoothstep(0.02, 0.05, ring));
+      }
     }
   } else if (uDrawFloor == 1 && dir.z < 0.0) {
     float floorZ = -uCenterHeight;

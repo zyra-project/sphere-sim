@@ -49,7 +49,7 @@ import type { RigCalibration } from '../../calibration/src/index.ts';
 import { PARAMETER_TABLE } from '../../calibration/src/parameters.ts';
 import { placeCameras } from '../../bench/src/camera.ts';
 import { DEFAULT_CLOCK, DEFAULT_HANDHELD } from '../../bench/src/camera.ts';
-import { captureAndDecode, DEFAULT_ROOM_SPILL, DEFAULT_SENSOR } from '../../bench/src/capture.ts';
+import { captureAndDecode, DEFAULT_SENSOR } from '../../bench/src/capture.ts';
 import {
   DEFAULT_PATTERN_PLAN,
   grayBitsForCamera,
@@ -315,7 +315,13 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
       // an explicitly labelled control that tells the reader it has left the
       // bench's conditions answers it, and being able to watch a room destroy a
       // calibration is worth more than a page that can only describe it.
-      roomSpill: req.settings.roomSpill === 1 ? { ...DEFAULT_ROOM_SPILL } : null,
+      // The panel's own wall and ceiling, not the bench's defaults, so the room
+      // drawn on screen and the room photographed are one room. They start at
+      // §5's nominals; moving either slider moves both.
+      roomSpill:
+        req.settings.roomSpill === 1
+          ? { wallRadiusM: req.settings.wallRadiusM, ceilingM: req.settings.ceilingM }
+          : null,
       segmentImage: req.settings.segmentSphere === 1 ? {} : null,
     },
     seed: req.seed,

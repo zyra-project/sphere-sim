@@ -72,6 +72,10 @@ export interface DisplayOptions {
   markerSelected?: number;
   /** Floor to ceiling, metres. The hangers and the sphere's rod reach it. */
   ceilingM?: number;
+  /** Draw the wall, ceiling and full floor. Opt-in, like the markers and the floor. */
+  roomOn?: boolean;
+  /** Sphere axis to the wall, metres. Only read when `roomOn`. */
+  wallRadiusM?: number;
   /** Draw the guard rail, its floor ring and the sphere's rod. Off by default. */
   rail?: boolean;
   /** Draw a faint cone of light from each lens to the ball. */
@@ -248,6 +252,10 @@ export interface DisplayUniforms {
   markerRadius: number;
   markerSelected: number;
   ceiling: number;
+  /** Draw the room the capture models: wall, ceiling, and floor out to the wall. */
+  roomOn: boolean;
+  /** Sphere axis to the wall, metres. */
+  wallRadius: number;
   rail: number;
   aimGuides: number;
 }
@@ -379,6 +387,11 @@ export function buildDisplayUniforms(
     markerRadius: options.markerRadiusM ?? 0,
     markerSelected: rigIndexOf(options.markerSelected ?? -1, options.slots),
     ceiling: options.ceilingM ?? 4.27,
+    // Opt-IN for the same reason the markers and the floor are: the CPU two-rig
+    // renderer draws no room, so anything the display shader draws by default
+    // is a difference the parity check reports as a disagreement.
+    roomOn: options.roomOn === true,
+    wallRadius: options.wallRadiusM ?? 6.0,
     // Opt-IN, exactly like `markerRadiusM` and for exactly the same reason: the
     // CPU two-rig renderer draws no furniture, so anything the display shader
     // draws by default is a difference the parity check reports as a
