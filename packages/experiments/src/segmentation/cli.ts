@@ -18,61 +18,76 @@ import { compact } from '../photometric/cli.ts';
 import type { Cell, PointRun } from '../spill/run.ts';
 import { runPoint } from '../spill/run.ts';
 import { ARMS, SEED_COUNT } from './design.ts';
+import { renderSegmentationSvg } from './plot.ts';
 import { assemble, buildResult } from './run.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const OUT = path.join(ROOT, 'experiments');
 const WORK = path.join(OUT, '.experiment-5-partial');
 
-const only = process.argv.includes('--arm')
-  ? process.argv[process.argv.indexOf('--arm') + 1]
-  : null;
+export function main(): void {
+  const only = process.argv.includes('--arm')
+    ? process.argv[process.argv.indexOf('--arm') + 1]
+    : null;
 
-fs.mkdirSync(WORK, { recursive: true });
+  fs.mkdirSync(WORK, { recursive: true });
 
-const t0 = Date.now();
-for (const arm of ARMS) {
-  if (only !== null && arm.key !== only) continue;
-  const file = path.join(WORK, `${arm.key}.json`);
-  if (fs.existsSync(file)) {
-    const have = JSON.parse(fs.readFileSync(file, 'utf8')) as PointRun[];
-    if (have.length >= SEED_COUNT) {
-      process.stdout.write(`  ${arm.key}: ${have.length} seeds already on disk, skipping\n`);
+  const t0 = Date.now();
+  for (const arm of ARMS) {
+    if (only !== null && arm.key !== only) continue;
+    const file = path.join(WORK, `${arm.key}.json`);
+    // Per SEED, not per arm. A long-throw arm is nearly nine minutes of solves,
+    // and losing all of it to an interrupted process was a real cost paid twice
+    // before this loop was written this way.
+    const runs: PointRun[] = fs.existsSync(file)
+      ? (JSON.parse(fs.readFileSync(file, 'utf8')) as PointRun[])
+      : [];
+    if (runs.length >= SEED_COUNT) {
+      process.stdout.write(`  ${arm.key}: ${runs.length} seeds already on disk, skipping\n`);
       continue;
     }
+    if (runs.length > 0) {
+      process.stdout.write(`  ${arm.key}: resuming at seed ${runs.length}\n`);
+    }
+    for (let i = runs.length; i < SEED_COUNT; i++) {
+      runs.push(runPoint(arm.spec, i));
+      fs.writeFileSync(file, `${JSON.stringify(runs)}\n`);
+      process.stdout.write(`  ${arm.key} ${i + 1}/${SEED_COUNT}\n`);
+    }
+    process.stdout.write(`  ${arm.key}: ${runs.length} seeds\n`);
   }
-  const runs: PointRun[] = [];
-  for (let i = 0; i < SEED_COUNT; i++) {
-    runs.push(runPoint(arm.spec, i));
-    process.stdout.write(`  ${arm.key} ${i + 1}/${SEED_COUNT}\n`);
+
+  // Assemble only when every arm is present, so a partial sweep never writes a
+  // results file that looks complete.
+  const cells: Record<string, Cell> = {};
+  const missing: string[] = [];
+  for (const arm of ARMS) {
+    const file = path.join(WORK, `${arm.key}.json`);
+    if (!fs.existsSync(file)) {
+      missing.push(arm.key);
+      continue;
+    }
+    const runs = JSON.parse(fs.readFileSync(file, 'utf8')) as PointRun[];
+    if (runs.length < SEED_COUNT) missing.push(arm.key);
+    else cells[arm.key] = assemble(runs);
   }
-  fs.writeFileSync(file, `${JSON.stringify(runs)}\n`);
-  process.stdout.write(`  ${arm.key}: wrote ${runs.length} seeds\n`);
+
+  if (missing.length > 0) {
+    process.stdout.write(`\nnot writing a results file: arms still missing — ${missing.join(', ')}\n`);
+  } else {
+    const result = buildResult(cells);
+    fs.writeFileSync(
+      path.join(OUT, 'experiment-5.json'),
+      `${JSON.stringify(compact(result), null, 1)}\n`,
+    );
+    fs.writeFileSync(path.join(OUT, 'experiment-5.svg'), renderSegmentationSvg(result));
+    process.stdout.write(`\nexperiment 5 verdict: ${result.verdict.statement}\n`);
+  }
+  process.stdout.write(`done in ${((Date.now() - t0) / 1000).toFixed(1)} s\n`);
 }
 
-// Assemble only when every arm is present, so a partial sweep never writes a
-// results file that looks complete.
-const cells: Record<string, Cell> = {};
-const missing: string[] = [];
-for (const arm of ARMS) {
-  const file = path.join(WORK, `${arm.key}.json`);
-  if (!fs.existsSync(file)) {
-    missing.push(arm.key);
-    continue;
-  }
-  const runs = JSON.parse(fs.readFileSync(file, 'utf8')) as PointRun[];
-  if (runs.length < SEED_COUNT) missing.push(arm.key);
-  else cells[arm.key] = assemble(runs);
+// Only when invoked directly, so the dispatcher can import `main` without
+// running it — the same guard `spill/cli.ts` uses and for the same reason.
+if (process.argv[1] !== undefined && import.meta.url === `file://${path.resolve(process.argv[1])}`) {
+  main();
 }
-
-if (missing.length > 0) {
-  process.stdout.write(`\nnot writing a results file: arms still missing — ${missing.join(', ')}\n`);
-} else {
-  const result = buildResult(cells);
-  fs.writeFileSync(
-    path.join(OUT, 'experiment-5.json'),
-    `${JSON.stringify(compact(result), null, 1)}\n`,
-  );
-  process.stdout.write(`\nexperiment 5 verdict: ${result.verdict.statement}\n`);
-}
-process.stdout.write(`done in ${((Date.now() - t0) / 1000).toFixed(1)} s\n`);

@@ -66,6 +66,8 @@ export interface PointRun {
   rejectedOffSphere: number;
   /** Whether the image-space mask was on for this cell. */
   segmentImage: boolean;
+  /** Which bench archetype the rig was drawn from. */
+  archetypeIndex: number;
   /** Camera pixels the image mask threw away before decoding. Zero when off. */
   rejectedOffImage: number;
   /**
@@ -263,7 +265,7 @@ export function runPoint(spec: CellSpec, seedIndex: number): PointRun {
   const t0 = Date.now();
   const preset = PRESETS.default;
   const seed = seedFor(seedIndex);
-  const scenario = makeScenario(seed, ARCHETYPE_INDEX, preset);
+  const scenario = makeScenario(seed, spec.archetypeIndex ?? ARCHETYPE_INDEX, preset);
   scenario.degradation.roomSpill = spillFor(spec);
   const result = runScenario(scenario, {
     preset,
@@ -318,6 +320,7 @@ export function runPoint(spec: CellSpec, seedIndex: number): PointRun {
     rejectedLowModulation: result.capture.stats.rejectedLowModulation,
     rejectedOffSphere: result.capture.stats.rejectedOffSphere,
     segmentImage: spec.segmentImage === true,
+    archetypeIndex: spec.archetypeIndex ?? ARCHETYPE_INDEX,
     rejectedOffImage: result.capture.stats.rejectedOffImage,
     silhouetteFailures: result.capture.silhouettes.filter(
       (sil) => sil.chosen < 0 || sil.warnings.length > 0,

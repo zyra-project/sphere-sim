@@ -34,6 +34,25 @@
  *       image-space does not beat geometric on a clear majority, then the
  *       geometric mean is being carried by a handful of draws.
  *
+ * ## The long-throw falsifiers, written before that arm ran
+ *
+ * The argument for preferring image-space is a CAUSAL one: the geometric test
+ * consults the nominal rig, so it should get worse as the nominal gets worse,
+ * and the image test does not, so it should not. The `long-throw` archetype is
+ * where that is checkable — truth is the floor plan's 6.14 m while the operator
+ * hands over the alignment manual's 5.18 m, a nominal nearly a metre out.
+ *
+ *   G6  The geometric test does NOT degrade on long-throw. If a nominal that is
+ *       0.96 m wrong costs it nothing, then rig-dependence is not what limits
+ *       it and the explanation on this page is wrong, however good the numbers.
+ *   G7  The image test DOES degrade on long-throw. If reading pixels still loses
+ *       ground when the nominal is wrong, then it is not rig-independent in
+ *       practice and something unmodelled couples them.
+ *
+ * Both are measured as the share of seeds producing a solve no worse than THAT
+ * ARCHETYPE'S OWN worst clean solve, so the two archetypes are compared on a bar
+ * each sets for itself rather than on millimetres that are not comparable.
+ *
  * ## Why thirty seeds
  *
  * Experiment 4 shipped at five and its every headline factor turned out to be a
@@ -45,6 +64,8 @@
 export const EXPERIMENT_ROOT_SEED = 20260819;
 export const SEED_COUNT = 30;
 export const ARCHETYPE_INDEX = 1;
+/** `long-throw`: truth 6.14 m against a handed-over nominal of 5.18 m. */
+export const LONG_THROW_INDEX = 9;
 export const SHIPPED_MODULATION = 0.02;
 
 import type { CellSpec } from '../spill/design.ts';
@@ -99,6 +120,51 @@ export const ARMS: readonly Arm[] = [
       segmentImage: true,
     },
   },
+
+  // The long-throw arms. Same four conditions, an archetype whose nominal is
+  // 0.96 m out. Its own clean arm is here because the usable-solve bar has to be
+  // set by this archetype rather than borrowed from the easy one.
+  {
+    key: 'lt-clean',
+    label: 'long-throw, no room, no segmentation',
+    spec: {
+      wallRadiusM: null,
+      minModulation: SHIPPED_MODULATION,
+      segmentMarginFrac: null,
+      archetypeIndex: LONG_THROW_INDEX,
+    },
+  },
+  {
+    key: 'lt-room',
+    label: 'long-throw, room, no segmentation',
+    spec: {
+      wallRadiusM: WALL_RADIUS_M,
+      minModulation: SHIPPED_MODULATION,
+      segmentMarginFrac: null,
+      archetypeIndex: LONG_THROW_INDEX,
+    },
+  },
+  {
+    key: 'lt-geometric',
+    label: 'long-throw, room, geometric segmentation at margin 0',
+    spec: {
+      wallRadiusM: WALL_RADIUS_M,
+      minModulation: SHIPPED_MODULATION,
+      segmentMarginFrac: 0,
+      archetypeIndex: LONG_THROW_INDEX,
+    },
+  },
+  {
+    key: 'lt-image',
+    label: 'long-throw, room, image-space segmentation',
+    spec: {
+      wallRadiusM: WALL_RADIUS_M,
+      minModulation: SHIPPED_MODULATION,
+      segmentMarginFrac: null,
+      segmentImage: true,
+      archetypeIndex: LONG_THROW_INDEX,
+    },
+  },
 ];
 
 /** Every place this design is thinner than it should be, and what it costs. */
@@ -110,10 +176,10 @@ export const CUTS: readonly { what: string; why: string; costsTheConclusion: str
       'G1 to G5 were written knowing that seed 0 gave 9.6 mm at 0.00% contamination. They are stated so that a single favourable draw cannot satisfy them — G5 asks for a majority over 30 — but they are not blind, and a reader should treat them as pre-registered against the OTHER 29 seeds rather than against all 30.',
   },
   {
-    what: 'One archetype, one room size, one decoder threshold.',
-    why: 'The comparison is between two segmentations, so everything that is not the segmentation is held fixed.',
+    what: 'Two archetypes, one room size, one decoder threshold.',
+    why: 'The comparison is between two segmentations, so everything that is not the segmentation or the archetype is held fixed.',
     costsTheConclusion:
-      'It says nothing about whether image-space segmentation survives the long-throw archetype, where the nominal rig is nearly a metre out. That is where the GEOMETRIC test should be expected to fail worst and where this one should not care at all — which makes it the obvious next measurement and not this one.',
+      'Room size and decoder threshold were swept against the GEOMETRIC test in experiment 4 and are not swept again here, so nothing says whether the image test\'s advantage holds at 4 m or at a raised modulation floor. The archetype axis has exactly two levels, which is enough to test the causal claim in G6 and G7 and not enough to characterise either method across the corpus.',
   },
   {
     what: 'The detector gets an all-projectors-on frame by taking the max over the per-projector white frames.',

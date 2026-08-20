@@ -4,6 +4,8 @@
  * ```
  * node packages/experiments/src/cli.ts 2        # Experiment 2, blend softness vs geometric tolerance
  * node packages/experiments/src/cli.ts 3        # Experiment 3, photometric sensitivity
+ * node packages/experiments/src/cli.ts 4        # Experiment 4, what a room costs a calibration
+ * node packages/experiments/src/cli.ts 5        # Experiment 5, image-space vs geometric segmentation
  * node packages/experiments/src/cli.ts photometry   # both of the above
  * node packages/experiments/src/cli.ts --list   # Experiment 1's plan and budget
  * node packages/experiments/src/cli.ts          # Experiment 1, the published run
@@ -39,6 +41,11 @@ if (first === '2' || first === '3') {
   // command costs without anybody asking for it.
   const { main: spillMain } = await import('./spill/cli.ts');
   spillMain();
+} else if (first === '5' || first === 'segmentation') {
+  // Same reasoning as Experiment 4's branch: this is 270 real solves, so it
+  // stays out of `all` and has to be asked for by name.
+  const { main: segMain } = await import('./segmentation/cli.ts');
+  segMain();
 } else if (first === 'photometry' || first === 'all') {
   photometricMain('all');
 } else {

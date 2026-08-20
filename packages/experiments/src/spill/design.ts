@@ -126,6 +126,16 @@ export interface CellSpec {
    * thing it did then, and so the 28-cell design above is untouched.
    */
   segmentImage?: boolean;
+  /**
+   * Which bench archetype to draw the rig from. Defaults to `ARCHETYPE_INDEX`.
+   *
+   * Optional, so every cell written before this axis existed still means what it
+   * meant. Experiment 5 uses it to reach `long-throw`, whose documented projector
+   * distance is nearly a metre out — the case where a segmentation that consults
+   * the nominal rig should be expected to struggle and one that reads pixels
+   * should not notice.
+   */
+  archetypeIndex?: number;
 }
 
 /**
@@ -166,7 +176,11 @@ export function cellKey(spec: CellSpec): string {
   // Appended only when set, so every key the 28-cell design produces is the
   // string it was before this axis existed and the published file still reads.
   const img = spec.segmentImage === true ? '|image' : '';
-  return `${room}|${spec.minModulation}|${seg}${img}`;
+  const arch =
+    spec.archetypeIndex === undefined || spec.archetypeIndex === ARCHETYPE_INDEX
+      ? ''
+      : `|a${spec.archetypeIndex}`;
+  return `${room}|${spec.minModulation}|${seg}${img}${arch}`;
 }
 
 /**
