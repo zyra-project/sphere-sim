@@ -290,6 +290,8 @@ per channel, and it cannot correct a chromatic seam.
 | `E_amb_chroma` | Ambient color temperature | 4000 K | `ASSUME` | Exhibit lighting is rarely daylight-balanced. Tints the whole sphere and shifts every ΔE measurement. |
 | `amb_dir` | Ambient directionality | uniform hemisphere | `ASSUME` | Real rooms have windows, spots, exit signs. |
 | `ρ_room` | Wall/floor albedo | 0.3 | `ASSUME` | Reaches a geometric result directly: with `roomSpill` on it scales every off-sphere return before the decoder's modulation gate, so it sets how much contamination experiment 4 sees. The earlier note here said it only mattered via inter-reflection; that stopped being true when the room became switchable. |
+| `r_wall` | Distance from the sphere's vertical axis to the wall | 6.0 m | `ASSUME` | The room the structured-light pattern lands on when `roomSpill` is enabled. Nobody has measured a building; 6.0 m is a gallery-sized guess and experiment 4 swept 4, 6 and 9 m around it without being able to order them. Had no row in this document until the room became switchable — it lived only as a literal in `packages/bench/src/capture.ts`. |
+| `h_ceiling` | Floor to ceiling | 4.27 m | `ASSUME` | 14 feet. Same provenance as `r_wall`: a guess, and the surface that matters most, because the ceiling and the floor are NEARER their projectors than the sphere is and therefore come back at least as bright — which is why no decoder brightness threshold separates them from the ball. |
 
 ---
 
@@ -383,14 +385,48 @@ documentation gives it.
 17. Note lamp hours per projector if the site tracks them — directly predicts
     `g` divergence.
 
-Total ≈ 35 frames. A tethered camera and a scripted pattern sequence makes this
-one continuous run rather than 35 manual setups.
+**The room the pattern lands on (2 frames + measurements) — new in rev 3**
+
+Everything above characterises the sphere. These characterise everything else in
+the throw, and they are here because experiment 4 measured what omitting them
+costs: with a room behind the ball, 14% of accepted correspondences come back
+from surfaces that are not the sphere, and the recovered pose degrades by a
+paired factor of 146. Experiment 5 then measured the mitigation — segmenting the
+sphere out of the photograph recovers it, 2 usable solves in 30 becoming 28.
+
+Neither can be turned on for a published number until these are collected. The
+size of the effect is set by `ρ_room`, which is `ASSUME` at 0.3 with nobody
+having measured a wall, so switching the room on today would make every geometric
+result depend on a guess — which is the thing §10's sequencing exists to prevent.
+
+18. Grey card (or any known-reflectance reference) held flat against the wall and
+    against the floor inside a projector's throw, one frame with that projector
+    showing full white, at the same exposure as frame 6. → `ρ_room`, and whether
+    wall and floor differ enough to need separate values. **This is the
+    highest-value item added in rev 3**: it is the one number standing between a
+    measured room and an assumed one.
+19. Tape measure: sphere's vertical axis to the nearest wall, and floor to
+    ceiling. → `r_wall`, `h_ceiling`, both currently `ASSUME`. Note anything else
+    inside the throw that the model does not have — a guard rail, a plinth, a
+    door, a case — because §9 records that the simulator has no occlusion at all,
+    so those surfaces are the difference between a floor on the effect and a
+    bound on it.
+20. One frame of a projector's spill on the room with the sphere absent from the
+    frame, if the geometry allows it. → a direct check on the falloff the model
+    assumes, rather than an inference from the sphere.
+
+Total ≈ 37 frames. A tethered camera and a scripted pattern sequence makes this
+one continuous run rather than 37 manual setups.
 
 ---
 
 ## 9. What this simulator does not model
 
-- Inter-reflection between sphere, walls, and floor
+- Inter-reflection between sphere, walls, and floor. The light reaches the room
+  and stops: it never comes back onto the ball. Note the asymmetry this leaves —
+  the model has the half of room coupling that ADDS false correspondences and not
+  the half that would degrade good ones, and nothing measures which way that
+  biases the segmentation results in experiment 5.
 - Projector depth-of-field and focus falloff across the ~0.79 m depth swing
 - Chromatic aberration
 - Lamp warm-up drift and long-term aging (gain divergence is modeled statically)
@@ -399,7 +435,20 @@ one continuous run rather than 35 manual setups.
 - Viewer stereopsis on a curved surface
 - Spectral rendering — RGB only, so metamerism between projector primaries and
   ambient light is approximated, not simulated
-- The guard rail and its shadow
+- The guard rail and its shadow. More generally there is NO occlusion anywhere:
+  nothing in the model blocks a beam or casts a shadow, so a rail, a plinth, a
+  door or a visitor is absent from every capture. This is the reason experiment
+  4's room is a floor on the effect rather than a bound on it, and the reason
+  experiment 5's silhouette detector — which assumes the ball is framed and the
+  room runs off the frame edge — has not been tested against the thing most
+  likely to break it.
+
+**One thing this list used to imply and no longer should.** The pattern landing
+on the room IS modelled, as of the `roomSpill` capture condition: the first
+bounce onto a cylindrical wall, a floor and a ceiling. It is **off by default**,
+every number this document and `bench-results.json` carry was produced with it
+off, and §8 items 18–20 exist to collect what would let it be switched on
+honestly. What remains unmodelled is the SECOND bounce, above.
 
 The first two matter most. Focus falloff degrades exactly the blend regions the
 metrics care about, so a passing seam score may overstate real-world quality.
@@ -413,7 +462,7 @@ metrics care about, so a passing seam score may overstate real-world quality.
 | `DOC` | 11 | Low. `d_proj` conflicts; `gamma 0.8` and `bottommask` units inferred. |
 | `CFG` | 6 | Low. Known per install. |
 | `SOLVE` | 10 per projector | None. Wrong nominals cost iterations, not correctness. |
-| `ASSUME` | 31 | **All of it.** Rev 2 nearly doubled this by splitting photometry per channel — the count went up because the honesty went up, not because the simulator got worse. |
+| `ASSUME` | 33 | **All of it.** Rev 2 nearly doubled this by splitting photometry per channel — the count went up because the honesty went up, not because the simulator got worse. Rev 3 added two more the same way: `r_wall` and `h_ceiling` were already driving experiment 4's headline as literals in `packages/bench/src/capture.ts`, with no row here at all. Documenting them raised the count without changing a single number. |
 | `MEAS` | 5 groups | Blocking for photometric and chromatic metrics only. |
 
 **Highest-risk four, in order:**

@@ -57,6 +57,7 @@
  */
 
 import type { ChannelTriplet, RigCalibration } from '../../calibration/src/index.ts';
+import { PARAMETER_TABLE } from '../../calibration/src/parameters.ts';
 import type { RgbImage } from '../../sim/src/equirect.ts';
 import { createImage } from '../../sim/src/equirect.ts';
 import { raySphereIntersect } from '../../sim/src/geometry.ts';
@@ -208,7 +209,15 @@ export interface RoomSpill {
  * gallery, and a tighter room means MORE spill, not less — so this default is
  * not a conservative one and should not be read as a bound.
  */
-export const DEFAULT_ROOM_SPILL: RoomSpill = { wallRadiusM: 6.0, ceilingM: 4.27 };
+export const DEFAULT_ROOM_SPILL: RoomSpill = {
+  // Read from the table rather than written here. These were literals in this
+  // file with no row in PARAMETERS.md at all until the room stopped being
+  // hypothetical, which meant two ASSUME constants drove experiment 4's headline
+  // while the document that is supposed to account for every constant did not
+  // know they existed. §5 carries them now and §8 item 19 collects them.
+  wallRadiusM: PARAMETER_TABLE.r_wall.nominal,
+  ceilingM: PARAMETER_TABLE.h_ceiling.nominal,
+};
 
 export interface CaptureConditions {
   /** `E_amb`, relative irradiance on the sphere. §5 nominal 0.04, range 0.01-0.15. */
