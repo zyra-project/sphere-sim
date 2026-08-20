@@ -58,16 +58,23 @@ jobs:
       - name: Smoke the app in a browser (the shader compiles, the workers reply)
         run: npm run smoke:app
 
+      # TWELVE, not six. Six always covered archetypes 0-5 and never 6-11, so
+      # `six-cameras`, `three-projectors`, `two-projectors`, `long-throw`,
+      # `no-floor-reference` and `fov-held` were never judged — and the
+      # unlit_in_mask waiver was scoped to two archetypes CI structurally could
+      # not run, which the gate reported as an UNUSED waiver to be deleted.
+      # Judging all twelve costs about four extra minutes across the two runs.
+      #
       # The bench MEASURES. It does not judge, which is why both runs carry
       # --allow-failure: a failing gate must not stop the determinism check from
       # running, and a step that both measures and judges makes it ambiguous
       # which of the two went wrong when it goes red.
       - name: Headless bench (deterministic, seeded)
-        run: npm run bench -- --scenarios 6 --seed 1234 --out bench-results.json --allow-failure
+        run: npm run bench -- --scenarios 12 --seed 1234 --out bench-results.json --allow-failure
 
       - name: Determinism check (same seed, byte-identical output)
         run: |
-          npm run bench -- --scenarios 6 --seed 1234 --out bench-results-2.json --allow-failure
+          npm run bench -- --scenarios 12 --seed 1234 --out bench-results-2.json --allow-failure
           node tools/assert-deterministic.ts bench-results.json bench-results-2.json
 
       # ...and this step JUDGES. It is the only step allowed to fail on a

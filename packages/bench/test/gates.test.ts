@@ -23,6 +23,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import type { BenchResults, GateSummary, GatesBlock } from '../src/results.ts';
+import { RECOVERY_GATES } from '../src/results.ts';
 import type { AmendmentEntry, GateWaiver, WaiverFile } from '../src/waivers.ts';
 import {
   WAIVERS_SCHEMA,
@@ -397,4 +398,36 @@ test('judge() reads the real repository files and agrees with the CLI', () => {
   // reported rather than hidden.
   assert.equal(evaluation.unused.length, readWaivers(WAIVERS).waivers.length);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('h_center_recovery does not score a scenario where h_center was never estimated', () => {
+  // The bug this pins: h_center is observable through a floor reference and
+  // nothing else, so with none supplied the solver holds it at the documented
+  // nominal and never estimates it. Scoring that scenario measured the
+  // SIMULATOR's own perturbation draw — whose sigma is 25.4 mm precisely because
+  // PARAMETERS.md §1 names NOAA's inch — so the gate was reading back the
+  // constant it exists to test against, and calling a 53 mm draw a failure.
+  const spec = RECOVERY_GATES.find((g) => g.id === 'h_center_recovery');
+  assert.ok(spec !== undefined, 'the gate is gone');
+  assert.ok(spec.measurable !== undefined, 'the gate must declare when it can be scored');
+
+  const withReference = {
+    recovery: { centerHeight: { errorMm: 4, observed: true } },
+  } as unknown as Parameters<NonNullable<typeof spec.measurable>>[0];
+  const without = {
+    recovery: { centerHeight: { errorMm: 53.27, observed: false } },
+  } as unknown as Parameters<NonNullable<typeof spec.measurable>>[0];
+
+  assert.equal(spec.measurable(withReference), true, 'an estimated h_center must be scored');
+  assert.equal(spec.measurable(without), false, 'an un-estimated h_center must not be scored');
+});
+
+test('the recovery gates that ARE always measurable stay that way', () => {
+  // The escape hatch above must not spread. Pose recovery is a comparison
+  // between two rigs the simulator built; it is always available.
+  for (const id of ['pose_position', 'pose_rotation']) {
+    const spec = RECOVERY_GATES.find((g) => g.id === id);
+    assert.ok(spec !== undefined, `${id} is gone`);
+    assert.equal(spec.measurable, undefined, `${id} must not have acquired a measurable() guard`);
+  }
 });

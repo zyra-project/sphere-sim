@@ -416,6 +416,15 @@ export interface RecoveryGateSpec {
   klass: string;
   basis: string;
   value(r: ScenarioResult): number;
+  /**
+   * Whether this scenario can be scored at all. Default: always.
+   *
+   * A gate that scores a quantity the solver declined to estimate is not
+   * measuring the solver, it is measuring the simulator's own perturbation draw.
+   * Marking those scenarios NOT MEASURABLE keeps them visible and counted
+   * without letting them decide a pass or a fail.
+   */
+  measurable?(r: ScenarioResult): boolean;
 }
 
 export const RECOVERY_GATES: RecoveryGateSpec[] = [
@@ -456,8 +465,9 @@ export const RECOVERY_GATES: RecoveryGateSpec[] = [
     max: 10.0,
     klass: 'DERIVED',
     basis:
-      "NOT a §7 gate. PARAMETERS.md §1's note claims sub-centimetre h_center recovery is a concrete improvement over NOAA's add-or-subtract-an-inch loop; this holds that claim to the centimetre it names. The documented correction step is 25.4 mm.",
+      "NOT a §7 gate. PARAMETERS.md §1's note claims sub-centimetre h_center recovery is a concrete improvement over NOAA's add-or-subtract-an-inch loop; this holds that claim to the centimetre it names. The documented correction step is 25.4 mm. Scored ONLY where the solver actually estimated h_center: it is observable through a floor reference and nothing else (packages/solver/src/index.ts, `centerHeightObserved`), so with none supplied the solver holds it at the documented nominal and this gate would otherwise report the simulator's own perturbation draw — which is drawn at sigma 25.4 mm precisely BECAUSE §1 names NOAA's inch, so the gate would be scoring the constant it is supposed to be testing against.",
     value: (r) => r.recovery?.centerHeight.errorMm ?? NaN,
+    measurable: (r) => r.recovery?.centerHeight.observed === true,
   },
 ];
 
@@ -467,7 +477,12 @@ function buildRecoveryGates(results: readonly ScenarioResult[]): GateSummary[] {
     const values: number[] = [];
     const failed: string[] = [];
     let worst: { scenario: string; value: number } | null = null;
+    const notMeasurable: string[] = [];
     for (const r of results) {
+      if (spec.measurable !== undefined && !spec.measurable(r)) {
+        notMeasurable.push(r.scenario.id);
+        continue;
+      }
       const v = spec.value(r);
       values.push(v);
       if (!Number.isFinite(v) || v > spec.max) failed.push(r.scenario.id);
@@ -490,7 +505,7 @@ function buildRecoveryGates(results: readonly ScenarioResult[]): GateSummary[] {
       failedScenarios: failed,
       worst,
       distribution: dispersion(values),
-      scenariosNotMeasurable: [],
+      scenariosNotMeasurable: notMeasurable,
       dependsOnRecovery: true,
       // Pose recovery is a comparison between two rigs the simulator built. No
       // photometric constant enters it, so it is never provisional — stated

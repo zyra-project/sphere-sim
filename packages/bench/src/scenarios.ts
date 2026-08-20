@@ -26,9 +26,10 @@
  * Two consequences worth stating. Scenario 0 is always the canary — zero
  * injected misalignment, noiseless, ambient off — because a bench whose
  * end-to-end path has quietly broken should fail loudly on the first scenario
- * rather than produce twelve plausible-looking failures. And a run of six
- * scenarios (what CI does) always covers the same first six archetypes, so CI's
- * verdict is comparable across commits even though its numbers are not.
+ * rather than produce twelve plausible-looking failures. A run of N scenarios
+ * always covers the same first N archetypes, so a verdict is comparable across
+ * commits even though its numbers are not. CI ran SIX for a long time and
+ * therefore never judged archetypes 6-11 at all; it runs all twelve now.
  *
  * Asking for more scenarios than there are archetypes cycles the list with
  * fresh seeds, which is what a long round should do: the same twelve questions
