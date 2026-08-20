@@ -199,8 +199,9 @@ export interface Verdict {
   /** The margin with the lowest median, whether or not it cleared F5. */
   bestMargin: number | null;
   /**
-   * What the room costs, paired seed by seed. The honest form of the ratio of
-   * medians above, which is a ratio of two single seeds.
+   * What the room costs, paired seed by seed — expressed as what removing it
+   * buys, so the geometric mean is the cost factor. The honest form of the ratio
+   * of medians above, which is a ratio of two single seeds.
    */
   roomCostPaired: Paired | null;
   /** What segmentation recovers at `bestMargin`, paired seed by seed. */
@@ -460,7 +461,11 @@ export function judge(cells: Cell[]): Verdict {
   // Paired, seed by seed. The medians above are each a single seed's number; these
   // use the pairing the design already bought.
   const usableAtOrBelowMm = base.posePositionMm.max;
-  const roomCostPaired = paired(base, spiltAtDefault, usableAtOrBelowMm);
+  // Oriented as what REMOVING the room buys, so the geometric mean reads as the
+  // room's cost (146x) rather than its reciprocal, and `improved` counts the seeds
+  // that a clean capture beats. Same convention as the segmentation pair below:
+  // ratios are before/after and `after` is the better state being moved to.
+  const roomCostPaired = paired(spiltAtDefault, base, usableAtOrBelowMm);
   const segmentationPaired =
     best === undefined ? null : paired(spiltAtDefault, best, usableAtOrBelowMm);
 
