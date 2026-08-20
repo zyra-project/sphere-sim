@@ -150,6 +150,7 @@ import {
   mat3Multiply,
   mat3MulVec,
   kabschRotation,
+  jacobiEigenSymmetric,
   median,
   solveSymmetric,
 } from './linalg.ts';
@@ -1781,11 +1782,19 @@ export function gaugeNullSpace(state: BundleState, problem: BundleProblem): Gaug
  * multiplies the ratio by four and a fixed threshold silently changes its
  * verdict. This cosine is dimensionless and depends on neither.
  */
-function floorCoupling(problem: BundleProblem, dir: Float64Array): number {
+/**
+ * How much each floor reference's residual moves along `dir`.
+ *
+ * One entry per reference. `floorCoupling` is the worst of these; the null-space
+ * computation below needs all of them, because a direction is unobservable only
+ * when EVERY reference is blind to it.
+ */
+function floorResponse(problem: BundleProblem, dir: Float64Array): Float64Array {
   const { layout } = problem;
   const hCol = layout.freeMap[layout.slotCenterHeight];
-  let worst = 0;
-  for (const ref of problem.floor) {
+  const out = new Float64Array(problem.floor.length);
+  for (let i = 0; i < problem.floor.length; i++) {
+    const ref = problem.floor[i];
     const zSlot =
       ref.kind === 'camera'
         ? slotCamera(layout, ref.index, CAM_PZ)
@@ -1793,9 +1802,94 @@ function floorCoupling(problem: BundleProblem, dir: Float64Array): number {
     const zCol = layout.freeMap[zSlot];
     const dz = zCol >= 0 ? dir[zCol] : 0;
     const dh = hCol >= 0 ? dir[hCol] : 0;
-    worst = Math.max(worst, Math.abs(dz + dh) / Math.SQRT2);
+    out[i] = (dz + dh) / Math.SQRT2;
   }
+  return out;
+}
+
+function floorCoupling(problem: BundleProblem, dir: Float64Array): number {
+  const resp = floorResponse(problem, dir);
+  let worst = 0;
+  for (let i = 0; i < resp.length; i++) worst = Math.max(worst, Math.abs(resp[i]));
   return worst;
+}
+
+/** A rotation direction the floor cannot measure, and which axes it is made of. */
+interface UnobservedDirection {
+  /** Unit vector in the reduced parameter space. */
+  dir: Float64Array;
+  /** Coefficients on the three world-axis candidates, unit length. */
+  coeffs: number[];
+}
+
+/**
+ * The rotation directions the floor references cannot see.
+ *
+ * This used to be three independent per-axis questions: for each world axis,
+ * "do the floor heights move when the rig rotates about it?" That is the right
+ * question only when the unobservable set happens to be spanned by world axes,
+ * and with exactly TWO floor references it is not. The direction two heights
+ * cannot distinguish is a MIXTURE of the horizontal axes, fixed by the
+ * references' plan-view azimuths: rotate so that both referenced lenses rise by
+ * the same amount and `h_center` absorbs it at zero cost. Both PURE axes move
+ * the two heights by different amounts, so both were judged observable and left
+ * to the data, and the mixture that moves neither was never pinned at all. The
+ * normal matrix kept a cost-invariant direction, the solve wandered along it,
+ * and `h_center` rode it: two references recovered `h_center` about a hundred
+ * times worse than three, and adding the SECOND reference made a two-projector
+ * rig worse than having one.
+ *
+ * So ask the question in the space rather than on the axes. Build each floor
+ * reference's response to each candidate, take the Gram matrix of those
+ * responses, and read off its null space: an eigenvector with no response is a
+ * rotation no reference can measure, whatever mixture of axes it happens to be.
+ * With one reference all three come back null, with four only the azimuth does,
+ * and both of those are what the per-axis test already gave — this changes the
+ * answer only where the per-axis test could not represent it.
+ */
+function gaugeUnobserved(
+  problem: BundleProblem,
+  candidates: readonly GaugeDirection[],
+  nullTolerance: number,
+): UnobservedDirection[] {
+  const k = candidates.length;
+  if (k === 0) return [];
+  const n = candidates[0].dir.length;
+  const resp = candidates.map((c) => floorResponse(problem, c.dir));
+
+  const gram = new Float64Array(k * k);
+  for (let a = 0; a < k; a++) {
+    for (let b = a; b < k; b++) {
+      let sum = 0;
+      for (let i = 0; i < resp[a].length; i++) sum += resp[a][i] * resp[b][i];
+      gram[a * k + b] = sum;
+      gram[b * k + a] = sum;
+    }
+  }
+  const eig = jacobiEigenSymmetric(gram, k);
+
+  const out: UnobservedDirection[] = [];
+  for (let j = 0; j < k; j++) {
+    const coeffs: number[] = [];
+    for (let a = 0; a < k; a++) coeffs.push(eig.vectors[a * k + j]);
+    const dir = new Float64Array(n);
+    for (let a = 0; a < k; a++) {
+      const w = coeffs[a];
+      if (w === 0) continue;
+      const from = candidates[a].dir;
+      for (let i = 0; i < n; i++) dir[i] += w * from[i];
+    }
+    let norm = 0;
+    for (let i = 0; i < n; i++) norm += dir[i] * dir[i];
+    norm = Math.sqrt(norm);
+    if (!(norm > 1e-12)) continue;
+    for (let i = 0; i < n; i++) dir[i] /= norm;
+    // The same test the per-axis version applied, on a direction it could not
+    // express: a direction the floor genuinely measures must be left to the data.
+    if (floorCoupling(problem, dir) > nullTolerance) continue;
+    out.push({ dir, coeffs });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -2180,14 +2274,31 @@ export function levenbergMarquardt(
     if (opts.gauge.mode === 'inner' && opts.gauge.strength > 0) {
       const nulls = gaugeNullSpace(state, problem);
       const w2 = opts.gauge.strength * meanDiag;
+      // A direction the floor heights genuinely determine is left to the data:
+      // pinning it would throw away the measurement PARAMETERS.md §8 item 1
+      // exists to collect. `gaugeUnobserved` decides that in the rotation SPACE
+      // rather than on the three world axes, which is the only way to see the
+      // mixed direction two references cannot distinguish.
+      const unobserved = gaugeUnobserved(problem, nulls, opts.gauge.nullTolerance);
+
+      // `gaugeFreeAxes` stays a statement about WORLD AXES, and deliberately
+      // remains the conservative reading: axis k is reported free only when the
+      // pinned subspace contains the whole of it, not merely a component. At two
+      // references the pinned set holds the azimuth and one horizontal MIXTURE,
+      // so neither horizontal axis is wholly unobservable and neither is
+      // reported free. Consumers downstream (packages/bench/src/score.ts) strip
+      // the reported axes from a rotation before scoring, so over-reporting here
+      // would remove a rotation the data did determine and flatter the score.
+      // Under-reporting only leaves a real gauge freedom in the number, which is
+      // the direction an honest score should err in.
       gaugeFreeAxes = [false, false, false];
-      for (let ci = 0; ci < nulls.length; ci++) {
-        // A direction the floor heights genuinely determine must be left to the
-        // data. Pinning it would throw away the measurement PARAMETERS.md §8
-        // item 1 exists to collect.
-        if (floorCoupling(problem, nulls[ci].dir) > opts.gauge.nullTolerance) continue;
-        const cand = nulls[ci];
-        gaugeFreeAxes[cand.axis] = true;
+      for (let axis = 0; axis < 3; axis++) {
+        let captured = 0;
+        for (const u of unobserved) captured += u.coeffs[axis] * u.coeffs[axis];
+        gaugeFreeAxes[axis] = captured > 1 - 1e-9;
+      }
+
+      for (const cand of unobserved) {
         gaugeCount++;
         const vec = cand.dir;
         for (let a = 0; a < n; a++) {

@@ -182,6 +182,43 @@ test('h_center tracks a deliberately shifted floor measurement', () => {
   assert.ok(Math.abs(delta - 0.01) < 5e-4, `expected +10 mm, got ${delta * 1000} mm`);
 });
 
+test('the gauge pins every rotation the floor cannot measure, including mixtures', () => {
+  // The count is arithmetic, not a preference. Floor references see a rotation
+  // only through the height it gives each referenced lens, so with N references
+  // the observable part of the rotation space has the rank of an N-by-2 matrix
+  // over the two horizontal axes, and the gauge must pin what is left:
+  //
+  //   0 or 1 reference   rank 0   ->  3 constraints
+  //   2 references       rank 1   ->  2 constraints
+  //   3+ non-collinear   rank 2   ->  1 constraint (azimuth, which moves no height)
+  //
+  // The two-reference row is the one that regressed. The old code asked of each
+  // WORLD AXIS separately whether the heights moved under it; at two references
+  // both pure axes move them, so both looked observable and only the azimuth was
+  // pinned — while the MIXTURE that raises both lenses equally, which no
+  // reference can see, was left free for the damping to resolve. It applied one
+  // constraint where the space needs two.
+  const scene = makeScene(7);
+  const corrs = generateCorrespondences(scene.truth);
+  const refs = (idx: number[]): FloorReference[] =>
+    idx.map((i) => ({
+      kind: 'projector' as const,
+      index: i,
+      heightM: scene.truth.projectors[i].position.z + scene.truth.centerHeightM,
+      sigmaM: 0.002,
+    }));
+  const constraintsFor = (idx: number[]): number =>
+    solveFromCorrespondences(scene.nominal, scene.cameraInputs, corrs, refs(idx)).extra
+      .gaugeConstraints;
+
+  assert.equal(constraintsFor([]), 3, 'no reference determines no rotation');
+  assert.equal(constraintsFor([0]), 3, 'one height determines no rotation either');
+  assert.equal(constraintsFor([0, 1]), 2, 'two ADJACENT lenses leave one tilt unmeasurable');
+  assert.equal(constraintsFor([0, 2]), 2, 'two ANTIPODAL lenses leave one tilt unmeasurable');
+  assert.equal(constraintsFor([0, 1, 2]), 1, 'three lenses leave only the azimuth');
+  assert.equal(constraintsFor([0, 1, 2, 3]), 1, 'four lenses leave only the azimuth');
+});
+
 test('a single floor reference leaves h_center tied to the tilt gauge', () => {
   // Documented limitation, asserted so it cannot regress into a silent claim.
   // With one height, tilting the rig and shifting h_center to compensate leaves
