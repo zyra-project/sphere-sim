@@ -29,6 +29,13 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # PARAMETERS.md 4.2 (multiplicity never exceeds 2) and 4.3 (the scalloped
+      # unlit region) are both counterintuitive and both easy to break, and a
+      # build that breaks them still renders something that looks like a sphere.
+      # The check existed, passed, and ran in no workflow.
+      - name: Reference geometry (PARAMETERS.md 4.2 and 4.3)
+        run: npm run progress:reference:check
+
       # The browser bundles are typechecked separately from the Node one: they
       # target DOM and WebWorker libs, forbid the `node:` builtins, and emit real
       # JavaScript rather than only checking types. A page that typechecks under

@@ -348,3 +348,38 @@ test('F6 is evaluated even when F5 triggers', () => {
   );
   assert.equal(v.bestMargin, 0);
 });
+
+test('the statement never claims a paired estimate it does not have', () => {
+  // Cells summarised without per-seed runs have no pairing. The first draft of the
+  // paired reporting emitted "a geometric mean of NaN over 0 seeds" into the
+  // verdict, and from there into the figure.
+  const v = judge([
+    cell(null, 0.02, 20, 0),
+    cell(6, 0.02, 7800, 0.14),
+    cell(6, 0.02, 44, 0.008, undefined, 0),
+    cell(null, 0.02, 21, 0, undefined, 0),
+  ]);
+  assert.doesNotMatch(v.statement, /NaN|undefined|Infinity/, v.statement);
+  assert.doesNotMatch(v.statement, /geometric mean/, 'no pairing exists, so none may be claimed');
+});
+
+test('the statement reports the paired estimate when the pairing is there', () => {
+  const withRuns = (
+    w: number | null,
+    margin: number | null,
+    values: number[],
+  ): Cell =>
+    ({
+      ...cell(w, 0.02, [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)], w === null ? 0 : 0.14, values, margin),
+      runs: values.map((v, i) => ({ seedIndex: i, posePositionMm: v })),
+    }) as unknown as Cell;
+  const v = judge([
+    withRuns(null, null, [20.6, 51.5, 18.7, 12.9, 28.6]),
+    withRuns(6, null, [15.1, 7840.6, 40638.1, 2499.8, 40349.2]),
+    withRuns(6, 0, [21.6, 44.0, 18.8, 352389, 166.8]),
+    withRuns(null, 0, [21.4, 42.6, 18.8, 9.2, 28.6]),
+  ]);
+  assert.doesNotMatch(v.statement, /NaN|undefined|Infinity/, v.statement);
+  assert.match(v.statement, /geometric mean of 146\.0/, v.statement);
+  assert.match(v.statement, /geometric mean of 13\.6/, v.statement);
+});

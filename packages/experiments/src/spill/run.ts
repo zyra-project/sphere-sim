@@ -469,6 +469,16 @@ export function judge(cells: Cell[]): Verdict {
   const segmentationPaired =
     best === undefined ? null : paired(spiltAtDefault, best, usableAtOrBelowMm);
 
+  // A cell built without per-seed runs — every synthetic fixture, and any future
+  // caller that summarises before it measures — has no pairing to report, and a
+  // sentence reading "a geometric mean of NaN over 0 seeds" is worse than silence.
+  const pairedClause = (p: Paired | null, verb: string): string =>
+    p === null || p.n === 0 || !Number.isFinite(p.geometricMean)
+      ? ''
+      : ` Paired seed by seed that is a geometric mean of ${p.geometricMean.toFixed(1)} over ` +
+        `${p.n} seeds, ${verb} ${p.improved} of them and taking the seeds no worse than the ` +
+        `worst clean solve from ${p.usableBefore} to ${p.usableAfter}.`;
+
   const segmentationLine =
     best === undefined
       ? ' No segmentation cell was in the grid.'
@@ -483,12 +493,9 @@ export function judge(cells: Cell[]): Verdict {
           `${best.posePositionMm.median.toFixed(1)} mm, a factor of ` +
           `${(segmentationMedianFactor ?? NaN).toFixed(0)} on the medians, against a clean ` +
           `baseline of ${base.posePositionMm.median.toFixed(1)} mm. Both of those medians are ` +
-          'one seed, so the number that carries the effect is the paired one: a geometric mean ' +
-          `of ${(segmentationPaired?.geometricMean ?? NaN).toFixed(1)} over ` +
-          `${segmentationPaired?.n ?? 0} seeds, improving ${segmentationPaired?.improved ?? 0} of ` +
-          `them and taking the seeds no worse than the worst clean solve from ` +
-          `${segmentationPaired?.usableBefore ?? 0} to ${segmentationPaired?.usableAfter ?? 0}. ` +
-          `What it does not fix is the tail: the worst of ${best.n} seeds is still ` +
+          'one seed.' +
+          pairedClause(segmentationPaired, 'improving') +
+          ` What it does not fix is the tail: the worst of ${best.n} seeds is still ` +
           `${(segmentationWorstSeedMm ?? NaN).toFixed(0)} mm. ` +
           'The residue is the correspondences that miss the TRUE sphere and hit the NOMINAL one, ' +
           'which is the dependence on the answer that this test was always going to carry.';
@@ -506,7 +513,9 @@ export function judge(cells: Cell[]): Verdict {
         'accepted correspondences off the sphere, and that is enough to destroy the solve: ' +
         `recovered pose goes from ${base.posePositionMm.median.toFixed(1)} mm to ` +
         `${spiltAtDefault.posePositionMm.median.toFixed(0)} mm, a factor of ` +
-        `${ratio.toFixed(0)}. ` +
+        `${ratio.toFixed(0)} on the medians, which are one seed each.` +
+        pairedClause(roomCostPaired, 'improving') +
+        ' ' +
         (separatingModulation === null
           ? 'No modulation floor in the sweep separated the room from the sphere. A floor is a ' +
             'brightness test, and what survives the high floors is not the far wall but the ' +
