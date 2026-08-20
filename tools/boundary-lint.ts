@@ -53,7 +53,12 @@ function walk(dir: string, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+      // `dist` is skipped only where a build actually writes it — directly under a
+      // package root. Pruning the name at any depth meant packages/solver/src/dist/
+      // was unscannable: plain TypeScript, imported normally, invisible to every
+      // rule below. A guard with a directory name as its escape hatch is not a guard.
+      if (entry.name === 'node_modules') continue;
+      if (entry.name === 'dist' && path.dirname(path.dirname(full)) === PKG) continue;
       walk(full, out);
     } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) {
       out.push(full);
@@ -218,11 +223,17 @@ for (const file of files) {
   const sf = ts.createSourceFile(file, src, ts.ScriptTarget.ES2023, true, ts.ScriptKind.TS);
   const pkg = packageOf(file);
 
-  // R2 constrains what the boundary object SHIPS, so it applies to src/ only.
-  // The tests that exercise this rule necessarily contain functions and
-  // arithmetic; they are not part of the published bag of numbers.
-  const inSrc = path.relative(PKG, file).split(path.sep)[1] === 'src';
-  if (pkg === 'calibration' && inSrc) checkNoMath(sf, file);
+  // R2 constrains what the boundary object SHIPS, so it exempts tests only. The
+  // tests that exercise this rule necessarily contain functions and arithmetic;
+  // they are not part of the published bag of numbers.
+  //
+  // It used to be scoped to src/ instead, which is not the same thing: R1 lets
+  // both sim and solver import packages/calibration, so anything ELSE under
+  // calibration — lib/, util/, a stray helpers.ts — was importable by both sides
+  // and never checked for math. That is precisely the erosion path R1's own
+  // message warns about, with the check that would have caught it turned off.
+  const segment = path.relative(PKG, file).split(path.sep)[1];
+  if (pkg === 'calibration' && segment !== 'test') checkNoMath(sf, file);
 
   for (const spec of moduleSpecifiers(sf)) {
     const targetPkg = resolveTargetPackage(file, spec.text);

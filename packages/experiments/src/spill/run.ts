@@ -107,6 +107,64 @@ function dispersion(values: number[]): Dispersion {
   return { median, min: sorted[0] ?? NaN, max: sorted[sorted.length - 1] ?? NaN, values };
 }
 
+/**
+ * A paired per-seed comparison of two cells.
+ *
+ * `seedFor()` depends only on the seed index and never on the cell, so all 28
+ * cells are the SAME five rig draws: the design is fully paired. Every quantity
+ * in this file used to throw that away by dividing two independently sorted
+ * medians. At n=5 a median IS one observation, so a ratio of two medians is a
+ * ratio of two arbitrary seeds — the published "factor of 178" was seed 1's
+ * 7840.59 mm over seed 1's 44.01 mm, and the paired geometric mean of the same
+ * effect is 13.6.
+ *
+ * This deliberately adds no confidence interval. `experiment1/stats.ts` argues
+ * that a standard error at n<=5 is "a number with a confidence interval wider
+ * than itself", and that argument is right. Pairing is a different thing: it is
+ * information the design already bought and the estimator was discarding.
+ */
+export interface Paired {
+  /** Per-seed ratio before/after, in seed order. */
+  ratios: number[];
+  /** Geometric mean of the ratios. The paired point estimate. */
+  geometricMean: number;
+  /** Seeds that moved in the improving direction. */
+  improved: number;
+  n: number;
+  /**
+   * Seeds no worse than the WORST clean solve, before and after.
+   *
+   * The threshold is the clean baseline's own maximum rather than a round
+   * number, so it is set by the data instead of chosen. This is the summary the
+   * ratio hides: a geometric mean over a bimodal set says little, but "one seed
+   * in five was usable, then three were" is the same fact stated usefully.
+   */
+  usableBefore: number;
+  usableAfter: number;
+}
+
+/** Pair two cells seed by seed. `before` and `after` must share a seed order. */
+export function paired(before: Cell, after: Cell, usableAtOrBelowMm: number): Paired {
+  const b = [...before.runs].sort((x, y) => x.seedIndex - y.seedIndex);
+  const a = [...after.runs].sort((x, y) => x.seedIndex - y.seedIndex);
+  const n = Math.min(b.length, a.length);
+  const ratios: number[] = [];
+  for (let i = 0; i < n; i++) ratios.push(b[i].posePositionMm / a[i].posePositionMm);
+  const usable = (runs: PointRun[]): number =>
+    runs.slice(0, n).filter((r) => r.posePositionMm <= usableAtOrBelowMm).length;
+  return {
+    ratios,
+    geometricMean:
+      ratios.length === 0
+        ? NaN
+        : Math.exp(ratios.reduce((sum, r) => sum + Math.log(r), 0) / ratios.length),
+    improved: ratios.filter((r) => r > 1).length,
+    n,
+    usableBefore: usable(b),
+    usableAfter: usable(a),
+  };
+}
+
 export interface Verdict {
   /** F1: the condition changed the correspondence set at all. */
   isInert: boolean;
@@ -140,6 +198,13 @@ export interface Verdict {
   segmentationWorstSeedMm: number | null;
   /** The margin with the lowest median, whether or not it cleared F5. */
   bestMargin: number | null;
+  /**
+   * What the room costs, paired seed by seed. The honest form of the ratio of
+   * medians above, which is a ratio of two single seeds.
+   */
+  roomCostPaired: Paired | null;
+  /** What segmentation recovers at `bestMargin`, paired seed by seed. */
+  segmentationPaired: Paired | null;
   statement: string;
 }
 
@@ -283,6 +348,8 @@ export function judge(cells: Cell[]): Verdict {
       segmentationMedianFactor: null,
       segmentationWorstSeedMm: null,
       bestMargin: null,
+      roomCostPaired: null,
+      segmentationPaired: null,
       statement: 'The grid did not contain the cells the verdict is defined against.',
     };
   }
@@ -319,9 +386,19 @@ export function judge(cells: Cell[]): Verdict {
   const atDefaultRoom = cells
     .filter((c) => c.wallRadiusM === DEFAULT_ROOM_SPILL.wallRadiusM && c.segmentMarginFrac === null)
     .sort((a, b) => a.minModulation - b.minModulation);
-  const recovered = atDefaultRoom.find(
-    (c) => c.posePositionMm.median < 2 * base.posePositionMm.median,
-  );
+  // Against the clean capture AT THE SAME FLOOR, not against the clean capture at
+  // the shipped floor. Raising the floor costs a clean capture too — 0.40 takes it
+  // from 20.6 mm to 60.8 mm — so a bar fixed at 2x the SHIPPED clean baseline is
+  // arithmetically unreachable over the top of this sweep no matter how completely
+  // the room is removed, and a falsifier that cannot fail measures nothing.
+  const cleanAt = (m: number): Cell | undefined =>
+    cells.find(
+      (c) => c.wallRadiusM === null && c.minModulation === m && c.segmentMarginFrac === null,
+    );
+  const recovered = atDefaultRoom.find((c) => {
+    const clean = cleanAt(c.minModulation);
+    return clean !== undefined && c.posePositionMm.median < 2 * clean.posePositionMm.median;
+  });
   const separatingModulation =
     recovered && recovered.minModulation > BASELINE_MODULATION ? recovered.minModulation : null;
   const cleanAtThatFloor =
@@ -361,19 +438,31 @@ export function judge(cells: Cell[]): Verdict {
     best === undefined ? null : spiltAtDefault.posePositionMm.median / best.posePositionMm.median;
   const segmentationWorstSeedMm = best?.posePositionMm.max ?? null;
   const bestMargin = best?.segmentMarginFrac ?? null;
+  // At the BEST margin, not the recovering one. Keyed on `recoveringMargin` this
+  // was null whenever F5 triggered — which it did — so F6 was never evaluated in
+  // the published run while the write-up reported it as "not triggered" from a
+  // number computed by hand. A falsifier that silently does not run when its
+  // predecessor fires is worse than no falsifier: the row is still printed.
   const cleanSegmented =
-    recoveringMargin === null
+    bestMargin === null
       ? undefined
       : cells.find(
           (c) =>
             c.wallRadiusM === null &&
             c.minModulation === BASELINE_MODULATION &&
-            c.segmentMarginFrac === recoveringMargin,
+            c.segmentMarginFrac === bestMargin,
         );
   const segmentationCostToACleanCapture =
     cleanSegmented === undefined
       ? null
       : cleanSegmented.posePositionMm.median / base.posePositionMm.median;
+
+  // Paired, seed by seed. The medians above are each a single seed's number; these
+  // use the pairing the design already bought.
+  const usableAtOrBelowMm = base.posePositionMm.max;
+  const roomCostPaired = paired(base, spiltAtDefault, usableAtOrBelowMm);
+  const segmentationPaired =
+    best === undefined ? null : paired(spiltAtDefault, best, usableAtOrBelowMm);
 
   const segmentationLine =
     best === undefined
@@ -387,9 +476,15 @@ export function judge(cells: Cell[]): Verdict {
           `but it is not a null result: it takes the median from ` +
           `${spiltAtDefault.posePositionMm.median.toFixed(0)} mm to ` +
           `${best.posePositionMm.median.toFixed(1)} mm, a factor of ` +
-          `${(segmentationMedianFactor ?? NaN).toFixed(0)}, against a clean baseline of ` +
-          `${base.posePositionMm.median.toFixed(1)} mm. What it does not fix is the tail: the ` +
-          `worst of ${best.n} seeds is still ${(segmentationWorstSeedMm ?? NaN).toFixed(0)} mm. ` +
+          `${(segmentationMedianFactor ?? NaN).toFixed(0)} on the medians, against a clean ` +
+          `baseline of ${base.posePositionMm.median.toFixed(1)} mm. Both of those medians are ` +
+          'one seed, so the number that carries the effect is the paired one: a geometric mean ' +
+          `of ${(segmentationPaired?.geometricMean ?? NaN).toFixed(1)} over ` +
+          `${segmentationPaired?.n ?? 0} seeds, improving ${segmentationPaired?.improved ?? 0} of ` +
+          `them and taking the seeds no worse than the worst clean solve from ` +
+          `${segmentationPaired?.usableBefore ?? 0} to ${segmentationPaired?.usableAfter ?? 0}. ` +
+          `What it does not fix is the tail: the worst of ${best.n} seeds is still ` +
+          `${(segmentationWorstSeedMm ?? NaN).toFixed(0)} mm. ` +
           'The residue is the correspondences that miss the TRUE sphere and hit the NOMINAL one, ' +
           'which is the dependence on the answer that this test was always going to carry.';
 
@@ -435,6 +530,8 @@ export function judge(cells: Cell[]): Verdict {
     segmentationMedianFactor,
     segmentationWorstSeedMm,
     bestMargin,
+    roomCostPaired,
+    segmentationPaired,
     statement,
   };
 }
@@ -477,9 +574,15 @@ export function runSpillExperiment(options: RunOptions = {}): SpillExperimentRes
     schema: 'sphere-sim/experiment-4@1',
     provisional: false,
     provisionalNote:
-      'Purely geometric. The measurement is a recovered pose against ground truth, and no ' +
-      'photometric constant enters it — the room’s two constants decide where light lands, not ' +
-      'how bright the answer is. The Phase 2 gate does not apply.',
+      'The pose metric is geometric — a recovered pose against ground truth — so the Phase 2 ' +
+      'gate does not apply to it. What IS conditional on an unmeasured constant is how much ' +
+      'contamination reaches the solver at all: an off-sphere return is scaled by rho_room ' +
+      '(PARAMETERS.md, 0.3, class ASSUME) before it meets the decoder threshold. So F1’s ' +
+      'contamination percentage and the whole of F4’s threshold sweep move with a number ' +
+      'nobody has measured, while the pose consequence OF a contaminated correspondence set ' +
+      'does not. The consequence is measured; the dose is assumed. An earlier version of this ' +
+      'note claimed no photometric constant entered the experiment at all, which was wrong: it ' +
+      'counted the room’s two geometric constants and forgot its albedo.',
     generatedFrom: {
       rootSeed: EXPERIMENT_ROOT_SEED,
       seedCount,

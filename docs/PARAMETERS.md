@@ -289,7 +289,7 @@ per channel, and it cannot correct a chromatic seam.
 | `E_amb` | Ambient luminance on sphere, relative | 0.04 | `ASSUME` / `MEAS` | NOAA's automated-alignment docs note ambient and direct light throw off their CV, and that they have unusually good lighting control at their own facility — implying typical sites do not. Range 0.01–0.15. |
 | `E_amb_chroma` | Ambient color temperature | 4000 K | `ASSUME` | Exhibit lighting is rarely daylight-balanced. Tints the whole sphere and shifts every ΔE measurement. |
 | `amb_dir` | Ambient directionality | uniform hemisphere | `ASSUME` | Real rooms have windows, spots, exit signs. |
-| `ρ_room` | Wall/floor albedo | 0.3 | `ASSUME` | Only matters via inter-reflection, not modeled in v1. |
+| `ρ_room` | Wall/floor albedo | 0.3 | `ASSUME` | Reaches a geometric result directly: with `roomSpill` on it scales every off-sphere return before the decoder's modulation gate, so it sets how much contamination experiment 4 sees. The earlier note here said it only mattered via inter-reflection; that stopped being true when the room became switchable. |
 
 ---
 

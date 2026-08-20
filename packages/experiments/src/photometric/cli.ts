@@ -38,6 +38,12 @@ export function compact(value: unknown): unknown {
     if (Number.isNaN(value)) return null;
     if (!Number.isFinite(value)) return value > 0 ? 'Infinity' : '-Infinity';
     if (value === 0) return 0;
+    // Integers are identities, not measurements: seeds, counts, indices. Rounding
+    // 996363085 to 996363000 made every seed in experiments/experiment-4.json a
+    // number that cannot reproduce the run it labels, in a repository whose CI
+    // asserts byte-identical output from the same seed. Six significant figures is
+    // a readability rule for metrics and must not touch a value that is an identity.
+    if (Number.isInteger(value)) return value;
     return Number(value.toPrecision(Math.abs(value) >= 1 ? 6 : 4));
   }
   if (Array.isArray(value)) return value.map(compact);

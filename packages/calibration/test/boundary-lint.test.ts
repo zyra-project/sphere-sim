@@ -192,3 +192,52 @@ test('the real repository passes its own rule', () => {
   const out = execFileSync(process.execPath, [LINTER], { encoding: 'utf8' });
   assert.match(out, /0 violations/);
 });
+
+// The two holes below were found by an adversarial review that reproduced them
+// against the real linter: both fixtures printed "0 violations, exit 0" before
+// the fix. They are the failure the lint exists to prevent — solver executing
+// sim's own distortion math — reached by walking around the scan rather than by
+// breaking a rule.
+
+test('R1: a directory named dist BELOW a package src is still scanned', () => {
+  // `dist` used to be pruned at any depth, so packages/solver/src/dist/ was
+  // unreachable by every rule while being ordinary, importable TypeScript.
+  const r = runLint({
+    'packages/sim/src/optics.ts':
+      'export function undistort(x: number, k1: number): number { return x * (1 + k1 * x * x); }\n',
+    'packages/solver/src/dist/leak.ts': "export { undistort } from '../../../sim/src/optics.ts';\n",
+  });
+  assert.notEqual(r.code, 0, `a re-export hidden in src/dist passed the lint:\n${r.out}`);
+  assert.match(r.out, /R1/);
+});
+
+test('R1: a real build output directory is still skipped', () => {
+  // The narrowing must not cost the lint its reason for skipping dist at all:
+  // packages/<pkg>/dist is compiler output and contains whatever src contains.
+  const r = runLint({
+    'packages/calibration/src/index.ts': 'export const R = 0.8636;\n',
+    'packages/solver/dist/main.js.ts': "export { R } from '../../sim/src/optics.ts';\n",
+  });
+  assert.equal(r.code, 0, `a package-root dist/ was scanned when it should not be:\n${r.out}`);
+});
+
+test('R2: math anywhere in calibration fails, not only under src/', () => {
+  // R1 lets BOTH sides import packages/calibration, so a helper parked outside
+  // src/ was shared executable math with the math check switched off — the exact
+  // erosion path R1's own violation message describes.
+  const r = runLint({
+    'packages/calibration/src/index.ts': 'export const R = 0.8636;\n',
+    'packages/calibration/lib/math.ts':
+      'export function scale(a: number, b: number): number { return a * b; }\n',
+  });
+  assert.notEqual(r.code, 0, `executable math outside calibration/src passed the lint:\n${r.out}`);
+  assert.match(r.out, /R2/);
+});
+
+test('R2: the calibration tests may still contain arithmetic', () => {
+  const r = runLint({
+    'packages/calibration/src/index.ts': 'export const R = 0.8636;\n',
+    'packages/calibration/test/r.test.ts': 'const twice = 0.8636 * 2;\nexport { twice };\n',
+  });
+  assert.equal(r.code, 0, `the exemption for calibration's own tests was lost:\n${r.out}`);
+});

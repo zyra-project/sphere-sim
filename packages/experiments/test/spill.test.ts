@@ -25,7 +25,7 @@ import {
   spillFor,
 } from '../src/spill/design.ts';
 import type { Cell, Dispersion } from '../src/spill/run.ts';
-import { judge } from '../src/spill/run.ts';
+import { judge, paired, runSpillExperiment } from '../src/spill/run.ts';
 import { renderSpillSvg } from '../src/spill/plot.ts';
 
 test('the design is two one-axis arms and every cell is distinct', () => {
@@ -272,4 +272,79 @@ test('the figure is well-formed, self-contained, and carries no non-finite coord
     'the figure carries an external URL',
   );
   assert.ok(!/NaN|undefined|Infinity/.test(svg), 'a non-finite coordinate reached the figure');
+});
+
+// The estimator these three pin was found by an adversarial review of the first
+// published run. The design is fully paired — seedFor() depends only on the seed
+// index — and every headline quantity divided two independently sorted medians,
+// which at n=5 is a ratio of two single seeds.
+
+test('the paired estimator uses the pairing, not the sorted order', () => {
+  const cellOf = (values: number[]): Cell =>
+    ({
+      wallRadiusM: null,
+      minModulation: 0.02,
+      segmentMarginFrac: null,
+      n: values.length,
+      // Deliberately out of seed order: paired() must sort by seedIndex, and a
+      // reader who trusted array order would get a different answer here.
+      runs: values.map((v, i) => ({ seedIndex: values.length - 1 - i, posePositionMm: v })),
+    }) as unknown as Cell;
+
+  // before/after are written so that seed 0 gets WORSE and every other seed
+  // improves: a ratio of medians cannot see that and a paired estimate must.
+  const before = cellOf([100, 100, 100, 100, 10].reverse());
+  const after = cellOf([10, 10, 10, 10, 100].reverse());
+  const p = paired(before, after, 50);
+
+  assert.equal(p.n, 5);
+  assert.equal(p.improved, 4, 'four of five seeds improved');
+  assert.ok(p.ratios.some((r) => r < 1), 'the seed that got worse must appear as a ratio below 1');
+  // Geometric mean of four 10x improvements and one 10x regression is 10^(3/5).
+  assert.ok(Math.abs(p.geometricMean - Math.pow(10, 3 / 5)) < 1e-9, `got ${p.geometricMean}`);
+  assert.equal(p.usableBefore, 1);
+  assert.equal(p.usableAfter, 4);
+});
+
+test('the paired geometric mean is not the ratio of the medians', () => {
+  // The whole point: on data spanning orders of magnitude these disagree, and the
+  // published run disagreed by a factor of 13.
+  const mk = (values: number[]): Cell =>
+    ({
+      wallRadiusM: null,
+      minModulation: 0.02,
+      segmentMarginFrac: null,
+      n: values.length,
+      runs: values.map((v, i) => ({ seedIndex: i, posePositionMm: v })),
+    }) as unknown as Cell;
+  const before = mk([15.1, 7840.59, 40638.1, 2499.79, 40349.2]);
+  const after = mk([21.55, 44.01, 18.77, 352389, 166.76]);
+  const p = paired(before, after, 51.5);
+  const medianOf = (v: number[]): number => [...v].sort((a, b) => a - b)[2];
+  const ratioOfMedians =
+    medianOf([15.1, 7840.59, 40638.1, 2499.79, 40349.2]) /
+    medianOf([21.55, 44.01, 18.77, 352389, 166.76]);
+
+  assert.ok(Math.abs(ratioOfMedians - 178.16) < 0.1, `ratio of medians ${ratioOfMedians}`);
+  assert.ok(Math.abs(p.geometricMean - 13.6) < 0.2, `paired geometric mean ${p.geometricMean}`);
+  assert.equal(p.improved, 3, 'segmentation improved three of five seeds and degraded two');
+});
+
+test('F6 is evaluated even when F5 triggers', () => {
+  // It used to be keyed on recoveringMargin, which is null exactly when F5 fires,
+  // so the published run printed an F6 row from a hand calculation while the
+  // machine field beside it was null.
+  const v = judge([
+    cell(null, 0.02, 20, 0),                 // clean baseline
+    cell(6, 0.02, 7800, 0.14),               // the room, unsegmented
+    cell(6, 0.02, 44, 0.008, undefined, 0),  // segmented: 44 > 2 x 20, so F5 fires
+    cell(null, 0.02, 21, 0, undefined, 0),   // clean + segmentation, what F6 asks about
+  ]);
+  assert.equal(v.segmentationRecoversIt, false, 'F5 must trigger for this test to mean anything');
+  assert.notEqual(
+    v.segmentationCostToACleanCapture,
+    null,
+    'F6 must still produce a number when F5 has triggered',
+  );
+  assert.equal(v.bestMargin, 0);
 });
