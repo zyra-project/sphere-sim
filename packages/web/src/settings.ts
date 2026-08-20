@@ -88,7 +88,7 @@ export interface ControlSpec {
   help: string;
 }
 
-export type GroupId = 'install' | 'lens' | 'error' | 'blend' | 'view';
+export type GroupId = 'install' | 'lens' | 'error' | 'blend' | 'capture' | 'view';
 
 export interface Group {
   id: GroupId;
@@ -135,6 +135,21 @@ export const GROUPS: readonly Group[] = [
       'is marked PROVISIONAL.',
   },
   {
+    id: 'capture',
+    title: 'What the camera sees',
+    blurb:
+      'The two conditions that decide whether the solve is measuring the ball or the building. ' +
+      'Both are OFF here and off in the bench, and every number this project publishes was ' +
+      'produced with them off — so switching either one makes this page stop being comparable ' +
+      'with the report, deliberately and visibly. Room spill puts the structured-light pattern ' +
+      'on a wall, a floor and a ceiling as well as the sphere; experiment 4 measured what that ' +
+      'costs at a paired factor of 146, because a decoded point from a wall is not noise, it is ' +
+      'a confident lie the solver has no way to reject. Segmentation is the fix experiment 5 ' +
+      'measured: find the ball in the photograph and throw the rest away, which takes usable ' +
+      'solves from 2 in 30 back to 28. Turn the room on, recalibrate, and watch the headline ' +
+      'number fall over; turn segmentation on and watch it come back.',
+  },
+  {
     id: 'view',
     title: 'The view',
     blurb: 'Where you are standing. Changes nothing about the rig and no metric may depend on it (§6).',
@@ -151,6 +166,24 @@ export interface Settings {
   projectorCount: number;
   /** Index into {@link RESOLUTIONS}. §3.1 / §3.4 — per projector, not the X screen. */
   resolution: number;
+
+  // ---- what the camera sees -----------------------------------------------
+  /**
+   * Put the structured-light pattern on the room as well as the sphere. 0 or 1.
+   *
+   * Off is what the bench does and what every published number was measured
+   * with. On uses §5's `r_wall` and `h_ceiling`, both ASSUME, so a number
+   * produced with this on depends on two constants nobody has measured.
+   */
+  roomSpill: number;
+  /**
+   * Reject camera pixels the photograph says are not the sphere. 0 or 1.
+   *
+   * The image-space segmentation of experiment 5. Reads pixels and nothing
+   * else — no rig, no pose, no radius — so it cannot inherit a dependence on the
+   * calibration being solved for.
+   */
+  segmentSphere: number;
 
   // ---- the lenses ---------------------------------------------------------
   /** Lens to sphere centre, metres. §2 `d_proj`, CONFLICTED. Boulder 5.3594. */
@@ -372,6 +405,10 @@ export function viewSampleSide(s: Settings): number {
  *     P1..P4_DIST_INCHES              211.0
  */
 export const BOULDER_PRESET: Settings = {
+  // Both off, like the bench. See the 'capture' group's blurb for why turning
+  // either on takes this page out of comparability with the report on purpose.
+  roomSpill: 0,
+  segmentSphere: 0,
   sphereDiaIn: 68,
   equatorIn: 84,
   projectorCount: 4,
@@ -1025,6 +1062,49 @@ export const CONTROLS: readonly ControlSpec[] = [
     help:
       'What is playing on the sphere under the graticule. The flat fields are what §8 prescribes ' +
       'for judging seams and for photographing the spill.',
+  },
+  {
+    key: 'roomSpill',
+    label: 'Room behind the sphere',
+    symbol: 'r_wall',
+    section: '§5',
+    klass: 'ASSUME',
+    min: 0,
+    max: 1,
+    step: 1,
+    unit: '',
+    decimals: 0,
+    options: ['off', 'on'],
+    group: 'capture',
+    help:
+      'Lets the pattern land on a wall at 6 m, a floor and a 14 ft ceiling as well as on the ' +
+      'ball. It changes the CAPTURE and not the picture: the room is not drawn, exactly as the ' +
+      'hangers and the rail ARE drawn and are not in the capture. What moves is the headline ' +
+      'number after Recalibrate, and it moves a long way — 14% of accepted correspondences come ' +
+      'back from surfaces that are not the sphere, and the solver has no way to tell. Both of ' +
+      'the room constants are ASSUME (§5, §8 item 19 collects them), so this is a demonstration ' +
+      'and not a prediction.',
+  },
+  {
+    key: 'segmentSphere',
+    label: 'Find the ball in the photo',
+    symbol: '',
+    section: '',
+    klass: 'PANEL',
+    min: 0,
+    max: 1,
+    step: 1,
+    unit: '',
+    decimals: 0,
+    options: ['off', 'on'],
+    group: 'capture',
+    help:
+      'Before decoding, threshold the all-on frame, keep the largest lit region that does not ' +
+      'run off the edge of the picture, and reject every pixel outside it. That one rule — the ' +
+      'ball is framed and the room is not — is worth a paired factor of 340 with the room on, ' +
+      'and costs a clean capture nothing. It reads pixels only: no rig, no pose, no radius, so ' +
+      'unlike a geometric test it cannot lean on the calibration being solved for. It refuses ' +
+      'rather than guessing when no framed object is found, which costs that camera entirely.',
   },
   {
     key: 'gridOn',

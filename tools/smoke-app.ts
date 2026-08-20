@@ -1134,6 +1134,50 @@ async function main(): Promise<void> {
       );
     }
 
+    // The two switches that decide whether the solve is measuring the ball or the
+    // building. They are the page's version of experiments 4 and 5, and an
+    // unexercised control is an unverified one: both were declared in
+    // `settings.ts` and rendered by `main.ts` in different places, and a control
+    // that is declared but never laid out looks identical to a working one from
+    // the outside — which is exactly what happened on the first attempt here.
+    //
+    // Restored to their defaults at the end: leaving room spill ON would send
+    // every check below into a deliberately harder capture.
+    const roomSwitch = await cdp.evaluate<{ room: boolean; seg: boolean; restored: boolean } | null>(`(() => {
+      const tab = [...document.querySelectorAll('#controls .seg button')]
+        .find((b) => (b.textContent ?? '').trim() === 'Install');
+      if (!tab) return null;
+      tab.click();
+      const named = (t) => [...document.querySelectorAll('#controls .chip')]
+        .find((c) => (c.textContent ?? '').trim() === t);
+      if (!named('Room behind it') || !named('Find the ball first')) return null;
+      named('Room behind it').click();
+      const room = (named('Room behind it')?.className ?? '').includes('on');
+      named('Find the ball first').click();
+      const seg = (named('Find the ball first')?.className ?? '').includes('on');
+      named('Empty room').click();
+      named('Decode everything').click();
+      const restored =
+        (named('Empty room')?.className ?? '').includes('on') &&
+        (named('Decode everything')?.className ?? '').includes('on');
+      return { room, seg, restored };
+    })()`);
+    if (!roomSwitch) {
+      failures.push(
+        'the panel offers no room-spill / segmentation switch — the finding the page exists to ' +
+          'show has no control',
+      );
+    } else if (!roomSwitch.room || !roomSwitch.seg) {
+      failures.push(
+        `clicking the capture switches did not select them (room ${roomSwitch.room}, ` +
+          `segmentation ${roomSwitch.seg}) — declared but not wired`,
+      );
+    } else if (!roomSwitch.restored) {
+      failures.push('the capture switches would not go back to their defaults');
+    } else {
+      process.stdout.write('  capture: room spill and sphere segmentation both switch, and reset\n');
+    }
+
     // Last, because both of these move the rig or the eye, and every check above
     // reads the before-and-after snapshots that a movement is meant to void.
     //

@@ -185,3 +185,34 @@ test('the operator stands back further for a bigger ball, and at the same height
   const small = (40 * IN_TO_M) / 2;
   assert.ok(cameraDistanceM(small) < 2.6, 'and a small one lets the operator come in');
 });
+
+test('the room toggle reaches the capture, and segmentation undoes it', { timeout: 900_000 }, () => {
+  // The page's own version of experiments 4 and 5. The claim the two switches
+  // make is that a room destroys the solve and that finding the ball in the
+  // photograph gets it back; if either switch did not reach the capture this
+  // would pass by doing nothing, so the first assertion is that the room
+  // actually changed the correspondence set.
+  const clean = runSolve(request({ settings: { ...BOULDER_PRESET, roomSpill: 0, segmentSphere: 0 } }));
+  const spilt = runSolve(
+    request({ id: 2, settings: { ...BOULDER_PRESET, roomSpill: 1, segmentSphere: 0 } }),
+  );
+  const fixed = runSolve(
+    request({ id: 3, settings: { ...BOULDER_PRESET, roomSpill: 1, segmentSphere: 1 } }),
+  );
+
+  assert.notEqual(
+    spilt.correspondences,
+    clean.correspondences,
+    'turning the room on did not change what the decoder accepted — the switch is inert',
+  );
+  assert.ok(
+    spilt.posePositionMm > clean.posePositionMm,
+    `the room must cost the pose something: clean ${clean.posePositionMm.toFixed(3)} mm, ` +
+      `room ${spilt.posePositionMm.toFixed(3)} mm`,
+  );
+  assert.ok(
+    fixed.posePositionMm < spilt.posePositionMm,
+    `segmentation must recover most of it: room ${spilt.posePositionMm.toFixed(3)} mm, ` +
+      `segmented ${fixed.posePositionMm.toFixed(3)} mm`,
+  );
+});

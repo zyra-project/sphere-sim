@@ -49,7 +49,7 @@ import type { RigCalibration } from '../../calibration/src/index.ts';
 import { PARAMETER_TABLE } from '../../calibration/src/parameters.ts';
 import { placeCameras } from '../../bench/src/camera.ts';
 import { DEFAULT_CLOCK, DEFAULT_HANDHELD } from '../../bench/src/camera.ts';
-import { captureAndDecode, DEFAULT_SENSOR } from '../../bench/src/capture.ts';
+import { captureAndDecode, DEFAULT_ROOM_SPILL, DEFAULT_SENSOR } from '../../bench/src/capture.ts';
 import {
   DEFAULT_PATTERN_PLAN,
   grayBitsForCamera,
@@ -308,14 +308,15 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
       // those points receive ambient only and the decoder rejects them on
       // modulation exactly as it would in the room.
       minIncidenceCos: 0.2,
-    // Off. The page has no control for it and the numbers it prints are the
-    // bench's own conditions; a browser solve that quietly ran a harder capture
-    // than the bench would make the two incomparable.
-    roomSpill: null,
-    // Off for the same reason: the page prints the bench's own numbers, and a
-    // browser solve that quietly ran an easier capture than the bench would make
-    // the two incomparable.
-    segmentImage: null,
+      // Both default OFF, and the page says so where it offers them. The old
+      // comment here said the page had no control because a browser solve that
+      // QUIETLY ran a different capture than the bench would make the two
+      // incomparable. That reasoning was about silence, not about the switch:
+      // an explicitly labelled control that tells the reader it has left the
+      // bench's conditions answers it, and being able to watch a room destroy a
+      // calibration is worth more than a page that can only describe it.
+      roomSpill: req.settings.roomSpill === 1 ? { ...DEFAULT_ROOM_SPILL } : null,
+      segmentImage: req.settings.segmentSphere === 1 ? {} : null,
     },
     seed: req.seed,
     decode: { pixelStride: 1, maxCorrespondences: 4000 },
