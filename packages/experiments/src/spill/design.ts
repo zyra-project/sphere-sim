@@ -119,6 +119,13 @@ export interface CellSpec {
   minModulation: number;
   /** `null` is segmentation off. Otherwise the test sphere's inflation. */
   segmentMarginFrac: number | null;
+  /**
+   * Segment in the image instead of, or as well as, in the geometry.
+   *
+   * Optional so every cell written before this axis existed means the same
+   * thing it did then, and so the 28-cell design above is untouched.
+   */
+  segmentImage?: boolean;
 }
 
 /**
@@ -156,7 +163,10 @@ export function spillFor(spec: CellSpec): RoomSpill | null {
 export function cellKey(spec: CellSpec): string {
   const room = spec.wallRadiusM === null ? 'off' : spec.wallRadiusM;
   const seg = spec.segmentMarginFrac === null ? 'noseg' : `seg${spec.segmentMarginFrac}`;
-  return `${room}|${spec.minModulation}|${seg}`;
+  // Appended only when set, so every key the 28-cell design produces is the
+  // string it was before this axis existed and the published file still reads.
+  const img = spec.segmentImage === true ? '|image' : '';
+  return `${room}|${spec.minModulation}|${seg}${img}`;
 }
 
 /**

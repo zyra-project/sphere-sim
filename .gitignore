@@ -29,3 +29,5 @@ bench-before.json
 # truth; the page is a view. validation/sources.json IS tracked, because the
 # provenance ledger is the part that must be auditable.
 validation/index.html
+# Per-arm checkpoints for experiment 5; the assembled result is experiments/experiment-5.json.
+experiments/.experiment-5-partial/

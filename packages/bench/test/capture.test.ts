@@ -32,6 +32,7 @@ import type { RoomSpill } from '../src/capture.ts';
 import { DEFAULT_ROOM_SPILL, DEFAULT_SENSOR, captureAndDecode, roomHit } from '../src/capture.ts';
 import { DEFAULT_PATTERN_PLAN } from '../src/patterns.ts';
 import { makeBenchRng } from '../src/random.ts';
+import type { SilhouetteOptions } from '../../solver/src/index.ts';
 import { bundleStateFromCalibration, sphereSegmenter } from '../../solver/src/index.ts';
 
 const RIG = nominalRig({ projectorCount: 4 });
@@ -71,6 +72,7 @@ interface CaptureArgs {
    * the segmentation is reading the nominal rather than the truth.
    */
   segmentation: { marginFrac: number; nominalOffsetM?: number } | null;
+  segmentImage?: Partial<SilhouetteOptions> | null;
 }
 
 /**
@@ -103,6 +105,7 @@ function capture(cams: SimulatedCamera[], args: Partial<CaptureArgs> = {}) {
       clock: { ...DEFAULT_CLOCK, rollingShutter: args.rollingShutter ?? true },
       minIncidenceCos: 0.2,
       roomSpill: args.roomSpill ?? null,
+      segmentImage: args.segmentImage ?? null,
     },
     seed: 4242,
     decode: {
@@ -576,4 +579,51 @@ test('segmentation is driven by the NOMINAL rig, and a wrong nominal degrades it
     wrong.stats.rejectedOffSphere > 0,
     'a wrong nominal should still reject something, not fall over',
   );
+});
+
+// ---------------------------------------------------------------------------
+// Image-space segmentation
+// ---------------------------------------------------------------------------
+
+test('image segmentation is exactly inert when it is off', () => {
+  // captureAndDecode was restructured to render a camera's pairs before decoding
+  // any of them, because the mask needs all of them at once. That restructure
+  // must not touch the path every published number was produced by.
+  const cams = cameras(1);
+  const a = capture(cams, { sensor: null, roomSpill: DEFAULT_ROOM_SPILL });
+  const b = capture(cams, { sensor: null, roomSpill: DEFAULT_ROOM_SPILL, segmentImage: null });
+  assert.equal(a.correspondences.length, b.correspondences.length);
+  for (let i = 0; i < a.correspondences.length; i++) {
+    assert.deepEqual(a.correspondences[i], b.correspondences[i]);
+  }
+  assert.equal(a.stats.rejectedOffImage, 0);
+  assert.equal(a.silhouettes.length, 0, 'the detector ran with nothing asking it to');
+});
+
+test('image segmentation keeps the sphere and throws the room away', () => {
+  const cams = cameras(1);
+  const off = capture(cams, { sensor: null, roomSpill: DEFAULT_ROOM_SPILL });
+  const on = capture(cams, { sensor: null, roomSpill: DEFAULT_ROOM_SPILL, segmentImage: {} });
+
+  assert.ok(on.stats.rejectedOffImage > 0, 'the mask rejected nothing');
+  assert.ok(on.silhouettes.length > 0, 'no silhouette was reported');
+  for (const sil of on.silhouettes) {
+    assert.ok(sil.chosen >= 0, `camera ${sil.camera} found no sphere`);
+    assert.ok(sil.maskPixels > 0);
+    assert.deepEqual(sil.warnings, [], `camera ${sil.camera} was not sure`);
+  }
+
+  // The point is not that it rejects things, it is WHAT it rejects: ground truth
+  // is available HERE, in the test, and is not available to the thing tested.
+  const offSphere = (r: ReturnType<typeof capture>): number => {
+    let n = 0;
+    for (const c of r.correspondences) {
+      const cam = cams[c.camera];
+      const dir = cameraPixelToRay(cam, c.camU, c.camV);
+      if (raySphereIntersect(cam.pose.position, dir, RIG.sphere.radiusM) === null) n++;
+    }
+    return n;
+  };
+  assert.ok(offSphere(off) > 0, 'the room contributed nothing to reject');
+  assert.equal(offSphere(on), 0, 'off-sphere correspondences survived the image mask');
 });

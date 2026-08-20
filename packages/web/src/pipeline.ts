@@ -312,6 +312,10 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     // bench's own conditions; a browser solve that quietly ran a harder capture
     // than the bench would make the two incomparable.
     roomSpill: null,
+    // Off for the same reason: the page prints the bench's own numbers, and a
+    // browser solve that quietly ran an easier capture than the bench would make
+    // the two incomparable.
+    segmentImage: null,
     },
     seed: req.seed,
     decode: { pixelStride: 1, maxCorrespondences: 4000 },

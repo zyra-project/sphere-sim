@@ -76,6 +76,8 @@ export type {
 } from './decode.ts';
 export type { CameraIntrinsics, CameraModel, SphereSegmentation } from './sphere.ts';
 export { DEFAULT_SEGMENTATION_MARGIN, sphereSegmenter } from './sphere.ts';
+export type { Component, SilhouetteOptions, SilhouetteResult } from './silhouette.ts';
+export { DEFAULT_SILHOUETTE_OPTIONS, otsuThreshold, segmentSphere } from './silhouette.ts';
 export type { ProjectorModel } from './project.ts';
 export type {
   BundleOptions,

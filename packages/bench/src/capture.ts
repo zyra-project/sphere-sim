@@ -70,8 +70,9 @@ import type {
   LinearImage,
   PatternCapture,
   PhaseSequence,
+  SilhouetteOptions,
 } from '../../solver/src/index.ts';
-import { decodeCapture } from '../../solver/src/index.ts';
+import { decodeCapture, segmentSphere } from '../../solver/src/index.ts';
 import type {
   CameraPose,
   FrameClock,
@@ -234,6 +235,16 @@ export interface CaptureConditions {
    * See {@link RoomSpill}.
    */
   roomSpill: RoomSpill | null;
+  /**
+   * Segment the sphere out of the photograph before decoding, and options for it.
+   *
+   * Null is off, and off is what every published number was produced with. This
+   * is the image-space counterpart to `RunOptions.segmentSphere`: that one asks
+   * the NOMINAL rig whether a decoded ray reaches the ball and therefore depends
+   * on the answer being solved for; this one asks the pixels and depends on
+   * nothing.
+   */
+  segmentImage: Partial<SilhouetteOptions> | null;
 }
 
 export interface CaptureOptions {
@@ -273,6 +284,12 @@ export interface CaptureResult {
   preview: RgbImage | null;
   /** Every requested frame, in (camera, projector) order. See `previewPairs`. */
   previews: PreviewFrame[];
+  /**
+   * What the silhouette detector did, per camera. Empty when image segmentation
+   * is off. Reported rather than assumed: a detector that quietly selected the
+   * floor would otherwise look exactly like one that worked.
+   */
+  silhouettes: SilhouetteReport[];
   /** Per-camera motion excursion over the whole sequence, metres and degrees. */
   motionExcursion: { camera: number; translationMm: number; rotationDeg: number }[];
   /**
@@ -838,6 +855,71 @@ function renderPair(
  * have produced from the same captures, in the same order — it only decides how
  * long the frames live.
  */
+/** What the silhouette detector did for one camera, so a run can be audited. */
+export interface SilhouetteReport {
+  camera: number;
+  /** Index of the chosen component in the size-ordered list, or -1 for none. */
+  chosen: number;
+  componentCount: number;
+  /** Pixels the mask keeps. Zero means the camera contributed nothing. */
+  maskPixels: number;
+  threshold: number;
+  warnings: string[];
+}
+
+/**
+ * Build one camera's sphere mask from every projector it saw.
+ *
+ * The union across projectors, because a single projector lights a CRESCENT of
+ * the ball -- the page's own copy says so -- and a crescent is not
+ * distinguishable from a lit patch of floor by shape. Turning them all on gives
+ * the disc back. That is not a trick of the simulator either: it corresponds to
+ * one extra photograph with every projector lit, which is a thing a person
+ * standing in the room can take.
+ */
+function maskForCamera(
+  pending: readonly { projector: number; capture: PatternCapture }[],
+  opts: CaptureOptions,
+): { mask: Uint8Array; report: Omit<SilhouetteReport, 'camera'> } {
+  const first = pending[0]?.capture.white;
+  if (first === undefined || first === null) {
+    throw new Error(
+      'capture: image segmentation needs the all-on and all-off frames. Set ' +
+        'includeWhiteBlack on the pattern plan.',
+    );
+  }
+  const width = first.width;
+  const height = first.height;
+  const lit = new Float64Array(width * height);
+  for (const { capture } of pending) {
+    const w = capture.white;
+    const b = capture.black;
+    if (w === null || b === null) {
+      throw new Error('capture: image segmentation needs white and black frames on every capture.');
+    }
+    const stride = w.channels;
+    for (let i = 0; i < lit.length; i++) {
+      // Channel 0 throughout: the detector wants radiance, not colour, and the
+      // renderer writes the same value to every channel for a white frame.
+      const v = w.data[i * stride] - b.data[i * stride];
+      if (v > lit[i]) lit[i] = v;
+    }
+  }
+  const seg = segmentSphere(lit, width, height, opts.conditions.segmentImage ?? {});
+  let maskPixels = 0;
+  for (let i = 0; i < seg.mask.length; i++) maskPixels += seg.mask[i];
+  return {
+    mask: seg.mask,
+    report: {
+      chosen: seg.chosen,
+      componentCount: seg.components.length,
+      maskPixels,
+      threshold: seg.threshold,
+      warnings: seg.warnings,
+    },
+  };
+}
+
 export function captureAndDecode(
   rig: RigCalibration,
   cameras: readonly SimulatedCamera[],
@@ -859,11 +941,47 @@ export function captureAndDecode(
     accepted: 0,
     rejectedLowModulation: 0,
     rejectedOffSphere: 0,
+    rejectedOffImage: 0,
     rejectedGrayAmbiguous: 0,
     rejectedPhaseWeak: 0,
     rejectedDisagreement: 0,
     rejectedOutOfRange: 0,
     rejectedMissingAxis: 0,
+  };
+
+  const imageMasking = opts.conditions.segmentImage !== null;
+  const pending: { projector: number; capture: PatternCapture }[] = [];
+  const silhouettes: SilhouetteReport[] = [];
+
+  /** Decode one pair and fold its numbers in. The only place that happens. */
+  const consume = (
+    c: number,
+    p: number,
+    capture: PatternCapture,
+    mask: Uint8Array | null,
+  ): void => {
+    const decodeOpts =
+      mask === null
+        ? opts.decode
+        : { ...opts.decode, imageMask: (_cam: number, pixel: number) => mask[pixel] === 1 };
+    const decoded = decodeCapture(capture, decodeOpts);
+    for (const corr of decoded.correspondences) correspondences.push(corr);
+    perPair.push({
+      camera: c,
+      projector: p,
+      considered: decoded.stats.considered,
+      accepted: decoded.correspondences.length,
+    });
+    stats.considered += decoded.stats.considered;
+    stats.accepted += decoded.stats.accepted;
+    stats.rejectedLowModulation += decoded.stats.rejectedLowModulation;
+    stats.rejectedOffSphere += decoded.stats.rejectedOffSphere;
+    stats.rejectedOffImage += decoded.stats.rejectedOffImage;
+    stats.rejectedGrayAmbiguous += decoded.stats.rejectedGrayAmbiguous;
+    stats.rejectedPhaseWeak += decoded.stats.rejectedPhaseWeak;
+    stats.rejectedDisagreement += decoded.stats.rejectedDisagreement;
+    stats.rejectedOutOfRange += decoded.stats.rejectedOutOfRange;
+    stats.rejectedMissingAxis += decoded.stats.rejectedMissingAxis;
   };
 
   for (let c = 0; c < cameras.length; c++) {
@@ -886,23 +1004,20 @@ export function captureAndDecode(
         previews.push({ camera: c, projector: p, frame: opts.previewFrame, image: rendered.preview });
       }
 
-      const decoded = decodeCapture(rendered.capture, opts.decode);
-      for (const corr of decoded.correspondences) correspondences.push(corr);
-      perPair.push({
-        camera: c,
-        projector: p,
-        considered: decoded.stats.considered,
-        accepted: decoded.correspondences.length,
-      });
-      stats.considered += decoded.stats.considered;
-      stats.accepted += decoded.stats.accepted;
-      stats.rejectedLowModulation += decoded.stats.rejectedLowModulation;
-      stats.rejectedOffSphere += decoded.stats.rejectedOffSphere;
-      stats.rejectedGrayAmbiguous += decoded.stats.rejectedGrayAmbiguous;
-      stats.rejectedPhaseWeak += decoded.stats.rejectedPhaseWeak;
-      stats.rejectedDisagreement += decoded.stats.rejectedDisagreement;
-      stats.rejectedOutOfRange += decoded.stats.rejectedOutOfRange;
-      stats.rejectedMissingAxis += decoded.stats.rejectedMissingAxis;
+      if (imageMasking) {
+        // The mask is built from every projector at once, so nothing for this
+        // camera can be decoded until all of them are rendered. See `consume`.
+        pending.push({ projector: p, capture: rendered.capture });
+        continue;
+      }
+      consume(c, p, rendered.capture, null);
+    }
+
+    if (imageMasking) {
+      const seg = maskForCamera(pending, opts);
+      silhouettes.push({ camera: c, ...seg.report });
+      for (const q of pending) consume(c, q.projector, q.capture, seg.mask);
+      pending.length = 0;
     }
   }
 
@@ -1005,6 +1120,7 @@ export function captureAndDecode(
     pixelsTraced,
     preview,
     previews,
+    silhouettes,
     motionExcursion,
     epochDisplacement,
     cameraPoseAtEpoch,

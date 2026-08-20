@@ -269,6 +269,15 @@ export interface RunOptions {
    */
   segmentSphere?: boolean;
   /**
+   * Segment the sphere out of the PHOTOGRAPH before decoding.
+   *
+   * Independent of `segmentSphere` and testable against it: that one casts a
+   * decoded ray at the nominal rig and so inherits a dependence on the error
+   * being solved for, this one reads pixels and inherits nothing. Off by
+   * default; no published number was produced with it.
+   */
+  segmentImage?: boolean;
+  /**
    * How far to inflate the segmentation's test sphere. Defaults to
    * `DEFAULT_SEGMENTATION_MARGIN`. Inert unless `segmentSphere` is on.
    *
@@ -295,7 +304,8 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
       handheld: scenario.degradation.handheld,
       clock: scenario.degradation.clock,
       minIncidenceCos: 0.2,
-    roomSpill: scenario.degradation.roomSpill,
+      roomSpill: scenario.degradation.roomSpill,
+      segmentImage: options.segmentImage === true ? {} : null,
     },
     seed: scenario.seed,
     decode: {

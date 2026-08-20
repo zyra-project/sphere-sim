@@ -214,6 +214,16 @@ export interface DecodeOptions {
    * points' honesty without recovering their number.
    */
   segmentation: SegmentationTest | null;
+  /**
+   * Image-space segmentation. Off by default, like the geometric one.
+   *
+   * Applied immediately after the modulation gate and before any decoding,
+   * because that is where a real implementation would put it: a pixel the
+   * photograph says is the back wall should not cost a Gray decode, and the
+   * ordering is also the honest one -- this test genuinely does not need the
+   * decoded coordinate that `segmentation` cannot work without.
+   */
+  imageMask: ImageMask | null;
 }
 
 /**
@@ -224,6 +234,17 @@ export interface DecodeOptions {
  * else here uses.
  */
 export type SegmentationTest = (projector: number, u: number, v: number) => boolean;
+
+/**
+ * Is this camera pixel on the sphere?
+ *
+ * Camera space, not projector space, and asked BEFORE the pixel is decoded --
+ * which is the whole difference between this and `segmentation`. That one needs
+ * a decoded projector coordinate and a rig to cast it through; this one needs
+ * the photograph. A caller builds it from `silhouette.ts` and the decoder never
+ * learns how.
+ */
+export type ImageMask = (camera: number, pixel: number) => boolean;
 
 export const DEFAULT_DECODE_OPTIONS: DecodeOptions = {
   channel: 'luminance',
@@ -251,6 +272,8 @@ export const DEFAULT_DECODE_OPTIONS: DecodeOptions = {
   // Off. Every published number was produced without it, and a segmentation
   // that switched itself on would move all of them.
   segmentation: null,
+  // Off. Every number published before this existed was produced without it.
+  imageMask: null,
 };
 
 /** One decoded camera-pixel-to-projector-pixel correspondence. */
@@ -316,6 +339,8 @@ export interface DecodeStats {
    * capture was dim or full of room.
    */
   rejectedOffSphere: number;
+  /** Rejected by the image-space mask, before any decoding was attempted. */
+  rejectedOffImage: number;
 }
 
 export function emptyStats(): DecodeStats {
@@ -329,6 +354,7 @@ export function emptyStats(): DecodeStats {
     rejectedOutOfRange: 0,
     rejectedMissingAxis: 0,
     rejectedOffSphere: 0,
+    rejectedOffImage: 0,
   };
 }
 
@@ -867,6 +893,12 @@ export function decodeCapture(
         continue;
       }
 
+      // The photograph, before the decode. Nothing here knows where anything is.
+      if (opts.imageMask !== null && !opts.imageMask(capture.camera, pixel)) {
+        stats.rejectedOffImage++;
+        continue;
+      }
+
       const ru = decodeAxis(capture, 'u', pixel, modulation, capture.projectorRes.x, opts, noise);
       const rv = decodeAxis(capture, 'v', pixel, modulation, capture.projectorRes.y, opts, noise);
       if (!ru.ok || !rv.ok) {
@@ -961,6 +993,7 @@ export function decodeAll(
     stats.rejectedOutOfRange += r.stats.rejectedOutOfRange;
     stats.rejectedMissingAxis += r.stats.rejectedMissingAxis;
     stats.rejectedOffSphere += r.stats.rejectedOffSphere;
+    stats.rejectedOffImage += r.stats.rejectedOffImage;
   }
   return { correspondences: all, stats, frames: elapsed };
 }

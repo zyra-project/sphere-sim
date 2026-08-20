@@ -64,6 +64,18 @@ export interface PointRun {
   rejectedLowModulation: number;
   /** Correspondences the segmentation threw away. Zero when it is off. */
   rejectedOffSphere: number;
+  /** Whether the image-space mask was on for this cell. */
+  segmentImage: boolean;
+  /** Camera pixels the image mask threw away before decoding. Zero when off. */
+  rejectedOffImage: number;
+  /**
+   * Cameras where the silhouette detector either found nothing or warned.
+   *
+   * The detector's one assumption is that the ball is framed and the room runs
+   * off the edge. This counts the captures where that did not hold, so a run
+   * that quietly segmented the floor cannot be read as one that worked.
+   */
+  silhouetteFailures: number;
   posePositionMm: number;
   poseRotationDeg: number;
   /** `null` when the solve threw or the metric came back NaN. */
@@ -260,6 +272,7 @@ export function runPoint(spec: CellSpec, seedIndex: number): PointRun {
     writeArtifacts: false,
     baseline: false,
     decode: { minModulation: spec.minModulation },
+    segmentImage: spec.segmentImage === true,
     segmentSphere: spec.segmentMarginFrac !== null,
     segmentMarginFrac: spec.segmentMarginFrac ?? undefined,
   });
@@ -304,6 +317,11 @@ export function runPoint(spec: CellSpec, seedIndex: number): PointRun {
     offSphereCeiling: offCeiling,
     rejectedLowModulation: result.capture.stats.rejectedLowModulation,
     rejectedOffSphere: result.capture.stats.rejectedOffSphere,
+    segmentImage: spec.segmentImage === true,
+    rejectedOffImage: result.capture.stats.rejectedOffImage,
+    silhouetteFailures: result.capture.silhouettes.filter(
+      (sil) => sil.chosen < 0 || sil.warnings.length > 0,
+    ).length,
     posePositionMm: result.recovery?.aligned.maxPositionMm ?? NaN,
     poseRotationDeg: result.recovery?.aligned.maxRotationDeg ?? NaN,
     gridMm: grid !== undefined && Number.isFinite(grid) ? grid : null,
