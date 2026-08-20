@@ -2322,6 +2322,7 @@ function installSection(): HTMLElement[] {
       helpFor('resolution'),
     ),
   );
+  out.push(...roomControls());
   out.push(el('span', { className: 'lab', textContent: 'Projectors' }));
   out.push(
     chipRow([
@@ -2402,6 +2403,83 @@ function capturePxMm(resX: number, radiusM: number): number {
   // The capture camera's 62° horizontal field, from `pipeline.ts`.
   const halfTan = Math.tan((62 / 2) * (Math.PI / 180));
   return ((cameraDistanceM(radiusM) * 2 * halfTan) / resX) * 1000;
+}
+
+/**
+ * The two capture conditions that decide whether the solve is measuring the ball
+ * or the building.
+ *
+ * High in the panel rather than at the bottom of the capture block, because they
+ * are the most consequential switches on the page and they were buried under
+ * three groups nobody scrolls to.
+ */
+function roomControls(): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  out.push(el('span', { className: 'lab', textContent: 'What else the light lands on' }));
+  out.push(
+    chipRow(
+      [
+        {
+          label: 'Empty room',
+          title: 'The pattern lands on the sphere and on nothing else. What the bench does.',
+          on: state.settings.roomSpill !== 1,
+          onPick: () => {
+            if (state.settings.roomSpill !== 1) return;
+            setSetting('roomSpill', 0);
+          },
+        },
+        {
+          label: 'Room behind it',
+          title: 'A wall at 6 m, a floor, and a 14 ft ceiling. Both constants are ASSUME.',
+          on: state.settings.roomSpill === 1,
+          onPick: () => {
+            if (state.settings.roomSpill === 1) return;
+            setSetting('roomSpill', 1);
+          },
+        },
+      ],
+      'The assumption the black background behind the sphere was hiding. Turn it on and press ' +
+        'Recalibrate: about 14% of the accepted correspondences come back from a wall, a floor ' +
+        'or a ceiling, and because the solver’s world has exactly one surface in it those points ' +
+        'are not noise — they are placed on the ball anyway, as a confident lie nothing can ' +
+        'reject. Experiment 4 measured a paired factor of 146. It changes the CAPTURE and not ' +
+        'the picture: the room is not drawn, the same way the hangers and the rail ARE drawn and ' +
+        'are not in the capture. Both room constants are ASSUME, so this is a demonstration and ' +
+        'not a prediction of your gallery.',
+    ),
+  );
+  out.push(
+    chipRow(
+      [
+        {
+          label: 'Decode everything',
+          title: 'Every pixel that clears the modulation floor becomes a correspondence.',
+          on: state.settings.segmentSphere !== 1,
+          onPick: () => {
+            if (state.settings.segmentSphere !== 1) return;
+            setSetting('segmentSphere', 0);
+          },
+        },
+        {
+          label: 'Find the ball first',
+          title: 'Segment the sphere out of the photograph and reject everything outside it.',
+          on: state.settings.segmentSphere === 1,
+          onPick: () => {
+            if (state.settings.segmentSphere === 1) return;
+            setSetting('segmentSphere', 1);
+          },
+        },
+      ],
+      'The fix, and it is one rule: the ball is framed and the room runs off the edge of the ' +
+        'picture, so keep the largest lit region that touches no edge and throw the rest away. ' +
+        'With the room on it is worth a paired factor of 340 and takes usable solves from 2 in ' +
+        '30 to 28; on an empty capture it costs nothing. It reads pixels only — no rig, no pose, ' +
+        'no radius — so unlike a test against the nominal sphere it cannot lean on the ' +
+        'calibration being solved for. Turn the room on, recalibrate, then turn this on and ' +
+        'recalibrate again.',
+    ),
+  );
+  return out;
 }
 
 function captureControls(): HTMLElement[] {
@@ -2486,70 +2564,6 @@ function captureControls(): HTMLElement[] {
     ),
   );
 
-  out.push(el('span', { className: 'lab', textContent: 'What else the light lands on' }));
-  out.push(
-    chipRow(
-      [
-        {
-          label: 'Empty room',
-          title: 'The pattern lands on the sphere and on nothing else. What the bench does.',
-          on: state.settings.roomSpill !== 1,
-          onPick: () => {
-            if (state.settings.roomSpill !== 1) return;
-            setSetting('roomSpill', 0);
-          },
-        },
-        {
-          label: 'Room behind it',
-          title: 'A wall at 6 m, a floor, and a 14 ft ceiling. Both constants are ASSUME.',
-          on: state.settings.roomSpill === 1,
-          onPick: () => {
-            if (state.settings.roomSpill === 1) return;
-            setSetting('roomSpill', 1);
-          },
-        },
-      ],
-      'The assumption the black background behind the sphere was hiding. Turn it on and press ' +
-        'Recalibrate: about 14% of the accepted correspondences come back from a wall, a floor ' +
-        'or a ceiling, and because the solver’s world has exactly one surface in it those points ' +
-        'are not noise — they are placed on the ball anyway, as a confident lie nothing can ' +
-        'reject. Experiment 4 measured a paired factor of 146. It changes the CAPTURE and not ' +
-        'the picture: the room is not drawn, the same way the hangers and the rail ARE drawn and ' +
-        'are not in the capture. Both room constants are ASSUME, so this is a demonstration and ' +
-        'not a prediction of your gallery.',
-    ),
-  );
-  out.push(
-    chipRow(
-      [
-        {
-          label: 'Decode everything',
-          title: 'Every pixel that clears the modulation floor becomes a correspondence.',
-          on: state.settings.segmentSphere !== 1,
-          onPick: () => {
-            if (state.settings.segmentSphere !== 1) return;
-            setSetting('segmentSphere', 0);
-          },
-        },
-        {
-          label: 'Find the ball first',
-          title: 'Segment the sphere out of the photograph and reject everything outside it.',
-          on: state.settings.segmentSphere === 1,
-          onPick: () => {
-            if (state.settings.segmentSphere === 1) return;
-            setSetting('segmentSphere', 1);
-          },
-        },
-      ],
-      'The fix, and it is one rule: the ball is framed and the room runs off the edge of the ' +
-        'picture, so keep the largest lit region that touches no edge and throw the rest away. ' +
-        'With the room on it is worth a paired factor of 340 and takes usable solves from 2 in ' +
-        '30 to 28; on an empty capture it costs nothing. It reads pixels only — no rig, no pose, ' +
-        'no radius — so unlike a test against the nominal sphere it cannot lean on the ' +
-        'calibration being solved for. Turn the room on, recalibrate, then turn this on and ' +
-        'recalibrate again.',
-    ),
-  );
   return out;
 }
 

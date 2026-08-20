@@ -582,6 +582,30 @@ float roomOpenness(vec3 point) {
   return mix(0.34, 1.0, smoothstep(0.0, 1.0, max(near, 0.0)));
 }
 
+/**
+ * A faint tint per surface, so floor, wall and ceiling are told apart.
+ *
+ * PRESENTATION, and labelled as such: rho_room is ONE albedo in section 5 and
+ * splitting it per surface would be inventing a constant nobody measured. This
+ * multiplies the finished colour by a few percent either side of neutral and
+ * leaves its luminance alone, the same standing this file already gives the
+ * rail and its footprint ring. Real galleries do have a floor and a wall of
+ * different colours; this does not claim to know which, only that they differ.
+ *
+ * A reader who wants the honest radiance turns the room off, which returns
+ * exactly 1.0 here and everywhere else this feature touches.
+ */
+vec3 roomTint(vec3 normal) {
+  if (uRoomOn != 1) return vec3(1.0);
+  // Up or down: the floor and the ceiling. Sideways: the wall.
+  // A tenth either side of neutral, not a twentieth. At the luminance a darkened
+  // gallery actually sits at -- under 30 of 255 -- five percent is one level and
+  // measures as no tint at all, which is what the first attempt at this did.
+  if (normal.z > 0.5) return vec3(1.12, 1.02, 0.88);
+  if (normal.z < -0.5) return vec3(0.97, 1.00, 1.08);
+  return vec3(0.90, 0.96, 1.14);
+}
+
 vec3 shadeSurface(vec3 point, vec3 normal) {
   vec3 acc = uAmbient * roomOpenness(point);
   for (int i = 0; i < MAX_PROJ; i++) {
@@ -602,7 +626,7 @@ vec3 shadeSurface(vec3 point, vec3 normal) {
     // is the rectangle of glow around the sphere in every real SOS photograph.
     acc += uGain[i] * uBlack[i] * (cosv * falloff);
   }
-  return acc * uRoomAlbedo;
+  return acc * uRoomAlbedo * roomTint(normal);
 }
 
 vec3 shadeFloor(vec3 point) { return shadeSurface(point, vec3(0.0, 0.0, 1.0)); }
