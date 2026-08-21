@@ -1150,16 +1150,16 @@ async function main(): Promise<void> {
       tab.click();
       const named = (t) => [...document.querySelectorAll('#controls .chip')]
         .find((c) => (c.textContent ?? '').trim() === t);
-      if (!named('Room behind it') || !named('Find the ball first')) return null;
+      if (!named('Room behind it') || !named('Only the ball')) return null;
       named('Room behind it').click();
       const room = (named('Room behind it')?.className ?? '').includes('on');
-      named('Find the ball first').click();
-      const seg = (named('Find the ball first')?.className ?? '').includes('on');
+      named('Only the ball').click();
+      const seg = (named('Only the ball')?.className ?? '').includes('on');
       named('Empty room').click();
-      named('Decode everything').click();
+      named('Every lit pixel').click();
       const restored =
         (named('Empty room')?.className ?? '').includes('on') &&
-        (named('Decode everything')?.className ?? '').includes('on');
+        (named('Every lit pixel')?.className ?? '').includes('on');
       return { room, seg, restored };
     })()`);
     if (!roomSwitch) {

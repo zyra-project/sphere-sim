@@ -138,7 +138,12 @@ export const GROUPS: readonly Group[] = [
     id: 'capture',
     title: 'What the camera sees',
     blurb:
-      'The two conditions that decide whether the solve is measuring the ball or the building. ' +
+      'Two switches, and they are different KINDS of thing. Room spill is a fact about the ' +
+      'installation: whether there is a wall, a floor and a ceiling for the pattern to land on ' +
+      'besides the sphere. Segmentation is a choice about the software: whether the decoder hands ' +
+      'the solver every pixel bright enough to carry a pattern, or only the ones inside the ball ' +
+      'it found in the photograph. The first is the problem and the second is the fix, which is ' +
+      'why they sit together, but no amount of segmenting changes where the light landed. ' +
       'Both are OFF here and off in the bench, and every number this project publishes was ' +
       'produced with them off — so switching either one makes this page stop being comparable ' +
       'with the report, deliberately and visibly. Room spill puts the structured-light pattern ' +
@@ -1099,7 +1104,7 @@ export const CONTROLS: readonly ControlSpec[] = [
   },
   {
     key: 'segmentSphere',
-    label: 'Find the ball in the photo',
+    label: 'Segment the sphere',
     symbol: '',
     section: '',
     klass: 'PANEL',

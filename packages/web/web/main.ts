@@ -2449,10 +2449,13 @@ function roomControls(): HTMLElement[] {
     ),
   );
   out.push(
+    el('span', { className: 'lab', textContent: 'Which pixels the solver may use' }),
+  );
+  out.push(
     chipRow(
       [
         {
-          label: 'Decode everything',
+          label: 'Every lit pixel',
           title: 'Every pixel that clears the modulation floor becomes a correspondence.',
           on: state.settings.segmentSphere !== 1,
           onPick: () => {
@@ -2461,7 +2464,7 @@ function roomControls(): HTMLElement[] {
           },
         },
         {
-          label: 'Find the ball first',
+          label: 'Only the ball',
           title: 'Segment the sphere out of the photograph and reject everything outside it.',
           on: state.settings.segmentSphere === 1,
           onPick: () => {
@@ -2470,8 +2473,12 @@ function roomControls(): HTMLElement[] {
           },
         },
       ],
-      'The fix, and it is one rule: the ball is framed and the room runs off the edge of the ' +
-        'picture, so keep the largest lit region that touches no edge and throw the rest away. ' +
+      'The row above is a fact about the room; this is a choice about the software, and it is the ' +
+        'fix for that fact. The decoder normally turns every pixel bright enough to carry a ' +
+        'pattern into a correspondence, and with a room in shot a good many of those pixels are ' +
+        'wall. Only the ball segments the sphere out of the photograph first and rejects ' +
+        'everything outside it. One rule does it: the ball is framed and the room runs off the ' +
+        'edge of the picture, so keep the largest lit region that touches no edge. ' +
         'With the room on it is worth a paired factor of 340 and takes usable solves from 2 in ' +
         '30 to 28; on an empty capture it costs nothing. It reads pixels only — no rig, no pose, ' +
         'no radius — so unlike a test against the nominal sphere it cannot lean on the ' +
