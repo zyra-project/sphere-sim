@@ -19,9 +19,9 @@ it. One photometric constant does enter, and §7 says where.
 
 > **A room behind the sphere is fatal to this pipeline, and no setting makes it
 > harmless for free.** Putting the structured-light pattern on the room takes the
-> recovered pose from **20.6 mm to 7841 mm** on the medians. Paired seed by seed
+> recovered pose from **20.6 mm to 16 365 mm** on the medians. Paired seed by seed
 > — which is the comparison this design actually bought — removing the room is
-> worth a **geometric mean of 146×**, it improves **4 of 5** rig draws, and it
+> worth a **geometric mean of 168×**, it improves **4 of 5** rig draws, and it
 > takes the solves no worse than the worst clean solve from **1 back to 5**. The
 > cause is that **14.1% of accepted correspondences come back from surfaces that
 > are not the sphere**, and those are not noise: the solver's world model has
@@ -30,12 +30,12 @@ it. One photometric constant does enter, and §7 says where.
 >
 > Two mitigations work, neither cleanly. **Segmentation** — rejecting a
 > correspondence whose projector ray misses the *nominal* sphere — is worth a
-> paired geometric mean of **13.6×**, improves **3 of 5** seeds while degrading
+> paired geometric mean of **15.7×**, improves **3 of 5** seeds while degrading
 > 2, takes usable solves from **1 to 3**, and costs a clean capture nothing
 > (1.04×). **Raising the decoder's modulation floor to 0.40** brings the room to
 > within 2× of what a clean capture achieves *at that same floor* — but 0.40
 > costs a clean capture **2.94×** on its own, so it buys immunity by making
-> everything worse, and it leaves a 15 249 mm tail.
+> everything worse, and it leaves a 953 624 mm tail.
 
 Six things must travel with that.
 
@@ -76,9 +76,9 @@ Five seeds per cell, archetype 1, the bench's `default` preset, ceiling held at
 | room | median | min | max | off-sphere share | usable grid metric |
 | --- | ---: | ---: | ---: | ---: | --- |
 | **none (as published)** | **20.6** | 12.9 | 51.5 | 0.00% | 5/5 |
-| wall at 9 m | 146.9 | 24.6 | 80 953 | 10.04% | 5/5 |
-| wall at 6 m | 7841 | 15.1 | 40 638 | 14.10% | 4/5 |
-| wall at 4 m | 3452 | 21.5 | 346 932 | 16.12% | 3/5 |
+| wall at 9 m | 133.7 | 24.6 | 100 021 | 10.04% | 5/5 |
+| wall at 6 m | 16 365 | 15.1 | 40 349 | 14.10% | 4/5 |
+| wall at 4 m | 3452 | 21.5 | 346 940 | 16.12% | 3/5 |
 
 **A tenth of the accepted correspondences is enough to destroy the solve.**
 `packages/solver/src/bundle.ts` turns a camera pixel into a 3D point by
@@ -138,10 +138,10 @@ shipped 0.02. Median pose error in millimetres; the seed range in brackets.
 
 | threshold | no room | wall at 6 m | room ÷ clean, same floor |
 | --- | ---: | ---: | ---: |
-| **0.02 (shipped)** | **20.6** [12.9 – 51.5] | **7841** [15.1 – 40 638] | 380× |
-| 0.10 | 20.6 [12.9 – 51.5] | 49.1 [18.7 – 89 538] | 2.4× |
-| 0.20 | 33.2 [12.1 – 47.4] | 515.6 [12.1 – 172 442] | 15.5× |
-| 0.40 | 60.8 [46.4 – 63.3] | 62.9 [53.9 – 15 249] | **1.03×** |
+| **0.02 (shipped)** | **20.6** [12.9 – 51.5] | **16 365** [15.1 – 40 349] | 793× |
+| 0.10 | 20.6 [12.9 – 51.5] | 49.1 [18.7 – 73 401] | 2.4× |
+| 0.20 | 33.2 [12.1 – 47.4] | 515.5 [12.1 – 172 442] | 15.5× |
+| 0.40 | 60.8 [46.4 – 63.3] | 62.9 [53.9 – 953 624] | **1.03×** |
 
 **F4 is not triggered: a floor does separate them.** At 0.40 the room adds almost
 nothing — 62.9 mm against a clean 60.8 mm at the same floor. The first version of
@@ -156,7 +156,7 @@ broken one did.** Reaching that immunity costs a clean capture a factor of
 **2.94** — 20.6 mm becomes 60.8 mm — because the floor starts rejecting genuine
 sphere pixels at grazing incidence, which are exactly the ones that constrain the
 limb. And the tail does not go away: the worst seed at 0.40 with a room is still
-15 249 mm. What the threshold buys is not a good calibration in a room; it is an
+953 624 mm. What the threshold buys is not a good calibration in a room; it is an
 equally bad calibration either way.
 
 **Read the brackets, not the medians.** At 0.10 the median is 49 mm and the worst
@@ -176,16 +176,16 @@ brackets.
 | room | no segmentation | margin 0 | margin 0.05 | margin 0.15 | best |
 | --- | ---: | ---: | ---: | ---: | :--- |
 | **none** | **20.6** [12.9 – 51.5] | 21.4 [9.2 – 42.6] | 20.6 [12.9 – 42.3] | 20.6 [12.9 – 51.5] | 0.05 |
-| wall at 9 m | 146.9 [24.6 – 80 953] | 102.8 [25.8 – 7282] | 3517 [7.0 – 36 455] | 1037 [14.8 – 376 452] | 0 |
-| wall at 6 m | 7841 [15.1 – 40 638] | **44.0** [18.8 – 352 389] | 52.8 [7.0 – 109 639] | 282.5 [17.8 – 155 988] | 0 |
-| wall at 4 m | 3452 [21.5 – 346 932] | 42.0 [15.1 – 917] | 410.1 [21.4 – 64 474] | **41.3** [20.8 – 1299] | 0.15 |
+| wall at 9 m | 133.7 [24.6 – 100 021] | 102.8 [25.8 – 45 798] | 3877 [7.0 – 222 209] | 898.0 [14.8 – 376 452] | 0 |
+| wall at 6 m | 16 365 [15.1 – 40 349] | **44.0** [18.8 – 348 115] | 52.8 [7.0 – 96 517] | 287.4 [17.8 – 155 988] | 0 |
+| wall at 4 m | 3452 [21.5 – 346 940] | 42.0 [15.1 – 906] | 410.1 [21.4 – 64 474] | **41.3** [20.8 – 1299] | 0.15 |
 
-**It is worth a paired geometric mean of 13.6×, and F5 still triggered.** F5 asked
+**It is worth a paired geometric mean of 15.7×, and F5 still triggered.** F5 asked
 whether segmentation leaves the room costing more than twice the clean baseline.
-At 6 m the median is 44.0 mm against a baseline of 20.6, which is 2.14× — so F5
+At 6 m the median is 44.0 mm against a baseline of 20.6, which is 2.13× — so F5
 triggered. The first version of this page called that "by seven percent". It is
 not: at n=5 that cell's median could only ever have been one of 18.8, 21.5, 44.0,
-166.8 or 352 389 mm, so there is no resolution behind a seven-percent margin. The
+166.8 or 348 115 mm, so there is no resolution behind a seven-percent margin. The
 criterion was written before the sweep and fired; the effect size is reported
 beside it, because a threshold verdict says nothing about the size of an effect.
 
@@ -210,7 +210,7 @@ grazing-incidence decodes at the limb, the least certain in the set.
 room, 0.80% of accepted correspondences are still off the sphere: the ones whose
 projector ray misses the TRUE sphere and hits the NOMINAL one, displaced by the
 mount error the solve exists to find. Two of five seeds still get worse, one of
-them from 2500 mm to 352 389 mm.
+them from 2500 mm to 348 115 mm.
 
 ---
 
@@ -222,10 +222,10 @@ Written into `packages/experiments/src/spill/design.ts` before the sweep ran;
 | # | Falsifier | Outcome |
 | --- | --- | --- |
 | F1 | The condition is inert — the wall never clears `minModulation` | **Not triggered.** 14.1% of accepted correspondences came from off the sphere |
-| F2 | The robust loss absorbs it — the pose does not move | **Not triggered.** Paired, the room costs a geometric mean of 146× and degrades 4 of 5 seeds |
+| F2 | The robust loss absorbs it — the pose does not move | **Not triggered.** Paired, the room costs a geometric mean of 168× and degrades 4 of 5 seeds |
 | F3 | The cost is not monotone in room size | **Triggered**, but decided entirely by the 4 m cell, whose lenses sit outside the wall. The 9 m → 6 m step is monotone and the axis is unorderable at n=5 |
-| F4 | No modulation floor separates the two populations | **Not triggered.** 0.40 does separate them — at 2.94× on a clean capture, and with a 15 249 mm tail |
-| F5 | Segmentation does not recover the solve either | **Triggered.** 2.14× the clean baseline against a 2× bar, while improving the paired geometric mean by 13.6× |
+| F4 | No modulation floor separates the two populations | **Not triggered.** 0.40 does separate them — at 2.94× on a clean capture, and with a 953 624 mm tail |
+| F5 | Segmentation does not recover the solve either | **Triggered.** 2.13× the clean baseline against a 2× bar, while improving the paired geometric mean by 15.7× |
 | F6 | Segmentation costs a clean capture | **Not triggered.** 1.04×, inside the seed range |
 
 Two of the six triggered. F4 is the one that changed under review, and it changed
@@ -247,12 +247,13 @@ depends only on the seed index and never on the cell, so all 28 cells are the
 same five rig draws. Every headline quantity was nonetheless computed by dividing
 two *independently sorted* medians. At n=5 a median **is** one observation, so a
 ratio of two medians is a ratio of two arbitrary seeds. The published "factor of
-178" was seed 1's 7840.59 mm over seed 1's 44.01 mm.
+178" was seed 1's pose over seed 1's pose, one number divided by another number
+that happened to sort to the same rank.
 
 | quantity | as published | paired |
 | --- | ---: | ---: |
-| the room's cost | 380× | **146×**, 4 of 5 seeds worse, usable 5 → 1 |
-| segmentation's benefit | 178× | **13.6×**, 3 of 5 seeds better, usable 1 → 3 |
+| the room's cost | 793× | **168×**, 4 of 5 seeds worse, usable 5 → 1 |
+| segmentation's benefit | 372× | **15.7×**, 3 of 5 seeds better, usable 1 → 3 |
 
 `judge()` now reports both, the paired figure beside the ratio of medians rather
 than instead of it. It deliberately adds no confidence interval:
@@ -271,6 +272,34 @@ always produces a number.
 **The archived seeds could not reproduce the run.** The results writer rounded
 every number to six significant figures, including the seeds: 996363085 was
 written as 996363000. Fixed; seeds are now exact.
+
+**Re-measured under a corrected solver, and the factors moved.** A self-review of
+`packages/solver` found that `ransacDlt` drew its six-point minimal sample WITH
+replacement, so roughly one bootstrap iteration in 133 built a twelve-column
+system from fewer than six distinct constraints. Fixing it changes which six
+points each iteration draws, so every number on this page was re-measured rather
+than left standing. The whole sweep is above; what moved is worth reading
+carefully, because it says something the experiment could not say on its own:
+
+| | before | after |
+| --- | ---: | ---: |
+| the room's paired cost | 146× | **168×** |
+| segmentation's paired benefit | 13.6× | **15.7×** |
+| clean capture at floor 0.40 | 2.94486× | 2.94486× |
+| worst seed, 0.40 with a room | 15 249 mm | **953 624 mm** |
+
+**Every cell with no room in it came back bit-for-bit identical.** Not close —
+identical, to the last digit, including the 2.94486 above. Every cell with a room
+moved, and the tails moved by up to sixty-fold. That localises the sensitivity
+exactly: on a clean capture the bootstrap converges to the same basin whatever it
+samples, and on a contaminated one the bootstrap is what CHOOSES the basin. A
+different six-point draw picks a different catastrophe.
+
+So the conclusions on this page are unchanged — 0.40 still separates the
+populations, margin 0 is still the choice, F5 still fires — and the confidence
+interval on every catastrophic magnitude here is worse than §7 already says. A
+953 624 mm tail and a 15 249 mm tail are the same finding: the solve failed. The
+digits are bootstrap noise.
 
 ---
 

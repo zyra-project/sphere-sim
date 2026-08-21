@@ -52,10 +52,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 783091,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 20.6369,
      "poseRotationDeg": 0.04054,
      "gridMm": 0.2205,
-     "seconds": 8.185
+     "seconds": 8.921
     },
     {
      "wallRadiusM": null,
@@ -71,10 +75,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 769170,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 51.4823,
      "poseRotationDeg": 0.06366,
      "gridMm": 0.3884,
-     "seconds": 7.406
+     "seconds": 8.348
     },
     {
      "wallRadiusM": null,
@@ -90,10 +98,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 829384,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 18.7191,
      "poseRotationDeg": 0.0406,
      "gridMm": 0.1797,
-     "seconds": 6.753
+     "seconds": 6.998
     },
     {
      "wallRadiusM": null,
@@ -109,10 +121,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 794639,
      "rejectedOffSphere": 0,
-     "posePositionMm": 12.891,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 12.8911,
      "poseRotationDeg": 0.03961,
      "gridMm": 0.2199,
-     "seconds": 6.656
+     "seconds": 6.985
     },
     {
      "wallRadiusM": null,
@@ -128,21 +144,25 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 817691,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 28.5569,
      "poseRotationDeg": 0.03325,
      "gridMm": 0.1743,
-     "seconds": 6.652
+     "seconds": 7.2
     }
    ],
    "posePositionMm": {
     "median": 20.6369,
-    "min": 12.891,
+    "min": 12.8911,
     "max": 51.4823,
     "values": [
      20.6369,
      51.4823,
      18.7191,
-     12.891,
+     12.8911,
      28.5569
     ]
    },
@@ -209,10 +229,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 783091,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 20.6369,
      "poseRotationDeg": 0.04054,
      "gridMm": 0.2205,
-     "seconds": 7.275
+     "seconds": 7.591
     },
     {
      "wallRadiusM": null,
@@ -228,10 +252,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 769170,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 51.4823,
      "poseRotationDeg": 0.06366,
      "gridMm": 0.3884,
-     "seconds": 7.301
+     "seconds": 7.828
     },
     {
      "wallRadiusM": null,
@@ -247,10 +275,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 829384,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 18.7191,
      "poseRotationDeg": 0.0406,
      "gridMm": 0.1797,
-     "seconds": 6.587
+     "seconds": 7.102
     },
     {
      "wallRadiusM": null,
@@ -266,10 +298,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 794639,
      "rejectedOffSphere": 0,
-     "posePositionMm": 12.891,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 12.8911,
      "poseRotationDeg": 0.03961,
      "gridMm": 0.2199,
-     "seconds": 6.62
+     "seconds": 7.17
     },
     {
      "wallRadiusM": null,
@@ -285,21 +321,25 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 817691,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 28.5569,
      "poseRotationDeg": 0.03325,
      "gridMm": 0.1743,
-     "seconds": 6.522
+     "seconds": 7.262
     }
    ],
    "posePositionMm": {
     "median": 20.6369,
-    "min": 12.891,
+    "min": 12.8911,
     "max": 51.4823,
     "values": [
      20.6369,
      51.4823,
      18.7191,
-     12.891,
+     12.8911,
      28.5569
     ]
    },
@@ -366,10 +406,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 795332,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 12.0764,
      "poseRotationDeg": 0.01775,
      "gridMm": 0.283,
-     "seconds": 6.862
+     "seconds": 7.882
     },
     {
      "wallRadiusM": null,
@@ -385,10 +429,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 783061,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 42.6686,
      "poseRotationDeg": 0.03524,
      "gridMm": 0.2921,
-     "seconds": 6.915
+     "seconds": 7.954
     },
     {
      "wallRadiusM": null,
@@ -404,10 +452,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 837603,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 21.3846,
      "poseRotationDeg": 0.02291,
      "gridMm": 0.2492,
-     "seconds": 6.395
+     "seconds": 7.009
     },
     {
      "wallRadiusM": null,
@@ -423,10 +475,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 806405,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 33.1672,
      "poseRotationDeg": 0.03263,
      "gridMm": 0.5128,
-     "seconds": 6.477
+     "seconds": 6.943
     },
     {
      "wallRadiusM": null,
@@ -442,10 +498,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 826819,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 47.4407,
      "poseRotationDeg": 0.04179,
      "gridMm": 0.2576,
-     "seconds": 6.721
+     "seconds": 7.361
     }
    ],
    "posePositionMm": {
@@ -523,10 +583,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 832404,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 60.7729,
      "poseRotationDeg": 0.05016,
      "gridMm": 1.3284,
-     "seconds": 7.824
+     "seconds": 8.65
     },
     {
      "wallRadiusM": null,
@@ -542,10 +606,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 825094,
      "rejectedOffSphere": 0,
-     "posePositionMm": 62.8979,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 62.8978,
      "poseRotationDeg": 0.04183,
      "gridMm": 0.9761,
-     "seconds": 7.32
+     "seconds": 7.974
     },
     {
      "wallRadiusM": null,
@@ -561,10 +629,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 862726,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 53.9212,
      "poseRotationDeg": 0.08126,
      "gridMm": 0.8887,
-     "seconds": 7.457
+     "seconds": 8.194
     },
     {
      "wallRadiusM": null,
@@ -580,10 +652,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 841868,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 46.3501,
      "poseRotationDeg": 0.04701,
      "gridMm": 0.8763,
-     "seconds": 6.98
+     "seconds": 7.502
     },
     {
      "wallRadiusM": null,
@@ -599,10 +675,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 854694,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 63.2982,
      "poseRotationDeg": 0.04894,
      "gridMm": 1.14761,
-     "seconds": 8.534
+     "seconds": 9.063
     }
    ],
    "posePositionMm": {
@@ -611,7 +691,7 @@
     "max": 63.2982,
     "values": [
      60.7729,
-     62.8979,
+     62.8978,
      53.9212,
      46.3501,
      63.2982
@@ -680,10 +760,14 @@
      "offSphereCeiling": 9,
      "rejectedLowModulation": 767906,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 104.738,
      "poseRotationDeg": 1.15849,
      "gridMm": 0.7601,
-     "seconds": 6.221
+     "seconds": 6.742
     },
     {
      "wallRadiusM": 9,
@@ -699,10 +783,14 @@
      "offSphereCeiling": 91,
      "rejectedLowModulation": 755621,
      "rejectedOffSphere": 0,
-     "posePositionMm": 394.793,
-     "poseRotationDeg": 4.40512,
-     "gridMm": 0.9045,
-     "seconds": 6.015
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 393.612,
+     "poseRotationDeg": 4.39175,
+     "gridMm": 0.9029,
+     "seconds": 6.461
     },
     {
      "wallRadiusM": 9,
@@ -718,10 +806,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 811599,
      "rejectedOffSphere": 0,
-     "posePositionMm": 146.914,
-     "poseRotationDeg": 1.58277,
-     "gridMm": 0.4814,
-     "seconds": 8.331
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 133.675,
+     "poseRotationDeg": 1.43829,
+     "gridMm": 0.4819,
+     "seconds": 7.146
     },
     {
      "wallRadiusM": 9,
@@ -737,10 +829,14 @@
      "offSphereCeiling": 26,
      "rejectedLowModulation": 775735,
      "rejectedOffSphere": 0,
-     "posePositionMm": 80952.9,
-     "poseRotationDeg": 21.7991,
-     "gridMm": 101.32,
-     "seconds": 7.694
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 100021,
+     "poseRotationDeg": 8.78044,
+     "gridMm": 90.2527,
+     "seconds": 9.771
     },
     {
      "wallRadiusM": 9,
@@ -756,33 +852,37 @@
      "offSphereCeiling": 38,
      "rejectedLowModulation": 802715,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 24.6027,
      "poseRotationDeg": 0.02874,
      "gridMm": 0.3483,
-     "seconds": 6.593
+     "seconds": 7.133
     }
    ],
    "posePositionMm": {
-    "median": 146.914,
+    "median": 133.675,
     "min": 24.6027,
-    "max": 80952.9,
+    "max": 100021,
     "values": [
      104.738,
-     394.793,
-     146.914,
-     80952.9,
+     393.612,
+     133.675,
+     100021,
      24.6027
     ]
    },
    "poseRotationDeg": {
-    "median": 1.58277,
+    "median": 1.43829,
     "min": 0.02874,
-    "max": 21.7991,
+    "max": 8.78044,
     "values": [
      1.15849,
-     4.40512,
-     1.58277,
-     21.7991,
+     4.39175,
+     1.43829,
+     8.78044,
      0.02874
     ]
    },
@@ -837,10 +937,14 @@
      "offSphereCeiling": 3,
      "rejectedLowModulation": 783088,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 20.6369,
      "poseRotationDeg": 0.04054,
      "gridMm": 0.2205,
-     "seconds": 6.904
+     "seconds": 7.751
     },
     {
      "wallRadiusM": 9,
@@ -856,10 +960,14 @@
      "offSphereCeiling": 44,
      "rejectedLowModulation": 769094,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 51.4784,
      "poseRotationDeg": 0.06409,
      "gridMm": 0.3917,
-     "seconds": 7.173
+     "seconds": 7.65
     },
     {
      "wallRadiusM": 9,
@@ -875,10 +983,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 829384,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 18.7191,
      "poseRotationDeg": 0.0406,
      "gridMm": 0.1797,
-     "seconds": 6.863
+     "seconds": 6.989
     },
     {
      "wallRadiusM": 9,
@@ -894,10 +1006,14 @@
      "offSphereCeiling": 20,
      "rejectedLowModulation": 794597,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 14.1204,
      "poseRotationDeg": 0.03442,
      "gridMm": 0.2164,
-     "seconds": 6.881
+     "seconds": 7.461
     },
     {
      "wallRadiusM": 9,
@@ -913,10 +1029,14 @@
      "offSphereCeiling": 38,
      "rejectedLowModulation": 817610,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 863.937,
      "poseRotationDeg": 9.60819,
      "gridMm": 0.2604,
-     "seconds": 6.022
+     "seconds": 6.5
     }
    ],
    "posePositionMm": {
@@ -994,10 +1114,14 @@
      "offSphereCeiling": 3,
      "rejectedLowModulation": 795329,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 12.0764,
      "poseRotationDeg": 0.01775,
      "gridMm": 0.283,
-     "seconds": 7.295
+     "seconds": 7.472
     },
     {
      "wallRadiusM": 9,
@@ -1013,10 +1137,14 @@
      "offSphereCeiling": 29,
      "rejectedLowModulation": 783015,
      "rejectedOffSphere": 0,
-     "posePositionMm": 994.683,
-     "poseRotationDeg": 11.0189,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 994.655,
+     "poseRotationDeg": 11.0186,
      "gridMm": 0.2147,
-     "seconds": 6.553
+     "seconds": 6.614
     },
     {
      "wallRadiusM": 9,
@@ -1032,10 +1160,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 837603,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 21.3846,
      "poseRotationDeg": 0.02291,
      "gridMm": 0.2492,
-     "seconds": 6.488
+     "seconds": 7.058
     },
     {
      "wallRadiusM": 9,
@@ -1051,10 +1183,14 @@
      "offSphereCeiling": 16,
      "rejectedLowModulation": 806378,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 172442,
-     "poseRotationDeg": 7.3205,
-     "gridMm": 0.5654,
-     "seconds": 5.602
+     "poseRotationDeg": 7.31501,
+     "gridMm": 0.5695,
+     "seconds": 5.829
     },
     {
      "wallRadiusM": 9,
@@ -1070,34 +1206,38 @@
      "offSphereCeiling": 27,
      "rejectedLowModulation": 826770,
      "rejectedOffSphere": 0,
-     "posePositionMm": 515.61,
-     "poseRotationDeg": 5.68057,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 515.481,
+     "poseRotationDeg": 5.67913,
      "gridMm": 0.3875,
-     "seconds": 6.42
+     "seconds": 6.608
     }
    ],
    "posePositionMm": {
-    "median": 515.61,
+    "median": 515.481,
     "min": 12.0764,
     "max": 172442,
     "values": [
      12.0764,
-     994.683,
+     994.655,
      21.3846,
      172442,
-     515.61
+     515.481
     ]
    },
    "poseRotationDeg": {
-    "median": 5.68057,
+    "median": 5.67913,
     "min": 0.01775,
-    "max": 11.0189,
+    "max": 11.0186,
     "values": [
      0.01775,
-     11.0189,
+     11.0186,
      0.02291,
-     7.3205,
-     5.68057
+     7.31501,
+     5.67913
     ]
    },
    "offSphereFrac": {
@@ -1151,10 +1291,14 @@
      "offSphereCeiling": 3,
      "rejectedLowModulation": 832401,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 60.7729,
      "poseRotationDeg": 0.05016,
      "gridMm": 1.3284,
-     "seconds": 7.592
+     "seconds": 7.978
     },
     {
      "wallRadiusM": 9,
@@ -1170,10 +1314,14 @@
      "offSphereCeiling": 21,
      "rejectedLowModulation": 825067,
      "rejectedOffSphere": 0,
-     "posePositionMm": 62.898,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 62.8978,
      "poseRotationDeg": 0.04183,
      "gridMm": 0.9761,
-     "seconds": 8.019
+     "seconds": 8.212
     },
     {
      "wallRadiusM": 9,
@@ -1189,10 +1337,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 862726,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 53.9212,
      "poseRotationDeg": 0.08126,
      "gridMm": 0.8887,
-     "seconds": 7.335
+     "seconds": 7.945
     },
     {
      "wallRadiusM": 9,
@@ -1208,10 +1360,14 @@
      "offSphereCeiling": 14,
      "rejectedLowModulation": 841850,
      "rejectedOffSphere": 0,
-     "posePositionMm": 15249.2,
-     "poseRotationDeg": 55.5121,
-     "gridMm": null,
-     "seconds": 8.676
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 953624,
+     "poseRotationDeg": 60.8157,
+     "gridMm": 0.373,
+     "seconds": 9.35
     },
     {
      "wallRadiusM": 9,
@@ -1227,34 +1383,38 @@
      "offSphereCeiling": 11,
      "rejectedLowModulation": 854675,
      "rejectedOffSphere": 0,
-     "posePositionMm": 1064.81,
-     "poseRotationDeg": 11.8148,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 1064.78,
+     "poseRotationDeg": 11.8144,
      "gridMm": 0.2502,
-     "seconds": 6.199
+     "seconds": 6.351
     }
    ],
    "posePositionMm": {
-    "median": 62.898,
+    "median": 62.8978,
     "min": 53.9212,
-    "max": 15249.2,
+    "max": 953624,
     "values": [
      60.7729,
-     62.898,
+     62.8978,
      53.9212,
-     15249.2,
-     1064.81
+     953624,
+     1064.78
     ]
    },
    "poseRotationDeg": {
     "median": 0.08126,
     "min": 0.04183,
-    "max": 55.5121,
+    "max": 60.8157,
     "values": [
      0.05016,
      0.04183,
      0.08126,
-     55.5121,
-     11.8148
+     60.8157,
+     11.8144
     ]
    },
    "offSphereFrac": {
@@ -1286,7 +1446,7 @@
     "floor": 18,
     "ceiling": 49
    },
-   "gridUsable": 4
+   "gridUsable": 5
   },
   {
    "wallRadiusM": 6,
@@ -1308,10 +1468,14 @@
      "offSphereCeiling": 3,
      "rejectedLowModulation": 755827,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 15.1101,
      "poseRotationDeg": 0.02253,
      "gridMm": 0.2916,
-     "seconds": 6.68
+     "seconds": 7.109
     },
     {
      "wallRadiusM": 6,
@@ -1327,10 +1491,14 @@
      "offSphereCeiling": 44,
      "rejectedLowModulation": 748052,
      "rejectedOffSphere": 0,
-     "posePositionMm": 7840.59,
-     "poseRotationDeg": 64.0895,
-     "gridMm": 0.3642,
-     "seconds": 6.08
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 16364.8,
+     "poseRotationDeg": 60.7684,
+     "gridMm": 0.01309,
+     "seconds": 6.181
     },
     {
      "wallRadiusM": 6,
@@ -1346,10 +1514,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 799038,
      "rejectedOffSphere": 0,
-     "posePositionMm": 40638.1,
-     "poseRotationDeg": 3.38355,
-     "gridMm": 22.311,
-     "seconds": 6.389
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 39625.3,
+     "poseRotationDeg": 12.9546,
+     "gridMm": 0.1849,
+     "seconds": 7.216
     },
     {
      "wallRadiusM": 6,
@@ -1365,10 +1537,14 @@
      "offSphereCeiling": 18,
      "rejectedLowModulation": 766901,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 2499.79,
      "poseRotationDeg": 8.82883,
      "gridMm": null,
-     "seconds": 4.751
+     "seconds": 4.859
     },
     {
      "wallRadiusM": 6,
@@ -1384,32 +1560,36 @@
      "offSphereCeiling": 38,
      "rejectedLowModulation": 788794,
      "rejectedOffSphere": 0,
-     "posePositionMm": 40349.2,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 40349.1,
      "poseRotationDeg": 7.62712,
      "gridMm": 0.5101,
-     "seconds": 5.653
+     "seconds": 5.62
     }
    ],
    "posePositionMm": {
-    "median": 7840.59,
+    "median": 16364.8,
     "min": 15.1101,
-    "max": 40638.1,
+    "max": 40349.1,
     "values": [
      15.1101,
-     7840.59,
-     40638.1,
+     16364.8,
+     39625.3,
      2499.79,
-     40349.2
+     40349.1
     ]
    },
    "poseRotationDeg": {
-    "median": 7.62712,
+    "median": 8.82883,
     "min": 0.02253,
-    "max": 64.0895,
+    "max": 60.7684,
     "values": [
      0.02253,
-     64.0895,
-     3.38355,
+     60.7684,
+     12.9546,
      8.82883,
      7.62712
     ]
@@ -1465,10 +1645,14 @@
      "offSphereCeiling": 3,
      "rejectedLowModulation": 783079,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 20.6369,
      "poseRotationDeg": 0.04054,
      "gridMm": 0.2205,
-     "seconds": 6.904
+     "seconds": 7.227
     },
     {
      "wallRadiusM": 6,
@@ -1484,10 +1668,14 @@
      "offSphereCeiling": 44,
      "rejectedLowModulation": 768832,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 49.1342,
      "poseRotationDeg": 0.06315,
      "gridMm": 0.3273,
-     "seconds": 7.691
+     "seconds": 7.573
     },
     {
      "wallRadiusM": 6,
@@ -1503,10 +1691,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 829384,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 18.7191,
      "poseRotationDeg": 0.0406,
      "gridMm": 0.1797,
-     "seconds": 6.67
+     "seconds": 6.939
     },
     {
      "wallRadiusM": 6,
@@ -1522,10 +1714,14 @@
      "offSphereCeiling": 18,
      "rejectedLowModulation": 794458,
      "rejectedOffSphere": 0,
-     "posePositionMm": 89537.7,
-     "poseRotationDeg": 9.61443,
-     "gridMm": 87.652,
-     "seconds": 7.143
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 73401,
+     "poseRotationDeg": 9.65491,
+     "gridMm": 47.3422,
+     "seconds": 7.487
     },
     {
      "wallRadiusM": 6,
@@ -1541,33 +1737,37 @@
      "offSphereCeiling": 38,
      "rejectedLowModulation": 817546,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 749.453,
      "poseRotationDeg": 8.37967,
      "gridMm": 0.628,
-     "seconds": 6.45
+     "seconds": 6.782
     }
    ],
    "posePositionMm": {
     "median": 49.1342,
     "min": 18.7191,
-    "max": 89537.7,
+    "max": 73401,
     "values": [
      20.6369,
      49.1342,
      18.7191,
-     89537.7,
+     73401,
      749.453
     ]
    },
    "poseRotationDeg": {
     "median": 0.06315,
     "min": 0.04054,
-    "max": 9.61443,
+    "max": 9.65491,
     "values": [
      0.04054,
      0.06315,
      0.0406,
-     9.61443,
+     9.65491,
      8.37967
     ]
    },
@@ -1622,10 +1822,14 @@
      "offSphereCeiling": 3,
      "rejectedLowModulation": 795329,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 12.0764,
      "poseRotationDeg": 0.01775,
      "gridMm": 0.283,
-     "seconds": 7.171
+     "seconds": 7.514
     },
     {
      "wallRadiusM": 6,
@@ -1641,10 +1845,14 @@
      "offSphereCeiling": 29,
      "rejectedLowModulation": 783015,
      "rejectedOffSphere": 0,
-     "posePositionMm": 994.683,
-     "poseRotationDeg": 11.0189,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 994.655,
+     "poseRotationDeg": 11.0186,
      "gridMm": 0.2147,
-     "seconds": 6.281
+     "seconds": 6.756
     },
     {
      "wallRadiusM": 6,
@@ -1660,10 +1868,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 837603,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 21.3846,
      "poseRotationDeg": 0.02291,
      "gridMm": 0.2492,
-     "seconds": 6.317
+     "seconds": 6.671
     },
     {
      "wallRadiusM": 6,
@@ -1679,10 +1891,14 @@
      "offSphereCeiling": 16,
      "rejectedLowModulation": 806378,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 172442,
-     "poseRotationDeg": 7.3205,
-     "gridMm": 0.5654,
-     "seconds": 5.531
+     "poseRotationDeg": 7.31501,
+     "gridMm": 0.5695,
+     "seconds": 5.751
     },
     {
      "wallRadiusM": 6,
@@ -1698,34 +1914,38 @@
      "offSphereCeiling": 27,
      "rejectedLowModulation": 826770,
      "rejectedOffSphere": 0,
-     "posePositionMm": 515.61,
-     "poseRotationDeg": 5.68057,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 515.481,
+     "poseRotationDeg": 5.67913,
      "gridMm": 0.3875,
-     "seconds": 6.509
+     "seconds": 6.777
     }
    ],
    "posePositionMm": {
-    "median": 515.61,
+    "median": 515.481,
     "min": 12.0764,
     "max": 172442,
     "values": [
      12.0764,
-     994.683,
+     994.655,
      21.3846,
      172442,
-     515.61
+     515.481
     ]
    },
    "poseRotationDeg": {
-    "median": 5.68057,
+    "median": 5.67913,
     "min": 0.01775,
-    "max": 11.0189,
+    "max": 11.0186,
     "values": [
      0.01775,
-     11.0189,
+     11.0186,
      0.02291,
-     7.3205,
-     5.68057
+     7.31501,
+     5.67913
     ]
    },
    "offSphereFrac": {
@@ -1779,10 +1999,14 @@
      "offSphereCeiling": 3,
      "rejectedLowModulation": 832401,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 60.7729,
      "poseRotationDeg": 0.05016,
      "gridMm": 1.3284,
-     "seconds": 7.438
+     "seconds": 7.915
     },
     {
      "wallRadiusM": 6,
@@ -1798,10 +2022,14 @@
      "offSphereCeiling": 21,
      "rejectedLowModulation": 825067,
      "rejectedOffSphere": 0,
-     "posePositionMm": 62.898,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 62.8978,
      "poseRotationDeg": 0.04183,
      "gridMm": 0.9761,
-     "seconds": 7.937
+     "seconds": 8.093
     },
     {
      "wallRadiusM": 6,
@@ -1817,10 +2045,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 862726,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 53.9212,
      "poseRotationDeg": 0.08126,
      "gridMm": 0.8887,
-     "seconds": 7.52
+     "seconds": 8.389
     },
     {
      "wallRadiusM": 6,
@@ -1836,10 +2068,14 @@
      "offSphereCeiling": 14,
      "rejectedLowModulation": 841850,
      "rejectedOffSphere": 0,
-     "posePositionMm": 15249.2,
-     "poseRotationDeg": 55.5121,
-     "gridMm": null,
-     "seconds": 8.82
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 953624,
+     "poseRotationDeg": 60.8157,
+     "gridMm": 0.373,
+     "seconds": 9.607
     },
     {
      "wallRadiusM": 6,
@@ -1855,34 +2091,38 @@
      "offSphereCeiling": 11,
      "rejectedLowModulation": 854675,
      "rejectedOffSphere": 0,
-     "posePositionMm": 1064.81,
-     "poseRotationDeg": 11.8148,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 1064.78,
+     "poseRotationDeg": 11.8144,
      "gridMm": 0.2502,
-     "seconds": 6.162
+     "seconds": 6.344
     }
    ],
    "posePositionMm": {
-    "median": 62.898,
+    "median": 62.8978,
     "min": 53.9212,
-    "max": 15249.2,
+    "max": 953624,
     "values": [
      60.7729,
-     62.898,
+     62.8978,
      53.9212,
-     15249.2,
-     1064.81
+     953624,
+     1064.78
     ]
    },
    "poseRotationDeg": {
     "median": 0.08126,
     "min": 0.04183,
-    "max": 55.5121,
+    "max": 60.8157,
     "values": [
      0.05016,
      0.04183,
      0.08126,
-     55.5121,
-     11.8148
+     60.8157,
+     11.8144
     ]
    },
    "offSphereFrac": {
@@ -1914,7 +2154,7 @@
     "floor": 18,
     "ceiling": 49
    },
-   "gridUsable": 4
+   "gridUsable": 5
   },
   {
    "wallRadiusM": 4,
@@ -1936,10 +2176,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 752843,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 21.5499,
      "poseRotationDeg": 0.03005,
      "gridMm": 0.2287,
-     "seconds": 6.765
+     "seconds": 7.705
     },
     {
      "wallRadiusM": 4,
@@ -1955,10 +2199,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 746925,
      "rejectedOffSphere": 0,
-     "posePositionMm": 346932,
-     "poseRotationDeg": 4.38012,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 346940,
+     "poseRotationDeg": 4.38013,
      "gridMm": 0.4513,
-     "seconds": 5.509
+     "seconds": 5.796
     },
     {
      "wallRadiusM": 4,
@@ -1974,10 +2222,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 789394,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 3451.75,
      "poseRotationDeg": 7.24081,
      "gridMm": null,
-     "seconds": 4.513
+     "seconds": 4.946
     },
     {
      "wallRadiusM": 4,
@@ -1993,10 +2245,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 764516,
      "rejectedOffSphere": 0,
-     "posePositionMm": 4802.64,
-     "poseRotationDeg": 22.0975,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 40796.6,
+     "poseRotationDeg": 20.6215,
      "gridMm": null,
-     "seconds": 5.619
+     "seconds": 5.876
     },
     {
      "wallRadiusM": 4,
@@ -2012,34 +2268,38 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 782873,
      "rejectedOffSphere": 0,
-     "posePositionMm": 203.205,
-     "poseRotationDeg": 2.22434,
-     "gridMm": 0.4066,
-     "seconds": 5.894
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 249.029,
+     "poseRotationDeg": 2.73873,
+     "gridMm": 0.4002,
+     "seconds": 6.058
     }
    ],
    "posePositionMm": {
     "median": 3451.75,
     "min": 21.5499,
-    "max": 346932,
+    "max": 346940,
     "values": [
      21.5499,
-     346932,
+     346940,
      3451.75,
-     4802.64,
-     203.205
+     40796.6,
+     249.029
     ]
    },
    "poseRotationDeg": {
-    "median": 4.38012,
+    "median": 4.38013,
     "min": 0.03005,
-    "max": 22.0975,
+    "max": 20.6215,
     "values": [
      0.03005,
-     4.38012,
+     4.38013,
      7.24081,
-     22.0975,
-     2.22434
+     20.6215,
+     2.73873
     ]
    },
    "offSphereFrac": {
@@ -2093,10 +2353,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 783091,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 20.6369,
      "poseRotationDeg": 0.04054,
      "gridMm": 0.2205,
-     "seconds": 7.125
+     "seconds": 7.784
     },
     {
      "wallRadiusM": 4,
@@ -2112,10 +2376,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 769170,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 51.4823,
      "poseRotationDeg": 0.06366,
      "gridMm": 0.3884,
-     "seconds": 7.222
+     "seconds": 8.12
     },
     {
      "wallRadiusM": 4,
@@ -2131,10 +2399,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 829384,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 18.7191,
      "poseRotationDeg": 0.0406,
      "gridMm": 0.1797,
-     "seconds": 6.624
+     "seconds": 6.9
     },
     {
      "wallRadiusM": 4,
@@ -2150,10 +2422,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 794639,
      "rejectedOffSphere": 0,
-     "posePositionMm": 12.891,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 12.8911,
      "poseRotationDeg": 0.03961,
      "gridMm": 0.2199,
-     "seconds": 6.618
+     "seconds": 7.027
     },
     {
      "wallRadiusM": 4,
@@ -2169,21 +2445,25 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 817691,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 28.5569,
      "poseRotationDeg": 0.03325,
      "gridMm": 0.1743,
-     "seconds": 6.551
+     "seconds": 7.044
     }
    ],
    "posePositionMm": {
     "median": 20.6369,
-    "min": 12.891,
+    "min": 12.8911,
     "max": 51.4823,
     "values": [
      20.6369,
      51.4823,
      18.7191,
-     12.891,
+     12.8911,
      28.5569
     ]
    },
@@ -2250,10 +2530,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 795332,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 12.0764,
      "poseRotationDeg": 0.01775,
      "gridMm": 0.283,
-     "seconds": 7.15
+     "seconds": 7.317
     },
     {
      "wallRadiusM": 4,
@@ -2269,10 +2553,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 783061,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 42.6686,
      "poseRotationDeg": 0.03524,
      "gridMm": 0.2921,
-     "seconds": 6.89
+     "seconds": 7.314
     },
     {
      "wallRadiusM": 4,
@@ -2288,10 +2576,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 837603,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 21.3846,
      "poseRotationDeg": 0.02291,
      "gridMm": 0.2492,
-     "seconds": 6.297
+     "seconds": 6.685
     },
     {
      "wallRadiusM": 4,
@@ -2307,10 +2599,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 806405,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 33.1672,
      "poseRotationDeg": 0.03263,
      "gridMm": 0.5128,
-     "seconds": 6.441
+     "seconds": 6.945
     },
     {
      "wallRadiusM": 4,
@@ -2326,10 +2622,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 826819,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 47.4407,
      "poseRotationDeg": 0.04179,
      "gridMm": 0.2576,
-     "seconds": 7.199
+     "seconds": 7.29
     }
    ],
    "posePositionMm": {
@@ -2407,10 +2707,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 832404,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 60.7729,
      "poseRotationDeg": 0.05016,
      "gridMm": 1.3284,
-     "seconds": 8.091
+     "seconds": 8.499
     },
     {
      "wallRadiusM": 4,
@@ -2426,10 +2730,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 825094,
      "rejectedOffSphere": 0,
-     "posePositionMm": 62.8979,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 62.8978,
      "poseRotationDeg": 0.04183,
      "gridMm": 0.9761,
-     "seconds": 7.416
+     "seconds": 8.302
     },
     {
      "wallRadiusM": 4,
@@ -2445,10 +2753,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 862726,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 53.9212,
      "poseRotationDeg": 0.08126,
      "gridMm": 0.8887,
-     "seconds": 7.742
+     "seconds": 8.2
     },
     {
      "wallRadiusM": 4,
@@ -2464,10 +2776,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 841868,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 46.3501,
      "poseRotationDeg": 0.04701,
      "gridMm": 0.8763,
-     "seconds": 7.027
+     "seconds": 7.399
     },
     {
      "wallRadiusM": 4,
@@ -2483,10 +2799,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 854694,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 63.2982,
      "poseRotationDeg": 0.04894,
      "gridMm": 1.14761,
-     "seconds": 8.528
+     "seconds": 9.027
     }
    ],
    "posePositionMm": {
@@ -2495,7 +2815,7 @@
     "max": 63.2982,
     "values": [
      60.7729,
-     62.8979,
+     62.8978,
      53.9212,
      46.3501,
      63.2982
@@ -2564,10 +2884,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 783091,
      "rejectedOffSphere": 2349,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 9.24439,
      "poseRotationDeg": 0.036,
      "gridMm": 0.3323,
-     "seconds": 7.553
+     "seconds": 8.017
     },
     {
      "wallRadiusM": null,
@@ -2583,10 +2907,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 769170,
      "rejectedOffSphere": 6850,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 42.6052,
      "poseRotationDeg": 0.04391,
      "gridMm": 0.233,
-     "seconds": 6.923
+     "seconds": 7.452
     },
     {
      "wallRadiusM": null,
@@ -2602,10 +2930,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 829384,
      "rejectedOffSphere": 3555,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 21.4225,
      "poseRotationDeg": 0.03667,
      "gridMm": 0.178,
-     "seconds": 6.63
+     "seconds": 7.123
     },
     {
      "wallRadiusM": null,
@@ -2621,10 +2953,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 794639,
      "rejectedOffSphere": 2886,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 12.7997,
      "poseRotationDeg": 0.04065,
      "gridMm": 0.2089,
-     "seconds": 6.794
+     "seconds": 7.36
     },
     {
      "wallRadiusM": null,
@@ -2640,10 +2976,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 817691,
      "rejectedOffSphere": 1127,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 32.1432,
      "poseRotationDeg": 0.03625,
      "gridMm": 0.2565,
-     "seconds": 6.624
+     "seconds": 7.221
     }
    ],
    "posePositionMm": {
@@ -2721,10 +3061,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 783091,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 20.6369,
      "poseRotationDeg": 0.04054,
      "gridMm": 0.2205,
-     "seconds": 7.209
+     "seconds": 7.628
     },
     {
      "wallRadiusM": null,
@@ -2740,10 +3084,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 769170,
      "rejectedOffSphere": 1015,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 42.2523,
      "poseRotationDeg": 0.03967,
      "gridMm": 0.3518,
-     "seconds": 6.896
+     "seconds": 7.404
     },
     {
      "wallRadiusM": null,
@@ -2759,10 +3107,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 829384,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 18.7191,
      "poseRotationDeg": 0.0406,
      "gridMm": 0.1797,
-     "seconds": 6.659
+     "seconds": 6.986
     },
     {
      "wallRadiusM": null,
@@ -2778,10 +3130,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 794639,
      "rejectedOffSphere": 0,
-     "posePositionMm": 12.891,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 12.8911,
      "poseRotationDeg": 0.03961,
      "gridMm": 0.2199,
-     "seconds": 6.686
+     "seconds": 6.976
     },
     {
      "wallRadiusM": null,
@@ -2797,21 +3153,25 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 817691,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 28.5569,
      "poseRotationDeg": 0.03325,
      "gridMm": 0.1743,
-     "seconds": 6.717
+     "seconds": 7.403
     }
    ],
    "posePositionMm": {
     "median": 20.6369,
-    "min": 12.891,
+    "min": 12.8911,
     "max": 42.2523,
     "values": [
      20.6369,
      42.2523,
      18.7191,
-     12.891,
+     12.8911,
      28.5569
     ]
    },
@@ -2878,10 +3238,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 783091,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 20.6369,
      "poseRotationDeg": 0.04054,
      "gridMm": 0.2205,
-     "seconds": 7.369
+     "seconds": 8.083
     },
     {
      "wallRadiusM": null,
@@ -2897,10 +3261,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 769170,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 51.4823,
      "poseRotationDeg": 0.06366,
      "gridMm": 0.3884,
-     "seconds": 7.373
+     "seconds": 7.99
     },
     {
      "wallRadiusM": null,
@@ -2916,10 +3284,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 829384,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 18.7191,
      "poseRotationDeg": 0.0406,
      "gridMm": 0.1797,
-     "seconds": 6.9
+     "seconds": 7.083
     },
     {
      "wallRadiusM": null,
@@ -2935,10 +3307,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 794639,
      "rejectedOffSphere": 0,
-     "posePositionMm": 12.891,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 12.8911,
      "poseRotationDeg": 0.03961,
      "gridMm": 0.2199,
-     "seconds": 6.823
+     "seconds": 7.128
     },
     {
      "wallRadiusM": null,
@@ -2954,21 +3330,25 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 817691,
      "rejectedOffSphere": 0,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 28.5569,
      "poseRotationDeg": 0.03325,
      "gridMm": 0.1743,
-     "seconds": 6.76
+     "seconds": 7.305
     }
    ],
    "posePositionMm": {
     "median": 20.6369,
-    "min": 12.891,
+    "min": 12.8911,
     "max": 51.4823,
     "values": [
      20.6369,
      51.4823,
      18.7191,
-     12.891,
+     12.8911,
      28.5569
     ]
    },
@@ -3035,10 +3415,14 @@
      "offSphereCeiling": 5,
      "rejectedLowModulation": 767906,
      "rejectedOffSphere": 17185,
-     "posePositionMm": 25.7648,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 25.7649,
      "poseRotationDeg": 0.02914,
      "gridMm": 0.3019,
-     "seconds": 7.28
+     "seconds": 7.729
     },
     {
      "wallRadiusM": 9,
@@ -3054,10 +3438,14 @@
      "offSphereCeiling": 59,
      "rejectedLowModulation": 755621,
      "rejectedOffSphere": 19922,
-     "posePositionMm": 135.278,
-     "poseRotationDeg": 1.42327,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 135.427,
+     "poseRotationDeg": 1.42505,
      "gridMm": 0.8475,
-     "seconds": 6.533
+     "seconds": 6.763
     },
     {
      "wallRadiusM": 9,
@@ -3073,10 +3461,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 811599,
      "rejectedOffSphere": 21157,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 40.4261,
      "poseRotationDeg": 0.06538,
      "gridMm": 0.2567,
-     "seconds": 7.351
+     "seconds": 8.124
     },
     {
      "wallRadiusM": 9,
@@ -3092,10 +3484,14 @@
      "offSphereCeiling": 16,
      "rejectedLowModulation": 775735,
      "rejectedOffSphere": 21500,
-     "posePositionMm": 7281.68,
-     "poseRotationDeg": 87.3028,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 45798,
+     "poseRotationDeg": 53.1738,
      "gridMm": null,
-     "seconds": 7.312
+     "seconds": 7.142
     },
     {
      "wallRadiusM": 9,
@@ -3111,34 +3507,38 @@
      "offSphereCeiling": 25,
      "rejectedLowModulation": 802715,
      "rejectedOffSphere": 15697,
-     "posePositionMm": 102.781,
-     "poseRotationDeg": 1.1497,
-     "gridMm": 1.07458,
-     "seconds": 6.542
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 102.769,
+     "poseRotationDeg": 1.14956,
+     "gridMm": 1.07456,
+     "seconds": 6.755
     }
    ],
    "posePositionMm": {
-    "median": 102.781,
-    "min": 25.7648,
-    "max": 7281.68,
+    "median": 102.769,
+    "min": 25.7649,
+    "max": 45798,
     "values": [
-     25.7648,
-     135.278,
+     25.7649,
+     135.427,
      40.4261,
-     7281.68,
-     102.781
+     45798,
+     102.769
     ]
    },
    "poseRotationDeg": {
-    "median": 1.1497,
+    "median": 1.14956,
     "min": 0.02914,
-    "max": 87.3028,
+    "max": 53.1738,
     "values": [
      0.02914,
-     1.42327,
+     1.42505,
      0.06538,
-     87.3028,
-     1.1497
+     53.1738,
+     1.14956
     ]
    },
    "offSphereFrac": {
@@ -3192,10 +3592,14 @@
      "offSphereCeiling": 5,
      "rejectedLowModulation": 767906,
      "rejectedOffSphere": 14367,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 7.04425,
      "poseRotationDeg": 0.01693,
      "gridMm": 0.212,
-     "seconds": 7.056
+     "seconds": 7.583
     },
     {
      "wallRadiusM": 9,
@@ -3211,10 +3615,14 @@
      "offSphereCeiling": 61,
      "rejectedLowModulation": 755621,
      "rejectedOffSphere": 13752,
-     "posePositionMm": 36454.5,
-     "poseRotationDeg": 42.8258,
-     "gridMm": 14.4027,
-     "seconds": 8.358
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 36558.2,
+     "poseRotationDeg": 42.8135,
+     "gridMm": 82.9375,
+     "seconds": 10.262
     },
     {
      "wallRadiusM": 9,
@@ -3230,10 +3638,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 811599,
      "rejectedOffSphere": 17228,
-     "posePositionMm": 813.474,
-     "poseRotationDeg": 27.6525,
-     "gridMm": 65.5265,
-     "seconds": 6.017
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 1714.77,
+     "poseRotationDeg": 44.7844,
+     "gridMm": 0.5622,
+     "seconds": 6.371
     },
     {
      "wallRadiusM": 9,
@@ -3249,10 +3661,14 @@
      "offSphereCeiling": 16,
      "rejectedLowModulation": 775735,
      "rejectedOffSphere": 17935,
-     "posePositionMm": 3517.11,
-     "poseRotationDeg": 59.0528,
-     "gridMm": 19.6856,
-     "seconds": 5.979
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 222209,
+     "poseRotationDeg": 179.571,
+     "gridMm": null,
+     "seconds": 5.775
     },
     {
      "wallRadiusM": 9,
@@ -3268,34 +3684,38 @@
      "offSphereCeiling": 29,
      "rejectedLowModulation": 802715,
      "rejectedOffSphere": 13995,
-     "posePositionMm": 4772.21,
-     "poseRotationDeg": 27.0938,
-     "gridMm": 0.1083,
-     "seconds": 5.75
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 3876.62,
+     "poseRotationDeg": 54.8579,
+     "gridMm": 0.2093,
+     "seconds": 6.041
     }
    ],
    "posePositionMm": {
-    "median": 3517.11,
+    "median": 3876.62,
     "min": 7.04425,
-    "max": 36454.5,
+    "max": 222209,
     "values": [
      7.04425,
-     36454.5,
-     813.474,
-     3517.11,
-     4772.21
+     36558.2,
+     1714.77,
+     222209,
+     3876.62
     ]
    },
    "poseRotationDeg": {
-    "median": 27.6525,
+    "median": 44.7844,
     "min": 0.01693,
-    "max": 59.0528,
+    "max": 179.571,
     "values": [
      0.01693,
-     42.8258,
-     27.6525,
-     59.0528,
-     27.0938
+     42.8135,
+     44.7844,
+     179.571,
+     54.8579
     ]
    },
    "offSphereFrac": {
@@ -3327,7 +3747,7 @@
     "floor": 112,
     "ceiling": 111
    },
-   "gridUsable": 5
+   "gridUsable": 4
   },
   {
    "wallRadiusM": 9,
@@ -3349,10 +3769,14 @@
      "offSphereCeiling": 6,
      "rejectedLowModulation": 767906,
      "rejectedOffSphere": 13394,
-     "posePositionMm": 14.7813,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 14.7814,
      "poseRotationDeg": 0.04031,
      "gridMm": 0.1727,
-     "seconds": 7.39
+     "seconds": 7.549
     },
     {
      "wallRadiusM": 9,
@@ -3368,10 +3792,14 @@
      "offSphereCeiling": 67,
      "rejectedLowModulation": 755621,
      "rejectedOffSphere": 11594,
-     "posePositionMm": 3033.49,
-     "poseRotationDeg": 74.71,
-     "gridMm": 0.5661,
-     "seconds": 5.829
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 3538.89,
+     "poseRotationDeg": 74.967,
+     "gridMm": 0.6794,
+     "seconds": 6.231
     },
     {
      "wallRadiusM": 9,
@@ -3387,10 +3815,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 811599,
      "rejectedOffSphere": 15097,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 376452,
      "poseRotationDeg": 1.52674,
      "gridMm": 0.5032,
-     "seconds": 5.994
+     "seconds": 6.338
     },
     {
      "wallRadiusM": 9,
@@ -3406,10 +3838,14 @@
      "offSphereCeiling": 14,
      "rejectedLowModulation": 775735,
      "rejectedOffSphere": 16272,
-     "posePositionMm": 1036.94,
-     "poseRotationDeg": 11.4085,
-     "gridMm": 0.2926,
-     "seconds": 6.509
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 897.952,
+     "poseRotationDeg": 9.89283,
+     "gridMm": 0.2936,
+     "seconds": 7.051
     },
     {
      "wallRadiusM": 9,
@@ -3425,33 +3861,37 @@
      "offSphereCeiling": 31,
      "rejectedLowModulation": 802715,
      "rejectedOffSphere": 12612,
-     "posePositionMm": 50.0438,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 50.0451,
      "poseRotationDeg": 0.4794,
      "gridMm": 0.4829,
-     "seconds": 6.602
+     "seconds": 7.064
     }
    ],
    "posePositionMm": {
-    "median": 1036.94,
-    "min": 14.7813,
+    "median": 897.952,
+    "min": 14.7814,
     "max": 376452,
     "values": [
-     14.7813,
-     3033.49,
+     14.7814,
+     3538.89,
      376452,
-     1036.94,
-     50.0438
+     897.952,
+     50.0451
     ]
    },
    "poseRotationDeg": {
     "median": 1.52674,
     "min": 0.04031,
-    "max": 74.71,
+    "max": 74.967,
     "values": [
      0.04031,
-     74.71,
+     74.967,
      1.52674,
-     11.4085,
+     9.89283,
      0.4794
     ]
    },
@@ -3506,10 +3946,14 @@
      "offSphereCeiling": 3,
      "rejectedLowModulation": 755827,
      "rejectedOffSphere": 28949,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 21.5498,
      "poseRotationDeg": 0.03457,
      "gridMm": 0.1464,
-     "seconds": 7.544
+     "seconds": 7.821
     },
     {
      "wallRadiusM": 6,
@@ -3525,10 +3969,14 @@
      "offSphereCeiling": 32,
      "rejectedLowModulation": 748052,
      "rejectedOffSphere": 27401,
-     "posePositionMm": 44.0098,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 44.0099,
      "poseRotationDeg": 0.04773,
      "gridMm": 0.2789,
-     "seconds": 9.525
+     "seconds": 8.858
     },
     {
      "wallRadiusM": 6,
@@ -3544,10 +3992,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 799038,
      "rejectedOffSphere": 33285,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 18.7665,
      "poseRotationDeg": 0.0387,
      "gridMm": 0.1712,
-     "seconds": 7.257
+     "seconds": 7.443
     },
     {
      "wallRadiusM": 6,
@@ -3563,10 +4015,14 @@
      "offSphereCeiling": 10,
      "rejectedLowModulation": 766901,
      "rejectedOffSphere": 30243,
-     "posePositionMm": 352389,
-     "poseRotationDeg": 71.8418,
-     "gridMm": 70.5026,
-     "seconds": 8.22
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 348115,
+     "poseRotationDeg": 79.7272,
+     "gridMm": 93.9861,
+     "seconds": 7.162
     },
     {
      "wallRadiusM": 6,
@@ -3582,34 +4038,38 @@
      "offSphereCeiling": 25,
      "rejectedLowModulation": 788794,
      "rejectedOffSphere": 29239,
-     "posePositionMm": 166.762,
-     "poseRotationDeg": 1.88448,
-     "gridMm": 1.2069,
-     "seconds": 6.533
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 166.752,
+     "poseRotationDeg": 1.88436,
+     "gridMm": 1.20688,
+     "seconds": 6.626
     }
    ],
    "posePositionMm": {
-    "median": 44.0098,
+    "median": 44.0099,
     "min": 18.7665,
-    "max": 352389,
+    "max": 348115,
     "values": [
      21.5498,
-     44.0098,
+     44.0099,
      18.7665,
-     352389,
-     166.762
+     348115,
+     166.752
     ]
    },
    "poseRotationDeg": {
     "median": 0.04773,
     "min": 0.03457,
-    "max": 71.8418,
+    "max": 79.7272,
     "values": [
      0.03457,
      0.04773,
      0.0387,
-     71.8418,
-     1.88448
+     79.7272,
+     1.88436
     ]
    },
    "offSphereFrac": {
@@ -3663,10 +4123,14 @@
      "offSphereCeiling": 3,
      "rejectedLowModulation": 755827,
      "rejectedOffSphere": 24973,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 7.02294,
      "poseRotationDeg": 0.03022,
      "gridMm": 0.3398,
-     "seconds": 7.527
+     "seconds": 7.784
     },
     {
      "wallRadiusM": 6,
@@ -3682,10 +4146,14 @@
      "offSphereCeiling": 32,
      "rejectedLowModulation": 748052,
      "rejectedOffSphere": 20656,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 52.8032,
      "poseRotationDeg": 0.05834,
      "gridMm": 0.4327,
-     "seconds": 7.589
+     "seconds": 7.967
     },
     {
      "wallRadiusM": 6,
@@ -3701,10 +4169,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 799038,
      "rejectedOffSphere": 28640,
-     "posePositionMm": 9193.87,
-     "poseRotationDeg": 138.102,
-     "gridMm": 0.1188,
-     "seconds": 6.136
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 38476.5,
+     "poseRotationDeg": 73.7728,
+     "gridMm": 0.6491,
+     "seconds": 6.735
     },
     {
      "wallRadiusM": 6,
@@ -3720,10 +4192,14 @@
      "offSphereCeiling": 10,
      "rejectedLowModulation": 766901,
      "rejectedOffSphere": 25571,
-     "posePositionMm": 109639,
-     "poseRotationDeg": 40.7821,
-     "gridMm": 121.693,
-     "seconds": 7.762
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 96516.9,
+     "poseRotationDeg": 50.9994,
+     "gridMm": 135.348,
+     "seconds": 7.9
     },
     {
      "wallRadiusM": 6,
@@ -3739,33 +4215,37 @@
      "offSphereCeiling": 29,
      "rejectedLowModulation": 788794,
      "rejectedOffSphere": 26375,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 24.501,
      "poseRotationDeg": 0.02984,
      "gridMm": 0.2527,
-     "seconds": 7.301
+     "seconds": 7.454
     }
    ],
    "posePositionMm": {
     "median": 52.8032,
     "min": 7.02294,
-    "max": 109639,
+    "max": 96516.9,
     "values": [
      7.02294,
      52.8032,
-     9193.87,
-     109639,
+     38476.5,
+     96516.9,
      24.501
     ]
    },
    "poseRotationDeg": {
     "median": 0.05834,
     "min": 0.02984,
-    "max": 138.102,
+    "max": 73.7728,
     "values": [
      0.03022,
      0.05834,
-     138.102,
-     40.7821,
+     73.7728,
+     50.9994,
      0.02984
     ]
    },
@@ -3820,10 +4300,14 @@
      "offSphereCeiling": 3,
      "rejectedLowModulation": 755827,
      "rejectedOffSphere": 21588,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 17.7891,
      "poseRotationDeg": 0.04269,
      "gridMm": 0.4034,
-     "seconds": 7.792
+     "seconds": 8.08
     },
     {
      "wallRadiusM": 6,
@@ -3839,10 +4323,14 @@
      "offSphereCeiling": 36,
      "rejectedLowModulation": 748052,
      "rejectedOffSphere": 17246,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 45.3065,
      "poseRotationDeg": 0.05337,
      "gridMm": 0.2873,
-     "seconds": 7.759
+     "seconds": 8.128
     },
     {
      "wallRadiusM": 6,
@@ -3858,10 +4346,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 799038,
      "rejectedOffSphere": 24859,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 155988,
-     "poseRotationDeg": 4.23612,
-     "gridMm": 0.4432,
-     "seconds": 5.644
+     "poseRotationDeg": 4.23602,
+     "gridMm": 0.4431,
+     "seconds": 5.611
     },
     {
      "wallRadiusM": 6,
@@ -3877,10 +4369,14 @@
      "offSphereCeiling": 11,
      "rejectedLowModulation": 766901,
      "rejectedOffSphere": 21928,
-     "posePositionMm": 1921.86,
-     "poseRotationDeg": 32.1502,
-     "gridMm": 68.9132,
-     "seconds": 11.097
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 1360.46,
+     "poseRotationDeg": 13.7918,
+     "gridMm": 74.697,
+     "seconds": 10.114
     },
     {
      "wallRadiusM": 6,
@@ -3896,34 +4392,38 @@
      "offSphereCeiling": 31,
      "rejectedLowModulation": 788794,
      "rejectedOffSphere": 22622,
-     "posePositionMm": 282.487,
-     "poseRotationDeg": 3.18764,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 287.351,
+     "poseRotationDeg": 3.24262,
      "gridMm": 0.8125,
-     "seconds": 6.638
+     "seconds": 6.813
     }
    ],
    "posePositionMm": {
-    "median": 282.487,
+    "median": 287.351,
     "min": 17.7891,
     "max": 155988,
     "values": [
      17.7891,
      45.3065,
      155988,
-     1921.86,
-     282.487
+     1360.46,
+     287.351
     ]
    },
    "poseRotationDeg": {
-    "median": 3.18764,
+    "median": 3.24262,
     "min": 0.04269,
-    "max": 32.1502,
+    "max": 13.7918,
     "values": [
      0.04269,
      0.05337,
-     4.23612,
-     32.1502,
-     3.18764
+     4.23602,
+     13.7918,
+     3.24262
     ]
    },
    "offSphereFrac": {
@@ -3977,10 +4477,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 752843,
      "rejectedOffSphere": 31189,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 24.2322,
      "poseRotationDeg": 0.03003,
      "gridMm": 0.273,
-     "seconds": 7.927
+     "seconds": 8.522
     },
     {
      "wallRadiusM": 4,
@@ -3996,10 +4500,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 746925,
      "rejectedOffSphere": 28347,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 41.998,
      "poseRotationDeg": 0.04233,
      "gridMm": 0.3104,
-     "seconds": 7.717
+     "seconds": 8.011
     },
     {
      "wallRadiusM": 4,
@@ -4015,10 +4523,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 789394,
      "rejectedOffSphere": 42588,
-     "posePositionMm": 917.033,
-     "poseRotationDeg": 10.0138,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 905.942,
+     "poseRotationDeg": 9.89243,
      "gridMm": 0.2263,
-     "seconds": 7.035
+     "seconds": 7.068
     },
     {
      "wallRadiusM": 4,
@@ -4034,10 +4546,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 764516,
      "rejectedOffSphere": 32503,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 15.1167,
      "poseRotationDeg": 0.02716,
      "gridMm": 0.3348,
-     "seconds": 7.101
+     "seconds": 7.714
     },
     {
      "wallRadiusM": 4,
@@ -4053,34 +4569,38 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 782873,
      "rejectedOffSphere": 35192,
-     "posePositionMm": 544.29,
-     "poseRotationDeg": 6.04704,
-     "gridMm": 0.9502,
-     "seconds": 6.38
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 251.992,
+     "poseRotationDeg": 2.79643,
+     "gridMm": 0.9285,
+     "seconds": 7.036
     }
    ],
    "posePositionMm": {
     "median": 41.998,
     "min": 15.1167,
-    "max": 917.033,
+    "max": 905.942,
     "values": [
      24.2322,
      41.998,
-     917.033,
+     905.942,
      15.1167,
-     544.29
+     251.992
     ]
    },
    "poseRotationDeg": {
     "median": 0.04233,
     "min": 0.02716,
-    "max": 10.0138,
+    "max": 9.89243,
     "values": [
      0.03003,
      0.04233,
-     10.0138,
+     9.89243,
      0.02716,
-     6.04704
+     2.79643
     ]
    },
    "offSphereFrac": {
@@ -4134,10 +4654,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 752843,
      "rejectedOffSphere": 26089,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 21.4105,
      "poseRotationDeg": 0.03936,
      "gridMm": 0.5369,
-     "seconds": 7.793
+     "seconds": 7.859
     },
     {
      "wallRadiusM": 4,
@@ -4153,10 +4677,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 746925,
      "rejectedOffSphere": 20939,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 47.6768,
      "poseRotationDeg": 0.04939,
      "gridMm": 0.3267,
-     "seconds": 7.519
+     "seconds": 7.947
     },
     {
      "wallRadiusM": 4,
@@ -4172,10 +4700,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 789394,
      "rejectedOffSphere": 37065,
-     "posePositionMm": 23326,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 23325.7,
      "poseRotationDeg": 77.2479,
      "gridMm": 0.4,
-     "seconds": 5.833
+     "seconds": 6.085
     },
     {
      "wallRadiusM": 4,
@@ -4191,10 +4723,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 764516,
      "rejectedOffSphere": 26955,
-     "posePositionMm": 64474.2,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 64474.3,
      "poseRotationDeg": 10.0479,
      "gridMm": 0.3491,
-     "seconds": 5.932
+     "seconds": 6.146
     },
     {
      "wallRadiusM": 4,
@@ -4210,26 +4746,30 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 782873,
      "rejectedOffSphere": 31465,
-     "posePositionMm": 410.091,
-     "poseRotationDeg": 4.57673,
-     "gridMm": 0.5523,
-     "seconds": 6.858
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 410.055,
+     "poseRotationDeg": 4.57634,
+     "gridMm": 0.5522,
+     "seconds": 6.841
     }
    ],
    "posePositionMm": {
-    "median": 410.091,
+    "median": 410.055,
     "min": 21.4105,
-    "max": 64474.2,
+    "max": 64474.3,
     "values": [
      21.4105,
      47.6768,
-     23326,
-     64474.2,
-     410.091
+     23325.7,
+     64474.3,
+     410.055
     ]
    },
    "poseRotationDeg": {
-    "median": 4.57673,
+    "median": 4.57634,
     "min": 0.03936,
     "max": 77.2479,
     "values": [
@@ -4237,7 +4777,7 @@
      0.04939,
      77.2479,
      10.0479,
-     4.57673
+     4.57634
     ]
    },
    "offSphereFrac": {
@@ -4291,10 +4831,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 752843,
      "rejectedOffSphere": 20826,
-     "posePositionMm": 1299,
-     "poseRotationDeg": 14.2651,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 1298.99,
+     "poseRotationDeg": 14.265,
      "gridMm": 0.845,
-     "seconds": 6.54
+     "seconds": 6.736
     },
     {
      "wallRadiusM": 4,
@@ -4310,10 +4854,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 746925,
      "rejectedOffSphere": 16309,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 41.3003,
      "poseRotationDeg": 0.04169,
      "gridMm": 0.1934,
-     "seconds": 7.745
+     "seconds": 7.784
     },
     {
      "wallRadiusM": 4,
@@ -4329,10 +4877,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 789394,
      "rejectedOffSphere": 31590,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 20.8227,
      "poseRotationDeg": 0.04514,
      "gridMm": 0.2176,
-     "seconds": 7.4
+     "seconds": 7.312
     },
     {
      "wallRadiusM": 4,
@@ -4348,10 +4900,14 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 764516,
      "rejectedOffSphere": 21889,
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
      "posePositionMm": 24.7261,
      "poseRotationDeg": 0.05892,
      "gridMm": 0.2278,
-     "seconds": 7.221
+     "seconds": 7.376
     },
     {
      "wallRadiusM": 4,
@@ -4367,34 +4923,38 @@
      "offSphereCeiling": 0,
      "rejectedLowModulation": 782873,
      "rejectedOffSphere": 25986,
-     "posePositionMm": 525.355,
-     "poseRotationDeg": 5.84261,
-     "gridMm": 0.781,
-     "seconds": 6.753
+     "segmentImage": false,
+     "archetypeIndex": 1,
+     "rejectedOffImage": 0,
+     "silhouetteFailures": 0,
+     "posePositionMm": 525.386,
+     "poseRotationDeg": 5.84295,
+     "gridMm": 0.7811,
+     "seconds": 6.897
     }
    ],
    "posePositionMm": {
     "median": 41.3003,
     "min": 20.8227,
-    "max": 1299,
+    "max": 1298.99,
     "values": [
-     1299,
+     1298.99,
      41.3003,
      20.8227,
      24.7261,
-     525.355
+     525.386
     ]
    },
    "poseRotationDeg": {
     "median": 0.05892,
     "min": 0.04169,
-    "max": 14.2651,
+    "max": 14.265,
     "values": [
-     14.2651,
+     14.265,
      0.04169,
      0.04514,
      0.05892,
-     5.84261
+     5.84295
     ]
    },
    "offSphereFrac": {
@@ -4466,18 +5026,18 @@
   "segmentationRecoversIt": false,
   "recoveringMargin": null,
   "segmentationCostToACleanCapture": 1.03806,
-  "segmentationMedianFactor": 178.155,
-  "segmentationWorstSeedMm": 352389,
+  "segmentationMedianFactor": 371.843,
+  "segmentationWorstSeedMm": 348115,
   "bestMargin": 0,
   "roomCostPaired": {
    "ratios": [
     0.7322,
-    152.297,
-    2170.94,
+    317.872,
+    2116.84,
     193.917,
     1412.94
    ],
-   "geometricMean": 145.996,
+   "geometricMean": 168.291,
    "improved": 4,
    "n": 5,
    "usableBefore": 1,
@@ -4486,17 +5046,17 @@
   "segmentationPaired": {
    "ratios": [
     0.7012,
-    178.155,
-    2165.47,
-    0.007094,
-    241.956
+    371.843,
+    2111.5,
+    0.007181,
+    241.971
    ],
-   "geometricMean": 13.5944,
+   "geometricMean": 15.7088,
    "improved": 3,
    "n": 5,
    "usableBefore": 1,
    "usableAfter": 3
   },
-  "statement": "The room puts 14.1% of the accepted correspondences off the sphere, and that is enough to destroy the solve: recovered pose goes from 20.6 mm to 7841 mm, a factor of 380. Raising the decoder's modulation floor from 0.02 to 0.4 recovers it, and costs a capture with no room in it a factor of 2.94 on the same measure. Segmentation at a margin of 0 does not clear the two-times bar either, but it is not a null result: it takes the median from 7841 mm to 44.0 mm, a factor of 178 on the medians, against a clean baseline of 20.6 mm. Both of those medians are one seed, so the number that carries the effect is the paired one: a geometric mean of 13.6 over 5 seeds, improving 3 of them and taking the seeds no worse than the worst clean solve from 1 to 3. What it does not fix is the tail: the worst of 5 seeds is still 352389 mm. The residue is the correspondences that miss the TRUE sphere and hit the NOMINAL one, which is the dependence on the answer that this test was always going to carry."
+  "statement": "The room puts 14.1% of the accepted correspondences off the sphere, and that is enough to destroy the solve: recovered pose goes from 20.6 mm to 16365 mm, a factor of 793 on the medians, which are one seed each. Paired seed by seed that is a geometric mean of 168.3 over 5 seeds, improving 4 of them and taking the seeds no worse than the worst clean solve from 1 to 5. Raising the decoder's modulation floor from 0.02 to 0.4 recovers it, and costs a capture with no room in it a factor of 2.94 on the same measure. Segmentation at a margin of 0 does not clear the two-times bar either, but it is not a null result: it takes the median from 16365 mm to 44.0 mm, a factor of 372 on the medians, against a clean baseline of 20.6 mm. Both of those medians are one seed. Paired seed by seed that is a geometric mean of 15.7 over 5 seeds, improving 3 of them and taking the seeds no worse than the worst clean solve from 1 to 3. What it does not fix is the tail: the worst of 5 seeds is still 348115 mm. The residue is the correspondences that miss the TRUE sphere and hit the NOMINAL one, which is the dependence on the answer that this test was always going to carry."
  }
 }
