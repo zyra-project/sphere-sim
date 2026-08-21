@@ -29,7 +29,7 @@ import { tintedAmbient } from '../../sim/src/color.ts';
 import type { ShadingModel } from '../../sim/src/shading.ts';
 import { fullShading, lambertianShading } from '../../sim/src/shading.ts';
 import type { HarnessState } from './params.ts';
-import { RAMP_SHAPE_BY_INDEX, RESOLUTIONS, normalizeState } from './params.ts';
+import { RESOLUTIONS, normalizeState, rampShapeAt } from './params.ts';
 
 const DEG2RAD = Math.PI / 180;
 
@@ -110,7 +110,7 @@ export function buildRig(s: HarnessState): RigCalibration {
     resY: res.resY,
     marginFrac: s.margin_frac,
     blend: {
-      rampShape: RAMP_SHAPE_BY_INDEX[Math.max(0, Math.min(3, Math.round(s.ramp_shape)))],
+      rampShape: rampShapeAt(s.ramp_shape),
       widthDeg: s.w_width,
       rampGamma: s.gamma_blend,
       maskLoDeg: s.mask_lo,

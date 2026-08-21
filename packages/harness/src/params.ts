@@ -644,6 +644,25 @@ export const RAMP_SHAPE_BY_INDEX: readonly ('linear' | 'cosine' | 'smoothstep' |
 ];
 
 /**
+ * The ramp shape a control index names.
+ *
+ * The clamp used to be written inline as `Math.max(0, Math.min(3, Math.round(v)))`,
+ * which holds for every finite input and fails for exactly one: `Math.round(NaN)`
+ * is NaN, and both clamps pass it straight through, so the lookup yielded
+ * `undefined` and the rig carried a shape that is not a shape. `normalizeState`
+ * drops non-finite values before they ever get here, so nothing in this
+ * repository could reach it — but `buildRig` is exported, and a guarantee that
+ * depends on every caller having gone through a different function first is not
+ * a guarantee.
+ */
+export function rampShapeAt(index: number): (typeof RAMP_SHAPE_BY_INDEX)[number] {
+  if (!Number.isFinite(index)) {
+    throw new Error(`ramp_shape must be a finite control index in 0..3; got ${index}`);
+  }
+  return RAMP_SHAPE_BY_INDEX[Math.max(0, Math.min(3, Math.round(index)))];
+}
+
+/**
  * Named starting points. Each is a partial state; the rest stays at nominal.
  *
  * These are not "scenarios" in the bench's sense and produce no scores. They

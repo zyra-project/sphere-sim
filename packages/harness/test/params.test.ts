@@ -31,6 +31,7 @@ import {
   RESOLUTIONS,
   defaultState,
   normalizeState,
+  rampShapeAt,
   presetState,
 } from '../src/params.ts';
 import { PARAMETER_TABLE } from '../../calibration/src/parameters.ts';
@@ -194,4 +195,22 @@ test('azimuth jitter and roll alternate sign, so a seam actually moves', () => {
   const az = rig.projectors.map((p) => (Math.atan2(p.pose.position.y, p.pose.position.x) * 180) / Math.PI);
   assert.ok(Math.abs(az[0] - 2) < 1e-9, `P1 azimuth ${az[0]}`);
   assert.ok(Math.abs(az[1] - 88) < 1e-9, `P2 azimuth ${az[1]}`);
+});
+
+test('a ramp-shape index that is not a number is refused, not looked up', () => {
+  // `normalizeState` drops non-finite values, so nothing in this repository can
+  // reach `buildRig` with a NaN control. But `buildRig` is exported, and the
+  // clamp it used to carry -- `Math.max(0, Math.min(3, Math.round(v)))` -- passes
+  // NaN through both bounds untouched: the table lookup then returned `undefined`
+  // and the rig carried a shape that is not a shape, which downstream became NaN
+  // coverage, NaN registration and NaN photometry with nothing raised.
+  assert.equal(rampShapeAt(0), 'linear');
+  assert.equal(rampShapeAt(3), 'gaussian');
+  // Out of range still clamps -- a slider that overshoots is not an error.
+  assert.equal(rampShapeAt(-7), 'linear');
+  assert.equal(rampShapeAt(99), 'gaussian');
+  assert.equal(rampShapeAt(1.4), 'cosine');
+  // Not a number is.
+  assert.throws(() => rampShapeAt(Number.NaN), /finite control index/);
+  assert.throws(() => rampShapeAt(Number.POSITIVE_INFINITY), /finite control index/);
 });
