@@ -144,6 +144,9 @@ export const GROUPS: readonly Group[] = [
       'the solver every pixel bright enough to carry a pattern, or only the ones inside the ball ' +
       'it found in the photograph. The first is the problem and the second is the fix, which is ' +
       'why they sit together, but no amount of segmenting changes where the light landed. ' +
+      'Segmentation is ON by default here and OFF in the bench — the one place this page ' +
+      'deliberately parts company with the report, because it costs a clean capture nothing and ' +
+      'saves nine solves in ten when a room is present. ' +
       'Both are OFF here and off in the bench, and every number this project publishes was ' +
       'produced with them off — so switching either one makes this page stop being comparable ' +
       'with the report, deliberately and visibly. Room spill puts the structured-light pattern ' +
@@ -421,7 +424,13 @@ export const BOULDER_PRESET: Settings = {
   // Both off, like the bench. See the 'capture' group's blurb for why turning
   // either on takes this page out of comparability with the report on purpose.
   roomSpill: 0,
-  segmentSphere: 0,
+  // ON by default, and the only default on this page that deliberately differs
+  // from the bench. The payoff is asymmetric: with a room present segmentation
+  // takes usable solves from 6.7% to 93.3% (experiment 5, 30 paired draws), and
+  // with no room at all it costs 0.908x, which is inside the seed range. Every
+  // real gallery is a room and the empty void never happens, so the default is
+  // set for the case that always occurs rather than the one that never does.
+  segmentSphere: 1,
   wallRadiusM: 6.0,
   sphereDiaIn: 68,
   equatorIn: 84,

@@ -4321,6 +4321,25 @@ function solveSection(): HTMLElement | null {
       }),
     );
 
+    // A camera the segmentation refused contributed NOTHING, and refusing is the
+    // right thing for it to have done — it found no framed sphere and declined to
+    // guess rather than handing the solver a wall. But a silent refusal and a
+    // working camera look identical from out here, so it is said out loud. This
+    // is the one failure mode experiment 5's falsifiers actually caught.
+    if (r.silhouetteRefusals > 0) {
+      box.append(
+        el('p', {
+          className: 'note warn',
+          textContent:
+            `Segmentation refused ${r.silhouetteRefusals} of ${r.silhouetteCameras} camera views: ` +
+            'it found no sphere clear of the frame edge and declined to guess rather than hand ' +
+            'the solver a wall. Those views contributed nothing, so this solve used fewer ' +
+            'cameras than it photographed from — and camera spread is the thing the recovery is ' +
+            'most sensitive to. Step back, or frame the ball with room around it.',
+        }),
+      );
+    }
+
     const seg = el('div', { className: 'seg' });
     for (const v of [
       { id: 'axes' as const, label: 'What it found' },

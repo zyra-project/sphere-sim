@@ -418,6 +418,17 @@ export interface SolveResponse {
   recoveredRig: RigCalibration;
   /** Correspondences the decode produced, after rejection. */
   correspondences: number;
+  /**
+   * Cameras whose photograph held no framed sphere, so segmentation refused.
+   *
+   * Reported because refusing is the RIGHT behaviour and still costs the solve
+   * that camera's entire contribution -- experiment 5 measured one in ninety
+   * runs, and nothing but a counter noticed. A silent refusal and a working
+   * camera look identical from outside. Zero when segmentation is off.
+   */
+  silhouetteRefusals: number;
+  /** Cameras the detector examined, so the refusals have a denominator. */
+  silhouetteCameras: number;
   /** Frames the capture needed — Gray planes plus phase shifts, per camera. */
   frames: number;
   grayBits: number;

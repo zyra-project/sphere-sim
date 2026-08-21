@@ -308,13 +308,16 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
       // those points receive ambient only and the decoder rejects them on
       // modulation exactly as it would in the room.
       minIncidenceCos: 0.2,
-      // Both default OFF, and the page says so where it offers them. The old
-      // comment here said the page had no control because a browser solve that
-      // QUIETLY ran a different capture than the bench would make the two
-      // incomparable. That reasoning was about silence, not about the switch:
-      // an explicitly labelled control that tells the reader it has left the
-      // bench's conditions answers it, and being able to watch a room destroy a
-      // calibration is worth more than a page that can only describe it.
+      // The room defaults OFF because its three constants are ASSUME and nobody
+      // has measured a wall; segmentation defaults ON because the payoff is
+      // asymmetric -- 6.7% of solves usable against 93.3% when a room is
+      // present, and 0.908x when there is none, which is inside the seed range.
+      // That makes segmentation the one condition where this page deliberately
+      // differs from the bench, so the panel says so and the readout says so.
+      //
+      // The old comment here argued the page should have no control at all,
+      // because a browser solve that QUIETLY ran a different capture would make
+      // the two incomparable. That was about silence, not about the switch.
       // The panel's own wall and ceiling, not the bench's defaults, so the room
       // drawn on screen and the room photographed are one room. They start at
       // §5's nominals; moving either slider moves both.
@@ -477,6 +480,9 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     // scores and no operator would ever see.
     recoveredRig: recovery.alignedRig,
     correspondences: capture.correspondences.length,
+    silhouetteRefusals: capture.silhouettes.filter((s) => s.chosen < 0 || s.warnings.length > 0)
+      .length,
+    silhouetteCameras: capture.silhouettes.length,
     frames: capture.framesRendered,
     grayBits,
     residualRmsPx: solver.diagnostics.rmsResidualPx,

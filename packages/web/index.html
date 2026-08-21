@@ -347,6 +347,9 @@ pre.cfg { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font
   border: 1px solid var(--line-strong); border-radius: 6px; background: var(--stage); padding: 9px 11px; }
 .note { font-size: 11px; line-height: 1.45; color: var(--muted); margin: 0; }
 .note.tiny { font-size: 10px; color: var(--dim); }
+/* A note the reader must not skim past: a camera that contributed nothing looks
+   exactly like one that worked, so the one place the page says so is coloured. */
+.note.warn { color: var(--warn); border-left: 2px solid rgba(255,204,102,0.45); padding-left: 8px; }
 .bar { display: flex; height: 10px; border-radius: 3px; overflow: hidden;
   border: 1px solid var(--line-strong); }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 10px; color: var(--muted); }

@@ -216,3 +216,28 @@ test('the room toggle reaches the capture, and segmentation undoes it', { timeou
       `segmented ${fixed.posePositionMm.toFixed(3)} mm`,
   );
 });
+
+test('the page reports how many camera views segmentation refused', { timeout: 600_000 }, () => {
+  // Refusing is correct and still costs the solve that camera entirely, so the
+  // count has to reach the page. Experiment 5 measured one refusal in ninety
+  // runs and only a counter noticed; a silent refusal and a working camera are
+  // indistinguishable from outside.
+  const off = runSolve(request({ settings: { ...BOULDER_PRESET, segmentSphere: 0 } }));
+  assert.equal(off.silhouetteRefusals, 0, 'nothing can refuse when the detector is not running');
+  assert.equal(off.silhouetteCameras, 0);
+
+  const on = runSolve(request({ id: 2, settings: { ...BOULDER_PRESET, segmentSphere: 1 } }));
+  assert.equal(on.silhouetteCameras, 2, 'every camera view is examined and counted');
+  assert.ok(
+    on.silhouetteRefusals >= 0 && on.silhouetteRefusals <= on.silhouetteCameras,
+    `refusals ${on.silhouetteRefusals} outside 0..${on.silhouetteCameras}`,
+  );
+  // The page's own default framing must not be one the detector chokes on.
+  assert.equal(on.silhouetteRefusals, 0, 'the shipped default framing should find every sphere');
+});
+
+test('segmentation ships on, and the presets agree', () => {
+  // The one default this page deliberately differs from the bench on.
+  assert.equal(BOULDER_PRESET.segmentSphere, 1);
+  assert.equal(BOULDER_PRESET.roomSpill, 0, 'the room stays off: its constants are all ASSUME');
+});

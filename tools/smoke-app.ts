@@ -1153,13 +1153,14 @@ async function main(): Promise<void> {
       if (!named('Room behind it') || !named('Only the ball')) return null;
       named('Room behind it').click();
       const room = (named('Room behind it')?.className ?? '').includes('on');
-      named('Only the ball').click();
-      const seg = (named('Only the ball')?.className ?? '').includes('on');
-      named('Empty room').click();
+      // Segmentation ships ON, so exercise it by turning it OFF and back.
       named('Every lit pixel').click();
+      const seg = !((named('Only the ball')?.className ?? '').includes('on'));
+      named('Empty room').click();
+      named('Only the ball').click();
       const restored =
         (named('Empty room')?.className ?? '').includes('on') &&
-        (named('Every lit pixel')?.className ?? '').includes('on');
+        (named('Only the ball')?.className ?? '').includes('on');
       return { room, seg, restored };
     })()`);
     if (!roomSwitch) {
@@ -1169,11 +1170,14 @@ async function main(): Promise<void> {
       );
     } else if (!roomSwitch.room || !roomSwitch.seg) {
       failures.push(
-        `clicking the capture switches did not select them (room ${roomSwitch.room}, ` +
-          `segmentation ${roomSwitch.seg}) — declared but not wired`,
+        `the capture switches did not respond (room on ${roomSwitch.room}, segmentation off ` +
+          `${roomSwitch.seg}) — declared but not wired`,
       );
     } else if (!roomSwitch.restored) {
-      failures.push('the capture switches would not go back to their defaults');
+      failures.push(
+        'the capture switches would not go back to their defaults — the room off and ' +
+          'segmentation ON, which is what this page ships',
+      );
     } else {
       process.stdout.write('  capture: room spill and sphere segmentation both switch, and reset\n');
     }
