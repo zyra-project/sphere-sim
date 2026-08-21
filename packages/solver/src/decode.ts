@@ -547,8 +547,96 @@ export interface PhaseNoiseModel {
   sigmas: Float64Array;
 }
 
-/** median(|N(0, sigma)|) = 0.6745 * sigma. */
+/** median(|N(0, sigma)|) = 0.6745 * sigma. The chi median at one degree of freedom. */
 const HALF_NORMAL_MEDIAN = 0.674489750196082;
+
+/**
+ * Regularised lower incomplete gamma P(a, x), series below the diagonal and
+ * continued fraction above it — the standard split, because the series
+ * converges slowly exactly where the fraction converges fast.
+ *
+ * Here only to locate the median of a chi-squared distribution; nothing else in
+ * the package needs it.
+ */
+function gammaP(a: number, x: number): number {
+  if (!(x > 0)) return 0;
+  const lg = lnGamma(a);
+  if (x < a + 1) {
+    let ap = a;
+    let sum = 1 / a;
+    let del = sum;
+    for (let n = 0; n < 500; n++) {
+      ap++;
+      del *= x / ap;
+      sum += del;
+      if (Math.abs(del) < Math.abs(sum) * 1e-15) break;
+    }
+    return sum * Math.exp(-x + a * Math.log(x) - lg);
+  }
+  const tiny = 1e-300;
+  let b = x + 1 - a;
+  let c = 1 / tiny;
+  let d = 1 / b;
+  let h = d;
+  for (let i = 1; i <= 500; i++) {
+    const an = -i * (i - a);
+    b += 2;
+    d = an * d + b;
+    if (Math.abs(d) < tiny) d = tiny;
+    c = b + an / c;
+    if (Math.abs(c) < tiny) c = tiny;
+    d = 1 / d;
+    const del = d * c;
+    h *= del;
+    if (Math.abs(del - 1) < 1e-15) break;
+  }
+  return 1 - Math.exp(-x + a * Math.log(x) - lg) * h;
+}
+
+/** Lanczos log-gamma, g = 7, n = 9. Accurate to about 1e-15 for the a values used here. */
+function lnGamma(a: number): number {
+  const c = [
+    0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313,
+    -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6,
+    1.5056327351493116e-7,
+  ];
+  const z = a - 1;
+  let x = c[0];
+  for (let i = 1; i < 9; i++) x += c[i] / (z + i);
+  const t = z + 7.5;
+  return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
+}
+
+/**
+ * median of chi_dof, the scale a median absolute residual has to be divided by
+ * to recover sigma.
+ *
+ * `phaseResidualAt` returns the ROOT SUM OF SQUARES over all N frames of a
+ * three-parameter fit, so it is `sigma * chi_(N-3)` — one degree of freedom at
+ * the four steps this project ships, and more at any other count. Dividing by
+ * the fixed half-normal constant is therefore right at N = 4 and wrong
+ * everywhere else: at eight steps it inflates every sigma by a factor of three,
+ * which shrinks the standardised residuals in the bundle by the same factor,
+ * and Huber's threshold and the rejection floor both stop biting. `patterns.ts`
+ * makes `phaseSteps` a configurable field, so 'everywhere else' is reachable
+ * from the outside.
+ *
+ * Bisection on the chi-squared CDF rather than a closed form, because there
+ * isn't one; the two cases that do have one are asserted against it in the tests.
+ */
+export function chiMedian(dof: number): number {
+  if (dof === 1) return HALF_NORMAL_MEDIAN;
+  // The median of chi-squared_k is within a few percent of k(1 - 2/(9k))^3, so
+  // bracket generously around that and bisect to full double precision.
+  let lo = 0;
+  let hi = Math.max(4, 4 * dof);
+  for (let i = 0; i < 200; i++) {
+    const mid = 0.5 * (lo + hi);
+    if (gammaP(dof / 2, mid / 2) < 0.5) lo = mid;
+    else hi = mid;
+  }
+  return Math.sqrt(0.5 * (lo + hi));
+}
 
 /** Fewer than this many pixels in a bin and the bin's median is not worth having. */
 const MIN_SAMPLES_PER_BIN = 64;
@@ -618,36 +706,50 @@ export function estimatePhaseNoise(
   if (bins <= 0 || capture.phase.length === 0) return null;
   if (capture.phase[0].steps <= 3) return null;
 
-  const samples: { dc: number; residual: number }[] = [];
+  // The SAME stride the decode uses. The docstring above says the pooled
+  // population is the one the decode runs on, and it was not: this loop visited
+  // every pixel whatever `pixelStride` said, so setting a stride of 8 to make
+  // the decode sixty-four times cheaper left the noise estimate at full price —
+  // on a 1920x1080 capture, four million short-lived objects and a
+  // four-million-element sort for a model the docstring says needs 'tens of
+  // thousands'. At the shipped stride of 1 nothing changes.
+  const stride = Math.max(1, Math.floor(opts.pixelStride));
+  // Two flat arrays and an index sort rather than an array of objects: the
+  // allocation was the cost here, not the comparison.
+  const dcs: number[] = [];
+  const residuals: number[] = [];
   for (const seq of capture.phase) {
-    for (let i = 0; i < white.length; i++) {
+    for (let i = 0; i < white.length; i += stride) {
       if (!(white[i] - black[i] >= opts.minModulation)) continue;
       const s = phaseResidualAt(seq, i, opts.channel);
       if (!Number.isFinite(s.dc) || !Number.isFinite(s.residual)) continue;
-      samples.push(s);
+      dcs.push(s.dc);
+      residuals.push(s.residual);
     }
   }
-  if (samples.length < MIN_SAMPLES_PER_BIN) return null;
+  if (dcs.length < MIN_SAMPLES_PER_BIN) return null;
 
-  const usable = Math.max(1, Math.min(bins, Math.floor(samples.length / MIN_SAMPLES_PER_BIN)));
+  const usable = Math.max(1, Math.min(bins, Math.floor(dcs.length / MIN_SAMPLES_PER_BIN)));
   // Sorting by DC and cutting into equal-count bins rather than equal-width
   // ones: the DC histogram of a sphere lit by one projector is heavily skewed,
   // and equal-width bins would put nearly every pixel in one of them.
-  samples.sort((a, b) => (a.dc === b.dc ? a.residual - b.residual : a.dc - b.dc));
+  const order = Array.from(dcs.keys()).sort((a, b) =>
+    dcs[a] === dcs[b] ? residuals[a] - residuals[b] : dcs[a] - dcs[b],
+  );
+
+  // Three parameters fitted per pixel — the DC and the two quadrature terms — so
+  // the residual carries `steps - 3` degrees of freedom, whatever `steps` is.
+  const chiScale = chiMedian(capture.phase[0].steps - 3);
 
   const levels = new Float64Array(usable);
   const sigmas = new Float64Array(usable);
   for (let b = 0; b < usable; b++) {
-    const lo = Math.floor((b * samples.length) / usable);
-    const hi = Math.floor(((b + 1) * samples.length) / usable);
-    const slice = samples.slice(lo, hi);
-    const res = Float64Array.from(slice, (s) => s.residual);
+    const lo = Math.floor((b * order.length) / usable);
+    const hi = Math.floor(((b + 1) * order.length) / usable);
+    const res = Float64Array.from(order.slice(lo, hi), (i) => residuals[i]);
     res.sort();
-    levels[b] = slice[Math.floor(slice.length / 2)].dc;
-    sigmas[b] = Math.max(
-      res[Math.floor(res.length / 2)] / HALF_NORMAL_MEDIAN,
-      opts.noiseSigma * 1e-3,
-    );
+    levels[b] = dcs[order[lo + Math.floor((hi - lo) / 2)]];
+    sigmas[b] = Math.max(res[Math.floor(res.length / 2)] / chiScale, opts.noiseSigma * 1e-3);
   }
   return { levels, sigmas };
 }
@@ -738,17 +840,37 @@ function decodePhaseAt(
  * averaged. A wrong fringe order is a whole-period outlier, which is exactly
  * the kind of gross error that a robust loss can absorb but should not have to.
  */
+/** The gray and phase sequences for one axis. Fixed for a capture; see `axisSequences`. */
+interface AxisSequences {
+  gray: GraySequence | null;
+  phase: PhaseSequence | null;
+}
+
+/**
+ * Which sequences belong to an axis — resolved ONCE per capture.
+ *
+ * `decodeAxis` used to run `capture.gray.find(...)` and `capture.phase.find(...)`
+ * itself, on every pixel of every axis, in the hottest loop in the package: two
+ * closure allocations and two linear scans per pixel to look up two objects that
+ * cannot change while a capture is being decoded. At 1920x1080 that is about
+ * eight million of each, for nothing.
+ */
+function axisSequences(capture: PatternCapture, axis: DecodeAxis): AxisSequences {
+  return {
+    gray: capture.gray.find((g) => g.axis === axis) ?? null,
+    phase: capture.phase.find((p) => p.axis === axis) ?? null,
+  };
+}
+
 function decodeAxis(
-  capture: PatternCapture,
-  axis: DecodeAxis,
+  sequences: AxisSequences,
   pixel: number,
   modulation: number,
   res: number,
   opts: DecodeOptions,
   noise: PhaseNoiseModel | null,
 ): AxisResult {
-  const gray = capture.gray.find((g) => g.axis === axis) ?? null;
-  const phase = capture.phase.find((p) => p.axis === axis) ?? null;
+  const { gray, phase } = sequences;
   if (!gray && !phase) return FAIL('missing');
 
   let coarse = NaN;
@@ -881,6 +1003,9 @@ export function decodeCapture(
   const noise = estimatePhaseNoise(capture, ref.white, ref.black, opts);
   const out: Correspondence[] = [];
   const stride = Math.max(1, Math.floor(opts.pixelStride));
+  // Resolved once, not per pixel. See `axisSequences`.
+  const seqU = axisSequences(capture, 'u');
+  const seqV = axisSequences(capture, 'v');
 
   for (let py = 0; py < ref.height; py += stride) {
     for (let px = 0; px < ref.width; px += stride) {
@@ -899,8 +1024,8 @@ export function decodeCapture(
         continue;
       }
 
-      const ru = decodeAxis(capture, 'u', pixel, modulation, capture.projectorRes.x, opts, noise);
-      const rv = decodeAxis(capture, 'v', pixel, modulation, capture.projectorRes.y, opts, noise);
+      const ru = decodeAxis(seqU, pixel, modulation, capture.projectorRes.x, opts, noise);
+      const rv = decodeAxis(seqV, pixel, modulation, capture.projectorRes.y, opts, noise);
       if (!ru.ok || !rv.ok) {
         const reason = !ru.ok ? ru.reason : rv.reason;
         if (reason === 'gray') stats.rejectedGrayAmbiguous++;

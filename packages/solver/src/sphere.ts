@@ -323,9 +323,14 @@ export function intersectSphere(origin: Vec3, dir: Vec3, radius: number): Sphere
 export interface SphereHitJacobian {
   hit: SphereHit;
   /**
-   * d(point)/d(camera params), 3 x CAM_PARAM_COUNT row-major. The focal column
-   * is left at zero here and filled by finite differences in bundle.ts — see the
-   * note on `freeCameraFocal` there.
+   * d(point)/d(camera params), 3 x CAM_PARAM_COUNT row-major.
+   *
+   * The focal column is filled only when `dNormalized` is supplied, and stays
+   * zero otherwise — a solve with the focal held never asks for it. This used to
+   * say the column was 'filled by finite differences in bundle.ts', and no such
+   * code existed anywhere: freeing the focal added a parameter whose Jacobian
+   * column was identically zero, so the normal equations were rank deficient by
+   * one and `focalScale` came back as exactly 1.0 however wrong it was.
    */
   dPoint: Float64Array;
 }
@@ -368,6 +373,12 @@ export function intersectSphereJacobian(
    * the velocity held wants.
    */
   dt?: number,
+  /**
+   * d(x, y)/d(focalScale) for the normalised coordinate that was passed in.
+   * Supplied only by a solve with the focal free; omit it and the focal column
+   * stays zero, which is what a solve with the focal held wants.
+   */
+  dNormalized?: { dx: number; dy: number },
 ): SphereHitJacobian {
   const dPoint = out ?? new Float64Array(3 * CAM_PARAM_COUNT);
   dPoint.fill(0);
@@ -397,9 +408,11 @@ export function intersectSphereJacobian(
     dPoint[2 * CAM_PARAM_COUNT + i] = eo.z + dir.z * dt;
   }
 
-  // --- rotation: do = 0, dd from the normalised direction ---
-  const rotSlot = (dR: Float64Array, slot: number): void => {
-    const dw = mat3MulVec(dR, canonical);
+  // --- anything that moves the unnormalised direction and nothing else ---
+  // Rotation and focal both land here: the camera stays put, `w` changes, and
+  // the derivative of `w -> w/|w| -> intersection` is the same three lines
+  // either way. Only the source of `dw` differs.
+  const dirSlot = (dw: Vec3, slot: number): void => {
     // (I - d d^T) dw / |w|
     const proj = vDot(dir, dw);
     const dd = {
@@ -413,9 +426,21 @@ export function intersectSphereJacobian(
     dPoint[1 * CAM_PARAM_COUNT + slot] = t * dd.y + dir.y * dt;
     dPoint[2 * CAM_PARAM_COUNT + slot] = t * dd.z + dir.z * dt;
   };
+  const rotSlot = (dR: Float64Array, slot: number): void => {
+    dirSlot(mat3MulVec(dR, canonical), slot);
+  };
   rotSlot(rot.dYaw, CAM_YAW);
   rotSlot(rot.dPitch, CAM_PITCH);
   rotSlot(rot.dRoll, CAM_ROLL);
+
+  // --- focal: the normalised coordinate moves, so the canonical ray does ---
+  // `canonical` is (1, -x, y), so d(canonical)/d(focalScale) is (0, -dx, dy)
+  // and the rest is the same normalisation. The caller supplies d(x,y) because
+  // it owns the pixel and the intrinsics; this function is handed x and y
+  // already undistorted and cannot recover where they came from.
+  if (dNormalized !== undefined) {
+    dirSlot(mat3MulVec(rot.r, { x: 0, y: -dNormalized.dx, z: dNormalized.dy }), CAM_FOCAL);
+  }
 
   // --- velocity: the chain rule on `pose(t) = pose + velocity * dt` ---
   if (dt !== undefined && dt !== 0) {

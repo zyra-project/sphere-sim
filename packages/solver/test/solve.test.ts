@@ -239,3 +239,16 @@ test('§N.2: a 3-projector install drops a quadrant rather than respacing the re
     ['P1', 'P3'],
   );
 });
+
+test('the solver refuses duplicate azimuth slots, exactly as the simulator does', () => {
+  // Two projectors on one slot share an azimuth AND an id: `buildLayout` emits
+  // 'P1.px' twice into the parameter names, every diagnostic keyed by projector
+  // id collides, and `sectorHalfWidths` degenerates on a zero angular gap. The
+  // sim's `nominalRig` has always thrown on this; the solver's accepted it and
+  // returned ids 'P1,P1,P2,P3'. The two sides of this project are allowed to
+  // disagree about almost everything, but not about what a rig is.
+  assert.throws(() => nominalRig({ projectorCount: 4, slots: [0, 0, 1, 2] }), /distinct/);
+  assert.throws(() => nominalRig({ projectorCount: 2, slots: [3, 3] }), /distinct/);
+  // The legitimate subsets still work.
+  assert.equal(nominalRig({ projectorCount: 3, slots: [0, 1, 2] }).projectors.length, 3);
+});

@@ -765,6 +765,19 @@ export function nominalRig(options: Partial<NominalRigOptions> = {}): RigCalibra
     );
   }
 
+  // Distinct, not merely in range. Two projectors on one slot share an azimuth
+  // AND an id, so `buildLayout` emits 'P1.px' twice into the parameter names,
+  // every diagnostic keyed by projector id collides, and `sectorHalfWidths`
+  // degenerates because the angular gap between them is zero. The sim's
+  // `nominalRig` has always refused this; the solver's accepted it, and the two
+  // sides disagreeing about what a rig IS is the one disagreement this project
+  // cannot afford.
+  if (new Set(slots).size !== slots.length) {
+    throw new Error(
+      `nominalRig: slots must be distinct (conventions.ts §N.2); got ${JSON.stringify(slots)}`,
+    );
+  }
+
   const projectors = [];
   for (const slot of slots) {
     if (!Number.isInteger(slot) || slot < 0 || slot > 3) {

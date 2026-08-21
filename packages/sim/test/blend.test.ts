@@ -21,6 +21,7 @@ import {
   rampValue,
   rampWeight,
 } from '../src/blend.ts';
+import type { RampShape } from '../src/blend.ts';
 import { emittedRadiance } from '../src/photometry.ts';
 
 test('§B: every ramp shape runs 0 to 1, monotonically, and clamps outside', () => {
@@ -154,4 +155,19 @@ test("§4.5's reading of gamma_blend = 0.8 as an inverse display gamma", () => {
   // high-brightness curve, or an empirical shaping constant — both live in that gap.
   assert.ok(Math.abs(1 / 2.2 - 0.4545) < 0.001);
   assert.ok(displayGammaImpliedByBlendGamma(1 / 2.2) === 2.2);
+});
+
+test('an unrecognised ramp shape is refused, not turned into NaN', () => {
+  // `rampValue`'s switch had no default, so a shape the type system never saw --
+  // a rig loaded from JSON with a typo, or written by an older version -- fell
+  // out of it as `undefined`. Every weight became NaN, `normalizeWeights` left
+  // them alone because `sum > 0` is false for NaN, and coverage, registration
+  // and photometry all came back NaN with nothing raised anywhere.
+  assert.throws(() => rampValue('cos' as RampShape, 0.5), /unknown rampShape/);
+  assert.throws(() => rampWeight('COSINE' as RampShape, 0.5, 0.8), /unknown rampShape/);
+  // And the shapes that exist are untouched.
+  for (const shape of RAMP_SHAPES) {
+    const v = rampValue(shape, 0.5);
+    assert.ok(Number.isFinite(v), `${shape} at t=0.5 is not finite`);
+  }
 });

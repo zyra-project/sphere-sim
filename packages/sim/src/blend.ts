@@ -85,6 +85,18 @@ export function rampValue(shape: RampShape, t: number): number {
       const g = Math.exp(-4.5 * (1 - x) * (1 - x));
       return (g - g0) / (1 - g0);
     }
+    default:
+      // A rig loaded from JSON carries whatever string was written, and the
+      // type only checks the ones written in TypeScript. Falling out of this
+      // switch returned `undefined`, which made every blend weight NaN, which
+      // `normalizeWeights` then left alone because `sum > 0` is false for NaN
+      // -- so a typo'd shape produced NaN coverage, NaN registration and NaN
+      // photometry with nothing raised anywhere. The GPU path already refuses
+      // to do that (`RAMP_SHAPE_INDEX[...] ?? 1`), and the two must not
+      // disagree about the same rig.
+      throw new Error(
+        `unknown rampShape ${JSON.stringify(shape)}; expected one of ${RAMP_SHAPES.join(', ')}`,
+      );
   }
 }
 

@@ -288,6 +288,17 @@ const RAMP_SHAPE_CODE: Record<string, number> = {
   gaussian: 3,
 };
 
+/** The shader's code for a ramp shape, or an error naming the ones that exist. */
+function rampShapeCode(shape: string): number {
+  const code = RAMP_SHAPE_CODE[shape];
+  if (code === undefined) {
+    throw new Error(
+      `unknown rampShape ${JSON.stringify(shape)}; expected one of ${Object.keys(RAMP_SHAPE_CODE).join(', ')}`,
+    );
+  }
+  return code;
+}
+
 /**
  * The camera basis, built exactly as `renderRoomView` and `renderTwoRigRoomView`
  * build it — forward from position to target, right from forward × upHint, up
@@ -337,7 +348,8 @@ export function buildDisplayUniforms(
     physical: packRig(physical),
     content: packRig(content),
 
-    rampShape: RAMP_SHAPE_CODE[blend.rampShape] ?? 1,
+    // Refused, not defaulted -- see the note in packages/harness/src/uniforms.ts.
+    rampShape: rampShapeCode(blend.rampShape),
     widthDeg: blend.widthDeg,
     rampGamma: blend.rampGamma,
     maskLo: blend.maskLoDeg,

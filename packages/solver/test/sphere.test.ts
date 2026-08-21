@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  CAM_FOCAL,
   CAM_PARAM_COUNT,
   type CameraModel,
   cameraPixelToNormalized,
@@ -182,4 +183,87 @@ test('the cone fit recovers the distance when the rays really do span the silhou
   const cone = fitRayCone(dirs);
   assert.ok(Math.abs(cone.halfAngleRad - half) < 1e-9);
   assert.ok(Math.abs(distanceFromAngularRadius(R, cone.halfAngleRad) - d) < 1e-9);
+});
+
+test('the focal column is the real derivative when asked for, and absent when not', () => {
+  // It used to be neither. `SphereHitJacobian.dPoint` promised the column was
+  // 'filled by finite differences in bundle.ts' and no such code existed, so
+  // freeing the camera focal added a parameter whose Jacobian column was
+  // identically zero: the normal equations lost rank, the step in that direction
+  // stayed zero, and `focalScale` was reported as exactly 1.0 however wrong it
+  // was -- while `buildProblem` paid to recompute every normalised coordinate on
+  // every evaluation for it.
+  const cam: CameraModel = {
+    position: { x: 4, y: 0, z: 0 },
+    yawDeg: 180,
+    pitchDeg: 0,
+    rollDeg: 2,
+    focalScale: 1,
+    velocity: { px: 0, py: 0, pz: 0, yawDeg: 0, pitchDeg: 0, rollDeg: 0 },
+    intrinsics: {
+      resX: 640,
+      resY: 480,
+      fx: 900,
+      fy: 900,
+      cx: 320,
+      cy: 240,
+      k1: -0.08,
+      k2: 0.02,
+      p1: 0.001,
+      p2: -0.0005,
+    },
+  };
+  const u = 340;
+  const v = 232;
+  const radius = 0.61;
+
+  // The truth: difference the WHOLE pipeline, pixel through intersection.
+  const pointAt = (scale: number) => {
+    const c = { ...cam, focalScale: scale };
+    const n = cameraPixelToNormalized(c, u, v);
+    const j = intersectSphereJacobian(c, n.x, n.y, radius);
+    assert.ok(j.hit.hit, 'the fixture ray must hit the sphere');
+    return j.hit.point;
+  };
+  const h = 1e-5;
+  const plus = pointAt(1 + h);
+  const minus = pointAt(1 - h);
+  const truth = {
+    x: (plus.x - minus.x) / (2 * h),
+    y: (plus.y - minus.y) / (2 * h),
+    z: (plus.z - minus.z) / (2 * h),
+  };
+
+  const n0 = cameraPixelToNormalized(cam, u, v);
+  const d = 1e-6;
+  const np = cameraPixelToNormalized({ ...cam, focalScale: 1 + d }, u, v);
+  const nm = cameraPixelToNormalized({ ...cam, focalScale: 1 - d }, u, v);
+  const dNormalized = { dx: (np.x - nm.x) / (2 * d), dy: (np.y - nm.y) / (2 * d) };
+
+  const withFocal = intersectSphereJacobian(
+    cam,
+    n0.x,
+    n0.y,
+    radius,
+    undefined,
+    undefined,
+    0,
+    dNormalized,
+  );
+  const col = (j: Float64Array) => ({
+    x: j[0 * CAM_PARAM_COUNT + CAM_FOCAL],
+    y: j[1 * CAM_PARAM_COUNT + CAM_FOCAL],
+    z: j[2 * CAM_PARAM_COUNT + CAM_FOCAL],
+  });
+  const got = col(withFocal.dPoint);
+  const scale = Math.hypot(truth.x, truth.y, truth.z);
+  assert.ok(scale > 1e-3, 'the fixture should have a focal derivative worth checking');
+  assert.ok(
+    Math.hypot(got.x - truth.x, got.y - truth.y, got.z - truth.z) / scale < 1e-6,
+    `focal column ${JSON.stringify(got)} against finite difference ${JSON.stringify(truth)}`,
+  );
+
+  // And a solve with the focal held must be bit-for-bit what it always was.
+  const held = col(intersectSphereJacobian(cam, n0.x, n0.y, radius).dPoint);
+  assert.deepEqual(held, { x: 0, y: 0, z: 0 });
 });

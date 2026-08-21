@@ -605,6 +605,12 @@ export function projectPointJacobian(
   const dParam = out ?? new Float64Array(2 * PROJ_PARAM_COUNT);
   dParam.fill(0);
   const dWorld = worldOut ?? new Float64Array(6);
+  // Both buffers, not just the parameter one. `worldOut` exists so a caller can
+  // reuse one scratch array across correspondences, and the early return below
+  // handed back whatever the PREVIOUS point had left in it. `bundle.ts` is safe
+  // only because `evaluate` checks `inFront` three frames away before reading
+  // this, which is a guarantee living nowhere near the code that depends on it.
+  dWorld.fill(0);
 
   if (!(a > 0)) {
     return { inFront: false, u: NaN, v: NaN, x: NaN, y: NaN, a, dParam, dWorld };

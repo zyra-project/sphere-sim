@@ -200,6 +200,63 @@ interface RegistrationCore {
  * {@link computeRegistration} so the convergence check can rerun it at a
  * different density without duplicating a line of the geometry.
  */
+/**
+ * Place one texel through every projector, filling `landed` and `responsible`.
+ *
+ * Shared by the statistic and the map. They carried two copies of this loop and
+ * two copies of the worst-pair search below, so "which projector is responsible
+ * for this texel" and "how far apart did two of them put it" each had two
+ * definitions — and a change to either had to be made twice or the number and
+ * the picture of that number would disagree.
+ */
+function placeAll(
+  point: Vec3,
+  physical: PreparedRig,
+  content: PreparedRig,
+  landed: (Vec3 | null)[],
+  responsible: boolean[],
+): number {
+  let count = 0;
+  for (let i = 0; i < content.projectors.length; i++) {
+    const r = placeTexel(point, content.projectors[i], physical.projectors[i], physical.radiusM);
+    landed[i] = r.landed;
+    responsible[i] = r.responsible;
+    if (r.responsible) count++;
+  }
+  return count;
+}
+
+/**
+ * The two landed points that disagree most, or null when fewer than two landed.
+ *
+ * Strictly-greater comparison, so among equals the first pair in index order
+ * wins — the tie-break both callers already had.
+ */
+function worstPair(
+  landed: readonly (Vec3 | null)[],
+  n: number,
+  radiusM: number,
+): { i: number; j: number; errorMm: number } | null {
+  let bi = -1;
+  let bj = -1;
+  let best = -1;
+  for (let i = 0; i < n; i++) {
+    const li = landed[i];
+    if (li === null) continue;
+    for (let j = i + 1; j < n; j++) {
+      const lj = landed[j];
+      if (lj === null) continue;
+      const err = geodesicMm(li, lj, radiusM);
+      if (err > best) {
+        best = err;
+        bi = i;
+        bj = j;
+      }
+    }
+  }
+  return bi < 0 ? null : { i: bi, j: bj, errorMm: best };
+}
+
 function registrationOver(
   physical: PreparedRig,
   content: PreparedRig,
@@ -221,6 +278,7 @@ function registrationOver(
   };
 
   const landed: (Vec3 | null)[] = new Array<Vec3 | null>(n).fill(null);
+  const responsibleFlags: boolean[] = new Array<boolean>(n).fill(false);
 
   for (const s of lattice) {
     const point = latLonToWorld(s.latDeg, s.lonDeg, content.radiusM);
@@ -230,15 +288,12 @@ function registrationOver(
     // onto." That sentence is about exactly this.
     if (polarMask(s.latDeg, content.blend, maskInterpretation) <= 0) continue;
 
-    let responsible = 0;
+    const responsible = placeAll(point, physical, content, landed, responsibleFlags);
     for (let i = 0; i < n; i++) {
-      const r = placeTexel(point, content.projectors[i], physical.projectors[i], physical.radiusM);
-      landed[i] = r.landed;
-      if (r.responsible) {
-        responsible++;
-        if (r.landed === null) core.escaped++;
-        else core.perProjectorDisplacement[i].push(geodesicMm(r.landed, point, physical.radiusM));
-      }
+      if (!responsibleFlags[i]) continue;
+      const li = landed[i];
+      if (li === null) core.escaped++;
+      else core.perProjectorDisplacement[i].push(geodesicMm(li, point, physical.radiusM));
     }
     if (responsible >= 1) core.litSamples++;
     if (responsible < 2) continue;
@@ -248,35 +303,19 @@ function registrationOver(
     // compositor computed, not a property of the physical rig.
     const weights = coverageAndWeights(point, content).weights;
 
-    let worstPair = -1;
-    let worstErr = -1;
-    let worstMinW = 0;
-    for (let i = 0; i < n; i++) {
-      const li = landed[i];
-      if (li === null) continue;
-      for (let j = i + 1; j < n; j++) {
-        const lj = landed[j];
-        if (lj === null) continue;
-        const err = geodesicMm(li, lj, physical.radiusM);
-        const minW = Math.min(weights[i], weights[j]);
-        if (err > worstErr) {
-          worstErr = err;
-          worstPair = i * n + j;
-          worstMinW = minW;
-        }
-      }
-    }
-    if (worstPair < 0) continue;
+    const worst = worstPair(landed, n, physical.radiusM);
+    if (worst === null) continue;
+    const worstMinW = Math.min(weights[worst.i], weights[worst.j]);
 
-    core.overlapErrors.push(worstErr);
-    if (worstMinW >= visibleWeightFloor) core.visibleErrors.push(worstErr);
+    core.overlapErrors.push(worst.errorMm);
+    if (worstMinW >= visibleWeightFloor) core.visibleErrors.push(worst.errorMm);
     if (keepSamples) {
       core.samples.push({
         latDeg: s.latDeg,
         lonDeg: s.lonDeg,
-        projectorA: Math.floor(worstPair / n),
-        projectorB: worstPair % n,
-        errorMm: worstErr,
+        projectorA: worst.i,
+        projectorB: worst.j,
+        errorMm: worst.errorMm,
         minWeight: worstMinW,
       });
     }
@@ -304,6 +343,7 @@ function registrationField(
   const multiplicity: CountField = { width, height, data: new Uint8Array(width * height) };
   const n = content.projectors.length;
   const landed: (Vec3 | null)[] = new Array<Vec3 | null>(n).fill(null);
+  const responsibleFlags: boolean[] = new Array<boolean>(n).fill(false);
 
   for (let y = 0; y < height; y++) {
     const latDeg = 90 - ((y + 0.5) / height) * 180;
@@ -313,26 +353,12 @@ function registrationField(
       const point = latLonToWorld(latDeg, lonDeg, content.radiusM);
       if (polarMask(latDeg, content.blend, maskInterpretation) <= 0) continue;
 
-      let responsible = 0;
-      for (let i = 0; i < n; i++) {
-        const r = placeTexel(point, content.projectors[i], physical.projectors[i], physical.radiusM);
-        landed[i] = r.landed;
-        if (r.responsible) responsible++;
-      }
+      const responsible = placeAll(point, physical, content, landed, responsibleFlags);
       multiplicity.data[idx] = responsible;
       if (responsible < 2) continue;
 
-      let worst = -1;
-      for (let i = 0; i < n; i++) {
-        const li = landed[i];
-        if (li === null) continue;
-        for (let j = i + 1; j < n; j++) {
-          const lj = landed[j];
-          if (lj === null) continue;
-          worst = Math.max(worst, geodesicMm(li, lj, physical.radiusM));
-        }
-      }
-      if (worst >= 0) field.data[idx] = worst;
+      const worst = worstPair(landed, n, physical.radiusM);
+      if (worst !== null) field.data[idx] = worst.errorMm;
     }
   }
   return { field, multiplicity };

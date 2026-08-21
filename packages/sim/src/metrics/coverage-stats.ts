@@ -37,6 +37,7 @@
 
 import type { RigCalibration } from '../../../calibration/src/index.ts';
 import { latLonToWorld } from '../geometry.ts';
+import type { Vec3 } from '../vec.ts';
 import type { PreparedRig } from '../optics.ts';
 import { prepareRig } from '../optics.ts';
 import type { MaskInterpretation } from '../coverage.ts';
@@ -102,6 +103,30 @@ interface CoverageCore {
   maxMultiplicity: number;
 }
 
+/**
+ * How many projectors light one point, and the best incidence among them.
+ *
+ * One definition, used by both the scalar statistic and the field it is drawn
+ * against. They were two copies of this loop, which is the drift this metric set
+ * exists to surface: a change to what "lit" or "best incidence" means had to
+ * land in both or the number and the picture would quietly stop agreeing.
+ */
+function pointStats(
+  point: Vec3,
+  normal: Vec3,
+  projectors: PreparedRig['projectors'],
+): { multiplicity: number; bestIncidence: number } {
+  let multiplicity = 0;
+  let bestIncidence = 0;
+  for (const p of projectors) {
+    if (!isIlluminatedAt(point, p)) continue;
+    multiplicity++;
+    const c = incidenceCosineAt(point, normal, p.lens);
+    if (c > bestIncidence) bestIncidence = c;
+  }
+  return { multiplicity, bestIncidence };
+}
+
 function coverageOver(rig: PreparedRig, count: number): CoverageCore {
   const lattice = equalAreaLattice(count);
   const n = rig.projectors.length;
@@ -113,15 +138,7 @@ function coverageOver(rig: PreparedRig, count: number): CoverageCore {
 
   for (const s of lattice) {
     const point = latLonToWorld(s.latDeg, s.lonDeg, rig.radiusM);
-    const normal = s.unit;
-    let m = 0;
-    let best = 0;
-    for (const p of rig.projectors) {
-      if (!isIlluminatedAt(point, p)) continue;
-      m++;
-      const c = incidenceCosineAt(point, normal, p.lens);
-      if (c > best) best = c;
-    }
+    const { multiplicity: m, bestIncidence: best } = pointStats(point, s.unit, rig.projectors);
     multiplicityCounts[m]++;
     if (m > maxMultiplicity) maxMultiplicity = m;
     if (m > 0) {
@@ -152,14 +169,7 @@ function coverageFields(
       const idx = y * width + x;
       const point = latLonToWorld(latDeg, lonDeg, rig.radiusM);
       const normal = { x: point.x * invR, y: point.y * invR, z: point.z * invR };
-      let m = 0;
-      let best = 0;
-      for (const p of rig.projectors) {
-        if (!isIlluminatedAt(point, p)) continue;
-        m++;
-        const c = incidenceCosineAt(point, normal, p.lens);
-        if (c > best) best = c;
-      }
+      const { multiplicity: m, bestIncidence: best } = pointStats(point, normal, rig.projectors);
       multiplicityField.data[idx] = m;
       // The mask is carried into the map so a reader is not misled into thinking
       // a grazing-incidence south polar band is a problem; it is hidden.

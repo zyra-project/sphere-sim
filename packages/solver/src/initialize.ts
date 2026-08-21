@@ -454,6 +454,27 @@ function projectorRms(
 }
 
 /**
+ * Fill `out` with distinct indices below `n`, or report that it could not.
+ *
+ * Rejection sampling rather than a partial Fisher-Yates shuffle: the draw is
+ * six from thousands, so a collision is rare and a retry is cheaper than
+ * touching an n-element array once per RANSAC iteration.
+ */
+function drawDistinct(out: number[], n: number, rng: { nextInt(bound: number): number }): boolean {
+  if (n < out.length) return false;
+  for (let s = 0; s < out.length; s++) {
+    let tries = 0;
+    let candidate = rng.nextInt(n);
+    while (out.lastIndexOf(candidate, s - 1) >= 0) {
+      if (++tries > 64) return false;
+      candidate = rng.nextInt(n);
+    }
+    out[s] = candidate;
+  }
+  return true;
+}
+
+/**
  * RANSAC over the DLT, so one badly-unwrapped fringe cannot define the pose.
  *
  * The iteration count is fixed rather than adaptive. An adaptive count depends
@@ -478,7 +499,14 @@ function ransacDlt(
 
   const sampleIdx = new Array<number>(6);
   for (let iter = 0; iter < opts.ransacIterations; iter++) {
-    for (let s = 0; s < 6; s++) sampleIdx[s] = rng.nextInt(points.length);
+    // Six DISTINCT points. Drawing with replacement repeats an index about 0.75%
+    // of the time at the default sample size, and a minimal set with a repeat
+    // gives dltPose fewer than six constraints for a twelve-column system: the
+    // block is rank deficient, `nearestRotation`'s determinant branch cannot
+    // repair it, and the iteration burns on a candidate that was never a
+    // candidate. Redrawing the collision costs a few extra RNG calls and keeps
+    // every iteration a real hypothesis.
+    if (!drawDistinct(sampleIdx, points.length, rng)) continue;
     const sp = sampleIdx.map((i) => points[i]);
     const sx = sampleIdx.map((i) => pixels[i]);
     const candidate = dltPose(model, sp, sx, radiusM);

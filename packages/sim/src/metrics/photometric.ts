@@ -111,7 +111,13 @@ import type { PreparedRig } from '../optics.ts';
 import { pixelToRay, prepareRig, worldToPixel } from '../optics.ts';
 import type { MaskInterpretation } from '../coverage.ts';
 import { coverageAndWeights, isIlluminatedAt, polarMask } from '../coverage.ts';
-import { deltaE2000, linearRgbToLab, linearRgbToXyz, relativeLuminance } from '../color.ts';
+import {
+  cctFromChromaticity,
+  deltaE2000,
+  linearRgbToLab,
+  linearRgbToXyz,
+  relativeLuminance,
+} from '../color.ts';
 import { channelMatchedTransferSet, summariseTransfers } from '../photometry.ts';
 import type { TransferSummary } from '../photometry.ts';
 import type { ProjectorContribution, ShadeInput, ShadingModel } from '../shading.ts';
@@ -659,6 +665,11 @@ export interface SeamOptions {
    * invisible at white need not be invisible at mid-gray.
    */
   level?: number;
+  /**
+   * Re-measure at half the density to report whether the seam number has
+   * converged. Defaults to `PhotometricOptions.convergence`, so a caller can
+   * skip the seam re-measure — the expensive one — while keeping the black one.
+   */
   convergence?: boolean;
 }
 
@@ -1050,6 +1061,10 @@ function tripletFromFits(fits: ChannelFitTrio[], side: 'left' | 'right'): Channe
 export interface BlackOptions {
   /** Equal-area lattice size over the whole sphere, before restriction to overlaps. */
   sampleCount?: number;
+  /**
+   * Re-measure at the coarse density to report whether the black-uplift number
+   * has converged. Defaults to `PhotometricOptions.convergence`.
+   */
   convergence?: boolean;
 }
 
@@ -1377,7 +1392,11 @@ export function computePhotometricMetrics(
 
   let seamConvergence: ConvergenceReport | null = null;
   let blackConvergence: ConvergenceReport | null = null;
-  if (wantConvergence) {
+  // Per measurement, falling back to the whole-run switch. Both of these fields
+  // were declared and neither was read, so `{ seams: { convergence: false } }`
+  // ran the second full seam pass anyway — the most expensive thing in here,
+  // silently, for a caller who had asked for it not to happen.
+  if (seamOptions.convergence ?? wantConvergence) {
     const coarseSeams = measureSeams(
       grayCtx,
       { ...seamGeometry, sampleSpacingDeg: seamGeometry.sampleSpacingDeg * 2 },
@@ -1391,6 +1410,8 @@ export function computePhotometricMetrics(
       // A tenth of the gate. Finer than that cannot change a verdict.
       0.002,
     );
+  }
+  if ((opts.black?.convergence ?? wantConvergence) === true) {
     const coarseBlack = measureBlackUplift(blackCtx, coarse, whiteRgb, false);
     blackConvergence = convergenceOf(black.ratio, coarseBlack.ratio, coarse, 0.02);
   }
@@ -1668,7 +1689,7 @@ export function computePhotometricMetrics(
       whiteRgb,
       seamLevel: level,
       transfers: summariseTransfers(transfers),
-      assumed: assumedConstants(rig, scene, transfers),
+      assumed: assumedConstants(rig, scene, transfers, shading),
       densityScale,
     },
   };
@@ -1687,6 +1708,7 @@ function assumedConstants(
   rig: RigCalibration,
   scene: Scene,
   transfers: readonly ProjectorTransfer[],
+  shading: ShadingModel,
 ): AssumedConstant[] {
   const out: AssumedConstant[] = [];
   const push = (id: string, value: number, extra = ''): void => {
@@ -1704,8 +1726,17 @@ function assumedConstants(
   push('rho_R', scene.reflectance.r);
   push('rho_G', scene.reflectance.g);
   push('rho_B', scene.reflectance.b);
-  push('rho_spec', 0.03, 'Value as configured on the shading model.');
-  push('alpha_spec', 0.4, 'Value as configured on the shading model.');
+  // From the model this run actually rendered with, not from the defaults. A
+  // Lambertian run has no specular lobe at all, and saying so is the honest
+  // report — printing 0.03 for a term that was never applied is not.
+  const spec = shading.specular;
+  if (spec) {
+    push('rho_spec', spec.rhoSpec, `Value applied by the shading model \`${shading.name}\`.`);
+    push('alpha_spec', spec.alphaSpec, `Value applied by the shading model \`${shading.name}\`.`);
+  } else {
+    push('rho_spec', 0, `Shading model \`${shading.name}\` applies no specular term.`);
+    push('alpha_spec', 0, `Shading model \`${shading.name}\` applies no specular term.`);
+  }
   push('E_amb', relativeLuminance(scene.ambient), 'Reported as the luminance of the ambient triple.');
   push('E_amb_chroma', ambientCct(scene.ambient));
 
@@ -1720,11 +1751,16 @@ function assumedConstants(
   return out;
 }
 
-/** Correlated colour temperature of an ambient triple, for the provenance block. */
+/**
+ * Correlated colour temperature of an ambient triple, for the provenance block.
+ *
+ * McCamy's polynomial lives in `color.ts` and is called, not copied. It was
+ * spelled out inline here as well, which meant one empirical fit in two places
+ * — and the copy a reader is least likely to find is the one in a metrics file.
+ */
 function ambientCct(ambient: ChannelTriplet): number {
   const xyz = linearRgbToXyz(ambient);
   const sum = xyz.X + xyz.Y + xyz.Z;
   if (!(sum > 0)) return NaN;
-  const n = (xyz.X / sum - 0.332) / (0.1858 - xyz.Y / sum);
-  return 437 * n * n * n + 3601 * n * n + 6861 * n + 5517;
+  return cctFromChromaticity({ x: xyz.X / sum, y: xyz.Y / sum });
 }

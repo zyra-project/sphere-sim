@@ -82,6 +82,19 @@ export interface ShadeInput {
 
 export interface ShadingModel {
   readonly name: string;
+  /**
+   * The specular parameters this model actually applies, or absent when it has
+   * no specular lobe at all.
+   *
+   * Here so the provenance block can report the values the RUN used. It used to
+   * hardcode `rho_spec = 0.03` and `alpha_spec = 0.4` and label them 'as
+   * configured on the shading model' whatever the caller passed — which, for a
+   * package whose thesis is that every unmeasured constant travels with its own
+   * provenance, is the provenance stating a number the render never applied.
+   * The values were reachable all along, spelled into `name`; a caller should
+   * not have to parse a string to find out what it asked for.
+   */
+  readonly specular?: { readonly rhoSpec: number; readonly alphaSpec: number };
   /** Reflected radiance, relative linear, per channel. */
   shade(input: ShadeInput): ChannelTriplet;
 }
@@ -244,6 +257,7 @@ export function fullShading(params: SpecularParams = {}): ShadingModel {
 
   return {
     name: `full-v1(rho_spec=${weight},alpha_spec=${alpha})`,
+    specular: { rhoSpec: weight, alphaSpec: alpha },
     shade(input: ShadeInput): ChannelTriplet {
       // Two accumulators. The diffuse one is the TOTAL IRRADIANCE and is accumulated
       // in exactly the order `lambertian-v1` accumulates it, including starting from

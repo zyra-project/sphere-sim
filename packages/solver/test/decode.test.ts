@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_DECODE_OPTIONS,
   binaryToGray,
+  chiMedian,
   decodeCapture,
   grayPatternBit,
   grayToBinary,
@@ -381,4 +382,32 @@ test('a noiseless capture still reports a finite, floored sigma', () => {
     assert.ok(Number.isFinite(c.sigmaU) && c.sigmaU > 0, `sigmaU ${c.sigmaU}`);
     assert.ok(c.sigmaU >= DEFAULT_DECODE_OPTIONS.minSigmaPx, `sigmaU ${c.sigmaU} below the floor`);
   }
+});
+
+test('the noise scale uses the residual\'s real degrees of freedom', () => {
+  // `phaseResidualAt` returns the root sum of squares over all N frames of a
+  // three-parameter fit, so it is `sigma * chi_(N-3)`. Dividing by the fixed
+  // half-normal constant 0.6745 is the chi median at ONE degree of freedom: right
+  // at the four steps this project ships, and wrong at any other count. At eight
+  // steps it made every sigma three times too large, which shrinks every
+  // standardised residual in the bundle by the same factor -- so Huber's knee
+  // never bends and the rejection floor never rejects.
+  //
+  // Published chi-squared medians, square-rooted.
+  const expected: Record<number, number> = {
+    1: Math.sqrt(0.45493642311957),
+    2: Math.sqrt(1.38629436111989),
+    5: Math.sqrt(4.35146095046122),
+    9: Math.sqrt(8.34283258878810),
+  };
+  for (const [dof, want] of Object.entries(expected)) {
+    const got = chiMedian(Number(dof));
+    assert.ok(
+      Math.abs(got - want) / want < 1e-6,
+      `median(chi_${dof}): expected ${want}, got ${got}`,
+    );
+  }
+  // One degree of freedom must be bit-identical to the constant it replaced, or
+  // every number this project has published at four phase steps would move.
+  assert.equal(chiMedian(1), 0.674489750196082);
 });

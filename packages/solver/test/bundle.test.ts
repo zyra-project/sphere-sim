@@ -18,8 +18,10 @@ import {
   DEFAULT_FREE_FLAGS,
   DEFAULT_GAUGE_OPTIONS,
   buildProblem,
+  cloneState,
   evaluate,
   gaugeNullSpace,
+  rotationVector,
   runBundle,
   type BundleState,
   type FloorReference,
@@ -656,5 +658,97 @@ test('the shared-lens tie costs what the spread costs, and the cost is not hidde
   assert.ok(
     tied.maxProjectorPositionM < 0.05,
     `tied position error ${tied.maxProjectorPositionM * 1000} mm is larger than the modelling error should be`,
+  );
+});
+
+/** Row-major rotation matrix for a unit axis and an angle. */
+function rodrigues(ax: number, ay: number, az: number, theta: number): Float64Array {
+  const n = Math.hypot(ax, ay, az);
+  const x = ax / n;
+  const y = ay / n;
+  const z = az / n;
+  const c = Math.cos(theta);
+  const s = Math.sin(theta);
+  const t = 1 - c;
+  return Float64Array.from([
+    t * x * x + c, t * x * y - s * z, t * x * z + s * y,
+    t * x * y + s * z, t * y * y + c, t * y * z - s * x,
+    t * x * z - s * y, t * y * z + s * x, t * z * z + c,
+  ]);
+}
+
+test('rotationVector recovers an angle past ninety degrees, and at a half turn', () => {
+  // The `asin` this replaced could not represent an angle above 90 degrees: it
+  // returned 0.14 rad for a true 3.0 and exactly zero for a half turn, which
+  // made `alignGaugeToReference` apply a fraction of the rotation it needed --
+  // or, at 180 degrees, silently none at all while reporting success. A gauge
+  // alignment that no-ops reports the raw bootstrap frame as if it were aligned.
+  const axes: [number, number, number][] = [
+    [0, 0, 1],
+    [1, 0, 0],
+    [0.3, -0.7, 0.5],
+    [1, 1, 1],
+  ];
+  const angles = [0, 1e-9, 0.01, 0.5, 1.2, Math.PI / 2, 2.0, 2.5, 3.0, Math.PI];
+  for (const [ax, ay, az] of axes) {
+    for (const theta of angles) {
+      const R = rodrigues(ax, ay, az, theta);
+      const w = rotationVector(R);
+      const got = Math.hypot(w.x, w.y, w.z);
+      assert.ok(
+        Math.abs(got - theta) < 1e-7,
+        `axis ${ax},${ay},${az} angle ${theta}: recovered ${got}`,
+      );
+      // A half turn has no signed axis, so the check that matters either way is
+      // that the vector rebuilds the rotation it came from.
+      const back = got < 1e-12 ? rodrigues(1, 0, 0, 0) : rodrigues(w.x, w.y, w.z, got);
+      let fro = 0;
+      for (let i = 0; i < 9; i++) fro += (back[i] - R[i]) ** 2;
+      assert.ok(Math.sqrt(fro) < 1e-6, `axis ${ax},${ay},${az} angle ${theta} did not rebuild`);
+    }
+  }
+});
+
+test('an unusable correspondence is charged for missing; an excluded one is not', () => {
+  // This is the mechanism behind the exclusion rule, and it is the reason
+  // `runBundle` must not bank an unusable point as excluded. `evaluate` skips
+  // excluded points BEFORE charging `missPenalty`, so a point moved into that
+  // set stops paying anything at all and can never make itself worth recovering
+  // -- which is the opposite of what `RobustOptions.missPenalty` documents:
+  // 'the penalty disappears when the point comes back, which makes recovering
+  // one rewarding'.
+  //
+  // Stated on the two states directly, because it holds whatever the solve does
+  // with them. If a later change made `evaluate` charge the penalty for excluded
+  // points too, the banking would become harmless and this test would say so.
+  const scene = makeScene(11);
+  const corrs = generateCorrespondences(scene.truth, { cameraStride: 24 });
+  const floor = floorAtEveryLens(scene);
+  const opts = {
+    ...DEFAULT_BUNDLE_OPTIONS,
+    free: DEFAULT_FREE_FLAGS,
+    gauge: DEFAULT_GAUGE_OPTIONS,
+  };
+
+  // Swing one projector far enough behind itself that its points cannot project.
+  const wrecked = cloneState(bundleStateFromCalibration(scene.nominal, scene.cameraInputs));
+  wrecked.projectors[0].yawDeg += 180;
+
+  const problem = buildProblem(wrecked, corrs, floor, opts);
+  const missing = evaluate(wrecked, problem, false);
+  const unusable: number[] = [];
+  for (let i = 0; i < corrs.length; i++) if (!missing.usable[i]) unusable.push(i);
+  assert.ok(unusable.length > 0, 'the fixture should put some correspondences behind a lens');
+
+  // Now exclude exactly those, and the cost must FALL -- they stop paying the
+  // miss penalty. That fall is the objective quietly losing the evidence that
+  // the pose is wrong, which is what banking them would make permanent.
+  const banked = buildProblem(wrecked, corrs, floor, opts);
+  for (const i of unusable) banked.excluded[i] = true;
+  const bankedEval = evaluate(wrecked, banked, false);
+  assert.ok(
+    bankedEval.cost < missing.cost,
+    `excluding ${unusable.length} unusable points did not reduce the cost ` +
+      `(${missing.cost} -> ${bankedEval.cost}); the miss penalty is not being charged`,
   );
 });

@@ -88,6 +88,17 @@ export interface Uniforms {
   equirect: TextureData;
 }
 
+/** The shader's code for a ramp shape, or an error naming the ones that exist. */
+export function rampShapeIndex(shape: string): number {
+  const index = RAMP_SHAPE_INDEX[shape];
+  if (index === undefined) {
+    throw new Error(
+      `unknown rampShape ${JSON.stringify(shape)}; expected one of ${Object.keys(RAMP_SHAPE_INDEX).join(', ')}`,
+    );
+  }
+  return index;
+}
+
 export const RAMP_SHAPE_INDEX: Readonly<Record<string, number>> = {
   linear: 0,
   cosine: 1,
@@ -182,7 +193,10 @@ export function buildUniforms(
     rotationOffset: rig.sphere.rotationOffsetDeg,
     projectors,
 
-    rampShape: RAMP_SHAPE_INDEX[rig.blend.rampShape] ?? 1,
+    // Refused, not defaulted. `?? 1` drew the rig as cosine while the CPU
+    // path threw on the same string, so a typo'd shape produced two different
+    // answers to one question and the parity check compared them.
+    rampShape: rampShapeIndex(rig.blend.rampShape),
     widthDeg: rig.blend.widthDeg,
     rampGamma: rig.blend.rampGamma,
     maskLo: rig.blend.maskLoDeg,

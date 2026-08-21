@@ -1216,13 +1216,59 @@ export function buildProblem(
     // "evaluate at two epochs"; it does not mean a clock is being read — see
     // this file's DIFFERENTIAL u-vs-v CAMERA POSE section.)
     timeAware: anyVelocityFree(layout) || state.cameras.some((c) => rateIsNonZero(c.velocity)),
-    boxes: opts.bounds.filter((b) => {
-      if (b.slot < 0 || b.slot >= layout.nSlots) return false;
-      if (layout.freeMap[b.slot] < 0) return false;
-      return b.hi > b.lo;
-    }),
+    boxes: collapseBoxes(
+      opts.bounds.filter((b) => {
+        if (b.slot < 0 || b.slot >= layout.nSlots) return false;
+        if (layout.freeMap[b.slot] < 0) return false;
+        return b.hi > b.lo;
+      }),
+      layout,
+    ),
     boxProjections: 0,
   };
+}
+
+/**
+ * One box per free COLUMN, not per slot.
+ *
+ * With `tieProjectorFov` on — the default — four projector slots are one
+ * parameter, and `solve()` pushes one spec-sheet box per projector. Keeping all
+ * four made a single clamp of a single number look like four: `boxProjections`
+ * counted 4, and `boundsAtLimit` listed 'P1.fovH / P2.fovH / P3.fovH / P4.fovH'
+ * for one value at one limit. Worse, if the boxes on a tied column disagree,
+ * only the first slot's is ever read back — `packState` reads the column from
+ * the tie's head slot — so the tighter limit was silently discarded rather than
+ * enforced.
+ *
+ * Intersecting them fixes both: the tightest lower bound and the tightest upper
+ * bound of everything on the column, under a name that says how many slots the
+ * column carries when it carries more than one.
+ */
+function collapseBoxes(
+  boxes: readonly ParameterBox[],
+  layout: ParamLayout,
+): readonly ParameterBox[] {
+  const byColumn = new Map<number, ParameterBox>();
+  for (const b of boxes) {
+    const col = layout.freeMap[b.slot];
+    const seen = byColumn.get(col);
+    if (seen === undefined) {
+      byColumn.set(col, { slot: b.slot, name: b.name, lo: b.lo, hi: b.hi });
+      continue;
+    }
+    // The head slot is kept, because that is the one `packState` reads.
+    const lo = Math.max(seen.lo, b.lo);
+    const hi = Math.min(seen.hi, b.hi);
+    byColumn.set(col, {
+      slot: seen.slot,
+      name: seen.name === b.name ? seen.name : `${seen.name} (tied)`,
+      lo,
+      // An empty intersection would be a contradiction rather than a bound, so
+      // it collapses to the single tightest value instead of inverting.
+      hi: hi > lo ? hi : lo,
+    });
+  }
+  return [...byColumn.values()];
 }
 
 function anyVelocityFree(layout: ParamLayout): boolean {
@@ -1286,9 +1332,19 @@ function hitAtEpoch(
   radiusM: number,
   wantJacobian: boolean,
   scratch: Float64Array,
+  dNormalized?: { dx: number; dy: number },
 ): EpochHit | null {
   if (wantJacobian) {
-    const hj = intersectSphereJacobian(e.cam, nx, ny, radiusM, e.rotJ ?? undefined, scratch, e.dt);
+    const hj = intersectSphereJacobian(
+      e.cam,
+      nx,
+      ny,
+      radiusM,
+      e.rotJ ?? undefined,
+      scratch,
+      e.dt,
+      dNormalized,
+    );
     if (!hj.hit.hit) return null;
     return { point: hj.hit.point, dPoint: hj.dPoint };
   }
@@ -1409,6 +1465,7 @@ export function evaluate(
 
     let nx: number;
     let ny: number;
+    let dNormalized: { dx: number; dy: number } | undefined;
     if (problem.normalizedValid) {
       nx = problem.normalized[2 * i];
       ny = problem.normalized[2 * i + 1];
@@ -1416,19 +1473,41 @@ export function evaluate(
       const nn = cameraPixelToNormalized(cam, corr.camU, corr.camV);
       nx = nn.x;
       ny = nn.y;
+      // The focal is free, so the normalised coordinate itself is a function of
+      // it, and the sphere intersection needs to know that. One central
+      // difference on the undistort — cheap, and analytic differentiation would
+      // mean differentiating a Newton loop for a parameter this solve moves
+      // slowly and by very little. `1e-6` is relative to a scale near 1, where
+      // the undistort is smooth on any scale far larger than that.
+      if (opts.free.cameraFocal && wantJacobian) {
+        const h = 1e-6;
+        const plus = cameraPixelToNormalized(
+          { ...cam, focalScale: cam.focalScale + h },
+          corr.camU,
+          corr.camV,
+        );
+        const minus = cameraPixelToNormalized(
+          { ...cam, focalScale: cam.focalScale - h },
+          corr.camU,
+          corr.camV,
+        );
+        dNormalized = { dx: (plus.x - minus.x) / (2 * h), dy: (plus.y - minus.y) / (2 * h) };
+      }
     }
 
     // The `u` coordinate was read from one set of frames and the `v` from
     // another, so each is evaluated against the camera as it was when ITS
     // frames were shot. With one pose the two passes are the same pass and the
     // second is skipped entirely.
-    const hitU = hitAtEpoch(eU, nx, ny, state.radiusM, wantJacobian, dPointScratch);
+    const hitU = hitAtEpoch(eU, nx, ny, state.radiusM, wantJacobian, dPointScratch, dNormalized);
     if (hitU === null) {
       cost += missCost;
       continue;
     }
     const hitV =
-      eV === eU ? hitU : hitAtEpoch(eV, nx, ny, state.radiusM, wantJacobian, dPointScratchV);
+      eV === eU
+        ? hitU
+        : hitAtEpoch(eV, nx, ny, state.radiusM, wantJacobian, dPointScratchV, dNormalized);
     if (hitV === null) {
       cost += missCost;
       continue;
@@ -1896,14 +1975,53 @@ function gaugeUnobserved(
 // Post-solve gauge alignment
 // ---------------------------------------------------------------------------
 
-/** Rotation vector (axis * angle) of a rotation matrix, small-angle branch. */
-function rotationVector(m: Mat3): Vec3 {
+/**
+ * Rotation vector (axis * angle) of a rotation matrix, over the whole range.
+ *
+ * The axial part of `(R - Rᵀ)/2` has magnitude `sin θ`, and this used to recover
+ * θ with `asin`, which cannot tell 150° from 30° and returns zero at 180°. That
+ * is not an academic range: a solve whose bootstrap lands in a badly wrong frame
+ * — the tail of a room-contaminated capture, say — got HALF the rotation it
+ * needed out of `alignGaugeToReference`, or at 180° a silent no-op that reported
+ * the unaligned frame as aligned. `atan2` against the trace covers [0, π], and
+ * the half-turn, where the axial vector vanishes and carries no axis at all, is
+ * read from the symmetric part instead.
+ */
+export function rotationVector(m: Mat3): Vec3 {
   const wx = 0.5 * (m[7] - m[5]);
   const wy = 0.5 * (m[2] - m[6]);
   const wz = 0.5 * (m[3] - m[1]);
   const s = Math.hypot(wx, wy, wz);
-  if (s < 1e-15) return { x: 0, y: 0, z: 0 };
-  const angle = Math.asin(Math.min(1, s));
+  const c = (m[0] + m[4] + m[8] - 1) / 2;
+
+  if (s < 1e-12) {
+    // Either no rotation at all (c ≈ +1) or exactly half a turn (c ≈ -1).
+    if (c > 0) return { x: 0, y: 0, z: 0 };
+    // R = 2aaᵀ - I for a half turn, so (R + I)/2 is aaᵀ and any column of it is
+    // the axis scaled by that component. Read the one with the largest diagonal,
+    // which is the best conditioned.
+    const dxx = (m[0] + 1) / 2;
+    const dyy = (m[4] + 1) / 2;
+    const dzz = (m[8] + 1) / 2;
+    let axis: Vec3;
+    if (dxx >= dyy && dxx >= dzz) {
+      const ax = Math.sqrt(Math.max(0, dxx));
+      if (ax < 1e-12) return { x: 0, y: 0, z: 0 };
+      axis = { x: ax, y: (m[1] + m[3]) / 4 / ax, z: (m[2] + m[6]) / 4 / ax };
+    } else if (dyy >= dzz) {
+      const ay = Math.sqrt(Math.max(0, dyy));
+      if (ay < 1e-12) return { x: 0, y: 0, z: 0 };
+      axis = { x: (m[1] + m[3]) / 4 / ay, y: ay, z: (m[5] + m[7]) / 4 / ay };
+    } else {
+      const az = Math.sqrt(Math.max(0, dzz));
+      if (az < 1e-12) return { x: 0, y: 0, z: 0 };
+      axis = { x: (m[2] + m[6]) / 4 / az, y: (m[5] + m[7]) / 4 / az, z: az };
+    }
+    const n = Math.hypot(axis.x, axis.y, axis.z);
+    return { x: (Math.PI * axis.x) / n, y: (Math.PI * axis.y) / n, z: (Math.PI * axis.z) / n };
+  }
+
+  const angle = Math.atan2(s, c);
   const k = angle / s;
   return { x: wx * k, y: wy * k, z: wz * k };
 }
@@ -2040,6 +2158,15 @@ export interface BundleReport {
   used: number;
   rejected: number;
   residuals: ResidualSample[];
+  /**
+   * Which correspondences the solve dropped, in input order.
+   *
+   * `rejected` says how many; this says which, and that difference is what makes
+   * the exclusion rule checkable from outside. Exclusion is supposed to mean
+   * 'the rejection pass judged this a gross error' — never 'the pose swung away
+   * from it for one pass', which is what `missPenalty` handles instead.
+   */
+  excluded: readonly boolean[];
   /** Number of gauge constraints actually applied. 3 in the normal case. */
   gaugeConstraints: number;
   /**
@@ -2427,9 +2554,12 @@ function finishReport(
   let used = 0;
   let rejected = 0;
 
+  const excludedMask: boolean[] = new Array<boolean>(correspondences.length).fill(false);
+
   for (let i = 0; i < correspondences.length; i++) {
     const corr = correspondences[i];
     const excluded = problem.excluded[i] || !ev.usable[i];
+    excludedMask[i] = excluded;
     if (excluded) {
       rejected++;
       continue;
@@ -2476,6 +2606,7 @@ function finishReport(
     used,
     rejected,
     residuals,
+    excluded: excludedMask,
     gaugeConstraints,
     gaugeFreeAxes,
     lastDeficiency,
@@ -2788,9 +2919,21 @@ export function runBundle(
 
   for (let pass = 0; pass < opts.rejectionPasses; pass++) {
     const ev = evaluate(report.state, problem, false);
-    // A correspondence whose ray no longer meets the sphere is not an outlier
-    // to be scored, it is unusable; fold it into the exclusion set directly.
-    const priorExcluded = problem.excluded.map((e, i) => e || !ev.usable[i]);
+    // A correspondence whose ray no longer meets the sphere is not an outlier to
+    // be scored: it has no residual, so it must stay out of the robust scale and
+    // out of the threshold count. That is all this array is for.
+    //
+    // It used to be written back into `problem.excluded` as well, which was a
+    // mistake with a mechanism behind it. `evaluate` skips excluded points BEFORE
+    // charging `missPenalty` (see the loop at the top of this file), so a point
+    // banked here left the objective entirely -- no residual and no penalty --
+    // and could never return. That is exactly what `RobustOptions.missPenalty`
+    // exists to prevent: 'the penalty disappears when the point comes back, which
+    // makes recovering one rewarding'. A pass that ended with a projector pose
+    // swinging a fifth of its points behind the lens deleted them, converged
+    // comfortably on the remainder, and reported the casualties as outliers
+    // rather than as evidence the pose was wrong.
+    const unscored = problem.excluded.map((e, i) => e || !ev.usable[i]);
 
     // Variance components first, rejection second, and the order matters: the
     // rejection threshold is stated in standardised units, so it means one thing
@@ -2841,10 +2984,14 @@ export function runBundle(
         rejNorms[i] *= problem.pairScale[corr.camera * nProj + corr.projector];
       }
     }
-    const rej = rejectOutliers(rejNorms, opts.loss, priorExcluded);
+    const rej = rejectOutliers(rejNorms, opts.loss, unscored);
     let changed = false;
     for (let i = 0; i < problem.excluded.length; i++) {
-      const next = !rej.keep[i];
+      // Only points this pass actually judged. A point the current state cannot
+      // use was not judged, so the pass says nothing about it: it keeps whatever
+      // standing it had, goes on paying the miss penalty, and stays able to come
+      // back if a later pass moves the pose under it.
+      const next = ev.usable[i] ? !rej.keep[i] : problem.excluded[i];
       if (next !== problem.excluded[i]) changed = true;
       problem.excluded[i] = next;
     }
