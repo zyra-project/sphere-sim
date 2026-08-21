@@ -20,13 +20,23 @@ dice, and the loop is chasing noise rather than improving anything.
 Every gate is scored on its WORST scenario (`gates.gates[].worst.value`), so
 that is the statistic compared. Comparing medians would flatter the result:
 the distribution is bimodal by construction and the median hides the tail.
+
+Usage: dispersion.py <dir>
+
+<dir> holds one `seed-*.json` per fixed-code bench run — the output of running
+the bench at three or more seeds with the working tree untouched between runs.
+Those files are large and are not committed, so this takes the directory as an
+argument rather than naming one; it used to name the scratch directory of the
+session that produced them, which reported "found 0" in every other checkout.
 """
 import json
 import glob
 import statistics
 import sys
 
-CONV = '/tmp/claude-0/-home-user-sphere-sim/b37221d0-dbb7-5aca-a9ab-085305f51107/scratchpad/conv'
+if len(sys.argv) < 2:
+    sys.exit('usage: dispersion.py <dir of seed-*.json bench runs, code held fixed>')
+CONV = sys.argv[1]
 
 
 def gates_of(path):

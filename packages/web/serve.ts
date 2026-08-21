@@ -68,6 +68,13 @@ export function createServer(appRoot: string = HERE, repoRoot: string = REPO_ROO
 
 function main(): void {
   const port = Number(process.env.PORT ?? 8174);
+  // Loopback unless somebody says otherwise. This server hands out repository
+  // files under /repo/, and it advertises a localhost URL -- binding every
+  // interface would put a checkout on the coffee-shop wifi while saying
+  // 'localhost' on the terminal. HOST=0.0.0.0 is there for the case where the
+  // laptop beside the sphere is meant to be reachable, and that is a decision
+  // somebody has to make on purpose.
+  const host = process.env.HOST ?? '127.0.0.1';
   if (!fs.existsSync(BUNDLE)) {
     process.stderr.write(
       `\npackages/web: the browser bundle is missing.\n\n` +
@@ -76,9 +83,9 @@ function main(): void {
         `Serving anyway so the page's error banner is visible, but nothing will render.\n\n`,
     );
   }
-  createServer().listen(port, () => {
+  createServer().listen(port, host, () => {
     process.stdout.write(
-      `sphere-sim installation simulator on http://localhost:${port}/\n` +
+      `sphere-sim installation simulator on http://${host === '127.0.0.1' ? 'localhost' : host}:${port}/\n` +
         `  the picture is a shader; every number beside it comes from packages/sim in a worker\n` +
         `  Recalibrate runs packages/solver on structured light the simulator photographed\n`,
     );

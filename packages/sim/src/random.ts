@@ -164,8 +164,20 @@ export function hash01(...values: number[]): number {
  * function of `(calibration, scene, seed)`: a low-discrepancy set gives better
  * edge antialiasing per sample than white noise anyway, and it does so without
  * a stream whose position depends on how many pixels came first.
+ *
+ * The two guards are not defensive noise. `base === 1` leaves `i` unchanged on
+ * every pass and hangs the render forever with no error and no frame — the
+ * worst failure mode a pure function can have, because it looks like slowness.
+ * A fractional index is quieter and worse: it returns a number, so the sequence
+ * silently stops being the low-discrepancy set the antialiasing assumes.
  */
 export function radicalInverse(base: number, index: number): number {
+  if (!Number.isInteger(base) || base < 2) {
+    throw new RangeError(`radicalInverse needs an integer base of at least 2, got ${base}`);
+  }
+  if (!Number.isInteger(index) || index < 0) {
+    throw new RangeError(`radicalInverse needs a non-negative integer index, got ${index}`);
+  }
   let result = 0;
   let f = 1 / base;
   let i = index;

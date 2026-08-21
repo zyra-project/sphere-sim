@@ -1338,7 +1338,16 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage>): voi
   // A frame the lightbox asked for, on its own id sequence. It carries no
   // metrics and must not be mistaken for a stale model reply.
   if (msg.kind === 'frames') {
-    if (!msg.ok || !lightbox || msg.slot !== lightbox.slot) return;
+    // A frame that threw. It reaches the page as a failure carrying this kind
+    // rather than 'model', so it stops here instead of clearing the metrics
+    // lock — but it still has to be SAID, because the alternative is a lightbox
+    // that sits on an empty panel with no explanation.
+    if (!msg.ok) {
+      lastError = msg.error;
+      renderReadout();
+      return;
+    }
+    if (!lightbox || msg.slot !== lightbox.slot) return;
     if (msg.tag === 'before') lightbox.before = msg.frame;
     else if (msg.tag === lightbox.wants && msg.frame) lightbox.after = msg.frame;
     else return;

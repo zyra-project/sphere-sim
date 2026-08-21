@@ -12,13 +12,20 @@ comparison at 69-182% of the metric, cancels exactly.
 
 Each row is one solve. A pair is two rows differing in exactly one knob.
 Ratios are old/new, so >1 means round 1's change HELPED.
+
+Usage: analyse.py [log]   default: round1-paired.log, committed beside this file.
 """
+import os
 import re
 import sys
 import statistics
 from collections import defaultdict
 
-LOG = '/tmp/claude-0/-home-user-sphere-sim/b37221d0-dbb7-5aca-a9ab-085305f51107/scratchpad/paired.log'
+# The log this analysis was run on is committed next to it, so the default
+# reproduces the published numbers from any checkout. It used to name the
+# scratch directory of the session that produced it, which reproduced nowhere.
+HERE = os.path.dirname(os.path.abspath(__file__))
+LOG = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, 'round1-paired.log')
 
 ROW = re.compile(
     r'^(\S+)\s+noiseBins=\s*(\d+)\s+varComp=(on|off)\s+pos=\s*([\d.]+)\s+rot=\s*([\d.]+)\s+'

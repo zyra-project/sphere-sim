@@ -120,6 +120,19 @@ test('the sample-offset hash is a pure function of its arguments', () => {
     const v = radicalInverse(2, i);
     assert.ok(v >= 0 && v < 1);
   }
+
+  // Base 1 used to spin forever: `i % 1` is 0 and `Math.floor(i / 1)` is `i`, so
+  // the loop never advances and the render never returns. Throwing is the only
+  // outcome a caller can see.
+  assert.throws(() => radicalInverse(1, 4), RangeError);
+  assert.throws(() => radicalInverse(0, 4), RangeError);
+  assert.throws(() => radicalInverse(2.5, 4), RangeError);
+  // A non-integer index returns a number, which is why it needs a guard: it
+  // would quietly stop being the low-discrepancy sequence.
+  assert.throws(() => radicalInverse(2, 1.5), RangeError);
+  assert.throws(() => radicalInverse(2, -1), RangeError);
+  // Index zero is the legitimate first element of the sequence, not an error.
+  assert.equal(radicalInverse(2, 0), 0);
 });
 
 test('room view: the same seed gives byte-identical PNGs', () => {

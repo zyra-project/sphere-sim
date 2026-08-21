@@ -128,7 +128,10 @@ function startServer(url: string): Promise<http.Server> {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.once('error', reject);
-    server.listen(port, () => resolve(server));
+    // The host the URL names, so the bind and the browser cannot disagree —
+    // and loopback, like `npm run app`, because a smoke run must not be the
+    // thing that exposes a checkout to the network.
+    server.listen(port, new URL(url).hostname, () => resolve(server));
   });
 }
 

@@ -488,7 +488,7 @@ export const PARAMETER_TABLE: Record<string, ParamSpec> = {
     max: 0.6,
     rangeSource: 'inferred',
     affects: 'both',
-    note: 'Only matters via inter-reflection, which §9 lists as not modelled in v1.',
+    note: 'Reaches a geometric result directly: with room spill on it scales every off-sphere return before the decoder modulation gate, so it sets how much contamination experiments 4 and 5 see. The earlier note here said it only mattered via inter-reflection; that stopped being true when the room became switchable. PARAMETERS.md §5 and §8 item 18 carry the same statement.',
   },
 
   // ---- §6 Viewer ----------------------------------------------------------

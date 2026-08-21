@@ -32,8 +32,14 @@ self.onmessage = (event: MessageEvent<ModelRequest | FramesRequest>): void => {
     if (reply.parityImage) transfer.push(reply.parityImage.data.buffer);
     self.postMessage(reply, transfer);
   } catch (err) {
+    // The kind of the REQUEST, not of this worker. This shell answers two
+    // request kinds on one port, and labelling a failed frame render 'model'
+    // sent it down the metrics path on the page: at best the lightbox waited
+    // forever for a reply that had already been thrown away, and when the two
+    // independent id sequences happened to agree it released the metrics
+    // in-flight lock for a request that was still running.
     const failure: WorkerFailure = {
-      kind: 'model',
+      kind: req.kind,
       id: req.id,
       ok: false,
       error: err instanceof Error ? err.message : String(err),

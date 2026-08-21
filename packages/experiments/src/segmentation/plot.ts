@@ -15,6 +15,7 @@
 import type { FigureSpec, Panel, PlotPoint, PlotSeries } from '../experiment1/svg.ts';
 import { PALETTE, renderFigure } from '../experiment1/svg.ts';
 import type { Cell } from '../spill/run.ts';
+import { medianOf } from '../spill/run.ts';
 import type { SegmentationResult } from './run.ts';
 
 const ARM_COLOR = {
@@ -31,7 +32,9 @@ function point(cell: Cell | undefined, x: number, of: (c: Cell) => number[]): Pl
   const sorted = [...values].sort((a, b) => a - b);
   return {
     x,
-    y: sorted[Math.floor(sorted.length / 2)],
+    // The SAME median the results file records. This used to take the upper of
+    // the two middle observations, which at thirty seeds is a different number.
+    y: medianOf(values),
     lo: sorted[0],
     hi: sorted[sorted.length - 1],
     values,

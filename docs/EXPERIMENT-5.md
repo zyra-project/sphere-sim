@@ -15,8 +15,8 @@ why it matters far less here than it did in experiment 4.
 
 > **Image-space segmentation puts the room case back on top of the clean case,
 > tail and all.** With a 6 m room present, rejecting camera pixels the photograph
-> says are not the sphere takes the recovered pose from a median of **6166 mm to
-> 26.9 mm** against a clean baseline of **25.5 mm** — a paired geometric mean of
+> says are not the sphere takes the recovered pose from a median of **5776 mm to
+> 26.3 mm** against a clean baseline of **24.9 mm** — a paired geometric mean of
 > **340×** over 30 rig draws, improving **29 of 30**. The geometric test measured
 > in experiment 4 is worth **14.7×** on the same draws. Head to head, image-space
 > beats it by **23×** and wins on **26 of 30** seeds.
@@ -42,7 +42,7 @@ why it matters far less here than it did in experiment 4.
 > nominal is bad. The `long-throw` archetype hands the operator 5.18 m when truth
 > is 6.14 m — a nominal 0.96 m out — and there the geometric test gets **better**,
 > not worse: paired recovery against the room rises from 14.7× to 33.7×, and the
-> contamination it fails to remove falls from 1.215% to 0.208%. Image-space stays
+> contamination it fails to remove falls from 1.185% to 0.207%. Image-space stays
 > ahead on both archetypes but its margin collapses from **23.2× to 1.30×**.
 > Falsifier G6 triggered. §4 is what that costs the conclusion.
 
@@ -57,11 +57,11 @@ gauge alignment, in millimetres.
 
 | arm | median | min | max | off-sphere share |
 | --- | ---: | ---: | ---: | ---: |
-| no room, no segmentation | 25.5 | 7.8 | 52 | 0.00% |
-| room, no segmentation | 6166 | 15.1 | 1 226 190 | 16.88% |
-| room, geometric segmentation (margin 0) | 451.9 | 9.9 | 352 389 | 1.21% |
-| **room, image-space segmentation** | **26.9** | 6.8 | **54** | **0.00%** |
-| no room, image-space segmentation | 22.7 | 7.0 | 58 | 0.00% |
+| no room, no segmentation | 24.9 | 7.8 | 52 | 0.00% |
+| room, no segmentation | 5776 | 15.1 | 1 226 190 | 16.86% |
+| room, geometric segmentation (margin 0) | 446.0 | 9.9 | 352 389 | 1.18% |
+| **room, image-space segmentation** | **26.3** | 6.8 | **54** | **0.00%** |
+| no room, image-space segmentation | 22.6 | 7.0 | 58 | 0.00% |
 
 And the same four conditions on `long-throw`, whose handed-over nominal is 0.96 m
 from truth. Note the clean row: this archetype is simply harder, and millimetres
@@ -69,12 +69,12 @@ here are not comparable with the table above.
 
 | arm (long-throw) | median | min | max | off-sphere share |
 | --- | ---: | ---: | ---: | ---: |
-| no room, no segmentation | 95.0 | 25.1 | 618 | 0.00% |
-| room, no segmentation | 4204 | 26.1 | 1 332 550 | 11.04% |
-| room, geometric segmentation (margin 0) | 97.4 | 32.1 | 1136 | 0.21% |
-| room, image-space segmentation | 113.3 | 41.6 | **458** | 0.00% |
+| no room, no segmentation | 92.4 | 25.1 | 618 | 0.00% |
+| room, no segmentation | 4111 | 26.1 | 1 332 550 | 10.81% |
+| room, geometric segmentation (margin 0) | 97.2 | 32.1 | 1136 | 0.21% |
+| room, image-space segmentation | 107.9 | 41.6 | **458** | 0.00% |
 
-**Contamination goes to zero, not merely down.** The geometric test leaves 1.21%
+**Contamination goes to zero, not merely down.** The geometric test leaves 1.18%
 of accepted correspondences coming from surfaces that are not the sphere. The
 image-space test leaves none that the ground-truth ray cast can find, in any of
 the thirty draws. That is the whole mechanism: experiment 4 showed that a tenth
@@ -90,10 +90,23 @@ has no access to any of them, so it cannot inherit the dependence and it cannot
 leak ground truth into the solve. That is a property of what it imports, not of a
 test asserting good behaviour.
 
-**It is free on a clean capture.** With no room at all it lands at 22.7 mm
-against the baseline's 25.5 — a factor of 0.91, inside the seed range and if
+**It is free on a clean capture.** With no room at all it lands at 22.6 mm
+against the baseline's 24.9 — a factor of 0.91, inside the seed range and if
 anything slightly better, because the pixels it discards at the limb are
 grazing-incidence decodes that were never the well-constrained ones.
+
+**Correction — every median on this page was regenerated.** A code review found
+that the figure's centre marker took the *upper* of the two middle observations
+rather than their mean; the write-up script did the same, and at thirty seeds
+that is not the median. The results file always recorded the correct value, so
+nothing derived from it moved: the paired geometric means, the usable-share
+counts, the ratios in §4 and every falsifier verdict are computed per seed and
+are unchanged. The medians themselves moved by up to 6% — the room arm from
+6166 mm to 5776, image-space from 26.9 to 26.3, the clean baseline from 25.5 to
+24.9 — and the tables above are the corrected ones. Experiment 4 was unaffected
+because it ran an odd number of seeds, where the two conventions agree. There is
+now one median in the codebase, exported from the spill runner and imported by
+both the runner and the plot.
 
 ---
 
@@ -142,7 +155,7 @@ answer beyond declining to guess.
 
 | # | Falsifier | Outcome |
 | --- | --- | --- |
-| G1 | It does not reduce contamination below the geometric test | **Not triggered.** 0.00% against 1.21% |
+| G1 | It does not reduce contamination below the geometric test | **Not triggered.** 0.00% against 1.18% |
 | G2 | It does not beat the geometric test on pose, paired | **Not triggered.** Paired geometric mean 23.2 |
 | G3 | It costs a clean capture | **Not triggered.** 0.91×, inside the seed range |
 | G4 | Its framing assumption fails somewhere | **TRIGGERED.** 1 of 90 runs — long-throw seed 26, one camera, ball not fully framed |
@@ -181,7 +194,7 @@ is that case — truth 6.14 m, handed-over nominal 5.18 m, an error of 0.96 m.
 | geometric: paired recovery vs the room | 14.7× | **33.7×** |
 | image-space: paired recovery vs the room | 340.3× | **43.7×** |
 | head to head (image ÷ geometric) | 23.2× | **1.30×** |
-| geometric: contamination it fails to remove | 1.215% | **0.208%** |
+| geometric: contamination it fails to remove | 1.185% | **0.207%** |
 
 The geometric test did not degrade on a nominal a metre out. It got better, on
 the dimensionless measure and on the mechanism both — it leaves *less*
@@ -213,7 +226,7 @@ segmentation is never worse here and is sometimes enormously better, that nobody
 knows why the margin varies this much, and that a mechanism nobody can state is a
 mechanism that can reverse on the next archetype. Two candidates worth
 separating: a longer throw changes how much of each projector's beam reaches the
-room at all — long-throw's unsegmented contamination is 11.0% against archetype
+room at all — long-throw's unsegmented contamination is 10.8% against archetype
 1's 16.9%, so there is less of it to remove — and long-throw's much larger
 absolute errors may swamp the contamination term rather than being dominated by
 it. A third candidate, that long-throw is better constrained by carrying more
@@ -237,7 +250,7 @@ the remaining two not at all.
    the components it rejected and why. Zero warnings across 180 captures is a
    result; a detector that cannot produce that number is one you cannot audit.
 5. **Do not discard the geometric test on this evidence.** It recovered 33.7×
-   on the harder archetype and left only 0.208% contamination there. On a rig
+   on the harder archetype and left only 0.207% contamination there. On a rig
    like that one the two methods are within 30% of each other, and the geometric
    test needs no extra frame and no framing assumption.
 6. **Decide what a refusal means before you need to.** This detector declines

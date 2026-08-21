@@ -7,15 +7,19 @@
  * unreachable, and this one exists precisely for the situation where somebody is
  * standing next to a sphere with a laptop.
  *
- * Three things it does beyond serving bytes:
+ * Four things it does beyond serving bytes:
  *
  *  1. **It checks that the browser bundle exists before it starts**, and if it
  *     does not, it says `npm run build:web` rather than serving an index page
  *     whose only symptom is a blank canvas and a 404 in a console nobody opened.
  *  2. **It refuses to serve anything outside the served roots.** The path is
- *     resolved and then checked against the root prefix, so `..%2f..%2f/etc/passwd`
- *     gets a 403 rather than a file.
- *  3. **It serves from two roots.** `packages/harness/` holds the page and the
+ *     resolved and checked against the root prefix, so `..%2f..%2f/etc/passwd`
+ *     gets a 403 rather than a file — and then canonicalised and checked again,
+ *     because the first check is a check on a string and a symbolic link inside
+ *     the root can name a target outside it without ever spelling `..`.
+ *  3. **It binds loopback** unless `HOST` says otherwise. Point 4 is why: a
+ *     server that hands out a checkout should not be on the network by default.
+ *  4. **It serves from two roots.** `packages/harness/` holds the page and the
  *     compiled bundle; the repository root is exposed READ-ONLY under `/repo/`
  *     so the page can link to `docs/PARAMETERS.md` and the amendments it keeps
  *     citing. Nothing writes.
@@ -84,25 +88,71 @@ export function resolveRequest(
   const requested = rel === '' ? 'index.html' : rel;
 
   // Resolve first, then test the prefix. Testing for '..' in the string instead
-  // misses '%2e%2e', symlinks, and Windows separators.
+  // misses '%2e%2e', a doubled slash, and Windows separators.
   const resolved = path.resolve(root, requested);
-  const prefix = root.endsWith(path.sep) ? root : root + path.sep;
-  if (resolved !== root && !resolved.startsWith(prefix)) {
+  if (!contains(root, resolved)) {
     return { file: null, status: 403, reason: 'the request path leaves the served directory' };
+  }
+
+  // ...and then again on the CANONICAL path, because the check above is a check
+  // on a string. `path.resolve` does not follow symbolic links, so a link inside
+  // the served root that names a target outside it passes the prefix test and is
+  // read anyway. This is the second half of the guarantee the comment above used
+  // to claim on its own.
+  const realRoot = canonical(root);
+  let real: string;
+  try {
+    real = fs.realpathSync(resolved);
+  } catch {
+    return { file: null, status: 404, reason: `not found: ${decoded}` };
+  }
+  if (!contains(realRoot, real)) {
+    return { file: null, status: 403, reason: 'the request path leaves the served directory by a symbolic link' };
   }
 
   let stat: fs.Stats;
   try {
-    stat = fs.statSync(resolved);
+    stat = fs.statSync(real);
   } catch {
     return { file: null, status: 404, reason: `not found: ${decoded}` };
   }
   if (stat.isDirectory()) {
-    const index = path.join(resolved, 'index.html');
-    if (fs.existsSync(index)) return { file: index, status: 200, reason: 'ok' };
-    return { file: null, status: 403, reason: 'directory listing is not served' };
+    // The index is a separate file and can be a link of its own, so it gets the
+    // same treatment rather than inheriting its directory's clearance.
+    let index: string;
+    try {
+      index = fs.realpathSync(path.join(real, 'index.html'));
+    } catch {
+      return { file: null, status: 403, reason: 'directory listing is not served' };
+    }
+    if (!contains(realRoot, index)) {
+      return { file: null, status: 403, reason: 'the request path leaves the served directory by a symbolic link' };
+    }
+    return { file: index, status: 200, reason: 'ok' };
   }
-  return { file: resolved, status: 200, reason: 'ok' };
+  return { file: real, status: 200, reason: 'ok' };
+}
+
+/** Is `candidate` the directory `root` itself or something underneath it? */
+function contains(root: string, candidate: string): boolean {
+  if (candidate === root) return true;
+  const prefix = root.endsWith(path.sep) ? root : root + path.sep;
+  return candidate.startsWith(prefix);
+}
+
+/**
+ * The served root, canonicalised.
+ *
+ * The root can itself be reached through a link — a checkout under a symlinked
+ * home directory is the ordinary case, not an exotic one — and comparing a real
+ * path against an unresolved root would then refuse every legitimate file.
+ */
+function canonical(root: string): string {
+  try {
+    return fs.realpathSync(root);
+  } catch {
+    return root;
+  }
 }
 
 export function contentTypeOf(file: string): string {
@@ -143,6 +193,10 @@ export function createServer(harnessRoot: string = HERE, repoRoot: string = REPO
 
 function main(): void {
   const port = Number(process.env.PORT ?? 8173);
+  // Loopback by default -- see the note in `packages/web/serve.ts`. This one
+  // serves the repository under /repo/ by design, which makes the default
+  // matter more here rather than less.
+  const host = process.env.HOST ?? '127.0.0.1';
   if (!fs.existsSync(BUNDLE)) {
     process.stderr.write(
       `\npackages/harness: the browser bundle is missing.\n\n` +
@@ -152,9 +206,9 @@ function main(): void {
     );
   }
   const server = createServer();
-  server.listen(port, () => {
+  server.listen(port, host, () => {
     process.stdout.write(
-      `sphere-sim harness on http://localhost:${port}/\n` +
+      `sphere-sim harness on http://${host === '127.0.0.1' ? 'localhost' : host}:${port}/\n` +
         `  repository files are readable under /repo/ (docs/PARAMETERS.md, docs/AMENDMENTS.md)\n` +
         `  the headless half of the parity check: node --test "packages/harness/test/**/*.test.ts"\n`,
     );

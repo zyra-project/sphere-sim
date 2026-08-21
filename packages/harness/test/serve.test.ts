@@ -16,6 +16,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -62,6 +63,35 @@ test('traversal is refused, in every encoding that reaches the resolver', () => 
         `${attempt} escaped to ${r.file}`,
       );
     }
+  }
+});
+
+test('a symbolic link out of the served root is refused', () => {
+  // The string check passes for both of these -- neither path contains '..' and
+  // both resolve under the harness -- so this is the case `path.resolve` alone
+  // cannot see. Built in a scratch root rather than in the repository, because a
+  // committed symlink to /etc is a worse idea than the bug it would test.
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'serve-symlink-'));
+  const root = path.join(scratch, 'root');
+  const outside = path.join(scratch, 'outside');
+  fs.mkdirSync(root);
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'not yours\n');
+  fs.writeFileSync(path.join(root, 'index.html'), '<!doctype html>\n');
+  fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(root, 'escape.txt'));
+  fs.symlinkSync(outside, path.join(root, 'escape'));
+  // A link that stays inside is still served: the check must refuse the escape,
+  // not every link.
+  fs.writeFileSync(path.join(root, 'real.txt'), 'fine\n');
+  fs.symlinkSync(path.join(root, 'real.txt'), path.join(root, 'inside.txt'));
+
+  try {
+    assert.equal(resolveRequest('/escape.txt', root, root).status, 403);
+    assert.equal(resolveRequest('/escape/secret.txt', root, root).status, 403);
+    assert.equal(resolveRequest('/inside.txt', root, root).status, 200);
+    assert.equal(resolveRequest('/', root, root).status, 200);
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
   }
 });
 

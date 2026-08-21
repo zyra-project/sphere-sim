@@ -109,15 +109,29 @@ export interface Dispersion {
   values: number[];
 }
 
-function dispersion(values: number[]): Dispersion {
+/**
+ * The median, defined once.
+ *
+ * Exported because it was defined three times -- here, in the segmentation
+ * runner, and again inside its plot -- and the third copy took the UPPER of the
+ * two middle observations instead of their mean. At the odd seed counts
+ * experiment 4 uses those agree; at experiment 5's thirty they do not, so the
+ * figure drew one centre while the results file recorded another, and the
+ * write-up quoted the figure's. One definition, imported, cannot drift.
+ */
+export function medianOf(values: readonly number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
-  const median =
-    sorted.length === 0
-      ? NaN
-      : sorted.length % 2 === 1
-        ? sorted[mid]
-        : (sorted[mid - 1] + sorted[mid]) / 2;
+  return sorted.length === 0
+    ? NaN
+    : sorted.length % 2 === 1
+      ? sorted[mid]
+      : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function dispersion(values: number[]): Dispersion {
+  const sorted = [...values].sort((a, b) => a - b);
+  const median = medianOf(values);
   return { median, min: sorted[0] ?? NaN, max: sorted[sorted.length - 1] ?? NaN, values };
 }
 

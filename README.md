@@ -65,6 +65,11 @@ node packages/bench/src/validation.ts   # regenerate validation/index.html (read
 Node 22.18+ runs the TypeScript directly; there is no build step for anything
 but the browser bundle.
 
+Both servers bind loopback only. They read repository files under `/repo/`, so
+the default is deliberate; `HOST=0.0.0.0 npm run app` opens them to the network
+when that is what you want — a tablet beside the sphere, say — and the terminal
+then prints the address it actually bound rather than `localhost`.
+
 ## Three geometry facts this implementation must reproduce
 
 From PARAMETERS.md §4.2 and §4.3. They are counterintuitive, so they are

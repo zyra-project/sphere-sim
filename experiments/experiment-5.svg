@@ -60,8 +60,8 @@
 <text transform="translate(369.50,335) rotate(-38)" class="tick end">image-space</text>
 <line x1="72" y1="326" x2="412" y2="326" class="ax"/>
 <line x1="72" y1="326" x2="72" y2="144" class="ax"/>
-<line x1="72" y1="289.42" x2="412" y2="289.42" stroke="#1f5fa9" stroke-width="1.2" stroke-dasharray="2 3" opacity="0.85"/>
-<text x="76" y="285.42" class="tick" fill="#1f5fa9">no room: 25.5 mm</text>
+<line x1="72" y1="289.71" x2="412" y2="289.71" stroke="#1f5fa9" stroke-width="1.2" stroke-dasharray="2 3" opacity="0.85"/>
+<text x="76" y="285.71" class="tick" fill="#1f5fa9">no room: 24.9 mm</text>
 <line x1="114.50" y1="302.86" x2="114.50" y2="281.42" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
 <circle cx="114.50" cy="291.82" r="2" fill="#1f5fa9" opacity="0.32"/>
 <circle cx="114.50" cy="281.50" r="2" fill="#1f5fa9" opacity="0.32"/>
@@ -93,7 +93,7 @@
 <circle cx="114.50" cy="287.60" r="2" fill="#1f5fa9" opacity="0.32"/>
 <circle cx="114.50" cy="288.29" r="2" fill="#1f5fa9" opacity="0.32"/>
 <circle cx="114.50" cy="288.48" r="2" fill="#1f5fa9" opacity="0.32"/>
-<circle cx="114.50" cy="289.42" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="114.50" cy="289.71" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
 <line x1="199.50" y1="295.34" x2="199.50" y2="167.70" stroke="#b3261e" stroke-width="1" opacity="0.45"/>
 <circle cx="199.50" cy="295.34" r="2" fill="#b3261e" opacity="0.32"/>
 <circle cx="199.50" cy="224.75" r="2" fill="#b3261e" opacity="0.32"/>
@@ -125,7 +125,7 @@
 <circle cx="199.50" cy="208.07" r="2" fill="#b3261e" opacity="0.32"/>
 <circle cx="199.50" cy="174.02" r="2" fill="#b3261e" opacity="0.32"/>
 <circle cx="199.50" cy="216.07" r="2" fill="#b3261e" opacity="0.32"/>
-<circle cx="199.50" cy="227.46" r="3.4" fill="#ffffff" stroke="#b3261e" stroke-width="2"/>
+<circle cx="199.50" cy="228.20" r="3.4" fill="#ffffff" stroke="#b3261e" stroke-width="2"/>
 <line x1="284.50" y1="300.06" x2="284.50" y2="181.78" stroke="#c2521a" stroke-width="1" opacity="0.45"/>
 <circle cx="284.50" cy="291.33" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="284.50" cy="283.27" r="2" fill="#c2521a" opacity="0.32"/>
@@ -157,7 +157,7 @@
 <circle cx="284.50" cy="284.72" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="284.50" cy="238.56" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="284.50" cy="250.85" r="2" fill="#c2521a" opacity="0.32"/>
-<circle cx="284.50" cy="256.97" r="3.4" fill="#ffffff" stroke="#c2521a" stroke-width="2"/>
+<circle cx="284.50" cy="257.12" r="3.4" fill="#ffffff" stroke="#c2521a" stroke-width="2"/>
 <line x1="369.50" y1="304.32" x2="369.50" y2="280.99" stroke="#2e7d4f" stroke-width="1" opacity="0.45"/>
 <circle cx="369.50" cy="300.41" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="369.50" cy="284.41" r="2" fill="#2e7d4f" opacity="0.32"/>
@@ -189,7 +189,7 @@
 <circle cx="369.50" cy="287.72" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="369.50" cy="292.10" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="369.50" cy="288.76" r="2" fill="#2e7d4f" opacity="0.32"/>
-<circle cx="369.50" cy="288.83" r="3.4" fill="#ffffff" stroke="#2e7d4f" stroke-width="2"/>
+<circle cx="369.50" cy="289.10" r="3.4" fill="#ffffff" stroke="#2e7d4f" stroke-width="2"/>
 <text x="242.0" y="378" class="axlbl mid">condition (archetype 1, wall at 6 m)</text>
 <text transform="translate(24,235.0) rotate(-90)" class="axlbl mid">pose error, mm (log)</text>
 <text x="20" y="394" class="foot">Every dot is one rig draw, and the same thirty draws appear in every column — so a column is comparable to its neighbour draw by draw, not only in aggregate. The whiskers are the observed range, which is the point: the image-space column has no tail.</text>
@@ -279,7 +279,7 @@
 <circle cx="619.50" cy="172.16" r="2" fill="#b3261e" opacity="0.32"/>
 <circle cx="619.50" cy="174.02" r="2" fill="#b3261e" opacity="0.32"/>
 <circle cx="619.50" cy="171.60" r="2" fill="#b3261e" opacity="0.32"/>
-<circle cx="619.50" cy="172.13" r="3.4" fill="#ffffff" stroke="#b3261e" stroke-width="2"/>
+<circle cx="619.50" cy="172.15" r="3.4" fill="#ffffff" stroke="#b3261e" stroke-width="2"/>
 <line x1="704.50" y1="239.97" x2="704.50" y2="197.82" stroke="#c2521a" stroke-width="1" opacity="0.45"/>
 <circle cx="704.50" cy="231.84" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="704.50" cy="206.76" r="2" fill="#c2521a" opacity="0.32"/>
@@ -311,7 +311,7 @@
 <circle cx="704.50" cy="210.77" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="704.50" cy="222.71" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="704.50" cy="209.13" r="2" fill="#c2521a" opacity="0.32"/>
-<circle cx="704.50" cy="213.73" r="3.4" fill="#ffffff" stroke="#c2521a" stroke-width="2"/>
+<circle cx="704.50" cy="214.12" r="3.4" fill="#ffffff" stroke="#c2521a" stroke-width="2"/>
 <circle cx="789.50" cy="326.00" r="3" fill="#2e7d4f" opacity="0.9" stroke="#b3261e" stroke-width="1"/>
 <circle cx="789.50" cy="292.08" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="789.50" cy="326.00" r="3" fill="#2e7d4f" opacity="0.9" stroke="#b3261e" stroke-width="1"/>
@@ -403,7 +403,7 @@
 <circle cx="114.50" cy="597.08" r="2" fill="#1f5fa9" opacity="0.32"/>
 <circle cx="114.50" cy="609.11" r="2" fill="#1f5fa9" opacity="0.32"/>
 <circle cx="114.50" cy="606.78" r="2" fill="#1f5fa9" opacity="0.32"/>
-<circle cx="114.50" cy="596.34" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="114.50" cy="596.71" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
 <line x1="199.50" y1="613.37" x2="199.50" y2="470.55" stroke="#b3261e" stroke-width="1" opacity="0.45"/>
 <circle cx="199.50" cy="521.12" r="2" fill="#b3261e" opacity="0.32"/>
 <circle cx="199.50" cy="546.42" r="2" fill="#b3261e" opacity="0.32"/>
@@ -435,7 +435,7 @@
 <circle cx="199.50" cy="470.55" r="2" fill="#b3261e" opacity="0.32"/>
 <circle cx="199.50" cy="588.84" r="2" fill="#b3261e" opacity="0.32"/>
 <circle cx="199.50" cy="492.03" r="2" fill="#b3261e" opacity="0.32"/>
-<circle cx="199.50" cy="546.42" r="3.4" fill="#ffffff" stroke="#b3261e" stroke-width="2"/>
+<circle cx="199.50" cy="546.71" r="3.4" fill="#ffffff" stroke="#b3261e" stroke-width="2"/>
 <line x1="284.50" y1="610.65" x2="284.50" y2="563.65" stroke="#c2521a" stroke-width="1" opacity="0.45"/>
 <circle cx="284.50" cy="579.52" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="284.50" cy="571.26" r="2" fill="#c2521a" opacity="0.32"/>
@@ -467,7 +467,7 @@
 <circle cx="284.50" cy="591.26" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="284.50" cy="610.65" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="284.50" cy="589.58" r="2" fill="#c2521a" opacity="0.32"/>
-<circle cx="284.50" cy="596.01" r="3.4" fill="#ffffff" stroke="#c2521a" stroke-width="2"/>
+<circle cx="284.50" cy="596.04" r="3.4" fill="#ffffff" stroke="#c2521a" stroke-width="2"/>
 <line x1="369.50" y1="607.23" x2="369.50" y2="575.62" stroke="#2e7d4f" stroke-width="1" opacity="0.45"/>
 <circle cx="369.50" cy="584.89" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="369.50" cy="575.62" r="2" fill="#2e7d4f" opacity="0.32"/>
@@ -499,7 +499,7 @@
 <circle cx="369.50" cy="589.86" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="369.50" cy="590.57" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="369.50" cy="590.75" r="2" fill="#2e7d4f" opacity="0.32"/>
-<circle cx="369.50" cy="594.02" r="3.4" fill="#ffffff" stroke="#2e7d4f" stroke-width="2"/>
+<circle cx="369.50" cy="594.66" r="3.4" fill="#ffffff" stroke="#2e7d4f" stroke-width="2"/>
 <text x="242.0" y="678" class="axlbl mid">condition (long-throw, wall at 6 m)</text>
 <text transform="translate(24,535.0) rotate(-90)" class="axlbl mid">pose error, mm (log)</text>
 <text x="20" y="694" class="foot">The causal test. The geometric segmentation consults the nominal rig, so a nominal this wrong should cost it; the image-space one never reads a rig, so it should not notice. Falsifiers G6 and G7 are exactly these two predictions and are judged on the share of seeds meeting THIS archetype’s own clean bar.</text>
