@@ -10,20 +10,26 @@ name: Pages
 # is a real hazard and it is why this list is short and explicit rather than
 # `branches: ['**']`.
 #
-# It does not apply while `main` is empty: every commit this project has is on the
-# development branch below, and PR #1 is the project rather than a change to it.
-# Until that merges there is nothing on main for a branch build to clobber, and
-# the alternative — no way to look at the page before merging the commit that
-# creates it — is worse.
+# It does not apply yet. `main` holds three files — the README, PARAMETERS.md and
+# the brief — and NOT this workflow, so main cannot publish anything: every deploy
+# the live URL has ever had came from the development branch below. There is
+# nothing on main for a branch build to clobber, and the alternative — no way to
+# look at the page before merging the commit that creates it — is worse.
 #
-# The moment it DOES apply, the `gate` step below stops branch deploys on its
-# own. It asks whether `main` has any commit; once one does, a push to any other
-# branch builds and uploads the artifact but does not deploy. That is deliberately
+# The moment it DOES apply, the `gate` step below stops branch deploys on its own.
+# It asks whether `main` carries THIS FILE. Once it does, main can deploy for
+# itself, a branch deploy is something that overwrites it, and a push to any other
+# branch builds and uploads the artifact without deploying. That is deliberately
 # not a comment saying 'delete this later': a review pointed out that leaving the
 # trigger here lets a later branch push overwrite production, and a rule the
 # workflow enforces is worth more than a rule somebody has to remember. A
-# `workflow_dispatch` from a branch still deploys, because that is a person
-# asking for it on purpose.
+# `workflow_dispatch` from a branch still deploys, because that is a person asking
+# for it on purpose.
+#
+# The first version of this gate asked whether `main` had any COMMIT, which was
+# wrong the day it was written: main already had three, so it would have switched
+# branch previews off immediately while nothing on main could replace them. What
+# makes a branch deploy dangerous is main being able to deploy, not main existing.
 on:
   push:
     branches:
@@ -51,9 +57,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Self-expiring: while `main` is unborn a branch push is the only way to
-      # see the page at all, and the first commit on `main` turns that off
-      # without anybody editing this file.
+      # Self-expiring: while `main` cannot publish, a branch push is the only way
+      # to see the page at all; the moment this file lands on `main` that stops,
+      # without anybody editing anything.
       - name: May this ref deploy?
         id: gate
         run: |
@@ -61,12 +67,13 @@ jobs:
             echo "deploy=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git ls-remote --exit-code --heads origin main > /dev/null 2>&1; then
-            echo "main exists, so a push to ${{ github.ref_name }} builds but does not deploy."
+          git fetch --depth=1 origin main || true
+          if git cat-file -e FETCH_HEAD:.github/workflows/pages.yml 2> /dev/null; then
+            echo "main publishes for itself now, so a push to ${{ github.ref_name }} builds but does not deploy."
             echo "Run this workflow manually from the branch if a preview is genuinely wanted."
             echo "deploy=false" >> "$GITHUB_OUTPUT"
           else
-            echo "main has no commits yet; nothing on the live URL for this build to overwrite."
+            echo "main carries no Pages workflow, so nothing on the live URL came from it."
             echo "deploy=true" >> "$GITHUB_OUTPUT"
           fi
 
