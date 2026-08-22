@@ -797,11 +797,26 @@ function slider(o: SliderOptions): HTMLElement {
     // re-renders the panel, and a listener on a detached node never fires again;
     // that is what made a drag stop dead after the first step while a click
     // carried on working.
+    //
+    // One pointer owns the drag, and the listeners below answer only to it. They
+    // used to answer to any pointer anywhere in the window, which on a
+    // touchscreen — where the settings sheet sits over the sphere — meant a
+    // second finger orbiting the ball wrote its own clientX into the slider, and
+    // that finger's `pointerup` tore the listeners down and set
+    // `sliderDragging` false while the reader's finger was still on the track.
+    // The drag then went dead mid-gesture and `renderControls` rebuilt the panel
+    // underneath it, which reads as the page freezing rather than as a bug.
+    if (sliderDragging) return;
     e.preventDefault();
+    const owner = e.pointerId;
     sliderDragging = true;
     setFromClientX(e.clientX);
-    const move = (ev: PointerEvent): void => setFromClientX(ev.clientX);
-    const up = (): void => {
+    const move = (ev: PointerEvent): void => {
+      if (ev.pointerId !== owner) return;
+      setFromClientX(ev.clientX);
+    };
+    const up = (ev: PointerEvent): void => {
+      if (ev.pointerId !== owner) return;
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
@@ -1027,6 +1042,8 @@ function stopVideo(): void {
   lastVideoTime = -1;
   if (gl) releaseVideoTarget(gl);
   contentKey = '';
+  // There is no video left to have failed to snapshot.
+  snapshotError = '';
 }
 
 /**
@@ -1136,6 +1153,12 @@ function snapshotVideo(): void {
     customImage = frame;
     videoFrameSeq++;
     customName = `${customName.split('#')[0]}#${videoFrameSeq}`;
+    // Cleared on success. It was written once and released nowhere, so a single
+    // transient read-back failure pinned a present-tense warning — "the readout
+    // and the parity check are describing an older frame" — under the content
+    // chips for the life of the page, including after the video was removed and
+    // there was no older frame to describe.
+    snapshotError = '';
   } catch (err) {
     // A read-back that fails must not take the page with it: the sphere is still
     // being drawn from a texture that works.
@@ -1316,7 +1339,10 @@ function postModel(fine: boolean): void {
   // Not until a real frame has been through the GPU. Until then the model holds
   // the black placeholder `loadCustomVideo` left it, and a comparison against
   // whatever the texture happens to contain is a disagreement about nothing.
-  if (fine && !(videoActive() && videoFrameSeq === 0)) {
+  // Not against a lost context either. The read-back would come back as the
+  // frozen frame or as zeros, and `judgeParity` would report the two renderers
+  // disagreeing — which would be a confident statement about the wrong thing.
+  if (fine && !contextLost && !(videoActive() && videoFrameSeq === 0)) {
     const camera = buildViewer(state.settings, PARITY_WIDTH, PARITY_HEIGHT, viewShiftFrac());
     req.parity = {
       width: PARITY_WIDTH,
@@ -1672,7 +1698,17 @@ function ensureContent(image: { width: number; height: number; data: Float32Arra
   // which is a tenth of a second behind. Uploading it would drop the sphere back
   // to the last settled frame on every draw, which reads as a stutter nobody can
   // account for.
-  if (videoActive()) return;
+  if (videoActive()) {
+    // The key has to go with it. The video decode pass writes the SAME texture
+    // this key describes, so leaving the key naming the still that was there
+    // before means switching back to that still is a cache HIT: no re-upload,
+    // and the sphere keeps showing the video's last decoded frame while the chip
+    // row says Blue Marble. Every other place that invalidates the key does it
+    // by hand — loadMarble, loadCustomImage, stopVideo, loadCustomVideo, Remove
+    // — and this path was the one that was missed.
+    contentKey = '';
+    return;
+  }
   const key = `${state.settings.gridDeg}|${state.settings.content}|${state.settings.gridOn}|${suppliedName()}`;
   if (gl && key !== contentKey) {
     // The decode target holds the content texture at the VIDEO's raster and a
@@ -2294,17 +2330,23 @@ function installSection(): HTMLElement[] {
           // across the room and switched the sphere off a dropped-in image, so
           // "restore Boulder" after walking in to look at a seam threw away two
           // things nobody asked it to touch.
-          state.settings = {
-            ...p.s,
-            nudge: p.s.nudge.map((n) => ({ ...n })),
-            viewAzDeg: state.settings.viewAzDeg,
-            viewElDeg: state.settings.viewElDeg,
-            viewRangeM: state.settings.viewRangeM,
-            viewFovDeg: state.settings.viewFovDeg,
-            viewExposure: state.settings.viewExposure,
-            content: state.settings.content,
-            gridOn: state.settings.gridOn,
-          };
+          // Carried by GROUP, not by a hand-written list. The list held seven of
+          // the ten keys `CONTROLS` puts in group 'view', so picking a preset
+          // silently reset the graticule spacing, the edge smoothing and the
+          // black lift — under a caption promising it leaves the viewpoint and
+          // what is playing alone. `matchesInstall` skips exactly the view keys,
+          // so the chip lit up as matching while having changed three of them.
+          let next: Settings = { ...p.s, nudge: p.s.nudge.map((n) => ({ ...n })) };
+          for (const c of CONTROLS) {
+            if (c.group !== 'view') continue;
+            // Through `withSetting`, because some of these are bounded against
+            // keys the preset DOES change. `viewRangeM`'s floor tracks
+            // `sphereDiaIn`: carried across verbatim, a range that was legal
+            // beside a small ball survives beside a bigger one and the eye ends
+            // up inside the shell, which renders as the room seen from within.
+            next = withSetting(next, c.key, state.settings[c.key]);
+          }
+          state.settings = next;
           clearCalibration();
           markDirty();
           renderControls();
@@ -2439,7 +2481,9 @@ function roomControls(): HTMLElement[] {
         },
         {
           label: 'Room behind it',
-          title: 'A wall at 6 m, a floor, and a 14 ft ceiling. Both constants are ASSUME.',
+          // The wall distance is a slider now, so stating it as a constant here
+          // would go stale the first time anybody moved it.
+          title: `A wall at ${state.settings.wallRadiusM.toFixed(2)} m, a floor, and the ceiling from the Install tab. Both constants are ASSUME.`,
           on: state.settings.roomSpill === 1,
           onPick: () => {
             if (state.settings.roomSpill === 1) return;
@@ -2457,6 +2501,14 @@ function roomControls(): HTMLElement[] {
         'not a prediction of your gallery.',
     ),
   );
+  // Only with the room on, the way Grid spacing appears only with the graticule
+  // on: with the room off nothing reads it. It was declared with a range, a unit
+  // and 250 words of help and then laid out by no panel at all — `controlsFor`
+  // is called once, for the install, lens and error groups, and `controlsByKey`
+  // never names it — so `r_wall` was pinned at 6.0 m and PARAMETERS.md's own
+  // sweep of it (§8 item 19; experiment 4 swept 4, 6 and 9 m) could not be
+  // reproduced by hand on the page that exists to make it reproducible.
+  if (state.settings.roomSpill === 1) out.push(...controlsByKey(['wallRadiusM']));
   out.push(
     el('span', { className: 'lab', textContent: 'Which pixels the solver may use' }),
   );
@@ -3330,6 +3382,16 @@ function renderActions(): void {
     state.settings = { ...PERFECT_PRESET, nudge: PERFECT_PRESET.nudge.map((n) => ({ ...n })) };
     state.overlay = 'none';
     state.highlight = -1;
+    // The preset carries Boulder's desktop 71°, which across a 390x844 screen is
+    // the 114° vertical frustum `portraitFovDeg` exists to prevent — and Reset,
+    // whose whole job is to put everything back, was the one writer of the key
+    // that ignored it. It also poisoned the refit: `fitFirstScreen` overwrites
+    // only while the value is still the one it wrote, so installing a foreign
+    // one made it give up ownership for the life of the page and rotating the
+    // phone stopped fixing anything. Clearing `fittedFov` hands ownership back
+    // and re-fits for whatever viewport is actually there.
+    fittedFov = null;
+    fitFirstScreen();
     forgetCalibration();
     renderControls();
   });
@@ -4500,6 +4562,22 @@ function factsList(facts: readonly RigFact[]): HTMLElement {
 function renderReadout(): void {
   readoutEl.replaceChildren();
 
+  if (contextLost) {
+    const box = el('div');
+    box.append(el('p', { className: 'eyebrow-sm', textContent: 'The picture has stopped' }));
+    const p = el('p', {
+      className: 'note',
+      textContent:
+        'The browser took the GPU context away — a driver reset, or the tab being put to sleep. ' +
+        'The picture on screen is the last frame drawn and is no longer following the controls. ' +
+        'Every number below is still live: they are computed on the CPU in a worker, which is ' +
+        'unaffected. The page asks for the context back and redraws itself when it gets one.',
+    });
+    p.style.color = 'var(--bad)';
+    box.append(p);
+    readoutEl.append(box);
+  }
+
   if (lastError) {
     const box = el('div');
     box.append(el('p', { className: 'eyebrow-sm', textContent: 'Something failed' }));
@@ -5243,7 +5321,53 @@ function portraitFovDeg(): number {
 // Boot
 // ---------------------------------------------------------------------------
 
+/**
+ * True between `webglcontextlost` and the rebuild that answers it.
+ *
+ * A lost context is not an error anything throws: every GL call afterwards is a
+ * silent no-op, and with `preserveDrawingBuffer: true` the compositor keeps the
+ * last frame on screen. So the page looks alive — sliders move, the worker is
+ * CPU-only and keeps answering — while the picture is frozen. And the parity
+ * check, which reads pixels back off that dead context, reported the frozen
+ * frame as a MODEL DISAGREEMENT: the page's most confident sentence, about the
+ * one thing that had not gone wrong.
+ */
+let contextLost = false;
+
+function installContextLossHandling(): void {
+  // `preventDefault` is not optional bookkeeping: per the WebGL spec the browser
+  // only attempts restoration when the lost handler calls it. Without a listener
+  // at all — which is what this page had — the default action stands,
+  // `webglcontextrestored` never fires, and a reload is the only way back.
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    contextLost = true;
+    gl = null;
+    renderReadout();
+  });
+  canvas.addEventListener('webglcontextrestored', () => {
+    try {
+      gl = createDisplayGl(canvas);
+    } catch (err) {
+      fatal(
+        `The GPU context was lost and could not be rebuilt: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
+    contextLost = false;
+    // Every GPU-side object went with the context, so nothing may be assumed
+    // still uploaded. Clearing the key forces the content back up on the next
+    // pass, the same way `stopVideo` does.
+    contentKey = '';
+    lastVideoTime = -1;
+    markDirty();
+    renderReadout();
+    requestModel(true);
+  });
+}
+
 function boot(): void {
+  installContextLossHandling();
   try {
     gl = createDisplayGl(canvas);
   } catch (err) {

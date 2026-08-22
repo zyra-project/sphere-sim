@@ -1,5 +1,21 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/**
+ * `web/main.ts` as text.
+ *
+ * A control is DECLARED in settings.ts and LAID OUT in main.ts, and the test
+ * below is about the second half. Reading the source is the same trick
+ * glsl.test.ts uses on gl.ts, for the same reason: there is no DOM here, and the
+ * question is which call sites exist rather than what they render.
+ */
+const MAIN_SOURCE = fs.readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'main.ts'),
+  'utf8',
+);
 
 import {
   BOULDER_PRESET,
@@ -49,6 +65,155 @@ test('every control drives a real setting, and every setting has a control', () 
     assert.ok(spec.key in noNudge(), `nudge control ${spec.key} drives nothing`);
     assert.ok(spec.help.length > 30, `nudge control ${spec.key} has no explanation`);
   }
+});
+
+test('every declared control is laid out by some panel', () => {
+  // The test above catches a SETTING with no control. This one catches the other
+  // half, which is what actually happened: `wallRadiusM` was declared with a
+  // range, a unit and 250 words of help, in group 'capture' — and `controlsFor`
+  // is called once, for the install, lens and error groups, while
+  // `controlsByKey` never named it. So `r_wall` was pinned at its default of
+  // 6.0 m, and PARAMETERS.md §8 item 19's sweep of it could not be reproduced by
+  // hand on the page that exists to make it reproducible. Nothing looked broken;
+  // that is the whole difficulty.
+  const laidOut = new Set<string>();
+
+  // `controlsFor(groups, skip)` — every control in those groups except the skips.
+  for (const m of MAIN_SOURCE.matchAll(/controlsFor\(\s*(\[[^\]]*\])\s*(?:,\s*(\[[^\]]*\]))?/g)) {
+    const groups = [...m[1].matchAll(/'([^']+)'/g)].map((g) => g[1]);
+    const skip = new Set([...(m[2] ?? '').matchAll(/'([^']+)'/g)].map((g) => g[1]));
+    for (const c of CONTROLS) {
+      if (groups.includes(c.group) && !skip.has(c.key)) laidOut.add(c.key);
+    }
+  }
+  // `controlsByKey([...])` — named one at a time.
+  for (const m of MAIN_SOURCE.matchAll(/controlsByKey\(\s*\[([^\]]*)\]/g)) {
+    for (const k of m[1].matchAll(/'([^']+)'/g)) laidOut.add(k[1]);
+  }
+  // A chip row is a control too: it does not render a slider, it calls
+  // `setSetting` with the key.
+  for (const m of MAIN_SOURCE.matchAll(/setSetting\(\s*'([^']+)'/g)) laidOut.add(m[1]);
+
+  assert.ok(laidOut.size > 10, 'the source scan found almost nothing, so it has stopped working');
+  for (const c of CONTROLS) {
+    assert.ok(
+      laidOut.has(c.key),
+      `control '${c.key}' ('${c.label}') is declared and no panel lays it out`,
+    );
+  }
+});
+
+test('every option a discrete control offers can actually be chosen', () => {
+  // `resolution` declared `max: 3` while RESOLUTIONS grew to five entries, so
+  // `coerce` clamped the last chip away: it was rendered, clickable, and
+  // unreachable — clicking it selected 3840x2160 instead. The square chip is the
+  // one added to demonstrate A-03, that §7's off-sphere-flux gate is unreachable
+  // on 16:9 and reachable on a square chip, and the readout's advice for that
+  // failing row is "A squarer chip".
+  for (const c of CONTROLS) {
+    if (!c.options) continue;
+    assert.equal(
+      c.max,
+      c.options.length - 1,
+      `'${c.key}' offers ${c.options.length} options and its range stops at ${c.max}`,
+    );
+    for (let i = 0; i < c.options.length; i++) {
+      assert.equal(coerce(c.key, i), i, `'${c.key}' cannot be set to option ${i}`);
+    }
+  }
+});
+
+test('picking an install preset keeps every view-group setting, not most of them', () => {
+  // The chip's own caption says picking a preset "leaves both alone" — the
+  // viewpoint and what is playing. The call site carried seven of the ten keys
+  // `CONTROLS` puts in group 'view', so the graticule spacing, the edge
+  // smoothing and the black lift were silently reset, and `matchesInstall`
+  // skips exactly those keys, so the chip lit up as matching while having
+  // changed three of them.
+  //
+  // The scan is over the source because there is no DOM here: the requirement
+  // is that the call site is driven by the group rather than by a list, which is
+  // what stops the eleventh view key being forgotten.
+  const pick = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('A preset is an INSTALL'),
+    MAIN_SOURCE.indexOf('clearCalibration();', MAIN_SOURCE.indexOf('A preset is an INSTALL')),
+  );
+  assert.ok(pick.length > 0, 'the preset chip has moved; this test can no longer find it');
+  assert.ok(
+    /c\.group !== 'view'/.test(pick),
+    'the preset chip carries view settings by a hand-written list rather than by group',
+  );
+  // And through `withSetting`, because `viewRangeM`'s floor tracks `sphereDiaIn`
+  // and the preset changes `sphereDiaIn`. Carried verbatim, a range that was
+  // legal beside a 40-inch ball survives beside a 68-inch one and the eye ends
+  // up inside the shell.
+  assert.ok(
+    /withSetting\(next, c\.key/.test(pick),
+    'the preset chip writes view settings without re-applying their live bounds',
+  );
+});
+
+test('a slider drag belongs to one pointer', () => {
+  // The handler put `pointermove`/`pointerup` on `window` — correctly, because
+  // the track node is replaced whenever the panel re-renders — but with no
+  // reference to which pointer started the drag. On a touchscreen the settings
+  // sheet sits over the sphere, so a second finger orbiting the ball wrote its
+  // own clientX into the slider, and that finger's `pointerup` tore the
+  // listeners down and set `sliderDragging` false while the reader's finger was
+  // still on the track. The drag went dead mid-gesture and `renderControls`
+  // rebuilt the panel underneath it, which reads as the page freezing.
+  const handler = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf("track.addEventListener('pointerdown'"),
+    MAIN_SOURCE.indexOf("window.addEventListener('pointercancel', up);"),
+  );
+  assert.ok(handler.length > 0, 'the slider drag handler has moved');
+  assert.ok(
+    /const owner = e\.pointerId/.test(handler),
+    'the drag does not record which pointer owns it',
+  );
+  assert.ok(
+    /ev\.pointerId !== owner/.test(handler),
+    'the move and up listeners answer to any pointer in the window',
+  );
+  assert.ok(
+    /if \(sliderDragging\) return;/.test(handler),
+    'a second pointerdown can register a second set of listeners on the same track',
+  );
+});
+
+test('Reset re-fits the field of view instead of installing the desktop one', () => {
+  // `PERFECT_PRESET.viewFovDeg` is Boulder's desktop 71, which across a 390x844
+  // screen is the 114-degree vertical frustum `portraitFovDeg` exists to
+  // prevent. Every other writer of that key respects it — the viewpoint chips
+  // and `fitFirstScreen` — and Reset, whose whole job is to put everything back,
+  // was the one that did not. It also poisoned the refit: `fitFirstScreen`
+  // overwrites only while the value is still the one it wrote, so installing a
+  // foreign one gave up ownership for the life of the page and rotating the
+  // phone stopped fixing anything.
+  const handler = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf("const reset = el('button'"),
+    MAIN_SOURCE.indexOf('actionsEl.append(reset);'),
+  );
+  assert.ok(handler.length > 0, 'the Reset button has moved');
+  assert.ok(/PERFECT_PRESET/.test(handler), 'Reset no longer installs the preset at all');
+  assert.ok(
+    /fittedFov = null/.test(handler) && /fitFirstScreen\(\)/.test(handler),
+    'Reset installs a field of view without re-fitting it to the viewport',
+  );
+});
+
+test('the standing distance stays outside the ball when the ball changes size', () => {
+  // The rule `withSetting` enforces, checked at the range the preset chip walks
+  // between: 40 inches is the smallest ball and 68 the preset's, so a camera
+  // legal at the first must be pushed out at the second rather than left inside.
+  const close = withSetting({ ...BOULDER_PRESET, sphereDiaIn: 40 }, 'viewRangeM', 0.6);
+  assert.ok(close.viewRangeM < 0.96, 'the fixture is not close enough to prove anything');
+  const grown = withSetting(close, 'sphereDiaIn', 68);
+  const radiusM = (68 * 0.0254) / 2;
+  assert.ok(
+    grown.viewRangeM > radiusM,
+    `the eye is ${(radiusM - grown.viewRangeM).toFixed(3)} m inside a ${radiusM.toFixed(3)} m sphere`,
+  );
 });
 
 test('every projector has a tint, and they are distinct', () => {

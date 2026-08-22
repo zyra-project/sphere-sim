@@ -109,6 +109,49 @@ test('the same rig at 1024x768 does not', () => {
   assert.ok(mm > 1, `expected over the gate at 1024x768; got ${mm.toFixed(3)} mm`);
 });
 
+test('the projector pixel is the on-axis one, not the average across the raster', () => {
+  // A rectilinear lens is linear in TANGENT, so its pixels are not equal in
+  // angle across the raster and `fov / resX` is their average. The pixel this
+  // fact is about is the widest of them — the on-axis one, which lands at the
+  // sub-projector point the fact names.
+  //
+  // Checked against the identity rather than against a remembered number: the
+  // footprint is the half-width the frustum subtends at the near surface,
+  // divided by half the columns.
+  for (const s of [
+    BOULDER_PRESET,
+    { ...BOULDER_PRESET, sphereDiaIn: 130, distanceM: 4.32 },
+    { ...BOULDER_PRESET, sphereDiaIn: 40, distanceM: 7.2 },
+    { ...BOULDER_PRESET, resolution: 0 },
+  ]) {
+    const rig = buildWorld(s).truthRig;
+    const mm = pixelFootprintMm(rig);
+    const worst = rig.projectors.reduce((acc, p) => {
+      const throwM =
+        Math.hypot(p.pose.position.x, p.pose.position.y, p.pose.position.z) - rig.sphere.radiusM;
+      const halfWidthM = Math.tan(((p.intrinsics.fovHDeg / 2) * Math.PI) / 180) * throwM;
+      return Math.max(acc, (halfWidthM / (p.intrinsics.resX / 2)) * 1000);
+    }, 0);
+    assert.ok(
+      Math.abs(mm - worst) < 1e-9,
+      `${mm.toFixed(4)} mm against the frustum's own ${worst.toFixed(4)} mm`,
+    );
+  }
+
+  // And the case where the two readings disagree about the verdict, which is
+  // what makes this worth a test rather than a comment: a 130-inch ball at
+  // 4.32 m read "under the 1 mm gate" for a pixel that lands over it.
+  const big = buildWorld({ ...BOULDER_PRESET, sphereDiaIn: 130, distanceM: 4.32 });
+  const px = pixelFootprintMm(big.truthRig);
+  assert.ok(px > 1, `expected over the 1 mm gate; got ${px.toFixed(4)} mm`);
+  const average = big.truthRig.projectors.reduce((acc, p) => {
+    const throwM =
+      Math.hypot(p.pose.position.x, p.pose.position.y, p.pose.position.z) - big.truthRig.sphere.radiusM;
+    return Math.max(acc, (((p.intrinsics.fovHDeg * Math.PI) / 180 / p.intrinsics.resX) * throwM) * 1000);
+  }, 0);
+  assert.ok(average < 1, 'the average reading no longer disagrees, so this fixture proves nothing');
+});
+
 test('the d_proj ambiguity fact appears at Boulder and is absent at the spec', () => {
   const boulder = metricsAt(BOULDER_PRESET);
   const spec = metricsAt(SPEC_PRESET);

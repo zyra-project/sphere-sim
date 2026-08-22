@@ -209,17 +209,30 @@ export const LK935_THROW_MAX = 2.18;
  * Distance between two adjacent projector pixels where they land on the sphere,
  * at the sub-projector point.
  *
- * The angular pitch times the throw distance to the near surface. It is a
+ * The ON-AXIS pitch times the throw distance to the near surface. It is a
  * geometric identity, not a model: no coverage, no blend, no transfer. It is
  * here rather than in `sim` because it is a presentation convenience — `sim`'s
  * grid metric already measures the thing that matters — and because it is the
  * one number a visitor asks for by name.
+ *
+ * `2 * tan(fov / 2) / resX`, not `fov / resX`. Every lens in this project is
+ * rectilinear — linear in TANGENT, not in angle: `optics.ts` sets
+ * `fx = resX / 2 / halfMinor` so that `fovHDeg = 2 * atan(resX / 2 / fx)` — so
+ * the pixels are not equal in angle across the raster and `fov / resX` is their
+ * AVERAGE. The one this fact is about is the widest of them: the on-axis pixel,
+ * which is the one that lands at the sub-projector point.
+ *
+ * The average understates it by `2 * tan(t/2) / t`, which is 2.8% at Boulder's
+ * geometry and 24% at the far corner of the sphere-diameter and distance
+ * sliders. That is enough to change the answer: at a 130-inch ball 4.32 m out
+ * the fact read "0.90 mm on the sphere / under the 1 mm gate" for a pixel that
+ * lands 1.04 mm away.
  */
 export function pixelFootprintMm(rig: RigCalibration): number {
   let worst = 0;
   for (const p of rig.projectors) {
     const lensDist = Math.hypot(p.pose.position.x, p.pose.position.y, p.pose.position.z);
-    const pitch = (p.intrinsics.fovHDeg * DEG2RAD) / p.intrinsics.resX;
+    const pitch = (2 * Math.tan((p.intrinsics.fovHDeg * DEG2RAD) / 2)) / p.intrinsics.resX;
     worst = Math.max(worst, pitch * Math.max(0.01, lensDist - rig.sphere.radiusM) * 1000);
   }
   return worst;

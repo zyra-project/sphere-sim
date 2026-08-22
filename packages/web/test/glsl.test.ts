@@ -39,6 +39,7 @@ import { buildViewer, buildWorld } from '../src/rigs.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const GL_SOURCE = fs.readFileSync(path.join(HERE, '..', 'web', 'gl.ts'), 'utf8');
+const MAIN_SOURCE = fs.readFileSync(path.join(HERE, '..', 'web', 'main.ts'), 'utf8');
 
 test('PARAMETERS.md §2 caps a rig at four projectors and the shader is sized for exactly that', () => {
   assert.equal(MAX_PROJECTORS, 4);
@@ -556,6 +557,85 @@ test('on a shifted frame the pick follows the picture, not the raw screen point'
       'the shifted frame still picks at the unshifted point, so the term is being ignored',
     );
   }
+});
+
+test('a video hands the content texture back rather than leaving a stale key behind', () => {
+  // `ensureContent` returns early while a video is playing, because the decode
+  // pass owns the texture and re-uploading the model's snapshot would stutter.
+  // It returned WITHOUT touching `contentKey`, and the decode pass writes the
+  // same texture the key describes — so the key went on naming a still that was
+  // no longer in the texture. Switch to another content and back and the second
+  // switch away is a cache HIT: no re-upload, and the sphere keeps showing the
+  // video's last decoded frame under a chip row saying Blue Marble, with every
+  // number and every projector preview computed from the still.
+  const fn = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function ensureContent('),
+    MAIN_SOURCE.indexOf('function ensureContent(') + 1600,
+  );
+  const early = fn.slice(fn.indexOf('if (videoActive())'), fn.indexOf('const key ='));
+  assert.ok(early.length > 0, 'ensureContent no longer has a video early-out');
+  assert.ok(
+    /contentKey = ''/.test(early),
+    'the video early-out leaves the content key naming a still the texture no longer holds',
+  );
+});
+
+test('the video snapshot warning is released, not latched', () => {
+  // Written in one place and cleared nowhere, so one transient read-back failure
+  // pinned a present-tense sentence — "the readout and the parity check are
+  // describing an older frame" — under the content chips for the life of the
+  // page, including with no video on it at all.
+  const writes = [...MAIN_SOURCE.matchAll(/snapshotError = /g)].length;
+  assert.ok(writes >= 3, `snapshotError is assigned ${writes} times; it needs a release path`);
+  const snap = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function snapshotVideo('),
+    MAIN_SOURCE.indexOf('function snapshotVideo(') + 900,
+  );
+  const success = snap.slice(0, snap.indexOf('} catch'));
+  assert.ok(
+    /snapshotError = ''/.test(success),
+    'a successful snapshot does not clear the warning left by a failed one',
+  );
+});
+
+test('a lost GPU context is asked back, and never read as a model disagreement', () => {
+  // A lost context throws nothing: every GL call afterwards is a silent no-op,
+  // and `preserveDrawingBuffer: true` leaves the last frame on screen, so the
+  // page looks alive while the picture is frozen. Three separate things were
+  // missing and each has its own consequence.
+  //
+  // Recoverability: per the WebGL spec the browser only attempts restoration
+  // when the lost handler calls `preventDefault`. With no listener at all the
+  // default stands, `webglcontextrestored` never fires, and a reload is the only
+  // way back.
+  assert.ok(
+    /webglcontextlost/.test(MAIN_SOURCE),
+    'nothing listens for the context being lost',
+  );
+  const lost = MAIN_SOURCE.slice(MAIN_SOURCE.indexOf("addEventListener('webglcontextlost'"));
+  assert.ok(
+    /preventDefault\(\)/.test(lost.slice(0, 400)),
+    'the lost handler does not call preventDefault, so the browser will not restore',
+  );
+  assert.ok(
+    /webglcontextrestored/.test(MAIN_SOURCE),
+    'nothing rebuilds the context when the browser offers it back',
+  );
+  // The rebuild has to re-upload: every GPU object went with the context.
+  const restored = MAIN_SOURCE.slice(MAIN_SOURCE.indexOf("addEventListener('webglcontextrestored'"));
+  assert.ok(
+    /contentKey = ''/.test(restored.slice(0, 700)),
+    'the rebuild does not invalidate the uploaded content',
+  );
+
+  // Honesty: the parity check reads pixels back off the context. Against a dead
+  // one it compares a frozen frame with a live CPU render and reports the two
+  // renderers disagreeing — the page's most confident sentence, about the one
+  // thing that had not gone wrong.
+  assert.ok(
+    /contextLost && !\(videoActive\(\)/.test(MAIN_SOURCE),
+    'a parity comparison can still be requested against a lost context',
+  );
 });
 
 test('the viewer lens shift moves the frame, not the aim', () => {

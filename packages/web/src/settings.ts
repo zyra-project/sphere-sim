@@ -855,7 +855,16 @@ export const CONTROLS: readonly ControlSpec[] = [
     section: '§3.1',
     klass: 'CFG',
     min: 0,
-    max: 3,
+    // Derived, exactly as `viewSamples` derives its own from VIEW_SAMPLE_GRIDS,
+    // and for the reason this one did not: it was hard-coded at 3 while
+    // RESOLUTIONS grew to five entries, so `coerce` clamped the square chip away.
+    // It was rendered, clickable, and unreachable — clicking it selected
+    // 3840x2160 instead — and the square chip is the entry added to demonstrate
+    // A-03, that §7's 52% off-sphere-flux gate is unreachable on 16:9 (0.5758,
+    // FAIL) and reachable on a square chip (0.2459, pass). The readout's advice
+    // for that failing row is "A squarer chip", which was the one option the
+    // panel would not let anybody take.
+    max: RESOLUTIONS.length - 1,
     step: 1,
     unit: '',
     decimals: 0,
@@ -1145,7 +1154,7 @@ export const CONTROLS: readonly ControlSpec[] = [
     decimals: 2,
     group: 'capture',
     help:
-      'Sphere axis to the wall, and the ceiling slider above it is the other half of the same ' +
+      'Sphere axis to the wall, and the Ceiling height slider is the other half of the same ' +
       'room. Both are read by the render AND by the capture, so the room you can see is the room ' +
       'being photographed — not two constants that happen to agree. Class ASSUME: nobody has ' +
       'measured a gallery, and PARAMETERS.md §8 item 19 is the tape measure that would. A tighter ' +
