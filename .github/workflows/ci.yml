@@ -23,6 +23,14 @@ jobs:
       - name: Boundary isolation (A/B share no math)
         run: npm run lint:boundary
 
+      # The experiment pages report numbers that live in the results files, and
+      # three separate times a page and its file disagreed -- once for a whole
+      # commit history, because nothing compared them. The tables are generated
+      # now, and this is the step that makes that mean something: a results file
+      # that moves without its page moving is a red build.
+      - name: Experiment pages match their results files
+        run: npm run check:docs
+
       - name: Typecheck
         run: npm run typecheck
 
