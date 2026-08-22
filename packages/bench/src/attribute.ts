@@ -179,32 +179,103 @@ export function attributeCenterHeightFailure(
 ): GateAttribution | null {
   const failing = results.filter((r) => failedScenarioIds.includes(r.scenario.id));
   if (failing.length === 0) return null;
-  const unobserved = failing.filter((r) => r.recovery?.centerHeight.observed === false);
-  const observed = failing.filter((r) => r.recovery?.centerHeight.observed !== false);
+
+  // The unobserved scenarios are NOT among the failing ones, and this function
+  // used to look for them there.
+  //
+  // `RECOVERY_GATES`' h_center spec carries `measurable: (r) => observed ===
+  // true`, so `buildRecoveryGates` routes every unobserved scenario into
+  // `scenariosNotMeasurable` and never into `failedScenarios`. Partitioning the
+  // FAILING set by observability therefore always produced an empty half: the
+  // attribution reported 'floor-reference noise and network geometry' as the
+  // contributor every single time, with `explainedFraction` fixed at 0, having
+  // never measured it against the alternative it names. (The shipped
+  // bench-results.json shows a 0.5 split because it predates that predicate.)
+  //
+  // The observability question is still worth answering — it is the only
+  // interesting question this gate has — so it is answered against the whole
+  // corpus, where the unobserved scenarios actually are.
+  const unobservedAll = results.filter((r) => r.recovery?.centerHeight.observed === false);
+  const unobservedFailing = failing.filter((r) => r.recovery?.centerHeight.observed === false);
+  const observedFailing = failing.filter((r) => r.recovery?.centerHeight.observed !== false);
   const worst = failing.reduce((a, b) =>
     (a.recovery?.centerHeight.errorMm ?? 0) >= (b.recovery?.centerHeight.errorMm ?? 0) ? a : b,
   );
   const contributor =
-    unobserved.length >= observed.length
+    unobservedFailing.length >= observedFailing.length && unobservedFailing.length > 0
       ? 'no floor reference (h_center held, not solved)'
       : 'floor-reference noise and network geometry';
   return {
     scenario: worst.scenario.id,
-    method: 'observability split: failing scenarios partitioned by whether a floor reference existed',
+    method:
+      'observability split: failing scenarios partitioned by whether a floor reference existed, ' +
+      'with the scenarios the gate excludes for having none counted separately',
     contributor,
-    explains: `${unobserved.length} of ${failing.length} failing scenarios had no floor reference`,
-    explainedFraction: unobserved.length / failing.length,
+    explains:
+      `${observedFailing.length} of ${failing.length} failing scenarios DID have a floor ` +
+      `reference` +
+      (unobservedAll.length > 0
+        ? `; ${unobservedAll.length} more had none and are excluded from this gate rather than failing it`
+        : ''),
+    // What fraction of the FAILURES this contributor accounts for. With the
+    // measurable predicate in place every failure is in one bucket, so this is
+    // 1 — an honest statement that the split does not divide them, rather than
+    // the 0 the old arithmetic produced by dividing an always-empty half.
+    explainedFraction:
+      (contributor === 'no floor reference (h_center held, not solved)'
+        ? unobservedFailing.length
+        : observedFailing.length) / failing.length,
     allGroupsExplain: 1,
     byGroup: [
-      { group: 'no floor reference', value: unobserved.length },
-      { group: 'floor reference supplied', value: observed.length },
+      { group: 'failing, floor reference supplied', value: observedFailing.length },
+      { group: 'failing, no floor reference', value: unobservedFailing.length },
+      { group: 'excluded from the gate, no floor reference', value: unobservedAll.length },
     ],
     note:
-      `${failing.length} scenario(s) over the ${gateMax} mm mark; ${unobserved.length} of them ` +
-      'supplied no floor reference at all, in which case the solver holds h_center at the ' +
-      'documented 2.1844 m rather than handing the optimiser a parameter it cannot determine. ' +
-      'That is PARAMETERS.md §8 item 1 not having been carried out, not a solver defect.',
+      `${failing.length} scenario(s) over the ${gateMax} mm mark. ` +
+      (unobservedAll.length > 0
+        ? `A further ${unobservedAll.length} supplied no floor reference at all, in which case the ` +
+          'solver holds h_center at the documented 2.1844 m rather than handing the optimiser a ' +
+          'parameter it cannot determine — so the gate does not score them and they cannot fail ' +
+          'it. That is PARAMETERS.md §8 item 1 not having been carried out, not a solver defect. '
+        : '') +
+      `The ${observedFailing.length} that did fail had a floor reference, so what is left is ` +
+      'floor-reference noise and network geometry.',
   };
+}
+
+/**
+ * Which single parameter group removes the most of the excess, or none at all.
+ *
+ * Exported because the "none at all" answer is the interesting one and it used
+ * to be unrepresentable. `best` started at the string 'none' — the name of the
+ * NO-SUBSTITUTION bookend in `byGroup` — so when every substitution made the
+ * metric WORSE (`drop <= 0` throughout, and the loop never reassigns) the
+ * results file named 'none' as the largest contributor with an
+ * `explainedFraction` of 0, which reads like a parameter group called "none".
+ * The shipped bench-results.json says exactly that for grid_displacement.
+ *
+ * `null` is not an absence of information. It is the signature of a COMPENSATING
+ * DEFORMATION: the recovered calibration is wrong in several parameters at once
+ * in a combination that cancels, so substituting any one group's truth breaks
+ * the cancellation and costs more than it recovers. The grid_displacement waiver
+ * already argues this in prose; the machinery that measures it reported a name.
+ */
+export function largestContributor(
+  byGroup: readonly { group: string; value: number }[],
+  base: number,
+): { group: string | null; drop: number } {
+  let group: string | null = null;
+  let drop = 0;
+  for (const g of byGroup) {
+    if (g.group === 'none' || g.group === 'all') continue;
+    const d = base - g.value;
+    if (d > drop) {
+      drop = d;
+      group = g.group;
+    }
+  }
+  return { group, drop };
 }
 
 export interface AttributionOptions {
@@ -241,29 +312,30 @@ export function attributeGridFailure(
   const excess = base - gate.max;
   if (!(excess > 0)) return null;
 
-  let best = 'none';
-  let bestDrop = 0;
-  for (const g of byGroup) {
-    if (g.group === 'none' || g.group === 'all') continue;
-    const drop = base - g.value;
-    if (drop > bestDrop) {
-      bestDrop = drop;
-      best = g.group;
-    }
-  }
+  const { group: best, drop: bestDrop } = largestContributor(byGroup, base);
+  const compensating = best === null;
 
   return {
     scenario: result.scenario.id,
     method:
       'counterfactual substitution: one recovered parameter group replaced by ground truth at a time, metric recomputed',
-    contributor: best,
-    explains: `${((100 * bestDrop) / excess).toFixed(0)}% of the ${excess.toFixed(2)} mm excess over the gate`,
+    contributor: best ?? 'no single parameter group (compensating deformation)',
+    explains: compensating
+      ? `nothing: every single-group substitution makes the metric WORSE, so no one group ` +
+        `accounts for any of the ${excess.toFixed(2)} mm excess over the gate`
+      : `${((100 * bestDrop) / excess).toFixed(0)}% of the ${excess.toFixed(2)} mm excess over the gate`,
     explainedFraction: bestDrop / excess,
     allGroupsExplain: (base - all) / excess,
     byGroup,
     note:
-      `Reported value ${base.toFixed(3)} mm against a ${gate.max} mm gate. Replacing the recovered ` +
-      `${best} with ground truth removes ${bestDrop.toFixed(3)} mm of the ${excess.toFixed(3)} mm excess. ` +
+      `Reported value ${base.toFixed(3)} mm against a ${gate.max} mm gate. ` +
+      (compensating
+        ? `NO single parameter group reduces it: every one of the ${byGroup.length - 2} ` +
+          `substitutions tried makes the metric worse than leaving the recovered calibration ` +
+          `alone. The excess is not attributable to one group — it is carried by a combination ` +
+          `that cancels, and breaking the cancellation anywhere costs more than it recovers. `
+        : `Replacing the recovered ${best} with ground truth removes ${bestDrop.toFixed(3)} mm ` +
+          `of the ${excess.toFixed(3)} mm excess. `) +
       `Replacing the WHOLE calibration leaves ${all.toFixed(3)} mm, which is the apparatus and the ` +
       'physical rig rather than anything a solver can fix — see GridReport.measurementFloorMm. ' +
       'Expect some groups to make the metric WORSE than leaving them alone: a recovered ' +
