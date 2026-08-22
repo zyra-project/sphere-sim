@@ -27,8 +27,8 @@
  * in separate workers makes that structural instead of a comment.
  */
 
-import type { RigCalibration } from '../../calibration/src/index.ts';
-import { angleBetweenDeg, projectorBasis, raySphereIntersect } from '../../sim/src/geometry.ts';
+import type { ProjectorPose, RigCalibration } from '../../calibration/src/index.ts';
+import { projectorRotationMatrix, raySphereIntersect } from '../../sim/src/geometry.ts';
 import { pixelToRay, prepareRig, worldToPixel, worldToPixelUnbounded } from '../../sim/src/optics.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
@@ -80,12 +80,54 @@ function metricsFor(
     contentRig: compositor,
     densityScale,
     convergence: false,
+    coverage: {
+      // The one assertion this page must not inherit, and `packages/harness`
+      // reached the same conclusion for the same reason: a batch run that sees
+      // overlap multiplicity above 2 has had its arithmetic stop working and
+      // should die loudly, but a page where a human drags sliders is not a batch
+      // run, and taking the whole panel down is not a diagnosis.
+      //
+      // It is not a corner case here. §4.2's proof that 3-way overlap is
+      // impossible assumes lenses at or near the equator; it fails as soon as a
+      // lens sits higher above the sphere centre than the sphere radius, because
+      // the north pole then comes into view of all four at once. "Lens rise
+      // above the equator" runs to 1.4 m and the threshold is about 0.9 m — some
+      // sixty per cent along a slider whose own help text invites the reader up
+      // it — and from there every number on the page froze under a red box
+      // carrying sim's engineer text about §4.2.
+      //
+      // The reading is not lost. `readout.ts`'s 'Most projectors on one spot'
+      // fact carries the gate of 2 and the sentence explaining it, and that
+      // fact's failure arm was unreachable until this line existed.
+      assertMultiplicity: false,
+    },
   });
 }
 
 /** Vertices across and down. Odd, so a vertex sits on the optical axis. */
 const MESH_COLS = 17;
 const MESH_ROWS = 11;
+
+/**
+ * The angle of the rotation that carries one projector's orientation onto the
+ * other's, in degrees.
+ *
+ * The geodesic angle on SO(3): `acos((tr(A^T B) - 1) / 2)`, and `tr(A^T B)` for
+ * two rotation matrices is their elementwise dot product. The same quantity
+ * `packages/bench`'s `scoreRecovery` reports as `maxRotationDeg`, computed here
+ * from `packages/sim`'s own matrix rather than imported, because this worker
+ * must not pull in a bench module that opens `node:fs`.
+ *
+ * Unlike an angle between forward axes it cannot be blind to roll, which is the
+ * whole reason it is here.
+ */
+function rotationBetweenDeg(a: ProjectorPose, b: ProjectorPose): number {
+  const A = projectorRotationMatrix(a);
+  const B = projectorRotationMatrix(b);
+  let t = 0;
+  for (let i = 0; i < 9; i++) t += A[i] * B[i];
+  return (Math.acos(Math.min(1, Math.max(-1, (t - 1) / 2))) * 180) / Math.PI;
+}
 
 /**
  * How far the compositor's idea of the rig has fallen behind the rig itself:
@@ -97,9 +139,19 @@ const MESH_ROWS = 11;
  * pair of numbers "pose off by / aim off by" wants to show — and it is ground
  * truth, so it is reported and never fed back into anything the solver sees.
  *
- * The aim comparison is between the two forward axes, which is the part of the
- * orientation a viewer can point at. Roll about the axis is a real degree of
- * freedom and it is not what "aim" means.
+ * The angular term is the FULL rotation between the two orientations, on the
+ * same basis as `scoreRecovery`'s `maxRotationDeg` — and it used to be the angle
+ * between the two forward axes alone, on the argument that roll about the axis
+ * is not what "aim" means. That argument is fine in isolation and wrong here,
+ * because the cell it feeds does not keep one basis: `web/main.ts` shows this
+ * number until a solve lands and the solver's roll-inclusive residual
+ * afterwards, under a tooltip reading "same basis". So a projector bumped in
+ * ROLL alone read 0.000° — the page saying the software was perfectly up to
+ * date, while the seams visibly broke and worst grid error jumped to 27 mm —
+ * and then recalibrating made the cell go UP, because the two halves of one
+ * before-and-after were measuring different things. Roll is not a corner case:
+ * it is a slider on the projector tab and the LARGEST of §2's three angular
+ * mount tolerances at 0.5°.
  */
 function poseDrift(
   truth: RigCalibration,
@@ -120,10 +172,7 @@ function poseDrift(
         a.position.z - b.position.z,
       ) * 1000,
     );
-    aimDeg = Math.max(
-      aimDeg,
-      angleBetweenDeg(projectorBasis(a).axis, projectorBasis(b).axis),
-    );
+    aimDeg = Math.max(aimDeg, rotationBetweenDeg(a, b));
   }
   return { positionMm, aimDeg };
 }
@@ -497,12 +546,20 @@ export function computeModel(req: ModelRequest): ModelResponse {
   // no longer matches the room is refused in `buildWorld`, and asking the request
   // would print a comparison against a calibration that is not in force.
   if (world.calibrated) {
-    const baseline = metricsFor(
-      world.truthRig,
-      world.asBuiltRig,
-      world.scene,
-      Math.min(req.densityScale, 0.35),
-    );
+    // The SAME density as the headline, and it used to be `Math.min(density,
+    // 0.35)`. The page puts the two side by side as "125.05 mm before -> 0.02 mm
+    // now", under a sentence stating one sampling basis, and they were sampled
+    // at 1.0 and 0.35. The lattices are not nested — `grid.ts` derives
+    // `latStepDeg = max(0.5, 4 / densityScale)`, so 4 deg against 11.43 deg —
+    // and the metric is a MAX over that lattice, so the coarse pass simply
+    // misses whichever latitude carries the worst line. Measured: an improvement
+    // reported as 8084x where the same-basis figure is 8235x, off by 2-7%
+    // depending on seed and in whichever direction the coarse lattice happened
+    // to miss.
+    //
+    // It costs a second full metric pass on a settled pass only — `world.calibrated`
+    // is false until a solve has landed, and a drag never reaches here.
+    const baseline = metricsFor(world.truthRig, world.asBuiltRig, world.scene, req.densityScale);
     gridBaselineMm = baseline.grid.metric.value;
   }
 

@@ -19,7 +19,7 @@ import { test } from 'node:test';
 
 import { createImage } from '../../sim/src/equirect.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
-import { BOULDER_PRESET, CONTENT_CUSTOM, PERFECT_PRESET, withNudge } from '../src/settings.ts';
+import { BOULDER_PRESET, CONTENT_CUSTOM, PERFECT_PRESET, noNudge, withNudge } from '../src/settings.ts';
 import { buildWorld } from '../src/rigs.ts';
 import { computeModel } from '../src/model.ts';
 import type { ModelRequest } from '../src/protocol.ts';
@@ -106,6 +106,64 @@ test('the metrics are unaffected by which image is playing', () => {
   assert.equal(a.gridWorstMm, b.gridWorstMm);
   assert.deepEqual(a.multiplicityAreaFraction, b.multiplicityAreaFraction);
   assert.equal(a.unlitPolarSouth, b.unlitPolarSouth);
+});
+
+test('a slider position the panel offers does not take the panel down', () => {
+  // 'Lens rise above the equator' runs to 1.4 m. §4.2's proof that overlap
+  // multiplicity never exceeds 2 assumes lenses at or near the equator, and it
+  // stops holding once a lens is more than a sphere radius above the centre —
+  // the north pole comes into view of all four at once. `computeCoverageStats`
+  // throws on that, which is right for a batch run and wrong for a page where a
+  // human drags the slider: every number froze under a red box carrying sim's
+  // engineer text, roughly sixty per cent along a slider whose own help text
+  // invites the reader up it. `packages/harness` reached the same conclusion.
+  for (const lensRiseM of [0.2032, 0.9, 1.0, 1.4]) {
+    const reply = computeModel(request({ settings: { ...BOULDER_PRESET, lensRiseM } }));
+    assert.ok(reply.readings.length > 0, `the model died at lensRiseM = ${lensRiseM}`);
+  }
+
+  // And the reading is not lost: the fact that carries it reports the number
+  // with a gate of 2, which is the whole point of not throwing. Its failure arm
+  // was unreachable while the assertion was inherited.
+  const high = computeModel(request({ settings: { ...BOULDER_PRESET, lensRiseM: 1.4 } }));
+  const fact = high.facts.find((f) => f.label === 'Most projectors on one spot');
+  assert.ok(fact, 'the multiplicity fact is gone');
+  assert.equal(fact.ok, false, 'a four-way overlap was reported as fine');
+  assert.ok(Number(fact.value) > 2);
+  // It must not claim a code bug — this is geometry §4.2 does not cover, not a
+  // defect, and the note said "the code has a bug" while it could never render.
+  assert.doesNotMatch(fact.note, /the code has a bug/);
+
+  const level = computeModel(request({ settings: { ...BOULDER_PRESET, lensRiseM: 0.2032 } }));
+  const ok = level.facts.find((f) => f.label === 'Most projectors on one spot');
+  assert.equal(ok?.ok, true);
+  assert.equal(ok?.value, '2');
+});
+
+test('a projector bumped in roll alone is drift, not a rig that is up to date', () => {
+  // The 'Lens aim' cell shows this number until a solve lands and the solver's
+  // roll-inclusive residual afterwards, under a tooltip saying "same basis". The
+  // drift was the angle between forward axes, which roll leaves fixed, so a
+  // pure-roll bump read 0.000° — and then recalibrating made the cell go UP.
+  // Roll is not exotic: it is a slider on the projector tab and the largest of
+  // §2's three angular mount tolerances at 0.5°.
+  const rolled = (deg: number) => ({
+    ...PERFECT_PRESET,
+    nudge: PERFECT_PRESET.nudge.map((n, i) => (i === 1 ? { ...noNudge(), rollDeg: deg } : noNudge())),
+  });
+  const still = computeModel(request({ settings: rolled(0) }));
+  assert.ok(still.driftAimDeg < 1e-9, 'an untouched rig has drifted');
+
+  for (const deg of [0.5, 3]) {
+    const reply = computeModel(request({ settings: rolled(deg) }));
+    assert.ok(
+      Math.abs(reply.driftAimDeg - deg) < 1e-6,
+      `a ${deg}° roll reported ${reply.driftAimDeg.toFixed(4)}° of aim drift`,
+    );
+    // The position term is genuinely unmoved — roll is a rotation about the
+    // lens, so this is the pair being right rather than both being wrong.
+    assert.ok(reply.driftPositionMm < 1e-9);
+  }
 });
 
 test('projector frames are rendered only when asked for', () => {

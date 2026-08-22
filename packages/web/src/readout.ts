@@ -325,13 +325,22 @@ export function rigFacts(rig: RigCalibration, set: MetricSet | null): RigFact[] 
     facts.push({
       label: 'Most projectors on one spot',
       value: String(maxMult),
-      verdict: maxMult <= 2 ? 'never three, as predicted' : 'THREE — this should be impossible',
+      verdict: maxMult <= 2 ? 'never three, as predicted' : `${maxMult} — the lenses are too high`,
       ok: maxMult <= 2,
+      // This arm was unreachable until `metricsFor` stopped inheriting sim's
+      // `assertMultiplicity`, and while it was unreachable it said the wrong
+      // thing: it promised a code bug. It is not one. §4.2's argument assumes
+      // lenses at or near the equator, and the page has a slider that lifts them
+      // well past that, at which point three- and four-way overlap is real
+      // geometry that the documented rig simply never reaches.
       note:
-        'Overlap multiplicity never exceeds 2 anywhere on the sphere. Three-way overlap would need a ' +
+        'Overlap multiplicity never exceeds 2 on the documented rig. Three-way overlap would need a ' +
         'point within about 80° of three equatorial directions spaced 90° apart; the only candidate ' +
-        'region is polar, and the poles sit exactly 90° from every projector. If this ever reads 3, ' +
-        'the code has a bug — it is asserted in the test suite for that reason.',
+        'region is polar, and on a level ring the poles sit exactly 90° from every projector. That ' +
+        'argument is about a LEVEL ring: raise the lenses more than a sphere radius above the ' +
+        'equator — past about 0.9 m on this page — and the north pole comes into view of all four ' +
+        'at once, which is what a reading above 2 here means. Every area-weighted number in the set ' +
+        'is still computed, but §4.2 no longer covers the rig producing them.',
     });
   }
 

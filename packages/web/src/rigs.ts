@@ -43,6 +43,7 @@ import {
   IN_TO_M,
   NOMINAL_BLACK_PCT,
   NOMINAL_LUMENS,
+  noNudge,
   SHIFT_PCT_PER_UNIT,
   RESOLUTIONS,
 } from './settings.ts';
@@ -327,7 +328,15 @@ export function nudgesAreClear(nudges: readonly ProjectorNudge[]): boolean {
 let lastContent: { key: string; custom: EquirectImage | null; image: EquirectImage } | null = null;
 
 export function buildContent(s: Settings, custom: EquirectImage | null): EquirectImage {
-  const key = `${Math.round(s.content)}|${Math.round(s.gridOn)}|${Math.round(s.gridDeg)}`;
+  // `content` and the supplied image, and nothing else. The graticule is no
+  // longer rasterised into the field — it moved to `buildGraticule` and is
+  // evaluated per sample, which `rigs.test.ts`'s 'the field is only ever the
+  // field' already asserts — so keying on `gridOn` and `gridDeg` bought a full
+  // rebuild of a byte-identical 2048x1024 field for a term the builder does not
+  // read. Dragging Grid spacing paid it on every step: 8-12 ms of blocked main
+  // thread and a fresh 25 MB Float32Array against a 16.7 ms frame budget, which
+  // is the exact stall this cache was added to remove.
+  const key = `${Math.round(s.content)}`;
   if (lastContent && lastContent.key === key && lastContent.custom === custom) {
     return lastContent.image;
   }
@@ -339,8 +348,6 @@ export function buildContent(s: Settings, custom: EquirectImage | null): Equirec
 function buildContentUncached(s: Settings, custom: EquirectImage | null): EquirectImage {
   const choice = Math.round(s.content);
   const base = CONTENTS[choice] ?? CONTENTS[1];
-  const grid = Math.round(s.gridOn) === 1;
-  const spacingDeg = Math.round(s.gridDeg);
 
   // Two fields are a supplied image rather than a flat colour: the shipped Blue
   // Marble and whatever the reader dropped. Both arrive here the same way — the
@@ -393,7 +400,21 @@ export function buildWorld(
 
   // The `on` flags are the only part of a nudge the software knows about, so
   // they apply to both rigs; the movements apply to the lenses alone.
-  const off = s.nudge.map((n) => ({ ...n, yawDeg: 0, pitchDeg: 0, rollDeg: 0, distanceM: 0, heightM: 0 }));
+  //
+  // Built UP from neutral, not stripped DOWN from the operator's nudge. The
+  // stripping version listed the five pose terms by hand and `ProjectorNudge`
+  // has ten, so `fovDeltaDeg`, `shiftH`, `shiftV`, `lumens` and `blackPct` were
+  // copied into the compositor rig as well as the truth rig — and a change the
+  // compositor already knows about cancels out of every alignment metric. Drag
+  // P1's lens shift to 10% and the sphere visibly moves while registration error
+  // stays at 139.211 mm, identical to three decimals to the untouched rig,
+  // against a true misregistration of 301.1 mm; the vertical shift is worse,
+  // because the readout goes DOWN as the real error goes up.
+  //
+  // Starting from `noNudge()` means the next degree of freedom added to
+  // ProjectorNudge is neutral here on the day it lands, rather than leaking
+  // until somebody notices a number that will not move.
+  const off = s.nudge.map((n) => ({ ...noNudge(), on: n.on }));
   const drawn = applyNudges(asBuiltRig, off);
   const drawing = drawn.rig;
   const truth = applyNudges(misaligned.rig, s.nudge);

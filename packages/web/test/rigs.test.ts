@@ -258,6 +258,59 @@ test('every per-projector control moves something, and the neutral value moves n
   }
 });
 
+test('a hand adjustment moves the lenses and never the drawing', () => {
+  // The exact mirror of the test above, on the other rig, and the half that was
+  // missing. `ProjectorNudge`'s own words: "These move the LENSES and nothing
+  // else. The software is not told — that is the whole point." A nudge that
+  // reaches the compositor is a change the software already knows about, so it
+  // cancels out of every alignment metric and the page prints the untouched
+  // number for a projector somebody has just moved.
+  //
+  // `buildWorld` used to build the compositor-side nudge by stripping the five
+  // pose terms out of the operator's nudge by hand. ProjectorNudge has ten, so
+  // 'Image size', both lens shifts and both lamp terms went straight through.
+  //
+  // Driven off NUDGE_CONTROLS rather than naming the fields, so the day an
+  // eleventh degree of freedom lands it is covered without anybody remembering.
+  const drawing = buildWorld(BOULDER_PRESET).compositorRig;
+  for (const spec of NUDGE_CONTROLS) {
+    const away = spec.key === 'lumens' ? 3000 : spec.key === 'blackPct' ? 0.6 : spec.max / 2;
+    const world = buildWorld({
+      ...BOULDER_PRESET,
+      nudge: BOULDER_PRESET.nudge.map(() => ({ ...noNudge(), [spec.key]: away })),
+    });
+    assert.deepEqual(
+      world.compositorRig,
+      drawing,
+      `'${spec.label}' leaked into the rig the software believes`,
+    );
+    // And it really did move the lenses, or the assertion above is vacuous.
+    assert.notDeepEqual(world.truthRig, drawing, `'${spec.label}' moved neither rig`);
+  }
+
+  // Switching one off is the exception, and the one the comment names: which
+  // projectors EXIST is not a movement, so it has to reach both rigs.
+  const dark = buildWorld({
+    ...BOULDER_PRESET,
+    nudge: BOULDER_PRESET.nudge.map((n, i) => ({ ...noNudge(), on: i !== 1 })),
+  });
+  assert.equal(dark.compositorRig.projectors.length, drawing.projectors.length - 1);
+});
+
+test('the content cache is not rebuilt by a control the content does not read', () => {
+  // The graticule is evaluated per sample from `Scene.graticule`, never
+  // rasterised into the field, so neither grid term can change what
+  // `buildContent` returns. Keying the cache on them bought a full rebuild of a
+  // byte-identical 2048x1024 field on every step of the Grid spacing slider.
+  // Identity, not deep equality: the point is that the same object comes back
+  // rather than an equal one built again.
+  const first = buildContent(BOULDER_PRESET, null);
+  assert.equal(buildContent({ ...BOULDER_PRESET, gridDeg: 29 }, null), first);
+  assert.equal(buildContent({ ...BOULDER_PRESET, gridOn: 0 }, null), first);
+  // A term it DOES read still misses, or the cache would be stale instead.
+  assert.notEqual(buildContent({ ...BOULDER_PRESET, content: 0 }, null), first);
+});
+
 test('a nudge moves the lens and re-aims it, without losing the mount error', () => {
   const before = buildWorld(BOULDER_PRESET).truthRig.projectors[0];
   const after = buildWorld({

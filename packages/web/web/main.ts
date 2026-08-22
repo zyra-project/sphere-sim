@@ -4645,7 +4645,9 @@ function renderReadout(): void {
       cell(
         'Lens aim',
         fresh ? `${fresh.poseRotationDeg.toFixed(3)}°` : `${model.driftAimDeg.toFixed(3)}°`,
-        fresh ? 'Worst aim error, same basis.' : 'Worst aim difference between the two rigs.',
+        fresh
+          ? 'Worst rotation error, roll included, after removing the unobservable global rotation.'
+          : 'Worst rotation difference between the two rigs, roll included — the same basis the solver reports after a recalibration, so the two halves of the before-and-after are the same quantity.',
       ),
     );
     g.append(cell('Unlit above mask', unlit ? unlit.value : '—', unlit?.means ?? ''));
