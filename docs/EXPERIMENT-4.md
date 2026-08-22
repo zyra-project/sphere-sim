@@ -73,12 +73,14 @@ Six things must travel with that.
 Five seeds per cell, archetype 1, the bench's `default` preset, ceiling held at
 14 feet. Worst projector position error after gauge alignment, in millimetres.
 
+<!-- generated: experiment-4-rooms -->
 | room | median | min | max | off-sphere share | usable grid metric |
 | --- | ---: | ---: | ---: | ---: | --- |
-| **none (as published)** | **20.6** | 12.9 | 51.5 | 0.00% | 5/5 |
-| wall at 9 m | 133.7 | 24.6 | 100 021 | 10.04% | 5/5 |
-| wall at 6 m | 16 365 | 15.1 | 40 349 | 14.10% | 4/5 |
-| wall at 4 m | 3452 | 21.5 | 346 940 | 16.12% | 3/5 |
+| **none (as published)** | **20.6** | 12.9 | **51.5** | **0.00%** | 5/5 |
+| wall at 9 m | 133.7 | 24.6 | 100 021 | 10.04% | 5/5 |
+| wall at 6 m | 16 365 | 15.1 | 40 349 | 14.10% | 4/5 |
+| wall at 4 m | 3 452 | 21.5 | 346 940 | 16.12% | 3/5 |
+<!-- /generated -->
 
 **A tenth of the accepted correspondences is enough to destroy the solve.**
 `packages/solver/src/bundle.ts` turns a camera pixel into a 3D point by
@@ -136,12 +138,14 @@ geometry that makes it so.
 Sweeping the decoder's absolute modulation floor, `minModulation`, from its
 shipped 0.02. Median pose error in millimetres; the seed range in brackets.
 
+<!-- generated: experiment-4-modulation -->
 | threshold | no room | wall at 6 m | room ÷ clean, same floor |
 | --- | ---: | ---: | ---: |
-| **0.02 (shipped)** | **20.6** [12.9 – 51.5] | **16 365** [15.1 – 40 349] | 793× |
-| 0.10 | 20.6 [12.9 – 51.5] | 49.1 [18.7 – 73 401] | 2.4× |
-| 0.20 | 33.2 [12.1 – 47.4] | 515.5 [12.1 – 172 442] | 15.5× |
-| 0.40 | 60.8 [46.4 – 63.3] | 62.9 [53.9 – 953 624] | **1.03×** |
+| **0.02 (shipped)** | **20.6 [12.9 – 51.5]** | **16 365 [15.1 – 40 349]** | 793× |
+| 0.10 | 20.6 [12.9 – 51.5] | 49.1 [18.7 – 73 401] | 2.38× |
+| 0.20 | 33.2 [12.1 – 47.4] | 515.5 [12.1 – 172 442] | 15.54× |
+| 0.40 | 60.8 [46.4 – 63.3] | 62.9 [53.9 – 953 624] | 1.03× |
+<!-- /generated -->
 
 **F4 is not triggered: a floor does separate them.** At 0.40 the room adds almost
 nothing — 62.9 mm against a clean 60.8 mm at the same floor. The first version of
@@ -173,12 +177,14 @@ radius at the world origin. The margin inflates that test sphere. All cells at
 the shipped decoder threshold; median pose error in millimetres, seed range in
 brackets.
 
+<!-- generated: experiment-4-segmentation -->
 | room | no segmentation | margin 0 | margin 0.05 | margin 0.15 | best |
 | --- | ---: | ---: | ---: | ---: | :--- |
-| **none** | **20.6** [12.9 – 51.5] | 21.4 [9.2 – 42.6] | 20.6 [12.9 – 42.3] | 20.6 [12.9 – 51.5] | 0.05 |
-| wall at 9 m | 133.7 [24.6 – 100 021] | 102.8 [25.8 – 45 798] | 3877 [7.0 – 222 209] | 898.0 [14.8 – 376 452] | 0 |
-| wall at 6 m | 16 365 [15.1 – 40 349] | **44.0** [18.8 – 348 115] | 52.8 [7.0 – 96 517] | 287.4 [17.8 – 155 988] | 0 |
-| wall at 4 m | 3452 [21.5 – 346 940] | 42.0 [15.1 – 906] | 410.1 [21.4 – 64 474] | **41.3** [20.8 – 1299] | 0.15 |
+| **none** | 20.6 [12.9 – 51.5] | 21.4 [9.2 – 42.6] | 20.6 [12.9 – 42.3] | 20.6 [12.9 – 51.5] | 0.05 |
+| wall at 9 m | 133.7 [24.6 – 100 021] | 102.8 [25.8 – 45 798] | 3 877 [7.0 – 222 209] | 898.0 [14.8 – 376 452] | 0 |
+| wall at 6 m | 16 365 [15.1 – 40 349] | 44.0 [18.8 – 348 115] | 52.8 [7.0 – 96 517] | 287.4 [17.8 – 155 988] | 0 |
+| wall at 4 m | 3 452 [21.5 – 346 940] | 42.0 [15.1 – 905.9] | 410.1 [21.4 – 64 474] | 41.3 [20.8 – 1 299] | 0.15 |
+<!-- /generated -->
 
 **It is worth a paired geometric mean of 15.7×, and F5 still triggered.** F5 asked
 whether segmentation leaves the room costing more than twice the clean baseline.
