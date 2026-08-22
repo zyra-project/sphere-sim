@@ -51,6 +51,7 @@ import type { RoundHistory, RoundRecord } from './loop.ts';
 import { ROUNDS_SCHEMA, TRACKED } from './loop.ts';
 import type { CoverageReference, ReferenceChecks } from './reference.ts';
 import { REFERENCE_RELATIVE_PATH, analyseCoverageReference, loadCoverageReference } from './reference.ts';
+import { missingCellHex } from './views.ts';
 
 export const PROGRESS_SCHEMA = 'sphere-sim/progress-page@1';
 
@@ -144,6 +145,26 @@ function projectorMeridiansDeg(inputs: InputsJson): number[] {
     while (lon <= -180) lon += 360;
     return lon;
   });
+}
+
+/**
+ * The name the rest of the page uses for a projector, given its RESIDUAL COLUMN.
+ *
+ * `residuals.projector` is an index into the rig the solver was handed — dense,
+ * 0..n-1 — while everything else on this page names a projector by its MOUNT
+ * SLOT: `inputs.injected.projectors[].id`, the meridians on the error map, and
+ * PARAMETERS.md §2's slot azimuths. On a full four-projector rig the two agree
+ * and the difference is invisible. On `s08-two-projectors`, whose slots are
+ * [0, 2], they do not: section 1 labelled the second projector `P2` while the
+ * injected perturbation table, the results file and the error map all called
+ * that same physical projector `P3`.
+ */
+function projectorName(inputs: InputsJson, column: number): string {
+  const injected = inputs.injected?.projectors ?? [];
+  const id = injected[column]?.id;
+  if (typeof id === 'string' && id.length > 0) return id;
+  const slot = inputs.slots?.[column];
+  return `P${(slot ?? column) + 1}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -284,6 +305,11 @@ export function analyseResiduals(
   projector: number,
   resX: number,
   resY: number,
+  /**
+   * What to call this projector on the page. Defaults to the column index,
+   * which is right only while the rig is full — see `projectorName`.
+   */
+  name?: string,
 ): ResidualStats | null {
   const p = pointsFor(cols, projector);
   const n = p.du.length;
@@ -413,7 +439,7 @@ export function analyseResiduals(
 
   return {
     projector,
-    label: `P${projector + 1}`,
+    label: name ?? `P${projector + 1}`,
     count: n,
     rmsPx: Math.sqrt(sumSq / n),
     biasDuPx: mdu,
@@ -691,7 +717,7 @@ function scatterPanel(p: ProjectorPoints, stats: ResidualStats, lim: number, alp
   ellipses.push(`<circle class="ref-circle" cx="${c(cxp)}" cy="${c(cyp)}" r="${c(rEq)}"/>`);
 
   return [
-    `<svg class="plot" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="residual du against dv for projector ${stats.projector + 1}">`,
+    `<svg class="plot" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="residual du against dv for projector ${stats.label}">`,
     frameRect(box),
     ticks.join(''),
     `<line class="axis" x1="${c(toX(0))}" y1="${c(box.y)}" x2="${c(toX(0))}" y2="${c(box.y + box.h)}"/>`,
@@ -748,7 +774,7 @@ function radiusPanel(p: ProjectorPoints, stats: ResidualStats, lim: number, alph
     .join(' ');
 
   return [
-    `<svg class="plot" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="radial residual against image radius for projector ${stats.projector + 1}">`,
+    `<svg class="plot" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="radial residual against image radius for projector ${stats.label}">`,
     frameRect(box),
     ticks.join(''),
     `<line class="axis" x1="${c(box.x)}" y1="${c(toY(0))}" x2="${c(box.x + box.w)}" y2="${c(toY(0))}"/>`,
@@ -827,6 +853,7 @@ function residualSection(results: BenchResults): string {
   // THERE is the bench's own floor, and every other panel is read against it.
   const cleanScenario = results.scenarios.find((s) => s.archetype === 'clean');
   const cleanCols = cleanScenario === undefined ? null : solverOf(cleanScenario);
+  const cleanInputs = cleanScenario === undefined ? null : inputsOf(cleanScenario);
 
   for (const s of results.scenarios) {
     const solver = solverOf(s);
@@ -844,16 +871,29 @@ function residualSection(results: BenchResults): string {
     const projectors = [...new Set(cols.projector.slice(0, cols.count))].sort((a, b) => a - b);
     const panels: string[] = [];
     for (const projector of projectors) {
-      const stats = analyseResiduals(cols, projector, resX, resY);
+      const stats = analyseResiduals(cols, projector, resX, resY, projectorName(inputs, projector));
       if (stats === null) continue;
       const p = pointsFor(cols, projector);
       const mags = p.du.map((d, i) => Math.hypot(d, p.dv[i])).sort((a, b) => a - b);
       const lim = Math.max(quantile(mags, 0.995) * 1.1, 1e-7);
       const alpha = Math.min(0.6, Math.max(0.05, 900 / Math.max(1, p.du.length)));
+      // The clean reference is matched by MOUNT SLOT, not by column. Matching
+      // by column compared this scenario's second projector against the clean
+      // rig's second projector, which on a sparse rig is a different mount
+      // pointing at a different part of the sphere — a comparison between two
+      // unrelated lenses, printed as a floor.
+      const slot = inputs.slots?.[projector] ?? projector;
+      const cleanColumn = (cleanInputs?.slots ?? []).indexOf(slot);
       const cleanRef =
-        cleanCols === null || s.archetype === 'clean'
+        cleanCols === null || cleanInputs === null || s.archetype === 'clean' || cleanColumn < 0
           ? null
-          : analyseResiduals(cleanCols.residuals, projector, resX, resY);
+          : analyseResiduals(
+              cleanCols.residuals,
+              cleanColumn,
+              resX,
+              resY,
+              projectorName(cleanInputs, cleanColumn),
+            );
       panels.push(`<div class="proj">
           <h4>${esc(stats.label)} <span class="muted">— ${stats.count} correspondences, RMS ${num(stats.rmsPx, 4)} px</span></h4>
           <div class="proj-body">
@@ -980,6 +1020,27 @@ function errorMapPanel(s: ScenarioJson, image: string | null): string {
   const reg = s.metrics.find((m) => m.id === 'registration_error');
   const grid = s.metrics.find((m) => m.id === 'grid_displacement');
 
+  // A metric with no samples has NOTHING TO MEASURE, which is not a failure —
+  // and the gate table on this same page already says so. `buildGates` routes
+  // `sampling.count === 0` into `scenariosNotMeasurable` and leaves it out of
+  // both the scored count and the failure count; this panel wrote
+  // `grid?.pass ? 'pass' : 'FAIL'`, which turns a null `pass` into FAIL. On the
+  // shipped corpus the two disagreed in public: `s08-two-projectors` is excluded
+  // from the grid gate as not measurable — two projectors on a four-mount rig
+  // leave no blend region, so there is no grid line spanning one to localise,
+  // and its sampling reads "0 line localisations" — while this panel called the
+  // same scenario a FAIL. The rule below is the gate's own rule, read from the
+  // same field, so the two cannot drift apart again.
+  const gridMeasured = grid !== undefined && grid.sampling.count > 0;
+  const gridVerdict =
+    grid === undefined
+      ? '<span class="muted">no metric recorded</span>'
+      : !gridMeasured
+        ? '<span class="muted">nothing to measure — excluded from the gate, not failing it</span>'
+        : grid.pass
+          ? 'pass'
+          : 'FAIL';
+
   return `<div class="panel">
       <h3>${esc(s.id)}</h3>
       <div class="map-row">
@@ -995,7 +1056,15 @@ function errorMapPanel(s: ScenarioJson, image: string | null): string {
           <table class="kv">
             <tr><th>registration RMS</th><td>${num(reg?.value, 3)} mm<div class="muted small">over every point at least two projectors reach, area-weighted</div></td></tr>
             <tr><th>registration p95 / max</th><td>${num(reg?.detail?.p95Mm, 3)} / ${num(reg?.detail?.maxMm, 3)} mm</td></tr>
-            <tr><th>grid displacement</th><td>${num(grid?.value, 3)} mm against a ${num(grid?.gateMax, 1)} mm gate — ${grid?.pass ? 'pass' : 'FAIL'}</td></tr>
+            <tr><th>grid displacement</th><td>${
+              gridMeasured
+                ? `${num(grid?.value, 3)} mm against a ${num(grid?.gateMax, 1)} mm gate — ${gridVerdict}`
+                : gridVerdict
+            }${
+              grid === undefined || gridMeasured
+                ? ''
+                : `<div class="muted small">${esc(grid.sampling.description.split('.')[0])}.</div>`
+            }</td></tr>
             <tr><th>overlap area</th><td>${pct(reg?.detail?.overlapAreaFraction ?? NaN)} of the sphere</td></tr>
           </table>
           <div class="muted small">Colour is registration error, 0–10 mm, viridis. Flat grey is
@@ -1015,7 +1084,12 @@ function colorbar(): string {
   return `<svg class="plot colorbar" viewBox="0 0 300 42" width="300" height="42" role="img" aria-label="registration error colour scale">
       <defs><linearGradient id="vir" x1="0" x2="1" y1="0" y2="0">${stops.join('')}</linearGradient></defs>
       <rect x="0" y="6" width="230" height="14" fill="url(#vir)"/>
-      <rect class="gap-rect" x="240" y="6" width="18" height="14"/>
+      <!-- The exact grey baked into the PNG, not the theme's --unlit token: this
+           chip legends a colour that is IN the image, so it cannot follow the
+           reader's colour scheme the way the SVG-drawn maps elsewhere do. It read
+           #b8bcc4 in light and #444a55 in dark against a region that is #595959
+           in every theme. -->
+      <rect x="240" y="6" width="18" height="14" fill="${missingCellHex()}" stroke="var(--muted)" stroke-width="0.5"/>
       <text class="tick" x="0" y="32">0 mm</text>
       <text class="tick" x="230" y="32" text-anchor="end">10 mm</text>
       <text class="tick" x="264" y="17">&lt;2 projectors</text>
@@ -1634,41 +1708,72 @@ function movementLabel(r: RoundRecord, key: string): string {
 
 function dispersionStrip(d: Dispersion, gateMax: number, unit: string): string {
   const w = 330;
-  const h = 46;
-  const padL = 8;
+  const h = 52;
+  const padL = 14;
   const padR = 8;
-  const finite = d.values.filter((v) => Number.isFinite(v) && v > 0);
-  const candidates = [...finite, gateMax].filter((v) => Number.isFinite(v) && v > 0);
+  // A log axis cannot place zero, and this strip used to respond by DROPPING
+  // every value that was not strictly positive — silently, while the prose
+  // above the table promised "one dot per scenario" and a whisker "at
+  // min–max". On the shipped corpus that is not a corner case: `unlit_in_mask`
+  // is exactly 0 on 10 of its 12 scenarios, so the strip drew two dots out of
+  // twelve and no whisker at all, and `off_sphere_flux_excess` has one slightly
+  // negative value, which took its whisker away too. A gate that is passing
+  // perfectly rendered as a nearly empty plot, which reads like missing data.
+  //
+  // So the non-positive values are PINNED at the axis floor and drawn in their
+  // own shape, and the count is written underneath. The axis is still a log
+  // axis — the values on this corpus span four orders of magnitude and a linear
+  // one would stack every passing scenario on the origin — but nothing is
+  // dropped without saying so.
+  const positive = d.values.filter((v) => Number.isFinite(v) && v > 0);
+  const pinned = d.values.filter((v) => Number.isFinite(v) && v <= 0);
+  const candidates = [...positive, gateMax].filter((v) => Number.isFinite(v) && v > 0);
   if (candidates.length === 0) {
     return `<div class="muted small">no positive finite values to plot (${d.count} scored)</div>`;
   }
   const lo = Math.min(...candidates) / 3;
   const hi = Math.max(...candidates) * 3;
+  const floorX = padL;
   const toX = (v: number): number => {
     const t = (Math.log10(Math.max(v, lo)) - Math.log10(lo)) / (Math.log10(hi) - Math.log10(lo));
     return padL + Math.min(1, Math.max(0, t)) * (w - padL - padR);
   };
-  const yMid = 20;
+  // Where a value sits, including the ones the axis cannot represent.
+  const at = (v: number): number => (v > 0 ? toX(v) : floorX);
+  const yMid = 22;
   const box =
-    Number.isFinite(d.p05) && Number.isFinite(d.p95) && d.p05 > 0
-      ? `<rect class="box" x="${c(toX(d.p05))}" y="${c(yMid - 7)}" width="${c(Math.max(1, toX(d.p95) - toX(d.p05)))}" height="14"/>`
+    Number.isFinite(d.p05) && Number.isFinite(d.p95)
+      ? `<rect class="box" x="${c(at(d.p05))}" y="${c(yMid - 7)}" width="${c(Math.max(1, at(d.p95) - at(d.p05)))}" height="14"/>`
       : '';
   const whisker =
-    Number.isFinite(d.min) && d.min > 0
-      ? `<line class="whisker" x1="${c(toX(d.min))}" y1="${c(yMid)}" x2="${c(toX(d.max))}" y2="${c(yMid)}"/>`
+    Number.isFinite(d.min) && Number.isFinite(d.max)
+      ? `<line class="whisker" x1="${c(at(d.min))}" y1="${c(yMid)}" x2="${c(at(d.max))}" y2="${c(yMid)}"/>`
       : '';
-  const dots = finite
+  const dots = positive
     .map((v) => `<circle class="dot" cx="${c(toX(v))}" cy="${c(yMid)}" r="3"/>`)
     .join('');
+  // Pinned values get a square rather than a circle, so a reader cannot mistake
+  // the pile at the left edge for a cluster of small positive values.
+  const pinnedMarks =
+    pinned.length === 0
+      ? ''
+      : `<line class="axis-floor" x1="${c(floorX)}" y1="${c(yMid - 11)}" x2="${c(floorX)}" y2="${c(yMid + 11)}"/>` +
+        `<rect class="dot-pinned" x="${c(floorX - 3)}" y="${c(yMid - 3)}" width="6" height="6"/>`;
   const median = Number.isFinite(d.median)
-    ? `<line class="median" x1="${c(toX(d.median))}" y1="${c(yMid - 9)}" x2="${c(toX(d.median))}" y2="${c(yMid + 9)}"/>`
+    ? `<line class="median" x1="${c(at(d.median))}" y1="${c(yMid - 9)}" x2="${c(at(d.median))}" y2="${c(yMid + 9)}"/>`
     : '';
-  const gate = `<line class="gate-line" x1="${c(toX(gateMax))}" y1="4" x2="${c(toX(gateMax))}" y2="${c(h - 12)}"/><text class="tick" x="${c(toX(gateMax))}" y="${c(h - 2)}" text-anchor="middle">gate ${num(gateMax, 3)}</text>`;
+  const gate = `<line class="gate-line" x1="${c(toX(gateMax))}" y1="6" x2="${c(toX(gateMax))}" y2="${c(h - 12)}"/><text class="tick" x="${c(toX(gateMax))}" y="${c(h - 2)}" text-anchor="middle">gate ${num(gateMax, 3)}</text>`;
+  const plotted = positive.length + pinned.length;
+  const note =
+    pinned.length === 0
+      ? ''
+      : `<div class="muted small">${pinned.length} of ${plotted} scenario(s) are ≤ 0 and cannot be placed on a
+         log axis; they are pinned at the axis floor (square) rather than dropped.</div>`;
   return `<svg class="plot strip" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="dispersion against the gate">
-      ${whisker}${box}${dots}${median}${gate}
+      ${whisker}${box}${dots}${pinnedMarks}${median}${gate}
       <text class="tick" x="${c(padL)}" y="10">${num(d.min, 3)}</text>
       <text class="tick" x="${c(w - padR)}" y="10" text-anchor="end">${num(d.max, 3)} ${esc(unit)}</text>
-    </svg>`;
+    </svg>${note}`;
 }
 
 function attributionBlock(gate: GateSummary): string {
@@ -1781,7 +1886,9 @@ function gateSection(results: BenchResults): string {
     })}
     <p class="lede">Every gate with its full dispersion, never a bare mean: the corpus is bimodal by construction and
       a mean hides exactly the failure mode docs/ARCHITECTURE.md's G2 describes. Each strip is a log axis with the
-      whisker at min–max, the box at p05–p95, the tick at the median, one dot per scenario and the gate marked. For a
+      whisker at min–max, the box at p05–p95, the tick at the median, one mark per scenario and the gate marked. A log
+      axis cannot place zero, so any scenario at or below zero is pinned at the axis floor as a square and counted
+      underneath the strip rather than dropped from it. For a
       failing gate, the single largest contributor is <em>measured</em> — by counterfactual substitution, error
       decomposition, or an observability split, whichever fits — not ranked.</p>
     <table class="data gates">
@@ -1970,9 +2077,25 @@ function experimentSection(slots: ExperimentSlot[]): string {
         </div>`;
       }
       const r = slot.report;
+      // PROVISIONAL is a PHASE GATE, not a field an experiment gets to set
+      // about itself. `ExperimentReport.provisional` is optional, so a report
+      // that simply omitted it rendered a green "complete" pill — and
+      // experiments 2 and 3 are provisional BY CONSTRUCTION, because they
+      // depend on Phase 2 photometry whose constants are unmeasured. The slot
+      // knows that; only the placeholder branch was asking it. Either source
+      // saying provisional makes it provisional.
+      const provisional = slot.provisionalByConstruction || r.provisional === true;
+      const understated = slot.provisionalByConstruction && r.provisional !== true;
       return `<div class="card">
-        <h3>${esc(r.title ?? slot.title)} ${r.provisional ? '<span class="pill provisional">PROVISIONAL</span>' : '<span class="pill pass">complete</span>'}</h3>
+        <h3>${esc(r.title ?? slot.title)} ${provisional ? '<span class="pill provisional">PROVISIONAL</span>' : '<span class="pill pass">complete</span>'}</h3>
         <p class="small">${esc(r.question ?? slot.question)}</p>
+        ${
+          understated
+            ? `<div class="muted small">Marked PROVISIONAL by this page, not by the report:
+               <code>progress/experiments/${esc(slot.id)}.json</code> does not carry the flag, and this experiment
+               depends on Phase 2 photometry whose constants are unmeasured.</div>`
+            : ''
+        }
         ${experimentPlot(r)}
         <p class="finding"><strong>Finding.</strong> ${esc(r.finding)}</p>
       </div>`;
@@ -2475,6 +2598,8 @@ svg.plot .gate-line { stroke: var(--gate); stroke-width: 1.2; stroke-dasharray: 
 svg.plot .box { fill: var(--box); opacity: 0.75; }
 svg.plot .whisker { stroke: var(--muted); stroke-width: 1; }
 svg.plot .dot { fill: var(--dot); fill-opacity: 0.55; }
+svg.plot .dot-pinned { fill: var(--dot); fill-opacity: 0.9; }
+svg.plot .axis-floor { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 2; }
 svg.plot .median { stroke: var(--fg); stroke-width: 2; }
 svg.plot .spark-median { fill: none; stroke: var(--accent); stroke-width: 2; }
 svg.plot .spark-p95 { fill: none; stroke: var(--accent); stroke-width: 1; opacity: 0.4; }

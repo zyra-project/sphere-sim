@@ -27,12 +27,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import * as zlib from 'node:zlib';
+
 import {
   EMPTY_IMAGE_STORE,
   GLOSSARY,
   analyseResiduals,
   renderProgressPage,
 } from '../src/progress.ts';
+import { colorizeFieldWithGaps, missingCellHex } from '../src/views.ts';
+import { encodePng8 } from '../../sim/src/png.ts';
 import type { ProgressInput, ResidualColumnsJson } from '../src/progress.ts';
 import { analyseCoverageReference, buildCoverageReference, countLobes } from '../src/reference.ts';
 import type { CoverageReference } from '../src/reference.ts';
@@ -760,6 +764,218 @@ test('the experiment placeholders are present until their reports exist', () => 
   );
   assert.ok(filled.includes('Three photographs recover most of what eight do.'));
   assert.equal([...filled.matchAll(/not yet run/g)].length, 2);
+});
+
+
+// ---------------------------------------------------------------------------
+// A page that tells the truth about its own plots
+//
+// Every test below is for something the page DREW WRONG while reading correctly
+// — a plot that dropped data, a pill that understated a phase gate, a verdict
+// that contradicted the table above it, a name that did not match the name used
+// three sections down, a legend chip that was not the colour it legended. None
+// of them is a crash and none would fail a typecheck; they are all a reader
+// being told something that is not so.
+// ---------------------------------------------------------------------------
+
+/** The `<td>` cells of the gate table, one per gate row. */
+function gateCells(html: string): string {
+  const section = sections(html).find((x) => x.id === 'gates');
+  assert.ok(section !== undefined, 'no gates section');
+  return section.body;
+}
+
+test('a scenario at zero is pinned on the log strip, not dropped from it', () => {
+  // `unlit_in_mask` is EXACTLY 0 on 10 of the 12 scenarios in the shipped
+  // corpus — it is a hard requirement that passes by being zero — and
+  // `off_sphere_flux_excess` has one slightly negative value. The strip
+  // filtered for `v > 0`, so a log axis it could not place them on became a
+  // reason to leave them out: ten of twelve dots missing, and no whisker at
+  // all, on a gate that is passing perfectly. The lede above the table promises
+  // a mark per scenario and a whisker at min-max.
+  const html = renderProgressPage(
+    input({
+      results: results({
+        gates: {
+          pass: true,
+          gates: [
+            gate({
+              id: 'unlit_in_mask',
+              max: 0,
+              distribution: dispersion([0, 0, 0, 0, 1.2]),
+              worst: { scenario: 's01-nominal', value: 1.2 },
+            }),
+          ],
+          unscored: [],
+          waivers: [],
+        },
+      }),
+    }),
+  );
+  const cells = gateCells(html);
+
+  // Four of the five are at zero and are accounted for in writing.
+  assert.match(cells, /4 of 5 scenario\(s\) are ≤ 0/);
+  assert.match(cells, /pinned at the axis floor/);
+  // The pinned marker is drawn, and it is not a dot: a square, so the pile at
+  // the left edge cannot be read as a cluster of small positive values.
+  assert.ok(cells.includes('class="dot-pinned"'), 'the pinned values are not drawn');
+  // And the whisker is back. `min` is 0, which the old guard `d.min > 0`
+  // rejected outright.
+  assert.ok(cells.includes('class="whisker"'), 'the min-max whisker is missing');
+});
+
+test('with every value positive the strip says nothing about pinning', () => {
+  const html = renderProgressPage(
+    input({
+      results: results({
+        gates: {
+          pass: true,
+          gates: [gate({ id: 'grid_displacement', distribution: dispersion([0.4, 0.5, 4.2]) })],
+          unscored: [],
+          waivers: [],
+        },
+      }),
+    }),
+  );
+  const cells = gateCells(html);
+  assert.doesNotMatch(cells, /are ≤ 0/);
+  assert.ok(!cells.includes('class="dot-pinned"'));
+  assert.ok(cells.includes('class="whisker"'));
+});
+
+test('an experiment that is provisional by construction cannot report itself complete', () => {
+  // PROVISIONAL is the PHASE GATE, not a field an experiment sets about itself:
+  // experiments 2 and 3 depend on Phase 2 photometry whose constants are
+  // unmeasured, and docs/prompt.md requires their output be marked. The flag on
+  // `ExperimentReport` is optional, so a report that simply omitted it rendered
+  // a green "complete" pill — the one claim the phase gate exists to prevent.
+  const html = renderProgressPage(
+    input({
+      experiments: [
+        {
+          id: 'experiment-2-blend',
+          finding: 'fixture finding',
+          xLabel: 'x',
+          yLabel: 'y',
+          series: [{ label: 'nominal', x: [1, 2, 3], y: [8, 3, 1] }],
+        },
+      ],
+    }),
+  );
+  const section = sections(html).find((x) => x.id === 'experiments');
+  assert.ok(section !== undefined);
+  const card = /<div class="card">[\s\S]*?<\/div>\s*<\/div>/.exec(section.body)?.[0] ?? section.body;
+  assert.ok(card.includes('PROVISIONAL'), 'a Phase 2 experiment rendered without the marking');
+  assert.ok(!card.includes('>complete<'), 'and it must not also claim to be complete');
+  // The page says whose judgement that is, so a reader is not left thinking the
+  // experiment claimed it.
+  assert.match(section.body, /Marked PROVISIONAL by this page, not by the report/);
+});
+
+test('a metric with nothing to measure is not rendered as a failure', () => {
+  // `buildGates` routes `sampling.count === 0` into `scenariosNotMeasurable`
+  // and leaves it out of both the scored count and the failure count. The
+  // error-map panel wrote `grid?.pass ? 'pass' : 'FAIL'`, which turns a null
+  // `pass` into FAIL — so on the shipped corpus `s08-two-projectors` was
+  // excluded by the gate table and called a FAIL by the panel above it, on one
+  // page.
+  const empty = metric({
+    id: 'grid_displacement',
+    value: NaN,
+    pass: null,
+    sampling: {
+      scheme: 'graticule-line-centroid',
+      description: '0 line localisations. No blend region exists on this rig.',
+      count: 0,
+      densityPerSr: null,
+      convergence: null,
+    },
+  });
+  const html = renderProgressPage(
+    input({
+      results: results({
+        scenarios: [scenario('s08-two-projectors', { metrics: [empty] })],
+        gates: {
+          pass: true,
+          gates: [
+            gate({
+              id: 'grid_displacement',
+              scenariosScored: 0,
+              scenariosNotMeasurable: ['s08-two-projectors'],
+              worst: null,
+              distribution: dispersion([]),
+            }),
+          ],
+          unscored: [],
+          waivers: [],
+        },
+      }),
+    }),
+  );
+  const section = sections(html).find((x) => x.id === 'error-map');
+  assert.ok(section !== undefined);
+  assert.ok(!section.body.includes('FAIL'), 'a scenario with no samples was called a failure');
+  assert.match(section.body, /nothing to measure/);
+  // And it says why, rather than leaving a reader to guess at an empty cell.
+  assert.match(section.body, /0 line localisations/);
+});
+
+test('one physical projector has one name across the whole page', () => {
+  // `residuals.projector` is a dense index into the rig the solver was handed;
+  // every other panel names a projector by its MOUNT SLOT. On a full rig the two
+  // agree. On `s08-two-projectors`, whose slots are [0, 2], section 1 called the
+  // second projector P2 while the injected perturbation table and the error map
+  // called that same lens P3.
+  const sparse = scenario('s08-two-projectors', {
+    inputs: {
+      ...(scenario('s08-two-projectors').inputs as Record<string, unknown>),
+      slots: [0, 2],
+      injected: {
+        centerHeightMm: 1,
+        projectors: [
+          { id: 'P1', azimuthDeg: 0.5 },
+          { id: 'P3', azimuthDeg: -0.5 },
+        ],
+      },
+    },
+  });
+  const html = renderProgressPage(input({ results: results({ scenarios: [sparse] }) }));
+  const section = sections(html).find((x) => x.id === 'residuals');
+  assert.ok(section !== undefined);
+
+  const headings = [...section.body.matchAll(/<h4>([^<\s]+)/g)].map((m) => m[1]);
+  assert.deepEqual(headings, ['P1', 'P3'], 'the residual panels are named by column, not by mount');
+  assert.ok(!section.body.includes('>P2'), 'a mount that is not on this rig was named');
+});
+
+test('the colour-scale legend is painted the colour the image actually contains', () => {
+  // The chip legends a grey that is BAKED INTO THE PNG, so it cannot be a theme
+  // token: it read #b8bcc4 in light and #444a55 in dark against a region that is
+  // one fixed grey in every theme. The check runs the real colorizer and the
+  // real encoder rather than trusting the arithmetic.
+  const field = { width: 1, height: 1, data: new Float32Array([NaN]) };
+  const png = encodePng8(colorizeFieldWithGaps(field, 0, 10), { displayGamma: 2.2 });
+
+  // Pull the one pixel back out: IDAT, inflate, drop the per-row filter byte.
+  const chunks: Buffer[] = [];
+  for (let off = 8; off < png.length; ) {
+    const len = png.readUInt32BE(off);
+    if (png.toString('ascii', off + 4, off + 8) === 'IDAT') {
+      chunks.push(png.subarray(off + 8, off + 8 + len));
+    }
+    off += 12 + len;
+  }
+  const raw = zlib.inflateSync(Buffer.concat(chunks));
+  assert.equal(raw[0], 0, 'the encoder writes filter type 0');
+  const baked = `#${[raw[1], raw[2], raw[3]].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+  assert.equal(missingCellHex(), baked, 'the legend helper disagrees with the encoder');
+
+  const html = renderProgressPage(input());
+  const bar = /<svg class="plot colorbar"[\s\S]*?<\/svg>/.exec(html)?.[0] ?? '';
+  assert.ok(bar.includes('&lt;2 projectors'), 'the colorbar legend is not where it was');
+  assert.ok(bar.includes(`fill="${baked}"`), `the legend chip is not ${baked}`);
+  assert.ok(!/class="gap-rect"/.test(bar), 'the chip still follows the theme token');
 });
 
 test('the trend section says so when there is no history to trend', () => {

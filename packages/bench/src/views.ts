@@ -39,6 +39,28 @@ export { renderTwoRigRoomView, traceTwoRig } from '../../sim/src/misregistration
  * end of viridis would make "no overlap here" and "no error here" the same
  * colour, which is the one confusion a registration map must not create.
  */
+/**
+ * The grey a field map paints where there is nothing to measure.
+ *
+ * A LINEAR level, which is why it needs a name: `writePng` encodes with a
+ * display gamma of 2.2 and `colorizeFieldWithGaps` stores `level^2.2`, so the
+ * round trip returns the level itself and the byte in the PNG is
+ * `round(255 * level)`. That byte is what a legend chip on the progress page
+ * has to match, and it cannot be a theme token: the grey is baked into the
+ * image and does not follow the reader's colour scheme.
+ */
+export const MISSING_CELL_LEVEL = 0.35;
+
+/** {@link MISSING_CELL_LEVEL} as it lands in the PNG, for a legend to match. */
+export function missingCellHex(displayGamma = 2.2): string {
+  const stored = Math.pow(MISSING_CELL_LEVEL, displayGamma);
+  const shown = Math.pow(Math.min(1, Math.max(0, stored)), 1 / displayGamma);
+  const h = Math.round(shown * 255)
+    .toString(16)
+    .padStart(2, '0');
+  return `#${h}${h}${h}`;
+}
+
 export function colorizeFieldWithGaps(
   field: ScalarField,
   lo: number,
@@ -47,7 +69,7 @@ export function colorizeFieldWithGaps(
 ): RgbImage {
   const img = createImage(field.width, field.height);
   const span = hi - lo;
-  const missing = 0.35;
+  const missing = MISSING_CELL_LEVEL;
   for (let i = 0; i < field.width * field.height; i++) {
     const value = field.data[i];
     if (!Number.isFinite(value)) {
