@@ -589,7 +589,24 @@ function projectorDistance(
   return Math.min(barrel, body);
 }
 
-/** Used by {@link pickMarker}, and by the shader's `main` under another name. */
+/**
+ * Used by {@link pickMarker}, and by the shader's `main` under another name.
+ *
+ * `camShift` is applied HERE, because the shader applies it before it builds a
+ * ray: `main` traces `(uv * 2.0 - 1.0) + vec2(0.0, uCamShift)` and `traceScene`
+ * takes an image coordinate that already carries it. This function did not, so
+ * for a screen point the shader drew the ray at `ndcY + camShift` while the
+ * picker tested `ndcY` — a pick that was aimed at a different part of the room
+ * than the one under the finger.
+ *
+ * It is zero on a wide window and non-zero on every narrow one: `viewShiftFrac`
+ * in `web/main.ts` returns 0 above 820 px and otherwise measures the band of
+ * room left between the two sheets, so this was a defect that existed only on
+ * phones and in portrait — where `pickMarkerNear`'s fingertip radius exists
+ * precisely because picking is hardest. A miss is not inert either: the tap
+ * falls through to the "clicked the room" branch, which clears the highlight
+ * and shuts the projector card.
+ */
 export function eyeRay(
   u: DisplayUniforms,
   ndcX: number,
@@ -598,9 +615,10 @@ export function eyeRay(
   const f = { x: u.camForward[0], y: u.camForward[1], z: u.camForward[2] };
   const r = { x: u.camRight[0], y: u.camRight[1], z: u.camRight[2] };
   const up = { x: u.camUp[0], y: u.camUp[1], z: u.camUp[2] };
+  const sy = ndcY + u.camShift;
   return normalize({
-    x: f.x + r.x * ndcX * u.camHalf[0] + up.x * ndcY * u.camHalf[1],
-    y: f.y + r.y * ndcX * u.camHalf[0] + up.y * ndcY * u.camHalf[1],
-    z: f.z + r.z * ndcX * u.camHalf[0] + up.z * ndcY * u.camHalf[1],
+    x: f.x + r.x * ndcX * u.camHalf[0] + up.x * sy * u.camHalf[1],
+    y: f.y + r.y * ndcX * u.camHalf[0] + up.y * sy * u.camHalf[1],
+    z: f.z + r.z * ndcX * u.camHalf[0] + up.z * sy * u.camHalf[1],
   });
 }

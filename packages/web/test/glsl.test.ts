@@ -514,6 +514,50 @@ test('the shader places the same sample grid the model does, and averages before
   assert.ok(divide < encode, 'the samples are averaged after the display encode');
 });
 
+test('on a shifted frame the pick follows the picture, not the raw screen point', () => {
+  // The shader traces `(uv * 2 - 1) + vec2(0, uCamShift)`; `eyeRay` did not add
+  // the term, so on any narrow viewport the picker tested a ray from a different
+  // screen position than the one drawn. `viewShiftFrac` in web/main.ts is zero
+  // above 820 px and non-zero below it, which made this a defect that existed
+  // only on phones and in portrait — where a tap is hardest to land and where
+  // `pickMarkerNear`'s fingertip radius exists for that reason. A miss is not
+  // inert: `markerUnder` returning -1 sends the tap into the "clicked the room"
+  // branch, which clears the highlight and shuts the projector card, so tapping
+  // a lens actively closed the thing it was meant to open.
+  const world = buildWorld(BOULDER_PRESET);
+  const physical = prepareRig(world.truthRig);
+  const content = prepareRig(world.compositorRig);
+  const shift = 0.35;
+
+  for (let i = 0; i < world.truthRig.projectors.length; i++) {
+    const lens = world.truthRig.projectors[i].pose.position;
+    const len = Math.hypot(lens.x, lens.y, lens.z);
+    const outside = { x: (lens.x / len) * (len + 3), y: (lens.y / len) * (len + 3), z: lens.z };
+    const base = buildViewer(BOULDER_PRESET, 64, 48);
+    const camera = { ...base, position: outside, target: lens, imageShift: shift };
+    const u = buildDisplayUniforms(physical, content, world.scene, camera, {
+      markerRadiusM: 0.12,
+    });
+    assert.equal(u.camShift, shift, 'the shift did not reach the uniforms');
+
+    // The shader puts the lens at NDC y = -shift: it adds `camShift` to the
+    // image coordinate, so the point that traces down the barrel is the one
+    // whose ndcY cancels it.
+    assert.equal(
+      pickMarker(u, 0, -shift),
+      i,
+      `P${i + 1} is not pickable where the shader draws it`,
+    );
+    // And the raw screen centre now looks somewhere else entirely, which is what
+    // the operator was tapping and missing.
+    assert.notEqual(
+      pickMarker(u, 0, 0),
+      i,
+      'the shifted frame still picks at the unshifted point, so the term is being ignored',
+    );
+  }
+});
+
 test('the viewer lens shift moves the frame, not the aim', () => {
   // `ViewerCamera.imageShift` is a principal-point offset: it is added to the
   // IMAGE coordinate and must never touch the camera basis. A shader that
