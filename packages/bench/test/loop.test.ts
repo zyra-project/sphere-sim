@@ -21,14 +21,17 @@ import {
   assertScorable,
   betterThan,
   classifyMovement,
+  ROUNDS_SCHEMA,
   loadHistory,
   movementOf,
+  nextRoundNumber,
+  parseLoopArgs,
   rankRound,
   recordFromFile,
   runRound,
   seedForRound,
 } from '../src/loop.ts';
-import type { RoundSeries } from '../src/loop.ts';
+import type { RoundRecord, RoundSeries } from '../src/loop.ts';
 import { PRESETS } from '../src/scenarios.ts';
 import type { BenchPreset } from '../src/scenarios.ts';
 import type { BenchResults } from '../src/results.ts';
@@ -394,9 +397,74 @@ test('a round can be RECORDED from a bench run that already happened', { timeout
   const numbered = recordFromFile({ ...base, record: resultsFile, round: 4 });
   assert.equal(numbered.record.round, 4);
 
+  // A history with a HOLE in it must not renumber on top of an existing round.
+  // Build 0, 1, 2, 4 — the shape `--round` produces, and the shape
+  // docs/PHASE-1.md's late-started history would have had if a round were ever
+  // dropped — and record one more. The count is 4 and the highest round is 4,
+  // so numbering by the count would hand the new round the number 4, and
+  // `recordRound` filters out the record whose number matches before appending:
+  // round 4 would be deleted and replaced without a word, having also re-run
+  // its seed, since `seedForRound` is a function of the round number.
+  let sparse = recorded.history;
+  for (let i = 0; i < 2; i++) {
+    fs.writeFileSync(historyPath, `${JSON.stringify(sparse, null, 2)}\n`);
+    sparse = recordFromFile({ ...base, record: resultsFile }).history;
+  }
+  fs.writeFileSync(historyPath, `${JSON.stringify(sparse, null, 2)}\n`);
+  sparse = recordFromFile({ ...base, record: resultsFile, round: 4 }).history;
+  fs.writeFileSync(historyPath, `${JSON.stringify(sparse, null, 2)}\n`);
+  assert.deepEqual(
+    loadHistory(historyPath).rounds.map((r) => r.round),
+    [0, 1, 2, 4],
+    'the history under test really does have a hole in it',
+  );
+
+  const afterHole = recordFromFile({ ...base, record: resultsFile });
+  assert.equal(afterHole.record.round, 5, 'one past the highest round, not the count');
+  assert.deepEqual(
+    afterHole.history.rounds.map((r) => r.round),
+    [0, 1, 2, 4, 5],
+    'and round 4 is still there',
+  );
+
   assert.throws(
     () => recordFromFile({ ...base, record: path.join(dir, 'nope.json') }),
     /no such file/,
   );
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('the next round number is one past the highest, not the number of records', () => {
+  const at = (rounds: readonly number[]): ReturnType<typeof loadHistory> => ({
+    schema: ROUNDS_SCHEMA,
+    rootSeed: 1,
+    rounds: rounds.map((round) => ({ round }) as unknown as RoundRecord),
+    best: null,
+  });
+
+  assert.equal(nextRoundNumber(at([])), 0, 'an empty history starts at round 0');
+  assert.equal(nextRoundNumber(at([0, 1, 2])), 3, 'a dense history is unaffected');
+  assert.equal(nextRoundNumber(at([0, 1, 2, 4])), 5, 'a hole does not pull the number back');
+  assert.equal(nextRoundNumber(at([4])), 5, 'a history that starts late keeps counting from there');
+  assert.equal(nextRoundNumber(at([2, 0, 1])), 3, 'and the answer does not depend on the order');
+});
+
+test('a round number that is not a whole number is refused, not turned into NaN', () => {
+  // `Number('x')` is NaN, and a NaN round survives every comparison in
+  // `recordRound` — `NaN !== NaN`, so it replaces nothing and sorts nowhere —
+  // before landing in a results file called `round-NaN.json`.
+  for (const bad of ['x', '1.5', '-1', '']) {
+    assert.throws(
+      () => parseLoopArgs(['--round', bad]),
+      /needs a non-negative whole number/,
+      `--round ${bad}`,
+    );
+    assert.throws(
+      () => parseLoopArgs(['--replay', bad]),
+      /needs a non-negative whole number/,
+      `--replay ${bad}`,
+    );
+  }
+  assert.equal(parseLoopArgs(['--round', '4']).round, 4);
+  assert.equal(parseLoopArgs(['--replay', '0']).replay, 0);
 });

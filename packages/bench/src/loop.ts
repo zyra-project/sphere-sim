@@ -319,6 +319,28 @@ export function loadHistory(file = HISTORY_PATH, rootSeed = 20240001): RoundHist
   }
 }
 
+/**
+ * The number the NEXT round gets.
+ *
+ * One past the highest round already recorded, not the count of records. The
+ * two agree only while the history is dense, and it need not be: `--round`
+ * records a results file under any number the caller names, and a round can be
+ * removed from `progress/rounds.json` by hand. On a history holding rounds
+ * 0, 1, 2 and 4, the count is 4 — so the next round would have been numbered 4
+ * as well, and `recordRound` filters out the record whose number matches before
+ * appending, which means the existing round 4 would have been DELETED and
+ * replaced without a word. The seed would have collided too, since
+ * `seedForRound` is a function of the round number: the "fresh" round would
+ * have re-run the scenarios of the one it overwrote.
+ *
+ * Monotone by construction, so the auto-numbered path cannot collide with
+ * anything. Deliberate replacement still exists — it is what `--replay` and an
+ * explicit `--round` are for.
+ */
+export function nextRoundNumber(history: RoundHistory): number {
+  return history.rounds.reduce((max, r) => Math.max(max, r.round), -1) + 1;
+}
+
 export function seedForRound(rootSeed: number, round: number): number {
   return deriveSeed(rootSeed, `round:${round}`);
 }
@@ -673,6 +695,20 @@ export function parseLoopArgs(argv: readonly string[]): LoopOptions {
       if (v === undefined) throw new Error(`loop: ${a} needs a value`);
       return v;
     };
+    // A round number is an index into the history and a filename. `Number('x')`
+    // is NaN, and a NaN round survives every comparison in `recordRound`
+    // (`NaN !== NaN`, so it replaces nothing and sorts nowhere) before landing
+    // in `progress/data/round-NaN.json`.
+    const index = (): number => {
+      // Digits only, on the RAW text. `Number('')` and `Number(' ')` are both
+      // 0, so a numeric check alone would silently turn a missing value into
+      // round 0 and overwrite the first round of the history.
+      const raw = next();
+      if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) {
+        throw new Error(`loop: ${a} needs a non-negative whole number, got '${raw}'`);
+      }
+      return Number(raw);
+    };
     switch (a) {
       case '--quick':
         preset = PRESETS.quick;
@@ -687,7 +723,7 @@ export function parseLoopArgs(argv: readonly string[]): LoopOptions {
         seed = Number(next());
         break;
       case '--replay':
-        replay = Number(next());
+        replay = index();
         break;
       case '--history':
         historyPath = path.resolve(REPO_ROOT, next());
@@ -702,7 +738,7 @@ export function parseLoopArgs(argv: readonly string[]): LoopOptions {
         record = next();
         break;
       case '--round':
-        round = Number(next());
+        round = index();
         break;
       default:
         throw new Error(`loop: unknown argument '${a}'`);
@@ -812,7 +848,7 @@ export function recordRound(
 
 export function runRound(options: LoopOptions): RoundOutcome {
   const history = loadHistory(options.historyPath);
-  const round = options.replay !== null ? options.replay : history.rounds.length;
+  const round = options.replay !== null ? options.replay : nextRoundNumber(history);
   const seed =
     options.seed !== null
       ? options.seed
@@ -859,7 +895,7 @@ export function recordFromFile(options: LoopOptions): RoundOutcome {
       ? options.round
       : options.replay !== null
         ? options.replay
-        : history.rounds.length;
+        : nextRoundNumber(history);
   return recordRound(
     results,
     history,

@@ -418,8 +418,17 @@ export function poseErrors(recovered: RigCalibration, truth: RigCalibration): Po
     });
     sumP += positionMm * positionMm;
     sumR += rotationDeg * rotationDeg;
-    if (positionMm > maxP) maxP = positionMm;
-    if (rotationDeg > maxR) maxR = rotationDeg;
+    // `Math.max`, not `if (x > max)`. Every comparison against NaN is false, so
+    // the guarded form SKIPS a non-finite projector and leaves the maximum at
+    // the largest finite value it happened to see — a diverged bundle would
+    // report a small, passing `pose_position` while its own `perProjector`
+    // entry read NaN, and the RMS beside it would already be NaN because
+    // `sumP` is not comparison-guarded. `Math.max` propagates it and keeps it
+    // propagated, which is what `cameraErrors` and `intrinsicsErrors` below
+    // already do; `buildRecoveryGates` then counts a non-finite value as both
+    // failed and unmeasured rather than scoring it.
+    maxP = Math.max(maxP, positionMm);
+    maxR = Math.max(maxR, rotationDeg);
   }
   return {
     perProjector,

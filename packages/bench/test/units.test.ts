@@ -183,6 +183,46 @@ test('poseErrors reports exactly the perturbation it was given', () => {
   assert.ok(Math.abs(e.maxPositionMm - Math.hypot(7, 3, 2.5)) < 1e-9);
 });
 
+test('a diverged projector poisons the maximum instead of being skipped by it', () => {
+  // A bundle that diverges hands back a non-finite pose, and `poseErrors` used
+  // to take its maxima with `if (positionMm > maxP)`. Every comparison against
+  // NaN is false, so the non-finite projector was SKIPPED: the maximum stayed
+  // at the largest finite value it happened to see. The failure mode is not a
+  // wrong number, it is a passing gate — `pose_position` scores
+  // `aligned.maxPositionMm`, so a rig with one diverged projector could report
+  // a small maximum and pass, while its own `perProjector` entry beside it read
+  // NaN and the RMS read NaN too (`sumP` was never comparison-guarded).
+  const truth = nominalRig({ projectorCount: 4 });
+  const moved = shiftProjector(truth, 1, 0.007, -0.003, 0.0025, 0.031);
+
+  // Projector 2 diverges; projector 3 is finite and comes AFTER it, which is
+  // the case a sticky-NaN written as a comparison would still get wrong.
+  const diverged: RigCalibration = {
+    ...moved,
+    projectors: moved.projectors.map((p, i) =>
+      i !== 2
+        ? p
+        : { ...p, pose: { ...p.pose, position: { x: NaN, y: p.pose.position.y, z: p.pose.position.z } } },
+    ),
+  };
+  const e = poseErrors(diverged, truth);
+
+  assert.ok(Number.isNaN(e.perProjector[2].positionMm), 'the diverged projector really is NaN');
+  assert.ok(Number.isFinite(e.perProjector[3].positionMm), 'and a later projector is not');
+  assert.ok(
+    Number.isNaN(e.maxPositionMm),
+    'so the maximum cannot be a finite number the gate would pass',
+  );
+  // The RMS already reported it. The two must not disagree about whether the
+  // rig was measurable.
+  assert.ok(Number.isNaN(e.rmsPositionMm));
+
+  // Rotation is untouched here, so it stays finite and scorable: the poisoning
+  // is per quantity, not a blanket write-off of the whole rig.
+  assert.ok(Number.isFinite(e.maxRotationDeg));
+  assert.ok(Math.abs(e.maxRotationDeg - 0.031) < 1e-9);
+});
+
 test('a pure gauge rotation is large raw and vanishes after alignment', () => {
   const truth = nominalRig({ projectorCount: 4 });
   const cams = [
