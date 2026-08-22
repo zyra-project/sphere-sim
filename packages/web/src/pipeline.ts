@@ -47,6 +47,7 @@
 
 import type { RigCalibration } from '../../calibration/src/index.ts';
 import { PARAMETER_TABLE } from '../../calibration/src/parameters.ts';
+import { NOMINAL_SLOTS_BY_COUNT } from '../../calibration/src/conventions.ts';
 import { placeCameras } from '../../bench/src/camera.ts';
 import { DEFAULT_CLOCK, DEFAULT_HANDHELD } from '../../bench/src/camera.ts';
 import { captureAndDecode, DEFAULT_SENSOR } from '../../bench/src/capture.ts';
@@ -218,6 +219,49 @@ function recoveryTable(
  * this one is the reason the page can claim anything at all.
  */
 /**
+ * The nominal the operator hands the solver: the SOLVER's own construction from
+ * the documented constants, at the quadrant slots this install actually uses.
+ *
+ * Exported because the slot mapping is the whole content of it and it is two
+ * hops, neither of which is obvious. It used to be one line inside `runSolve` —
+ * `world.truthRig.projectors.map((_, k) => fullNominal.projectors[k])` — which
+ * takes a PREFIX of the four-slot nominal, so the moment the lit set was not a
+ * prefix of the slot list every projector past the gap was handed a nominal a
+ * full quadrant around the ring: 7.33 m of position error, from one click on
+ * `Projectors = 2`. `NudgedRig.slots` exists for exactly this and its own doc
+ * comment names this failure class; nothing was reading it here.
+ *
+ * Hop one: PARAMETERS.md S2's "quadrants go dark" removes a projector from a
+ * standard layout rather than respacing the ones that remain, so an N-projector
+ * install occupies conventions.ts SN.2's SUBSET of the four 90-degree slots.
+ * Hop two: `NudgedRig.slots` indexes that already-cut installed rig, not the
+ * four quadrants — at Projectors = 3 the installed rig is slots 0, 1, 2, so
+ * `slots` of [0, 2] means quadrants 0 and 180, not 0 and 90.
+ *
+ * Built BY `nominalRig` at the named slots rather than sliced out of a
+ * four-projector rig. The solver's own construction is the one that has to be
+ * right about where a dark quadrant leaves the others, and it validates that the
+ * slots are distinct and in range on the way in.
+ */
+export function solverNominalFor(
+  settings: SolveRequest['settings'],
+  slots: readonly number[],
+): RigCalibration {
+  const res = RESOLUTIONS[Math.round(settings.resolution)] ?? RESOLUTIONS[1];
+  const installed = NOMINAL_SLOTS_BY_COUNT[Math.round(settings.projectorCount)] ?? [0, 1, 2, 3];
+  const litSlots = slots.map((i) => installed[i]);
+  return solverNominalRig({
+    projectorCount: litSlots.length,
+    slots: litSlots,
+    resX: res.resX,
+    resY: res.resY,
+    distanceM: PARAMETER_TABLE.d_proj.nominal,
+    projectorHeightM: PARAMETER_TABLE.h_proj.nominal,
+    centerHeightM: PARAMETER_TABLE.h_center.nominal,
+  });
+}
+
+/**
  * The image playing on the sphere, held across solves.
  *
  * The same arrangement `model.ts` uses and for the same reason: a megabyte of
@@ -247,6 +291,18 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     undefined,
     cachedImageId === req.customImageId ? (cachedImage ?? undefined) : undefined,
   );
+  // Nothing to photograph. `planPatternFor` reads `projectors[0].intrinsics` to
+  // size the Gray code and threw a raw TypeError here — a message naming neither
+  // the control that caused it nor the way back — and nothing upstream stops the
+  // last lit projector being switched off: the tabs toggle freely and the metrics
+  // worker is perfectly happy with an unlit sphere.
+  if (world.truthRig.projectors.length === 0) {
+    throw new Error(
+      'Every projector is switched off at the wall, so there is nothing to photograph. ' +
+        'Switch at least one back on and recalibrate.',
+    );
+  }
+
   const rng = makeBenchRng(req.seed);
 
   // §6 bounds the viewing distance at 2.0–3.5 m, the low end by the guard rail.
@@ -367,20 +423,7 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
   // construction from the documented constants, with the four quadrant slots cut
   // down to the ones this install uses. §2's "quadrants go dark" removes
   // projectors from a standard layout, it does not respace the ones that remain.
-  const res = RESOLUTIONS[Math.round(req.settings.resolution)] ?? RESOLUTIONS[1];
-  const fullNominal = solverNominalRig({
-    projectorCount: 4,
-    resX: res.resX,
-    resY: res.resY,
-    distanceM: PARAMETER_TABLE.d_proj.nominal,
-    projectorHeightM: PARAMETER_TABLE.h_proj.nominal,
-    centerHeightM: PARAMETER_TABLE.h_center.nominal,
-  });
-  const solverNominal: RigCalibration = {
-    ...fullNominal,
-    projectors: world.truthRig.projectors.map((_, k) => fullNominal.projectors[k]),
-  };
-
+  const solverNominal = solverNominalFor(req.settings, world.slots);
   // The operator's guess at where each tripod stood: right side of the sphere,
   // wrong distance and aim. `initialize.ts` is explicit that the pose is an
   // initialisation and needs to be right about which side it was on.

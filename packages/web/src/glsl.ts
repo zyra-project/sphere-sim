@@ -389,6 +389,41 @@ float rampWeight(int shape, float t, float rampGamma) {
   return w == 0.0 ? 0.0 : pow(w, rampGamma);
 }
 
+// Half the angular gap to each neighbouring lens, on each side, in degrees.
+//
+// NOT 360/N. conventions.ts SN.2 records equal spacing as "the rejected reading
+// ... it is what one of the two implementations did": PARAMETERS.md S2's 2- and
+// 3-projector installs keep the four 90-degree slots and let quadrants go dark,
+// and a projector switched off at the wall does the same, so the ring this
+// shader is handed is routinely uneven. An even split widens the survivors'
+// wedges across a gap they cannot physically reach; past the widened wedge but
+// still inside the real footprint every weight is zero, and the shader drops the
+// surface to the projector black floor over light the model says is on.
+//
+// Each boundary sits at the midpoint between two adjacent lenses, so whatever
+// one projector gives up its neighbour takes and the wedges tile the circle.
+// This is the same rule as coverageAndWeights in packages/sim, reached
+// independently from the uniforms this chunk already has.
+//
+// The one-step floored remainder that would fold the gap into [0, 360) is
+// banned in this shader, comment included -- it is floored where the CPU model
+// truncates, and the test that bans it exists because the difference is
+// invisible on a four-fold symmetric rig. wrapDeg180 plus a hand-lifted half
+// turn is exact and reads the same on both sides.
+void sectorHalfWidths(int i, out float plusHalf, out float minusHalf) {
+  plusHalf = 180.0;
+  minusHalf = 180.0;
+  float a = atan(uCLens[i].y, uCLens[i].x) * RAD2DEG;
+  for (int j = 0; j < MAX_PROJ; j++) {
+    if (j >= uProjCount || j == i) continue;
+    float d = wrapDeg180(atan(uCLens[j].y, uCLens[j].x) * RAD2DEG - a);
+    if (d < 0.0) d += 360.0;
+    if (d > 0.0 && d * 0.5 < plusHalf) plusHalf = d * 0.5;
+    float e = 360.0 - d;
+    if (e > 0.0 && e * 0.5 < minusHalf) minusHalf = e * 0.5;
+  }
+}
+
 // coverageAndWeights, evaluated in the CONTENT rig at the back-projected point.
 // Returns the normalized weight of projector 'want' and, through 'count', how
 // many content projectors light that point — which is the overlap multiplicity
@@ -412,11 +447,16 @@ float contentWeight(vec3 x, int want, out int count) {
     // here or the parity readout on this very page reports the disagreement.
     float t = (thetaMaxDeg - thetaDeg) / width;
     if (uBlendSector == 1) {
-      float span = 360.0 / float(uProjCount);
+      float plusHalf;
+      float minusHalf;
+      sectorHalfWidths(i, plusHalf, minusHalf);
       float lonDeg = atan(x.y, x.x) * RAD2DEG;
       float meridianDeg = atan(uCLens[i].y, uCLens[i].x) * RAD2DEG;
-      float dLon = abs(wrapDeg180(lonDeg - meridianDeg));
-      t = min((span * 0.5 + width * 0.5 - dLon) / width, t);
+      // SIGNED. The two half-widths differ on an uneven ring, so folding the
+      // sign away here would discard the whole point of measuring them.
+      float dLon = wrapDeg180(lonDeg - meridianDeg);
+      float edge = dLon >= 0.0 ? plusHalf : minusHalf;
+      t = min((edge + width * 0.5 - abs(dLon)) / width, t);
     }
     float w = rampWeight(uRampShape, t, uRampGamma);
     sum += w;

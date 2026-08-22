@@ -32,6 +32,7 @@ import {
   slotOfRigIndex,
 } from '../src/uniforms.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
+import { coverageAndWeights } from '../../sim/src/coverage.ts';
 import { BOULDER_PRESET } from '../src/settings.ts';
 import { CONTENT_DECODE_GAMMA } from '../src/rigs.ts';
 import { buildViewer, buildWorld } from '../src/rigs.ts';
@@ -171,6 +172,80 @@ test('the distortion inversion runs a fixed iteration count a GPU can actually f
   // never satisfy just burns the loop while pretending to be adaptive.
   const optics = FRAGMENT_CHUNKS.find((c) => c.name === 'optics');
   assert.ok(optics && !/1e-1[0-9]/.test(optics.source));
+});
+
+test('the A-37 sector wedge is measured from the neighbouring lenses, not from 360/N', () => {
+  // conventions.ts SN.2 records equal spacing as "the rejected reading ... it is
+  // what one of the two implementations did", and this shader was the one that
+  // did it. The trigger is not exotic: PARAMETERS.md S2's N=3 install keeps
+  // slots 0/90/180 rather than respacing to 0/120/240, so the plain "3" chip in
+  // the Projectors row reaches it in a single click, as does switching one
+  // projector off at the wall.
+  const blend = FRAGMENT_CHUNKS.find((c) => c.name === 'blend');
+  assert.ok(blend);
+  assert.ok(
+    !/360\.0\s*\/\s*float\(uProjCount\)/.test(blend.source),
+    'the sector wedge is 360/N, which respaces the survivors of a dark quadrant',
+  );
+  assert.ok(
+    blend.source.includes('sectorHalfWidths(i, plusHalf, minusHalf)'),
+    'the wedge is not measured from the neighbouring lens azimuths',
+  );
+  // Signed, or the two half-widths are computed and then thrown away.
+  assert.ok(blend.source.includes('float edge = dLon >= 0.0 ? plusHalf : minusHalf;'));
+  // The helper must stay inside the content rig, like the rest of the chunk.
+  for (const physical of ['uLens[', 'uRot[', 'uIntr[', 'uRaster[', 'uLimb[', 'uRadius']) {
+    assert.ok(!blend.source.includes(physical));
+  }
+});
+
+test('on an uneven ring the wedge rule leaves no lit surface unweighted', () => {
+  // Why the structural test above is worth having, stated as arithmetic rather
+  // than as an assertion about source text. A headless test cannot run the
+  // shader, and transliterating it here would only fail when somebody
+  // remembered to update the copy — so this pins the PROPERTY the rule has to
+  // have, against `packages/sim`'s implementation of it and against the even
+  // split the shader used to use.
+  //
+  // Any point some projector physically lights must come out with a positive
+  // normalised weight. Under 360/N on a three-projector ring it does not: the
+  // survivors' wedges are widened to 120 degrees, and the surface past the
+  // widened wedge but still inside the real footprint belongs to nobody.
+  const world = buildWorld({ ...BOULDER_PRESET, projectorCount: 3, mountError: 0 });
+  const rig = prepareRig(world.compositorRig);
+  assert.equal(rig.projectors.length, 3);
+
+  const R = world.compositorRig.sphere.radiusM;
+  let litSamples = 0;
+  let unweighted = 0;
+  for (let k = 0; k < 3600; k++) {
+    const lonDeg = -180 + (360 * k) / 3600;
+    const lon = (lonDeg * Math.PI) / 180;
+    const point = { x: R * Math.cos(lon), y: R * Math.sin(lon), z: 0 };
+    const { weights, lit } = coverageAndWeights(point, rig);
+    if (!lit.some(Boolean)) continue;
+    litSamples++;
+    if (weights.reduce((a, b) => a + b, 0) <= 0) unweighted++;
+  }
+  assert.ok(litSamples > 0, 'the fixture lit nothing');
+  assert.equal(unweighted, 0, `${unweighted} of ${litSamples} lit equator samples carry no weight`);
+
+  // And the point where the two rules actually part company, so this test is a
+  // comparison and not just a sanity check. P1 sits at azimuth 0 and the dark
+  // quadrant runs from 180 back to 360, so P1's negative-side boundary is the
+  // midpoint to P3 at 180 — a half-width of 90 degrees. An even three-way split
+  // would put it at 60. At -75 degrees the surface is inside P1's real footprint
+  // (the limb is about 80 degrees out) and inside the measured wedge, but
+  // outside the even-split one: this is the longitude the shader used to drop to
+  // the projector's black floor.
+  const lon = (-75 * Math.PI) / 180;
+  const probe = { x: R * Math.cos(lon), y: R * Math.sin(lon), z: 0 };
+  const at75 = coverageAndWeights(probe, rig);
+  assert.ok(at75.lit[0], 'P1 does not physically reach -75 degrees, so the probe proves nothing');
+  assert.ok(
+    at75.weights[0] > 0,
+    'the wedge stops short of the midpoint to the next lens, which is the 360/N rule',
+  );
 });
 
 test('longitude wrapping is truncated, not floored', () => {

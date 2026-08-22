@@ -15,7 +15,7 @@ import type { RigCalibration } from '../../calibration/src/index.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
 import { BOULDER_PRESET, cameraDistanceM, IN_TO_M } from '../src/settings.ts';
 import { buildWorld } from '../src/rigs.ts';
-import { runSolve } from '../src/pipeline.ts';
+import { runSolve, solverNominalFor } from '../src/pipeline.ts';
 import type { SolvePhase, SolveRequest } from '../src/protocol.ts';
 
 function request(overrides: Partial<SolveRequest> = {}): SolveRequest {
@@ -35,6 +35,84 @@ function request(overrides: Partial<SolveRequest> = {}): SolveRequest {
     ...overrides,
   };
 }
+
+/** Each projector's azimuth, in whole degrees, in rig order. */
+function azimuths(rig: RigCalibration): number[] {
+  return rig.projectors.map(
+    (p) =>
+      (Math.round((Math.atan2(p.pose.position.y, p.pose.position.x) * 180) / Math.PI) + 360) % 360,
+  );
+}
+
+function settingsWith(overrides: Record<string, unknown>): typeof BOULDER_PRESET {
+  return { ...BOULDER_PRESET, ...overrides } as typeof BOULDER_PRESET;
+}
+
+/** The preset with one projector switched off at the wall. */
+function withOff(index: number, overrides: Record<string, unknown> = {}): typeof BOULDER_PRESET {
+  const base = settingsWith(overrides);
+  return { ...base, nudge: base.nudge.map((n, k) => ({ ...n, on: k !== index })) };
+}
+
+test('the nominal handed to the solver is placed by SLOT, not by position', () => {
+  // The defect this replaces took a PREFIX of the four-slot nominal, so the
+  // moment the lit set was not a prefix — one click on `Projectors = 2`, or
+  // switching any projector but the last off at the wall — every projector past
+  // the gap was handed a nominal a full quadrant around the ring. Measured
+  // against the corrected placement that is 7.33 m of position error in the
+  // starting point of a bundle adjustment whose gate is 2 mm.
+  //
+  // Each case below states the truth rig's azimuths first, because the whole
+  // requirement is that the nominal agree with them.
+  const cases: { label: string; settings: typeof BOULDER_PRESET; want: number[] }[] = [
+    { label: 'four projectors, all on', settings: BOULDER_PRESET, want: [0, 90, 180, 270] },
+    { label: 'four installed, P2 off at the wall', settings: withOff(1), want: [0, 180, 270] },
+    { label: 'four installed, P1 off at the wall', settings: withOff(0), want: [90, 180, 270] },
+    // conventions.ts SN.2: three projectors take slots 0, 1, 2 — 0/90/180 — not
+    // an even 0/120/240 split.
+    { label: 'three projectors', settings: settingsWith({ projectorCount: 3 }), want: [0, 90, 180] },
+    {
+      label: 'three installed, the middle one off',
+      settings: withOff(1, { projectorCount: 3 }),
+      want: [0, 180],
+    },
+    // A-06: two projectors take the OPPOSED pair. This one needs no off switch
+    // at all — it is the plain "2" chip in the Projectors row.
+    { label: 'two projectors', settings: settingsWith({ projectorCount: 2 }), want: [0, 180] },
+  ];
+
+  for (const c of cases) {
+    const world = buildWorld(c.settings);
+    const nominal = solverNominalFor(c.settings, world.slots);
+    assert.deepEqual(azimuths(nominal), c.want, c.label);
+    assert.equal(
+      nominal.projectors.length,
+      world.truthRig.projectors.length,
+      `${c.label}: the nominal and the truth rig disagree about how many lenses are lit`,
+    );
+    // The real check: the nominal must be within a mount tolerance of the truth
+    // rig it is initialising, not a quadrant away from it.
+    for (let i = 0; i < nominal.projectors.length; i++) {
+      const a = nominal.projectors[i].pose.position;
+      const b = world.truthRig.projectors[i].pose.position;
+      const mm = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) * 1000;
+      assert.ok(mm < 500, `${c.label}: projector ${i} starts ${mm.toFixed(0)} mm from the truth`);
+    }
+  }
+});
+
+test('a solve with every projector switched off says so in words', () => {
+  // It used to be `TypeError: Cannot read properties of undefined (reading
+  // 'intrinsics')` from `planPatternFor`, surfaced raw in the page's error
+  // banner. Nothing upstream prevents it: the projector tabs toggle freely and
+  // the metrics worker is perfectly happy with an unlit sphere, so the first
+  // thing that notices is the solve.
+  const dark = { ...BOULDER_PRESET, nudge: BOULDER_PRESET.nudge.map((n) => ({ ...n, on: false })) };
+  assert.throws(
+    () => runSolve(request({ settings: dark })),
+    /Every projector is switched off at the wall/,
+  );
+});
 
 test('a solve recovers the rig from photographs and improves the alignment', { timeout: 300_000 }, () => {
   const phases: SolvePhase[] = [];
