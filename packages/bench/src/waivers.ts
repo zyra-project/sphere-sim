@@ -285,7 +285,22 @@ export function evaluateGates(input: EvaluationInput): Evaluation {
     // Checked BEFORE the advisory branch so an advisory gate reports the same
     // fact rather than printing a nonsense ratio like "12/0 scenarios over
     // 0.07 deg" — but it stays non-fatal there, for the reason that branch gives.
-    if (gate.scenariosScored === 0) {
+    // Either the gate scored nothing at all, or part of the corpus owed it a
+    // number and never produced one. Both mean the same thing for a verdict:
+    // it does not cover what it claims to have judged.
+    // Read defensively, not because the builders may omit it — the type makes
+    // them set it — but because this judge is meant to re-judge OLDER results
+    // files (gate.ts's own docstring: "against a different waiver file, on an
+    // older results file, in a review"). A file written before this field
+    // existed must still be judgeable rather than crash the step.
+    const owedScenarios = gate.scenariosUnmeasured ?? [];
+    if (gate.scenariosScored === 0 || owedScenarios.length > 0) {
+      const owed =
+        owedScenarios.length > 0
+          ? ` ${owedScenarios.length} scenario(s) owed a value and produced none ` +
+            `(${owedScenarios.join(', ')}) — a metric that threw, not a rig with ` +
+            `nothing to measure.`
+          : '';
       const excluded =
         gate.scenariosNotMeasurable.length > 0
           ? ` ${gate.scenariosNotMeasurable.length} scenario(s) had nothing to measure ` +
@@ -295,7 +310,10 @@ export function evaluateGates(input: EvaluationInput): Evaluation {
         id: gate.id,
         status: gate.advisory ? 'ADVISORY' : 'NOT-MEASURED',
         why:
-          `no scenario produced a value for this gate, so it was not judged either way.${excluded} ` +
+          (gate.scenariosScored === 0
+            ? `no scenario produced a value for this gate, so it was not judged either way.`
+            : `${gate.scenariosScored} scenario(s) scored, but the verdict does not cover the corpus.`) +
+          `${owed}${excluded} ` +
           `A gate that measured nothing has not passed; re-run with scenarios that can score it, ` +
           `or fix whatever stopped them scoring.` +
           (gate.advisory ? ' Advisory, so it does not fail the build.' : ''),

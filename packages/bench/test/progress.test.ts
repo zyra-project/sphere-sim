@@ -192,6 +192,7 @@ function gate(overrides: Partial<GateSummary> & { id: string }): GateSummary {
     worst: { scenario: 's00-clean', value: 0.42 },
     distribution: dispersion([0.42, 0.5]),
     scenariosNotMeasurable: [],
+    scenariosUnmeasured: [],
     dependsOnRecovery: true,
     provisional: false,
     advisory: false,

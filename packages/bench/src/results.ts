@@ -334,6 +334,27 @@ export interface GateSummary {
    */
   scenariosNotMeasurable: string[];
   /**
+   * Scenarios that SHOULD have produced a value for this gate and did not.
+   *
+   * The distinction from `scenariosNotMeasurable` is the whole point and it is
+   * not a shade of meaning: "not measurable" is a fact about the rig — an
+   * antipodal two-projector install has no seams, so there is nothing to
+   * measure and never was. "Unmeasured" is a fact about the RUN — the metric
+   * threw, or came back non-finite, and a number that should exist does not.
+   * One is a sentence to write in §7; the other is a bug.
+   *
+   * This existed as neither before. `run.ts` catches a `computeGeometricMetrics`
+   * exception into a per-scenario `error` string that the gate step never reads,
+   * and the section-7 loop then hit `m === undefined` and `continue`d — so the
+   * scenario was counted as neither scored, failed, nor not-measurable, the gate
+   * quietly shrank its own denominator to 11 of 12, and reported `pass: true`.
+   * A gate carrying any of these cannot pass: its verdict does not cover the
+   * corpus it claims to have judged.
+   */
+  scenariosUnmeasured: string[];
+  // (Readers that parse a results file written before this field existed must
+  // tolerate its absence — see the note in `waivers.ts`.)
+  /**
    * Whether the metric's value depends on the RECOVERED calibration at all.
    * Off-sphere flux and unlit-within-the-mask are properties of where the
    * lenses physically point; no solver can move them, and a summary that let a
@@ -478,6 +499,7 @@ function buildRecoveryGates(results: readonly ScenarioResult[]): GateSummary[] {
     const failed: string[] = [];
     let worst: { scenario: string; value: number } | null = null;
     const notMeasurable: string[] = [];
+    const unmeasured: string[] = [];
     for (const r of results) {
       if (spec.measurable !== undefined && !spec.measurable(r)) {
         notMeasurable.push(r.scenario.id);
@@ -486,6 +508,10 @@ function buildRecoveryGates(results: readonly ScenarioResult[]): GateSummary[] {
       const v = spec.value(r);
       values.push(v);
       if (!Number.isFinite(v) || v > spec.max) failed.push(r.scenario.id);
+      // A non-finite value is a failure AND a missing measurement. It is in both
+      // lists on purpose: `failed` is what the gate scores, `unmeasured` is what
+      // stops a waiver's ceiling vouching for a number nobody has.
+      if (!Number.isFinite(v)) unmeasured.push(r.scenario.id);
       if (Number.isFinite(v) && (worst === null || v > worst.value)) {
         worst = { scenario: r.scenario.id, value: v };
       }
@@ -506,6 +532,7 @@ function buildRecoveryGates(results: readonly ScenarioResult[]): GateSummary[] {
       worst,
       distribution: dispersion(values),
       scenariosNotMeasurable: notMeasurable,
+      scenariosUnmeasured: unmeasured,
       dependsOnRecovery: true,
       // Pose recovery is a comparison between two rigs the simulator built. No
       // photometric constant enters it, so it is never provisional — stated
@@ -546,12 +573,20 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
     const values: number[] = [];
     const failed: string[] = [];
     const notMeasurable: string[] = [];
+    const unmeasured: string[] = [];
     let scored = 0;
     let provisional = false;
     let worst: { scenario: string; value: number } | null = null;
     for (const r of results) {
       const m = metricsById(r.metrics).get(gate.id);
-      if (m === undefined) continue;
+      // `metrics: null` — the metric computation threw and run.ts swallowed it
+      // into a per-scenario `error` the gate step never reads. Recorded rather
+      // than skipped: skipping is what let the gate shrink its denominator and
+      // still report pass.
+      if (m === undefined) {
+        unmeasured.push(r.scenario.id);
+        continue;
+      }
       if (!m.scored) {
         unscored.set(m.id, m.note);
         continue;
@@ -570,7 +605,20 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
         worst = { scenario: r.scenario.id, value: m.value };
       }
     }
-    if (scored === 0 && values.length === 0 && notMeasurable.length === 0) continue;
+    // A gate with nothing in ANY list never ran here and is not this run's
+    // business. But one with unmeasured scenarios must stay: dropping it made it
+    // vanish from `gates.gates` entirely, and `evaluateGates` iterates that
+    // list — so a metric that threw on every scenario removed its own gate from
+    // the judgement and the build stayed green with §7's seam and unlit gates
+    // simply not judged.
+    if (
+      scored === 0 &&
+      values.length === 0 &&
+      notMeasurable.length === 0 &&
+      unmeasured.length === 0
+    ) {
+      continue;
+    }
     gates.push({
       id: gate.id,
       metric: gate.metric,
@@ -586,6 +634,7 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
       worst,
       distribution: dispersion(values),
       scenariosNotMeasurable: notMeasurable,
+      scenariosUnmeasured: unmeasured,
       dependsOnRecovery: RECOVERY_DEPENDENT.has(gate.id),
       provisional,
       // From PARAMETERS.md §7. Published thresholds, so never advisory.
@@ -614,10 +663,18 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
     const notMeasurable: string[] = [];
     let worst: { scenario: string; value: number } | null = null;
     let template: MetricResult | null = null;
+    const unmeasured: string[] = [];
     let provisional = false;
     for (const r of results) {
       const m = metricsById(r.metrics).get(id);
-      if (m === undefined || m.gate === null) continue;
+      // Two different absences. `metrics: null` means the computation threw and
+      // this scenario owes a number it never produced; `m.gate === null` means
+      // the metric exists here and simply carries no gate, which is ordinary.
+      if (m === undefined) {
+        unmeasured.push(r.scenario.id);
+        continue;
+      }
+      if (m.gate === null) continue;
       template = m;
       provisional = provisional || m.provisional;
       if (m.sampling.count === 0) {
@@ -644,6 +701,7 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
       worst,
       distribution: dispersion(values),
       scenariosNotMeasurable: notMeasurable,
+      scenariosUnmeasured: unmeasured,
       dependsOnRecovery: RECOVERY_DEPENDENT.has(id),
       provisional,
       // From PARAMETERS.md §7. Published thresholds, so never advisory.

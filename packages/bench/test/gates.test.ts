@@ -23,7 +23,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import type { BenchResults, GateSummary, GatesBlock } from '../src/results.ts';
-import { RECOVERY_GATES } from '../src/results.ts';
+import { RECOVERY_GATES, buildGates } from '../src/results.ts';
 import type { AmendmentEntry, GateWaiver, WaiverFile } from '../src/waivers.ts';
 import {
   WAIVERS_SCHEMA,
@@ -77,6 +77,7 @@ function gate(overrides: Partial<GateSummary> & { id: string }): GateSummary {
       values: [1, 1],
     },
     scenariosNotMeasurable: [],
+    scenariosUnmeasured: [],
     dependsOnRecovery: true,
     provisional: false,
     advisory: false,
@@ -539,4 +540,50 @@ test('a normal failing gate under a valid waiver is still WAIVED', () => {
   // covered failure start failing.
   assert.equal(statusOf([FAILING], [waiver()]), 'WAIVED');
   assert.equal(evaluate([FAILING], [waiver()]).ok, true);
+});
+
+test('a scenario whose metric threw cannot be dropped out of the denominator', () => {
+  // run.ts catches a computeGeometricMetrics exception into a per-scenario
+  // `error` string the gate step never reads, and the section-7 loop used to hit
+  // `m === undefined` and `continue`. The scenario was then counted as neither
+  // scored, failed, nor not-measurable: grid_displacement reported 11 of 12
+  // scored, zero failed, `pass: true`, and the summary printed "all scored
+  // geometric gates pass".
+  const shrunk = gate({
+    id: 'grid_displacement',
+    pass: true,
+    scenariosScored: 11,
+    scenariosFailed: 0,
+    failedScenarios: [],
+    scenariosUnmeasured: ['s07-three-projectors'],
+  });
+  const evaluation = evaluate([shrunk], []);
+  assert.equal(evaluation.outcomes[0].status, 'NOT-MEASURED');
+  assert.equal(evaluation.ok, false, 'a shrunken denominator must not leave the build green');
+  assert.match(evaluation.outcomes[0].why, /owed a value and produced none/);
+  assert.match(evaluation.outcomes[0].why, /s07-three-projectors/);
+  // And it says which kind of absence it is, because the other kind is ordinary.
+  assert.match(evaluation.outcomes[0].why, /not a rig with nothing to measure/);
+});
+
+test('a gate whose metric threw everywhere stays in the block to be judged', () => {
+  // The compounding half: `buildGates` dropped a gate entirely when nothing
+  // landed in any of its lists, and `evaluateGates` iterates only the gates
+  // present in the file. So a metric that threw on every scenario removed its
+  // own gate from the judgement, and the build stayed green with PARAMETERS.md
+  // section 7's seam and unlit gates simply not judged.
+  const results = Array.from({ length: 4 }, (_, i) => ({
+    scenario: { id: `s0${i}-fixture`, archetype: 'nominal' },
+    recovery: null,
+    metrics: null,
+  }));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const built = buildGates(results as any);
+  const ids = built.gates.map((g) => g.id);
+  for (const id of ['grid_displacement', 'unlit_in_mask']) {
+    const g = built.gates.find((x) => x.id === id);
+    assert.ok(g !== undefined, `${id} vanished from the gates block; ids were ${ids.join(', ')}`);
+    assert.equal(g.scenariosUnmeasured.length, 4);
+    assert.equal(g.scenariosScored, 0);
+  }
 });
