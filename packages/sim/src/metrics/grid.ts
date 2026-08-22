@@ -192,6 +192,17 @@ export interface GridRejections {
   /** The scan window could not be made to fit inside both projectors' coverage. */
   windowDoesNotFit: number;
   profileNotLocalisable: number;
+  /**
+   * A projector's copy of the line was displaced further than the scan window
+   * could measure.
+   *
+   * The one rejection that CORRELATES with the quantity being measured, which is
+   * why it is counted apart from {@link GridRejections.profileNotLocalisable}: a
+   * maximum taken after dropping these has dropped the largest values, and any
+   * non-zero count here makes the reported value a lower bound rather than a
+   * worst case. {@link MakeMetricInput.censored} carries that to the verdict.
+   */
+  displacedBeyondWindow: number;
 }
 
 export interface GridReport {
@@ -367,6 +378,28 @@ function lazyRaster(
  * unbiased as the incidence changes across the sphere, which is exactly where a
  * centroid stops being trustworthy.
  */
+interface Localisation {
+  /** Offset in mm of arc from the scan midpoint, or `NaN` when not localised. */
+  mm: number;
+  /**
+   * The line this window was placed to find is not centred in it — either
+   * nothing above the peak threshold anywhere in the window, or a run that
+   * reaches a window edge.
+   *
+   * Distinct from every other reason localisation fails, and the distinction is
+   * the whole point: this one means the projector's copy of the line has moved
+   * FURTHER than the window can measure, so dropping the sample removes exactly
+   * the largest displacements from a statistic whose job is to report the
+   * largest displacement. The others — two lines in the window, a bright skirt
+   * at the ends — are crowding and apparatus, uncorrelated with how far the rig
+   * has moved.
+   */
+  outOfWindow: boolean;
+}
+
+const NOT_LOCALISED: Localisation = { mm: NaN, outOfWindow: false };
+const DISPLACED_OUT: Localisation = { mm: NaN, outOfWindow: true };
+
 function localiseLine(
   pointAt: (sMm: number) => Vec3,
   halfWindowMm: number,
@@ -374,7 +407,7 @@ function localiseLine(
   physical: PreparedRig,
   raster: LazyRaster,
   k: number,
-): number {
+): Localisation {
   const proj = physical.projectors[k];
 
   /** The reconstructed profile at arc-length offset `s`, or `NaN` off-raster. */
@@ -393,14 +426,15 @@ function localiseLine(
   let peak = 0;
   for (let i = 0; i < samples; i++) {
     const value = profileAt(offsetOf(i));
-    if (!Number.isFinite(value)) return NaN;
+    if (!Number.isFinite(value)) return NOT_LOCALISED;
     values[i] = value;
     if (value > peak) peak = value;
   }
 
   // The graticule's line colour is 1.0 and its background 0.0, so a genuine line
-  // reconstructs to a clear peak. Anything less is a resampling ghost.
-  if (peak < 0.25) return NaN;
+  // reconstructs to a clear peak. Anything less means this projector's copy of
+  // the line is not in this window at all — it has been displaced past it.
+  if (peak < 0.25) return DISPLACED_OUT;
 
   // Validity is judged against the HALF-HEIGHT level, not against the tails.
   // The estimator does not integrate the profile, so a long blurred skirt is
@@ -426,9 +460,14 @@ function localiseLine(
       last = i;
     }
   }
-  if (runs !== 1) return NaN;
-  if (first <= 0 || last >= samples - 1) return NaN;
-  if (values[0] > 0.35 * peak || values[samples - 1] > 0.35 * peak) return NaN;
+  // Two runs is two lines: a neighbouring graticule line got into the window.
+  // Crowding, not displacement.
+  if (runs !== 1) return NOT_LOCALISED;
+  // The run reaches a window edge, so the line is partly outside it and the
+  // crossings are clipped rather than bracketed. Same class as no line at all:
+  // the copy has moved further than this window can measure.
+  if (first <= 0 || last >= samples - 1) return DISPLACED_OUT;
+  if (values[0] > 0.35 * peak || values[samples - 1] > 0.35 * peak) return NOT_LOCALISED;
 
   /**
    * The crossing, to a hundredth of a micrometre.
@@ -456,8 +495,8 @@ function localiseLine(
   };
   const rising = crossingAt(offsetOf(first), offsetOf(first - 1));
   const falling = crossingAt(offsetOf(last), offsetOf(last + 1));
-  if (!Number.isFinite(rising) || !Number.isFinite(falling)) return NaN;
-  return 0.5 * (rising + falling);
+  if (!Number.isFinite(rising) || !Number.isFinite(falling)) return NOT_LOCALISED;
+  return { mm: 0.5 * (rising + falling), outOfWindow: false };
 }
 
 /**
@@ -691,7 +730,25 @@ export function computeGridDisplacement(
 
       const ca = localiseLine(pointAt, halfWindowMm, profileSamples, physical, rasters[a.i], a.i);
       const cb = localiseLine(pointAt, halfWindowMm, profileSamples, physical, rasters[b.i], b.i);
-      if (!Number.isFinite(ca) || !Number.isFinite(cb)) {
+      // Counted apart, because the two mean opposite things about the rig. A
+      // sample dropped because the window held two lines or a bright skirt is
+      // missing for a reason unrelated to how far anything moved. A sample
+      // dropped because a projector's copy of the line is not IN the window is
+      // missing precisely BECAUSE it moved a long way — and this statistic is a
+      // MAXIMUM, so dropping those silently removes the largest displacements
+      // from the number whose job is to report the largest displacement.
+      //
+      // Measured on the interactive page: yaw one projector of a perfect rig by
+      // 2 degrees and all sixteen seam samples that involve it drop out, leaving
+      // the sixteen that do not. The reported worst then reads 0.0082 mm —
+      // bit-identical to an untouched rig — while registration error is 174 mm.
+      // The censoring is not merely lossy, it is signed: it always reports
+      // better.
+      if (ca.outOfWindow || cb.outOfWindow) {
+        reject.displacedBeyondWindow++;
+        continue;
+      }
+      if (!Number.isFinite(ca.mm) || !Number.isFinite(cb.mm)) {
         reject.profileNotLocalisable++;
         continue;
       }
@@ -703,9 +760,9 @@ export function computeGridDisplacement(
         lineDeg: cand.lineDeg,
         latDeg: cand.latDeg,
         lonDeg: cand.lonDeg,
-        offsetAMm: ca,
-        offsetBMm: cb,
-        displacementMm: Math.abs(ca - cb),
+        offsetAMm: ca.mm,
+        offsetBMm: cb.mm,
+        displacementMm: Math.abs(ca.mm - cb.mm),
         weightA: a.w,
         weightB: b.w,
         maskValue: mask,
@@ -720,6 +777,7 @@ export function computeGridDisplacement(
     linesTooCrowded: 0,
     windowDoesNotFit: 0,
     profileNotLocalisable: 0,
+    displacedBeyondWindow: 0,
   };
   const measurements = measure(latStepDeg, rejected);
 
@@ -744,6 +802,7 @@ export function computeGridDisplacement(
       linesTooCrowded: 0,
       windowDoesNotFit: 0,
       profileNotLocalisable: 0,
+      displacedBeyondWindow: 0,
     };
     const coarse = measure(latStepDeg * 2, coarseRejected);
     convergence = convergenceOf(
@@ -803,7 +862,19 @@ export function computeGridDisplacement(
     unit: 'mm on sphere surface',
     gate,
     scored: true,
+    // A maximum taken after dropping the samples that moved furthest is a lower
+    // bound, not a worst case, and it cannot certify anything under a gate.
+    censored: rejected.displacedBeyondWindow > 0,
     note:
+      (rejected.displacedBeyondWindow > 0
+        ? `INCOMPLETE: ${rejected.displacedBeyondWindow} of ` +
+          `${measurements.length + rejected.displacedBeyondWindow} otherwise-measurable seam ` +
+          'samples had a projector\'s copy of the line displaced further than the scan window ' +
+          'could measure, so this value is a LOWER BOUND over the seams that could still be read ' +
+          'and the gate is not applied to it. The rejection is not neutral: it removes exactly ' +
+          'the largest displacements from a statistic that reports the largest displacement, so ' +
+          'the number it leaves behind is biased toward passing. '
+        : '') +
       "Worst single line discontinuity. §7's basis is an operator judging the image continuous, " +
       'and one visible doubled line fails that judgement, so the gate is applied to the maximum; ' +
       'RMS and p95 are in `detail`. Each projector\'s copy of the line is localised in its own ' +
@@ -831,6 +902,7 @@ export function computeGridDisplacement(
       rejectedLinesTooCrowded: rejected.linesTooCrowded,
       rejectedWindowDoesNotFit: rejected.windowDoesNotFit,
       rejectedNotLocalisable: rejected.profileNotLocalisable,
+      rejectedDisplacedBeyondWindow: rejected.displacedBeyondWindow,
       worstLatDeg: worst ? worst.latDeg : NaN,
       worstLonDeg: worst ? worst.lonDeg : NaN,
     },

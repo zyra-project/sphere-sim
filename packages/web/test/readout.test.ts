@@ -244,6 +244,28 @@ test('a perfectly-mounted rig agrees with itself on every row', () => {
   }
 });
 
+test('a censored metric is printed as a lower bound, not as a worst case', () => {
+  // A metric that could not evaluate part of its own domain reports the worst of
+  // what it COULD read. Printed bare, that is a small number beside a FAIL badge
+  // and a 1.000 mm gate, which reads as a contradiction; printed with a `>=` it
+  // reads as what it is. The page also puts the metric's own INCOMPLETE sentence
+  // ahead of the standing copy, because that sentence is what explains the badge.
+  const { set } = metricsAt();
+  const m = set.metrics.find((x) => x.id === 'grid_displacement');
+  assert.ok(m);
+  const reading = readingsFrom(set).find((r) => r.id === 'grid_displacement');
+  assert.ok(reading);
+  assert.equal(reading.censored, m.censored);
+  if (m.censored) {
+    assert.ok(reading.value.startsWith('\u2265 '), `censored value reads '${reading.value}'`);
+    assert.match(reading.means, /^INCOMPLETE: /);
+    assert.equal(reading.status, 'FAIL', 'a censored metric cannot report PASS');
+  } else {
+    assert.ok(!reading.value.startsWith('\u2265 '));
+    assert.doesNotMatch(reading.means, /^INCOMPLETE: /);
+  }
+});
+
 test('a gate printed beside the headline drops the sampling basis and keeps the unit', () => {
   // `sim` says what a number was measured over — "mm on sphere surface" — which
   // belongs in a table and not in the line under a 44px figure, where it wrapped
@@ -253,7 +275,16 @@ test('a gate printed beside the headline drops the sampling basis and keeps the 
   assert.ok(grid);
   assert.match(grid.gate, /mm on sphere surface$/, 'the long form is what the table wants');
   assert.match(grid.gateShort, /^[\d.]+ mm$/, `short gate reads '${grid.gateShort}'`);
-  assert.match(grid.valueShort, /^[\d.]+ mm$/, `short value reads '${grid.valueShort}'`);
+  // The optional `>=` is the lower-bound marker a CENSORED metric carries: the
+  // Boulder preset's own mount error is large enough that some seams can no
+  // longer be localised, so its worst grid displacement really is a floor. What
+  // this test is about is the UNIT, and the marker must not disturb it.
+  assert.match(grid.valueShort, /^(\u2265 )?[\d.]+ mm$/, `short value reads '${grid.valueShort}'`);
+  assert.equal(
+    grid.valueShort.startsWith('\u2265 '),
+    grid.censored,
+    'the lower-bound marker and the censored flag disagree',
+  );
 
   // A fraction has no short form to take: "0.13%" is already the whole of it,
   // and chopping its unit would leave a bare number with no percent sign.

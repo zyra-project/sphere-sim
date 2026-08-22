@@ -598,6 +598,20 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
         notMeasurable.push(r.scenario.id);
         continue;
       }
+      // A CENSORED metric measured something, so it is not "not measurable" —
+      // but what it measured is a lower bound over the part of its domain it
+      // could reach, and the samples it lost are the ones the gate cares most
+      // about. It is a failure AND a missing measurement, exactly like a
+      // non-finite value above: `failed` is what the gate scores, `unmeasured`
+      // is what stops a waiver's ceiling vouching for a number nobody has. Its
+      // value stays out of `worst`, because a lower bound presented as the worst
+      // case is the lie this whole treatment exists to prevent.
+      if (m.censored) {
+        failed.push(r.scenario.id);
+        unmeasured.push(r.scenario.id);
+        values.push(m.value);
+        continue;
+      }
       scored++;
       values.push(m.value);
       if (m.pass === false) failed.push(r.scenario.id);

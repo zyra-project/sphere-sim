@@ -342,6 +342,98 @@ test('registration error under a known misalignment matches perturbation theory'
   );
 });
 
+/**
+ * The rig the page actually draws: A-37's SECTOR blend rather than the `limb`
+ * default, at the density a settled pass uses.
+ *
+ * Both matter for what follows. Under `limb` the blend region is the whole
+ * overlap, so plenty of seam samples involving a moved projector survive; under
+ * `sector` it is a narrow band at the seam, which is exactly where a moved
+ * projector's copy of the line has gone, so they all go at once.
+ */
+function sectorRig(): RigCalibration {
+  const plain = nominalRig({ distanceM: D_MANUAL });
+  return { ...plain, blend: { ...plain.blend, region: 'sector' } };
+}
+const PAGE_DENSITY = 0.3;
+
+test('a displacement too large to measure is reported, not dropped from the maximum', () => {
+  // The grid metric localises each projector's copy of a line inside a scan
+  // window centred on where the line should be. Move a projector far enough and
+  // its copy leaves the window, the sample cannot be localised, and it was
+  // DROPPED — from a statistic whose whole job is to report the largest
+  // displacement. The rejection therefore correlates with the quantity being
+  // measured, and always in the same direction: what survives is the small
+  // displacements.
+  //
+  // The consequence is a headline that reads as a perfect rig for a broken one.
+  // Yaw one projector by 2 degrees and every seam sample involving it drops out,
+  // leaving only the seams between the three untouched projectors — so the worst
+  // grid displacement comes back as the apparatus floor, to four decimal places
+  // the same number an ALIGNED rig gives, while registration error is over a
+  // hundred millimetres.
+  const base = sectorRig();
+  const opts = { convergence: false, measurementFloor: false } as const;
+
+  const clean = computeGridDisplacement(base, base, 'latitude', gridGate, opts, PAGE_DENSITY);
+  assert.equal(clean.rejected.displacedBeyondWindow, 0, 'an aligned rig lost samples');
+  assert.equal(clean.metric.censored, false);
+  assert.equal(clean.metric.pass, true);
+
+  const broken = computeGridDisplacement(
+    yawPerturbed(base, 2),
+    base,
+    'latitude',
+    gridGate,
+    opts,
+    PAGE_DENSITY,
+  );
+  assert.ok(
+    broken.rejected.displacedBeyondWindow > 0,
+    'a 2-degree yaw displaced nothing beyond the window; the fixture no longer bites',
+  );
+  // This is the number the page used to print with a PASS badge. It is allowed
+  // to stay — it IS the worst of the seams that could still be read — and the
+  // whole fix is that it can no longer be mistaken for the worst case.
+  assert.ok(
+    Math.abs(broken.metric.value - clean.metric.value) < 1e-9,
+    'the fixture no longer reproduces the aligned rig\'s own number for a broken one',
+  );
+  assert.ok(broken.metric.value < gridGate.max, 'and it is under the gate, which is why it mattered');
+  assert.equal(broken.metric.censored, true, 'the value is a lower bound and does not say so');
+  assert.equal(broken.metric.pass, false, 'a censored maximum certified the rig under the gate');
+  assert.match(broken.metric.note, /^INCOMPLETE: \d+ of \d+/);
+});
+
+test('making the rig worse can never turn a grid failure back into a pass', () => {
+  // The invariant the censoring broke, stated directly. Sweeping one projector's
+  // yaw away from zero, the verdict may go from PASS to FAIL and must then stay
+  // FAIL — it may not come back, whatever happens to the sample set. Before the
+  // fix it came back at 2 degrees and stayed back, because by then the only
+  // samples left were between the three projectors nobody had touched.
+  const base = sectorRig();
+  let failed = false;
+  for (const yawDeg of [0, 0.25, 0.5, 1, 1.5, 2, 3, 5]) {
+    const report = computeGridDisplacement(
+      yawPerturbed(base, yawDeg),
+      base,
+      'latitude',
+      gridGate,
+      { convergence: false, measurementFloor: false },
+      PAGE_DENSITY,
+    );
+    if (report.metric.pass === false) failed = true;
+    else if (failed) {
+      assert.fail(
+        `a ${yawDeg}-degree yaw passed after a smaller one failed: ` +
+          `${report.metric.value.toFixed(4)} mm over ${report.all.count} samples, ` +
+          `${report.rejected.displacedBeyondWindow} displaced beyond the window`,
+      );
+    }
+  }
+  assert.ok(failed, 'no yaw in the sweep failed the gate, so the sweep proves nothing');
+});
+
 test('grid displacement under a known misalignment matches perturbation theory', () => {
   // The grid metric measures only the component PERPENDICULAR to the line, which
   // for a meridian is the east-west component. One projector is perturbed and

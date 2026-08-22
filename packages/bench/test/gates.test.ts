@@ -22,6 +22,8 @@ import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { GATES } from '../../calibration/src/parameters.ts';
+import { gateById } from '../../sim/src/metrics/index.ts';
 import type { BenchResults, GateSummary, GatesBlock } from '../src/results.ts';
 import { RECOVERY_GATES, buildGates } from '../src/results.ts';
 import type { AmendmentEntry, GateWaiver, WaiverFile } from '../src/waivers.ts';
@@ -441,6 +443,83 @@ test('the recovery gates that ARE always measurable stay that way', () => {
 // "GATES: no unwaived failure." and exit 0 from a run in which no calibration
 // existed at all.
 // ---------------------------------------------------------------------------
+
+/**
+ * A scenario carrying one grid_displacement metric and nothing else.
+ *
+ * `buildGates` reads `r.metrics` and `r.scenario.id`; the solve, the capture and
+ * the recovery play no part in the §7 metric loop, and building them would make
+ * this a test of the solver.
+ */
+function scenarioWith(
+  id: string,
+  over: { value: number; censored: boolean },
+): unknown {
+  return {
+    scenario: { id },
+    recovery: null,
+    // `MetricSet`, not a bare array: `buildGates` reads `r.metrics.metrics`.
+    metrics: {
+      pass: !over.censored && over.value <= 1,
+      metrics: [
+      {
+        id: 'grid_displacement',
+        label: 'Grid-line displacement across a blend region',
+        value: over.value,
+        unit: 'mm on sphere surface',
+        gate: gateById(GATES, 'grid_displacement'),
+        gateMax: 1,
+        pass: !over.censored && over.value <= 1,
+        scored: true,
+        provisional: false,
+        censored: over.censored,
+        note: over.censored ? 'INCOMPLETE: 16 of 32 ...' : 'fixture',
+        sampling: {
+          scheme: 'graticule-line-centroid',
+          description: 'fixture',
+          count: 16,
+          densityPerSr: null,
+          convergence: null,
+        },
+        detail: {},
+      },
+      ],
+    },
+  };
+}
+
+test('a censored metric is both a failure and a missing measurement', () => {
+  // `MetricResult.censored` means the metric could not evaluate part of its own
+  // domain, so its value is a LOWER BOUND. The grid metric raises it when a
+  // projector's copy of a line has moved further than the scan window can
+  // measure: those samples are dropped, and because the statistic is a MAXIMUM,
+  // dropping them removes the largest displacements from the number that
+  // reports the largest displacement.
+  //
+  // Two consequences have to reach the gate, and they are separate. It is a
+  // FAILURE — a lower bound under the gate has not shown the rig is under the
+  // gate. And it is UNMEASURED — which is what stops a waiver's ceiling
+  // vouching for a number nobody has, the same rule a non-finite value gets.
+  const results = [
+    scenarioWith('s01-nominal', { value: 0.03, censored: true }),
+    scenarioWith('s02-sensor-noise', { value: 0.2, censored: false }),
+  ];
+  const block = buildGates(results as never);
+  const grid = block.gates.find((g) => g.id === 'grid_displacement');
+  assert.ok(grid, 'the grid gate is missing from the build');
+  assert.deepEqual(grid.failedScenarios, ['s01-nominal']);
+  assert.deepEqual(grid.scenariosUnmeasured, ['s01-nominal']);
+  assert.equal(grid.scenariosScored, 1, 'the censored scenario was counted as scored');
+  // And its lower bound must not become the reported worst case: `worst` is what
+  // a reader and a waiver ceiling compare against.
+  assert.equal(grid.worst?.scenario, 's02-sensor-noise');
+
+  // The verdict follows from `scenariosUnmeasured`, which `evaluateGates`
+  // already treats as a gate that has not covered its corpus.
+  const evaluation = evaluate([grid], []);
+  assert.notEqual(evaluation.outcomes[0].status, 'PASS');
+  assert.equal(evaluation.ok, false);
+});
 
 test('a gate that scored no scenarios is NOT-MEASURED, never PASS, and fails the build', () => {
   // `pass` upstream is `failed.length === 0`, which is vacuously true when every

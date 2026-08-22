@@ -53,6 +53,16 @@ export interface Reading {
    * wrapped onto three lines beside the figure it was captioning.
    */
   gateShort: string;
+  /**
+   * The metric could not evaluate part of its own domain, so `value` is a LOWER
+   * BOUND and is printed with a `>=`.
+   *
+   * Without this the panel showed "0.008 mm" beside a FAIL badge and a 1.000 mm
+   * gate, which reads as a contradiction rather than as what it is: the worst of
+   * the seams that could still be read, on a rig where the seams that moved
+   * furthest could no longer be read at all.
+   */
+  censored: boolean;
   status: ReadingStatus;
   /** One sentence: what this number means. */
   means: string;
@@ -164,15 +174,21 @@ export function readingsFrom(set: MetricSet): Reading[] {
   const out: Reading[] = [];
   for (const m of set.metrics) {
     const copy = COPY[m.id];
+    const bound = m.censored ? '\u2265 ' : '';
+    const standing = copy ? copy.means : m.note;
     out.push({
       id: m.id,
       label: copy ? copy.label : m.label,
-      value: fmt(m.value, m.unit),
-      valueShort: fmt(m.value, shortUnit(m.unit)),
+      value: bound + fmt(m.value, m.unit),
+      valueShort: bound + fmt(m.value, shortUnit(m.unit)),
       gate: m.gateMax === null ? '' : fmt(m.gateMax, m.unit),
       gateShort: m.gateMax === null ? '' : fmt(m.gateMax, shortUnit(m.unit)),
+      censored: m.censored,
       status: statusOf(m),
-      means: copy ? copy.means : m.note,
+      // The metric's own first sentence goes ahead of the standing copy when it
+      // is censored: it names how many samples went and why, which is the part a
+      // reader needs to make sense of a small number under a FAIL badge.
+      means: m.censored ? `${m.note.split('. ')[0]}. ${standing}` : standing,
       lever: copy ? copy.lever : '',
       section: m.id.startsWith('off_sphere') ? '§7 / §4.1' : '§7',
     });

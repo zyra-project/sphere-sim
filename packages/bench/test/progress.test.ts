@@ -66,6 +66,7 @@ function metric(overrides: Partial<MetricResult> & { id: string }): MetricResult
     pass: true,
     scored: true,
     provisional: false,
+    censored: false,
     note: 'fixture metric',
     sampling: {
       scheme: 'fixture',

@@ -93,6 +93,18 @@ export interface MetricResult {
   provisional: boolean;
   /** Prose the report prints verbatim. Explains gate choice and caveats. */
   note: string;
+  /**
+   * The measurement could not evaluate part of its own domain, so `value` is a
+   * LOWER BOUND and `pass` is false whatever the number says.
+   *
+   * Carried on the result, not just taken as an input, because everything
+   * downstream needs it: a bench gate must count this as unmeasured so a
+   * waiver's ceiling cannot vouch for a number nobody has, and a page must not
+   * print the value as a worst case. `sampling.count` reports how MANY samples
+   * there were; this reports that the ones missing are missing for a reason
+   * correlated with the answer.
+   */
+  censored: boolean;
   sampling: SamplingReport;
   /** Secondary numbers a reader needs to interpret `value`. */
   detail: Record<string, number>;
@@ -109,6 +121,18 @@ export interface MakeMetricInput {
   note: string;
   sampling: SamplingReport;
   detail?: Record<string, number>;
+  /**
+   * The measurement could not evaluate part of its own domain, so `value` is a
+   * LOWER BOUND rather than the worst case.
+   *
+   * Forces `pass` false. It is not the same as a non-finite value — the number
+   * is real and was really measured — and it is not the same as an empty sample
+   * set, which `sampling.count` already reports. It is the case where samples
+   * were dropped for a reason that CORRELATES with the quantity being measured,
+   * so what survives is biased toward the gate rather than merely sparse. The
+   * metric's own `note` must say which samples went and why.
+   */
+  censored?: boolean;
 }
 
 /**
@@ -126,7 +150,15 @@ export interface MakeMetricInput {
 export function makeMetric(input: MakeMetricInput): MetricResult {
   const gate = input.gate ?? null;
   const gateMax = gate ? gate.max : null;
-  const pass = gate === null ? null : Number.isFinite(input.value) && input.value <= gate.max;
+  // A censored metric cannot pass. `value <= gate.max` is a claim about the
+  // WHOLE domain, and a measurement that could not evaluate part of its own
+  // domain has not made that claim — it has reported the worst of what it could
+  // reach, which is a lower bound. The same rule the bench applies one level up
+  // in `waivers.ts`: a verdict that does not cover the corpus is not a verdict.
+  const pass =
+    gate === null
+      ? null
+      : !input.censored && Number.isFinite(input.value) && input.value <= gate.max;
   return {
     id: input.id,
     label: input.label,
@@ -138,6 +170,7 @@ export function makeMetric(input: MakeMetricInput): MetricResult {
     scored: input.scored ?? true,
     provisional: input.provisional ?? false,
     note: input.note,
+    censored: input.censored ?? false,
     sampling: input.sampling,
     detail: input.detail ?? {},
   };
