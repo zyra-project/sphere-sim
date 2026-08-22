@@ -47,7 +47,7 @@ import { fileURLToPath } from 'node:url';
 import { viridis } from '../../sim/src/png.ts';
 import type { MetricResult } from '../../sim/src/metrics/index.ts';
 import type { BenchResults, Dispersion, GateSummary, ScenarioJson } from './results.ts';
-import type { RoundHistory } from './loop.ts';
+import type { RoundHistory, RoundRecord } from './loop.ts';
 import { ROUNDS_SCHEMA, TRACKED } from './loop.ts';
 import type { CoverageReference, ReferenceChecks } from './reference.ts';
 import { REFERENCE_RELATIVE_PATH, analyseCoverageReference, loadCoverageReference } from './reference.ts';
@@ -1291,7 +1291,7 @@ function trendSection(results: BenchResults, rounds: RoundHistory | null): strin
     .slice(-12)
     .map(
       (r) =>
-        `<tr><td>${r.round}</td><td>${r.seed}</td><td><code>${esc(r.gitCommit.slice(0, 8))}</code></td><td>${r.pass ? '<span class="good">pass</span>' : '<span class="bad">fail</span>'}</td><td>${num(r.series.gridDisplacementMm?.median, 4)}</td><td>${TRACKED.map((t) => `${t.label}: ${r.movement[t.key] ?? 'flat'}`).join(', ')}</td></tr>`,
+        `<tr><td>${r.round}</td><td>${r.seed}</td><td><code>${esc(r.gitCommit.slice(0, 8))}</code></td><td>${r.pass ? '<span class="good">pass</span>' : '<span class="bad">fail</span>'}</td><td>${num(r.series.gridDisplacementMm?.median, 4)}</td><td>${TRACKED.map((t) => `${t.label}: ${movementLabel(r, t.key)}`).join(', ')}</td></tr>`,
     )
     .join('');
 
@@ -1613,6 +1613,25 @@ function referenceSection(ref: CoverageReference | null, checks: ReferenceChecks
  * magnitude on this corpus and a linear one would put every passing scenario on
  * top of the origin.
  */
+/**
+ * How a round's movement should be shown, including for records written before
+ * the bar was fixed.
+ *
+ * Two absences used to render identically as 'flat'. A missing key defaulted to
+ * it, and — worse — every one of the five rounds on record was LABELLED 'flat'
+ * by a bar computed from scenario scatter rather than seed noise, which on this
+ * corpus was larger than the gate. Those labels are not evidence of flatness and
+ * are not shown as though they were. A record predating the fix is detectable:
+ * its series carries no `scatterAcrossScenarios`.
+ */
+function movementLabel(r: RoundRecord, key: string): string {
+  const legacy = Object.values(r.series).some(
+    (s) => (s as { scatterAcrossScenarios?: number }).scatterAcrossScenarios === undefined,
+  );
+  if (legacy) return 'unqualified (bar predates the fix)';
+  return r.movement[key] ?? 'unqualified';
+}
+
 function dispersionStrip(d: Dispersion, gateMax: number, unit: string): string {
   const w = 330;
   const h = 46;

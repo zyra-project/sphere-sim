@@ -112,6 +112,26 @@ is defined rather than eyeballed: a round is *non-improving* when no gate-facing
 metric's round-over-round change exceeds its own run-to-run dispersion across
 seeds. Three consecutive non-improving rounds ends Phase 1.
 
+**That dispersion has never been measured for the statistic the loop now scores,
+so the loop reports every round `unqualified` and the count does not advance.**
+`loop.ts` used to substitute half the interquartile range of one round's values
+*across scenarios* — a measure of how much the twelve archetypes differ from each
+other, which is a design choice rather than noise. On the shipped corpus that put
+the bar for `grid_displacement` at 2.52 mm against a 1 mm gate, and across all
+five rounds run to date every metric came back `flat`, `improved` and `regressed`
+were empty every time, and the non-improving count marched 1, 2, 3, 4, 5 — while
+PHASE-1.md records round 3 taking grid displacement from 18.9 mm to 4.9 mm. The
+rule never registered motion in either direction and still accumulated evidence
+that Phase 1 was over.
+
+PHASE-1.md does carry measured across-seed dispersions, but for the **worst of
+six scenarios**, which is not what the loop scores now — it scores medians over
+twelve — and that page's own argument is that the worst-of-N is the wrong
+statistic for detecting an improvement. They are not transferable. Getting the
+count moving again means running the corpus at three or more seeds with the code
+held still and feeding the per-metric spread of the CURRENT statistic through
+`experiments/paired/dispersion.py`, then supplying it to `rankRound`.
+
 ### How a round is ranked, and the one rule that matters
 
 A round is ranked on a **vector** — one component per scored geometric gate,

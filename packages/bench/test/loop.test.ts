@@ -17,10 +17,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
+  TRACKED,
   assertScorable,
   betterThan,
   classifyMovement,
   loadHistory,
+  movementOf,
   rankRound,
   recordFromFile,
   runRound,
@@ -59,6 +61,7 @@ function series(values: Record<string, [number, number]>): Record<string, RoundS
       median,
       p95: median,
       max: median,
+      scatterAcrossScenarios: NaN,
       dispersion: dispersionValue,
       gateMax: 1,
       gateFraction: median,
@@ -192,7 +195,74 @@ test('the ranking vector covers every scored geometric gate, in gate units', () 
   assert.equal(ranked.poseMaxRotationDegAligned.gateFraction, 2);
   assert.equal(ranked.centerHeightErrorMm.gateFraction, 0.5);
   assert.equal(ranked.offSphereFluxExcess.gateFraction, 0.2);
-  assert.equal(ranked.poseMaxPositionMmAligned.dispersion, 0.5, 'the deadband is half the IQR');
+  // Half the IQR is the SCATTER ACROSS SCENARIOS, and it keeps that name. It is
+  // a true statement about how much the twelve archetypes differ; it is not seed
+  // noise, and it used to be used as the round-over-round bar.
+  assert.equal(ranked.poseMaxPositionMmAligned.scatterAcrossScenarios, 0.5);
+  // The bar itself is unmeasured unless somebody measured it.
+  assert.ok(
+    Number.isNaN(ranked.poseMaxPositionMmAligned.dispersion),
+    'an unmeasured across-seed dispersion must be NaN, not a number derived from one run',
+  );
+
+  // ...and it is what gets used when it IS supplied.
+  const measured = rankRound(results, undefined, { poseMaxPositionMmAligned: 0.125 });
+  assert.equal(measured.poseMaxPositionMmAligned.dispersion, 0.125);
+  assert.equal(measured.poseMaxPositionMmAligned.scatterAcrossScenarios, 0.5);
+});
+
+test('a round the loop cannot qualify is unqualified, not flat, and does not end Phase 1', () => {
+  // The finding, stated as a property. On the shipped corpus the old bar for
+  // grid displacement was 2.52 mm against a 1 mm gate, so a round that took the
+  // headline geometric gate from 3.5x its limit to exactly its limit came back
+  // 'flat'. Across all five rounds this project has run, every metric was 'flat',
+  // improved and regressed were empty, and consecutiveNonImproving marched to 5.
+  const series = (median: number, dispersion: number): RoundSeries => ({
+    median,
+    p95: median,
+    max: median,
+    scatterAcrossScenarios: 2.521,
+    dispersion,
+    gateMax: 1,
+    gateFraction: median,
+  });
+
+  // No measured dispersion on either side: the loop cannot say, and says so.
+  assert.equal(movementOf(series(1.0, NaN), series(3.507, NaN)), 'unqualified');
+  // One side measured is still not enough — the bar is the larger of the two.
+  assert.equal(movementOf(series(1.0, 0.1), series(3.507, NaN)), 'unqualified');
+  // With both measured, a 2.5 mm fall against a 0.1 mm noise floor is an
+  // improvement, which is what the old code could never report.
+  assert.equal(movementOf(series(1.0, 0.1), series(3.507, 0.1)), 'improved');
+  // And the scatter across scenarios never acts as the bar, however large.
+  assert.equal(movementOf(series(3.4, 0.1), series(3.507, 0.1)), 'improved');
+});
+
+test('an unqualified round does not count toward the three that end Phase 1', () => {
+  const s = (median: number): RoundSeries => ({
+    median,
+    p95: median,
+    max: median,
+    scatterAcrossScenarios: 1,
+    dispersion: NaN,
+    gateMax: 1,
+    gateFraction: median,
+  });
+  const now: Record<string, RoundSeries> = {};
+  const before: Record<string, RoundSeries> = {};
+  for (const t of TRACKED) {
+    now[t.key] = s(1);
+    before[t.key] = s(5);
+  }
+  const classified = classifyMovement(now, before);
+  for (const t of TRACKED) assert.equal(classified.movement[t.key], 'unqualified');
+  assert.equal(classified.improving, false, 'unqualified is not improving');
+  assert.deepEqual(classified.regressed, [], 'nor is it a regression');
+  assert.equal(
+    classified.qualified,
+    false,
+    'the round is not qualified, which is what stops it counting toward the three',
+  );
 });
 
 test('the loop refuses to score a round on a provisional metric', () => {

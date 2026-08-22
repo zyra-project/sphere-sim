@@ -30,13 +30,41 @@
  * change exceeds its own run-to-run dispersion across seeds. Three consecutive
  * non-improving rounds ends Phase 1."
  *
- * Implemented literally. The comparison is between MEDIANS, not means — a mean
- * hides the bimodal failure docs/ARCHITECTURE.md's G2 signature describes — and
- * the dispersion it must beat is half the interquartile range of the round's own
- * scenario values. Both halves matter: a change smaller than the scatter between
- * seeds is not evidence, and a metric that got WORSE by more than the scatter is
- * a regression rather than a non-improvement, so it is reported as such and does
- * not count toward the three.
+ * The comparison is between MEDIANS, not means — a mean hides the bimodal
+ * failure docs/ARCHITECTURE.md's G2 signature describes. A metric that got WORSE
+ * by more than its bar is a regression rather than a non-improvement, so it is
+ * reported as such and does not count toward the three.
+ *
+ * ## The bar, and why this file used to compute the wrong one
+ *
+ * "Run-to-run dispersion across seeds" means: hold the code still, change only
+ * the seed, and see how far the number wanders. That is the noise floor a
+ * round-over-round change has to clear to be evidence of anything.
+ *
+ * This file used to use half the interquartile range of ONE round's values
+ * ACROSS SCENARIOS, and called it the same thing. It is not the same thing. The
+ * corpus is twelve deliberately heterogeneous archetypes — a canary rig beside a
+ * two-projector install beside a long-throw one — so that IQR measures how much
+ * archetypes differ from each other, which is a design choice, not measurement
+ * noise. On the shipped corpus it puts the bar for `grid_displacement` at
+ * 2.52 mm when the gate itself is 1 mm: a round that took the headline geometric
+ * gate from three and a half times its limit to exactly its limit registered as
+ * 'flat'.
+ *
+ * It was not a near miss. Across all five rounds this project has run, every
+ * tracked metric came back 'flat', `improved` and `regressed` were empty every
+ * time, and `consecutiveNonImproving` marched 1, 2, 3, 4, 5 — while PHASE-1.md
+ * records round 3 taking grid displacement from 18.9 mm to 4.9 mm and rotation
+ * from 7.06 to 0.31 degrees. The rule never registered motion in either
+ * direction, and still accumulated evidence that Phase 1 was finished.
+ *
+ * So the bar is no longer invented. `dispersion` is the measured across-seed
+ * figure when one has been supplied and `NaN` when it has not, the scenario
+ * scatter keeps its own name (`scatterAcrossScenarios`) because it is genuinely
+ * informative about the corpus, and a round the loop cannot qualify is reported
+ * `unqualified` rather than `flat`. An unqualified round does not count toward
+ * the three: "non-improving" is a claim, and this one needs a measurement
+ * nobody has taken. `experiments/paired/dispersion.py` is how you take it.
  *
  * ## Ranking on a vector, and why a scalar was wrong
  *
@@ -186,6 +214,24 @@ export interface RoundSeries {
   p95: number;
   max: number;
   /** Half the interquartile range. The bar a change has to clear to count. */
+  /**
+   * Half the interquartile range of this round's values ACROSS SCENARIOS.
+   *
+   * Kept, because it says something true and useful — how much the twelve
+   * archetypes differ from each other on this metric. It is NOT seed noise and
+   * must never be used as the round-over-round bar; that mistake is what this
+   * field's rename records.
+   */
+  scatterAcrossScenarios: number;
+  /**
+   * Measured run-to-run dispersion across SEEDS, or NaN when nobody has measured
+   * it for this metric.
+   *
+   * The only number `movementOf` will accept as a bar. `NaN` is the honest
+   * default: this project has never run the corpus at several seeds with the
+   * code held still, which is what `experiments/paired/dispersion.py` exists to
+   * do, so every round it has recorded is `unqualified`.
+   */
   dispersion: number;
   /** The gate limit this metric is measured against, in the metric's own unit. */
   gateMax: number;
@@ -277,15 +323,36 @@ export function seedForRound(rootSeed: number, round: number): number {
   return deriveSeed(rootSeed, `round:${round}`);
 }
 
-function seriesOf(d: Dispersion | undefined, gateMax: number): RoundSeries {
+function seriesOf(
+  d: Dispersion | undefined,
+  gateMax: number,
+  /**
+   * Measured across-seed dispersion for this metric, if anybody has measured it.
+   * Threaded in rather than derived, because it cannot be derived from a single
+   * seeded run — which is the entire finding this signature records.
+   */
+  measuredDispersion: number | undefined,
+): RoundSeries {
+  const dispersion = measuredDispersion !== undefined && Number.isFinite(measuredDispersion)
+    ? measuredDispersion
+    : Number.NaN;
   if (d === undefined) {
-    return { median: NaN, p95: NaN, max: NaN, dispersion: NaN, gateMax, gateFraction: NaN };
+    return {
+      median: NaN,
+      p95: NaN,
+      max: NaN,
+      scatterAcrossScenarios: NaN,
+      dispersion,
+      gateMax,
+      gateFraction: NaN,
+    };
   }
   return {
     median: d.median,
     p95: d.p95,
     max: d.max,
-    dispersion: d.iqr / 2,
+    scatterAcrossScenarios: d.iqr / 2,
+    dispersion,
     gateMax,
     gateFraction: gateMax === 0 ? Number.POSITIVE_INFINITY : d.median / gateMax,
   };
@@ -345,28 +412,55 @@ export function assertScorable(results: BenchResults, only?: readonly string[]):
  * that passes `only` is asserting the omission is a property of the DATA, not a
  * preference about the result.
  */
+/**
+ * Measured across-seed dispersion, keyed by tracked-metric key.
+ *
+ * Supplied by whoever took the measurement — run the corpus at three or more
+ * seeds with the code held still and feed the per-metric spread through
+ * `experiments/paired/dispersion.py`. Absent keys mean "not measured", which is
+ * the honest state of every metric in this repository today.
+ */
+export type SeedDispersion = Readonly<Record<string, number>>;
+
 export function rankRound(
   results: BenchResults,
   only?: readonly string[],
+  seedDispersion: SeedDispersion = {},
 ): Record<string, RoundSeries> {
   assertScorable(results, only);
   const series: Record<string, RoundSeries> = {};
   for (const t of TRACKED) {
     if (only !== undefined && !only.includes(t.key)) continue;
     const gate = results.gates.gates.find((g) => g.id === t.gateId);
-    series[t.key] = seriesOf(results.aggregate[t.key], gate?.max ?? NaN);
+    series[t.key] = seriesOf(results.aggregate[t.key], gate?.max ?? NaN, seedDispersion[t.key]);
   }
   return series;
 }
 
-export type Movement = 'improved' | 'regressed' | 'flat' | 'lost';
+export type Movement =
+  | 'improved'
+  | 'regressed'
+  | 'flat'
+  | 'lost'
+  /**
+   * The metric moved, and this loop cannot say whether that means anything.
+   *
+   * Reported when no measured across-seed dispersion is available for it. NOT
+   * the same as `flat`, and the difference is the whole point: `flat` asserts
+   * the change was smaller than the noise, which is a measurement; this says
+   * nobody has taken that measurement. An unqualified round does not count
+   * toward the three non-improving rounds that end Phase 1.
+   */
+  | 'unqualified';
 
 /**
  * How one metric moved between two rounds, with the deadband applied.
  *
- * The bar is the LARGER of the two rounds' own scatters across seeds, so a
- * change has to clear the noise of both things being compared. A change that
- * does not clear it is not evidence of anything, whichever way it points.
+ * The bar is the LARGER of the two rounds' MEASURED across-seed dispersions, so
+ * a change has to clear the noise of both things being compared. A change that
+ * does not clear it is not evidence of anything, whichever way it points — and
+ * when either round has no measured dispersion, neither is the change: that is
+ * `unqualified`, not `flat`.
  *
  * `lost` is its own answer: a metric that was measurable and now is not has not
  * improved, however tempting the empty series looks. It counts as a regression
@@ -375,9 +469,16 @@ export type Movement = 'improved' | 'regressed' | 'flat' | 'lost';
 export function movementOf(now: RoundSeries | undefined, before: RoundSeries | undefined): Movement {
   if (before === undefined || !Number.isFinite(before.median)) return 'flat';
   if (now === undefined || !Number.isFinite(now.median)) return 'lost';
+  // Both rounds must carry a measured across-seed dispersion. Falling back to
+  // whatever number happens to be lying around is exactly what this function
+  // used to do, and the fallback it used was larger than the gate.
+  const haveNow = Number.isFinite(now.dispersion);
+  const haveBefore = Number.isFinite(before.dispersion);
+  if (!haveNow || !haveBefore) return 'unqualified';
+
   const bar = Math.max(
-    Number.isFinite(now.dispersion) && now.dispersion > 0 ? now.dispersion : 0,
-    Number.isFinite(before.dispersion) && before.dispersion > 0 ? before.dispersion : 0,
+    now.dispersion > 0 ? now.dispersion : 0,
+    before.dispersion > 0 ? before.dispersion : 0,
   );
   const delta = now.median - before.median;
   if (delta < -bar) return 'improved';
@@ -403,21 +504,34 @@ export function classifyMovement(
   improving: boolean;
   improved: string[];
   regressed: string[];
+  /**
+   * Whether this comparison could be qualified at all.
+   *
+   * False when any tracked metric came back `unqualified` — no measured
+   * across-seed dispersion, so the loop has no noise floor to judge it against.
+   * The stopping condition reads this: three consecutive NON-IMPROVING rounds
+   * ends Phase 1, and a round nobody could qualify is not a round that was found
+   * to be non-improving. It is a round that was not assessed.
+   */
+  qualified: boolean;
 } {
   const movement: Record<string, Movement> = {};
   const improved: string[] = [];
   const regressed: string[] = [];
+  let unqualified = 0;
   for (const t of TRACKED) {
     const m = movementOf(current[t.key], previous?.[t.key]);
     movement[t.key] = m;
     if (m === 'improved') improved.push(t.key);
     if (m === 'regressed' || m === 'lost') regressed.push(t.key);
+    if (m === 'unqualified') unqualified++;
   }
   return {
     movement,
     improving: improved.length > 0 && regressed.length === 0,
     improved,
     regressed,
+    qualified: unqualified === 0,
   };
 }
 
@@ -636,8 +750,19 @@ export function recordRound(
   const series = rankRound(results, only);
   const priorRounds = history.rounds.filter((r) => r.round < round);
   const previous = priorRounds.length > 0 ? priorRounds[priorRounds.length - 1] : null;
-  const { movement, improving, regressed } = classifyMovement(series, previous?.series ?? null);
-  const consecutive = improving ? 0 : (previous?.consecutiveNonImproving ?? 0) + 1;
+  const { movement, improving, regressed, qualified } = classifyMovement(
+    series,
+    previous?.series ?? null,
+  );
+  // Three consecutive NON-IMPROVING rounds ends Phase 1 — a claim that requires
+  // having assessed them. A round the loop could not qualify carries the count
+  // forward unchanged rather than incrementing it: not evidence of improvement,
+  // and not evidence of its absence either.
+  const consecutive = improving
+    ? 0
+    : qualified
+      ? (previous?.consecutiveNonImproving ?? 0) + 1
+      : (previous?.consecutiveNonImproving ?? 0);
 
   // Against the incumbent BEST, not against the last round: "keep the best" is a
   // different question from "did this round move", and answering it with the
