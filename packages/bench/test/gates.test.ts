@@ -28,6 +28,7 @@ import type { AmendmentEntry, GateWaiver, WaiverFile } from '../src/waivers.ts';
 import {
   WAIVERS_SCHEMA,
   evaluateGates,
+  formatEvaluation,
   parseAmendments,
   readAmendments,
   readWaivers,
@@ -430,4 +431,112 @@ test('the recovery gates that ARE always measurable stay that way', () => {
     assert.ok(spec !== undefined, `${id} is gone`);
     assert.equal(spec.measurable, undefined, `${id} must not have acquired a measurable() guard`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// The two loopholes: a gate that measured nothing, and a ceiling with nothing
+// to compare. Both were found by an adversarial review that BUILT the fixture
+// and ran the real gate against the real waiver file, and both produced
+// "GATES: no unwaived failure." and exit 0 from a run in which no calibration
+// existed at all.
+// ---------------------------------------------------------------------------
+
+test('a gate that scored no scenarios is NOT-MEASURED, never PASS, and fails the build', () => {
+  // `pass` upstream is `failed.length === 0`, which is vacuously true when every
+  // scenario was skipped. This is the exact shape `buildGates` produces for
+  // h_center_recovery when the solver threw on every scenario: its `measurable`
+  // predicate is false everywhere, so nothing is scored and nothing failed.
+  const unmeasured = gate({
+    id: 'h_center_recovery',
+    pass: true,
+    scenariosScored: 0,
+    scenariosFailed: 0,
+    failedScenarios: [],
+    worst: null,
+    scenariosNotMeasurable: ['s01-nominal', 's04-handheld'],
+  });
+
+  const evaluation = evaluate([unmeasured], []);
+  assert.equal(evaluation.outcomes[0].status, 'NOT-MEASURED');
+  assert.equal(evaluation.ok, false, 'a gate that measured nothing must not leave the build green');
+  assert.match(evaluation.outcomes[0].why, /no scenario produced a value/);
+  // ...and it names what was excluded, so the reader can tell "nothing to
+  // measure here" from "everything broke".
+  assert.match(evaluation.outcomes[0].why, /s01-nominal/);
+});
+
+test('a waiver cannot launder a gate that measured nothing', () => {
+  // The waiver is valid in every other respect: OPEN amendment, unexpired, a
+  // ceiling well above anything this gate could report. It must still not apply,
+  // because "we measured nothing" is not a failure any amendment accounts for.
+  const unmeasured = gate({
+    id: 'pose_position',
+    pass: false,
+    scenariosScored: 0,
+    scenariosFailed: 2,
+    failedScenarios: ['s01-nominal', 's04-handheld'],
+    worst: null,
+  });
+  const evaluation = evaluate([unmeasured], [waiver()]);
+  assert.equal(evaluation.outcomes[0].status, 'NOT-MEASURED');
+  assert.equal(evaluation.ok, false);
+});
+
+test("a waiver's ceiling stops covering when the gate produced no value to compare", () => {
+  // The other half. Here scenarios WERE scored — this is the shape the section-7
+  // builder produces when every measurable scenario returned NaN, since `scored`
+  // counts those and `worst` stays null because NaN loses every comparison. The
+  // ceiling test used to read `gate.worst !== null &&`, which made it inert in
+  // exactly the case it exists to catch.
+  const noValue = gate({
+    id: 'pose_position',
+    pass: false,
+    scenariosScored: 2,
+    scenariosFailed: 2,
+    failedScenarios: ['s01-nominal', 's04-handheld'],
+    worst: null,
+  });
+  const evaluation = evaluate([noValue], [waiver({ ceiling: 640 })]);
+  assert.equal(evaluation.outcomes[0].status, 'FAIL');
+  assert.equal(evaluation.ok, false);
+  assert.match(evaluation.outcomes[0].why, /nothing to compare against/);
+
+  // A ceiling-free waiver is unaffected: it never claimed to bound the size.
+  assert.equal(statusOf([noValue], [waiver({ ceiling: null })]), 'WAIVED');
+});
+
+test('an advisory gate that measured nothing says so, and still does not fail the build', () => {
+  // Advisory gates never fail a build — the threshold is this project's own. But
+  // they used to print a nonsense ratio ("12/0 scenarios over 0.07 deg") rather
+  // than the fact that nothing was measured.
+  const advisory = gate({
+    id: 'camera_pose_rotation',
+    advisory: true,
+    pass: false,
+    scenariosScored: 0,
+    scenariosFailed: 2,
+    failedScenarios: ['s01-nominal', 's04-handheld'],
+    worst: null,
+  });
+  const evaluation = evaluate([advisory], []);
+  assert.equal(evaluation.outcomes[0].status, 'ADVISORY');
+  assert.equal(evaluation.ok, true, 'advisory gates never fail the build');
+  assert.match(evaluation.outcomes[0].why, /no scenario produced a value/);
+});
+
+test('the summary line never reports "no unwaived failure" while the build fails', () => {
+  const unmeasured = gate({ id: 'pose_position', pass: true, scenariosScored: 0, worst: null });
+  const evaluation = evaluate([unmeasured], []);
+  const text = formatEvaluation(evaluation, false);
+  assert.equal(evaluation.ok, false);
+  assert.doesNotMatch(text, /no unwaived failure/);
+  assert.match(text, /measured nothing/);
+  assert.match(text, /Build FAILS/);
+});
+
+test('a normal failing gate under a valid waiver is still WAIVED', () => {
+  // The regression guard for all of the above: none of it may make an ordinary
+  // covered failure start failing.
+  assert.equal(statusOf([FAILING], [waiver()]), 'WAIVED');
+  assert.equal(evaluate([FAILING], [waiver()]).ok, true);
 });

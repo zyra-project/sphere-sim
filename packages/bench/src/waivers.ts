@@ -196,7 +196,21 @@ export function resolveCitation(waiver: GateWaiver, amendments: readonly Amendme
   return { waiver, entry: matched.length === 1 ? matched[0] : null, candidates };
 }
 
-export type GateStatus = 'PASS' | 'WAIVED' | 'FAIL' | 'NOT-JUDGED' | 'ADVISORY';
+export type GateStatus =
+  | 'PASS'
+  | 'WAIVED'
+  | 'FAIL'
+  | 'NOT-JUDGED'
+  | 'ADVISORY'
+  /**
+   * The gate had nothing to judge: no scenario produced a value for it.
+   *
+   * Distinct from every other status because it is a statement about the RUN,
+   * not about the rig. NOT-JUDGED means "we chose not to score this" (a
+   * provisional constant); NOT-MEASURED means "we tried and got nothing back",
+   * which is a failure of the measurement and fails the build.
+   */
+  | 'NOT-MEASURED';
 
 export interface GateOutcome {
   id: string;
@@ -252,6 +266,45 @@ export function evaluateGates(input: EvaluationInput): Evaluation {
       });
       continue;
     }
+    // A gate that measured NOTHING did not pass it.
+    //
+    // `pass` is computed upstream as `failed.length === 0`, which is vacuously
+    // true when every scenario was skipped or produced no value. So a run where
+    // the solver threw on all twelve scenarios — `recovery: null`, every
+    // `measurable` predicate false, every value NaN — arrived here as
+    // `pass=true, scenariosScored=0` and printed PASS. An adversarial review
+    // built exactly that fixture and got `GATES: no unwaived failure.` and exit
+    // 0 from a run in which no calibration existed at all.
+    //
+    // `results.ts` already makes this argument for a single scenario — "a metric
+    // that could not be computed is not a metric that passed" — and this applies
+    // the same sentence to a whole gate. It is deliberately NOT waivable: a
+    // waiver explains a failure an amendment accounts for, and "we measured
+    // nothing" is not a failure anybody has accounted for.
+    //
+    // Checked BEFORE the advisory branch so an advisory gate reports the same
+    // fact rather than printing a nonsense ratio like "12/0 scenarios over
+    // 0.07 deg" — but it stays non-fatal there, for the reason that branch gives.
+    if (gate.scenariosScored === 0) {
+      const excluded =
+        gate.scenariosNotMeasurable.length > 0
+          ? ` ${gate.scenariosNotMeasurable.length} scenario(s) had nothing to measure ` +
+            `(${gate.scenariosNotMeasurable.join(', ')}).`
+          : '';
+      outcomes.push({
+        id: gate.id,
+        status: gate.advisory ? 'ADVISORY' : 'NOT-MEASURED',
+        why:
+          `no scenario produced a value for this gate, so it was not judged either way.${excluded} ` +
+          `A gate that measured nothing has not passed; re-run with scenarios that can score it, ` +
+          `or fix whatever stopped them scoring.` +
+          (gate.advisory ? ' Advisory, so it does not fail the build.' : ''),
+        waiver,
+        citation: null,
+      });
+      continue;
+    }
+
     // ADVISORY: a gate this project invented, with a threshold no document
     // publishes. It is tracked because it is diagnostic, and it is never allowed
     // to fail a build, because failing someone's build on a number we made up is
@@ -304,11 +357,21 @@ export function evaluateGates(input: EvaluationInput): Evaluation {
       why:
         gate === undefined
           ? `no gate '${w.gate}' in this run — the waiver may name a gate that no longer exists.`
-          : `gate '${w.gate}' PASSED. The waiver did nothing; delete it once it stays that way.`,
+          : gate.scenariosScored === 0
+            ? `gate '${w.gate}' measured nothing in this run, so the waiver was never reached. ` +
+              'That is not evidence the waiver is unnecessary — it is evidence the run did not test it.'
+            : `gate '${w.gate}' PASSED. The waiver did nothing; delete it once it stays that way.`,
     });
   }
 
-  return { outcomes, unused, ok: outcomes.every((o) => o.status !== 'FAIL') };
+  // NOT-MEASURED is fatal alongside FAIL. The whole point of the gate is to be
+  // loud, and "we could not measure it" is the one outcome that used to be
+  // silent AND green.
+  return {
+    outcomes,
+    unused,
+    ok: outcomes.every((o) => o.status !== 'FAIL' && o.status !== 'NOT-MEASURED'),
+  };
 }
 
 function judgeWaived(gate: GateSummary, waiver: GateWaiver, input: EvaluationInput): GateOutcome {
@@ -336,6 +399,20 @@ function judgeWaived(gate: GateSummary, waiver: GateWaiver, input: EvaluationInp
   if (today > waiver.expires) {
     return fail(
       `waiver expired on ${waiver.expires} (today is ${today}). Renew it with a fresh argument or remove it.`,
+    );
+  }
+  // A ceiling compares a measured worst case against the size of failure the
+  // amendment accounts for. When the gate failed and produced NO value, there is
+  // nothing to compare — and this used to read `gate.worst !== null &&`, which
+  // made the ceiling inert in exactly that case rather than decisive. The §7
+  // builder reaches it whenever every measurable scenario returned NaN: `scored`
+  // counts those, so the guard above lets them through, and `worst` stays null
+  // because NaN loses every comparison.
+  if (waiver.ceiling !== null && gate.worst === null) {
+    return fail(
+      `the gate failed but no scenario produced a value, so the waiver's ceiling of ` +
+        `${waiver.ceiling} ${gate.unit} has nothing to compare against. ${waiver.ceilingBasis} ` +
+        'A failure the ceiling cannot measure is not a failure the amendment accounts for.',
     );
   }
   if (waiver.ceiling !== null && gate.worst !== null && gate.worst.value > waiver.ceiling) {
@@ -424,29 +501,39 @@ export function waiverAudit(
 export function formatEvaluation(evaluation: Evaluation, allowFailure: boolean): string {
   const lines: string[] = [];
   const pad = (s: string, n: number): string => (s.length >= n ? s : s + ' '.repeat(n - s.length));
+  // Wide enough for the longest status, NOT-MEASURED.
+  const STATUS_COL = 14;
   lines.push('');
   lines.push('GATE VERDICT');
   for (const o of evaluation.outcomes) {
-    lines.push(`  ${pad(o.status, 11)}${o.id}`);
-    if (o.why !== '') lines.push(`               ${o.why}`);
+    lines.push(`  ${pad(o.status, STATUS_COL)}${o.id}`);
+    if (o.why !== '') lines.push(`  ${' '.repeat(STATUS_COL)}${o.why}`);
   }
   for (const u of evaluation.unused) {
-    lines.push(`  ${pad('UNUSED', 11)}${u.waiver.gate}`);
-    lines.push(`               ${u.why}`);
+    lines.push(`  ${pad('UNUSED', STATUS_COL)}${u.waiver.gate}`);
+    lines.push(`  ${' '.repeat(STATUS_COL)}${u.why}`);
   }
   const failed = evaluation.outcomes.filter((o) => o.status === 'FAIL');
+  // Unmeasured gates are counted here too. Reporting "no unwaived failure" while
+  // exiting 1 would be a summary line contradicting its own exit code, and the
+  // summary is the line people read.
+  const unmeasured = evaluation.outcomes.filter((o) => o.status === 'NOT-MEASURED');
   lines.push('');
-  if (failed.length === 0) {
+  const parts: string[] = [];
+  if (failed.length > 0) {
+    parts.push(`${failed.length} unwaived failure(s) — ${failed.map((f) => f.id).join(', ')}`);
+  }
+  if (unmeasured.length > 0) {
+    parts.push(
+      `${unmeasured.length} gate(s) measured nothing — ${unmeasured.map((f) => f.id).join(', ')}`,
+    );
+  }
+  if (parts.length === 0) {
     lines.push('GATES: no unwaived failure.');
   } else if (allowFailure) {
-    lines.push(
-      `GATES: ${failed.length} unwaived failure(s) — ${failed.map((f) => f.id).join(', ')}. ` +
-        'Exit code suppressed by --allow-failure.',
-    );
+    lines.push(`GATES: ${parts.join('; ')}. Exit code suppressed by --allow-failure.`);
   } else {
-    lines.push(
-      `GATES: ${failed.length} unwaived failure(s) — ${failed.map((f) => f.id).join(', ')}. Build FAILS.`,
-    );
+    lines.push(`GATES: ${parts.join('; ')}. Build FAILS.`);
   }
   lines.push('');
   return lines.join('\n');
