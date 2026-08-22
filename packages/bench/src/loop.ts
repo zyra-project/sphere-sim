@@ -46,8 +46,8 @@
  * corpus is twelve deliberately heterogeneous archetypes — a canary rig beside a
  * two-projector install beside a long-throw one — so that IQR measures how much
  * archetypes differ from each other, which is a design choice, not measurement
- * noise. On the shipped corpus it puts the bar for `grid_displacement` at
- * 2.52 mm when the gate itself is 1 mm: a round that took the headline geometric
+ * noise. On a twelve-scenario corpus run it puts the bar for `grid_displacement`
+ * at 2.52 mm when the gate itself is 1 mm: a round that took the headline geometric
  * gate from three and a half times its limit to exactly its limit registered as
  * 'flat'.
  *

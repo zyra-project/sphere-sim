@@ -535,7 +535,12 @@ eigendirections are dominated by per-projector pointing coupled to shift:
 | `two-cameras` | pitch 52.8%, yaw 40.9%, shift 5.5% |
 
 That is the same signature the bench's own attribution reports from the other
-side: `pose_rotation` is 63% pitch.
+side: `pose_rotation` is **pitch-dominated**, and the fraction moves with the
+draw — 63% when this was written, 64% and 68% on two later corpus runs at seed
+771003 with the solver changing in between. `bench-results.json` is generated,
+not tracked (see `.gitignore`), so a figure quoted from it is a reading from one
+run rather than a fixed property; what survives across all of them is which
+component dominates, which is what this amendment rests on.
 
 **The measurement.** Holding `shiftH`/`shiftV` at §3.1's own nominal of zero, on
 the twelve-scenario corpus at seed 1234:

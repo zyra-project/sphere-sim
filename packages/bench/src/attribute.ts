@@ -253,7 +253,10 @@ export function attributeCenterHeightFailure(
  * metric WORSE (`drop <= 0` throughout, and the loop never reassigns) the
  * results file named 'none' as the largest contributor with an
  * `explainedFraction` of 0, which reads like a parameter group called "none".
- * The shipped bench-results.json says exactly that for grid_displacement.
+ * A corpus run at seed 771003 said exactly that for grid_displacement, and the
+ * results file is generated rather than tracked (see .gitignore) — so the
+ * evidence for this is a run somebody can reproduce, not an artifact in the
+ * tree, and the wording used to imply otherwise.
  *
  * `null` is not an absence of information. It is the signature of a COMPENSATING
  * DEFORMATION: the recovered calibration is wrong in several parameters at once
