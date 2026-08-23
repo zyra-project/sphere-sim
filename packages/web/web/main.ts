@@ -1479,7 +1479,21 @@ solveWorker.onmessage = (event: MessageEvent<SolveMessage>): void => {
   // it ran out of steps. Measured on this page: one handheld camera stops at
   // the 400-step cap with a 2.31 px residual and a rig 3.06 m from the lenses.
   // Installing that repaints the sphere and every readout from it.
-  if (!msg.converged) {
+  // The same rule, applied to what the capture actually yielded. Segmentation
+  // refuses a camera whose photograph held no framed sphere — which is the right
+  // thing for it to do and still costs that view entirely — so a three-position
+  // capture can arrive here with one usable view. That is only knowable after
+  // the photographs, which is why it is checked here and the count is checked
+  // before them.
+  const usableViews = msg.silhouetteCameras - msg.silhouetteRefusals;
+  const tooFewViews = msg.silhouetteCameras > 0 && usableViews < MIN_CAMERA_POSITIONS;
+  if (tooFewViews) {
+    lastError =
+      `Segmentation could use only ${usableViews} of ${msg.silhouetteCameras} camera views, and a ` +
+      `calibration needs at least ${MIN_CAMERA_POSITIONS}. The result was not applied. A refused ` +
+      'view found no framed sphere in its photograph — reframe it, or add a position.';
+  }
+  if (!msg.converged || tooFewViews) {
     state.compositorRig = beforeRig ?? null;
     markDirty();
     requestModel(true);
@@ -1535,8 +1549,67 @@ let seamPick = 0;
  */
 let solveWorld: { world: ReturnType<typeof buildWorld>; ceilingM: number } | null = null;
 
+/**
+ * Did this reply become the calibration in force?
+ *
+ * One predicate, because two call sites need the same answer and they used to
+ * disagree: the handler decided whether to install, and the drift cells decided
+ * separately whether to show the solver's residual. A residual shown for a rig
+ * that was never installed is the same class of lie as installing it.
+ */
+function solveInstalled(r: SolveResponse): boolean {
+  return r.converged && r.silhouetteCameras - r.silhouetteRefusals >= MIN_CAMERA_POSITIONS;
+}
+
+/**
+ * The fewest camera positions a calibration is allowed to be attempted from.
+ *
+ * Not a judgement call: experiment 1 swept the count over five seeds and the
+ * gap between one position and two is three orders of magnitude — median worst
+ * lens error 17,490 mm at one against 41.8 mm at two, with a worst draw of
+ * 1,978,378 mm. The knee is at three, so two is poor and one is not a
+ * measurement at all.
+ *
+ * What makes one position DANGEROUS rather than merely bad is that nothing in
+ * the answer says so. It converges — in 48 steps, to a residual of 0.518 px,
+ * better than the three-camera solve beside it — and every diagnostic the
+ * solver produces reads clean: `lastDeficiency` 0 (computed after LM damping,
+ * so it cannot see this), `gaugeFreeAxes` the expected [false, false, true],
+ * `cameraResidualScale` 1.03. The photographs really are explained. There is
+ * simply more than one rig that explains them, because from a single viewpoint
+ * a near projector zoomed in is indistinguishable from a far one zoomed out.
+ *
+ * So this is refused rather than warned about. A warning beside a number that
+ * looks better than the good one is not a warning anybody acts on.
+ */
+export const MIN_CAMERA_POSITIONS = 2;
+
+/**
+ * Why this solve cannot be attempted, or `null`.
+ *
+ * Checked BEFORE the capture, because the answer is knowable before spending
+ * ten seconds photographing a sphere to produce a rig that will be thrown away.
+ */
+function solveRefusalReason(cameraCount: number): string | null {
+  if (cameraCount >= MIN_CAMERA_POSITIONS) return null;
+  return (
+    `A calibration needs at least ${MIN_CAMERA_POSITIONS} camera positions, and this capture has ` +
+    `${cameraCount}. From one spot a projector close in and zoomed tight is indistinguishable ` +
+    'from one far out and zoomed wide, so the solve converges to a clean residual and the answer ' +
+    'is still metres out — experiment 1 measured a median worst-lens error of 17.5 m at one ' +
+    'position against 41.8 mm at two. Move the camera and add a position.'
+  );
+}
+
 function startSolve(): void {
   if (solveRunning) return;
+  // Refused outright, not attempted and then judged. See MIN_CAMERA_POSITIONS.
+  const refusal = solveRefusalReason(state.cameraCount);
+  if (refusal !== null) {
+    lastError = refusal;
+    renderReadout();
+    return;
+  }
   solveRunning = true;
   solveTrace = [];
   solveStep = null;
@@ -3379,11 +3452,16 @@ function renderActions(): void {
   });
   actionsEl.append(drift);
 
+  const refusal = solveRefusalReason(state.cameraCount);
   const solve = el('button', {
     className: 'btn primary',
     textContent: solveRunning ? 'Calibrating…' : 'Recalibrate',
-    disabled: solveRunning,
-    title: 'Photograph the sphere with structured light and solve for where the lenses really are.',
+    // Disabled with the reason on it, rather than live and then refusing on
+    // click: a button that does nothing when pressed reads as a broken page.
+    disabled: solveRunning || refusal !== null,
+    title:
+      refusal ??
+      'Photograph the sphere with structured light and solve for where the lenses really are.',
   });
   solve.addEventListener('click', startSolve);
   actionsEl.append(solve);
@@ -4414,33 +4492,21 @@ function solveSection(): HTMLElement | null {
       }),
     );
 
-    // The failure convergence CANNOT catch, said out loud because nothing the
-    // solver produces says it.
-    //
-    // Measured on this page: one camera converges in 48 steps with a residual of
-    // 0.518 px — a better residual than the three-camera solve beside it — and
-    // recovers a rig 19.6 METRES from the lenses. Every diagnostic reads clean:
-    // `converged` true, `lastDeficiency` 0 (it is computed after LM damping, so
-    // it cannot see this), `cameraResidualScale` 1.03. The photographs really
-    // are explained; there is simply more than one rig that explains them, and
-    // from a single viewpoint a near projector zoomed in is indistinguishable
-    // from a far one zoomed out.
-    //
-    // Experiment 1 measured the shape of it over five seeds: median worst-lens
-    // error 17,490 mm at one camera against 41.8 mm at two, with the knee at
-    // three. That is the citation this warning rests on, rather than a
-    // threshold somebody chose.
-    if (r.silhouetteCameras - r.silhouetteRefusals < 2 || state.cameraCount < 2) {
+    // Below experiment 1's knee, but not refused. The refusal is at ONE position
+    // (see MIN_CAMERA_POSITIONS, where the measurement is): the gap between one
+    // and two is three orders of magnitude, and between two and three it is a
+    // factor of 1.7. Two positions is a determinate network that recovers to
+    // tens of millimetres — poor against a 2 mm gate, and worth saying, and not
+    // the same thing as a rig that cannot be determined at all.
+    if (state.cameraCount === 2) {
       box.append(
         el('p', {
-          className: 'note warn',
+          className: 'note',
           textContent:
-            'One camera position cannot determine this rig, and the numbers above will not tell ' +
-            'you so — a single-viewpoint solve converges to a sub-pixel residual and can still be ' +
-            'metres out, because from one spot a near projector zoomed in looks identical to a ' +
-            'far one zoomed out. Experiment 1 measured a median worst-lens error of 17.5 m at one ' +
-            'camera against 41.8 mm at two, over five seeds. Move the camera and photograph it ' +
-            'again from somewhere else.',
+            'Two camera positions is below the knee experiment 1 measured. Two recovers a median ' +
+            'worst-lens error of 41.8 mm and three recovers 24.9 mm, over five seeds — both well ' +
+            'over the 2 mm pose gate, and the third position is the cheapest of the two ' +
+            'improvements left.',
         }),
       );
     }
@@ -4763,7 +4829,10 @@ function renderReadout(): void {
     // ...and not from a solve that was refused: its residual describes a rig
     // that was never installed, so the cells would report the accuracy of a
     // calibration nobody is looking at.
-    const fresh = rigMovedSinceSolve || solveResult?.converged === false ? null : solveResult;
+    const fresh =
+      rigMovedSinceSolve || solveResult === null || !solveInstalled(solveResult)
+        ? null
+        : solveResult;
     g.append(
       cell(
         'Lens position',

@@ -113,8 +113,15 @@ test('convergence is reported, and it is not a warrant for the answer', { timeou
   //     produces catches it — `lastDeficiency` is computed after LM damping and
   //     reads 0 here, as it does on every case in the suite.
   //
-  // The test exists so that a future change which starts treating `converged`
-  // as a certificate has to argue with a measurement.
+  // This is the measurement `MIN_CAMERA_POSITIONS` rests on, and it is taken
+  // through `runSolve` on purpose: the pipeline MEASURES and the page JUDGES, so
+  // the one-position case is refused by `web/main.ts` and stays reachable here.
+  // If the degeneracy ever goes away, this test fails and the refusal should go
+  // with it — which is the property that keeps the refusal honest rather than
+  // permanent.
+  //
+  // It also exists so that a future change which starts treating `converged` as
+  // a certificate has to argue with a measurement.
   const three = runSolve(request({ cameraCount: 3 }));
   assert.ok(three.converged, 'the reference solve did not converge');
   assert.ok(three.posePositionMm < 500, `reference recovered ${three.posePositionMm.toFixed(0)} mm`);

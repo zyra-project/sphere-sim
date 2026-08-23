@@ -153,6 +153,60 @@ test('picking an install preset keeps every view-group setting, not most of them
   );
 });
 
+test('a one-position capture is refused before it is attempted', () => {
+  // Refused, not warned about. A warning beside a number that looks BETTER than
+  // the good one is not a warning anybody acts on: the single-camera solve
+  // converges in 48 steps to a 0.518 px residual — better than the three-camera
+  // solve — and lands 19.6 m from the lenses, and no diagnostic the solver
+  // produces says otherwise.
+  //
+  // Before the capture, because the answer is knowable from the camera count
+  // and photographing a sphere for ten seconds to throw the result away is not
+  // a courtesy.
+  assert.ok(
+    /export const MIN_CAMERA_POSITIONS = 2;/.test(MAIN_SOURCE),
+    'the minimum is not stated as a named constant',
+  );
+  const start = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function startSolve(): void {'),
+    MAIN_SOURCE.indexOf('function startSolve(): void {') + 700,
+  );
+  assert.ok(
+    /solveRefusalReason\(state\.cameraCount\)/.test(start),
+    'startSolve does not check whether the capture can be calibrated at all',
+  );
+  assert.ok(
+    start.indexOf('return;') < start.indexOf('solveRunning = true'),
+    'the refusal happens after the solve has already been started',
+  );
+
+  // And the button says why, rather than being live and doing nothing.
+  const button = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf("  const solve = el('button'"),
+    MAIN_SOURCE.indexOf('actionsEl.append(solve);'),
+  );
+  assert.ok(/disabled: solveRunning \|\| refusal !== null/.test(button));
+  assert.ok(/title:\s*\n?\s*refusal \?\?/.test(button), 'the disabled button gives no reason');
+});
+
+test('one predicate decides whether a solve became the calibration', () => {
+  // The handler decided whether to install and the drift cells decided
+  // separately whether to show the solver's residual, so they could disagree —
+  // and a residual shown for a rig that was never installed is the same class of
+  // lie as installing it. Both now ask `solveInstalled`.
+  assert.ok(/function solveInstalled\(r: SolveResponse\): boolean \{/.test(MAIN_SOURCE));
+  const fn = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function solveInstalled(r: SolveResponse): boolean {'),
+    MAIN_SOURCE.indexOf('export const MIN_CAMERA_POSITIONS'),
+  );
+  assert.ok(/r\.converged/.test(fn), 'the predicate ignores convergence');
+  assert.ok(/MIN_CAMERA_POSITIONS/.test(fn), 'the predicate ignores how many views were usable');
+  assert.ok(
+    /!solveInstalled\(solveResult\)/.test(MAIN_SOURCE),
+    'the drift cells do not consult the predicate',
+  );
+});
+
 test('a solve that never settled is not installed as the calibration', () => {
   // The reply handler wrote `state.compositorRig = msg.recoveredRig` with no
   // reference to `msg.converged`, so a bundle adjustment that stopped at its
@@ -169,19 +223,18 @@ test('a solve that never settled is not installed as the calibration', () => {
   );
   assert.ok(handler.length > 0, 'the solve reply handler has moved');
   assert.ok(
-    /if \(!msg\.converged\)/.test(handler),
+    /!msg\.converged/.test(handler),
     'the recovered rig is installed without checking that the solve converged',
+  );
+  // The install must sit behind the check, not beside it.
+  assert.ok(
+    handler.indexOf('!msg.converged') <
+      handler.indexOf('state.compositorRig = msg.recoveredRig'),
+    'the rig is installed before the convergence check can refuse it',
   );
   assert.ok(
     /state\.compositorRig = beforeRig \?\? null/.test(handler),
     'a refused solve leaves the last partial rig on screen',
-  );
-
-  // And the drift cells must not read a refused solve's residual: it describes
-  // a rig that was never installed.
-  assert.ok(
-    /solveResult\?\.converged === false \? null : solveResult/.test(MAIN_SOURCE),
-    'the drift cells still show the residual of a calibration nobody is looking at',
   );
 });
 
