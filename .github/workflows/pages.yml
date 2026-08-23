@@ -17,7 +17,9 @@ name: Pages
 # look at the page before merging the commit that creates it — is worse.
 #
 # The moment it DOES apply, the `gate` step below stops branch deploys on its own.
-# It asks whether `main` carries THIS FILE. Once it does, main can deploy for
+# It asks whether `main` carries THIS FILE — and it asks in the deny-by-default
+# direction: if it cannot read `main` at all, it refuses rather than assuming the
+# permissive answer. Once it does, main can deploy for
 # itself, a branch deploy is something that overwrites it, and a push to any other
 # branch builds and uploads the artifact without deploying. That is deliberately
 # not a comment saying 'delete this later': a review pointed out that leaving the
@@ -67,7 +69,21 @@ jobs:
             echo "deploy=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git fetch --depth=1 origin main || true
+          # A fetch that fails must DENY, and it used to allow. `|| true` swallowed
+          # the error and left FETCH_HEAD unset or stale, `git cat-file -e` then
+          # failed, and the else branch below — the permissive one — is where that
+          # landed. So a transient network blip on this one step was enough to let
+          # a branch push overwrite the production deployment, which is precisely
+          # the thing this gate exists to prevent. The build and the artifact
+          # upload still happen; only the deploy is refused.
+          if ! git fetch --depth=1 origin main 2> /dev/null; then
+            echo "Could not read main, so this run cannot tell whether main publishes"
+            echo "for itself. Refusing to deploy from ${{ github.ref_name }} rather than"
+            echo "guessing — re-run this workflow, or dispatch it manually if the preview"
+            echo "is genuinely wanted."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if git cat-file -e FETCH_HEAD:.github/workflows/pages.yml 2> /dev/null; then
             echo "main publishes for itself now, so a push to ${{ github.ref_name }} builds but does not deploy."
             echo "Run this workflow manually from the branch if a preview is genuinely wanted."
