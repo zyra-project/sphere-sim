@@ -25,6 +25,7 @@ build on any import across that line.
 | [`validation/README.md`](validation/README.md) | Photographs of real installations beside our render. Plausibility only — no metric, no gate, no score |
 | [`docs/EXPERIMENT-1.md`](docs/EXPERIMENT-1.md) | **How many photographs a calibration needs, and whether a phone suffices.** Measured |
 | [`docs/VISIT.md`](docs/VISIT.md) | **The ground-truth visit field card.** What to measure, in cut order, with framing diagrams |
+| [`docs/USAGE-ACCOUNTING.md`](docs/USAGE-ACCOUNTING.md) | What building this cost, in dollars and in kilowatt-hours. The bill is measured; the environmental figure is **PROVISIONAL** |
 
 ## The honesty structure
 
@@ -38,6 +39,13 @@ classification drives how the work is sequenced:
   them. So photometry gets **built and tested but not optimized**, and every
   photometric metric is marked **PROVISIONAL** in the report. Optimizing against
   unmeasured constants produces confident nonsense.
+
+The same rule is applied to the project's own resource accounting, which is why
+`npm run usage` reports two halves with different standing rather than one
+number: the **cost** is measured token counts at published rates, the
+**environmental impact** is those counts through a chain of non-public constants,
+and only the first can be quoted. See
+[`docs/USAGE-ACCOUNTING.md`](docs/USAGE-ACCOUNTING.md).
 
 ## Commands
 
@@ -58,6 +66,8 @@ npm run build:app          # compile sim + solver + bench + the app to browser E
 npm run app                # interactive simulator on http://localhost:8174/
 npm run smoke:app          # load the app in a real browser: does the shader compile?
 npm run build:site         # assemble site/ — the app, the harness and the progress page
+npm run usage              # what this project cost, in dollars and (PROVISIONALLY) in kWh,
+                           # litres and kgCO2e. --html <path> writes the shareable page
 node packages/bench/src/validation.ts   # regenerate validation/index.html (reads local files only;
                            # images are never fetched — the owner supplies them)
 ```

@@ -25,6 +25,7 @@
     "build:site": "npm run build:web && npm run build:app && node tools/build-site.ts",
     "smoke:app": "node tools/smoke-app.ts",
     "progress": "node packages/bench/src/progress.ts",
+    "usage": "node packages/usage/src/cli.ts",
     "progress:reference": "node packages/bench/src/reference.ts",
     "progress:reference:check": "node packages/bench/src/reference.ts --check",
     "ci": "npm run lint:boundary && npm run check:docs && npm run typecheck && npm test && npm run progress:reference:check && npm run build:app && npm run smoke:app",
