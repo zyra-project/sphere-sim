@@ -1,0 +1,150 @@
+name: Pages
+
+# Publishes the interactive simulator, the developer harness and — when the
+# bench has produced one — the measurement record.
+#
+# ## Why the development branch is here alongside main
+#
+# There is exactly one live Pages URL, so publishing from a branch normally means
+# somebody can read a number off a page that was published by an experiment. That
+# is a real hazard and it is why this list is short and explicit rather than
+# `branches: ['**']`.
+#
+# It does not apply yet. `main` holds three files — the README, PARAMETERS.md and
+# the brief — and NOT this workflow, so main cannot publish anything: every deploy
+# the live URL has ever had came from the development branch below. There is
+# nothing on main for a branch build to clobber, and the alternative — no way to
+# look at the page before merging the commit that creates it — is worse.
+#
+# The moment it DOES apply, the `gate` step below stops branch deploys on its own.
+# It asks whether `main` carries THIS FILE — and it asks in the deny-by-default
+# direction: if it cannot read `main` at all, it refuses rather than assuming the
+# permissive answer. Once it does, main can deploy for
+# itself, a branch deploy is something that overwrites it, and a push to any other
+# branch builds and uploads the artifact without deploying. That is deliberately
+# not a comment saying 'delete this later': a review pointed out that leaving the
+# trigger here lets a later branch push overwrite production, and a rule the
+# workflow enforces is worth more than a rule somebody has to remember. A
+# `workflow_dispatch` from a branch still deploys, because that is a person asking
+# for it on purpose.
+#
+# The first version of this gate asked whether `main` had any COMMIT, which was
+# wrong the day it was written: main already had three, so it would have switched
+# branch previews off immediately while nothing on main could replace them. What
+# makes a branch deploy dangerous is main being able to deploy, not main existing.
+on:
+  push:
+    branches:
+      - main
+      - claude/sphere-sim-solver-fs3jg9
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and a newer commit waits rather than cancelling: the
+# published site should be the newest COMPLETED build, not whichever race
+# finished last.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.gate.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Self-expiring: while `main` cannot publish, a branch push is the only way
+      # to see the page at all; the moment this file lands on `main` that stops,
+      # without anybody editing anything.
+      - name: May this ref deploy?
+        id: gate
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A fetch that fails must DENY, and it used to allow. `|| true` swallowed
+          # the error and left FETCH_HEAD unset or stale, `git cat-file -e` then
+          # failed, and the else branch below — the permissive one — is where that
+          # landed. So a transient network blip on this one step was enough to let
+          # a branch push overwrite the production deployment, which is precisely
+          # the thing this gate exists to prevent. The build and the artifact
+          # upload still happen; only the deploy is refused.
+          if ! git fetch --depth=1 origin main 2> /dev/null; then
+            echo "Could not read main, so this run cannot tell whether main publishes"
+            echo "for itself. Refusing to deploy from ${{ github.ref_name }} rather than"
+            echo "guessing — re-run this workflow, or dispatch it manually if the preview"
+            echo "is genuinely wanted."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git cat-file -e FETCH_HEAD:.github/workflows/pages.yml 2> /dev/null; then
+            echo "main publishes for itself now, so a push to ${{ github.ref_name }} builds but does not deploy."
+            echo "Run this workflow manually from the branch if a preview is genuinely wanted."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "main carries no Pages workflow, so nothing on the live URL came from it."
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+          cache: npm
+      - run: npm ci
+
+      # The boundary rule gates the deploy as well as the build. A site that
+      # published a simulator scoring its own assumptions would be worse than no
+      # site: it would look authoritative.
+      - name: Boundary isolation (A/B share no math)
+        run: npm run lint:boundary
+
+      - name: Build the site
+        run: npm run build:site
+
+      # Does the shader actually compile? No headless test can answer that, and a
+      # page whose canvas is black is the one failure a visitor cannot diagnose.
+      # `ubuntu-latest` ships Chromium; the tool finds it or says which paths it
+      # tried.
+      - name: Smoke test the app in a real browser
+        run: |
+          npx --yes serve@14 -l 8174 site/app > /tmp/serve.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://localhost:8174/ && break
+            sleep 1
+          done
+          node tools/smoke-app.ts --url http://localhost:8174/
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      # The same bytes, downloadable, for the case where the deploy is blocked by
+      # an environment rule or Pages is not enabled. Unzip it and serve it — the
+      # page will not run from `file://`, because ES modules and module workers
+      # both require an http origin.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: site
+          path: site
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

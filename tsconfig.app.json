@@ -1,0 +1,31 @@
+{
+  "//": [
+    "The browser app. Separate from tsconfig.web.json because that one builds the",
+    "developer harness and the two must not share an output directory: they compile",
+    "the same sim modules and a shared outDir would make one overwrite the other's",
+    "sourcemap paths, which is exactly the kind of quiet coupling this repository",
+    "spends its effort avoiding.",
+    "",
+    "`include` names entry points only. tsc follows imports, so packages/bench and",
+    "packages/solver arrive through packages/web without being listed — and without",
+    "dragging in the bench modules that open node:fs, which would compile fine and",
+    "then fail at runtime in a tab."
+  ],
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "WebWorker"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": true,
+    "outDir": "packages/web/dist",
+    "rootDir": "packages",
+    "declaration": false,
+    "sourceMap": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "erasableSyntaxOnly": true
+  },
+  "include": ["packages/web/src/**/*.ts", "packages/web/web/**/*.ts", "packages/web/worker/**/*.ts"],
+  "exclude": ["node_modules", "**/test/**"]
+}

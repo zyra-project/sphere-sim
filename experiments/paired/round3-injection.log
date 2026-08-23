@@ -1,0 +1,36 @@
+314159  s01-nominal          base-off     yaw= -90.23417 px=  0.02381 posErr=   29.22 rotErr= 0.0263 grid=  0.2225
+314159  s01-nominal          base-rotation yaw= -90.23230 px=  0.02377 posErr=   30.01 rotErr= 0.0291 grid=  0.2319
+314159  s01-nominal          base-full    yaw= -90.23619 px=  0.02377 posErr=   30.10 rotErr= 0.0338 grid=  0.3056
+314159  s01-nominal          inj-off      yaw= -89.22730 px=  0.04388 posErr=   29.17 rotErr= 0.0258 grid=  0.1868
+314159  s01-nominal          inj-rotation yaw= -89.21935 px=  0.04383 posErr=   30.11 rotErr= 0.0289 grid=  0.2413
+314159  s01-nominal          inj-full     yaw= -89.21739 px=  0.04383 posErr=   30.73 rotErr= 0.0391 grid=  0.3234
+# RECOVERED-INJECTION 314159 s01-nominal off      dYaw=  1.0069 (1.007x) dShiftAsYaw= -0.0086 dPointing=  0.9983 (0.998x) dPx=  20.07mm (1.003x)
+# RECOVERED-INJECTION 314159 s01-nominal rotation dYaw=  1.0129 (1.013x) dShiftAsYaw= -0.0149 dPointing=  0.9981 (0.998x) dPx=  20.06mm (1.003x)
+# RECOVERED-INJECTION 314159 s01-nominal full     dYaw=  1.0188 (1.019x) dShiftAsYaw= -0.0211 dPointing=  0.9977 (0.998x) dPx=  20.06mm (1.003x)
+314159  s04-handheld         base-off     yaw= -90.14587 px= -0.01921 posErr=  406.01 rotErr= 2.9945 grid= 18.7133
+314159  s04-handheld         base-rotation yaw= -89.95350 px= -0.02136 posErr=   85.74 rotErr= 0.1610 grid=  5.6169
+314159  s04-handheld         base-full    yaw= -90.21265 px= -0.02150 posErr=   99.43 rotErr= 0.2752 grid=  6.3269
+314159  s04-handheld         inj-off      yaw= -86.97288 px= -0.01339 posErr=  395.19 rotErr= 3.0925 grid= 18.7597
+314159  s04-handheld         inj-rotation yaw= -88.34573 px= -0.00318 posErr=  121.17 rotErr= 0.6620 grid=  5.2871
+314159  s04-handheld         inj-full     yaw= -88.89389 px= -0.00339 posErr=   89.33 rotErr= 0.2526 grid=  5.6352
+# RECOVERED-INJECTION 314159 s04-handheld off      dYaw=  3.1730 (3.173x) dShiftAsYaw= -2.0353 dPointing=  1.1377 (1.138x) dPx=   5.82mm (0.291x)
+# RECOVERED-INJECTION 314159 s04-handheld rotation dYaw=  1.6078 (1.608x) dShiftAsYaw= -0.6091 dPointing=  0.9987 (0.999x) dPx=  18.18mm (0.909x)
+# RECOVERED-INJECTION 314159 s04-handheld full     dYaw=  1.3188 (1.319x) dShiftAsYaw= -0.3130 dPointing=  1.0057 (1.006x) dPx=  18.11mm (0.905x)
+271828  s01-nominal          base-off     yaw= -90.23933 px=  0.08707 posErr=    7.76 rotErr= 0.0204 grid=  0.1516
+271828  s01-nominal          base-rotation yaw= -90.23639 px=  0.08711 posErr=    9.72 rotErr= 0.0212 grid=  0.1419
+271828  s01-nominal          base-full    yaw= -90.23309 px=  0.08716 posErr=    9.29 rotErr= 0.0221 grid=  0.1668
+271828  s01-nominal          inj-off      yaw= -89.31227 px=  0.10716 posErr=   15.93 rotErr= 0.0709 grid=  0.1450
+271828  s01-nominal          inj-rotation yaw= -89.30597 px=  0.10714 posErr=   14.37 rotErr= 0.0646 grid=  0.1259
+271828  s01-nominal          inj-full     yaw= -89.31397 px=  0.10709 posErr=   15.64 rotErr= 0.0717 grid=  0.1304
+# RECOVERED-INJECTION 271828 s01-nominal off      dYaw=  0.9271 (0.927x) dShiftAsYaw=  0.0745 dPointing=  1.0016 (1.002x) dPx=  20.09mm (1.005x)
+# RECOVERED-INJECTION 271828 s01-nominal rotation dYaw=  0.9304 (0.930x) dShiftAsYaw=  0.0715 dPointing=  1.0020 (1.002x) dPx=  20.04mm (1.002x)
+# RECOVERED-INJECTION 271828 s01-nominal full     dYaw=  0.9191 (0.919x) dShiftAsYaw=  0.0844 dPointing=  1.0036 (1.004x) dPx=  19.93mm (0.996x)
+271828  s04-handheld         base-off     yaw= -91.74157 px=  0.07285 posErr=  161.44 rotErr= 1.8613 grid= 15.2913
+271828  s04-handheld         base-rotation yaw= -92.23344 px=  0.09983 posErr=  246.42 rotErr= 1.2484 grid=  5.1254
+271828  s04-handheld         base-full    yaw= -92.08069 px=  0.08993 posErr=  250.32 rotErr= 0.8838 grid=  7.0938
+271828  s04-handheld         inj-off      yaw= -89.18640 px=  0.10569 posErr=  366.48 rotErr= 6.1973 grid= 18.0143
+271828  s04-handheld         inj-rotation yaw= -90.81892 px=  0.11499 posErr=  256.66 rotErr= 0.9803 grid=  4.9797
+271828  s04-handheld         inj-full     yaw= -90.90755 px=  0.10822 posErr=  237.74 rotErr= 0.9673 grid=  6.6492
+# RECOVERED-INJECTION 271828 s04-handheld off      dYaw=  2.5552 (2.555x) dShiftAsYaw= -1.7347 dPointing=  0.8204 (0.820x) dPx=  32.84mm (1.642x)
+# RECOVERED-INJECTION 271828 s04-handheld rotation dYaw=  1.4145 (1.415x) dShiftAsYaw= -0.4074 dPointing=  1.0071 (1.007x) dPx=  15.16mm (0.758x)
+# RECOVERED-INJECTION 271828 s04-handheld full     dYaw=  1.1731 (1.173x) dShiftAsYaw= -0.1815 dPointing=  0.9916 (0.992x) dPx=  18.29mm (0.915x)

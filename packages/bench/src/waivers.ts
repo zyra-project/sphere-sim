@@ -1,0 +1,558 @@
+/**
+ * Gate waivers — how a gate is allowed to fail without making CI meaningless,
+ * and how it is not.
+ *
+ * ## The problem this solves, stated honestly
+ *
+ * Two facts are both true and they pull in opposite directions.
+ *
+ * 1. `packages/bench/src/cli.ts` used to set `process.exitCode = 0`
+ *    unconditionally, one line after printing `VERDICT: FAIL`. A build whose
+ *    pose recovery missed §7's gate by 253x was green. A quality bar that cannot
+ *    report failure is not a quality bar.
+ * 2. Some of §7's gates cannot be met, for reasons that are nothing to do with
+ *    the code and are already measured and written down. docs/AMENDMENTS.md
+ *    A-16 ("the pose gate is a tape-measure gate", now superseded by A-18)
+ *    showed the solver recovers
+ *    pose to 0.073 mm with the sensor and reference noise removed, and that the
+ *    3 mm tape measure PARAMETERS.md §8 prescribes puts a ~4.4 mm floor under a
+ *    2 mm gate. No camera and no solver reaches it. A CI that is red forever
+ *    teaches everyone to ignore CI, and then fact 1 is back.
+ *
+ * A waiver is the join between them: a gate may fail WITHOUT failing the build
+ * only where the project has already written down why, in `docs/AMENDMENTS.md`,
+ * and only until a stated date. It is not a tuning knob. The measured number is
+ * reported unchanged, the gate is reported as WAIVED rather than PASS, and the
+ * citation is printed every time.
+ *
+ * ## The five ways a waiver stops covering a failure
+ *
+ * Each is a build failure, because each means the waiver has stopped being an
+ * accurate statement about the project:
+ *
+ *   - **expired** — the date passed. A waiver with no expiry is a permanent
+ *     exemption, which is the thing this file exists to prevent.
+ *   - **amendment resolved** — the entry it cites is no longer `OPEN`. Somebody
+ *     decided; the gate must now be restated or met, and the waiver removed.
+ *   - **amendment missing or ambiguous** — the citation does not resolve to
+ *     exactly one entry. (AMENDMENTS.md has carried duplicate ids more than
+ *     once — A-12 and A-13 before they were renumbered, A-16 and A-17 now — so
+ *     a citation carries a title fragment as well as an id.)
+ *   - **ceiling exceeded** — the amendment accounts for a failure of a stated
+ *     size, and the measurement is bigger than that. This is what keeps the
+ *     alarm live: a waiver for the ~640 mm the fov/distance valley is known to
+ *     cost does not cover 6 metres.
+ *   - **scenario not covered** — the waiver names the archetypes the amendment
+ *     explains, and some other scenario started failing.
+ *
+ * ## What a waiver deliberately does NOT do
+ *
+ * It does not change a metric, a gate limit, or a scenario. It does not make the
+ * verdict in `bench-results.json` say PASS: `gates.pass` there stays the raw
+ * measurement. It records that the project knows why a number is what it is, and
+ * where the decision is pending.
+ */
+
+import * as fs from 'node:fs';
+import type { GateSummary, GatesBlock } from './results.ts';
+
+export const WAIVERS_SCHEMA = 'sphere-sim/gate-waivers@1';
+
+/** One waiver, as it appears in `gate-waivers.json`. */
+export interface GateWaiver {
+  /** Gate id, matching `gates[].id` in bench-results.json. */
+  gate: string;
+  /** Amendment id, e.g. `A-12`. */
+  amendment: string;
+  /**
+   * A fragment of the amendment's heading, matched case-insensitively. Required
+   * because AMENDMENTS.md has repeatedly carried two entries under one id, and a
+   * citation that resolves to two different arguments cites neither.
+   */
+  amendmentTitle: string;
+  /** Why this failure is the amendment's and not a defect. Printed verbatim. */
+  reason: string;
+  /** `YYYY-MM-DD`, inclusive. After this date the waiver fails the build. */
+  expires: string;
+  /**
+   * Largest value, IN THE GATE'S OWN UNIT, that the cited amendment accounts
+   * for. A measurement above it is not covered. `null` waives the gate at any
+   * value and must be argued for in `ceilingBasis`.
+   */
+  ceiling: number | null;
+  /** Where the ceiling comes from. A ceiling with no provenance is a fudge. */
+  ceilingBasis: string;
+  /**
+   * Scenario ARCHETYPES this covers (`nominal`, `handheld`, ...), or `null` for
+   * every scenario. A narrower scope is a louder alarm.
+   */
+  scenarios: string[] | null;
+  openedAt: string;
+  openedBy: string;
+}
+
+export interface WaiverFile {
+  schema: string;
+  notes: string[];
+  waivers: GateWaiver[];
+}
+
+/** One `## A-NN — title` entry of docs/AMENDMENTS.md, with its status. */
+export interface AmendmentEntry {
+  id: string;
+  title: string;
+  /** `OPEN`, `ACCEPTED`, `REJECTED`, `APPLIED`, or `UNKNOWN`. */
+  status: string;
+  line: number;
+}
+
+/**
+ * Read the amendment index out of the markdown.
+ *
+ * Deliberately a parse of the document itself rather than a second copy of the
+ * statuses in JSON. A copy would drift, and the drift would always be in the
+ * direction of the waiver outliving the decision.
+ *
+ * The first `**Status:**` line after a heading wins: A-08 carries two, the
+ * second being the history of the entry before it was applied.
+ */
+export function parseAmendments(markdown: string): AmendmentEntry[] {
+  const lines = markdown.split('\n');
+  const out: AmendmentEntry[] = [];
+  let current: AmendmentEntry | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    const heading = /^##\s+(A-\d+)\s*[—–-]\s*(.+?)\s*$/.exec(lines[i]);
+    if (heading) {
+      current = { id: heading[1], title: heading[2], status: 'UNKNOWN', line: i + 1 };
+      out.push(current);
+      continue;
+    }
+    if (current !== null && current.status === 'UNKNOWN') {
+      // `**Status:** OPEN.` and `**Status:** **SUPERSEDED by A-18.**` are both
+      // in the file, so the emphasis markers are optional on the value.
+      const status = /^\*\*Status:\*\*\s*\*{0,2}([A-Za-z]+)/.exec(lines[i]);
+      if (status) current.status = status[1].toUpperCase();
+    }
+  }
+  return out;
+}
+
+export function readAmendments(file: string): AmendmentEntry[] {
+  return parseAmendments(fs.readFileSync(file, 'utf8'));
+}
+
+/**
+ * Read `gate-waivers.json`.
+ *
+ * A missing file is not an error — it means no gate is waived, which is the
+ * state the project should be trying to reach. A malformed one IS an error: the
+ * failure mode of silently ignoring a file somebody thought was protecting them
+ * is worse than not having it.
+ */
+export function readWaivers(file: string): WaiverFile {
+  if (!fs.existsSync(file)) return { schema: WAIVERS_SCHEMA, notes: [], waivers: [] };
+  const raw = fs.readFileSync(file, 'utf8');
+  let parsed: WaiverFile;
+  try {
+    parsed = JSON.parse(raw) as WaiverFile;
+  } catch (e) {
+    throw new Error(`${file}: not valid JSON (${e instanceof Error ? e.message : String(e)})`);
+  }
+  if (parsed.schema !== WAIVERS_SCHEMA) {
+    throw new Error(`${file}: schema is '${parsed.schema}', expected '${WAIVERS_SCHEMA}'`);
+  }
+  if (!Array.isArray(parsed.waivers)) throw new Error(`${file}: 'waivers' must be an array`);
+  for (const w of parsed.waivers) {
+    for (const key of ['gate', 'amendment', 'amendmentTitle', 'reason', 'expires', 'ceilingBasis'] as const) {
+      if (typeof w[key] !== 'string' || w[key].length === 0) {
+        throw new Error(`${file}: waiver for '${w.gate}' is missing a non-empty '${key}'`);
+      }
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(w.expires)) {
+      throw new Error(`${file}: waiver for '${w.gate}' has expires='${w.expires}', want YYYY-MM-DD`);
+    }
+    if (w.ceiling !== null && !(typeof w.ceiling === 'number' && Number.isFinite(w.ceiling))) {
+      throw new Error(`${file}: waiver for '${w.gate}' has a non-numeric ceiling`);
+    }
+    if (w.scenarios !== null && !Array.isArray(w.scenarios)) {
+      throw new Error(`${file}: waiver for '${w.gate}' has a non-array, non-null 'scenarios'`);
+    }
+  }
+  return parsed;
+}
+
+/** What a citation resolved to. */
+export interface Citation {
+  waiver: GateWaiver;
+  entry: AmendmentEntry | null;
+  /** Every entry the id matched, before the title narrowed it. Diagnostics. */
+  candidates: AmendmentEntry[];
+}
+
+export function resolveCitation(waiver: GateWaiver, amendments: readonly AmendmentEntry[]): Citation {
+  const candidates = amendments.filter((a) => a.id === waiver.amendment);
+  const needle = waiver.amendmentTitle.toLowerCase();
+  const matched = candidates.filter((a) => a.title.toLowerCase().includes(needle));
+  return { waiver, entry: matched.length === 1 ? matched[0] : null, candidates };
+}
+
+export type GateStatus =
+  | 'PASS'
+  | 'WAIVED'
+  | 'FAIL'
+  | 'NOT-JUDGED'
+  | 'ADVISORY'
+  /**
+   * The gate had nothing to judge: no scenario produced a value for it.
+   *
+   * Distinct from every other status because it is a statement about the RUN,
+   * not about the rig. NOT-JUDGED means "we chose not to score this" (a
+   * provisional constant); NOT-MEASURED means "we tried and got nothing back",
+   * which is a failure of the measurement and fails the build.
+   */
+  | 'NOT-MEASURED';
+
+export interface GateOutcome {
+  id: string;
+  status: GateStatus;
+  /** One line, printed under the gate. Always says why, never just what. */
+  why: string;
+  waiver: GateWaiver | null;
+  citation: Citation | null;
+}
+
+export interface EvaluationInput {
+  gates: GatesBlock;
+  /** Scenario id -> archetype, for scoping a waiver to the cases it explains. */
+  archetypeById: ReadonlyMap<string, string>;
+  waivers: WaiverFile;
+  amendments: readonly AmendmentEntry[];
+  /** Injected rather than read from the clock, so a test can pin it. */
+  now: Date;
+}
+
+export interface Evaluation {
+  outcomes: GateOutcome[];
+  /** Waivers that matched no failing gate. Reported, not fatal. */
+  unused: { waiver: GateWaiver; why: string }[];
+  /** True when nothing failed without cover. The build's verdict. */
+  ok: boolean;
+}
+
+function isoDay(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Judge every gate.
+ *
+ * Only SCORED, NON-PROVISIONAL gates can fail the build. A provisional metric is
+ * a statement about a constant nobody has measured (docs/ARCHITECTURE.md's phase
+ * gate); failing a build on one would encode a guess as a requirement.
+ */
+export function evaluateGates(input: EvaluationInput): Evaluation {
+  const outcomes: GateOutcome[] = [];
+  const used = new Set<GateWaiver>();
+
+  for (const gate of input.gates.gates) {
+    const waiver = input.waivers.waivers.find((w) => w.gate === gate.id) ?? null;
+    if (gate.provisional) {
+      outcomes.push({
+        id: gate.id,
+        status: 'NOT-JUDGED',
+        why: 'PROVISIONAL — depends on a constant nobody has measured (docs/ARCHITECTURE.md phase gate). Reported, never scored.',
+        waiver,
+        citation: null,
+      });
+      continue;
+    }
+    // A gate that measured NOTHING did not pass it.
+    //
+    // `pass` is computed upstream as `failed.length === 0`, which is vacuously
+    // true when every scenario was skipped or produced no value. So a run where
+    // the solver threw on all twelve scenarios — `recovery: null`, every
+    // `measurable` predicate false, every value NaN — arrived here as
+    // `pass=true, scenariosScored=0` and printed PASS. An adversarial review
+    // built exactly that fixture and got `GATES: no unwaived failure.` and exit
+    // 0 from a run in which no calibration existed at all.
+    //
+    // `results.ts` already makes this argument for a single scenario — "a metric
+    // that could not be computed is not a metric that passed" — and this applies
+    // the same sentence to a whole gate. It is deliberately NOT waivable: a
+    // waiver explains a failure an amendment accounts for, and "we measured
+    // nothing" is not a failure anybody has accounted for.
+    //
+    // Checked BEFORE the advisory branch so an advisory gate reports the same
+    // fact rather than printing a nonsense ratio like "12/0 scenarios over
+    // 0.07 deg" — but it stays non-fatal there, for the reason that branch gives.
+    // Either the gate scored nothing at all, or part of the corpus owed it a
+    // number and never produced one. Both mean the same thing for a verdict:
+    // it does not cover what it claims to have judged.
+    // Read defensively, not because the builders may omit it — the type makes
+    // them set it — but because this judge is meant to re-judge OLDER results
+    // files (gate.ts's own docstring: "against a different waiver file, on an
+    // older results file, in a review"). A file written before this field
+    // existed must still be judgeable rather than crash the step.
+    const owedScenarios = gate.scenariosUnmeasured ?? [];
+    if (gate.scenariosScored === 0 || owedScenarios.length > 0) {
+      const owed =
+        owedScenarios.length > 0
+          ? ` ${owedScenarios.length} scenario(s) owed a value and produced none ` +
+            `(${owedScenarios.join(', ')}) — a metric that threw, not a rig with ` +
+            `nothing to measure.`
+          : '';
+      const excluded =
+        gate.scenariosNotMeasurable.length > 0
+          ? ` ${gate.scenariosNotMeasurable.length} scenario(s) had nothing to measure ` +
+            `(${gate.scenariosNotMeasurable.join(', ')}).`
+          : '';
+      outcomes.push({
+        id: gate.id,
+        status: gate.advisory ? 'ADVISORY' : 'NOT-MEASURED',
+        why:
+          (gate.scenariosScored === 0
+            ? `no scenario produced a value for this gate, so it was not judged either way.`
+            : `${gate.scenariosScored} scenario(s) scored, but the verdict does not cover the corpus.`) +
+          `${owed}${excluded} ` +
+          `A gate that measured nothing has not passed; re-run with scenarios that can score it, ` +
+          `or fix whatever stopped them scoring.` +
+          (gate.advisory ? ' Advisory, so it does not fail the build.' : ''),
+        waiver,
+        citation: null,
+      });
+      continue;
+    }
+
+    // ADVISORY: a gate this project invented, with a threshold no document
+    // publishes. It is tracked because it is diagnostic, and it is never allowed
+    // to fail a build, because failing someone's build on a number we made up is
+    // not a quality bar — it is this repo asserting authority it does not have.
+    // Distinct from PROVISIONAL, which is about an unmeasured CONSTANT; this is
+    // about an unpublished THRESHOLD. See the gate's own `basis`.
+    if (gate.advisory) {
+      outcomes.push({
+        id: gate.id,
+        status: gate.pass ? 'PASS' : 'ADVISORY',
+        why: gate.pass
+          ? ''
+          : `ADVISORY — not a PARAMETERS.md §7 gate; the threshold is this project's own. ` +
+            `${gate.scenariosFailed}/${gate.scenariosScored} scenarios over ${gate.max} ${gate.unit}` +
+            `${gate.worst === null ? '' : `, worst ${gate.worst.value} on ${gate.worst.scenario}`}. ` +
+            `Reported and tracked; never fails the build.`,
+        waiver,
+        citation: null,
+      });
+      continue;
+    }
+    if (gate.pass) {
+      outcomes.push({ id: gate.id, status: 'PASS', why: '', waiver, citation: null });
+      continue;
+    }
+    if (waiver === null) {
+      outcomes.push({
+        id: gate.id,
+        status: 'FAIL',
+        why:
+          `no waiver in gate-waivers.json. ${gate.scenariosFailed}/${gate.scenariosScored} scenarios failed` +
+          `${gate.worst === null ? '' : `, worst ${gate.worst.value} ${gate.unit} on ${gate.worst.scenario}`}` +
+          ` against a limit of ${gate.max}.`,
+        waiver: null,
+        citation: null,
+      });
+      continue;
+    }
+
+    used.add(waiver);
+    outcomes.push(judgeWaived(gate, waiver, input));
+  }
+
+  const unused: { waiver: GateWaiver; why: string }[] = [];
+  for (const w of input.waivers.waivers) {
+    if (used.has(w)) continue;
+    const gate = input.gates.gates.find((g) => g.id === w.gate);
+    unused.push({
+      waiver: w,
+      why:
+        gate === undefined
+          ? `no gate '${w.gate}' in this run — the waiver may name a gate that no longer exists.`
+          : gate.scenariosScored === 0
+            ? `gate '${w.gate}' measured nothing in this run, so the waiver was never reached. ` +
+              'That is not evidence the waiver is unnecessary — it is evidence the run did not test it.'
+            : `gate '${w.gate}' PASSED. The waiver did nothing; delete it once it stays that way.`,
+    });
+  }
+
+  // NOT-MEASURED is fatal alongside FAIL. The whole point of the gate is to be
+  // loud, and "we could not measure it" is the one outcome that used to be
+  // silent AND green.
+  return {
+    outcomes,
+    unused,
+    ok: outcomes.every((o) => o.status !== 'FAIL' && o.status !== 'NOT-MEASURED'),
+  };
+}
+
+function judgeWaived(gate: GateSummary, waiver: GateWaiver, input: EvaluationInput): GateOutcome {
+  const citation = resolveCitation(waiver, input.amendments);
+  const fail = (why: string): GateOutcome => ({ id: gate.id, status: 'FAIL', why, waiver, citation });
+
+  if (citation.entry === null) {
+    return fail(
+      citation.candidates.length === 0
+        ? `waiver cites ${waiver.amendment}, which does not exist in docs/AMENDMENTS.md.`
+        : `waiver cites ${waiver.amendment} '${waiver.amendmentTitle}', which matches ` +
+          `${citation.candidates.length === 1 ? 'no' : `${citation.candidates.length}`} entries ` +
+          `(${citation.candidates.map((c) => `line ${c.line}: ${c.title}`).join(' | ')}). ` +
+          'A citation that does not resolve to exactly one entry cites nothing.',
+    );
+  }
+  if (citation.entry.status !== 'OPEN') {
+    return fail(
+      `${waiver.amendment} is ${citation.entry.status}, not OPEN — the decision has been made ` +
+        `(docs/AMENDMENTS.md line ${citation.entry.line}). Meet the gate, restate it in PARAMETERS.md, ` +
+        'or the waiver is now hiding a live failure.',
+    );
+  }
+  const today = isoDay(input.now);
+  if (today > waiver.expires) {
+    return fail(
+      `waiver expired on ${waiver.expires} (today is ${today}). Renew it with a fresh argument or remove it.`,
+    );
+  }
+  // A ceiling compares a measured worst case against the size of failure the
+  // amendment accounts for. When the gate failed and produced NO value, there is
+  // nothing to compare — and this used to read `gate.worst !== null &&`, which
+  // made the ceiling inert in exactly that case rather than decisive. The §7
+  // builder reaches it whenever every measurable scenario returned NaN: `scored`
+  // counts those, so the guard above lets them through, and `worst` stays null
+  // because NaN loses every comparison.
+  if (waiver.ceiling !== null && gate.worst === null) {
+    return fail(
+      `the gate failed but no scenario produced a value, so the waiver's ceiling of ` +
+        `${waiver.ceiling} ${gate.unit} has nothing to compare against. ${waiver.ceilingBasis} ` +
+        'A failure the ceiling cannot measure is not a failure the amendment accounts for.',
+    );
+  }
+  if (waiver.ceiling !== null && gate.worst !== null && gate.worst.value > waiver.ceiling) {
+    return fail(
+      `measured ${gate.worst.value} ${gate.unit} on ${gate.worst.scenario}, above the waiver's ceiling of ` +
+        `${waiver.ceiling} ${gate.unit}. ${waiver.ceilingBasis} A failure larger than the one the amendment ` +
+        'accounts for is a new failure.',
+    );
+  }
+  if (waiver.scenarios !== null) {
+    const covered = new Set(waiver.scenarios);
+    const stray = gate.failedScenarios.filter((id) => !covered.has(input.archetypeById.get(id) ?? id));
+    if (stray.length > 0) {
+      return fail(
+        `waiver covers archetypes [${waiver.scenarios.join(', ')}], but ${stray.join(', ')} also failed. ` +
+          'A scenario the amendment does not discuss is not waived by it.',
+      );
+    }
+  }
+
+  return {
+    id: gate.id,
+    status: 'WAIVED',
+    why:
+      `${waiver.amendment} (${citation.entry.title}), OPEN, expires ${waiver.expires}. ${waiver.reason} ` +
+      `Reported unchanged: ${gate.worst === null ? 'n/a' : `${gate.worst.value} ${gate.unit} worst`} ` +
+      `against a limit of ${gate.max}` +
+      `${waiver.ceiling === null ? '' : `, waived up to ${waiver.ceiling}`}.`,
+    waiver,
+    citation,
+  };
+}
+
+/**
+ * The audit rows that go into `bench-results.json`.
+ *
+ * Everything here is a pure function of two files on disk, so the results file
+ * stays byte-identical between two runs with the same seed. The one thing that
+ * needs a clock — whether the waiver has expired — is deliberately NOT here: it
+ * is decided at print time, by `evaluateGates`, and shows up in the exit code
+ * and on stdout. A results file whose content depended on the wall clock would
+ * break the determinism check for a reason that has nothing to do with
+ * determinism, which is the same trap `env.argv` fell into.
+ */
+export interface WaiverAudit {
+  gate: string;
+  amendment: string;
+  amendmentTitle: string;
+  /** Status parsed out of docs/AMENDMENTS.md at the time of the run. */
+  amendmentStatus: string;
+  amendmentResolvesUniquely: boolean;
+  expires: string;
+  ceiling: number | null;
+  ceilingBasis: string;
+  scenarios: string[] | null;
+  reason: string;
+  /** True when the gate this waiver names actually failed in this run. */
+  gateFailed: boolean;
+}
+
+export function waiverAudit(
+  gates: GatesBlock,
+  waivers: WaiverFile,
+  amendments: readonly AmendmentEntry[],
+): WaiverAudit[] {
+  return waivers.waivers.map((w) => {
+    const citation = resolveCitation(w, amendments);
+    const gate = gates.gates.find((g) => g.id === w.gate) ?? null;
+    return {
+      gate: w.gate,
+      amendment: w.amendment,
+      amendmentTitle: w.amendmentTitle,
+      amendmentStatus: citation.entry?.status ?? 'UNRESOLVED',
+      amendmentResolvesUniquely: citation.entry !== null,
+      expires: w.expires,
+      ceiling: w.ceiling,
+      ceilingBasis: w.ceilingBasis,
+      scenarios: w.scenarios === null ? null : [...w.scenarios],
+      reason: w.reason,
+      gateFailed: gate !== null && !gate.pass,
+    };
+  });
+}
+
+/** Human-readable block, printed by both `cli.ts` and `gate.ts`. */
+export function formatEvaluation(evaluation: Evaluation, allowFailure: boolean): string {
+  const lines: string[] = [];
+  const pad = (s: string, n: number): string => (s.length >= n ? s : s + ' '.repeat(n - s.length));
+  // Wide enough for the longest status, NOT-MEASURED.
+  const STATUS_COL = 14;
+  lines.push('');
+  lines.push('GATE VERDICT');
+  for (const o of evaluation.outcomes) {
+    lines.push(`  ${pad(o.status, STATUS_COL)}${o.id}`);
+    if (o.why !== '') lines.push(`  ${' '.repeat(STATUS_COL)}${o.why}`);
+  }
+  for (const u of evaluation.unused) {
+    lines.push(`  ${pad('UNUSED', STATUS_COL)}${u.waiver.gate}`);
+    lines.push(`  ${' '.repeat(STATUS_COL)}${u.why}`);
+  }
+  const failed = evaluation.outcomes.filter((o) => o.status === 'FAIL');
+  // Unmeasured gates are counted here too. Reporting "no unwaived failure" while
+  // exiting 1 would be a summary line contradicting its own exit code, and the
+  // summary is the line people read.
+  const unmeasured = evaluation.outcomes.filter((o) => o.status === 'NOT-MEASURED');
+  lines.push('');
+  const parts: string[] = [];
+  if (failed.length > 0) {
+    parts.push(`${failed.length} unwaived failure(s) — ${failed.map((f) => f.id).join(', ')}`);
+  }
+  if (unmeasured.length > 0) {
+    parts.push(
+      `${unmeasured.length} gate(s) measured nothing — ${unmeasured.map((f) => f.id).join(', ')}`,
+    );
+  }
+  if (parts.length === 0) {
+    lines.push('GATES: no unwaived failure.');
+  } else if (allowFailure) {
+    lines.push(`GATES: ${parts.join('; ')}. Exit code suppressed by --allow-failure.`);
+  } else {
+    lines.push(`GATES: ${parts.join('; ')}. Build FAILS.`);
+  }
+  lines.push('');
+  return lines.join('\n');
+}

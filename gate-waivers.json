@@ -1,0 +1,76 @@
+{
+  "schema": "sphere-sim/gate-waivers@1",
+  "notes": [
+    "A waiver lets a gate fail without failing the build, and it is not a tuning knob. The measured number is reported unchanged; the waiver records that the project already knows why, in writing, and where the decision is pending. Read packages/bench/src/waivers.ts for the rules.",
+    "Every waiver cites an entry in docs/AMENDMENTS.md and expires. It stops covering the failure the moment the entry stops being OPEN, the date passes, the measurement exceeds the stated ceiling, or a scenario the amendment does not discuss starts failing. Each of those fails CI.",
+    "The citation carries a title fragment as well as an id because AMENDMENTS.md has repeatedly carried two entries under one id (A-12 and A-13 before they were renumbered; A-16 and A-17 at the time of writing). packages/bench/src/waivers.ts refuses a citation that resolves to more or fewer than one entry.",
+    "grid_displacement carried NO waiver for four rounds, and this file said so explicitly: the failure was 'Phase 1's work rather than a decision pending with the author'. That premise was true when written and is no longer. Round 4's independent critic established by counterfactual substitution that the contributor is a jointly compensating position/fov_h/shift_h deformation whose floor is set by A-18, A-12 and A-33 — all OPEN, all decisions for the spec's author. The waiver below is issued on this file's own rule: a gate may fail without failing the build only where the project has already written down why. The old note is removed rather than edited so the change of premise is visible in the diff."
+  ],
+  "waivers": [
+    {
+      "gate": "pose_position",
+      "amendment": "A-18",
+      "amendmentTitle": "the pose gate is a LENS-KNOWLEDGE gate",
+      "reason": "PARAMETERS.md §3.1 does not say whether a nominal field of view is built from the throw ratio (class CFG, off a spec sheet) or from d_proj (class SOLVE, and §2 refuses to settle which of two conflicting values it is). A-18 measures what that omission costs: holding fov_h at truth removes 88-97% of the position error for 0.3-3.5% of residual RMS, and the nominal archetype then recovers to 2.03 mm and 0.0334 deg WITH the 3 mm tape still in place — inside the gate. So the gate is reachable and the failure is a decision pending with the author, not a solver defect. A-18 asks §3.1 to state that fov_h comes from the lens and §8 item 2 to record the zoom setting as deployed. This waiver replaces one that cited A-16, which A-18 superseded: A-16 read the ~2-4.4 mm tape floor as the ceiling, and the waiver failed the build the moment its citation stopped being OPEN. That is the mechanism working, and it is recorded here rather than quietly edited away.",
+      "expires": "2027-02-01",
+      "ceiling": 640.0,
+      "ceilingBasis": "A-13 measures the worst-case pose position error over the twelve-scenario corpus at seed 1234 as 639.6 mm with the field of view free, which is the largest failure the register accounts for. A measurement above it is a new failure, not this one. It is a wide ceiling and it should come DOWN as A-18's remedy lands; a ceiling that only ever rises is a ratchet, and a ratchet is the thing this file exists to prevent.",
+      "scenarios": null,
+      "openedAt": "2026-08-10",
+      "openedBy": "quality-bar repair, defect 2"
+    },
+    {
+      "gate": "pose_rotation",
+      "amendment": "A-12",
+      "amendmentTitle": "lens shift has a nominal and a class but no uncertainty",
+      "reason": "PARAMETERS.md §3.1 gives shift_h/shift_v a nominal and a class and no uncertainty, and at this geometry lens shift and pointing are very nearly the same parameter — 0.01 of shift is 0.172 deg of yaw. Which side of a factor of twenty the rotation gate lands on is decided entirely by an uncertainty the document does not state. A-12 asks for a plausible range in §3.1 and one line in §8 item 2 (read the shift off the projector's own menu). Beneath that sits the reference measurement: 3 mm of tape error at 5.18 m is atan(0.003/5.18) = 0.033 deg, two thirds of the whole 0.05 deg budget, before the solver does anything (A-11, and A-16's step 3 which A-18 confirms as the floor even while correcting its headline).",
+      "expires": "2027-02-01",
+      "ceiling": 6.3,
+      "ceilingBasis": "A-12 measures the worst pose rotation error over the twelve-scenario corpus at seed 1234 as 6.29 deg with shift free (0.30 deg with shift held at §3.1's own nominal of zero). 6.3 is that measurement, rounded up in the last digit.",
+      "scenarios": null,
+      "openedAt": "2026-08-10",
+      "openedBy": "quality-bar repair, defect 2"
+    },
+    {
+      "gate": "unlit_in_mask",
+      "amendment": "A-10",
+      "amendmentTitle": "unlit-within-the-mask gate cannot be met by the 2- and 3-projector installs",
+      "reason": "PARAMETERS.md §2 says 2- and 3-projector installs are supported and quadrants go dark; §7 makes unlit-fraction-within-the-mask a hard 0% requirement. Those are the same statement about overlapping regions, and for N < 4 the dark quadrant reaches inside the mask boundary. No calibration moves it — a three-projector install has one 90-degree wedge lit only by its neighbours' skirts. A-10 proposes qualifying the gate by projector count. The gate is still reported and still fails for a four-projector rig, which is what it is for: this waiver covers only the two archetypes that are dark by construction.",
+      "expires": "2027-02-01",
+      "ceiling": 0.13,
+      "ceilingBasis": "A-10's own measurement on the nominal geometry at d_proj = 5.18 m: 5.92% unlit for three projectors, 12.78% for the antipodal pair, 0% for four. 0.13 is the antipodal figure with the last digit rounded up; anything above it is a rig that is dark for some other reason.",
+      "scenarios": [
+        "three-projectors",
+        "two-projectors"
+      ],
+      "openedAt": "2026-08-10",
+      "openedBy": "quality-bar repair, defect 2"
+    },
+    {
+      "gate": "grid_displacement",
+      "amendment": "A-18",
+      "amendmentTitle": "the pose gate is a LENS-KNOWLEDGE gate",
+      "reason": "PARAMETERS.md §7 sets 1.0 mm and the bench measures 9.03 mm worst on the CI corpus, on the handheld archetypes only — grid displacement PASSES all four tripod scenarios (0.039-0.726 mm) and fails only where the camera moved, with no scenario where the two disagree. Four rounds established what sets the floor. Round 3's time-differential camera pose took the worst case from 18.9 mm to 4.9 mm, replicated by an independent critic on seeds the round never saw. Round 4's shared-lens tie, licensed by the LK935 spec sheet in A-35, took pose_position from 504 mm to 60.7 mm and moved this gate not at all (1.000x paired over 275 solves). The bench's own counterfactual then names the cause: substituting the whole calibration gives 0.073 mm while substituting ANY SINGLE parameter group gives 10x to 27x WORSE — the signature of a compensating deformation, with the smallest scaled eigenvalue of the gauge-augmented normal matrix at 2.8e-7 and condition 2.4e7. That degeneracy is bounded below by three OPEN amendments, none of which is a code defect: A-18 (does fov_h come from the lens or from d_proj — §2 refuses to settle d_proj, and A-35 shows the LK935's zoom ring is continuous so the model number bounds fov_h without pinning it), A-12 (lens shift has no stated uncertainty, and 0.01 of shift is 0.172 deg of yaw at this geometry), and A-33 (whether the four zoom rings are set identically, which decides whether the tie is free or costs 23.7 mm). A-18's remedy is §8 item 2: read the projector's model and zoom setting at the install. Waived so CI reports the one real signal it has rather than being red forever — this file's opening argument is that a permanently red build teaches everyone to ignore CI, and then a genuine regression hides in the noise.",
+      "expires": "2026-11-01",
+      "ceiling": 25.0,
+      "ceilingBasis": "The largest worst-case any independent measurement has produced on this gate since round 3: 24.171 mm, by round 4's critic at its own seed 909131 on s05-two-cameras. Round 4's own corpus reads 12.651 mm at 771003 and 8.314 mm at 480915, and CI reads 9.03 mm at 1234 — the spread is the worst-of-N statistic's, measured at 69-182 percent of its own median in docs/PHASE-1.md, not a change in the code. 25.0 is that maximum rounded up. Deliberately SHORTER-DATED than the other waivers (2026-11-01, not 2027-02-01) because unlike them this one covers a gate the loop can still move: it should be revisited after the ground-truth visit settles A-18, not left to run a full year.",
+      "scenarios": null,
+      "openedAt": "2026-08-11",
+      "openedBy": "owner decision, after round 4's critic named the contributor as a pending spec decision"
+    },
+    {
+      "gate": "h_center_recovery",
+      "amendment": "A-18",
+      "amendmentTitle": "the pose gate is a LENS-KNOWLEDGE gate",
+      "reason": "h_center is the messenger here, not the failure. It is observable through a floor reference and nothing else, and packages/solver/src/bundle.ts assigns it the inverse-variance-weighted mean of (measured height - recovered lens height) over the references — so a COMMON-MODE error in the referenced lens heights becomes h_center error essentially one-for-one. Measured on s08 at seed 1234: the two referenced lenses recover 17.33 mm and 28.62 mm LOW, a common mode of -22.97 mm, against a reported h_center error of 24.48 mm. The common-mode height error is the two-projector network riding the same fov_h/d_proj scale degeneracy A-18 already covers for pose_position, on a rig with half the constraints: s08's pose_position is 45.7 mm at the same seed, itself waived under A-18. So this is the same pending spec decision reaching a second gate, not a second defect. Two candidate solver explanations were tested and rejected before this waiver was written. First, that the gauge left a rotation unpinned at exactly two floor references: that WAS a real defect and it was fixed rather than waived (gaugeConstraints now reads 2 at two references instead of 1), and it moved this number by 0.1 mm — 24.58 to 24.48 — so it is not the cause. Second, that too few references were taken: s08 scores 9.23 mm with zero references and 6.54 mm with one, so it fails WORSE with its two than with fewer, and 'take more references' is not available anyway — packages/bench/src/scenarios.ts clamps the count to the projector count because PARAMETERS.md section 8 item 1 lists floor-to-projector-lens as the measurement. A-18's remedy (state that fov_h comes from the lens; record the zoom setting at the install) is what would move this.",
+      "expires": "2026-11-01",
+      "ceiling": 273.0,
+      "ceilingBasis": "The largest measurement of this gate anywhere in the register: 272.646 mm on s08-two-projectors, from a twelve-scenario corpus run at root seed 771003. That run is not an artifact in the tree — bench-results.json is generated, not tracked (.gitignore) — and this clause used to call it tracked, which invited a reader to go and check a file whose contents depend on when it was last generated. A clean run at the same seed after the August solver work reads 271.462 mm, 1.5 mm under this ceiling: the value moved 1.2 mm on solver changes alone, so of the five waivers this is the one closest to breaching and the one most exposed to further work. CI's own seed 1234 reads 24.48 mm, and an independent 20-seed sweep at a third seed family reads median 29.5, p90 88.2, max 129.1 with 14 of 20 over the 10 mm limit. The spread is the two-projector network's, not a change in the code, and 273 is the largest observed value rounded up in the last digit. It is a wide ceiling and it is wide because the tail is: it should come DOWN once A-18's remedy lands. Short-dated to 2026-11-01 to match the grid_displacement waiver that cites the same amendment, so both are revisited together after the ground-truth visit.",
+      "scenarios": [
+        "two-projectors"
+      ],
+      "openedAt": "2026-08-20",
+      "openedBy": "owner decision, after the 12-scenario corpus was judged for the first time"
+    }
+  ]
+}

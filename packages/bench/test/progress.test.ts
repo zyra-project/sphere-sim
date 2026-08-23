@@ -1,0 +1,1046 @@
+/**
+ * The progress page.
+ *
+ * Four claims, and the page is worth nothing without all four:
+ *
+ *  1. **It generates from a fixture, with no network and no files.**
+ *     `renderProgressPage` takes everything it needs as an argument and performs
+ *     no I/O, so the page can be built on a machine with no internet, from a
+ *     results file that came from somewhere else, and the tests can drive it
+ *     without a hundred-second bench run.
+ *  2. **The output reaches for nothing.** No `<script>`, no stylesheet link, no
+ *     font, no image from a host. Every `src` and `href` is either a `data:`
+ *     URI or an anchor in the page itself. A report that quietly needs the
+ *     internet is a report that will be blank in the room where it matters.
+ *  3. **The static reference asserts its properties FROM THE DATA IT PLOTS.**
+ *     Not from a caption, not from a constant: the multiplicity claim is read
+ *     off the same array the map is drawn from, and the four-lobed claim is
+ *     recovered by counting minima in the boundary curve parsed back out of the
+ *     rendered SVG path. A test that compared a hardcoded string would pass on a
+ *     page whose plot had gone wrong.
+ *  4. **The structure statistic can tell structure from noise.** Two synthetic
+ *     residual sets — one isotropic Gaussian, one with a radial term — must come
+ *     back with different verdicts, or the most diagnostic plot on the page has
+ *     a decorative number beside it.
+ */
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import * as zlib from 'node:zlib';
+
+import {
+  EMPTY_IMAGE_STORE,
+  GLOSSARY,
+  analyseResiduals,
+  renderProgressPage,
+} from '../src/progress.ts';
+import { colorizeFieldWithGaps, missingCellHex } from '../src/views.ts';
+import { encodePng8 } from '../../sim/src/png.ts';
+import type { ProgressInput, ResidualColumnsJson } from '../src/progress.ts';
+import { analyseCoverageReference, buildCoverageReference, countLobes } from '../src/reference.ts';
+import type { CoverageReference } from '../src/reference.ts';
+import { dispersion } from '../src/results.ts';
+import type { BenchResults, GateSummary, ScenarioJson } from '../src/results.ts';
+import type { MetricResult } from '../../sim/src/metrics/index.ts';
+
+// ---------------------------------------------------------------------------
+// Fixtures — a results file small enough to read, shaped exactly like a real one
+// ---------------------------------------------------------------------------
+
+function metric(overrides: Partial<MetricResult> & { id: string }): MetricResult {
+  return {
+    label: overrides.label ?? overrides.id,
+    value: 0.5,
+    unit: 'mm',
+    gate: {
+      id: overrides.id,
+      metric: overrides.label ?? overrides.id,
+      max: 1,
+      unit: 'mm',
+      klass: 'ASSUME',
+      phase: 'geometry',
+      basis: 'fixture',
+    },
+    gateMax: 1,
+    pass: true,
+    scored: true,
+    provisional: false,
+    censored: false,
+    note: 'fixture metric',
+    sampling: {
+      scheme: 'fixture',
+      description: 'fixture',
+      count: 10,
+      densityPerSr: null,
+      convergence: null,
+    },
+    detail: { p95Mm: 0.7, maxMm: 0.9, overlapAreaFraction: 0.68 },
+    ...overrides,
+  };
+}
+
+/** A deterministic residual block: `n` points per projector, seeded by hand. */
+function residualFixture(n: number, projectors: number, radial: number): ResidualColumnsJson {
+  const cols: ResidualColumnsJson = {
+    count: 0,
+    projector: [],
+    camera: [],
+    u: [],
+    v: [],
+    du: [],
+    dv: [],
+  };
+  let state = 12345;
+  const rand = (): number => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+  const gauss = (): number => {
+    const a = Math.max(1e-12, rand());
+    return Math.sqrt(-2 * Math.log(a)) * Math.cos(2 * Math.PI * rand());
+  };
+  for (let p = 0; p < projectors; p++) {
+    for (let i = 0; i < n; i++) {
+      const u = rand() * 1920;
+      const v = rand() * 1080;
+      const dx = u - 960;
+      const dy = v - 540;
+      const r = Math.hypot(dx, dy);
+      const rr = r / Math.hypot(960, 540);
+      cols.projector.push(p);
+      cols.camera.push(0);
+      cols.u.push(u);
+      cols.v.push(v);
+      cols.du.push(gauss() * 0.2 + (radial * rr * rr * dx) / Math.max(r, 1e-9));
+      cols.dv.push(gauss() * 0.2 + (radial * rr * rr * dy) / Math.max(r, 1e-9));
+      cols.count++;
+    }
+  }
+  return cols;
+}
+
+function scenario(id: string, overrides: Partial<ScenarioJson> = {}): ScenarioJson {
+  return {
+    index: 0,
+    id,
+    archetype: id === 's00-clean' ? 'clean' : 'nominal',
+    question: 'fixture question',
+    seed: 77,
+    inputs: {
+      projectorCount: 2,
+      slots: [0, 1],
+      distanceM: 5.18,
+      projectorHeightM: 2.1844,
+      centerHeightM: 2.1844,
+      projectorRes: { x: 1920, y: 1080 },
+      maskInterpretation: 'latitude',
+      floorReferenceCount: 4,
+      floorSigmaM: 0.003,
+      cameras: { count: 3, res: { x: 320, y: 240 } },
+      degradation: { ambient: 0.04 },
+      injected: {
+        centerHeightMm: 1,
+        projectors: [
+          { id: 'P1', azimuthDeg: 0.5 },
+          { id: 'P2', azimuthDeg: -0.5 },
+        ],
+      },
+    },
+    capture: { framesRendered: 30, correspondences: 400 },
+    solver: {
+      converged: true,
+      stopReason: 'step',
+      iterations: 12,
+      rmsResidualPx: 0.2,
+      perProjectorRmsPx: [0.2, 0.2],
+      correspondencesUsed: 400,
+      correspondencesRejected: 3,
+      gaugeFreeAxes: [false, false, true],
+      centerHeightObserved: true,
+      residuals: residualFixture(200, 2, 0),
+    },
+    recovery: {
+      preAlignment: { maxPositionMm: 3, maxRotationDeg: 0.04 },
+      postAlignment: { maxPositionMm: 2.4, maxRotationDeg: 0.03 },
+      gauge: { angleDeg: 0.0001, unconstrainedAngleDeg: 0.03, freeAxes: [false, false, true] },
+      centerHeight: { errorMm: 3.1, observed: true },
+      intrinsics: { maxFovHDeg: 0.1, maxK1: 0.001, maxK2: 0.0001, maxShift: 0.001 },
+    },
+    metrics: [metric({ id: 'grid_displacement', value: 0.42 })],
+    metricsPass: true,
+    baseline: { pass: false, metrics: [metric({ id: 'grid_displacement', value: 4.2, pass: false })] },
+    artifacts: {
+      roomBefore: 'progress/data/fixture-room-before.png',
+      roomAfter: 'progress/data/fixture-room-after.png',
+      registration: 'progress/data/fixture-registration.png',
+      cameraFrame: 'progress/data/fixture-camera.png',
+    },
+    error: null,
+    timings: { totalMs: 1 },
+    ...overrides,
+  };
+}
+
+function gate(overrides: Partial<GateSummary> & { id: string }): GateSummary {
+  return {
+    metric: 'fixture gate',
+    unit: 'mm',
+    max: 1,
+    klass: 'ASSUME',
+    phase: 'geometry',
+    basis: 'fixture',
+    pass: true,
+    scenariosScored: 2,
+    scenariosFailed: 0,
+    failedScenarios: [],
+    worst: { scenario: 's00-clean', value: 0.42 },
+    distribution: dispersion([0.42, 0.5]),
+    scenariosNotMeasurable: [],
+    scenariosUnmeasured: [],
+    dependsOnRecovery: true,
+    provisional: false,
+    advisory: false,
+    attribution: null,
+    ...overrides,
+  };
+}
+
+function results(overrides: Partial<BenchResults> = {}): BenchResults {
+  return {
+    schema: 'sphere-sim/bench-results@1',
+    volatile: ['env', 'scenarios[].timings'],
+    env: {
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      gitCommit: 'abcdef1234567890',
+      gitDirty: false,
+      node: 'v22.0.0',
+      platform: 'linux-x64',
+      cpus: 4,
+      durationMs: 1000,
+      scenarioDurationsMs: [500, 500],
+      argv: [],
+    },
+    run: {
+      seed: 1234,
+      scenarioCount: 2,
+      preset: 'default',
+      conventions: 'sphere-sim/conventions@2',
+      parametersRev: 'PARAMETERS.md rev 2',
+      outDir: 'progress/data',
+    },
+    gates: {
+      pass: false,
+      gates: [
+        gate({
+          id: 'grid_displacement',
+          pass: false,
+          scenariosFailed: 1,
+          failedScenarios: ['s01-nominal'],
+          distribution: dispersion([0.42, 4.2]),
+          worst: { scenario: 's01-nominal', value: 4.2 },
+          attribution: {
+            scenario: 's01-nominal',
+            method: 'counterfactual substitution',
+            contributor: 'projector-position',
+            explains: '91% of the 3.20 mm excess over the gate',
+            explainedFraction: 0.91,
+            allGroupsExplain: 0.99,
+            byGroup: [
+              { group: 'none', value: 4.2 },
+              { group: 'projector-position', value: 1.1 },
+              { group: 'all', value: 0.06 },
+            ],
+            note: 'fixture attribution',
+          },
+        }),
+      ],
+      unscored: [{ id: 'registration_error', reason: 'no §7 gate on registration error itself' }],
+      waivers: [],
+    },
+    aggregate: {
+      gridDisplacementMm: dispersion([0.42, 4.2]),
+      poseMaxPositionMmAligned: dispersion([2.4, 3.1]),
+      poseMaxRotationDegAligned: dispersion([0.03, 0.04]),
+      centerHeightErrorMm: dispersion([3.1, 4.0]),
+      offSphereFluxExcess: dispersion([0.001, 0.002]),
+    },
+    scenarios: [scenario('s00-clean'), scenario('s01-nominal', { index: 1 })],
+    notes: ['fixture note'],
+    ...overrides,
+  };
+}
+
+function input(overrides: Partial<ProgressInput> = {}): ProgressInput {
+  return {
+    results: results(),
+    images: EMPTY_IMAGE_STORE,
+    rounds: null,
+    reference: null,
+    previous: null,
+    experiments: [],
+    generatedAt: '2026-01-02T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The plain-language scaffolding
+//
+// A fifth claim, and it is the one a stranger's first thirty seconds rests on:
+// the page explains itself. Every section says what it shows before it shows
+// it, the vocabulary is defined somewhere on the page, and the explanations stay
+// explanations — no spec section numbers, no amendment codes, no file paths, and
+// nothing folded away behind a click.
+// ---------------------------------------------------------------------------
+
+/** Every `<section id="...">` in the page, with its inner HTML. */
+function sections(html: string): { id: string; body: string }[] {
+  const out: { id: string; body: string }[] = [];
+  for (const m of html.matchAll(/<section id="([^"]+)">([\s\S]*?)<\/section>/g)) {
+    out.push({ id: m[1], body: m[2] });
+  }
+  return out;
+}
+
+/** The plain-language blocks, as text: the orientation block and every how-to. */
+function plainBlocks(html: string): { where: string; text: string }[] {
+  const out: { where: string; text: string }[] = [];
+  const orientation = /<div class="orientation" id="orientation">([\s\S]*?)<\/div>\s*<p class="lede"/.exec(
+    html,
+  );
+  if (orientation !== null) out.push({ where: 'orientation', text: orientation[1] });
+  for (const s of sections(html)) {
+    for (const m of s.body.matchAll(/<div class="howto">([\s\S]*?)<\/div>/g)) {
+      out.push({ where: s.id, text: m[1] });
+    }
+  }
+  return out;
+}
+
+test('the page opens with an orientation block a stranger can read', () => {
+  const html = renderProgressPage(input());
+  const start = html.indexOf('<div class="orientation" id="orientation">');
+  assert.ok(start > 0, 'no orientation block on the page');
+  // Before the first number, the first gate and the first section.
+  assert.ok(start < html.indexOf('<main>'), 'the orientation block is not at the top');
+  const block = plainBlocks(html).find((b) => b.where === 'orientation');
+  assert.ok(block !== undefined, 'the orientation block did not parse');
+  const flat = block.text.replace(/\s+/g, ' ');
+
+  // The four things a newcomer cannot proceed without: the physical thing, the
+  // two programs, why they are kept apart, and what this page is.
+  assert.ok(/Science On a Sphere/.test(flat), 'the orientation never names the thing');
+  assert.ok(/four projectors/.test(flat));
+  assert.ok(/one to two hours/.test(flat), 'the manual baseline it is measured against is missing');
+  assert.ok(/simulator/.test(flat) && /solver/.test(flat));
+  assert.ok(/share no code/.test(flat), 'the independence claim is missing');
+  assert.ok(/fails the build/.test(flat), 'nothing says the independence is enforced');
+  assert.ok(/same input always gives the same output/.test(flat), 'determinism is never claimed');
+  assert.ok(/adjusted by hand|by hand/.test(flat), 'nothing rules out a hand-tuned screenshot');
+  // Four paragraphs, not an essay and not a caption.
+  assert.equal([...flat.matchAll(/<p>/g)].length, 4);
+});
+
+test('every section carries a plain-language block under its heading', () => {
+  const html = renderProgressPage(input());
+  const all = sections(html);
+  assert.ok(all.length >= 11, `only ${all.length} sections found`);
+
+  for (const s of all) {
+    const howto = s.body.indexOf('<div class="howto">');
+    assert.ok(howto > 0, `section ${s.id} has no plain-language block`);
+    const heading = s.body.indexOf('</h2>');
+    assert.ok(heading > 0, `section ${s.id} has no heading`);
+    assert.ok(howto > heading, `section ${s.id} explains itself before it is titled`);
+    // It comes FIRST, before any prose or data the reader would have to wade
+    // through to reach it.
+    const between = s.body.slice(heading, howto);
+    for (const tag of ['<p ', '<table', '<div class="panel"', '<div class="grid-cards"', '<pre']) {
+      assert.equal(
+        between.includes(tag),
+        false,
+        `section ${s.id} puts ${tag} above its plain-language block`,
+      );
+    }
+    // Always visible: never behind a click.
+    assert.equal(
+      /<details[\s\S]*<div class="howto">/.test(s.body),
+      false,
+      `section ${s.id} hides its explanation inside a <details>`,
+    );
+    assert.ok(s.body.includes('What this shows'), `section ${s.id} never says what it shows`);
+  }
+
+  // The sections where a reader can be actively misled all say what failure
+  // looks like, not just what success does.
+  for (const id of ['gates', 'residuals', 'error-map', 'grid-view', 'before-after', 'trend', 'reference']) {
+    const s = all.find((x) => x.id === id);
+    assert.ok(s !== undefined, `section ${id} is missing`);
+    assert.ok(s.body.includes('Good looks like'), `section ${id} never says what good looks like`);
+    assert.ok(s.body.includes('Bad looks like'), `section ${id} never says what bad looks like`);
+  }
+});
+
+test('the plain-language blocks stay plain', () => {
+  const html = renderProgressPage(input());
+  const blocks = plainBlocks(html);
+  assert.ok(blocks.length >= 12, `only ${blocks.length} plain-language blocks found`);
+  for (const b of blocks) {
+    // The dense text keeps every section number, amendment code and file path.
+    // These blocks are the way IN to that text and carry none of it.
+    assert.equal(/§/.test(b.text), false, `a spec section number reached the ${b.where} block`);
+    assert.equal(/\bA-\d\d\b/.test(b.text), false, `an amendment code reached the ${b.where} block`);
+    assert.equal(/\.md\b/.test(b.text), false, `a file path reached the ${b.where} block`);
+    assert.equal(/\bG[1-9]\b/.test(b.text), false, `a failure-mode code reached the ${b.where} block`);
+  }
+});
+
+test('the gate states are all four explained where the gates are', () => {
+  const html = renderProgressPage(input());
+  const gates = sections(html).find((s) => s.id === 'gates');
+  assert.ok(gates !== undefined);
+  const howto = /<div class="howto">([\s\S]*?)<\/div>/.exec(gates.body);
+  assert.ok(howto !== null);
+  for (const word of ['PASS', 'FAIL', 'WAIVED', 'ADVISORY']) {
+    assert.ok(howto[1].includes(word), `the gate explanation never mentions ${word}`);
+  }
+  // WAIVED is the one that can be read as "made to go away", so the three things
+  // that stop it being that must be named.
+  assert.ok(/expiry|expires/.test(howto[1]));
+  assert.ok(/ceiling/.test(howto[1]));
+  assert.ok(/amendment/.test(howto[1]));
+});
+
+test('the glossary defines every term the page uses without explaining', () => {
+  const html = renderProgressPage(input());
+  // The list a reader of this page will hit. It is asserted here rather than
+  // read off GLOSSARY, so deleting an entry fails instead of shrinking the test.
+  const required = [
+    'residual',
+    'gauge',
+    'gate',
+    'provisional',
+    'waived',
+    'registration error',
+    'seam',
+    'correspondence',
+    'decode',
+    'archetype',
+    'scenario',
+    'seed',
+    'paired comparison',
+    'structured light',
+    'bundle adjustment',
+    'equirectangular',
+    'incidence angle',
+  ];
+  const defined = new Map(GLOSSARY.map((g) => [g.term, g.definition]));
+  for (const term of required) {
+    const definition = defined.get(term);
+    assert.ok(definition !== undefined, `the glossary does not define "${term}"`);
+    assert.ok(definition.length > 60, `the definition of "${term}" is a stub`);
+    assert.ok(html.includes(`<dt>${term}</dt>`), `"${term}" is defined but never rendered`);
+  }
+
+  // The two counter-intuitive ones carry the reason they are counter-intuitive,
+  // not just a paraphrase of the word.
+  const gauge = defined.get('gauge') ?? '';
+  assert.ok(/identical/.test(gauge), 'the gauge entry never says the photographs come out identical');
+  assert.ok(/rotate/i.test(gauge));
+  const paired = defined.get('paired comparison') ?? '';
+  assert.ok(/once/.test(paired), 'the paired-comparison entry never says the capture happens once');
+  assert.ok(/69/.test(paired) && /182/.test(paired), 'the measured dispersion is missing');
+
+  // And the glossary is reachable from the top of the page.
+  assert.ok(html.includes('<a href="#glossary">glossary</a>'));
+});
+
+// ---------------------------------------------------------------------------
+// 1 + 2. Generates from a fixture; reaches for nothing
+// ---------------------------------------------------------------------------
+
+test('the page generates from a fixture, with no file system and no network', () => {
+  const html = renderProgressPage(input());
+  assert.ok(html.startsWith('<!doctype html>'));
+  assert.ok(html.includes('sphere-sim — progress'));
+  // Both scenarios, both gates, the attribution and the notes made it through.
+  assert.ok(html.includes('s00-clean'));
+  assert.ok(html.includes('s01-nominal'));
+  assert.ok(html.includes('grid_displacement'));
+  assert.ok(html.includes('fixture note'));
+});
+
+test('the page contains no external URL, no script and no remote asset', () => {
+  const html = renderProgressPage(
+    input({
+      images: { get: () => 'data:image/png;base64,iVBORw0KGgo=' },
+    }),
+  );
+
+  assert.equal(/https?:\/\//i.test(html), false, 'an absolute URL reached the page');
+  assert.equal(/<script/i.test(html), false, 'a script tag reached the page');
+  assert.equal(/<link\b/i.test(html), false, 'a link tag reached the page');
+  assert.equal(/<iframe/i.test(html), false);
+  assert.equal(/@import/i.test(html), false);
+  // Every src and href is either an in-page anchor or an inline data: URI.
+  for (const m of html.matchAll(/(?:src|href)="([^"]*)"/g)) {
+    const value = m[1];
+    assert.ok(
+      value.startsWith('#') || value.startsWith('data:'),
+      `non-local reference in the page: ${value.slice(0, 60)}`,
+    );
+  }
+  // `url(...)` in the CSS may only point inside the document (the colour-bar
+  // gradient), never at a host.
+  for (const m of html.matchAll(/url\(([^)]*)\)/g)) {
+    assert.ok(m[1].startsWith('#'), `CSS url() left the document: ${m[1]}`);
+  }
+});
+
+test('every residual is plotted, not a subsample', () => {
+  const cols = residualFixture(300, 2, 0);
+  const html = renderProgressPage(
+    input({
+      results: results({
+        scenarios: [
+          scenario('s00-clean', {
+            solver: { ...(scenario('s00-clean').solver as Record<string, unknown>), residuals: cols },
+          }),
+        ],
+      }),
+    }),
+  );
+  const circles = [...html.matchAll(/<circle cx="[^"]*" cy="[^"]*" r="0.9"\/>/g)].length;
+  // Each correspondence appears in both views: du/dv, and radial against radius.
+  assert.equal(circles, 2 * cols.count);
+});
+
+test('a missing render is drawn as a hole rather than skipped', () => {
+  const html = renderProgressPage(input());
+  assert.ok(html.includes('room render not found'));
+  assert.ok(html.includes('registration map PNG not found'));
+});
+
+// ---------------------------------------------------------------------------
+// 3. The static reference, asserted from the data it plots
+// ---------------------------------------------------------------------------
+
+/** Small enough for a test, dense enough to resolve a 4-degree scallop. */
+function testReference(): CoverageReference {
+  return buildCoverageReference({
+    width: 180,
+    height: 90,
+    boundarySamples: 180,
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    gitCommit: 'testcommit',
+  });
+}
+
+test('the reference data itself carries PARAMETERS.md §4.2 and §4.3', () => {
+  const ref = testReference();
+
+  // §4.2, read off the array the map is drawn from — not off a caption.
+  let maxMultiplicity = 0;
+  for (const v of ref.multiplicity) maxMultiplicity = Math.max(maxMultiplicity, v);
+  assert.equal(maxMultiplicity, 2, 'overlap multiplicity exceeded 2 — PARAMETERS.md §4.2');
+  assert.ok(ref.multiplicity.includes(2), 'no 2-way overlap at all: the seams have gone');
+  assert.ok(ref.multiplicity.includes(0), 'nothing unlit: the polar region has gone');
+
+  // §4.3, recovered by counting minima of the boundary curve.
+  const lobes = countLobes(ref.boundary.northLatDeg);
+  assert.equal(lobes.length, 4, 'the unlit polar region is not four-lobed');
+  const step = 360 / ref.boundary.lonDeg.length;
+  for (const i of lobes) {
+    const lon = ref.boundary.lonDeg[i];
+    // Nearest seam direction, circularly. The minimum can only be located to
+    // the longitude sample spacing, so the tolerance is one step.
+    const gap = Math.min(
+      ...[45, 135, -45, -135].map((s) => 180 - Math.abs(Math.abs(lon - s) % 360 - 180)),
+    );
+    assert.ok(gap <= step, `a lobe sits at ${lon}°, ${gap}° from any seam direction`);
+  }
+
+  const min = Math.min(...ref.boundary.northLatDeg);
+  const max = Math.max(...ref.boundary.northLatDeg);
+  assert.ok(max - min > 1, `boundary is a circular cap (scallop depth ${max - min}°)`);
+  // The meridian directions are sampled exactly on this grid; the seam ones sit
+  // between two samples, so the minimum is located to within a sample spacing.
+  assert.ok(Math.abs(max - ref.analytic.meridianLimitDeg) < 0.05);
+  assert.ok(Math.abs(min - ref.analytic.seamLimitDeg) < 0.4);
+
+  // The area lies strictly between the two caps its own latitudes cut. That
+  // containment IS "scalloped, not circular", stated as arithmetic.
+  assert.ok(ref.analytic.unlitFractionNorth > ref.analytic.capAboveMeridianLimit);
+  assert.ok(ref.analytic.unlitFractionNorth < ref.analytic.capAboveSeamLimit);
+});
+
+test('the rendered reference section reports the claims its own plots carry', () => {
+  const ref = testReference();
+  const checks = analyseCoverageReference(ref);
+  assert.equal(checks.pass, true, checks.checks.filter((x) => !x.pass).map((x) => x.observed).join('; '));
+
+  const html = renderProgressPage(input({ reference: ref }));
+
+  // The multiplicity map paints one rectangle per run. Only three fills may
+  // appear, and none of them the impossible-value colour the palette reserves
+  // for a multiplicity above 2.
+  const mapSvg = /<svg[^>]*aria-label="overlap multiplicity over the sphere"[\s\S]*?<\/svg>/.exec(html);
+  assert.ok(mapSvg !== null, 'the multiplicity map is not in the page');
+  const fills = new Set([...mapSvg[0].matchAll(/fill="([^"]+)"/g)].map((m) => m[1]));
+  assert.deepEqual(
+    [...fills].sort(),
+    ['var(--mult1)', 'var(--mult2)', 'var(--unlit)'],
+    'the multiplicity map painted a value outside 0..2',
+  );
+
+  // The four-lobed claim, recovered from the PLOTTED curve: parse the boundary
+  // path out of the unrolled profile and count its minima in latitude. The plot
+  // maps latitude to y downwards, so a minimum in latitude is a maximum in y.
+  const profileSvg = /<svg[^>]*aria-label="coverage boundary latitude against longitude"[\s\S]*?<\/svg>/.exec(
+    html,
+  );
+  assert.ok(profileSvg !== null, 'the boundary profile is not in the page');
+  const d = /<path class="boundary" d="([^"]+)"/.exec(profileSvg[0]);
+  assert.ok(d !== null);
+  const ys = d[1]
+    .split(/[ML]/)
+    .filter((s) => s.trim().length > 0)
+    .map((s) => -Number(s.trim().split(/\s+/)[1]));
+  assert.equal(ys.length, ref.boundary.lonDeg.length);
+  assert.equal(countLobes(ys, 0.5).length, 4, 'the plotted curve does not show four lobes');
+
+  // And the prose beside them says what a failure would look like.
+  assert.ok(html.includes('What you should see, and what would be a bug'));
+  assert.ok(html.includes('Maximum observed multiplicity is <strong>2</strong>'));
+  assert.ok(/rendered once/.test(html));
+});
+
+test('the reference checks actually fail when the data is wrong', () => {
+  // A check nobody has watched fail is not a check. Both of the properties the
+  // reference exists to guard are broken here, one at a time.
+  const threeWay = testReference();
+  threeWay.multiplicity[threeWay.grid.width * 40 + 20] = 3;
+  const a = analyseCoverageReference(threeWay);
+  assert.equal(a.pass, false);
+  assert.equal(a.checks.find((x) => x.id === 'multiplicity')?.pass, false);
+  assert.equal(a.maxMultiplicity, 3);
+
+  const circular = testReference();
+  circular.boundary.northLatDeg = circular.boundary.northLatDeg.map(() => 80.403);
+  const b = analyseCoverageReference(circular);
+  assert.equal(b.pass, false);
+  assert.equal(b.checks.find((x) => x.id === 'four-lobed')?.pass, false);
+  assert.equal(b.scallopDepthDeg, 0);
+});
+
+test('the reference is not regenerated by rendering the page', () => {
+  // The page reads the reference; it never computes one. Feeding it a reference
+  // whose numbers are impossible must produce a page that SAYS SO rather than a
+  // page that quietly recomputed a correct one.
+  const broken = testReference();
+  broken.multiplicity[0] = 4;
+  const html = renderProgressPage(input({ reference: broken }));
+  assert.ok(html.includes('FAIL'), 'a broken reference rendered as passing');
+  assert.ok(html.includes('max multiplicity over'));
+});
+
+// ---------------------------------------------------------------------------
+// 4. The structure statistic
+// ---------------------------------------------------------------------------
+
+test('the residual statistic tells radial structure from isotropic noise', () => {
+  const noise = analyseResiduals(residualFixture(3000, 1, 0), 0, 1920, 1080);
+  assert.ok(noise !== null);
+  assert.equal(noise.verdict, 'noise', `pure noise read as ${noise.verdict}`);
+  assert.ok(Math.abs(noise.radialStructureZ) < 3);
+  // An isotropic cloud must not be reported as anisotropic.
+  assert.ok(noise.anisotropy < 1.15, `isotropic cloud read as ${noise.anisotropy}`);
+  assert.ok(Math.abs(noise.axisAlignedZ) < 4);
+
+  const structured = analyseResiduals(residualFixture(3000, 1, 0.6), 0, 1920, 1080);
+  assert.ok(structured !== null);
+  assert.equal(structured.verdict, 'structured', `a radial term read as ${structured.verdict}`);
+  assert.ok(structured.radialStructureZ > 10);
+  // The radial profile the panel draws must climb with radius, which is the
+  // picture of the same statistic.
+  const first = structured.bins[0].mean;
+  const last = structured.bins[structured.bins.length - 1].mean;
+  assert.ok(last > first + 0.2, `the plotted profile is flat: ${first} to ${last}`);
+});
+
+test('the anisotropy statistic recovers a known stretch', () => {
+  const cols = residualFixture(2000, 1, 0);
+  // Stretch du by 3. `patterns.ts` produces exactly this shape by counting Gray
+  // planes once for both axes, and the panel prints the raster aspect ratio as
+  // the value that means "decode, not model".
+  for (let i = 0; i < cols.count; i++) cols.du[i] *= 3;
+  const stats = analyseResiduals(cols, 0, 1920, 1080);
+  assert.ok(stats !== null);
+  assert.ok(Math.abs(stats.anisotropy - 3) < 0.25, `anisotropy read ${stats.anisotropy}, expected 3`);
+  assert.ok(Math.abs(stats.majorAxisDeg) < 5, 'the major axis should lie along +u');
+  assert.ok(Math.abs(stats.anisotropyExpected - 1920 / 1080) < 1e-9);
+});
+
+// ---------------------------------------------------------------------------
+// The PROVISIONAL mechanism
+// ---------------------------------------------------------------------------
+
+test('a provisional metric lands in the provisional block, and only there', () => {
+  const withProvisional = results();
+  withProvisional.scenarios[0].metrics = [
+    metric({ id: 'grid_displacement', value: 0.42 }),
+    metric({
+      id: 'seam_chromaticity',
+      label: 'Seam chromaticity discontinuity',
+      value: 0.8,
+      unit: 'dE2000',
+      provisional: true,
+      note: 'depends on gamma_R,G,B which nobody has measured',
+    }),
+  ];
+  const html = renderProgressPage(input({ results: withProvisional }));
+
+  assert.ok(html.includes('PROVISIONAL'));
+  assert.ok(html.includes('seam_chromaticity'));
+  assert.ok(html.includes('depends on gamma_R,G,B which nobody has measured'));
+
+  // It appears inside the provisional section and nowhere else on the page: a
+  // provisional number loose in the gate table would borrow the credibility of
+  // a measured one, which is the exact thing the phase gate forbids.
+  const start = html.indexOf('id="provisional"');
+  const end = html.indexOf('</section>', start);
+  const outside = html.slice(0, start) + html.slice(end);
+  assert.equal(outside.includes('seam_chromaticity'), false);
+});
+
+test('with no provisional metric the block is present, empty and explains itself', () => {
+  const html = renderProgressPage(input());
+  assert.ok(html.includes('none yet — the mechanism is live'));
+  assert.ok(html.includes('provisional empty'));
+  assert.ok(html.includes('This run contains none.'));
+});
+
+// ---------------------------------------------------------------------------
+// Gates, experiments, trend
+// ---------------------------------------------------------------------------
+
+test('a failing gate names its single largest contributor', () => {
+  const html = renderProgressPage(input());
+  assert.ok(html.includes('Largest contributor: projector-position'));
+  assert.ok(html.includes('91% of the 3.20 mm excess over the gate'));
+
+  // Dispersion, never a bare mean: the corpus is bimodal by construction, so
+  // every one of the five must be printed and the mean must not be.
+  const section = html.slice(html.indexOf('id="gates"'), html.indexOf('id="residuals"'));
+  for (const label of ['min ', 'p05 ', 'median ', 'p95 ', 'max ']) {
+    assert.ok(section.includes(label), `the gate table omits ${label.trim()}`);
+  }
+  assert.equal(
+    /mean\s+[-\d]/.test(section),
+    false,
+    'a mean was printed as a gate statistic',
+  );
+});
+
+test('the experiment placeholders are present until their reports exist', () => {
+  const html = renderProgressPage(input());
+  assert.ok(html.includes('Experiment 1'));
+  assert.ok(html.includes('Experiment 2'));
+  assert.ok(html.includes('Experiment 3'));
+  assert.equal([...html.matchAll(/not yet run/g)].length, 3);
+
+  const filled = renderProgressPage(
+    input({
+      experiments: [
+        {
+          id: 'experiment-1-cameras',
+          finding: 'Three photographs recover most of what eight do.',
+          xLabel: 'cameras',
+          yLabel: 'grid displacement (mm)',
+          series: [{ label: 'nominal', x: [1, 2, 3], y: [8, 3, 1] }],
+        },
+      ],
+    }),
+  );
+  assert.ok(filled.includes('Three photographs recover most of what eight do.'));
+  assert.equal([...filled.matchAll(/not yet run/g)].length, 2);
+});
+
+
+// ---------------------------------------------------------------------------
+// A page that tells the truth about its own plots
+//
+// Every test below is for something the page DREW WRONG while reading correctly
+// — a plot that dropped data, a pill that understated a phase gate, a verdict
+// that contradicted the table above it, a name that did not match the name used
+// three sections down, a legend chip that was not the colour it legended. None
+// of them is a crash and none would fail a typecheck; they are all a reader
+// being told something that is not so.
+// ---------------------------------------------------------------------------
+
+/** The `<td>` cells of the gate table, one per gate row. */
+function gateCells(html: string): string {
+  const section = sections(html).find((x) => x.id === 'gates');
+  assert.ok(section !== undefined, 'no gates section');
+  return section.body;
+}
+
+test('a scenario at zero is pinned on the log strip, not dropped from it', () => {
+  // `unlit_in_mask` is EXACTLY 0 on 10 of the 12 scenarios in the shipped
+  // corpus — it is a hard requirement that passes by being zero — and
+  // `off_sphere_flux_excess` has one slightly negative value. The strip
+  // filtered for `v > 0`, so a log axis it could not place them on became a
+  // reason to leave them out: ten of twelve dots missing, and no whisker at
+  // all, on a gate that is passing perfectly. The lede above the table promises
+  // a mark per scenario and a whisker at min-max.
+  const html = renderProgressPage(
+    input({
+      results: results({
+        gates: {
+          pass: true,
+          gates: [
+            gate({
+              id: 'unlit_in_mask',
+              max: 0,
+              distribution: dispersion([0, 0, 0, 0, 1.2]),
+              worst: { scenario: 's01-nominal', value: 1.2 },
+            }),
+          ],
+          unscored: [],
+          waivers: [],
+        },
+      }),
+    }),
+  );
+  const cells = gateCells(html);
+
+  // Four of the five are at zero and are accounted for in writing.
+  assert.match(cells, /4 of 5 scenario\(s\) are ≤ 0/);
+  assert.match(cells, /pinned at the axis floor/);
+  // The pinned marker is drawn, and it is not a dot: a square, so the pile at
+  // the left edge cannot be read as a cluster of small positive values.
+  assert.ok(cells.includes('class="dot-pinned"'), 'the pinned values are not drawn');
+  // And the whisker is back. `min` is 0, which the old guard `d.min > 0`
+  // rejected outright.
+  assert.ok(cells.includes('class="whisker"'), 'the min-max whisker is missing');
+});
+
+test('with every value positive the strip says nothing about pinning', () => {
+  const html = renderProgressPage(
+    input({
+      results: results({
+        gates: {
+          pass: true,
+          gates: [gate({ id: 'grid_displacement', distribution: dispersion([0.4, 0.5, 4.2]) })],
+          unscored: [],
+          waivers: [],
+        },
+      }),
+    }),
+  );
+  const cells = gateCells(html);
+  assert.doesNotMatch(cells, /are ≤ 0/);
+  assert.ok(!cells.includes('class="dot-pinned"'));
+  assert.ok(cells.includes('class="whisker"'));
+});
+
+test('an experiment that is provisional by construction cannot report itself complete', () => {
+  // PROVISIONAL is the PHASE GATE, not a field an experiment sets about itself:
+  // experiments 2 and 3 depend on Phase 2 photometry whose constants are
+  // unmeasured, and docs/prompt.md requires their output be marked. The flag on
+  // `ExperimentReport` is optional, so a report that simply omitted it rendered
+  // a green "complete" pill — the one claim the phase gate exists to prevent.
+  const html = renderProgressPage(
+    input({
+      experiments: [
+        {
+          id: 'experiment-2-blend',
+          finding: 'fixture finding',
+          xLabel: 'x',
+          yLabel: 'y',
+          series: [{ label: 'nominal', x: [1, 2, 3], y: [8, 3, 1] }],
+        },
+      ],
+    }),
+  );
+  const section = sections(html).find((x) => x.id === 'experiments');
+  assert.ok(section !== undefined);
+  const card = /<div class="card">[\s\S]*?<\/div>\s*<\/div>/.exec(section.body)?.[0] ?? section.body;
+  assert.ok(card.includes('PROVISIONAL'), 'a Phase 2 experiment rendered without the marking');
+  assert.ok(!card.includes('>complete<'), 'and it must not also claim to be complete');
+  // The page says whose judgement that is, so a reader is not left thinking the
+  // experiment claimed it.
+  assert.match(section.body, /Marked PROVISIONAL by this page, not by the report/);
+});
+
+test('a metric with nothing to measure is not rendered as a failure', () => {
+  // `buildGates` routes `sampling.count === 0` into `scenariosNotMeasurable`
+  // and leaves it out of both the scored count and the failure count. The
+  // error-map panel wrote `grid?.pass ? 'pass' : 'FAIL'`, which turns a null
+  // `pass` into FAIL — so on the shipped corpus `s08-two-projectors` was
+  // excluded by the gate table and called a FAIL by the panel above it, on one
+  // page.
+  const empty = metric({
+    id: 'grid_displacement',
+    value: NaN,
+    pass: null,
+    sampling: {
+      scheme: 'graticule-line-centroid',
+      description: '0 line localisations. No blend region exists on this rig.',
+      count: 0,
+      densityPerSr: null,
+      convergence: null,
+    },
+  });
+  const html = renderProgressPage(
+    input({
+      results: results({
+        scenarios: [scenario('s08-two-projectors', { metrics: [empty] })],
+        gates: {
+          pass: true,
+          gates: [
+            gate({
+              id: 'grid_displacement',
+              scenariosScored: 0,
+              scenariosNotMeasurable: ['s08-two-projectors'],
+              worst: null,
+              distribution: dispersion([]),
+            }),
+          ],
+          unscored: [],
+          waivers: [],
+        },
+      }),
+    }),
+  );
+  const section = sections(html).find((x) => x.id === 'error-map');
+  assert.ok(section !== undefined);
+  assert.ok(!section.body.includes('FAIL'), 'a scenario with no samples was called a failure');
+  assert.match(section.body, /nothing to measure/);
+  // And it says why, rather than leaving a reader to guess at an empty cell.
+  assert.match(section.body, /0 line localisations/);
+});
+
+test('one physical projector has one name across the whole page', () => {
+  // `residuals.projector` is a dense index into the rig the solver was handed;
+  // every other panel names a projector by its MOUNT SLOT. On a full rig the two
+  // agree. On `s08-two-projectors`, whose slots are [0, 2], section 1 called the
+  // second projector P2 while the injected perturbation table and the error map
+  // called that same lens P3.
+  const sparse = scenario('s08-two-projectors', {
+    inputs: {
+      ...(scenario('s08-two-projectors').inputs as Record<string, unknown>),
+      slots: [0, 2],
+      injected: {
+        centerHeightMm: 1,
+        projectors: [
+          { id: 'P1', azimuthDeg: 0.5 },
+          { id: 'P3', azimuthDeg: -0.5 },
+        ],
+      },
+    },
+  });
+  const html = renderProgressPage(input({ results: results({ scenarios: [sparse] }) }));
+  const section = sections(html).find((x) => x.id === 'residuals');
+  assert.ok(section !== undefined);
+
+  const headings = [...section.body.matchAll(/<h4>([^<\s]+)/g)].map((m) => m[1]);
+  assert.deepEqual(headings, ['P1', 'P3'], 'the residual panels are named by column, not by mount');
+  assert.ok(!section.body.includes('>P2'), 'a mount that is not on this rig was named');
+});
+
+test('the colour-scale legend is painted the colour the image actually contains', () => {
+  // The chip legends a grey that is BAKED INTO THE PNG, so it cannot be a theme
+  // token: it read #b8bcc4 in light and #444a55 in dark against a region that is
+  // one fixed grey in every theme. The check runs the real colorizer and the
+  // real encoder rather than trusting the arithmetic.
+  const field = { width: 1, height: 1, data: new Float32Array([NaN]) };
+  const png = encodePng8(colorizeFieldWithGaps(field, 0, 10), { displayGamma: 2.2 });
+
+  // Pull the one pixel back out: IDAT, inflate, drop the per-row filter byte.
+  const chunks: Buffer[] = [];
+  for (let off = 8; off < png.length; ) {
+    const len = png.readUInt32BE(off);
+    if (png.toString('ascii', off + 4, off + 8) === 'IDAT') {
+      chunks.push(png.subarray(off + 8, off + 8 + len));
+    }
+    off += 12 + len;
+  }
+  const raw = zlib.inflateSync(Buffer.concat(chunks));
+  assert.equal(raw[0], 0, 'the encoder writes filter type 0');
+  const baked = `#${[raw[1], raw[2], raw[3]].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+  assert.equal(missingCellHex(), baked, 'the legend helper disagrees with the encoder');
+
+  const html = renderProgressPage(input());
+  const bar = /<svg class="plot colorbar"[\s\S]*?<\/svg>/.exec(html)?.[0] ?? '';
+  assert.ok(bar.includes('&lt;2 projectors'), 'the colorbar legend is not where it was');
+  assert.ok(bar.includes(`fill="${baked}"`), `the legend chip is not ${baked}`);
+  assert.ok(!/class="gap-rect"/.test(bar), 'the chip still follows the theme token');
+});
+
+test('the trend section says so when there is no history to trend', () => {
+  const html = renderProgressPage(input());
+  assert.ok(html.includes('No round history'));
+
+  const withRounds = renderProgressPage(
+    input({
+      rounds: {
+        schema: 'sphere-sim/rounds@2',
+        rootSeed: 1,
+        best: {
+          round: 0,
+          seed: 5,
+          series: {
+            gridDisplacementMm: {
+              median: 0.9,
+              p95: 4,
+              max: 5,
+              scatterAcrossScenarios: NaN,
+              dispersion: 0.2,
+              gateMax: 1,
+              gateFraction: 0.9,
+            },
+          },
+        },
+        rounds: [
+          {
+            round: 0,
+            seed: 5,
+            at: '2026-01-01T00:00:00.000Z',
+            preset: 'default',
+            scenarioCount: 2,
+            gitCommit: 'aaaaaaaa',
+            pass: false,
+            gates: [],
+            series: {
+              gridDisplacementMm: {
+                median: 0.9,
+                p95: 4,
+                max: 5,
+                scatterAcrossScenarios: NaN,
+                dispersion: 0.2,
+                gateMax: 1,
+                gateFraction: 0.9,
+              },
+            },
+            movement: { gridDisplacementMm: 'flat' },
+            regressed: [],
+            improving: false,
+            consecutiveNonImproving: 1,
+            comparison: {
+              verdict: 'better',
+              improved: [],
+              regressed: [],
+              why: 'first round on record: nothing to compare against, so it is the best by default.',
+            },
+            resultsPath: 'progress/data/round-000.json',
+            best: true,
+          },
+        ],
+      },
+    }),
+  );
+  assert.ok(withRounds.includes('This history is at round 0'));
+  assert.equal(withRounds.includes('No round history'), false);
+});

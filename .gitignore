@@ -1,0 +1,33 @@
+node_modules/
+packages/harness/dist/
+packages/web/dist/
+site/
+out/
+*.tsbuildinfo
+
+# Builder scratch. Investigation scripts live here so they do not masquerade as
+# deliverables; anything worth keeping gets promoted into a package with tests.
+probe/
+
+# Generated bench artifacts. bench-results.json is regenerated every round and
+# the progress page inlines every PNG as a data URI, so it runs to several MB —
+# committing either on each round would bury the actual source changes in
+# history. CI uploads them as build artifacts, and the page is published
+# separately for viewing.
+bench-results*.json
+progress/data/
+progress/index.html
+
+# The static coverage reference is deliberately NOT ignored: it is rendered once
+# and never regenerated, and it is the correctness check for PARAMETERS.md §4.2
+# and §4.3. Keeping it in history means a change to it shows up in a diff.
+!progress/reference/
+bench-before.json
+
+# The validation page inlines its reference renders, so it runs to ~190 KB and
+# regenerates whenever a photograph is added. The generator is the source of
+# truth; the page is a view. validation/sources.json IS tracked, because the
+# provenance ledger is the part that must be auditable.
+validation/index.html
+# Per-arm checkpoints for experiment 5; the assembled result is experiments/experiment-5.json.
+experiments/.experiment-5-partial/

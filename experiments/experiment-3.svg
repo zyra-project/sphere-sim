@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="807" height="738" viewBox="0 0 807 738" role="img" aria-label="Photometric sensitivity ranking, stated ranges separated from inferred ranges">
+<rect width="807" height="738" fill="#f9f9f7"/>
+<text x="24" y="32" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="17" fill="#0b0b0b" text-anchor="start" font-weight="600">Experiment 3 — which unmeasured constant actually moves a §7 metric?</text>
+<text x="24" y="52" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#eb6834" text-anchor="start" font-weight="600">PROVISIONAL — every constant here is class ASSUME and none has been measured. A bar is how far a metric moves across the</text>
+<text x="24" y="67" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#eb6834" text-anchor="start" font-weight="600">constant's plausible range, divided by that metric's own gate.</text>
+<text x="24" y="82" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#52514e" text-anchor="start" font-weight="400">A bar of 1.0 means the constant alone can move a §7 metric by the whole width of its gate. Longer than 1.0 means the constant</text>
+<text x="24" y="97" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#52514e" text-anchor="start" font-weight="400">decides the verdict on its own.</text>
+<rect x="24" y="111" width="10" height="10" fill="#2a78d6"/>
+<text x="40" y="120" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#52514e" text-anchor="start" font-weight="400">the four §7 gates this project SCORES</text>
+<rect x="292" y="111" width="10" height="10" fill="#eb6834"/>
+<text x="308" y="120" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#52514e" text-anchor="start" font-weight="400">readings §7 sets NO gate on (divergence, ambient-removed uplift)</text>
+<text x="24" y="124" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="start" font-weight="600">Ranges PARAMETERS.md STATES  — rank on these</text>
+<text x="24" y="139" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10" fill="#898781" text-anchor="start" font-weight="400">The swing is a statement about the projector.</text>
+<rect x="224" y="146" width="316" height="152" fill="#fcfcfb"/>
+<line x1="307" y1="146" x2="307" y2="298" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="382" y1="146" x2="382" y2="298" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="457" y1="146" x2="457" y2="298" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="532" y1="146" x2="532" y2="298" stroke="#e1e0d9" stroke-width="1"/>
+<text x="216" y="159" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">L_black_G  §3.2</text>
+<rect x="232" y="155" width="10.97" height="5" rx="2" fill="#eb6834"/>
+<rect x="232" y="149" width="10.12" height="5" rx="2" fill="#2a78d6"/>
+<text x="250.97" y="158" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">0.32× gate   (unscored 0.3×)</text>
+<text x="216" y="178" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">L_black_B  §3.2</text>
+<rect x="232" y="174" width="6.9" height="5" rx="2" fill="#eb6834"/>
+<rect x="232" y="168" width="8.02" height="5" rx="2" fill="#2a78d6"/>
+<text x="248.02" y="177" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">0.25× gate   (unscored 0.2×)</text>
+<text x="216" y="197" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">E_amb  §5</text>
+<rect x="232" y="187" width="4.11" height="5" rx="2" fill="#2a78d6"/>
+<text x="244.11" y="196" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">0.13× gate</text>
+<text x="216" y="216" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">L_black_R  §3.2</text>
+<rect x="232" y="212" width="8.49" height="5" rx="2" fill="#eb6834"/>
+<rect x="232" y="206" width="3.42" height="5" rx="2" fill="#2a78d6"/>
+<text x="248.49" y="215" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">0.11× gate   (unscored 0.3×)</text>
+<text x="216" y="235" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">γ_G  §3.2</text>
+<rect x="232" y="231" width="300" height="5" rx="2" fill="#eb6834"/>
+<rect x="232" y="225" width="1" height="5" rx="2" fill="#2a78d6"/>
+<text x="540" y="234" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">0.01× gate   (unscored 9.4×)</text>
+<text x="216" y="254" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">γ_R  §3.2</text>
+<rect x="232" y="250" width="219.34" height="5" rx="2" fill="#eb6834"/>
+<rect x="232" y="244" width="1" height="5" rx="2" fill="#2a78d6"/>
+<text x="459.34" y="253" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">4.4e-3× gate   (unscored 6.9×)</text>
+<text x="216" y="273" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">ρ_spec  §1</text>
+<rect x="232" y="263" width="1" height="5" rx="2" fill="#2a78d6"/>
+<text x="240.1" y="272" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">3.0e-3× gate</text>
+<text x="216" y="292" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">γ_B  §3.2</text>
+<rect x="232" y="288" width="208.8" height="5" rx="2" fill="#eb6834"/>
+<rect x="232" y="282" width="1" height="5" rx="2" fill="#2a78d6"/>
+<text x="448.8" y="291" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">1.5e-3× gate   (unscored 6.5×)</text>
+<text x="24" y="338" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="start" font-weight="600">Ranges this project INVENTED  — docs/AMENDMENTS.md A-04</text>
+<text x="24" y="353" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10" fill="#898781" text-anchor="start" font-weight="400">The swing is a statement about our invention. Never merge these into the ranking above.</text>
+<rect x="224" y="360" width="316" height="228" fill="#fcfcfb"/>
+<line x1="307" y1="360" x2="307" y2="588" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="382" y1="360" x2="382" y2="588" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="457" y1="360" x2="457" y2="588" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="532" y1="360" x2="532" y2="588" stroke="#e1e0d9" stroke-width="1"/>
+<text x="216" y="373" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">w_width  §4.5</text>
+<rect x="232" y="363" width="3.94" height="5" rx="2" fill="#2a78d6"/>
+<text x="243.94" y="372" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">0.12× gate</text>
+<text x="216" y="392" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">E_amb_chroma  §5</text>
+<rect x="232" y="382" width="1.82" height="5" rx="2" fill="#2a78d6"/>
+<text x="241.82" y="391" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">0.06× gate</text>
+<text x="216" y="411" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">g_B  §3.2</text>
+<rect x="232" y="407" width="194.36" height="5" rx="2" fill="#eb6834"/>
+<rect x="232" y="401" width="1" height="5" rx="2" fill="#2a78d6"/>
+<text x="434.36" y="410" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">0.02× gate   (unscored 6.1×)</text>
+<text x="216" y="430" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">g_G  §3.2</text>
+<rect x="232" y="426" width="296.1" height="5" rx="2" fill="#eb6834"/>
+<rect x="232" y="420" width="1" height="5" rx="2" fill="#2a78d6"/>
+<text x="536.1" y="429" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">0.01× gate   (unscored 9.3×)</text>
+<text x="216" y="449" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">g_R  §3.2</text>
+<rect x="232" y="445" width="215.36" height="5" rx="2" fill="#eb6834"/>
+<rect x="232" y="439" width="1" height="5" rx="2" fill="#2a78d6"/>
+<text x="455.36" y="448" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">3.7e-3× gate   (unscored 6.8×)</text>
+<text x="216" y="468" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">α_spec  §1</text>
+<rect x="232" y="458" width="1" height="5" rx="2" fill="#2a78d6"/>
+<text x="240.03" y="467" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">9.0e-4× gate</text>
+<text x="216" y="487" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">ρ_B  §1</text>
+<rect x="232" y="477" width="1" height="5" rx="2" fill="#2a78d6"/>
+<text x="240.01" y="486" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">4.4e-4× gate</text>
+<text x="216" y="506" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">ρ_G  §1</text>
+<rect x="232" y="496" width="1" height="5" rx="2" fill="#2a78d6"/>
+<text x="240.01" y="505" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">2.8e-4× gate</text>
+<text x="216" y="525" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">ρ_R  §1</text>
+<rect x="232" y="515" width="1" height="5" rx="2" fill="#2a78d6"/>
+<text x="240.01" y="524" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">2.3e-4× gate</text>
+<text x="216" y="544" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">wp_i  §3.2</text>
+<text x="240" y="543" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">no effect</text>
+<text x="216" y="563" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">mask_lo  §4.5</text>
+<text x="240" y="562" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">no effect</text>
+<text x="216" y="582" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10.5" fill="#0b0b0b" text-anchor="end" font-weight="400">mask_hi  §4.5</text>
+<text x="240" y="581" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9.5" fill="#52514e" text-anchor="start" font-weight="400" font-variant-numeric="tabular-nums">no effect</text>
+<line x1="24" y1="608" x2="783" y2="608" stroke="#c3c2b7" stroke-width="1"/>
+<text x="24" y="630" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10" fill="#0b0b0b" text-anchor="start" font-weight="400">§10 ranks gamma divergence the single highest photometric risk. On the four SCORED gates it ranks 8 of 20; on the unscored</text>
+<text x="24" y="644" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10" fill="#0b0b0b" text-anchor="start" font-weight="400">divergence reading it is first by an order of magnitude. What disagrees with §10 is the gates, not the physics.</text>
+<text x="24" y="662" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10" fill="#898781" text-anchor="start" font-weight="400">Bars are the largest swing over any single response, one constant moved at a time, everything else at its PARAMETERS.md nominal.</text>
+<text x="24" y="676" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10" fill="#898781" text-anchor="start" font-weight="400">No single constant swept alone crosses any §7 gate anywhere in its range.</text>
+</svg>

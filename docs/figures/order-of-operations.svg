@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="220" viewBox="0 0 620 220" role="img" aria-label="Timeline of the visit: twenty minutes of projector warm-up, then geometry measurements, then the photometric frame run, with camera settings locked across the whole photometric span.">
+  <style>
+    /* Higher-contrast per theme where the host allows CSS inside SVG. The
+       presentation attributes on each element are the fallback where it does not
+       — the figure degrades to a mid-tone palette legible on either ground,
+       never to black-on-black. */
+    .t { fill: #24292f; } .t-sm { fill: #57606a; }
+    .s-faint { stroke: #57606a; } .f-faint { fill: #57606a; }
+    .fill-surface { fill: #ffffff; fill-opacity: 1; }
+    @media (prefers-color-scheme: dark) {
+      .t { fill: #e6edf3; } .t-sm { fill: #8b949e; }
+      .s-faint { stroke: #8b949e; } .f-faint { fill: #8b949e; }
+      .fill-surface { fill: #0d1117; fill-opacity: 1; }
+      .s-hi { stroke: #3ddbca; } .f-hi { fill: #3ddbca; } .t-hi { fill: #3ddbca; }
+      .s-warn { stroke: #f0b429; } .f-warn { fill: #f0b429; } .t-warn { fill: #f0b429; }
+    }
+  </style>
+
+        <defs>
+          <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,1 L9,5 L0,9 z" class="f-warn" fill="#bf8700"/>
+          </marker>
+        </defs>
+
+        <rect x="18" y="52" width="132" height="44" rx="5" class="fill-block-soft s-warn" fill="#bf8700" fill-opacity="0.15" stroke="#bf8700" stroke-width="2"/>
+        <text class="t-warn" font-size="12" font-weight="650" fill="#bf8700" font-family="ui-sans-serif, system-ui, sans-serif" x="84" y="72" text-anchor="middle">warm up</text>
+        <text class="t-sm" font-size="10.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" x="84" y="88" text-anchor="middle">20 min, projectors on</text>
+
+        <rect x="162" y="52" width="132" height="44" rx="5" class="fill-sunk" fill="#8b949e" fill-opacity="0.14" stroke="currentColor" stroke-width="1.5"/>
+        <text class="t" font-size="12" fill="#6e7781" font-family="ui-sans-serif, system-ui, sans-serif" x="228" y="72" text-anchor="middle">geometry</text>
+        <text class="t-sm" font-size="10.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" x="228" y="88" text-anchor="middle">tape, config, grid</text>
+
+        <rect x="306" y="52" width="296" height="44" rx="5" class="fill-accent-soft s-hi" fill="#1f9c8f" fill-opacity="0.15" stroke="#1f9c8f" stroke-width="2"/>
+        <text class="t-hi" font-size="12" font-weight="650" fill="#1f9c8f" font-family="ui-sans-serif, system-ui, sans-serif" x="454" y="72" text-anchor="middle">photometric run · about 35 frames</text>
+        <text class="t-sm" font-size="10.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" x="454" y="88" text-anchor="middle">black on/off · step wedges · per-channel · mid-gray</text>
+
+        <line x1="150" y1="74" x2="160" y2="74" class="s-faint" stroke="#8b949e" stroke-width="1.5"/>
+        <line x1="294" y1="74" x2="304" y2="74" class="s-faint" stroke="#8b949e" stroke-width="1.5"/>
+
+        <line x1="306" y1="118" x2="602" y2="118" class="s-warn" stroke="#bf8700" stroke-width="2" marker-start="url(#a4)" marker-end="url(#a4)"/>
+        <text class="t-warn" font-size="12" font-weight="650" fill="#bf8700" font-family="ui-sans-serif, system-ui, sans-serif" x="454" y="140" text-anchor="middle">camera settings locked — nothing auto, nothing touched</text>
+        <text class="t-sm" font-size="10.5" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" x="454" y="158" text-anchor="middle">fixed ISO · aperture · shutter · white balance · RAW</text>
+
+        <text class="t" font-size="12" fill="#6e7781" font-family="ui-sans-serif, system-ui, sans-serif" x="18" y="192">If one setting drifts mid-run the frames stop being comparable, and every</text>
+        <text class="t" font-size="12" fill="#6e7781" font-family="ui-sans-serif, system-ui, sans-serif" x="18" y="210">measurement here is a ratio between frames rather than a single reading.</text>
+      </svg>

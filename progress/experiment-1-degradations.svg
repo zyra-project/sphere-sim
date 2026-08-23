@@ -1,0 +1,307 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 468" width="1280" height="468" role="img" aria-label="Experiment 1, figure 4 — each degradation condition on its own">
+<style>
+  text { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; fill: #1a1a1a; }
+  .h1 { font-size: 17px; font-weight: 650; }
+  .h2 { font-size: 12px; fill: #5a5a5a; }
+  .ttl { font-size: 13px; font-weight: 600; }
+  .sub { font-size: 10.5px; fill: #5a5a5a; }
+  .tick { font-size: 10px; fill: #5a5a5a; }
+  .axlbl { font-size: 11px; fill: #1a1a1a; }
+  .leg { font-size: 11.5px; }
+  .cap { font-size: 11px; fill: #5a5a5a; }
+  .foot { font-size: 10px; fill: #5a5a5a; }
+  .gatelbl { font-size: 10px; fill: #b3261e; }
+  .mid { text-anchor: middle; }
+  .end { text-anchor: end; }
+  .grid { stroke: #e3e3e3; stroke-width: 1; }
+  .ax { stroke: #333333; stroke-width: 1; }
+  .gate { stroke: #b3261e; stroke-width: 1.2; stroke-dasharray: 6 3; }
+</style>
+<rect x="0" y="0" width="1280" height="468" fill="#ffffff"/>
+<text x="14" y="30" class="h1">Experiment 1, figure 4 — each degradation condition on its own</text>
+<text x="14" y="50" class="h2">3 camera positions, 640x480, 4 floor references at sigma = 3 mm, 5 seeds each. Every condition is switched on against the noiseless reference, not against the one before it.</text>
+<line x1="14" y1="76" x2="36" y2="76" stroke="#1f5fa9" stroke-width="2.5"/>
+<circle cx="25" cy="76" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<text x="42" y="80" class="leg">measured (median, range over seeds)</text>
+<line x1="272" y1="76" x2="294" y2="76" stroke="#777777" stroke-width="2.5" stroke-dasharray="5 4"/>
+<circle cx="283" cy="76" r="3.4" fill="#ffffff" stroke="#777777" stroke-width="2"/>
+<text x="300" y="80" class="leg">quadrature prediction for &quot;all&quot;</text>
+<text x="20" y="120" class="ttl">Pose position error</text>
+<line x1="72" y1="326.00" x2="412" y2="326.00" class="grid"/>
+<text x="66" y="329.50" class="tick end">0.100</text>
+<line x1="72" y1="280.50" x2="412" y2="280.50" class="grid"/>
+<text x="66" y="284.00" class="tick end">1.00</text>
+<line x1="72" y1="235.00" x2="412" y2="235.00" class="grid"/>
+<text x="66" y="238.50" class="tick end">10.0</text>
+<line x1="72" y1="189.50" x2="412" y2="189.50" class="grid"/>
+<text x="66" y="193.00" class="tick end">100</text>
+<line x1="72" y1="144.00" x2="412" y2="144.00" class="grid"/>
+<text x="66" y="147.50" class="tick end">1000</text>
+<line x1="93.25" y1="326" x2="93.25" y2="330" class="ax"/>
+<text x="93.25" y="342" class="tick mid">none</text>
+<line x1="135.75" y1="326" x2="135.75" y2="330" class="ax"/>
+<text transform="translate(135.75,335) rotate(-38)" class="tick end">ambient 0.04</text>
+<line x1="178.25" y1="326" x2="178.25" y2="330" class="ax"/>
+<text transform="translate(178.25,335) rotate(-38)" class="tick end">ambient 0.15</text>
+<line x1="220.75" y1="326" x2="220.75" y2="330" class="ax"/>
+<text transform="translate(220.75,335) rotate(-38)" class="tick end">sensor noise</text>
+<line x1="263.25" y1="326" x2="263.25" y2="330" class="ax"/>
+<text transform="translate(263.25,335) rotate(-38)" class="tick end">rolling shutter</text>
+<line x1="305.75" y1="326" x2="305.75" y2="330" class="ax"/>
+<text transform="translate(305.75,335) rotate(-38)" class="tick end">motion, global shutter</text>
+<line x1="348.25" y1="326" x2="348.25" y2="330" class="ax"/>
+<text transform="translate(348.25,335) rotate(-38)" class="tick end">motion + rolling</text>
+<line x1="390.75" y1="326" x2="390.75" y2="330" class="ax"/>
+<text x="390.75" y="342" class="tick mid">all</text>
+<line x1="72" y1="326" x2="412" y2="326" class="ax"/>
+<line x1="72" y1="326" x2="72" y2="144" class="ax"/>
+<line x1="72" y1="266.80" x2="412" y2="266.80" class="gate"/>
+<text x="408" y="262.80" class="gatelbl end">PARAMETERS.md §7: 2 mm</text>
+<line x1="93.25" y1="282.92" x2="93.25" y2="263.91" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="135.75" y1="282.92" x2="135.75" y2="263.91" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="178.25" y1="282.92" x2="178.25" y2="263.91" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="220.75" y1="240.22" x2="220.75" y2="224.31" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="263.25" y1="282.92" x2="263.25" y2="263.91" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="305.75" y1="182.35" x2="305.75" y2="163.93" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="348.25" y1="194.14" x2="348.25" y2="158.31" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="390.75" y1="178.05" x2="390.75" y2="159.49" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<path d="M93.25,276.29 L135.75,276.29 L178.25,276.29 L220.75,231.39 L263.25,276.29 L305.75,174.76 L348.25,166.51 L390.75,164.22" fill="none" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="93.25" cy="280.93" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="93.25" cy="276.29" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="93.25" cy="265.82" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="93.25" cy="282.92" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="93.25" cy="263.91" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="135.75" cy="280.93" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="135.75" cy="276.29" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="135.75" cy="265.82" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="135.75" cy="282.92" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="135.75" cy="263.91" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="178.25" cy="280.93" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="178.25" cy="276.29" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="178.25" cy="265.82" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="178.25" cy="282.92" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="178.25" cy="263.91" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="220.75" cy="234.49" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="220.75" cy="224.31" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="220.75" cy="231.39" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="220.75" cy="240.22" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="220.75" cy="231.28" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="263.25" cy="280.93" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="263.25" cy="276.29" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="263.25" cy="265.82" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="263.25" cy="282.92" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="263.25" cy="263.91" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="305.75" cy="163.93" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="305.75" cy="165.27" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="305.75" cy="175.37" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="305.75" cy="182.35" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="305.75" cy="174.76" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="348.25" cy="166.51" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="348.25" cy="158.31" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="348.25" cy="166.35" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="348.25" cy="182.54" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="348.25" cy="194.14" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="390.75" cy="164.22" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="390.75" cy="159.49" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="390.75" cy="168.64" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="390.75" cy="178.05" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="390.75" cy="162.80" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="93.25" cy="276.29" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="135.75" cy="276.29" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="178.25" cy="276.29" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="220.75" cy="231.39" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="263.25" cy="276.29" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="305.75" cy="174.76" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="348.25" cy="166.51" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="390.75" cy="164.22" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="390.75" cy="166.58" r="3.4" fill="#ffffff" stroke="#777777" stroke-width="2"/>
+<text x="242.0" y="378" class="axlbl mid">degradation condition (each switched on alone)</text>
+<text transform="translate(24,235.0) rotate(-90)" class="axlbl mid">worst projector, mm (log)</text>
+<text x="440" y="120" class="ttl">Grid-line displacement</text>
+<line x1="492" y1="326.00" x2="832" y2="326.00" class="grid"/>
+<text x="486" y="329.50" class="tick end">0.010</text>
+<line x1="492" y1="280.50" x2="832" y2="280.50" class="grid"/>
+<text x="486" y="284.00" class="tick end">0.100</text>
+<line x1="492" y1="235.00" x2="832" y2="235.00" class="grid"/>
+<text x="486" y="238.50" class="tick end">1.00</text>
+<line x1="492" y1="189.50" x2="832" y2="189.50" class="grid"/>
+<text x="486" y="193.00" class="tick end">10.0</text>
+<line x1="492" y1="144.00" x2="832" y2="144.00" class="grid"/>
+<text x="486" y="147.50" class="tick end">100</text>
+<line x1="513.25" y1="326" x2="513.25" y2="330" class="ax"/>
+<text x="513.25" y="342" class="tick mid">none</text>
+<line x1="555.75" y1="326" x2="555.75" y2="330" class="ax"/>
+<text transform="translate(555.75,335) rotate(-38)" class="tick end">ambient 0.04</text>
+<line x1="598.25" y1="326" x2="598.25" y2="330" class="ax"/>
+<text transform="translate(598.25,335) rotate(-38)" class="tick end">ambient 0.15</text>
+<line x1="640.75" y1="326" x2="640.75" y2="330" class="ax"/>
+<text transform="translate(640.75,335) rotate(-38)" class="tick end">sensor noise</text>
+<line x1="683.25" y1="326" x2="683.25" y2="330" class="ax"/>
+<text transform="translate(683.25,335) rotate(-38)" class="tick end">rolling shutter</text>
+<line x1="725.75" y1="326" x2="725.75" y2="330" class="ax"/>
+<text transform="translate(725.75,335) rotate(-38)" class="tick end">motion, global shutter</text>
+<line x1="768.25" y1="326" x2="768.25" y2="330" class="ax"/>
+<text transform="translate(768.25,335) rotate(-38)" class="tick end">motion + rolling</text>
+<line x1="810.75" y1="326" x2="810.75" y2="330" class="ax"/>
+<text x="810.75" y="342" class="tick mid">all</text>
+<line x1="492" y1="326" x2="832" y2="326" class="ax"/>
+<line x1="492" y1="326" x2="492" y2="144" class="ax"/>
+<line x1="492" y1="235.00" x2="832" y2="235.00" class="gate"/>
+<text x="828" y="231.00" class="gatelbl end">PARAMETERS.md §7: 1 mm on sphere surface</text>
+<line x1="513.25" y1="296.27" x2="513.25" y2="283.87" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="555.75" y1="296.27" x2="555.75" y2="283.87" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="598.25" y1="296.27" x2="598.25" y2="283.87" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="640.75" y1="284.74" x2="640.75" y2="266.16" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="683.25" y1="296.27" x2="683.25" y2="283.87" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="725.75" y1="203.31" x2="725.75" y2="178.86" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="768.25" y1="198.69" x2="768.25" y2="182.90" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="810.75" y1="201.83" x2="810.75" y2="172.40" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<path d="M513.25,287.06 L555.75,287.06 L598.25,287.06 L640.75,278.99 L683.25,287.06 L725.75,184.64 L768.25,187.67 L810.75,189.07" fill="none" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="513.25" cy="286.54" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="513.25" cy="283.87" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="513.25" cy="287.06" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="513.25" cy="296.27" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="513.25" cy="289.43" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="555.75" cy="286.54" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="555.75" cy="283.87" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="555.75" cy="287.06" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="555.75" cy="296.27" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="555.75" cy="289.43" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="598.25" cy="286.54" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="598.25" cy="283.87" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="598.25" cy="287.06" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="598.25" cy="296.27" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="598.25" cy="289.43" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="640.75" cy="279.46" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="640.75" cy="278.99" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="640.75" cy="275.58" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="640.75" cy="284.74" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="640.75" cy="266.16" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="683.25" cy="286.54" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="683.25" cy="283.87" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="683.25" cy="287.06" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="683.25" cy="296.27" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="683.25" cy="289.43" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="725.75" cy="178.86" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="725.75" cy="203.31" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="725.75" cy="184.41" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="725.75" cy="197.00" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="725.75" cy="184.64" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="768.25" cy="183.12" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="768.25" cy="198.15" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="768.25" cy="187.67" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="768.25" cy="198.69" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="768.25" cy="182.90" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="810.75" cy="180.13" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="810.75" cy="193.37" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="810.75" cy="189.07" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="810.75" cy="201.83" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="810.75" cy="172.40" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="513.25" cy="287.06" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="555.75" cy="287.06" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="598.25" cy="287.06" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="640.75" cy="278.99" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="683.25" cy="287.06" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="725.75" cy="184.64" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="768.25" cy="187.67" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="810.75" cy="189.07" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="810.75" cy="187.80" r="3.4" fill="#ffffff" stroke="#777777" stroke-width="2"/>
+<text x="662.0" y="378" class="axlbl mid">degradation condition (each switched on alone)</text>
+<text transform="translate(444,235.0) rotate(-90)" class="axlbl mid">mm on sphere surface (log)</text>
+<text x="860" y="120" class="ttl">RMS reprojection residual</text>
+<line x1="912" y1="326.00" x2="1252" y2="326.00" class="grid"/>
+<text x="906" y="329.50" class="tick end">1.0e-5</text>
+<line x1="912" y1="295.67" x2="1252" y2="295.67" class="grid"/>
+<text x="906" y="299.17" class="tick end">1.0e-4</text>
+<line x1="912" y1="265.33" x2="1252" y2="265.33" class="grid"/>
+<text x="906" y="268.83" class="tick end">1.0e-3</text>
+<line x1="912" y1="235.00" x2="1252" y2="235.00" class="grid"/>
+<text x="906" y="238.50" class="tick end">0.010</text>
+<line x1="912" y1="204.67" x2="1252" y2="204.67" class="grid"/>
+<text x="906" y="208.17" class="tick end">0.100</text>
+<line x1="912" y1="174.33" x2="1252" y2="174.33" class="grid"/>
+<text x="906" y="177.83" class="tick end">1.00</text>
+<line x1="912" y1="144.00" x2="1252" y2="144.00" class="grid"/>
+<text x="906" y="147.50" class="tick end">10.0</text>
+<line x1="933.25" y1="326" x2="933.25" y2="330" class="ax"/>
+<text x="933.25" y="342" class="tick mid">none</text>
+<line x1="975.75" y1="326" x2="975.75" y2="330" class="ax"/>
+<text transform="translate(975.75,335) rotate(-38)" class="tick end">ambient 0.04</text>
+<line x1="1018.25" y1="326" x2="1018.25" y2="330" class="ax"/>
+<text transform="translate(1018.25,335) rotate(-38)" class="tick end">ambient 0.15</text>
+<line x1="1060.75" y1="326" x2="1060.75" y2="330" class="ax"/>
+<text transform="translate(1060.75,335) rotate(-38)" class="tick end">sensor noise</text>
+<line x1="1103.25" y1="326" x2="1103.25" y2="330" class="ax"/>
+<text transform="translate(1103.25,335) rotate(-38)" class="tick end">rolling shutter</text>
+<line x1="1145.75" y1="326" x2="1145.75" y2="330" class="ax"/>
+<text transform="translate(1145.75,335) rotate(-38)" class="tick end">motion, global shutter</text>
+<line x1="1188.25" y1="326" x2="1188.25" y2="330" class="ax"/>
+<text transform="translate(1188.25,335) rotate(-38)" class="tick end">motion + rolling</text>
+<line x1="1230.75" y1="326" x2="1230.75" y2="330" class="ax"/>
+<text x="1230.75" y="342" class="tick mid">all</text>
+<line x1="912" y1="326" x2="1252" y2="326" class="ax"/>
+<line x1="912" y1="326" x2="912" y2="144" class="ax"/>
+<line x1="933.25" y1="304.75" x2="933.25" y2="304.40" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="975.75" y1="304.75" x2="975.75" y2="304.40" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="1018.25" y1="304.75" x2="1018.25" y2="304.40" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="1060.75" y1="201.92" x2="1060.75" y2="201.49" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="1103.25" y1="304.75" x2="1103.25" y2="304.40" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="1145.75" y1="178.62" x2="1145.75" y2="173.49" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="1188.25" y1="178.44" x2="1188.25" y2="175.39" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<line x1="1230.75" y1="178.05" x2="1230.75" y2="175.04" stroke="#1f5fa9" stroke-width="1" opacity="0.45"/>
+<path d="M933.25,304.70 L975.75,304.70 L1018.25,304.70 L1060.75,201.58 L1103.25,304.70 L1145.75,174.44 L1188.25,176.68 L1230.75,176.21" fill="none" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="933.25" cy="304.73" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="933.25" cy="304.70" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="933.25" cy="304.54" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="933.25" cy="304.75" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="933.25" cy="304.40" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="975.75" cy="304.73" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="975.75" cy="304.70" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="975.75" cy="304.54" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="975.75" cy="304.75" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="975.75" cy="304.40" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1018.25" cy="304.73" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1018.25" cy="304.70" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1018.25" cy="304.54" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1018.25" cy="304.75" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1018.25" cy="304.40" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1060.75" cy="201.74" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1060.75" cy="201.53" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1060.75" cy="201.92" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1060.75" cy="201.49" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1060.75" cy="201.58" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1103.25" cy="304.73" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1103.25" cy="304.70" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1103.25" cy="304.54" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1103.25" cy="304.75" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1103.25" cy="304.40" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1145.75" cy="173.49" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1145.75" cy="173.60" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1145.75" cy="174.44" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1145.75" cy="176.10" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1145.75" cy="178.62" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1188.25" cy="175.39" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1188.25" cy="176.83" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1188.25" cy="178.44" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1188.25" cy="175.92" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1188.25" cy="176.68" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1230.75" cy="175.04" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1230.75" cy="176.31" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1230.75" cy="178.05" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1230.75" cy="175.62" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="1230.75" cy="176.21" r="2" fill="#1f5fa9" opacity="0.32"/>
+<circle cx="933.25" cy="304.70" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="975.75" cy="304.70" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="1018.25" cy="304.70" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="1060.75" cy="201.58" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="1103.25" cy="304.70" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="1145.75" cy="174.44" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="1188.25" cy="176.68" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="1230.75" cy="176.21" r="3.4" fill="#ffffff" stroke="#1f5fa9" stroke-width="2"/>
+<circle cx="1230.75" cy="176.53" r="3.4" fill="#ffffff" stroke="#777777" stroke-width="2"/>
+<text x="1082.0" y="378" class="axlbl mid">degradation condition (each switched on alone)</text>
+<text transform="translate(864,235.0) rotate(-90)" class="axlbl mid">projector px (log)</text>
+<text x="14" y="416" class="cap">&quot;rolling shutter&quot; is a rolling readout with a STATIC camera. packages/bench/test/capture.test.ts proves it is bit-identical to a global shutter;</text>
+<text x="14" y="432" class="cap">the row is measured anyway, because reporting a zero the brief asked for is a result and omitting it would leave the question open.</text>
+<text x="14" y="448" class="cap">&quot;motion, global shutter&quot; isolates the inter-frame half of handheld drift; the gap to &quot;motion + rolling&quot; is the shutter's own contribution.</text>
+</svg>

@@ -1,0 +1,677 @@
+{
+  "schema": "sphere-sim/rounds@2",
+  "rootSeed": 771003,
+  "rounds": [
+    {
+      "round": 0,
+      "seed": 771003,
+      "at": "2026-08-13T06:09:04.500Z",
+      "preset": "default",
+      "scenarioCount": 6,
+      "gitCommit": "bcf087e",
+      "pass": false,
+      "gates": [
+        {
+          "id": "pose_position",
+          "pass": false,
+          "failed": 6,
+          "scored": 6,
+          "worst": 632.8237716630656
+        },
+        {
+          "id": "pose_rotation",
+          "pass": false,
+          "failed": 5,
+          "scored": 6,
+          "worst": 6.373612157104312
+        },
+        {
+          "id": "h_center_recovery",
+          "pass": true,
+          "failed": 0,
+          "scored": 6,
+          "worst": 9.068710680526504
+        },
+        {
+          "id": "grid_displacement",
+          "pass": false,
+          "failed": 2,
+          "scored": 6,
+          "worst": 25.88837410603886
+        },
+        {
+          "id": "unlit_in_mask",
+          "pass": true,
+          "failed": 0,
+          "scored": 6,
+          "worst": 0
+        },
+        {
+          "id": "off_sphere_flux_excess",
+          "pass": true,
+          "failed": 0,
+          "scored": 6,
+          "worst": 0.0014132989659723094
+        }
+      ],
+      "series": {
+        "gridDisplacementMm": {
+          "median": 0.8170126065394339,
+          "p95": 23.859081367695694,
+          "max": 25.88837410603886,
+          "dispersion": 6.468107206104472,
+          "gateMax": 1,
+          "gateFraction": 0.8170126065394339
+        },
+        "poseMaxPositionMmAligned": {
+          "median": 118.41217207031247,
+          "p95": 589.7239090043994,
+          "max": 632.8237716630656,
+          "dispersion": 157.39318282652425,
+          "gateMax": 2,
+          "gateFraction": 59.20608603515623
+        },
+        "poseMaxRotationDegAligned": {
+          "median": 0.15664636125655063,
+          "p95": 5.833155963995668,
+          "max": 6.373612157104312,
+          "dispersion": 1.5447026126380388,
+          "gateMax": 0.05,
+          "gateFraction": 3.1329272251310125
+        },
+        "centerHeightErrorMm": {
+          "median": 0.8886089634947414,
+          "p95": 7.286143446473381,
+          "max": 9.068710680526504,
+          "dispersion": 0.5596498725672361,
+          "gateMax": 10,
+          "gateFraction": 0.08886089634947414
+        },
+        "offSphereFluxExcess": {
+          "median": 0.0003067830617625722,
+          "p95": 0.0013350331233720203,
+          "max": 0.0014132989659723094,
+          "dispersion": 0.00041080047674829645,
+          "gateMax": 0.01,
+          "gateFraction": 0.03067830617625722
+        }
+      },
+      "movement": {
+        "gridDisplacementMm": "flat",
+        "poseMaxPositionMmAligned": "flat",
+        "poseMaxRotationDegAligned": "flat",
+        "centerHeightErrorMm": "flat",
+        "cameraMaxRotationDeg": "flat",
+        "offSphereFluxExcess": "flat"
+      },
+      "regressed": [],
+      "improving": false,
+      "consecutiveNonImproving": 1,
+      "comparison": {
+        "verdict": "better",
+        "improved": [],
+        "regressed": [],
+        "why": "first round on record: nothing to compare against, so it is the best by default."
+      },
+      "resultsPath": "(replayed \u2014 bcf087e)",
+      "best": true,
+      "provenance": "replayed",
+      "shipped": "baseline \u2014 the bench exists, solver as first built"
+    },
+    {
+      "round": 1,
+      "seed": 771003,
+      "at": "2026-08-13T06:10:05.558Z",
+      "preset": "default",
+      "scenarioCount": 6,
+      "gitCommit": "932898f",
+      "pass": false,
+      "gates": [
+        {
+          "id": "pose_position",
+          "pass": false,
+          "failed": 6,
+          "scored": 6,
+          "worst": 772.5962463173304
+        },
+        {
+          "id": "pose_rotation",
+          "pass": false,
+          "failed": 5,
+          "scored": 6,
+          "worst": 7.058981685226694
+        },
+        {
+          "id": "h_center_recovery",
+          "pass": false,
+          "failed": 1,
+          "scored": 6,
+          "worst": 14.323777802397242
+        },
+        {
+          "id": "grid_displacement",
+          "pass": false,
+          "failed": 2,
+          "scored": 6,
+          "worst": 16.472975793587178
+        },
+        {
+          "id": "unlit_in_mask",
+          "pass": true,
+          "failed": 0,
+          "scored": 6,
+          "worst": 0
+        },
+        {
+          "id": "off_sphere_flux_excess",
+          "pass": true,
+          "failed": 0,
+          "scored": 6,
+          "worst": 0.0014132989659723094
+        }
+      ],
+      "series": {
+        "gridDisplacementMm": {
+          "median": 0.488913774868605,
+          "p95": 16.28510839290839,
+          "max": 16.472975793587178,
+          "dispersion": 5.884823340350952,
+          "gateMax": 1,
+          "gateFraction": 0.488913774868605
+        },
+        "poseMaxPositionMmAligned": {
+          "median": 56.4481751347799,
+          "p95": 679.1128315689698,
+          "max": 772.5962463173304,
+          "dispersion": 147.54399889758218,
+          "gateMax": 2,
+          "gateFraction": 28.22408756738995
+        },
+        "poseMaxRotationDegAligned": {
+          "median": 0.1001545821479208,
+          "p95": 6.3870272528311975,
+          "max": 7.058981685226694,
+          "dispersion": 1.6295995858940007,
+          "gateMax": 0.05,
+          "gateFraction": 2.003091642958416
+        },
+        "centerHeightErrorMm": {
+          "median": 1.2700205414672983,
+          "p95": 11.805102045292392,
+          "max": 14.323777802397242,
+          "dispersion": 1.5057034468846098,
+          "gateMax": 10,
+          "gateFraction": 0.12700205414672983
+        },
+        "offSphereFluxExcess": {
+          "median": 0.0003067830617625722,
+          "p95": 0.0013350331233720203,
+          "max": 0.0014132989659723094,
+          "dispersion": 0.00041080047674829645,
+          "gateMax": 0.01,
+          "gateFraction": 0.03067830617625722
+        }
+      },
+      "movement": {
+        "gridDisplacementMm": "flat",
+        "poseMaxPositionMmAligned": "flat",
+        "poseMaxRotationDegAligned": "flat",
+        "centerHeightErrorMm": "flat",
+        "cameraMaxRotationDeg": "flat",
+        "offSphereFluxExcess": "flat"
+      },
+      "regressed": [],
+      "improving": false,
+      "consecutiveNonImproving": 2,
+      "comparison": {
+        "verdict": "flat",
+        "improved": [],
+        "regressed": [],
+        "why": "nothing moved by more than the scatter across seeds. The best round is unchanged."
+      },
+      "resultsPath": "(replayed \u2014 932898f)",
+      "best": false,
+      "provenance": "replayed",
+      "shipped": "pooled decode noise estimate"
+    },
+    {
+      "round": 2,
+      "seed": 771003,
+      "at": "2026-08-13T06:11:07.700Z",
+      "preset": "default",
+      "scenarioCount": 6,
+      "gitCommit": "cebf5c6",
+      "pass": false,
+      "gates": [
+        {
+          "id": "pose_position",
+          "pass": false,
+          "failed": 6,
+          "scored": 6,
+          "worst": 772.5962463173304
+        },
+        {
+          "id": "pose_rotation",
+          "pass": false,
+          "failed": 5,
+          "scored": 6,
+          "worst": 7.058981685226694
+        },
+        {
+          "id": "h_center_recovery",
+          "pass": false,
+          "failed": 1,
+          "scored": 6,
+          "worst": 14.323777802397242
+        },
+        {
+          "id": "grid_displacement",
+          "pass": false,
+          "failed": 2,
+          "scored": 6,
+          "worst": 16.472975793587178
+        },
+        {
+          "id": "unlit_in_mask",
+          "pass": true,
+          "failed": 0,
+          "scored": 6,
+          "worst": 0
+        },
+        {
+          "id": "off_sphere_flux_excess",
+          "pass": true,
+          "failed": 0,
+          "scored": 6,
+          "worst": 0.0014132989659723094
+        }
+      ],
+      "series": {
+        "gridDisplacementMm": {
+          "median": 0.488913774868605,
+          "p95": 16.28510839290839,
+          "max": 16.472975793587178,
+          "dispersion": 5.884823340350952,
+          "gateMax": 1,
+          "gateFraction": 0.488913774868605
+        },
+        "poseMaxPositionMmAligned": {
+          "median": 56.4481751347799,
+          "p95": 679.1128315689698,
+          "max": 772.5962463173304,
+          "dispersion": 147.54399889758218,
+          "gateMax": 2,
+          "gateFraction": 28.22408756738995
+        },
+        "poseMaxRotationDegAligned": {
+          "median": 0.1001545821479208,
+          "p95": 6.3870272528311975,
+          "max": 7.058981685226694,
+          "dispersion": 1.6295995858940007,
+          "gateMax": 0.05,
+          "gateFraction": 2.003091642958416
+        },
+        "centerHeightErrorMm": {
+          "median": 1.2700205414672983,
+          "p95": 11.805102045292392,
+          "max": 14.323777802397242,
+          "dispersion": 1.5057034468846098,
+          "gateMax": 10,
+          "gateFraction": 0.12700205414672983
+        },
+        "offSphereFluxExcess": {
+          "median": 0.0003067830617625722,
+          "p95": 0.0013350331233720203,
+          "max": 0.0014132989659723094,
+          "dispersion": 0.00041080047674829645,
+          "gateMax": 0.01,
+          "gateFraction": 0.03067830617625722
+        }
+      },
+      "movement": {
+        "gridDisplacementMm": "flat",
+        "poseMaxPositionMmAligned": "flat",
+        "poseMaxRotationDegAligned": "flat",
+        "centerHeightErrorMm": "flat",
+        "cameraMaxRotationDeg": "flat",
+        "offSphereFluxExcess": "flat"
+      },
+      "regressed": [],
+      "improving": false,
+      "consecutiveNonImproving": 3,
+      "comparison": {
+        "verdict": "flat",
+        "improved": [],
+        "regressed": [],
+        "why": "nothing moved by more than the scatter across seeds. The best round is unchanged."
+      },
+      "resultsPath": "(replayed \u2014 cebf5c6)",
+      "best": false,
+      "provenance": "replayed",
+      "shipped": "null result \u2014 both knobs measured and left off"
+    },
+    {
+      "round": 3,
+      "seed": 771003,
+      "at": "2026-08-13T06:12:09.562Z",
+      "preset": "default",
+      "scenarioCount": 6,
+      "gitCommit": "6c0923d",
+      "pass": false,
+      "gates": [
+        {
+          "id": "pose_position",
+          "pass": false,
+          "failed": 6,
+          "scored": 6,
+          "worst": 250.75847932395226
+        },
+        {
+          "id": "pose_rotation",
+          "pass": false,
+          "failed": 5,
+          "scored": 6,
+          "worst": 0.3081255284713382
+        },
+        {
+          "id": "camera_pose_rotation",
+          "pass": false,
+          "failed": 2,
+          "scored": 6,
+          "worst": 0.2949541170374716
+        },
+        {
+          "id": "h_center_recovery",
+          "pass": true,
+          "failed": 0,
+          "scored": 6,
+          "worst": 2.336484289138241
+        },
+        {
+          "id": "grid_displacement",
+          "pass": false,
+          "failed": 2,
+          "scored": 6,
+          "worst": 3.826951969453546
+        },
+        {
+          "id": "unlit_in_mask",
+          "pass": true,
+          "failed": 0,
+          "scored": 6,
+          "worst": 0
+        },
+        {
+          "id": "off_sphere_flux_excess",
+          "pass": true,
+          "failed": 0,
+          "scored": 6,
+          "worst": 0.0014132989659723094
+        }
+      ],
+      "series": {
+        "gridDisplacementMm": {
+          "median": 0.48056720286126886,
+          "p95": 3.7199944685865662,
+          "max": 3.826951969453546,
+          "dispersion": 1.2478082610467078,
+          "gateMax": 1,
+          "gateFraction": 0.48056720286126886
+        },
+        "poseMaxPositionMmAligned": {
+          "median": 56.116576207397955,
+          "p95": 237.38769963671191,
+          "max": 250.75847932395226,
+          "dispersion": 70.87635356904107,
+          "gateMax": 2,
+          "gateFraction": 28.058288103698978
+        },
+        "poseMaxRotationDegAligned": {
+          "median": 0.09909929325031143,
+          "p95": 0.30716913524755807,
+          "max": 0.3081255284713382,
+          "dispersion": 0.10198749192620235,
+          "gateMax": 0.05,
+          "gateFraction": 1.9819858650062285
+        },
+        "centerHeightErrorMm": {
+          "median": 0.7668377119971481,
+          "p95": 2.199498444366843,
+          "max": 2.336484289138241,
+          "dispersion": 0.45472965927007003,
+          "gateMax": 10,
+          "gateFraction": 0.07668377119971481
+        },
+        "offSphereFluxExcess": {
+          "median": 0.0003067830617625722,
+          "p95": 0.0013350331233720203,
+          "max": 0.0014132989659723094,
+          "dispersion": 0.00041080047674829645,
+          "gateMax": 0.01,
+          "gateFraction": 0.03067830617625722
+        }
+      },
+      "movement": {
+        "gridDisplacementMm": "flat",
+        "poseMaxPositionMmAligned": "flat",
+        "poseMaxRotationDegAligned": "flat",
+        "centerHeightErrorMm": "flat",
+        "cameraMaxRotationDeg": "flat",
+        "offSphereFluxExcess": "flat"
+      },
+      "regressed": [],
+      "improving": false,
+      "consecutiveNonImproving": 4,
+      "comparison": {
+        "verdict": "flat",
+        "improved": [],
+        "regressed": [],
+        "why": "nothing moved by more than the scatter across seeds. The best round is unchanged."
+      },
+      "resultsPath": "(replayed \u2014 6c0923d)",
+      "best": false,
+      "provenance": "replayed",
+      "shipped": "differential u/v camera pose"
+    },
+    {
+      "round": 4,
+      "seed": 771003,
+      "at": "2026-08-13T06:13:14.023Z",
+      "preset": "default",
+      "scenarioCount": 6,
+      "gitCommit": "0aa8980",
+      "pass": false,
+      "gates": [
+        {
+          "id": "pose_position",
+          "pass": false,
+          "failed": 6,
+          "scored": 6,
+          "worst": 93.20570702736562
+        },
+        {
+          "id": "pose_rotation",
+          "pass": false,
+          "failed": 5,
+          "scored": 6,
+          "worst": 0.27115117802325467
+        },
+        {
+          "id": "camera_pose_rotation",
+          "pass": false,
+          "failed": 2,
+          "scored": 6,
+          "worst": 0.10088874159912442
+        },
+        {
+          "id": "h_center_recovery",
+          "pass": true,
+          "failed": 0,
+          "scored": 6,
+          "worst": 2.3477209471609584
+        },
+        {
+          "id": "grid_displacement",
+          "pass": false,
+          "failed": 2,
+          "scored": 6,
+          "worst": 4.127564229975279
+        },
+        {
+          "id": "unlit_in_mask",
+          "pass": true,
+          "failed": 0,
+          "scored": 6,
+          "worst": 0
+        },
+        {
+          "id": "off_sphere_flux_excess",
+          "pass": true,
+          "failed": 0,
+          "scored": 6,
+          "worst": 0.0014132989659723094
+        }
+      ],
+      "series": {
+        "gridDisplacementMm": {
+          "median": 0.4990252307191829,
+          "p95": 4.098773855380687,
+          "max": 4.127564229975279,
+          "dispersion": 1.5020394905127048,
+          "gateMax": 1,
+          "gateFraction": 0.4990252307191829
+        },
+        "poseMaxPositionMmAligned": {
+          "median": 35.81087941906917,
+          "p95": 87.69343305072474,
+          "max": 93.20570702736562,
+          "dispersion": 22.07509168011529,
+          "gateMax": 2,
+          "gateFraction": 17.905439709534583
+        },
+        "poseMaxRotationDegAligned": {
+          "median": 0.10963839439709985,
+          "p95": 0.2641830880689679,
+          "max": 0.27115117802325467,
+          "dispersion": 0.08380573213540948,
+          "gateMax": 0.05,
+          "gateFraction": 2.1927678879419967
+        },
+        "centerHeightErrorMm": {
+          "median": 0.770745492398639,
+          "p95": 2.1980946606655616,
+          "max": 2.3477209471609584,
+          "dispersion": 0.5054076206286728,
+          "gateMax": 10,
+          "gateFraction": 0.0770745492398639
+        },
+        "offSphereFluxExcess": {
+          "median": 0.0003067830617625722,
+          "p95": 0.0013350331233720203,
+          "max": 0.0014132989659723094,
+          "dispersion": 0.00041080047674829645,
+          "gateMax": 0.01,
+          "gateFraction": 0.03067830617625722
+        }
+      },
+      "movement": {
+        "gridDisplacementMm": "flat",
+        "poseMaxPositionMmAligned": "flat",
+        "poseMaxRotationDegAligned": "flat",
+        "centerHeightErrorMm": "flat",
+        "cameraMaxRotationDeg": "flat",
+        "offSphereFluxExcess": "flat"
+      },
+      "regressed": [],
+      "improving": false,
+      "consecutiveNonImproving": 5,
+      "comparison": {
+        "verdict": "flat",
+        "improved": [],
+        "regressed": [],
+        "why": "nothing moved by more than the scatter across seeds. The best round is unchanged."
+      },
+      "resultsPath": "(replayed \u2014 0aa8980)",
+      "best": false,
+      "provenance": "replayed",
+      "shipped": "LK935 hardware envelope and shared-lens tie"
+    }
+  ],
+  "best": {
+    "round": 0,
+    "seed": 771003,
+    "series": {
+      "gridDisplacementMm": {
+        "median": 0.8170126065394339,
+        "p95": 23.859081367695694,
+        "max": 25.88837410603886,
+        "dispersion": 6.468107206104472,
+        "gateMax": 1,
+        "gateFraction": 0.8170126065394339
+      },
+      "poseMaxPositionMmAligned": {
+        "median": 118.41217207031247,
+        "p95": 589.7239090043994,
+        "max": 632.8237716630656,
+        "dispersion": 157.39318282652425,
+        "gateMax": 2,
+        "gateFraction": 59.20608603515623
+      },
+      "poseMaxRotationDegAligned": {
+        "median": 0.15664636125655063,
+        "p95": 5.833155963995668,
+        "max": 6.373612157104312,
+        "dispersion": 1.5447026126380388,
+        "gateMax": 0.05,
+        "gateFraction": 3.1329272251310125
+      },
+      "centerHeightErrorMm": {
+        "median": 0.8886089634947414,
+        "p95": 7.286143446473381,
+        "max": 9.068710680526504,
+        "dispersion": 0.5596498725672361,
+        "gateMax": 10,
+        "gateFraction": 0.08886089634947414
+      },
+      "offSphereFluxExcess": {
+        "median": 0.0003067830617625722,
+        "p95": 0.0013350331233720203,
+        "max": 0.0014132989659723094,
+        "dispersion": 0.00041080047674829645,
+        "gateMax": 0.01,
+        "gateFraction": 0.03067830617625722
+      }
+    }
+  },
+  "provenance": {
+    "kind": "replayed",
+    "why": "Rounds 0-3 predate the round recorder, which loop.ts only grew in round 4, and their bench-results files were gitignored and overwritten. Rather than render a trend against one point, each round was replayed: its own commit checked out and its own bench run at one fixed seed.",
+    "method": "node tools/replay-rounds.ts --seed 771003 --scenarios 6",
+    "comparableBecause": "Seed selects the same scenarios and the same truth rig at every commit in the range: scenarios.ts is untouched since the bench was created, and scene.ts's later commits are a refactor that moved constants without changing them and a one-line comment renumbering. Same photographs, different solver.",
+    "stabilityCheck": [
+      "packages/bench/src/scenarios.ts: 0 commit(s) between bcf087e and 0aa8980",
+      "packages/sim/src/scene.ts: 2 commit(s) between bcf087e and 0aa8980"
+    ],
+    "rankedOn": [
+      "gridDisplacementMm",
+      "poseMaxPositionMmAligned",
+      "poseMaxRotationDegAligned",
+      "centerHeightErrorMm",
+      "offSphereFluxExcess"
+    ],
+    "omittedFromRanking": [
+      {
+        "key": "cameraMaxRotationDeg",
+        "gate": "camera_pose_rotation",
+        "why": "the gate did not exist for every round in the series"
+      }
+    ],
+    "caveat": "These are replays, not measurements taken at the time. They are the more controlled comparison \u2014 one seed, one corpus size \u2014 but a reader must be able to tell the two apart, so every record carries provenance: replayed.",
+    "knownDefect": {
+      "what": "Every round classifies as 'flat' and round 0 holds 'best', while the gate-scored statistic improves 6-7x across the series.",
+      "why": "classifyMovement and betterThan compare each metric's MEDIAN against the within-round dispersion, but every gate is scored on its MAX (packages/bench/src/results.ts). The two statistics disagree entirely here: grid median moves 0.817 -> 0.499 while grid max moves 25.888 -> 4.128, and pose median moves 118.4 -> 35.8 while pose max moves 632.8 -> 93.2. Ranking on a statistic the gate does not judge lets a round be 'flat' while the thing that actually fails moves by a factor of seven.",
+      "sameShapeAs": "The third instance of one defect class. loop.ts once ranked on median grid displacement while blind to pose; the stopping condition was satisfiable by making the measurement noisy; this is the same error one level down.",
+      "status": "REPORTED, NOT FIXED. The verdicts below are what the rule says, recorded faithfully rather than corrected in the same commit that found them. Changing how rounds are ranked is a decision about scoring, and this project's discipline is to name that rather than adjust it quietly. See docs/PHASE-1.md."
+    }
+  }
+}

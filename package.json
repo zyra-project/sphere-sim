@@ -1,0 +1,37 @@
+{
+  "name": "sphere-sim",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Physically-based simulator of a projected spherical display, plus a deliberately independent alignment solver.",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint:boundary": "node tools/boundary-lint.ts",
+    "test": "node --test --experimental-test-isolation=none \"packages/**/test/**/*.test.ts\"",
+    "bench": "node packages/bench/src/cli.ts",
+    "gate": "node packages/bench/src/gate.ts",
+    "experiments": "node packages/experiments/src/cli.ts photometry",
+    "experiment1": "node packages/experiments/src/experiment1/cli.ts",
+    "experiment4": "node packages/experiments/src/spill/cli.ts",
+    "experiment5": "node packages/experiments/src/segmentation/cli.ts",
+    "loop": "node packages/bench/src/loop.ts",
+    "build:web": "tsc -p tsconfig.web.json",
+    "build:app": "tsc -p tsconfig.app.json",
+    "harness": "node packages/harness/serve.ts",
+    "app": "node packages/web/serve.ts",
+    "build:site": "npm run build:web && npm run build:app && node tools/build-site.ts",
+    "smoke:app": "node tools/smoke-app.ts",
+    "progress": "node packages/bench/src/progress.ts",
+    "progress:reference": "node packages/bench/src/reference.ts",
+    "progress:reference:check": "node packages/bench/src/reference.ts --check",
+    "ci": "npm run lint:boundary && npm run check:docs && npm run typecheck && npm test && npm run progress:reference:check && npm run build:app && npm run smoke:app",
+    "check:docs": "node tools/experiment-tables.ts"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "22.15.3"
+  }
+}
