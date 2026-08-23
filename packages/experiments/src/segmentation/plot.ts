@@ -14,8 +14,7 @@
 
 import type { FigureSpec, Panel, PlotPoint, PlotSeries } from '../experiment1/svg.ts';
 import { PALETTE, renderFigure } from '../experiment1/svg.ts';
-import type { Cell } from '../spill/run.ts';
-import { medianOf } from '../spill/run.ts';
+import type { Cell, Dispersion } from '../spill/run.ts';
 import type { SegmentationResult } from './run.ts';
 
 const ARM_COLOR = {
@@ -25,21 +24,22 @@ const ARM_COLOR = {
   image: PALETTE.third,
 };
 
-function point(cell: Cell | undefined, x: number, of: (c: Cell) => number[]): PlotPoint | null {
+/**
+ * One plotted point, READ from the cell's stored summary rather than recomputed.
+ *
+ * This used to recompute the median from `cell.runs` after filtering, while the
+ * results file recorded one taken over the unfiltered values — so the figure and
+ * the JSON could show different centres, under a comment here claiming they were
+ * the same number. Two implementations of one statistic is what went wrong in
+ * the first place (see `medianOf` in `spill/run.ts`), so the plot now asks the
+ * file rather than doing the arithmetic again.
+ */
+function point(cell: Cell | undefined, x: number, of: (c: Cell) => Dispersion): PlotPoint | null {
   if (cell === undefined) return null;
-  const values = of(cell).filter((v) => Number.isFinite(v));
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  return {
-    x,
-    // The SAME median the results file records. This used to take the upper of
-    // the two middle observations, which at thirty seeds is a different number.
-    y: medianOf(values),
-    lo: sorted[0],
-    hi: sorted[sorted.length - 1],
-    values,
-    n: values.length,
-  };
+  const d = of(cell);
+  const finite = d.values.filter((v) => Number.isFinite(v));
+  if (finite.length === 0) return null;
+  return { x, y: d.median, lo: d.min, hi: d.max, values: finite, n: finite.length };
 }
 
 /** One series per condition, positioned along a categorical axis. */
@@ -48,7 +48,7 @@ function armSeries(
   keys: { key: string; x: number }[],
   label: (k: string) => string,
   color: (k: string) => string,
-  of: (c: Cell) => number[],
+  of: (c: Cell) => Dispersion,
 ): PlotSeries[] {
   return keys
     .map(({ key, x }) => {
@@ -69,8 +69,8 @@ const CATEGORIES = ['no room', 'room', 'geometric', 'image-space'];
 
 export function renderSegmentationSvg(result: SegmentationResult): string {
   const { cells, verdict } = result;
-  const poseOf = (c: Cell): number[] => c.runs.map((r) => r.posePositionMm);
-  const offOf = (c: Cell): number[] => c.runs.map((r) => r.offSphereFrac);
+  const poseOf = (c: Cell): Dispersion => c.posePositionMm;
+  const offOf = (c: Cell): Dispersion => c.offSphereFrac;
   const keys = CONDITIONS.map((k, i) => ({ key: k as string, x: i }));
   const ltKeys = CONDITIONS.map((k, i) => ({ key: `lt-${k}`, x: i }));
   const colorFor = (k: string): string =>

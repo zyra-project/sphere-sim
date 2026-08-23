@@ -480,7 +480,8 @@ this list is not. `ρ_room` scales the projector radiance returning from a room
 surface, and the decoder gates on exactly that varying term, so it sets how many
 false correspondences reach the solver: experiment 4 measures a paired 146× on
 pose recovery with a room present. `E_amb` is genuinely different and stays on
-this list honestly — it moves only the DC pedestal (`capture.ts:641`), not the
+this list honestly — it moves only the DC pedestal (`capture.ts`'s `ambient` term, which enters the
+rendered frame as a constant offset), not the
 modulation the decoder measures. The sequencing below is unchanged and the
 reason for it is unchanged; what is corrected is the generalisation a reader
 would otherwise draw from one sentence. **Build and gauntlet the

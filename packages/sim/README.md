@@ -57,7 +57,9 @@ produce byte-identical PNGs.
 
 From PARAMETERS.md §4.2 and §4.3, and asserted in `test/coverage.test.ts`:
 
-- Overlap multiplicity is **1 or 2 everywhere**, never 3 or 4.
+- Overlap multiplicity is **1 or 2 wherever anything is lit**, never 3 or 4.
+  It is 0 in the unlit polar region the next bullet describes — the claim is
+  about how many projectors can reach a point, not about whether any can.
 - The unlit polar region is **four-lobed and scalloped**, not a circular cap —
   reaching 80.4° latitude along a projector meridian but only 76.3° in the seam
   directions, at `d_proj` = 5.18 m.
@@ -75,8 +77,12 @@ projector a longitude wedge of `360/count` and crossfades at the boundary with
 its neighbour.
 
 They are different models of what an SOS compositor does, not two spellings of
-one. Under `'limb'` two projectors split the signal 50/50 across 71 degrees of
-longitude; under `'sector'` the overlap is the blend band and nothing else.
+one. Under `'limb'` two projectors overlap across 71 degrees of longitude, and the
+50/50 plateau in the middle of that is about 31 degrees wide — the rest of the
+overlap is unequal, which is the whole of A-37's argument: 20 degrees into P1's
+own territory the projector next door is still carrying more than a third of the
+signal (`test/blend-region.test.ts` measures it). Under `'sector'` the overlap is
+the blend band and nothing else.
 docs/AMENDMENTS.md **A-37** has the evidence, the measurements, and the four
 things that have to happen before the default can move. `test/blend-region.test.ts`
 pins that opting out changes nothing — including that a rig which never mentions

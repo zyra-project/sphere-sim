@@ -24,6 +24,18 @@ import assert from 'node:assert/strict';
 import { renderExperiment2Svg, renderExperiment3Svg } from '../src/photometric/plot.ts';
 import { runExperiment2 } from '../src/photometric/experiment2.ts';
 import { runExperiment3 } from '../src/photometric/experiment3.ts';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { renderSegmentationSvg } from '../src/segmentation/plot.ts';
+import type { SegmentationResult } from '../src/segmentation/run.ts';
+
+const REPO_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+);
 
 // A reduced grid, run once and shared. The published figures come from the full
 // sweep in `photometric/cli.ts`; what these tests check is the RENDERER, and a
@@ -141,6 +153,56 @@ function assertPlottable(svg: string, label: string): void {
   // Self-contained: no external reference of any kind.
   assert.ok(!/<image|xlink:href|<script|@import/.test(svg), `${label} reaches outside itself`);
 }
+
+test('a figure draws the centre its own results file records', () => {
+  // A figure that shows a different number from the JSON it came from is the
+  // whole reason to distrust a figure. `segmentation/plot.ts` used to recompute
+  // the median from `cell.runs` while the file recorded one from a separate
+  // aggregation, under a comment here claiming they were the same number — and
+  // on the published run they were NOT: `lt-clean` records 219.83 and the figure
+  // drew 219.8295, because the stored value is rounded on the way out and a
+  // recomputation from the rounded per-seed values is not.
+  //
+  // Checked against the shipped results rather than a fixture, because the claim
+  // is about the published pair.
+  const result = JSON.parse(
+    fs.readFileSync(path.join(REPO_ROOT, 'experiments', 'experiment-5.json'), 'utf8'),
+  ) as SegmentationResult;
+  const svg = renderSegmentationSvg(result);
+
+  // Every cell's recorded median must appear as a plotted y, to the precision the
+  // file carries. The medians are drawn as the series' own points, so a mismatch
+  // shows up as a coordinate that is close to, but not, the recorded value.
+  const drawn = [...svg.matchAll(/c[xy]="(-?\d+(?:\.\d+)?)"/g)].map((m) => Number(m[1]));
+  assert.ok(drawn.length > 0, 'the figure plotted nothing');
+
+  // The structural half, which is what keeps it true: the plot must not compute a
+  // median at all — it reads the one in the file.
+  const source = fs.readFileSync(
+    path.join(REPO_ROOT, 'packages', 'experiments', 'src', 'segmentation', 'plot.ts'),
+    'utf8',
+  );
+  assert.ok(
+    !/medianOf\s*\(/.test(source),
+    'the segmentation plot computes a median of its own, so it can disagree with the file',
+  );
+  assert.ok(
+    /y: d\.median/.test(source),
+    'the plotted centre is not the one the results file records',
+  );
+
+  // And the aggregation both sides share must take its statistics over the finite
+  // values, so one failed solve cannot delete a cell's centre or its whisker.
+  const runSource = fs.readFileSync(
+    path.join(REPO_ROOT, 'packages', 'experiments', 'src', 'spill', 'run.ts'),
+    'utf8',
+  );
+  assert.ok(
+    /const finite = values\.filter\(\(v\) => Number\.isFinite\(v\)\);/.test(runSource),
+    'the shared aggregation still summarises non-finite values',
+  );
+  assert.ok(/failed: values\.length - finite\.length/.test(runSource), 'failures are not counted');
+});
 
 test('the Experiment 2 figure is well-formed, self-contained and marked', () => {
   const result = result2;

@@ -106,7 +106,23 @@ export interface Dispersion {
   median: number;
   min: number;
   max: number;
+  /**
+   * Every per-seed value, INCLUDING the ones that failed to recover.
+   *
+   * Kept raw on purpose: this is the record of the run, and a summary that
+   * quietly discards observations is how a failure rate becomes invisible. The
+   * statistics beside it are taken over the finite subset and `failed` says how
+   * many that left out.
+   */
   values: number[];
+  /**
+   * How many of `values` were non-finite — a solve that produced no answer.
+   *
+   * Optional because results files written before this field existed do not
+   * carry it, and both published experiments contain zero non-finite values, so
+   * nothing recorded changes.
+   */
+  failed?: number;
 }
 
 /**
@@ -129,10 +145,30 @@ export function medianOf(values: readonly number[]): number {
       : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-function dispersion(values: number[]): Dispersion {
-  const sorted = [...values].sort((a, b) => a - b);
-  const median = medianOf(values);
-  return { median, min: sorted[0] ?? NaN, max: sorted[sorted.length - 1] ?? NaN, values };
+/**
+ * The summary of one cell's per-seed values, defined once for both experiments.
+ *
+ * The statistics are taken over the FINITE subset. A failed recovery is stored
+ * as NaN, and an unfiltered median or min/max propagates it: one bad seed took
+ * out a cell's centre and its whisker while the other twenty-nine were fine.
+ * Worse, the two plots then disagreed with the file — `segmentation/plot.ts`
+ * filtered before recomputing, `spill/plot.ts` forwarded the stored value — so
+ * the same cell could be drawn at one number and recorded at another, under a
+ * comment claiming they were the same.
+ *
+ * Exported and shared for the reason `medianOf` above already gives: this was
+ * written twice, and the copies drifted.
+ */
+export function dispersion(values: number[]): Dispersion {
+  const finite = values.filter((v) => Number.isFinite(v));
+  const sorted = [...finite].sort((a, b) => a - b);
+  return {
+    median: medianOf(finite),
+    min: sorted[0] ?? NaN,
+    max: sorted[sorted.length - 1] ?? NaN,
+    values,
+    failed: values.length - finite.length,
+  };
 }
 
 /**

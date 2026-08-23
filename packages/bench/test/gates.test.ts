@@ -488,6 +488,28 @@ function scenarioWith(
   };
 }
 
+test('--as-of refuses a date that is not a date, rather than normalising it', () => {
+  // `new Date('2026-02-31T12:00:00Z')` does not fail — it returns 3 March. So a
+  // typo was accepted and the waivers were judged against a day nobody asked
+  // for, and this is the one argument to the gate whose silent shift can invert
+  // a decision: it decides whether a waiver has expired.
+  for (const bad of ['2026-02-31', '2026-04-31', '2026-06-31']) {
+    assert.throws(() => parseGateArgs([bad ? `--as-of` : '', bad]), /is not a real date/, bad);
+  }
+  // Shape, too — the CLI promises YYYY-MM-DD.
+  for (const bad of ['2026-2-3', '20260203', 'yesterday', '2026-02']) {
+    assert.throws(() => parseGateArgs(['--as-of', bad]), /must be YYYY-MM-DD|is not a date/, bad);
+  }
+  // And a real date still parses, at the fixed midday clock.
+  const ok = parseGateArgs(['--as-of', '2026-02-28']);
+  assert.equal(ok.now.toISOString(), '2026-02-28T12:00:00.000Z');
+  // A leap day in a leap year is real and must survive.
+  assert.equal(
+    parseGateArgs(['--as-of', '2028-02-29']).now.toISOString(),
+    '2028-02-29T12:00:00.000Z',
+  );
+});
+
 test('a censored metric is both a failure and a missing measurement', () => {
   // `MetricResult.censored` means the metric could not evaluate part of its own
   // domain, so its value is a LOWER BOUND. The grid metric raises it when a

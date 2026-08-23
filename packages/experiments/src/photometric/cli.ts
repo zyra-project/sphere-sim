@@ -92,6 +92,13 @@ export function main(which: string): void {
 }
 
 // Only when invoked directly, so `cli.ts` can import `main` without running it.
-if (process.argv[1] !== undefined && import.meta.url === `file://${path.resolve(process.argv[1])}`) {
+// `fileURLToPath`, not string concatenation: a checkout path containing a
+// space or a non-ASCII character percent-encodes in `import.meta.url`, so the
+// concatenated form never matched and running this file directly silently did
+// nothing at all.
+if (
+  process.argv[1] !== undefined &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+) {
   main(process.argv[2] ?? 'all');
 }

@@ -237,10 +237,10 @@
 <circle cx="713.18" cy="326.00" r="3.4" fill="#ffffff" stroke="#b3261e" stroke-width="2"/>
 <circle cx="764.35" cy="326.00" r="3.4" fill="#ffffff" stroke="#b3261e" stroke-width="2"/>
 <line x1="543.18" y1="195.10" x2="543.18" y2="187.60" stroke="#c2521a" stroke-width="1" opacity="0.45"/>
-<path d="M543.18,189.43 L662.00,256.37 L713.18,262.67 L764.35,269.34" fill="none" stroke="#c2521a" stroke-width="2"/>
+<path d="M543.18,189.42 L662.00,256.37 L713.18,262.66 L764.35,269.34" fill="none" stroke="#c2521a" stroke-width="2"/>
 <circle cx="543.18" cy="195.10" r="2" fill="#c2521a" opacity="0.32"/>
-<circle cx="543.18" cy="189.43" r="2" fill="#c2521a" opacity="0.32"/>
-<circle cx="543.18" cy="188.45" r="2" fill="#c2521a" opacity="0.32"/>
+<circle cx="543.18" cy="189.42" r="2" fill="#c2521a" opacity="0.32"/>
+<circle cx="543.18" cy="188.44" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="543.18" cy="187.60" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="543.18" cy="191.70" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="662.00" cy="307.73" r="2" fill="#c2521a" opacity="0.32"/>
@@ -251,33 +251,33 @@
 <circle cx="713.18" cy="306.53" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="713.18" cy="252.43" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="713.18" cy="326.00" r="3" fill="#c2521a" opacity="0.9" stroke="#b3261e" stroke-width="1"/>
-<circle cx="713.18" cy="262.67" r="2" fill="#c2521a" opacity="0.32"/>
+<circle cx="713.18" cy="262.66" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="713.18" cy="251.61" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="764.35" cy="304.92" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="764.35" cy="261.90" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="764.35" cy="326.00" r="3" fill="#c2521a" opacity="0.9" stroke="#b3261e" stroke-width="1"/>
 <circle cx="764.35" cy="269.34" r="2" fill="#c2521a" opacity="0.32"/>
 <circle cx="764.35" cy="268.49" r="2" fill="#c2521a" opacity="0.32"/>
-<circle cx="543.18" cy="189.43" r="3.4" fill="#ffffff" stroke="#c2521a" stroke-width="2"/>
+<circle cx="543.18" cy="189.42" r="3.4" fill="#ffffff" stroke="#c2521a" stroke-width="2"/>
 <circle cx="662.00" cy="256.37" r="3.4" fill="#ffffff" stroke="#c2521a" stroke-width="2"/>
-<circle cx="713.18" cy="262.67" r="3.4" fill="#ffffff" stroke="#c2521a" stroke-width="2"/>
+<circle cx="713.18" cy="262.66" r="3.4" fill="#ffffff" stroke="#c2521a" stroke-width="2"/>
 <circle cx="764.35" cy="269.34" r="3.4" fill="#ffffff" stroke="#c2521a" stroke-width="2"/>
-<line x1="543.18" y1="186.90" x2="543.18" y2="178.64" stroke="#2e7d4f" stroke-width="1" opacity="0.45"/>
-<path d="M543.18,182.71 L662.00,231.44 L713.18,262.67 L764.35,269.34" fill="none" stroke="#2e7d4f" stroke-width="2"/>
+<line x1="543.18" y1="186.89" x2="543.18" y2="178.63" stroke="#2e7d4f" stroke-width="1" opacity="0.45"/>
+<path d="M543.18,182.71 L662.00,231.45 L713.18,262.66 L764.35,269.34" fill="none" stroke="#2e7d4f" stroke-width="2"/>
 <circle cx="543.18" cy="186.38" r="2" fill="#2e7d4f" opacity="0.32"/>
-<circle cx="543.18" cy="186.90" r="2" fill="#2e7d4f" opacity="0.32"/>
-<circle cx="543.18" cy="178.64" r="2" fill="#2e7d4f" opacity="0.32"/>
+<circle cx="543.18" cy="186.89" r="2" fill="#2e7d4f" opacity="0.32"/>
+<circle cx="543.18" cy="178.63" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="543.18" cy="182.71" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="543.18" cy="180.15" r="2" fill="#2e7d4f" opacity="0.32"/>
-<circle cx="662.00" cy="280.35" r="2" fill="#2e7d4f" opacity="0.32"/>
+<circle cx="662.00" cy="280.36" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="662.00" cy="215.68" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="662.00" cy="326.00" r="3" fill="#2e7d4f" opacity="0.9" stroke="#b3261e" stroke-width="1"/>
 <circle cx="662.00" cy="229.54" r="2" fill="#2e7d4f" opacity="0.32"/>
-<circle cx="662.00" cy="231.44" r="2" fill="#2e7d4f" opacity="0.32"/>
+<circle cx="662.00" cy="231.45" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="713.18" cy="306.53" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="713.18" cy="252.43" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="713.18" cy="326.00" r="3" fill="#2e7d4f" opacity="0.9" stroke="#b3261e" stroke-width="1"/>
-<circle cx="713.18" cy="262.67" r="2" fill="#2e7d4f" opacity="0.32"/>
+<circle cx="713.18" cy="262.66" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="713.18" cy="251.61" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="764.35" cy="304.92" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="764.35" cy="261.90" r="2" fill="#2e7d4f" opacity="0.32"/>
@@ -285,15 +285,15 @@
 <circle cx="764.35" cy="269.34" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="764.35" cy="268.49" r="2" fill="#2e7d4f" opacity="0.32"/>
 <circle cx="543.18" cy="182.71" r="3.4" fill="#ffffff" stroke="#2e7d4f" stroke-width="2"/>
-<circle cx="662.00" cy="231.44" r="3.4" fill="#ffffff" stroke="#2e7d4f" stroke-width="2"/>
-<circle cx="713.18" cy="262.67" r="3.4" fill="#ffffff" stroke="#2e7d4f" stroke-width="2"/>
+<circle cx="662.00" cy="231.45" r="3.4" fill="#ffffff" stroke="#2e7d4f" stroke-width="2"/>
+<circle cx="713.18" cy="262.66" r="3.4" fill="#ffffff" stroke="#2e7d4f" stroke-width="2"/>
 <circle cx="764.35" cy="269.34" r="3.4" fill="#ffffff" stroke="#2e7d4f" stroke-width="2"/>
-<line x1="543.18" y1="190.00" x2="543.18" y2="171.55" stroke="#7a4fa3" stroke-width="1" opacity="0.45"/>
-<path d="M543.18,180.07 L662.00,326.00 L713.18,326.00 L764.35,326.00" fill="none" stroke="#7a4fa3" stroke-width="2"/>
+<line x1="543.18" y1="190.00" x2="543.18" y2="171.54" stroke="#7a4fa3" stroke-width="1" opacity="0.45"/>
+<path d="M543.18,180.06 L662.00,326.00 L713.18,326.00 L764.35,326.00" fill="none" stroke="#7a4fa3" stroke-width="2"/>
 <circle cx="543.18" cy="183.98" r="2" fill="#7a4fa3" opacity="0.32"/>
 <circle cx="543.18" cy="190.00" r="2" fill="#7a4fa3" opacity="0.32"/>
-<circle cx="543.18" cy="171.55" r="2" fill="#7a4fa3" opacity="0.32"/>
-<circle cx="543.18" cy="180.07" r="2" fill="#7a4fa3" opacity="0.32"/>
+<circle cx="543.18" cy="171.54" r="2" fill="#7a4fa3" opacity="0.32"/>
+<circle cx="543.18" cy="180.06" r="2" fill="#7a4fa3" opacity="0.32"/>
 <circle cx="543.18" cy="174.43" r="2" fill="#7a4fa3" opacity="0.32"/>
 <circle cx="662.00" cy="326.00" r="3" fill="#7a4fa3" opacity="0.9" stroke="#b3261e" stroke-width="1"/>
 <circle cx="662.00" cy="326.00" r="3" fill="#7a4fa3" opacity="0.9" stroke="#b3261e" stroke-width="1"/>
@@ -310,7 +310,7 @@
 <circle cx="764.35" cy="326.00" r="3" fill="#7a4fa3" opacity="0.9" stroke="#b3261e" stroke-width="1"/>
 <circle cx="764.35" cy="326.00" r="3" fill="#7a4fa3" opacity="0.9" stroke="#b3261e" stroke-width="1"/>
 <circle cx="764.35" cy="326.00" r="3" fill="#7a4fa3" opacity="0.9" stroke="#b3261e" stroke-width="1"/>
-<circle cx="543.18" cy="180.07" r="3.4" fill="#ffffff" stroke="#7a4fa3" stroke-width="2"/>
+<circle cx="543.18" cy="180.06" r="3.4" fill="#ffffff" stroke="#7a4fa3" stroke-width="2"/>
 <circle cx="662.00" cy="326.00" r="3.4" fill="#ffffff" stroke="#b3261e" stroke-width="2"/>
 <circle cx="713.18" cy="326.00" r="3.4" fill="#ffffff" stroke="#b3261e" stroke-width="2"/>
 <circle cx="764.35" cy="326.00" r="3.4" fill="#ffffff" stroke="#b3261e" stroke-width="2"/>
@@ -433,4 +433,3 @@
 <text x="14" y="748" class="cap">furniture; both of its constants are class ASSUME and nobody has measured a gallery. It is a</text>
 <text x="14" y="764" class="cap">floor on the effect, not a bound — see the cuts in the results file.</text>
 </svg>
-

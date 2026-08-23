@@ -13,7 +13,7 @@
     "test": "node --test --experimental-test-isolation=none \"packages/**/test/**/*.test.ts\"",
     "bench": "node packages/bench/src/cli.ts",
     "gate": "node packages/bench/src/gate.ts",
-    "experiments": "node packages/experiments/src/cli.ts",
+    "experiments": "node packages/experiments/src/cli.ts photometry",
     "experiment1": "node packages/experiments/src/experiment1/cli.ts",
     "experiment4": "node packages/experiments/src/spill/cli.ts",
     "experiment5": "node packages/experiments/src/segmentation/cli.ts",

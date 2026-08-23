@@ -108,7 +108,12 @@ export function alternatingRotations(count: number, epsilonDeg: number): number[
 
 /**
  * The physical rig whose every adjacent pair is misregistered by `epsilonDeg` of
- * longitude against `contentRig`.
+ * longitude against `contentRig` — for an EVEN projector count.
+ *
+ * The alternating pattern cannot close on an odd ring, and the module note above
+ * says what happens instead: at N = 3 two pairs get `epsilon` and the wraparound
+ * pair gets 0. Experiment 2 runs the nominal N = 4 rig. The qualifier is here as
+ * well as in the note because this line is what a reader sees at the call site.
  */
 export function misregisteredRig(contentRig: RigCalibration, epsilonDeg: number): RigCalibration {
   return rotateProjectors(contentRig, alternatingRotations(contentRig.projectors.length, epsilonDeg));

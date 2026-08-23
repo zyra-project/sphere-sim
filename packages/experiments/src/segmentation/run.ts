@@ -9,6 +9,8 @@
  */
 
 import type { Cell, PointRun } from '../spill/run.ts';
+// The one aggregation, not a second copy of it: see `dispersion` there.
+import { dispersion } from '../spill/run.ts';
 import { medianOf, paired, runPoint } from '../spill/run.ts';
 import type { Paired } from '../spill/run.ts';
 import {
@@ -20,15 +22,7 @@ import {
   WALL_RADIUS_M,
 } from './design.ts';
 
-function dispersion(values: number[]): { median: number; min: number; max: number; values: number[] } {
-  const sorted = [...values].sort((a, b) => a - b);
-  return {
-    median: medianOf(values),
-    min: sorted[0] ?? NaN,
-    max: sorted[sorted.length - 1] ?? NaN,
-    values,
-  };
-}
+
 
 /** Aggregate one arm's per-seed runs into a cell. */
 export function assemble(runs: PointRun[]): Cell {

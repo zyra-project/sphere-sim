@@ -1,4 +1,35 @@
 /**
+ * `--as-of`, parsed strictly.
+ *
+ * `new Date('2026-02-31T12:00:00Z')` does not fail — it NORMALISES, and returns
+ * 3 March. So a typo in a date was accepted and the waivers were judged against
+ * a day nobody asked for: `2026-02-31` became March 3 and `2026-04-31` became
+ * May 1. This flag decides whether a waiver has expired, which is the one
+ * decision in the gate that a silently shifted clock can invert.
+ *
+ * Shape first, then a round trip: a normalised date does not print back as what
+ * was typed, which catches every impossible day without a calendar table.
+ */
+function asOf(text: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (match === null) {
+    throw new Error(`gate: --as-of must be YYYY-MM-DD, got '${text}'`);
+  }
+  const parsed = new Date(`${text}T12:00:00Z`);
+  if (!Number.isFinite(parsed.getTime())) {
+    throw new Error(`gate: --as-of '${text}' is not a date`);
+  }
+  if (parsed.toISOString().slice(0, 10) !== text) {
+    throw new Error(
+      `gate: --as-of '${text}' is not a real date — it normalises to ` +
+        `${parsed.toISOString().slice(0, 10)}, and a waiver judged against a day nobody asked ` +
+        'for is worse than a refused argument.',
+    );
+  }
+  return parsed;
+}
+
+/**
  * The gate step — the thing that actually fails the build.
  *
  *     node packages/bench/src/gate.ts bench-results.json
@@ -71,7 +102,7 @@ export function parseGateArgs(argv: readonly string[], repoRoot = REPO_ROOT): Ga
       // A fixed clock, so a CI run and a local run judge the same waivers, and
       // so the tests do not go red on their own one morning.
       case '--as-of':
-        options.now = new Date(`${next()}T12:00:00Z`);
+        options.now = asOf(next());
         break;
       case '--help':
       case '-h':
@@ -85,7 +116,7 @@ export function parseGateArgs(argv: readonly string[], repoRoot = REPO_ROOT): Ga
         positional++;
     }
   }
-  if (!Number.isFinite(options.now.getTime())) throw new Error('gate: --as-of must be YYYY-MM-DD');
+
   return options;
 }
 

@@ -2,7 +2,7 @@
 
 **Input:** one documented root seed per experiment.
 **Output:** `progress/experiment-1.json` and four SVG figures beside it;
-`experiments/experiment-{2,3,4}.{json,svg}`.
+`experiments/experiment-{2,3,4,5}.{json,svg}`.
 
 ```
 node packages/experiments/src/cli.ts --list        # the plan and the budget, runs nothing

@@ -7,9 +7,17 @@
  * node packages/experiments/src/cli.ts 4        # Experiment 4, what a room costs a calibration
  * node packages/experiments/src/cli.ts 5        # Experiment 5, image-space vs geometric segmentation
  * node packages/experiments/src/cli.ts photometry   # both of the above
+ * node packages/experiments/src/cli.ts 1        # Experiment 1, the published run, ~2 h
  * node packages/experiments/src/cli.ts --list   # Experiment 1's plan and budget
- * node packages/experiments/src/cli.ts          # Experiment 1, the published run
+ * node packages/experiments/src/cli.ts          # the same as `photometry`
  * ```
+ *
+ * A bare invocation used to run EXPERIMENT 1 — the two-hour solver sweep — which
+ * is what `npm run experiments` maps to, while README.md promises that command
+ * runs "experiments 2 and 3, each run once". The cheap thing is now the default
+ * and the expensive one is asked for by name, which is already the rule this file
+ * states for Experiments 4 and 5 and applies with more force to the longest of
+ * the five.
  *
  * The three experiments are independent measurements with different shapes — one is
  * a two-hour solver sweep with resume, two are minute-scale photometric sweeps — so
@@ -46,9 +54,13 @@ if (first === '2' || first === '3') {
   // stays out of `all` and has to be asked for by name.
   const { main: segMain } = await import('./segmentation/cli.ts');
   segMain();
-} else if (first === 'photometry' || first === 'all') {
+} else if (first === 'photometry' || first === 'all' || first === '') {
   photometricMain('all');
 } else {
+  // Everything else is Experiment 1, including `--list` and its own flags, which
+  // is why this stays a catch-all rather than becoming a `1` branch with an
+  // unknown-argument error beside it.
+  //
   // Computed, not literal: Experiment 1's CLI is being written by a separate effort
   // and a static import of a file that is momentarily absent would break the two
   // experiments that are finished.
