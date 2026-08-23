@@ -171,6 +171,39 @@ seeds.
 
 ---
 
+## The portable form
+
+`packages/usage/` is wired to this repository's conventions — TypeScript run
+directly by Node, tests under `packages/*/test/`, the model fixed at the one this
+project used. `skills/usage-report/` is the same accounting rebuilt to travel:
+dependency-free `.mjs`, no build step, and no assumption about the project it is
+pointed at.
+
+```
+npm run pack:skill      # -> dist/usage-report.skill, installable anywhere
+```
+
+The portable version also handles cases this repository never hit, and which
+would silently mis-price a different project:
+
+- **Per-message model pricing.** A run that delegated to a Haiku subagent inside
+  an Opus session prices each correctly. `message.model` is recorded per message,
+  so there is nothing to configure.
+- **Fast mode and batch tier.** `usage.speed` and `usage.service_tier` are also
+  per message. Fast mode is the same model at premium pricing; batch is half.
+- **Introductory rates that expire.** A rate entry may carry an `until` date, and
+  rates are selected from the scoped ledger's first timestamp.
+- **Synthetic messages**, which carry a usage block and are not billable.
+- **Scope filters** — session, branch, date window, or a pull request resolved
+  through `gh` — because a project-wide total is not what someone asking about
+  one PR wants.
+- **Unknown models** are reported as UNPRICED and excluded rather than priced at
+  a neighbour's rate, so the total is a visible floor rather than a confident
+  wrong number.
+
+The archive is deterministic: repacking unchanged sources produces byte-identical
+output, so `sha256sum` answers "did the skill change?" without unpacking it.
+
 ## Layout
 
 ```
@@ -181,4 +214,9 @@ packages/usage/src/montecarlo.ts    seeded lognormal sampling
 packages/usage/src/impact.ts        the constants, the three methods, water, carbon
 packages/usage/src/report.ts        the single HTML page
 packages/usage/src/cli.ts           entry point
+tools/pack-skill.ts                 deterministic .skill archive builder
+
+skills/usage-report/SKILL.md        the portable skill, incl. the interview protocol
+skills/usage-report/scripts/        dependency-free .mjs port of the above
+skills/usage-report/references/     counting rules, rate cards, the impact model
 ```

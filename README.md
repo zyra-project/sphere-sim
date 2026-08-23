@@ -26,6 +26,7 @@ build on any import across that line.
 | [`docs/EXPERIMENT-1.md`](docs/EXPERIMENT-1.md) | **How many photographs a calibration needs, and whether a phone suffices.** Measured |
 | [`docs/VISIT.md`](docs/VISIT.md) | **The ground-truth visit field card.** What to measure, in cut order, with framing diagrams |
 | [`docs/USAGE-ACCOUNTING.md`](docs/USAGE-ACCOUNTING.md) | What building this cost, in dollars and in kilowatt-hours. The bill is measured; the environmental figure is **PROVISIONAL** |
+| [`skills/usage-report/SKILL.md`](skills/usage-report/SKILL.md) | The same accounting as an installable, project-agnostic Claude Code skill |
 
 ## The honesty structure
 
@@ -68,6 +69,8 @@ npm run smoke:app          # load the app in a real browser: does the shader com
 npm run build:site         # assemble site/ — the app, the harness and the progress page
 npm run usage              # what this project cost, in dollars and (PROVISIONALLY) in kWh,
                            # litres and kgCO2e. --html <path> writes the shareable page
+npm run pack:skill         # build dist/usage-report.skill — the portable form of the
+                           # above, installable in any Claude Code project
 node packages/bench/src/validation.ts   # regenerate validation/index.html (reads local files only;
                            # images are never fetched — the owner supplies them)
 ```
