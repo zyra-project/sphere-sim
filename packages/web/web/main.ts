@@ -1469,8 +1469,25 @@ solveWorker.onmessage = (event: MessageEvent<SolveMessage>): void => {
     return;
   }
   solveResult = msg;
-  state.compositorRig = msg.recoveredRig;
   solveStage = '';
+  // A solve that never settled is not a calibration, and it was installed
+  // anyway. `partialRig` above draws the sphere from intermediates while the
+  // solve runs, so refusing also has to put the pre-solve rig back — otherwise
+  // the last intermediate stays on screen, which is worse than either outcome.
+  //
+  // The optimiser stopping at its iteration cap means it was still moving when
+  // it ran out of steps. Measured on this page: one handheld camera stops at
+  // the 400-step cap with a 2.31 px residual and a rig 3.06 m from the lenses.
+  // Installing that repaints the sphere and every readout from it.
+  if (!msg.converged) {
+    state.compositorRig = beforeRig ?? null;
+    markDirty();
+    requestModel(true);
+    renderActions();
+    renderReadout();
+    return;
+  }
+  state.compositorRig = msg.recoveredRig;
   markDirty();
   requestModel(true);
   renderActions();
@@ -4387,10 +4404,46 @@ function solveSection(): HTMLElement | null {
         className: 'note',
         textContent:
           `${r.correspondences.toLocaleString()} points decoded from ${r.frames} frames ` +
-          `(${r.grayBits} Gray planes). Converged in ${r.iterations} steps` +
-          `${r.converged ? '' : ' — hit the cap'}, residual ${r.residualRmsPx.toFixed(3)} px.`,
+          `(${r.grayBits} Gray planes). ` +
+          (r.converged
+            ? `Converged in ${r.iterations} steps, residual ${r.residualRmsPx.toFixed(3)} px.`
+            : `Did NOT converge — stopped at the ${r.iterations}-step cap with a residual of ` +
+              `${r.residualRmsPx.toFixed(3)} px, still moving. The result was not applied; the ` +
+              'calibration in force is the one from before. More camera positions is the usual ' +
+              'remedy, and a tripod rather than a handheld capture is the other.'),
       }),
     );
+
+    // The failure convergence CANNOT catch, said out loud because nothing the
+    // solver produces says it.
+    //
+    // Measured on this page: one camera converges in 48 steps with a residual of
+    // 0.518 px — a better residual than the three-camera solve beside it — and
+    // recovers a rig 19.6 METRES from the lenses. Every diagnostic reads clean:
+    // `converged` true, `lastDeficiency` 0 (it is computed after LM damping, so
+    // it cannot see this), `cameraResidualScale` 1.03. The photographs really
+    // are explained; there is simply more than one rig that explains them, and
+    // from a single viewpoint a near projector zoomed in is indistinguishable
+    // from a far one zoomed out.
+    //
+    // Experiment 1 measured the shape of it over five seeds: median worst-lens
+    // error 17,490 mm at one camera against 41.8 mm at two, with the knee at
+    // three. That is the citation this warning rests on, rather than a
+    // threshold somebody chose.
+    if (r.silhouetteCameras - r.silhouetteRefusals < 2 || state.cameraCount < 2) {
+      box.append(
+        el('p', {
+          className: 'note warn',
+          textContent:
+            'One camera position cannot determine this rig, and the numbers above will not tell ' +
+            'you so — a single-viewpoint solve converges to a sub-pixel residual and can still be ' +
+            'metres out, because from one spot a near projector zoomed in looks identical to a ' +
+            'far one zoomed out. Experiment 1 measured a median worst-lens error of 17.5 m at one ' +
+            'camera against 41.8 mm at two, over five seeds. Move the camera and photograph it ' +
+            'again from somewhere else.',
+        }),
+      );
+    }
 
     // A camera the segmentation refused contributed NOTHING, and refusing is the
     // right thing for it to have done — it found no framed sphere and declined to
@@ -4707,7 +4760,10 @@ function renderReadout(): void {
     // the unobservable global rotation removed.
     // The solver's residual only while it still describes the rig in the room.
     // See `rigMovedSinceSolve`.
-    const fresh = rigMovedSinceSolve ? null : solveResult;
+    // ...and not from a solve that was refused: its residual describes a rig
+    // that was never installed, so the cells would report the accuracy of a
+    // calibration nobody is looking at.
+    const fresh = rigMovedSinceSolve || solveResult?.converged === false ? null : solveResult;
     g.append(
       cell(
         'Lens position',

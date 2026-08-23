@@ -153,6 +153,60 @@ test('picking an install preset keeps every view-group setting, not most of them
   );
 });
 
+test('a solve that never settled is not installed as the calibration', () => {
+  // The reply handler wrote `state.compositorRig = msg.recoveredRig` with no
+  // reference to `msg.converged`, so a bundle adjustment that stopped at its
+  // iteration cap was painted onto the sphere and became the rig every readout
+  // describes. Measured on this page: one handheld camera stops at the 400-step
+  // cap with a 2.31 px residual and a rig 3.06 m from the lenses.
+  //
+  // Refusing also has to put the PRE-SOLVE rig back, because `partialRig` draws
+  // the sphere from intermediates while the solve runs — leaving the last
+  // intermediate up would be worse than either outcome.
+  const handler = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('  solveResult = msg;'),
+    MAIN_SOURCE.indexOf('let solveSeq = 0;'),
+  );
+  assert.ok(handler.length > 0, 'the solve reply handler has moved');
+  assert.ok(
+    /if \(!msg\.converged\)/.test(handler),
+    'the recovered rig is installed without checking that the solve converged',
+  );
+  assert.ok(
+    /state\.compositorRig = beforeRig \?\? null/.test(handler),
+    'a refused solve leaves the last partial rig on screen',
+  );
+
+  // And the drift cells must not read a refused solve's residual: it describes
+  // a rig that was never installed.
+  assert.ok(
+    /solveResult\?\.converged === false \? null : solveResult/.test(MAIN_SOURCE),
+    'the drift cells still show the residual of a calibration nobody is looking at',
+  );
+});
+
+test('the page never states convergence it did not get', () => {
+  // Both sentences asserted it unconditionally. The worker's progress line read
+  // "Bundle adjustment converged in N iterations" whatever happened, and the
+  // report block read "Converged in N steps — hit the cap", which asserts the
+  // claim and then withdraws it in a subordinate clause.
+  const PIPELINE = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'pipeline.ts'),
+    'utf8',
+  );
+  const progress = PIPELINE.slice(PIPELINE.indexOf("    'score',"), PIPELINE.indexOf("  const recovery = scoreRecovery("));
+  assert.ok(progress.length > 0, 'the score progress report has moved');
+  assert.ok(
+    /solver\.diagnostics\.converged\s*$|solver\.diagnostics\.converged\s*\n?\s*\?/m.test(progress),
+    'the worker reports convergence without testing it',
+  );
+  assert.ok(!/Converged in \$\{r\.iterations\} steps`/.test(MAIN_SOURCE));
+  assert.ok(
+    MAIN_SOURCE.includes('Did NOT converge'),
+    'the report block has no branch for a solve that did not converge',
+  );
+});
+
 test('a slider drag belongs to one pointer', () => {
   // The handler put `pointermove`/`pointerup` on `window` — correctly, because
   // the track node is replaced whenever the panel re-renders — but with no

@@ -101,6 +101,39 @@ test('the nominal handed to the solver is placed by SLOT, not by position', () =
   }
 });
 
+test('convergence is reported, and it is not a warrant for the answer', { timeout: 900_000 }, () => {
+  // Two claims, and the second is the one that matters.
+  //
+  // (1) `converged` is real: a capture the optimiser cannot settle reports
+  //     false, and the page refuses to install that rig.
+  // (2) `converged` is NOT sufficient. A single camera converges to a residual
+  //     BETTER than a three-camera solve and recovers a rig metres from the
+  //     lenses, because from one viewpoint a near projector zoomed in is
+  //     indistinguishable from a far one zoomed out. Nothing the solver
+  //     produces catches it — `lastDeficiency` is computed after LM damping and
+  //     reads 0 here, as it does on every case in the suite.
+  //
+  // The test exists so that a future change which starts treating `converged`
+  // as a certificate has to argue with a measurement.
+  const three = runSolve(request({ cameraCount: 3 }));
+  assert.ok(three.converged, 'the reference solve did not converge');
+  assert.ok(three.posePositionMm < 500, `reference recovered ${three.posePositionMm.toFixed(0)} mm`);
+
+  const one = runSolve(request({ cameraCount: 1 }));
+  assert.ok(one.converged, 'the single-camera solve is expected to CONVERGE — that is the point');
+  assert.ok(
+    one.residualRmsPx < three.residualRmsPx * 1.5,
+    `single-camera residual ${one.residualRmsPx.toFixed(3)} px is not comparable to the ` +
+      `reference ${three.residualRmsPx.toFixed(3)} px, so the fixture no longer shows the trap`,
+  );
+  assert.ok(
+    one.posePositionMm > 20 * three.posePositionMm,
+    `a single camera recovered ${one.posePositionMm.toFixed(0)} mm against the reference ` +
+      `${three.posePositionMm.toFixed(0)} mm — the degeneracy this warns about has gone, and the ` +
+      'warning should go with it',
+  );
+});
+
 test('a solve with every projector switched off says so in words', () => {
   // It used to be `TypeError: Cannot read properties of undefined (reading
   // 'intrinsics')` from `planPatternFor`, surfaced raw in the page's error

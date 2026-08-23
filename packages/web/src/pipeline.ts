@@ -497,8 +497,15 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
   report(
     'score',
     0.95,
-    `Bundle adjustment converged in ${solver.diagnostics.iterations} iterations; ` +
-      `residual ${solver.diagnostics.rmsResidualPx.toFixed(3)} px.`,
+    // Not "converged in N iterations" unconditionally, which is what this said:
+    // the sentence asserted the one thing the operator most needs to be told
+    // when it is false.
+    solver.diagnostics.converged
+      ? `Bundle adjustment converged in ${solver.diagnostics.iterations} iterations; ` +
+        `residual ${solver.diagnostics.rmsResidualPx.toFixed(3)} px.`
+      : `Bundle adjustment did NOT converge — it stopped at its ` +
+        `${solver.diagnostics.iterations}-iteration cap with a residual of ` +
+        `${solver.diagnostics.rmsResidualPx.toFixed(3)} px.`,
   );
 
   const recovery = scoreRecovery({
