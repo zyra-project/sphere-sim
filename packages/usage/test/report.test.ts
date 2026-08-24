@@ -131,6 +131,23 @@ test('every median is direct-labelled, since a static page has no hover layer', 
   assert.ok(values.length >= 4, `expected 4 direct labels, found ${values.length}`);
 });
 
+test('a timestamp carrying markup cannot inject into the page', () => {
+  // firstAt/lastAt come straight from transcript JSON, and --root can point at a
+  // tree this machine did not write. Slicing to ten characters is not a defence:
+  // both values land in the same text run, so twenty attacker-controlled
+  // characters share one tag context.
+  const evil = '<img src=x onerror=alert(1)>';
+  const html = build(ledger({ firstAt: evil, lastAt: evil }));
+  assert.ok(!html.includes('<img src=x'), 'raw markup reached the page');
+  assert.ok(html.includes('&lt;img'), 'the value should still be shown, escaped');
+});
+
+test('a ledger with no timestamps renders a dash, not the word undefined', () => {
+  const html = build(ledger({ firstAt: null, lastAt: null }));
+  assert.ok(!html.includes('undefined'));
+  assert.match(html, /—\s*to\s*—/);
+});
+
 test('a model id with markup in it cannot inject into the page', () => {
   const l = ledger();
   const cost = priceLedger(l, 'claude-opus-5');

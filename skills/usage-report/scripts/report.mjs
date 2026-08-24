@@ -22,6 +22,13 @@ const DOT = '#2a78d6';
 const int = (n) => (Number.isFinite(n) ? Math.round(n).toLocaleString('en-US') : '—');
 const usd = (n) => '$' + (Number.isFinite(n) ? n.toFixed(2) : '0.00');
 const pct = (n) => (100 * n).toFixed(0) + '%';
+/**
+ * A YYYY-MM-DD from a transcript timestamp, escaped, with a stable fallback.
+ * `--root` can point at a transcript tree this machine did not write, so these
+ * are untrusted input reaching HTML; slicing to ten characters is not enough,
+ * since two of them land in the same text run.
+ */
+const day = (stamp) => (typeof stamp === 'string' && stamp.length > 0 ? esc(stamp.slice(0, 10)) : '—');
 const esc = (s) =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -85,6 +92,24 @@ function methodChart(impact) {
 
 const row = (label, value) => `<tr><td class="item">${label}</td><td class="n mono">${value}</td></tr>`;
 
+
+/**
+ * The assumptions that produced these numbers, on the face of the page.
+ *
+ * A report that travels without them is unreadable six months later: 25 kg and
+ * 79 kg are the same project under different siting, and nothing else on the
+ * page distinguishes them.
+ */
+function assumptions(impact) {
+  const parts = [];
+  if (impact.cooling) parts.push(`cooling <b>${esc(impact.cooling)}</b>`);
+  if (impact.region) parts.push(`region <b>${esc(impact.region)}</b> (published)`);
+  else if (impact.geo) parts.push(`geography <b>${esc(impact.geo)}</b> (assumed)`);
+  if (impact.presets && impact.presets.length) parts.push(`grid <b>${impact.presets.map(esc).join(' + ')}</b>`);
+  if (parts.length === 0) parts.push('no siting or cooling assumed — the widest band');
+  return `<span style="display:block;margin-top:7px;font-weight:400">Assumptions: ${parts.join(' &#183; ')}.</span>`;
+}
+
 export function renderReport({ ledger, cost, impact, meta = {} }) {
   const title = meta.title ?? 'Claude Code usage';
   const scope = meta.scope ?? 'all sessions';
@@ -110,7 +135,8 @@ export function renderReport({ ledger, cost, impact, meta = {} }) {
 <div class="badge">PROVISIONAL. Modelled, not measured.
  <span>Only the token counts above are measured. Model size, serving hardware, batch size, fleet
  utilisation and datacentre siting are non-public and drive this more than the tokens do. The band
- is the result; the midpoint is just its middle.${impact.presets.length ? ` Grid assumption: <b>${impact.presets.map(esc).join(' + ')}</b>.` : ''}</span></div>
+ is the result; the midpoint is just its middle.</span>
+ ${assumptions(impact)}</div>
 
 <div class="heroes">
  <div class="hero"><div class="lbl">Electricity</div><div class="big">${int(impact.pooled.kwh.p50)}<em>kWh</em></div>
@@ -204,7 +230,7 @@ export function renderReport({ ledger, cost, impact, meta = {} }) {
 <p class="eyebrow">Usage accounting</p>
 <h1>${esc(title)}</h1>
 <p class="sub">${esc(scope)} &#183; ${int(ledger.uniqueMessages)} assistant messages &#183;
- ${ledger.firstAt ? ledger.firstAt.slice(0, 10) : '—'} to ${ledger.lastAt ? ledger.lastAt.slice(0, 10) : '—'} &#183;
+ ${day(ledger.firstAt)} to ${day(ledger.lastAt)} &#183;
  ${ledger.activeDays} active days</p>
 
 <h2>Cost &mdash; measured</h2>

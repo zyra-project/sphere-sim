@@ -36,6 +36,19 @@ const int = (n: number): string => Math.round(n).toLocaleString('en-US');
 const usd = (n: number): string => '$' + n.toFixed(2);
 const pct = (n: number): string => (100 * n).toFixed(0) + '%';
 
+/**
+ * A YYYY-MM-DD from a transcript timestamp, escaped, with a stable fallback.
+ *
+ * These come out of transcript JSON, and `--root` can point at a tree this
+ * machine did not write, so they are untrusted input reaching HTML. Slicing to
+ * ten characters does not make them safe: two of them land in the same text run,
+ * giving twenty attacker-controlled characters in one tag context. The `?.slice`
+ * spelling also rendered the literal string "undefined" on an empty ledger.
+ */
+function day(stamp: string | null): string {
+  return typeof stamp === 'string' && stamp.length > 0 ? escapeHtml(stamp.slice(0, 10)) : '—';
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -208,7 +221,7 @@ export function renderReport(input: ReportInput): string {
 <p class="eyebrow">Usage accounting</p>
 <h1>sphere-sim</h1>
 <p class="sub">${int(ledger.uniqueMessages)} assistant messages &#183;
- ${ledger.firstAt?.slice(0, 10)} to ${ledger.lastAt?.slice(0, 10)} &#183;
+ ${day(ledger.firstAt)} to ${day(ledger.lastAt)} &#183;
  ${ledger.activeDays} active days &#183; ${escapeHtml(cost.modelId)}</p>
 
 <h2>Cost &mdash; measured</h2>
