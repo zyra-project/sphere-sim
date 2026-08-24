@@ -69,15 +69,69 @@ reference query's own shape is `ASSUME`, since neither vendor states it.
 `dollarsPerAcceleratorHour` (1.5–4.0, `IND` — already includes provisioning
 slack, so method C does not divide by utilisation).
 
-**Water** (`IND`) — two unrelated quantities summed: `onSiteWue` 0.05–1.5 L/kWh
-evaporated for cooling, and `gridWaterIntensity` 0.8–3.2 L/kWh *consumed*
+**Water** (`IND`) — two unrelated quantities summed: `onSiteWue` (site water per
+kWh of **IT** energy — the Green Grid definition, so the model divides by PUE to
+reach facility energy) and `gridWaterIntensity` 0.8–3.2 L/kWh *consumed*
 generating the power. Withdrawal is an order larger but mostly returned;
-consumption is the honest figure.
+consumption is the honest figure. See "Cooling regimes" below — on-site water is
+not a continuum.
 
 **Carbon** (`IND`) — `gridCarbonLocation` 200–550 gCO2e/kWh (the grid the
 facility physically draws from) and `gridCarbonMarket` 20–200 (after power
 purchase agreements, anchored on the ~125 implied by Google's per-prompt
 disclosures).
+
+## Cooling regimes: open vs closed loop
+
+On-site water is **not a continuum**, and modelling it as one smooth range hides
+the only decision that moves it. Real facilities sit in one of three regimes
+whose water figures are two to three orders of magnitude apart — and the
+low-water ones are not uniformly better, because water and energy trade against
+each other.
+
+| Regime | WUE (L/kWh IT) | PUE | Character |
+| --- | --- | --- | --- |
+| Evaporative / open towers | 1.5 – 3.0 | 1.10 – 1.30 | Best PUE, highest water. Heat leaves as vapour, so the water is *consumed*, not returned |
+| Dry air cooling (closed) | 0.002 – 0.05 | 1.40 – 1.80 | Near-zero site water, bought with 20–50% more electricity |
+| Closed-loop liquid (direct-to-chip) | 0.01 – 0.10 | 1.05 – 1.20 | Near-zero site water **and** the best PUE. Filled once at construction |
+
+**"Closed-loop" and "air-cooled" are not synonyms**, and conflating them is the
+mistake an earlier version of this model made — it treated closed-loop as a free
+water saving with no energy cost. That is true of direct-to-chip liquid and false
+of dry air cooling.
+
+### The saving is smaller than the WUE figures imply
+
+Switching off evaporation removes site water but raises electricity, and that
+electricity brings its own water at the power station. On this project's shape:
+
+| | Energy | Total water | Carbon (location) |
+| --- | --- | --- | --- |
+| Evaporative | 130 kWh | 447 L | 42.7 kg |
+| Dry air-cooled | 171 kWh (+32%) | 270 L (−40%) | 56.2 kg (+32%) |
+| Closed-loop liquid | 122 kWh (−6%) | 197 L (−56%) | 40.2 kg (−6%) |
+
+Site WUE differs by ~100× between the first two rows; **total** water differs by
+1.7×. Going dry also costs a third more carbon.
+
+### Whether it helps at all depends on the grid
+
+The extra electricity's water is the whole story, so the answer changes with
+what generates it:
+
+| Grid supplying the extra power | Evaporative | Air-cooled | Saving |
+| --- | --- | --- | --- |
+| Low-water (wind, solar) | 263 L | 39 L | **6.75×** |
+| Default | 448 L | 270 L | 1.66× |
+| Thermal (coal, nuclear) | 637 L | 534 L | **1.19×** |
+
+On a thermal grid, abandoning evaporative cooling saves almost no water in total
+and costs a third more carbon. On a renewable grid it is a large, real win.
+Closed-loop *liquid* is the only option that improves every column regardless.
+
+Set the regime with `--cooling evaporative|air-cooled|liquid-closed`. Leaving it
+unset uses a deliberately wide band that is a **mixture of the three**, not a
+central estimate of any of them.
 
 ## Why carbon is reported twice
 

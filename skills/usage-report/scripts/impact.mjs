@@ -91,8 +91,10 @@ export const CONSTANTS = {
     note: 'Active parameters per token. Not published for any frontier model. The single largest unknown.' },
   achievedFlops: { name: 'achievedFlops', low: 2.5e14, high: 7.0e14, unit: 'FLOP/s', provenance: 'ASSUME',
     note: 'Achieved (not peak) throughput per accelerator during prefill.' },
-  acceleratorWatts: { name: 'acceleratorWatts', low: 1.0e3, high: 2.2e3, unit: 'W', provenance: 'IND',
-    note: 'Per accelerator at load, including its share of host, network, storage and PUE.' },
+  acceleratorItWatts: { name: 'acceleratorItWatts', low: 0.9e3, high: 1.5e3, unit: 'W', provenance: 'IND',
+    note: 'IT power per accelerator at load: the device plus its share of host, network and storage. EXCLUDES cooling and facility overhead — that is pue, below, because the cooling choice moves it.' },
+  pue: { name: 'pue', low: 1.10, high: 1.70, unit: 'ratio', provenance: 'IND',
+    note: 'Power usage effectiveness. Default spans the cooling regimes: evaporative reaches 1.1-1.3, dry air cooling costs 1.4-1.8. Set by --cooling when the regime is known.' },
   fleetUtilisation: { name: 'fleetUtilisation', low: 0.3, high: 0.8, unit: 'fraction', provenance: 'ASSUME',
     note: 'Fraction of fleet-seconds doing useful work. Capacity is provisioned for peak.' },
   kvBytesPerToken: { name: 'kvBytesPerToken', low: 8e3, high: 2e5, unit: 'bytes/token', provenance: 'ASSUME',
@@ -117,8 +119,8 @@ export const CONSTANTS = {
     note: 'Share of cost of goods sold that is accelerator time rather than storage, network, operations.' },
   dollarsPerAcceleratorHour: { name: 'dollarsPerAcceleratorHour', low: 1.5, high: 4.0, unit: 'USD/h', provenance: 'IND',
     note: 'Rental-equivalent accelerator-hour. Already includes provisioning slack, so method C does not divide by utilisation.' },
-  onSiteWue: { name: 'onSiteWue', low: 0.05, high: 1.5, unit: 'L/kWh', provenance: 'IND',
-    note: 'Water evaporated on site for cooling. Closed-loop near zero to conventional evaporative towers.' },
+  onSiteWue: { name: 'onSiteWue', low: 0.02, high: 3.0, unit: 'L/kWh(IT)', provenance: 'IND',
+    note: 'Site water per kWh of IT energy (the Green Grid definition, hence per IT rather than per facility kWh). NOT a continuum: real facilities cluster into regimes 2-3 orders apart, so the wide default is a mixture, not a central estimate. Set by --cooling.' },
   gridWaterIntensity: { name: 'gridWaterIntensity', low: 0.8, high: 3.2, unit: 'L/kWh', provenance: 'IND',
     note: 'Water CONSUMED generating the electricity. Withdrawal is an order larger but mostly returned.' },
   gridCarbonLocation: { name: 'gridCarbonLocation', low: 200, high: 550, unit: 'gCO2e/kWh', provenance: 'IND',
@@ -171,6 +173,43 @@ export function regionOverrides(id) {
   return {
     gridCarbonLocation: { low: r.grid * 0.85, high: r.grid * 1.15, provenance: 'PUB', source: id },
     gridCarbonMarket: { low: market * 0.7, high: market * 1.3, provenance: 'PUB', source: id },
+  };
+}
+
+/**
+ * Cooling regimes.
+ *
+ * Water and energy trade against each other here, and treating on-site water as
+ * one smooth range hides that. Real facilities sit in one of three regimes whose
+ * water figures are two to three orders of magnitude apart, and the low-water
+ * ones are not uniformly better — dry air cooling buys near-zero site water by
+ * spending 20-50% more electricity, which shows up again as power-station water
+ * and as carbon.
+ *
+ * The third regime is the one that breaks the tradeoff: closed-loop liquid
+ * (direct-to-chip) reaches near-zero site water at a BETTER PUE than evaporative,
+ * because it moves heat more efficiently than air does. "Closed-loop" and
+ * "air-cooled" are therefore not synonyms, and conflating them is what made an
+ * earlier version of this model treat closed-loop as a free win.
+ *
+ * WUE is per kWh of IT energy; PUE converts to facility energy.
+ * Figures: industry-reported ranges, see references/impact-model.md.
+ */
+export const COOLING_REGIMES = {
+  evaporative: { label: 'evaporative / open cooling towers', wue: [1.5, 3.0], pue: [1.10, 1.30],
+    note: 'Best PUE, highest water. Heat leaves as vapour, so the water is consumed, not returned.' },
+  'air-cooled': { label: 'dry air cooling (closed, no evaporation)', wue: [0.002, 0.05], pue: [1.40, 1.80],
+    note: 'Near-zero site water, paid for with 20-50% more electricity than evaporative.' },
+  'liquid-closed': { label: 'closed-loop liquid, direct-to-chip', wue: [0.01, 0.10], pue: [1.05, 1.20],
+    note: 'Near-zero site water AND the best PUE. Filled once at construction. No tradeoff.' },
+};
+
+export function coolingOverrides(id) {
+  const c = COOLING_REGIMES[id];
+  if (c === undefined) throw new Error(`unknown cooling regime "${id}". Known: ${Object.keys(COOLING_REGIMES).join(', ')}`);
+  return {
+    onSiteWue: { low: c.wue[0], high: c.wue[1], provenance: 'IND', source: `cooling:${id}` },
+    pue: { low: c.pue[0], high: c.pue[1], provenance: 'IND', source: `cooling:${id}` },
   };
 }
 
@@ -248,13 +287,16 @@ export const GRID_PRESETS = {
 };
 
 /** Apply named preset(s) and any explicit per-constant overrides. */
-export function resolveConstants(presets = [], overrides = {}, region = null, geo = null) {
+export function resolveConstants(presets = [], overrides = {}, region = null, geo = null, cooling = null) {
   const out = {};
   for (const [k, v] of Object.entries(CONSTANTS)) out[k] = { ...v };
   for (const name of presets) {
     const preset = GRID_PRESETS[name];
     if (preset === undefined) throw new Error(`unknown grid preset "${name}"`);
     for (const [k, v] of Object.entries(preset.overrides)) out[k] = { ...out[k], ...v, source: name };
+  }
+  if (cooling) {
+    for (const [k, v] of Object.entries(coolingOverrides(cooling))) out[k] = { ...out[k], ...v };
   }
   if (geo) {
     for (const [k, v] of Object.entries(geoOverrides(geo))) out[k] = { ...out[k], ...v };
@@ -273,7 +315,7 @@ export function resolveConstants(presets = [], overrides = {}, region = null, ge
 const J_PER_KWH = 3.6e6;
 
 export function bottomUpTerms(w, d) {
-  const perJ = d.acceleratorWatts / J_PER_KWH;
+  const perJ = (d.acceleratorItWatts * d.pue) / J_PER_KWH;
   return {
     prefill: ((2 * d.activeParams * w.prefillTokens) / d.achievedFlops) * perJ,
     decode: ((d.activeParams * d.bytesPerParam) / (d.decodeBatch * d.hbmBandwidth)) * perJ * w.outputTokens,
@@ -295,7 +337,7 @@ const sumTerms = (t) => t.prefill + t.decode + t.attention + t.staging;
 export function shortQueryWh(d) {
   const ctx = d.referenceQueryContext;
   const out = d.referenceQueryOutput;
-  const perJ = d.acceleratorWatts / J_PER_KWH;
+  const perJ = (d.acceleratorItWatts * d.pue) / J_PER_KWH;
   const kwh =
     (((2 * d.activeParams * ctx) / d.achievedFlops) * perJ +
       ((d.activeParams * d.bytesPerParam) / (d.decodeBatch * d.hbmBandwidth)) * perJ * out +
@@ -307,7 +349,7 @@ export function shortQueryWh(d) {
 export function runImpact(work, options = {}) {
   const draws = options.draws ?? 200_000;
   const seed = options.seed ?? 20260823;
-  const constants = resolveConstants(options.presets ?? [], options.overrides ?? {}, options.region ?? null, options.geo ?? null);
+  const constants = resolveConstants(options.presets ?? [], options.overrides ?? {}, options.region ?? null, options.geo ?? null, options.cooling ?? null);
   const rng = makeRng(seed);
   const keys = Object.keys(constants);
 
@@ -327,7 +369,7 @@ export function runImpact(work, options = {}) {
     const a = predicted > 0 ? b * (d.publishedWhPerQuery / predicted) : 0;
     const c =
       ((work.dollars * (1 - d.grossMargin) * d.computeShareOfCogs) / d.dollarsPerAcceleratorHour) *
-      (d.acceleratorWatts / 1000);
+      ((d.acceleratorItWatts * d.pue) / 1000);
 
     eA.push(a); eB.push(b); eC.push(c);
     shortQ.push(predicted);
@@ -339,7 +381,10 @@ export function runImpact(work, options = {}) {
     // Water and carbon share the draw with the energy they scale, and each
     // method contributes one sample, so the pooled band inherits the
     // between-method spread rather than smoothing it away.
-    const waterPerKwh = d.onSiteWue + d.gridWaterIntensity;
+    // onSiteWue is per kWh of IT energy and `e` is facility energy, so the site
+    // term is divided by PUE. Skipping that would charge a high-PUE facility
+    // extra site water for the very overhead that replaced its evaporation.
+    const waterPerKwh = d.onSiteWue / d.pue + d.gridWaterIntensity;
     for (const e of [a, b, c]) {
       litres.push(e * waterPerKwh);
       carbonLoc.push((e * d.gridCarbonLocation) / 1000);
@@ -353,6 +398,7 @@ export function runImpact(work, options = {}) {
     presets: options.presets ?? [],
     region: options.region ?? null,
     geo: options.geo ?? null,
+    cooling: options.cooling ?? null,
     methods: [
       { key: 'A', name: 'Vendor-anchored', role: 'floor — published figures cover smaller models', kwh: bandOf(eA) },
       { key: 'B', name: 'Bottom-up hardware', role: 'most specific to this workload', kwh: bandOf(eB) },

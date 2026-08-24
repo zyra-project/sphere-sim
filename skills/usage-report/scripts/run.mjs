@@ -24,7 +24,7 @@ import { execFileSync } from 'node:child_process';
 
 import { readLedger, defaultRoot, listProjects } from './ledger.mjs';
 import { priceLedger } from './price.mjs';
-import { runImpact, GRID_PRESETS, REGIONS, GEO_FAMILIES } from './impact.mjs';
+import { runImpact, GRID_PRESETS, REGIONS, GEO_FAMILIES, COOLING_REGIMES } from './impact.mjs';
 import { renderReport } from './report.mjs';
 
 const argv = process.argv.slice(2);
@@ -146,6 +146,7 @@ function doList() {
   console.log(`    presets: ${Object.keys(GRID_PRESETS).join(', ')}`);
   console.log(`    regions: ${Object.keys(REGIONS).join(', ')}`);
   console.log(`    geographies: ${Object.keys(GEO_FAMILIES).join(', ')} (explicit assumptions, labelled as such)`);
+  console.log(`    cooling    : ${Object.keys(COOLING_REGIMES).join(', ')} — water and energy trade off, see the reference`);
   console.log('    a sandbox\'s own region is NOT a proxy for where inference ran\n');
   return 0;
 }
@@ -205,7 +206,7 @@ function main() {
           contextOutputProduct: ledger.contextOutputProduct,
           dollars: cost.total,
         },
-        { draws: intFlag('--draws', 200_000), seed: intFlag('--seed', 20260823), presets, region: flag('--region') ?? null, geo: flag('--geo') ?? null },
+        { draws: intFlag('--draws', 200_000), seed: intFlag('--seed', 20260823), presets, region: flag('--region') ?? null, geo: flag('--geo') ?? null, cooling: flag('--cooling') ?? null },
       )
     : null;
 
@@ -248,6 +249,11 @@ function main() {
       const r = REGIONS[impact.region];
       console.log(`    region: ${impact.region} (${r.label}) — ${r.grid} gCO2/kWh, ${(100 * r.cfe).toFixed(0)}% carbon-free`);
       console.log('    NOTE: this must be where INFERENCE ran, not where a sandbox or shell ran.');
+    }
+    if (impact.cooling) {
+      const c = COOLING_REGIMES[impact.cooling];
+      console.log(`    cooling: ${c.label} — WUE ${c.wue[0]}–${c.wue[1]} L/kWh(IT), PUE ${c.pue[0]}–${c.pue[1]}`);
+      console.log(`      ${c.note}`);
     }
     if (impact.geo) {
       const g = GEO_FAMILIES[impact.geo];

@@ -88,13 +88,21 @@ export const CONSTANTS = {
     provenance: 'ASSUME',
     note: 'Achieved (not peak) throughput per accelerator during prefill.',
   },
-  acceleratorWatts: {
-    name: 'acceleratorWatts',
-    low: 1.0e3,
-    high: 2.2e3,
+  acceleratorItWatts: {
+    name: 'acceleratorItWatts',
+    low: 0.9e3,
+    high: 1.5e3,
     unit: 'W',
     provenance: 'IND',
-    note: 'Per accelerator AT LOAD, including its share of host, network, storage and PUE. Idle is fleetUtilisation, separately.',
+    note: 'IT power per accelerator at load: the device plus its share of host, network and storage. EXCLUDES cooling and facility overhead — that is pue, because the cooling choice moves it.',
+  },
+  pue: {
+    name: 'pue',
+    low: 1.10,
+    high: 1.70,
+    unit: 'ratio',
+    provenance: 'IND',
+    note: 'Power usage effectiveness. Spans the cooling regimes: evaporative towers reach 1.1-1.3, dry air cooling costs 1.4-1.8, closed-loop liquid 1.05-1.2.',
   },
   fleetUtilisation: {
     name: 'fleetUtilisation',
@@ -197,11 +205,11 @@ export const CONSTANTS = {
 
   onSiteWue: {
     name: 'onSiteWue',
-    low: 0.05,
-    high: 1.5,
-    unit: 'L/kWh',
+    low: 0.02,
+    high: 3.0,
+    unit: 'L/kWh(IT)',
     provenance: 'IND',
-    note: 'Water evaporated on site for cooling. Spans closed-loop designs near zero to conventional evaporative towers.',
+    note: 'Site water per kWh of IT energy (the Green Grid definition, hence per IT rather than per facility kWh). NOT a continuum: real facilities cluster into regimes two to three orders apart — evaporative towers 1.5-3.0, dry air cooling ~0.01, closed-loop liquid ~0.05 — so this wide band is a mixture, not a central estimate.',
   },
   gridWaterIntensity: {
     name: 'gridWaterIntensity',
@@ -263,7 +271,7 @@ export interface Terms {
 }
 
 export function bottomUpTerms(w: Work, d: Draw): Terms {
-  const perJ = d.acceleratorWatts / JOULES_PER_KWH;
+  const perJ = (d.acceleratorItWatts * d.pue) / JOULES_PER_KWH;
   return {
     prefill: ((2 * d.activeParams * w.prefillTokens) / d.achievedFlops) * perJ,
     decode:
@@ -291,7 +299,7 @@ export function bottomUpKwh(w: Work, d: Draw): number {
 export function shortQueryWh(d: Draw): number {
   const ctx = d.referenceQueryContext;
   const out = d.referenceQueryOutput;
-  const perJ = d.acceleratorWatts / JOULES_PER_KWH;
+  const perJ = (d.acceleratorItWatts * d.pue) / JOULES_PER_KWH;
   const kwh =
     (((2 * d.activeParams * ctx) / d.achievedFlops) * perJ +
       ((d.activeParams * d.bytesPerParam) / (d.decodeBatch * d.hbmBandwidth)) * perJ * out +
@@ -311,7 +319,7 @@ export function vendorAnchoredKwh(w: Work, d: Draw): number {
 export function costAnchoredKwh(w: Work, d: Draw): number {
   const acceleratorHours =
     (w.dollars * (1 - d.grossMargin) * d.computeShareOfCogs) / d.dollarsPerAcceleratorHour;
-  return acceleratorHours * (d.acceleratorWatts / 1000);
+  return acceleratorHours * ((d.acceleratorItWatts * d.pue) / 1000);
 }
 
 /** Energy with caching switched off: every cached token re-prefilled every turn. */
@@ -386,7 +394,10 @@ export function runImpact(w: Work, draws = 200_000, seed = 20260823): ImpactRepo
     // Water and carbon are conditioned on the SAME draw as the energy they scale,
     // and each method contributes one sample, so the pooled band inherits the
     // between-method spread rather than smoothing it away.
-    const waterPerKwh = d.onSiteWue + d.gridWaterIntensity;
+    // onSiteWue is per kWh of IT energy while `e` is facility energy, so the
+    // site term divides by PUE. Skipping that charges a high-PUE facility extra
+    // site water for the very overhead that replaced its evaporation.
+    const waterPerKwh = d.onSiteWue / d.pue + d.gridWaterIntensity;
     for (const e of [a, b, c]) {
       litres.push(e * waterPerKwh);
       carbonLoc.push((e * d.gridCarbonLocation) / 1000);

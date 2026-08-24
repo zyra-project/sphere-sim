@@ -92,6 +92,17 @@ which *US* region is not worth a question; the energy uncertainty swallows it.
 Asking whether it might be a hydro or nuclear grid is, because that is a 10x move
 on the headline. Pitch the question at that level.
 
+**How the facility is cooled**, if the water number matters to them. On-site
+water is not a continuum — it is a three-way regime choice, and the regimes are
+100× apart on site water but only ~1.7× apart on *total* water, because dry
+cooling buys its water saving with 20–50% more electricity that brings its own
+water at the power station. Whether that trade is worth it depends entirely on
+the grid: going dry saves 6.75× on a wind/solar grid and 1.19× on a thermal one,
+while always costing about a third more carbon. `--cooling
+evaporative|air-cooled|liquid-closed`. Note that "closed-loop" and "air-cooled"
+are not the same thing — direct-to-chip liquid gets near-zero water *and* the
+best PUE, with no tradeoff at all.
+
 **Whether they want the impact half at all.** Some people want the bill and
 nothing else. `--no-impact` skips the modelling entirely and the report is purely
 measurement. If they only asked about cost, don't volunteer the whole model —

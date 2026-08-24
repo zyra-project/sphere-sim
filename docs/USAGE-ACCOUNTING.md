@@ -109,8 +109,13 @@ long replies. Everything else in method B is a guess; this is not.
 
 Reported water is the sum of two unrelated quantities:
 
-- **On-site** (`IND`, 0.05–1.5 L/kWh) — evaporated for cooling. Spans closed-loop
-  designs near zero to conventional evaporative towers.
+- **On-site** (`IND`) — evaporated for cooling, per kWh of **IT** energy. Not a
+  continuum: facilities sit in one of three regimes two to three orders apart —
+  evaporative towers 1.5–3.0 with a PUE of 1.1–1.3, dry air cooling ~0.01 with a
+  PUE of 1.4–1.8, closed-loop liquid ~0.05 with a PUE of 1.05–1.2. Water and
+  energy trade against each other, so site WUE alone is misleading: abandoning
+  evaporation cuts site water ~100× but *total* water only ~1.7×, and costs about
+  a third more carbon. Only direct-to-chip liquid improves both.
 - **Off-site** (`IND`, 0.8–3.2 L/kWh) — *consumed* generating the electricity.
   Withdrawal is an order of magnitude larger but mostly returned; consumption is
   the honest figure.
