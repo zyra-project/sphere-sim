@@ -121,6 +121,33 @@ that sounds rigorous and measures the wrong thing. That is worse than the wide
 default, because it looks precise. Set `--region` only when the inference
 location is genuinely known.
 
+### Is "inference runs where my container runs" a fair assumption?
+
+No, and the usual reasoning for it inverts under arithmetic. Measured on a real
+project that moved about 14 GB of payload:
+
+| Force | Magnitude | Share of a $2,498 bill |
+| --- | --- | --- |
+| Cross-region egress, same continent | $0.14 – $0.28 | 0.006 – 0.011% |
+| Inter-continental egress | ~$1.27 | 0.05% |
+| One region of added latency | 2.6 – 18 min across the project | <1% of ~44 h spent generating |
+
+Neither force is within three orders of magnitude of shaping a placement
+decision. The force that does shape it runs the other way: accelerators are
+scarce and geographically concentrated while a one-core sandbox runs anywhere, so
+capacity wins — and an idle accelerator at $2–4/hour costs more in one hour than
+the project's entire network bill. Cost efficiency argues *against* co-location.
+
+**What does survive is the weaker claim**: same market, for data-residency,
+customer-latency and regulatory reasons. That is what `--geo us|eu|nordic` is
+for, and it prints itself as ASSUMED in the output because it is an assumption,
+not a measurement.
+
+**Better than either: read `inference_geo`.** The API records where inference ran
+and `--list` surfaces it. When it reports a geography, use it and assume nothing.
+When it reports `not_available`, that is genuine absence of evidence — which is
+an argument for the wide default, not for substituting a guess that looks precise.
+
 ### When the region is worth asking about
 
 Carbon is energy × grid intensity, and both are lognormal and independent, so on
@@ -129,19 +156,22 @@ a log scale their variances add exactly. That makes the decomposition analytic:
 | | Spread (p10–p90) | Var(ln) | Share of carbon variance |
 | --- | --- | --- | --- |
 | Pooled energy | ~36× | 1.96 | **95%** |
-| Grid, region unknown (200–550) | 2.8× | 0.095 | 5% |
+| Grid, region unknown (80–600) | 7.5× | 0.37 | 16% |
+| Grid, assumed US (79–576) | 7.3× | 0.37 | 16% |
+| Grid, exact region known | 1.4× | 0.004 | 0.4% |
 
-So within a US-grid assumption the region is nearly irrelevant — knowing it
-exactly narrows the carbon band by about 1.1×, which does not justify a question.
+Energy dominates under every assumption. Knowing the exact region narrows the
+carbon band from ~50× to ~37×, which is real but modest — and notably, assuming
+"somewhere in the US" buys almost nothing over knowing nothing, because the US
+regional span (7.3×) is about as wide as honest global ignorance.
 
-But that is a statement about the *default band*, not about regions. The real
-spread across published regions is **115×** (Montréal 5 to South Carolina 576),
-which is **3.2× wider than the entire energy uncertainty**. The default band
-quietly assumes "somewhere on an ordinary US-ish grid", and that assumption is
-doing more work than any measurement in the model.
+An earlier version of this model used 200–550 for "unknown", which was **narrower
+than the published span of real datacentre regions** and therefore claimed more
+knowledge than the label admitted. It has been widened to 80–600.
 
 The practical rule: ask about the region when the answer might be a hydro or
-nuclear grid, and don't when the work is clearly on ordinary US infrastructure.
+nuclear grid, because that is a 10× move on the headline. Don't ask to
+distinguish one US region from another — the energy uncertainty swallows it.
 
 ## Falsifiers
 

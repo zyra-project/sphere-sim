@@ -148,6 +148,9 @@ export function readLedger(root, filter = {}) {
   const sessions = new Map();
   const branches = new Map();
   const cwds = new Map();
+  // The API records where inference ran. When it reports anything other than
+  // 'not_available' this is the answer, and no geographic assumption is needed.
+  const inferenceGeos = new Map();
   let rawLines = 0;
   let firstAt = null;
   let lastAt = null;
@@ -190,6 +193,8 @@ export function readLedger(root, filter = {}) {
       // or a literal dash in a directory name, and '-home-user-sphere-sim' is
       // both. The transcript records the real cwd, so read it rather than guess.
       if (row.cwd) cwds.set(row.cwd, (cwds.get(row.cwd) ?? 0) + 1);
+      const geo = message.usage.inference_geo;
+      if (typeof geo === 'string') inferenceGeos.set(geo, (inferenceGeos.get(geo) ?? 0) + 1);
       const stamp = row.timestamp;
       if (typeof stamp === 'string') {
         days.add(stamp.slice(0, 10));
@@ -263,6 +268,9 @@ export function readLedger(root, filter = {}) {
     sessions: [...sessions.entries()].map(([id, n]) => ({ id, messages: n })).sort((a, b) => b.messages - a.messages),
     branches: [...branches.entries()].map(([name, n]) => ({ name, messages: n })).sort((a, b) => b.messages - a.messages),
     cwd: [...cwds.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
+    inferenceGeos: [...inferenceGeos.entries()]
+      .map(([geo, n]) => ({ geo, lines: n }))
+      .sort((a, b) => b.lines - a.lines),
     skippedSynthetic,
     skippedByFilter,
     contextOutputProduct,

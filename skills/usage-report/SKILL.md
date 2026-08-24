@@ -59,9 +59,15 @@ don't know:
 | `coal-heavy` | Coal-dominant grid |
 | `closed-loop-cooling` | Facility known to use closed-loop cooling; combine with a grid preset |
 
+Before asking anything about siting, check the `inference_geo` line in `--list`.
+The API records where inference ran; when it reports a geography, use it and
+assume nothing. When it reports `not_available`, that is genuine absence of
+evidence, not licence to substitute a guess.
+
 If they know the specific cloud region **where inference ran**, `--region us-east1`
-uses Google's published 2024 figures instead of a preset. Six regions are built
-in; `--list` prints them.
+uses Google's published 2024 figures. If they only know the market,
+`--geo us|eu|nordic` states that as an explicit assumption and labels itself
+ASSUMED in the output. `--list` prints both sets.
 
 **A sandbox's own region is not a proxy for where inference ran.** An agent's
 shell runs on a small CPU container; the model runs on accelerators elsewhere,
@@ -69,17 +75,22 @@ plausibly a different provider and region, and the container has no visibility
 into it. Its egress IP is worse still, since a NAT gateway can sit in another
 region. Pinning a region because that is where the shell egresses gives a number
 that sounds rigorous and measures the wrong thing — worse than the honest wide
-default, because it looks precise. Use `--region` only for infrastructure whose
-inference location is actually known.
+default, because it looks precise.
 
-**Whether the region is even worth asking about.** Within a US-grid assumption
-it barely matters: grid intensity contributes about 5% of the carbon variance,
-because the energy estimate spans ~36x and a US grid band only ~2.8x. Knowing
-the exact US region narrows the carbon band by about 1.1x — not worth a question.
-It matters when the region could be anywhere: Montréal to South Carolina is 115x,
-which is 3.2x wider than the whole energy spread. So ask when they might be on a
-hydro or nuclear grid, and don't bother when they're clearly on ordinary US
-infrastructure.
+If someone argues that co-location must be cheaper — less cross-region traffic,
+lower latency — the arithmetic does not support it. A project moving ~14 GB pays
+$0.14–$1.27 in cross-region egress against a $2,498 bill, and one region of
+latency adds minutes to tens of hours of generation. Both are three-plus orders
+of magnitude too small to drive placement, while accelerator scarcity, which
+pushes the other way, is the dominant cost. Explain this rather than accepting
+the assumption; `references/impact-model.md` has the table.
+
+**Whether the region is even worth asking about.** Energy dominates under every
+assumption — grid intensity is ~16% of the carbon variance when the region is
+unknown, and knowing it exactly only narrows the band from ~50x to ~37x. Asking
+which *US* region is not worth a question; the energy uncertainty swallows it.
+Asking whether it might be a hydro or nuclear grid is, because that is a 10x move
+on the headline. Pitch the question at that level.
 
 **Whether they want the impact half at all.** Some people want the bill and
 nothing else. `--no-impact` skips the modelling entirely and the report is purely

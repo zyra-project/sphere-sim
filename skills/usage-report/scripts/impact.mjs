@@ -175,6 +175,41 @@ export function regionOverrides(id) {
 }
 
 /**
+ * Geography families — for the assumption "I don't know the region, but I know
+ * roughly which market."
+ *
+ * This is the defensible weakening of "inference runs where my container runs".
+ * That stronger claim does not survive arithmetic: this project moved ~14 GB, so
+ * cross-region egress would have cost $0.14-$1.27 against a $2,498 bill
+ * (0.006-0.05%), and one region of extra latency adds minutes to a project that
+ * spent tens of hours generating tokens. Neither force is within three orders of
+ * magnitude of shaping a placement decision. The force that does shape it runs
+ * the other way: accelerators are scarce and geographically concentrated while a
+ * one-core sandbox runs anywhere, so capacity wins and an idle accelerator costs
+ * more per hour than the project's entire network bill.
+ *
+ * What survives is the weaker claim — same market, for data-residency, customer
+ * latency and regulatory reasons. These bands are the honest span of plausible
+ * regions in each, and they are `ASSUME`, because that is what they are.
+ */
+export const GEO_FAMILIES = {
+  us: { label: 'somewhere in the US', low: 79, high: 576,
+        note: 'Oregon (79) to South Carolina (576), both published Google 2024 figures.' },
+  eu: { label: 'somewhere in the EU', low: 10, high: 350,
+        note: 'Nordic hydro/nuclear to the most coal-weighted member-state grids.' },
+  nordic: { label: 'a Nordic grid', low: 8, high: 70,
+            note: 'Finland 39 and comparable hydro/nuclear-dominated grids.' },
+};
+
+export function geoOverrides(id) {
+  const g = GEO_FAMILIES[id];
+  if (g === undefined) throw new Error(`unknown geography "${id}". Known: ${Object.keys(GEO_FAMILIES).join(', ')}`);
+  return {
+    gridCarbonLocation: { low: g.low, high: g.high, provenance: 'ASSUME', source: `geo:${id}` },
+  };
+}
+
+/**
  * Grid presets, for when the user actually knows where the work ran.
  *
  * Siting moves carbon by roughly an order of magnitude, so this is the one
@@ -213,7 +248,7 @@ export const GRID_PRESETS = {
 };
 
 /** Apply named preset(s) and any explicit per-constant overrides. */
-export function resolveConstants(presets = [], overrides = {}, region = null) {
+export function resolveConstants(presets = [], overrides = {}, region = null, geo = null) {
   const out = {};
   for (const [k, v] of Object.entries(CONSTANTS)) out[k] = { ...v };
   for (const name of presets) {
@@ -221,6 +256,10 @@ export function resolveConstants(presets = [], overrides = {}, region = null) {
     if (preset === undefined) throw new Error(`unknown grid preset "${name}"`);
     for (const [k, v] of Object.entries(preset.overrides)) out[k] = { ...out[k], ...v, source: name };
   }
+  if (geo) {
+    for (const [k, v] of Object.entries(geoOverrides(geo))) out[k] = { ...out[k], ...v };
+  }
+  // An exact region is stronger evidence than a family, so it wins.
   if (region) {
     for (const [k, v] of Object.entries(regionOverrides(region))) out[k] = { ...out[k], ...v };
   }
@@ -268,7 +307,7 @@ export function shortQueryWh(d) {
 export function runImpact(work, options = {}) {
   const draws = options.draws ?? 200_000;
   const seed = options.seed ?? 20260823;
-  const constants = resolveConstants(options.presets ?? [], options.overrides ?? {}, options.region ?? null);
+  const constants = resolveConstants(options.presets ?? [], options.overrides ?? {}, options.region ?? null, options.geo ?? null);
   const rng = makeRng(seed);
   const keys = Object.keys(constants);
 
@@ -313,6 +352,7 @@ export function runImpact(work, options = {}) {
     seed,
     presets: options.presets ?? [],
     region: options.region ?? null,
+    geo: options.geo ?? null,
     methods: [
       { key: 'A', name: 'Vendor-anchored', role: 'floor — published figures cover smaller models', kwh: bandOf(eA) },
       { key: 'B', name: 'Bottom-up hardware', role: 'most specific to this workload', kwh: bandOf(eB) },

@@ -24,7 +24,7 @@ import { execFileSync } from 'node:child_process';
 
 import { readLedger, defaultRoot, listProjects } from './ledger.mjs';
 import { priceLedger } from './price.mjs';
-import { runImpact, GRID_PRESETS, REGIONS } from './impact.mjs';
+import { runImpact, GRID_PRESETS, REGIONS, GEO_FAMILIES } from './impact.mjs';
 import { renderReport } from './report.mjs';
 
 const argv = process.argv.slice(2);
@@ -129,6 +129,10 @@ function doList() {
   console.log(`    branches : ${l.branches.length}`);
   for (const b of l.branches.slice(0, 8)) console.log(`      ${b.name}  (${int(b.messages)} messages)`);
   console.log(`    models   : ${l.byClass.map((c) => `${c.model}/${c.speed}/${c.tier} × ${int(c.messages)}`).join(', ')}`);
+  const reported = l.inferenceGeos.filter((g) => g.geo !== 'not_available');
+  console.log(`    inference_geo : ${reported.length > 0
+    ? reported.map((g) => g.geo).join(', ') + '  <- reported by the API; do NOT assume a geography'
+    : 'not reported — the API did not say where inference ran'}`);
   console.log(`    agents   : ${int(l.agents.workflow)} workflow, ${int(l.agents.subagent)} plain subagent`);
   console.log('\n  AMBIGUOUS?');
   const ambiguities = [];
@@ -137,9 +141,11 @@ function doList() {
   if (l.branches.length > 1) ambiguities.push(`${l.branches.length} branches in scope — ask if they want one, or pass --branch`);
   if (ambiguities.length === 0) console.log('    no — scope is unambiguous, do not ask about it');
   for (const a of ambiguities) console.log(`    ${a}`);
-  console.log('    grid siting is never detectable — ask, or accept the wide default');
+  console.log('    grid siting: use inference_geo above if the API reported one; otherwise ask,');
+  console.log('      accept the wide default, or state a --geo family as an explicit assumption');
   console.log(`    presets: ${Object.keys(GRID_PRESETS).join(', ')}`);
   console.log(`    regions: ${Object.keys(REGIONS).join(', ')}`);
+  console.log(`    geographies: ${Object.keys(GEO_FAMILIES).join(', ')} (explicit assumptions, labelled as such)`);
   console.log('    a sandbox\'s own region is NOT a proxy for where inference ran\n');
   return 0;
 }
@@ -199,7 +205,7 @@ function main() {
           contextOutputProduct: ledger.contextOutputProduct,
           dollars: cost.total,
         },
-        { draws: intFlag('--draws', 200_000), seed: intFlag('--seed', 20260823), presets, region: flag('--region') ?? null },
+        { draws: intFlag('--draws', 200_000), seed: intFlag('--seed', 20260823), presets, region: flag('--region') ?? null, geo: flag('--geo') ?? null },
       )
     : null;
 
@@ -242,6 +248,10 @@ function main() {
       const r = REGIONS[impact.region];
       console.log(`    region: ${impact.region} (${r.label}) — ${r.grid} gCO2/kWh, ${(100 * r.cfe).toFixed(0)}% carbon-free`);
       console.log('    NOTE: this must be where INFERENCE ran, not where a sandbox or shell ran.');
+    }
+    if (impact.geo) {
+      const g = GEO_FAMILIES[impact.geo];
+      console.log(`    geography ASSUMED: ${g.label} (${g.low}–${g.high} gCO2eq/kWh). ${g.note}`);
     }
     if (presets.length > 0) console.log(`    grid assumption: ${presets.join(' + ')}`);
     for (const m of impact.methods) {
