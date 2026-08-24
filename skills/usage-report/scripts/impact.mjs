@@ -128,6 +128,53 @@ export const CONSTANTS = {
 };
 
 /**
+ * Published per-region grid figures — Google Cloud, 2024 data, fetched from
+ * cloud.google.com/sustainability/region-carbon. `PUB`, not `IND`: these are
+ * checkable against a page rather than inferred from a fleet average.
+ *
+ * READ THIS BEFORE USING ONE. The region that matters is where INFERENCE ran,
+ * not where your agent's sandbox ran. Those are different infrastructure,
+ * plausibly a different provider, and a sandbox has no visibility into the
+ * accelerators serving it. Its egress IP is a worse guide still, since a NAT
+ * gateway can sit in another region entirely. Picking a region because that is
+ * where your shell egresses produces a number that sounds rigorous and measures
+ * the wrong thing — it is strictly worse than the honest wide default, because
+ * it looks precise.
+ *
+ * Use these when you genuinely know where inference is served (a committed
+ * region in an enterprise agreement, a self-hosted deployment, a published
+ * commitment). Otherwise leave the region unset.
+ *
+ * cfe is the fraction of consumption matched hourly by carbon-free energy;
+ * market-based intensity is approximated as grid x (1 - cfe).
+ */
+export const REGIONS = {
+  'us-east1': { label: 'South Carolina', grid: 576, cfe: 0.31 },
+  'us-west1': { label: 'Oregon', grid: 79, cfe: 0.87 },
+  'us-west3': { label: 'Salt Lake City', grid: 555, cfe: 0.33 },
+  'us-central1': { label: 'Iowa', grid: 413, cfe: 0.87 },
+  'northamerica-northeast1': { label: 'Montreal', grid: 5, cfe: 0.99 },
+  'europe-north1': { label: 'Finland', grid: 39, cfe: 0.98 },
+};
+
+/**
+ * Turn a published region into constant overrides.
+ *
+ * The published figure is an annual average, so it is narrowed rather than
+ * pinned: +/-15% on the location-based value leaves room for hourly variation
+ * within the year without pretending the annual mean is the hour you ran in.
+ */
+export function regionOverrides(id) {
+  const r = REGIONS[id];
+  if (r === undefined) throw new Error(`unknown region "${id}". Known: ${Object.keys(REGIONS).join(', ')}`);
+  const market = Math.max(r.grid * (1 - r.cfe), 0.5);
+  return {
+    gridCarbonLocation: { low: r.grid * 0.85, high: r.grid * 1.15, provenance: 'PUB', source: id },
+    gridCarbonMarket: { low: market * 0.7, high: market * 1.3, provenance: 'PUB', source: id },
+  };
+}
+
+/**
  * Grid presets, for when the user actually knows where the work ran.
  *
  * Siting moves carbon by roughly an order of magnitude, so this is the one
@@ -166,13 +213,16 @@ export const GRID_PRESETS = {
 };
 
 /** Apply named preset(s) and any explicit per-constant overrides. */
-export function resolveConstants(presets = [], overrides = {}) {
+export function resolveConstants(presets = [], overrides = {}, region = null) {
   const out = {};
   for (const [k, v] of Object.entries(CONSTANTS)) out[k] = { ...v };
   for (const name of presets) {
     const preset = GRID_PRESETS[name];
     if (preset === undefined) throw new Error(`unknown grid preset "${name}"`);
     for (const [k, v] of Object.entries(preset.overrides)) out[k] = { ...out[k], ...v, source: name };
+  }
+  if (region) {
+    for (const [k, v] of Object.entries(regionOverrides(region))) out[k] = { ...out[k], ...v };
   }
   for (const [k, v] of Object.entries(overrides)) {
     if (out[k] === undefined) throw new Error(`unknown constant "${k}"`);
@@ -218,7 +268,7 @@ export function shortQueryWh(d) {
 export function runImpact(work, options = {}) {
   const draws = options.draws ?? 200_000;
   const seed = options.seed ?? 20260823;
-  const constants = resolveConstants(options.presets ?? [], options.overrides ?? {});
+  const constants = resolveConstants(options.presets ?? [], options.overrides ?? {}, options.region ?? null);
   const rng = makeRng(seed);
   const keys = Object.keys(constants);
 
@@ -262,6 +312,7 @@ export function runImpact(work, options = {}) {
     draws,
     seed,
     presets: options.presets ?? [],
+    region: options.region ?? null,
     methods: [
       { key: 'A', name: 'Vendor-anchored', role: 'floor — published figures cover smaller models', kwh: bandOf(eA) },
       { key: 'B', name: 'Bottom-up hardware', role: 'most specific to this workload', kwh: bandOf(eB) },

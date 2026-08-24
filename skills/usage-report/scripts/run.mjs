@@ -24,7 +24,7 @@ import { execFileSync } from 'node:child_process';
 
 import { readLedger, defaultRoot, listProjects } from './ledger.mjs';
 import { priceLedger } from './price.mjs';
-import { runImpact, GRID_PRESETS } from './impact.mjs';
+import { runImpact, GRID_PRESETS, REGIONS } from './impact.mjs';
 import { renderReport } from './report.mjs';
 
 const argv = process.argv.slice(2);
@@ -138,7 +138,9 @@ function doList() {
   if (ambiguities.length === 0) console.log('    no — scope is unambiguous, do not ask about it');
   for (const a of ambiguities) console.log(`    ${a}`);
   console.log('    grid siting is never detectable — ask, or accept the wide default');
-  console.log(`    presets: ${Object.keys(GRID_PRESETS).join(', ')}\n`);
+  console.log(`    presets: ${Object.keys(GRID_PRESETS).join(', ')}`);
+  console.log(`    regions: ${Object.keys(REGIONS).join(', ')}`);
+  console.log('    a sandbox\'s own region is NOT a proxy for where inference ran\n');
   return 0;
 }
 
@@ -197,7 +199,7 @@ function main() {
           contextOutputProduct: ledger.contextOutputProduct,
           dollars: cost.total,
         },
-        { draws: intFlag('--draws', 200_000), seed: intFlag('--seed', 20260823), presets },
+        { draws: intFlag('--draws', 200_000), seed: intFlag('--seed', 20260823), presets, region: flag('--region') ?? null },
       )
     : null;
 
@@ -236,6 +238,11 @@ function main() {
   if (impact !== null) {
     console.log('');
     console.log('  IMPACT — PROVISIONAL. Modelled, not measured.');
+    if (impact.region) {
+      const r = REGIONS[impact.region];
+      console.log(`    region: ${impact.region} (${r.label}) — ${r.grid} gCO2/kWh, ${(100 * r.cfe).toFixed(0)}% carbon-free`);
+      console.log('    NOTE: this must be where INFERENCE ran, not where a sandbox or shell ran.');
+    }
     if (presets.length > 0) console.log(`    grid assumption: ${presets.join(' + ')}`);
     for (const m of impact.methods) {
       console.log(`    ${m.key}  ${m.name.padEnd(20)} ${int(m.kwh.p50).padStart(6)} kWh [${int(m.kwh.p5)} – ${int(m.kwh.p95)}]   ${m.role}`);

@@ -86,12 +86,62 @@ Reporting only the market figure flatters the result; reporting only the locatio
 figure ignores procurement that genuinely happened. The report prints both,
 location first.
 
-## Grid presets
+## Grid presets and published regions
 
-Siting is the one input a user can sometimes supply that meaningfully changes the
-headline — roughly twentyfold in carbon between `low-carbon` and `coal-heavy`.
 `unknown` is the default and stays deliberately wide. Presets compose: pass
 `--grid coal-heavy --grid closed-loop-cooling` for both.
+
+`--region <id>` uses Google Cloud's published 2024 per-region figures (`PUB`,
+from cloud.google.com/sustainability/region-carbon) rather than a preset band:
+
+| Region | Location | CFE% | gCO2eq/kWh |
+| --- | --- | --- | --- |
+| `us-east1` | South Carolina | 31% | 576 |
+| `us-west3` | Salt Lake City | 33% | 555 |
+| `us-central1` | Iowa | 87% | 413 |
+| `us-west1` | Oregon | 87% | 79 |
+| `europe-north1` | Finland | 98% | 39 |
+| `northamerica-northeast1` | Montréal | 99% | 5 |
+
+The published value is an annual average, so it is narrowed to ±15% rather than
+pinned — the annual mean is not the hour you ran in. Market-based intensity is
+approximated as grid × (1 − CFE).
+
+### The region must be where inference ran
+
+An agent's sandbox is a small CPU container that exists only while a shell is
+running. The model runs on accelerators on separate infrastructure — different
+hardware, plausibly a different provider and region — and the container has no
+visibility into it. Session energy is dominated by inference; the sandbox is
+rounding error against it. Its egress IP is a worse guide still, because a NAT
+gateway can sit in a different region than the compute.
+
+Attributing a footprint to the region where a shell egresses produces a number
+that sounds rigorous and measures the wrong thing. That is worse than the wide
+default, because it looks precise. Set `--region` only when the inference
+location is genuinely known.
+
+### When the region is worth asking about
+
+Carbon is energy × grid intensity, and both are lognormal and independent, so on
+a log scale their variances add exactly. That makes the decomposition analytic:
+
+| | Spread (p10–p90) | Var(ln) | Share of carbon variance |
+| --- | --- | --- | --- |
+| Pooled energy | ~36× | 1.96 | **95%** |
+| Grid, region unknown (200–550) | 2.8× | 0.095 | 5% |
+
+So within a US-grid assumption the region is nearly irrelevant — knowing it
+exactly narrows the carbon band by about 1.1×, which does not justify a question.
+
+But that is a statement about the *default band*, not about regions. The real
+spread across published regions is **115×** (Montréal 5 to South Carolina 576),
+which is **3.2× wider than the entire energy uncertainty**. The default band
+quietly assumes "somewhere on an ordinary US-ish grid", and that assumption is
+doing more work than any measurement in the model.
+
+The practical rule: ask about the region when the answer might be a hydro or
+nuclear grid, and don't when the work is clearly on ordinary US infrastructure.
 
 ## Falsifiers
 
