@@ -1,0 +1,91 @@
+name: Release
+
+# Zenodo mints a DOI per GitHub Release, so a Release is the unit of archival:
+# no release, nothing to cite. This cuts one from `main` whenever the version in
+# package.json names a tag that does not exist yet.
+#
+# ## Why the version, and not every push
+#
+# A push to main is not a release — most of them are not worth a DOI, and a
+# workflow that tagged each one would either collide on the existing tag or mint
+# a citation for a typo fix. Making package.json the trigger means cutting a
+# release is a deliberate one-line commit, which is also the commit where
+# CITATION.cff has to be updated to match (check:citation enforces that pairing
+# in CI, so a mismatched release is caught before it is minted rather than after
+# the DOI exists).
+#
+# A push whose version is already tagged does nothing and reports why. That is
+# the common case and it is not a failure.
+#
+# ## Enabling Zenodo
+#
+# Zenodo archives releases created AFTER the repository is switched on there —
+# it does not backfill. So turn the repository on at zenodo.org/account/settings/github
+# first, then merge the version bump.
+#
+# Note also that Zenodo asks for a license, and this repository does not yet
+# carry one. GitHub's default in that case is all-rights-reserved, which is
+# probably not the intent for something meant to be cited.
+
+on:
+  push:
+    branches: [main]
+  # A release cut by hand, for the case where the version is already right and
+  # the tag was never created — say, because the workflow landed after the bump.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Tags are what this job tests against, and a shallow clone has none.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Which version, and is it already released?
+        id: v
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if git rev-parse "refs/tags/v$VERSION" > /dev/null 2>&1; then
+            echo "v$VERSION is already tagged; nothing to release."
+            echo "fresh=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$VERSION has no tag yet; cutting a release."
+            echo "fresh=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: CITATION.cff must name the same version
+        if: steps.v.outputs.fresh == 'true'
+        run: node tools/check-citation.ts
+
+      # The installable skill is a build product rather than a tracked file, so a
+      # release that did not carry it would archive the source of the skill
+      # without the thing you can install.
+      - name: Build the installable skill
+        if: steps.v.outputs.fresh == 'true'
+        run: |
+          npm ci
+          npm run pack:skill
+
+      - name: Cut the release
+        if: steps.v.outputs.fresh == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.v.outputs.version }}" \
+            --title "v${{ steps.v.outputs.version }}" \
+            --generate-notes \
+            dist/usage-report.skill

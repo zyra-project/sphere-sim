@@ -25,10 +25,13 @@
     "build:site": "npm run build:web && npm run build:app && node tools/build-site.ts",
     "smoke:app": "node tools/smoke-app.ts",
     "progress": "node packages/bench/src/progress.ts",
+    "usage": "node packages/usage/src/cli.ts",
+    "pack:skill": "node tools/pack-skill.ts skills/usage-report dist",
     "progress:reference": "node packages/bench/src/reference.ts",
     "progress:reference:check": "node packages/bench/src/reference.ts --check",
-    "ci": "npm run lint:boundary && npm run check:docs && npm run typecheck && npm test && npm run progress:reference:check && npm run build:app && npm run smoke:app",
-    "check:docs": "node tools/experiment-tables.ts"
+    "ci": "npm run lint:boundary && npm run check:docs && npm run check:citation && npm run typecheck && npm test && npm run progress:reference:check && npm run build:app && npm run smoke:app",
+    "check:docs": "node tools/experiment-tables.ts",
+    "check:citation": "node tools/check-citation.ts"
   },
   "devDependencies": {
     "typescript": "5.9.3",

@@ -25,6 +25,8 @@ build on any import across that line.
 | [`validation/README.md`](validation/README.md) | Photographs of real installations beside our render. Plausibility only — no metric, no gate, no score |
 | [`docs/EXPERIMENT-1.md`](docs/EXPERIMENT-1.md) | **How many photographs a calibration needs, and whether a phone suffices.** Measured |
 | [`docs/VISIT.md`](docs/VISIT.md) | **The ground-truth visit field card.** What to measure, in cut order, with framing diagrams |
+| [`docs/USAGE-ACCOUNTING.md`](docs/USAGE-ACCOUNTING.md) | What building this cost, in dollars and in kilowatt-hours. The bill is measured; the environmental figure is **PROVISIONAL** |
+| [`skills/usage-report/SKILL.md`](skills/usage-report/SKILL.md) | The same accounting as an installable, project-agnostic Claude Code skill |
 
 ## The honesty structure
 
@@ -38,6 +40,13 @@ classification drives how the work is sequenced:
   them. So photometry gets **built and tested but not optimized**, and every
   photometric metric is marked **PROVISIONAL** in the report. Optimizing against
   unmeasured constants produces confident nonsense.
+
+The same rule is applied to the project's own resource accounting, which is why
+`npm run usage` reports two halves with different standing rather than one
+number: the **cost** is measured token counts at published rates, the
+**environmental impact** is those counts through a chain of non-public constants,
+and only the first can be quoted. See
+[`docs/USAGE-ACCOUNTING.md`](docs/USAGE-ACCOUNTING.md).
 
 ## Commands
 
@@ -58,6 +67,12 @@ npm run build:app          # compile sim + solver + bench + the app to browser E
 npm run app                # interactive simulator on http://localhost:8174/
 npm run smoke:app          # load the app in a real browser: does the shader compile?
 npm run build:site         # assemble site/ — the app, the harness and the progress page
+npm run usage              # what this project cost, in dollars and (PROVISIONALLY) in kWh,
+                           # litres and kgCO2e. --html <path> writes the shareable page
+npm run pack:skill         # build dist/usage-report.skill — the portable form of the
+                           # above, installable in any Claude Code project
+npm run check:citation     # CITATION.cff and package.json must name the same version;
+                           # the release workflow tags whatever package.json says
 node packages/bench/src/validation.ts   # regenerate validation/index.html (reads local files only;
                            # images are never fetched — the owner supplies them)
 ```
@@ -69,6 +84,22 @@ Both servers bind loopback only. They read repository files under `/repo/`, so
 the default is deliberate; `HOST=0.0.0.0 npm run app` opens them to the network
 when that is what you want — a tablet beside the sphere, say — and the terminal
 then prints the address it actually bound rather than `localhost`.
+
+## Releases and citation
+
+A release is cut from `main` whenever `package.json` names a version that has no
+tag yet, so cutting one is a deliberate one-line commit rather than a side effect
+of merging. `CITATION.cff` has to move in the same commit — `check:citation`
+fails CI otherwise, which catches a mismatched release before a DOI is minted
+rather than after.
+
+Zenodo archives releases created *after* the repository is enabled there; it does
+not backfill. Enable it first, then merge the version bump.
+
+**This repository carries no LICENSE.** GitHub's default in that case is
+all-rights-reserved, which is unlikely to be the intent for something meant to be
+cited, and Zenodo will ask. Choosing one is a decision for the owner, not
+something to infer.
 
 ## Three geometry facts this implementation must reproduce
 
