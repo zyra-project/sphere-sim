@@ -1,5 +1,7 @@
 # sphere-sim
 
+[![DOI](https://zenodo.org/badge/1329975775.svg)](https://doi.org/10.5281/zenodo.22101428)
+
 A physically-based simulator of a projected spherical display, and an alignment
 solver that calibrates one from camera images.
 
