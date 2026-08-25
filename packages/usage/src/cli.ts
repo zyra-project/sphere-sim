@@ -19,6 +19,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import { readLedger } from './transcripts.ts';
 import { priceLedger } from './cost.ts';
@@ -31,6 +32,35 @@ export function defaultTranscriptRoot(cwd: string, home: string): string {
   // dash, leading separator included: /home/user/x -> -home-user-x
   const slug = cwd.split(path.sep).join('-');
   return path.join(home, '.claude', 'projects', slug);
+}
+
+/**
+ * The repository this report is about, as a browsable https URL.
+ *
+ * Detected rather than configured, like everything else the working tree already
+ * knows. Handles the ssh remote form (git@host:owner/repo) as well as https.
+ *
+ * Returns null for anything that does not reduce to a plain http(s) URL. That
+ * guard is load-bearing rather than defensive: a git remote is arbitrary text
+ * and this value ends up in an href, so `javascript:` or a bare path must not
+ * become a link.
+ */
+export function repoUrl(raw: string | undefined): string | null {
+  if (raw === undefined || raw === '') return null;
+  const ssh = /^(?:ssh:\/\/)?git@([\w.-]+)[:/](.+?)(?:\.git)?$/.exec(raw);
+  const url = ssh ? `https://${ssh[1]}/${ssh[2]}` : raw.replace(/\.git$/, '');
+  return /^https?:\/\/[\w.-]+\/[\w./-]+$/.test(url) ? url : null;
+}
+
+function gitRemote(): string | undefined {
+  try {
+    return execFileSync('git', ['remote', 'get-url', 'origin'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return undefined;
+  }
 }
 
 function flag(argv: readonly string[], name: string): string | undefined {
@@ -153,14 +183,16 @@ export function main(argv: readonly string[]): number {
   }
   console.log('');
 
+  const repo = repoUrl(flag(argv, '--repo') ?? gitRemote());
+
   const jsonPath = flag(argv, '--json');
   if (jsonPath !== undefined) {
-    fs.writeFileSync(jsonPath, JSON.stringify({ ledger, cost, impact }, null, 2));
+    fs.writeFileSync(jsonPath, JSON.stringify({ repo, ledger, cost, impact }, null, 2));
     console.log(`  wrote ${jsonPath}`);
   }
   const htmlPath = flag(argv, '--html');
   if (htmlPath !== undefined) {
-    fs.writeFileSync(htmlPath, renderReport({ ledger, cost, impact }));
+    fs.writeFileSync(htmlPath, renderReport({ ledger, cost, impact, repo }));
     console.log(`  wrote ${htmlPath}`);
   }
   return 0;

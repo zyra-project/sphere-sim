@@ -86,6 +86,33 @@ function resolvePr(number) {
   }
 }
 
+/**
+ * The repository this report is about, as a browsable https URL.
+ *
+ * Detected rather than configured, like everything else the transcripts or the
+ * working tree already know. Handles the ssh remote form (git@host:owner/repo)
+ * as well as https, and returns null for anything it cannot turn into a plain
+ * http(s) URL — a git remote is arbitrary text, and this ends up in an href.
+ */
+export function repoUrl(explicit) {
+  let raw = explicit;
+  if (raw === undefined) {
+    try {
+      raw = execFileSync('git', ['remote', 'get-url', 'origin'], {
+        encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+    } catch {
+      return null;
+    }
+  }
+  if (!raw) return null;
+  const ssh = /^(?:ssh:\/\/)?git@([\w.-]+)[:/](.+?)(?:\.git)?$/.exec(raw);
+  const url = ssh ? `https://${ssh[1]}/${ssh[2]}` : raw.replace(/\.git$/, '');
+  // Only an http(s) URL becomes a link. Anything else — file://, javascript:,
+  // a bare path — is dropped rather than rendered into an anchor.
+  return /^https?:\/\/[\w.-]+\/[\w./-]+$/.test(url) ? url : null;
+}
+
 /** What the work produced, if this is a git repo. Optional context, never load-bearing. */
 function deliveredWork(since, until) {
   const git = (args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
@@ -213,10 +240,11 @@ function main() {
   const meta = {
     title: title ?? (ledger.cwd ? path.basename(ledger.cwd) : path.basename(root)),
     scope: scopeLabel.length > 0 ? scopeLabel.join(' · ') : 'all sessions',
+    repo: repoUrl(flag('--repo')),
   };
 
   console.log('');
-  console.log(`  ${meta.title}  —  ${meta.scope}`);
+  console.log(`  ${meta.title}  —  ${meta.scope}${meta.repo ? '  —  ' + meta.repo : ''}`);
   console.log(`    ${int(ledger.uniqueMessages)} messages, deduplicated from ${int(ledger.rawLines)} lines across ${int(ledger.files)} transcripts`);
   console.log(`    ${ledger.firstAt?.slice(0, 10)} to ${ledger.lastAt?.slice(0, 10)} · ${ledger.activeDays} active days`);
   if (ledger.skippedSynthetic > 0) console.log(`    ${int(ledger.skippedSynthetic)} synthetic message(s) excluded — not billable`);

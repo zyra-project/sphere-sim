@@ -131,6 +131,11 @@ node scripts/run.mjs --no-impact
 node scripts/run.mjs --json /tmp/usage.json
 ```
 
+The report links back to the repository it describes, detected from the `origin`
+git remote (ssh and https remote forms both work). `--repo <url>` overrides it;
+anything that is not a plain http(s) URL is dropped rather than turned into a
+link, since a git remote is arbitrary text.
+
 Other flags: `--project <slug>` or `--root <dir>` to analyse a project other than
 the current directory, `--draws N` and `--seed N` for the Monte Carlo (defaults
 200,000 and 20260823 — the seed is printed so a rerun distinguishes a

@@ -23,6 +23,8 @@ export interface ReportInput {
   readonly ledger: Ledger;
   readonly cost: CostReport;
   readonly impact: ImpactReport;
+  /** Browsable repository URL, or null. Validated by the caller before it gets here. */
+  readonly repo?: string | null;
 }
 
 const INK = '#14181d';
@@ -148,6 +150,7 @@ function bandText(b: Band, unit: string, digits = 0): string {
 
 export function renderReport(input: ReportInput): string {
   const { ledger, cost, impact } = input;
+  const repo = input.repo ?? null;
   const p = impact.pooled;
 
   const costRows = cost.lines
@@ -185,7 +188,11 @@ export function renderReport(input: ReportInput): string {
  *{box-sizing:border-box}
  body{margin:0;padding:56px 60px 48px;background:#fff;color:var(--ink);max-width:1080px;
   font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
- .eyebrow{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
+ .topline{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:0 0 6px}
+ .eyebrow{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0}
+ .repo{font-size:11.5px;color:var(--faint);text-decoration:none;border-bottom:1px solid var(--rule);
+  font-family:ui-monospace,Menlo,Consolas,monospace;white-space:nowrap}
+ .repo:hover{color:var(--accent);border-bottom-color:var(--accent)}
  h1{font-size:30px;line-height:1.15;margin:0 0 4px;font-weight:640;letter-spacing:-.015em}
  .sub{color:var(--dim);font-size:14px;margin:0 0 22px}
  .badge{display:block;margin:0 0 26px;background:var(--warn-bg);color:var(--warn-ink);
@@ -218,7 +225,10 @@ export function renderReport(input: ReportInput): string {
  footer{margin-top:32px;padding-top:14px;border-top:1px solid var(--rule);color:var(--faint);font-size:11.5px}
 </style></head><body>
 
-<p class="eyebrow">Usage accounting</p>
+<div class="topline">
+ <p class="eyebrow">Usage accounting</p>
+ ${repo ? `<a class="repo" href="${escapeHtml(repo)}">${escapeHtml(repo.replace(/^https?:\/\//, ''))}</a>` : ''}
+</div>
 <h1>sphere-sim</h1>
 <p class="sub">${int(ledger.uniqueMessages)} assistant messages &#183;
  ${day(ledger.firstAt)} to ${day(ledger.lastAt)} &#183;
