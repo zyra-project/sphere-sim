@@ -51,6 +51,14 @@ button { font-family: inherit; }
 .brand h1 { font-size: 19px; font-weight: 300; letter-spacing: 0.15em;
   text-transform: uppercase; margin: 0; }
 .brand .sub { font-size: 12px; color: var(--muted); margin: 7px 0 0; max-width: 44ch; line-height: 1.4; }
+/* Baseline-aligned beside the eyebrow so the link costs no vertical space.
+   pointer-events is the whole reason the second rule exists: .brand disables
+   them so a drag starting on the wordmark still orbits the sphere. */
+.brandtop { display: flex; align-items: baseline; gap: 14px; margin: 0 0 6px; }
+.brandtop .eyebrow { margin: 0; }
+.brand .repo { pointer-events: auto; font-size: 11px; color: var(--dim);
+  text-decoration: none; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.brand .repo:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
 .card {
   background: var(--panel);
@@ -198,6 +206,10 @@ button { font-family: inherit; }
      `fitFirstScreen`). #hint is hidden below 900px, so hiding this too left a
      phone with no sentence anywhere saying the sphere could be moved. */
   .brand .sub { margin: 4px 0 0; font-size: 11px; max-width: 30ch; }
+  /* Below 820px the icon buttons sit beside the wordmark and the padding is
+     already reserved for them, so there is no width left for a URL. The footer
+     link on the site index still reaches the repository. */
+  .brand .repo { display: none; }
   /* Prose that explains a number, dropped where the number needs the room. */
   .phone-hide { display: none; }
   /* The buttons sit beside the wordmark, not under the sheet they open. */
@@ -453,7 +465,17 @@ body.dropping #dropzone { display: flex; }
 <div id="boot"><p>Building the room…</p></div>
 
 <div class="brand">
-  <p class="eyebrow">Science On a Sphere</p>
+  <div class="brandtop">
+    <p class="eyebrow">Science On a Sphere</p>
+    <!-- The first and only link on the page, and it rides the eyebrow line
+         rather than sitting under the subtitle: a third line in .brand runs
+         into #leftbtns, which is fixed against the same edge. `.brand` is
+         pointer-events: none so that dragging the wordmark still orbits the
+         sphere, so this has to opt back in or it is decoration nobody can
+         click. -->
+    <a class="repo mono" href="https://github.com/zyra-project/sphere-sim"
+       target="_blank" rel="noopener noreferrer">github.com/zyra-project/sphere-sim</a>
+  </div>
   <h1>Installation simulator</h1>
   <!-- Names the subject and hands the reader something to do. The provenance
        claim this used to make — forward model, inverse model — is true, is the
