@@ -126,8 +126,10 @@ Siting dominates both, by more than the entire reported range.
 
 They answer different questions and neither is wrong:
 
-- **Location-based** (`IND`, 200–550 gCO2e/kWh) — the grid the facility physically
-  draws from. Most of the range is regional spread across US interconnects.
+- **Location-based** (`IND`, 80–600 gCO2e/kWh) — the grid the facility physically
+  draws from. Widened from an earlier 200–550, which was narrower than the
+  published span of real datacentre regions (Oregon 79 to South Carolina 576) and
+  so claimed more knowledge than "unknown region" has.
 - **Market-based** (`IND`, 20–200 gCO2e/kWh) — after power purchase agreements and
   renewable certificates. Anchored on the ~125 gCO2e/kWh implied by Google's
   published per-prompt carbon and energy figures.
@@ -148,7 +150,7 @@ These are evaluated in `packages/usage/test/impact.test.ts`, not asserted here.
 | **F4** | Water/carbon are narrower than energy | They are unit conversions, not findings | Does not trigger — both are wider |
 
 F2 is the uncomfortable one and is left visible on purpose. Method B predicts
-~1.74 Wh for a typical short chat query against the 0.24–0.34 Wh Google and
+~1.85 Wh for a typical short chat query against the 0.24–0.34 Wh Google and
 OpenAI have published. Part of that gap is real — this is a larger model, and
 those are vendor self-reports — and part is bias in method B. Method A exists to
 hold the discrepancy in view rather than bury it.

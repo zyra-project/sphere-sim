@@ -222,11 +222,11 @@ export const CONSTANTS = {
 
   gridCarbonLocation: {
     name: 'gridCarbonLocation',
-    low: 200,
-    high: 550,
+    low: 80,
+    high: 600,
     unit: 'gCO2e/kWh',
     provenance: 'IND',
-    note: 'Location-based: the average intensity of the grid the facility physically draws from. Regional spread across US interconnects is most of this range.',
+    note: 'Location-based: the grid the facility physically draws from. Widened from an earlier 200-550, which was narrower than the published span of real datacentre regions (Oregon 79 to South Carolina 576) and so claimed more knowledge than "unknown region" has.',
   },
   gridCarbonMarket: {
     name: 'gridCarbonMarket',

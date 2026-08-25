@@ -76,7 +76,7 @@ generating the power. Withdrawal is an order larger but mostly returned;
 consumption is the honest figure. See "Cooling regimes" below — on-site water is
 not a continuum.
 
-**Carbon** (`IND`) — `gridCarbonLocation` 200–550 gCO2e/kWh (the grid the
+**Carbon** (`IND`) — `gridCarbonLocation` 80–600 gCO2e/kWh (the grid the
 facility physically draws from) and `gridCarbonMarket` 20–200 (after power
 purchase agreements, anchored on the ~125 implied by Google's per-prompt
 disclosures).
@@ -209,13 +209,15 @@ a log scale their variances add exactly. That makes the decomposition analytic:
 
 | | Spread (p10–p90) | Var(ln) | Share of carbon variance |
 | --- | --- | --- | --- |
-| Pooled energy | ~36× | 1.96 | **95%** |
-| Grid, region unknown (80–600) | 7.5× | 0.37 | 16% |
-| Grid, assumed US (79–576) | 7.3× | 0.37 | 16% |
-| Grid, exact region known | 1.4× | 0.004 | 0.4% |
+| Pooled energy | 38.7× | 2.04 | **84%** |
+| Grid, region unknown (80–600) | 7.5× | 0.375 | 16% |
+| Grid, assumed US (79–576) | 7.3× | 0.365 | 15% |
+| Grid, exact region known | 1.4× | 0.008 | ~0% |
 
 Energy dominates under every assumption. Knowing the exact region narrows the
-carbon band from ~50× to ~37×, which is real but modest — and notably, assuming
+carbon band from 53× to 39× — the same 39× the energy alone gives, so an exactly
+known region costs nothing and buys back only what the grid band was adding. Real
+but modest — and notably, assuming
 "somewhere in the US" buys almost nothing over knowing nothing, because the US
 regional span (7.3×) is about as wide as honest global ignorance.
 
@@ -240,7 +242,7 @@ report be simplified.
 | **F4** | Water/carbon narrower than energy | They are unit conversions, not findings | Both wider |
 
 **F2 is the uncomfortable one and is surfaced on purpose.** Method B predicts
-~1.7 Wh for a typical short query against 0.24–0.34 Wh published. Part of that
+~1.85 Wh for a typical short query against 0.24–0.34 Wh published. Part of that
 gap is real — a frontier coding model is larger than the median prompt those
 figures cover, and both are vendor self-reports — and part is bias in method B.
 Method A exists to hold the discrepancy in view rather than bury it. If you are

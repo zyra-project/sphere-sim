@@ -71,6 +71,8 @@ npm run usage              # what this project cost, in dollars and (PROVISIONAL
                            # litres and kgCO2e. --html <path> writes the shareable page
 npm run pack:skill         # build dist/usage-report.skill — the portable form of the
                            # above, installable in any Claude Code project
+npm run check:citation     # CITATION.cff and package.json must name the same version;
+                           # the release workflow tags whatever package.json says
 node packages/bench/src/validation.ts   # regenerate validation/index.html (reads local files only;
                            # images are never fetched — the owner supplies them)
 ```
@@ -82,6 +84,22 @@ Both servers bind loopback only. They read repository files under `/repo/`, so
 the default is deliberate; `HOST=0.0.0.0 npm run app` opens them to the network
 when that is what you want — a tablet beside the sphere, say — and the terminal
 then prints the address it actually bound rather than `localhost`.
+
+## Releases and citation
+
+A release is cut from `main` whenever `package.json` names a version that has no
+tag yet, so cutting one is a deliberate one-line commit rather than a side effect
+of merging. `CITATION.cff` has to move in the same commit — `check:citation`
+fails CI otherwise, which catches a mismatched release before a DOI is minted
+rather than after.
+
+Zenodo archives releases created *after* the repository is enabled there; it does
+not backfill. Enable it first, then merge the version bump.
+
+**This repository carries no LICENSE.** GitHub's default in that case is
+all-rights-reserved, which is unlikely to be the intent for something meant to be
+cited, and Zenodo will ask. Choosing one is a decision for the owner, not
+something to infer.
 
 ## Three geometry facts this implementation must reproduce
 

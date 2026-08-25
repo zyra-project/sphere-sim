@@ -94,7 +94,7 @@ export const bandOf = (values) => {
  *   ASSUME  not published anywhere; chosen by us, and why the band is wide
  */
 export const CONSTANTS = {
-  activeParams: { name: 'activeParams', low: 100e9, high: 600e9, unit: 'params/token', provenance: 'ASSUME',
+  activeParams: { name: 'activeParams', low: 100e9, high: 600e9, unit: 'parameters/token', provenance: 'ASSUME',
     note: 'Active parameters per token. Not published for any frontier model. The single largest unknown.' },
   achievedFlops: { name: 'achievedFlops', low: 2.5e14, high: 7.0e14, unit: 'FLOP/s', provenance: 'ASSUME',
     note: 'Achieved (not peak) throughput per accelerator during prefill.' },
@@ -124,13 +124,13 @@ export const CONSTANTS = {
     note: 'Inference gross margin at list API prices.' },
   computeShareOfCogs: { name: 'computeShareOfCogs', low: 0.55, high: 0.85, unit: 'fraction', provenance: 'ASSUME',
     note: 'Share of cost of goods sold that is accelerator time rather than storage, network, operations.' },
-  dollarsPerAcceleratorHour: { name: 'dollarsPerAcceleratorHour', low: 1.5, high: 4.0, unit: 'USD/h', provenance: 'IND',
+  dollarsPerAcceleratorHour: { name: 'dollarsPerAcceleratorHour', low: 1.5, high: 4.0, unit: 'USD/hour', provenance: 'IND',
     note: 'Rental-equivalent accelerator-hour. Already includes provisioning slack, so method C does not divide by utilisation.' },
   onSiteWue: { name: 'onSiteWue', low: 0.02, high: 3.0, unit: 'L/kWh(IT)', provenance: 'IND',
     note: 'Site water per kWh of IT energy (the Green Grid definition, hence per IT rather than per facility kWh). NOT a continuum: real facilities cluster into regimes 2-3 orders apart, so the wide default is a mixture, not a central estimate. Set by --cooling.' },
   gridWaterIntensity: { name: 'gridWaterIntensity', low: 0.8, high: 3.2, unit: 'L/kWh', provenance: 'IND',
     note: 'Water CONSUMED generating the electricity. Withdrawal is an order larger but mostly returned.' },
-  gridCarbonLocation: { name: 'gridCarbonLocation', low: 200, high: 550, unit: 'gCO2e/kWh', provenance: 'IND',
+  gridCarbonLocation: { name: 'gridCarbonLocation', low: 80, high: 600, unit: 'gCO2e/kWh', provenance: 'IND',
     note: 'Location-based: the grid the facility physically draws from. Most of the range is regional spread.' },
   gridCarbonMarket: { name: 'gridCarbonMarket', low: 20, high: 200, unit: 'gCO2e/kWh', provenance: 'IND',
     note: 'Market-based: after power purchase agreements. Anchored on ~125 gCO2e/kWh implied by Google per-prompt disclosures.' },

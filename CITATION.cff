@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it using these metadata.
+title: "sphere-sim: a physically-based simulator of a projected spherical display, with a deliberately independent alignment solver"
+abstract: >-
+  A forward model of a four-projector Science On a Sphere installation and an
+  inverse model that recovers projector pose from photographs, built so that the
+  two share no geometry code, no projection math and no distortion model. The
+  separation is enforced mechanically by a lint rule in CI rather than by
+  convention, because a simulator that shares math with the solver it scores is
+  scoring its own assumptions. Every physical constant carries a provenance
+  class; geometric parameters are documented or solved for and are optimised
+  against, photometric parameters are unmeasured and are therefore built, tested
+  and reported as PROVISIONAL rather than tuned.
+type: software
+authors:
+  - family-names: Hackathorn
+    given-names: Eric
+    alias: Hackshaven
+repository-code: https://github.com/zyra-project/sphere-sim
+version: 0.1.0
+date-released: "2026-08-25"
+keywords:
+  - Science On a Sphere
+  - spherical display
+  - projector calibration
+  - bundle adjustment
+  - structured light
+  - simulation
