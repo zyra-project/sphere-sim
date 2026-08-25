@@ -23,9 +23,9 @@ name: Release
 # it does not backfill. So turn the repository on at zenodo.org/account/settings/github
 # first, then merge the version bump.
 #
-# Note also that Zenodo asks for a license, and this repository does not yet
-# carry one. GitHub's default in that case is all-rights-reserved, which is
-# probably not the intent for something meant to be cited.
+# Zenodo also asks for a license. This repository is Apache 2.0 as of v0.1.1;
+# v0.1.0 was tagged before that landed and is archived all-rights-reserved, which
+# is why the licence is now checked rather than assumed — see check:citation.
 
 on:
   push:

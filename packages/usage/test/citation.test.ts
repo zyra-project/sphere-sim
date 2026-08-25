@@ -19,10 +19,17 @@ import { check, topLevelScalar } from '../../../tools/check-citation.ts';
 
 const REPO = path.resolve(import.meta.dirname, '../../..');
 
-function fixture(cff: string | null, version = '1.2.3'): string {
+function fixture(
+  cff: string | null,
+  version = '1.2.3',
+  opts: { license?: string; pkgLicense?: string } = {},
+): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cff-'));
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version }));
+  const pkg: Record<string, string> = { version };
+  if (opts.pkgLicense !== undefined) pkg['license'] = opts.pkgLicense;
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(pkg));
   if (cff !== null) fs.writeFileSync(path.join(root, 'CITATION.cff'), cff);
+  if (opts.license !== undefined) fs.writeFileSync(path.join(root, 'LICENSE'), opts.license);
   return root;
 }
 
@@ -78,4 +85,34 @@ version: 1.0.0
 test('quotes are stripped, so a quoted version still compares equal', () => {
   assert.equal(topLevelScalar('version: "1.2.3"\n', 'version'), '1.2.3');
   assert.equal(topLevelScalar("version: '1.2.3'\n", 'version'), '1.2.3');
+});
+
+test('a LICENSE nothing else names is caught', () => {
+  // v0.1.0 shipped exactly this way. Zenodo reads CITATION.cff and tooling reads
+  // package.json; neither opens the file, so an unnamed licence is invisible
+  // downstream and the archived record says all-rights-reserved.
+  const problems = check(fixture(GOOD, '1.2.3', { license: 'Apache License...' }));
+  assert.ok(problems.some((p) => /CITATION\.cff names no `license`/.test(p)));
+  assert.ok(problems.some((p) => /package\.json has no `license`/.test(p)));
+});
+
+test('a licence named in only one of the two is caught', () => {
+  const onlyCff = check(
+    fixture(GOOD + 'license: Apache-2.0\n', '1.2.3', { license: 'x' }),
+  );
+  assert.ok(onlyCff.some((p) => /package\.json has no `license`/.test(p)));
+  assert.ok(!onlyCff.some((p) => /CITATION\.cff names no/.test(p)));
+});
+
+test('two licences that disagree are caught', () => {
+  const problems = check(
+    fixture(GOOD + 'license: MIT\n', '1.2.3', { license: 'x', pkgLicense: 'Apache-2.0' }),
+  );
+  assert.ok(problems.some((p) => /MIT does not match package\.json Apache-2\.0/.test(p)));
+});
+
+test('no LICENSE file means the licence fields are not required', () => {
+  // Not every repository has settled on one, and demanding the field before the
+  // decision is made would be a check nobody can satisfy.
+  assert.deepEqual(check(fixture(GOOD)), []);
 });

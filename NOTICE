@@ -1,0 +1,13 @@
+sphere-sim
+Copyright 2026 Eric Hackathorn
+
+This product includes software developed for a physically-based simulator of a
+projected spherical display and an independent alignment solver.
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file for the
+full terms.
+
+Science On a Sphere® is a registered trademark of the National Oceanic and
+Atmospheric Administration. This project is an independent simulator and is not
+a NOAA product, nor is it endorsed by NOAA. The trademark is used only to
+identify the system being simulated.

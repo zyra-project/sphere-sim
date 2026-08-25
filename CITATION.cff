@@ -17,8 +17,9 @@ authors:
     given-names: Eric
     alias: Hackshaven
 repository-code: https://github.com/zyra-project/sphere-sim
-version: 0.1.0
+version: 0.1.1
 date-released: "2026-08-25"
+license: Apache-2.0
 keywords:
   - Science On a Sphere
   - spherical display

@@ -43,6 +43,7 @@ export function check(root: string): string[] {
   const cff = fs.readFileSync(cffPath, 'utf8');
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as {
     version: string;
+    license?: string;
   };
 
   const cffVersion = topLevelScalar(cff, 'version');
@@ -60,6 +61,19 @@ export function check(root: string): string[] {
     if (topLevelScalar(cff, key) === null) problems.push(`CITATION.cff has no top-level \`${key}\``);
   }
   if (!/^authors:/m.test(cff)) problems.push('CITATION.cff has no `authors`');
+
+  // A LICENSE file that nothing else names is a licence nobody downstream sees:
+  // Zenodo reads CITATION.cff and tooling reads package.json, and neither opens
+  // the file. v0.1.0 shipped that way, so the three are now checked together.
+  const pkgLicense = (pkg as { license?: string }).license;
+  const cffLicense = topLevelScalar(cff, 'license');
+  if (fs.existsSync(path.join(root, 'LICENSE'))) {
+    if (cffLicense === null) problems.push('a LICENSE file exists but CITATION.cff names no `license`');
+    if (pkgLicense === undefined) problems.push('a LICENSE file exists but package.json has no `license`');
+    if (cffLicense !== null && pkgLicense !== undefined && cffLicense !== pkgLicense) {
+      problems.push(`CITATION.cff license ${cffLicense} does not match package.json ${pkgLicense}`);
+    }
+  }
 
   return problems;
 }
