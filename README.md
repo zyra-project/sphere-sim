@@ -97,8 +97,9 @@ of merging. `CITATION.cff` has to move in the same commit — `check:citation`
 fails CI otherwise, which catches a mismatched release before a DOI is minted
 rather than after.
 
-Zenodo archives releases created *after* the repository is enabled there; it does
-not backfill. Enable it first, then merge the version bump.
+Archived on Zenodo. Cite the **concept DOI** — [`10.5281/zenodo.22101428`](https://doi.org/10.5281/zenodo.22101428)
+— which always resolves to the newest version; a version DOI pins a reader to
+whatever release was current when they wrote.
 
 Licensed under **Apache 2.0** — see [`LICENSE`](LICENSE), with the copyright
 holder and the NOAA trademark disclaimer in [`NOTICE`](NOTICE). Every source file
