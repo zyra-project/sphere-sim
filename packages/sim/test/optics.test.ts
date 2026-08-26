@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * The frustum, the distortion inversion, and the two conventions that are
  * easiest to get subtly wrong: half-integer pixel centres and lens shift as a

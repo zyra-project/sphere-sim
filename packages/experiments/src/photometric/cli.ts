@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * `node packages/experiments/src/photometric/cli.ts [2|3|all]`
  *

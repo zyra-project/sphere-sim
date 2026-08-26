@@ -30,9 +30,10 @@
     "pack:skill": "node tools/pack-skill.ts skills/usage-report dist",
     "progress:reference": "node packages/bench/src/reference.ts",
     "progress:reference:check": "node packages/bench/src/reference.ts --check",
-    "ci": "npm run lint:boundary && npm run check:docs && npm run check:citation && npm run typecheck && npm test && npm run progress:reference:check && npm run build:app && npm run smoke:app",
+    "ci": "npm run lint:boundary && npm run check:docs && npm run check:citation && npm run check:license && npm run typecheck && npm test && npm run progress:reference:check && npm run build:app && npm run smoke:app",
     "check:docs": "node tools/experiment-tables.ts",
-    "check:citation": "node tools/check-citation.ts"
+    "check:citation": "node tools/check-citation.ts",
+    "check:license": "node tools/license-header.ts"
   },
   "devDependencies": {
     "typescript": "5.9.3",

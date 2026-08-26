@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * Off-sphere flux — the Red Ball equivalent. What fraction of what each
  * projector emits misses the sphere and lands on the room.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * Bundle adjustment: recovery, gauge handling, and `h_center`.
  *

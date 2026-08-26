@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * A small plotting kit: SVG generated from the data, with no charting library
  * and no JavaScript in the output.

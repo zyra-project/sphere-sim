@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * The parameter-to-model mapping, and the two sweep helpers whose arithmetic decides
  * what Experiments 2 and 3 report.

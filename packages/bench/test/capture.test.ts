@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * The capture path: does the simulated camera see what the decoder thinks it
  * sees, and do the degradation conditions actually do anything?

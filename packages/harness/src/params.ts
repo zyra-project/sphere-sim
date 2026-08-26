@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * The slider manifest — every control the harness exposes, with the provenance
  * class of the constant it moves.

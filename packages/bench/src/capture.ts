@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * The simulated camera rig: render what a camera in the room photographs while
  * each structured-light pattern is displayed, then hand the frames to the

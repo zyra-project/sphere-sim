@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * Frames, sphere intersection, and pose composition — the forward model's own
  * independent implementation of conventions.ts §W, §S and §R.

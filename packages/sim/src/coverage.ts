@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * The coverage field: who lights what, how obliquely, how many at once, and how
  * the contributions are weighted.

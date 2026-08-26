@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * Bootstrap: from PARAMETERS.md nominals to a basin the Levenberg-Marquardt can
  * finish from.

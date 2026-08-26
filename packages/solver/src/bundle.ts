@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * Levenberg-Marquardt bundle adjustment over projector poses, projector
  * interior orientation, camera poses, and the global floor-to-sphere-centre

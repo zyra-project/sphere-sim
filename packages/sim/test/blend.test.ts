@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * conventions.ts §B's ramp algebra, and PARAMETERS.md §4.5's arithmetic about the
  * one DOC-class photometric constant in the whole document.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * Structural checks on the display shader. Not arithmetic — a headless test
  * cannot run GLSL — but the class of bug these catch is the one that silently

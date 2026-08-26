@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * The two `ShadingModel` implementations, and the interface contract that lets
  * `render.ts` take either without an edit.

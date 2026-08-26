@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * A synthetic scene generator, built from the SOLVER'S OWN forward math.
  *

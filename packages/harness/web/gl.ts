@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * The WebGL2 plumbing: one context, one program, one texture, and the
  * offscreen target the parity check reads back from.

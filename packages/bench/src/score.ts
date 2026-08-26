@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * Ground-truth scoring: what the simulator knows, measured against what the
  * solver found.

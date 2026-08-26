@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * SVG for the two experiment figures. No dependencies, no build step — the same
  * constraint as everything else in this repo (zero runtime dependencies, node

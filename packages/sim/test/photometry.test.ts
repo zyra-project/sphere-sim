@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * conventions.ts §P's transfer curve and PARAMETERS.md §3.2's per-channel model.
  *

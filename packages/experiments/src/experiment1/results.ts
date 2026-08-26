@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * The Experiment 1 results file: the raw numbers a reader checks the plots
  * against.

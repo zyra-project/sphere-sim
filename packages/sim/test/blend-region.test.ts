@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * docs/AMENDMENTS.md A-37 — where the blend region is.
  *

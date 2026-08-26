@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * A line-for-line TypeScript transliteration of `glsl.ts`.
  *

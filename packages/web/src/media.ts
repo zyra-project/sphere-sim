@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
 /**
  * What kind of file the reader just handed the page, and whether it is the right
  * shape to go on a sphere.
