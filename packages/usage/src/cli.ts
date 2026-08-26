@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * usage — what this project consumed, in dollars and in kilowatt-hours.
  *

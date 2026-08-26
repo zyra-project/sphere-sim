@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * The static reference: coverage and incidence-cosine over the sphere, computed
  * ONCE and never refreshed by a bench round.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * Deterministic equal-area sampling of the sphere, and the reductions built on
  * it.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * The GPU renderer's shader source — and the reason this file is TypeScript
  * rather than a `.glsl` asset.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * Minimal 3-vector and 3x3 matrix arithmetic — the forward model's OWN copy.
  *

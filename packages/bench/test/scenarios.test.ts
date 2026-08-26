@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * The scenario corpus: reproducible from a seed, fresh between seeds, and
  * pinned where an archetype exists to pin something.

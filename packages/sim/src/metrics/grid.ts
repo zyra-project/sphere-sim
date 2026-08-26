@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * Grid-line displacement across a blend region — the metric PARAMETERS.md §7
  * gates at 1.0 mm, and the one that corresponds to what an operator judges

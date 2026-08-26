@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * boundary-lint — the CI rule that keeps the forward model and the inverse
  * model from ever touching each other.

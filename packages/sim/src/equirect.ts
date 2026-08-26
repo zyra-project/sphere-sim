@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * Equirectangular source imagery: sampling it, and generating the patterns an
  * operator actually looks at.

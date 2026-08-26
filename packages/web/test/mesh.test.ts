@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * The warp mesh, which is the one output on this page derived by composing the
  * two rigs rather than by measuring one of them.

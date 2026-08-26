@@ -73,6 +73,8 @@ npm run pack:skill         # build dist/usage-report.skill — the portable form
                            # above, installable in any Claude Code project
 npm run check:citation     # CITATION.cff and package.json must name the same version;
                            # the release workflow tags whatever package.json says
+npm run check:license      # every source file carries an SPDX header
+node tools/license-header.ts --fix   # add the header to files that lack one
 node packages/bench/src/validation.ts   # regenerate validation/index.html (reads local files only;
                            # images are never fetched — the owner supplies them)
 ```
@@ -97,7 +99,10 @@ Zenodo archives releases created *after* the repository is enabled there; it doe
 not backfill. Enable it first, then merge the version bump.
 
 Licensed under **Apache 2.0** — see [`LICENSE`](LICENSE), with the copyright
-holder and the NOAA trademark disclaimer in [`NOTICE`](NOTICE). `check:citation`
+holder and the NOAA trademark disclaimer in [`NOTICE`](NOTICE). Every source file
+carries a two-line SPDX header, enforced by `check:license`; the short form
+rather than the full sixteen-line boilerplate, because 186 of 191 files open with
+a doc comment explaining what they are for and burying those was the wrong trade. `check:citation`
 keeps the licence named consistently in `package.json` and `CITATION.cff`, so a
 release cannot be cut claiming terms the repository does not carry.
 

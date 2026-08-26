@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * Colorimetry: linear RGB -> CIE XYZ -> CIE Lab, ΔE2000, and the Planckian locus.
  *

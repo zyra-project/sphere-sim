@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * World point -> projector pixel. The solver's own derivation of
  * conventions.ts §R, §I and §D.

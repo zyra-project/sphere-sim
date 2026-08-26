@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * WebGL2 plumbing for the display shader: one context, one program, one content
  * texture, and the offscreen target the parity check reads back from.

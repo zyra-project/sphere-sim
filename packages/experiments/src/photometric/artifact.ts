@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * How Experiment 2 measures a seam artifact, and the two estimators it rejected on
  * the way to the one it uses.

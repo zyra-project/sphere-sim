@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * The blend ramp — conventions.ts §B, and the arithmetic PARAMETERS.md §4.5 works
  * through to justify its one DOC-class photometric constant.

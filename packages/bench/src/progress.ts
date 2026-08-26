@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * The progress page: `progress/index.html`, regenerated from `bench-results.json`
  * plus the PNGs a round already wrote to `progress/data/`.

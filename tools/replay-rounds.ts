@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * Rebuild `progress/rounds.json` by replaying every round's ACTUAL code at one
  * fixed seed.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * Rig construction: framebuffer topology, degraded projector counts, and the
  * misalignment injection the bench scores solvers against.

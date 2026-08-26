@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * The projector frustum: pixel <-> world ray, lens shift, and the Brown-Conrady
  * distortion model INVERTED.

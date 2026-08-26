@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * One scenario, end to end: build a rig, photograph it, solve it, score it.
  *

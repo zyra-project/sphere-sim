@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * rates — the price card, and the multipliers that make cache accounting
  * different from ordinary token accounting.

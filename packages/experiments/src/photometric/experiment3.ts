@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * Experiment 3 — photometric sensitivity, as a work order for PARAMETERS.md §8.
  *

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * `computeGeometricMetrics` — one call, every geometric metric of
  * PARAMETERS.md §7, each with its gate status and the field maps a report needs

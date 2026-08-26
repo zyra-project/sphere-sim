@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * Rig construction from PARAMETERS.md nominals, and seeded misalignment
  * injection.

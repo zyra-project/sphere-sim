@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * Assemble everything publishable into `site/`. `node tools/build-site.ts`
  *

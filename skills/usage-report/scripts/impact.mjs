@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * impact.mjs — tokens to kilowatt-hours, litres, and kilograms of CO2e.
  *

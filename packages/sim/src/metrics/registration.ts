@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * Registration error: how far apart two projectors put the same texel, measured
  * in millimetres of arc along the sphere surface.

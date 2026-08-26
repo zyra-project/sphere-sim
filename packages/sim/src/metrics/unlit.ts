@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * Unlit fraction WITHIN the mask boundary — PARAMETERS.md §7's only gate with no
  * tolerance.

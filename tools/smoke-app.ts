@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * Load the app in a real browser and check that it worked. `node tools/smoke-app.ts`
  *

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * `makeFieldSampler` — the read-only primitive the experiments measure the §7 field
  * with.

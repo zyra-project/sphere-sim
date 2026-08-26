@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * The coverage summary: who lights what, how many at once, how obliquely, and
  * how much of each pole nobody reaches.

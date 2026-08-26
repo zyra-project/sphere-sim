@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * Supersampling: the display shader and the model must integrate the SAME
  * points, and the point set has to be dense enough to catch a graticule line.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Eric Hackathorn
+
 /**
  * The observing camera, and the handheld motion that makes a rolling shutter
  * mean anything at all.
