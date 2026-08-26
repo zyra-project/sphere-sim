@@ -98,10 +98,14 @@ rather than after.
 Zenodo archives releases created *after* the repository is enabled there; it does
 not backfill. Enable it first, then merge the version bump.
 
-**This repository carries no LICENSE.** GitHub's default in that case is
-all-rights-reserved, which is unlikely to be the intent for something meant to be
-cited, and Zenodo will ask. Choosing one is a decision for the owner, not
-something to infer.
+Licensed under **Apache 2.0** — see [`LICENSE`](LICENSE), with the copyright
+holder and the NOAA trademark disclaimer in [`NOTICE`](NOTICE). `check:citation`
+keeps the licence named consistently in `package.json` and `CITATION.cff`, so a
+release cannot be cut claiming terms the repository does not carry.
+
+v0.1.0 was tagged before the licence landed, so it is archived under GitHub's
+default of all-rights-reserved. v0.1.1 is the first release anyone can actually
+use — cite that one.
 
 ## Three geometry facts this implementation must reproduce
 

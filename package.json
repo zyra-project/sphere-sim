@@ -2,7 +2,8 @@
   "name": "sphere-sim",
   "private": true,
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "license": "Apache-2.0",
   "description": "Physically-based simulator of a projected spherical display, plus a deliberately independent alignment solver.",
   "engines": {
     "node": ">=22.18"
