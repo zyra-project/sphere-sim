@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Eric Hackathorn
+// Copyright 2026 The Zyra Project
 
 /**
  * The four photometric gates of PARAMETERS.md §7 — every one of them PROVISIONAL.

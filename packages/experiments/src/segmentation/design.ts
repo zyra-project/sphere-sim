@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Eric Hackathorn
+// Copyright 2026 The Zyra Project
 
 /**
  * Experiment 5 — geometric segmentation against image-space segmentation.

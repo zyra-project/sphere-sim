@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Eric Hackathorn
+// Copyright 2026 The Zyra Project
 
 /**
  * The geometric metrics of PARAMETERS.md §7, and the properties that make them

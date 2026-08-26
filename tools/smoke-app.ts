@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Eric Hackathorn
+// Copyright 2026 The Zyra Project
 
 /**
  * Load the app in a real browser and check that it worked. `node tools/smoke-app.ts`

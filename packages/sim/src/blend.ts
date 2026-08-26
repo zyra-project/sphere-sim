@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Eric Hackathorn
+// Copyright 2026 The Zyra Project
 
 /**
  * The blend ramp — conventions.ts §B, and the arithmetic PARAMETERS.md §4.5 works

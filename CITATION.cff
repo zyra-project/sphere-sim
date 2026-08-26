@@ -16,10 +16,12 @@ authors:
   - family-names: Hackathorn
     given-names: Eric
     alias: Hackshaven
+    affiliation: The Zyra Project
 repository-code: https://github.com/zyra-project/sphere-sim
 version: 0.1.1
 date-released: "2026-08-25"
 license: Apache-2.0
+copyright: Copyright 2026 The Zyra Project
 keywords:
   - Science On a Sphere
   - spherical display

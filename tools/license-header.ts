@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Eric Hackathorn
+// Copyright 2026 The Zyra Project
 
 /**
  * license-header — every source file names its licence, and CI says so.
@@ -46,7 +46,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export const SPDX = 'SPDX-License-Identifier: Apache-2.0';
-export const COPYRIGHT = 'Copyright 2026 Eric Hackathorn';
+export const COPYRIGHT = 'Copyright 2026 The Zyra Project';
 
 interface Comment {
   readonly open: string;
@@ -109,6 +109,23 @@ export function sourceFiles(root: string): string[] {
     .sort();
 }
 
+/**
+ * NOTICE must name the same copyright holder as the headers.
+ *
+ * These drifted once already: switching the holder meant a sweep across 195
+ * files plus NOTICE plus CITATION.cff by hand, and nothing would have caught a
+ * miss. The header constant is the single source of truth, so NOTICE is checked
+ * against it rather than kept in step by memory.
+ */
+export function noticeMismatch(root: string): string | null {
+  const file = path.join(root, 'NOTICE');
+  if (!fs.existsSync(file)) return null;
+  const notice = fs.readFileSync(file, 'utf8');
+  return notice.includes(COPYRIGHT)
+    ? null
+    : `NOTICE does not carry "${COPYRIGHT}" — the header constant and NOTICE have drifted`;
+}
+
 export function check(root: string, fix: boolean): string[] {
   const missing: string[] = [];
   for (const rel of sourceFiles(root)) {
@@ -129,15 +146,19 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const root = ROOT;
   const missing = check(root, fix);
   const total = sourceFiles(root).length;
+  const drift = noticeMismatch(root);
 
   if (fix) {
     console.log(`check:license: added a header to ${missing.length} of ${total} files`);
     process.exit(0);
   }
-  if (missing.length > 0) {
+  if (missing.length > 0 || drift !== null) {
     for (const f of missing) console.error(`check:license: ${f} has no SPDX header`);
-    console.error(`check:license: ${missing.length} of ${total} files. Run: node tools/license-header.ts --fix`);
+    if (missing.length > 0) {
+      console.error(`check:license: ${missing.length} of ${total} files. Run: node tools/license-header.ts --fix`);
+    }
+    if (drift !== null) console.error(`check:license: ${drift}`);
     process.exit(1);
   }
-  console.log(`check:license: all ${total} source files carry an SPDX header`);
+  console.log(`check:license: all ${total} source files carry an SPDX header, and NOTICE agrees`);
 }

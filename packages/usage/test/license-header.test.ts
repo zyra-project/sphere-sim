@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Eric Hackathorn
+// Copyright 2026 The Zyra Project
 
 /**
  * The licence header check.
@@ -15,9 +15,20 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { COPYRIGHT, SPDX, addHeader, check, hasHeader, prologueLines, sourceFiles } from '../../../tools/license-header.ts';
+import {
+  COPYRIGHT,
+  SPDX,
+  addHeader,
+  check,
+  hasHeader,
+  noticeMismatch,
+  prologueLines,
+  sourceFiles,
+} from '../../../tools/license-header.ts';
 
 const REPO = path.resolve(import.meta.dirname, '../../..');
 const TS = { open: '// ', close: '' };
@@ -87,4 +98,22 @@ test('the year is not pinned', () => {
   assert.equal(hasHeader(`// ${SPDX}\n// Copyright 2026-2031 Someone Else\n`), true);
   assert.equal(hasHeader(`// ${SPDX}\n// Copyright 2031 Someone Else\n`), true);
   assert.equal(hasHeader(`// ${SPDX}\n// Copyright\n`), false, 'a bare word is not a notice');
+});
+
+test('NOTICE names the same copyright holder as the headers', () => {
+  assert.equal(noticeMismatch(REPO), null);
+});
+
+test('a NOTICE that drifts from the header constant is caught', () => {
+  // This drifted once: changing the holder meant sweeping 195 files plus NOTICE
+  // plus CITATION.cff by hand, with nothing to catch a miss.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'notice-'));
+  fs.writeFileSync(path.join(root, 'NOTICE'), 'sphere-sim\nCopyright 2026 Someone Else\n');
+  assert.match(noticeMismatch(root) ?? '', /drifted/);
+});
+
+test('no NOTICE at all is not a failure', () => {
+  // Not every repository ships one, and demanding it here would be a check
+  // about a different thing than licence headers.
+  assert.equal(noticeMismatch(fs.mkdtempSync(path.join(os.tmpdir(), 'nonotice-'))), null);
 });
