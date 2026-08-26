@@ -117,12 +117,23 @@ export function addHeader(text: string, style: Comment): string {
   return [...lines.slice(0, skip), ...header, ...rest].join('\n');
 }
 
+/**
+ * Every source file, tracked or merely written.
+ *
+ * `git ls-files` alone lists only tracked files, which makes the local check
+ * disagree with CI in the one direction that matters: a file you have just
+ * written and not yet added passes here and fails there, so you find out after
+ * pushing rather than before. `--others --exclude-standard` adds the untracked
+ * files git would not ignore, which is exactly the set that is about to become
+ * tracked. Ignored paths — dist, node_modules — stay out by the same rule.
+ */
 export function sourceFiles(root: string): string[] {
-  const out = execFileSync('git', ['ls-files', '*.ts', '*.mjs', '*.html'], {
-    cwd: root,
-    encoding: 'utf8',
-  });
-  return out
+  const run = (args: string[]): string =>
+    execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+  const tracked = run(['ls-files', '*.ts', '*.mjs', '*.html']);
+  const untracked = run(['ls-files', '--others', '--exclude-standard', '*.ts', '*.mjs', '*.html']);
+  return [...new Set(`${tracked}\n${untracked}`.split('\n'))]
+    .join('\n')
     .split('\n')
     .filter(Boolean)
     .filter((f) => !/(^|\/)(node_modules|dist)\//.test(f))

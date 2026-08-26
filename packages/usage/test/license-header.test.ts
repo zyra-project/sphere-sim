@@ -142,3 +142,38 @@ test('no NOTICE at all is not a failure', () => {
   // about a different thing than licence headers.
   assert.equal(noticeMismatch(fs.mkdtempSync(path.join(os.tmpdir(), 'nonotice-'))), null);
 });
+
+test('a file written but not yet git-added is still in scope', () => {
+  // `git ls-files` alone lists only tracked files, which made the local check
+  // disagree with CI in the one direction that matters: a file you have just
+  // written passes here and fails there, so you find out after pushing. The
+  // untracked-but-not-ignored set is exactly what is about to become tracked.
+  const probe = path.join(REPO, 'packages/usage/src/untracked-header-probe.ts');
+  fs.writeFileSync(probe, 'export const probe = 1;\n');
+  try {
+    assert.ok(
+      sourceFiles(REPO).some((f) => f.endsWith('untracked-header-probe.ts')),
+      'an untracked source file should be scanned',
+    );
+    assert.ok(
+      check(REPO, false).some((f) => f.endsWith('untracked-header-probe.ts')),
+      'and should be reported as missing a header',
+    );
+  } finally {
+    fs.rmSync(probe, { force: true });
+  }
+});
+
+test('ignored paths stay out, tracked or not', () => {
+  // dist/ is regenerated and gitignored; headers there would be churn that
+  // never survives a rebuild.
+  const dir = path.join(REPO, 'packages/web/dist');
+  fs.mkdirSync(dir, { recursive: true });
+  const probe = path.join(dir, 'ignored-header-probe.ts');
+  fs.writeFileSync(probe, 'export const probe = 1;\n');
+  try {
+    assert.ok(!sourceFiles(REPO).some((f) => f.includes('ignored-header-probe')));
+  } finally {
+    fs.rmSync(probe, { force: true });
+  }
+});
