@@ -18,6 +18,13 @@ authors:
     alias: Hackshaven
     affiliation: The Zyra Project
 repository-code: https://github.com/zyra-project/sphere-sim
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.22101428
+    description: >-
+      The concept DOI. Always resolves to the newest archived version, which is
+      what a citation should point at — a version DOI pins a reader to whatever
+      release happened to be current when they wrote.
 version: 0.1.1
 date-released: "2026-08-25"
 license: Apache-2.0
