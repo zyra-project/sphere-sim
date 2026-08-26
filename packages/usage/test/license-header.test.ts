@@ -49,13 +49,13 @@ test('it covers the source tree and not the build output', () => {
 test('a shebang stays on line 1', () => {
   const out = addHeader('#!/usr/bin/env node\nconsole.log(1);\n', TS);
   assert.equal(out.split('\n')[0], '#!/usr/bin/env node');
-  assert.ok(hasHeader(out));
+  assert.ok(hasHeader(out, TS));
 });
 
 test('a doctype stays on line 1', () => {
   const out = addHeader('<!doctype html>\n<html></html>\n', HTML);
   assert.equal(out.split('\n')[0], '<!doctype html>');
-  assert.ok(hasHeader(out));
+  assert.ok(hasHeader(out, HTML));
   assert.ok(out.includes(`<!-- ${SPDX} -->`));
 });
 
@@ -75,29 +75,54 @@ test('the file body survives intact', () => {
 
 test('applying twice does not stack headers', () => {
   const once = addHeader('export const x = 1;\n', TS);
-  assert.ok(hasHeader(once));
+  assert.ok(hasHeader(once, TS));
   // check() skips anything that already has one, which is what makes --fix safe
   // to run repeatedly.
   assert.equal(once.split(SPDX).length - 1, 1);
 });
 
-test('a mention of SPDX further down the file is not a header', () => {
-  const prose = ['', '', '', '', '', '', '', '', '', `// ${SPDX}`, `// ${COPYRIGHT}`].join('\n');
-  assert.equal(hasHeader(prose), false);
+test('a file that merely TALKS about the header does not pass', () => {
+  // The regression. Searching the first eight lines for the two strings passes
+  // for a file which only mentions them — and two files in this repository do
+  // exactly that, this test and the tool it tests, so a header lost from either
+  // would have gone unnoticed by the check written to notice it.
+  const talksAboutIt = [
+    '/**',
+    ` * Parses ${SPDX} out of source files.`,
+    ` * Looks for ${COPYRIGHT} as the second line.`,
+    ' */',
+    'export const x = 1;',
+  ].join('\n');
+  assert.equal(hasHeader(talksAboutIt, TS), false);
 });
 
-test('both lines are required, not just the identifier', () => {
-  assert.equal(hasHeader(`// ${SPDX}\nexport const x = 1;\n`), false);
-  assert.equal(hasHeader(`// ${COPYRIGHT}\nexport const x = 1;\n`), false);
-  assert.equal(hasHeader(`// ${SPDX}\n// ${COPYRIGHT}\n`), true);
+test('the header must be first, not merely early', () => {
+  const pushedDown = ['export const x = 1;', `// ${SPDX}`, `// ${COPYRIGHT}`].join('\n');
+  assert.equal(hasHeader(pushedDown, TS), false);
 });
 
-test('the year is not pinned', () => {
-  // A file edited later should be free to say 2026-2027 without failing a check
-  // that has no opinion about copyright terms.
-  assert.equal(hasHeader(`// ${SPDX}\n// Copyright 2026-2031 Someone Else\n`), true);
-  assert.equal(hasHeader(`// ${SPDX}\n// Copyright 2031 Someone Else\n`), true);
-  assert.equal(hasHeader(`// ${SPDX}\n// Copyright\n`), false, 'a bare word is not a notice');
+test('both lines are required, in order', () => {
+  assert.equal(hasHeader(`// ${SPDX}\nexport const x = 1;\n`, TS), false);
+  assert.equal(hasHeader(`// ${COPYRIGHT}\nexport const x = 1;\n`, TS), false);
+  assert.equal(hasHeader(`// ${COPYRIGHT}\n// ${SPDX}\n`, TS), false, 'order matters');
+  assert.equal(hasHeader(`// ${SPDX}\n// ${COPYRIGHT}\n`, TS), true);
+});
+
+test('the year moves; the holder does not', () => {
+  // A file edited in a later year should be free to say 2026-2027. A file
+  // quietly attributing itself to somebody else is the drift NOTICE is pinned
+  // against, so that is a failure rather than a licence-agnostic shrug.
+  assert.equal(hasHeader(`// ${SPDX}\n// Copyright 2026-2031 The Zyra Project\n`, TS), true);
+  assert.equal(hasHeader(`// ${SPDX}\n// Copyright 2031 The Zyra Project\n`, TS), true);
+  assert.equal(hasHeader(`// ${SPDX}\n// Copyright 2026 Someone Else\n`, TS), false);
+  assert.equal(hasHeader(`// ${SPDX}\n// Copyright\n`, TS), false, 'a bare word is not a notice');
+});
+
+test('the comment style has to match the file kind', () => {
+  // An HTML header in a .ts file is a syntax error waiting to happen, and the
+  // reverse renders as visible text on the page.
+  assert.equal(hasHeader(`<!-- ${SPDX} -->\n<!-- ${COPYRIGHT} -->\n`, TS), false);
+  assert.equal(hasHeader(`// ${SPDX}\n// ${COPYRIGHT}\n`, HTML), false);
 });
 
 test('NOTICE names the same copyright holder as the headers', () => {

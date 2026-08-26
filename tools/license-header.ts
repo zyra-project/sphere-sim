@@ -74,11 +74,32 @@ export function prologueLines(text: string): number {
   return 0;
 }
 
-export function hasHeader(text: string): boolean {
-  // Only the opening of the file is examined. A file that mentions SPDX in its
-  // prose further down has not thereby licensed itself.
-  const head = text.split('\n').slice(0, 8).join('\n');
-  return head.includes(SPDX) && /Copyright\s+\d{4}(-\d{4})?\s+\S/.test(head);
+/** The holder, without the year, so the year can move and the holder cannot. */
+const HOLDER = COPYRIGHT.replace(/^Copyright\s+\d{4}\s+/, '');
+
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Is the header actually AT THE TOP, rather than merely mentioned somewhere near it?
+ *
+ * An earlier version searched the first eight lines for the two strings. That
+ * passes for a file which only talks about them — and two files here do exactly
+ * that, this one and its test, so a header lost from either would have gone
+ * unnoticed by the check written to notice it. Position is the point: the header
+ * is the first thing in the file, so it is matched in place.
+ *
+ * The year is deliberately loose and the holder deliberately is not. A file
+ * edited in a later year should be free to say 2026-2027, but a file quietly
+ * attributing itself to somebody else is the drift NOTICE is pinned against.
+ */
+export function hasHeader(text: string, style: Comment): boolean {
+  const lines = text.split('\n');
+  const skip = prologueLines(text);
+  const spdxLine = `${style.open}${SPDX}${style.close}`;
+  const copyrightLine = new RegExp(
+    `^${escapeRe(style.open)}Copyright \\d{4}(-\\d{4})? ${escapeRe(HOLDER)}${escapeRe(style.close)}$`,
+  );
+  return lines[skip] === spdxLine && copyrightLine.test(lines[skip + 1] ?? '');
 }
 
 export function addHeader(text: string, style: Comment): string {
@@ -121,21 +142,23 @@ export function noticeMismatch(root: string): string | null {
   const file = path.join(root, 'NOTICE');
   if (!fs.existsSync(file)) return null;
   const notice = fs.readFileSync(file, 'utf8');
+  // Compared against the constant the headers are built from, not against the
+  // files themselves — which is equivalent, since hasHeader matches that same
+  // constant in position, but worth stating rather than implying.
   return notice.includes(COPYRIGHT)
     ? null
-    : `NOTICE does not carry "${COPYRIGHT}" — the header constant and NOTICE have drifted`;
+    : `NOTICE does not carry "${COPYRIGHT}" — it has drifted from the header constant`;
 }
 
 export function check(root: string, fix: boolean): string[] {
   const missing: string[] = [];
   for (const rel of sourceFiles(root)) {
     const full = path.join(root, rel);
+    const style = commentStyle(rel);
+    if (style === null) continue;
     const text = fs.readFileSync(full, 'utf8');
-    if (hasHeader(text)) continue;
-    if (fix) {
-      const style = commentStyle(rel);
-      if (style !== null) fs.writeFileSync(full, addHeader(text, style));
-    }
+    if (hasHeader(text, style)) continue;
+    if (fix) fs.writeFileSync(full, addHeader(text, style));
     missing.push(rel);
   }
   return missing;
@@ -160,5 +183,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (drift !== null) console.error(`check:license: ${drift}`);
     process.exit(1);
   }
-  console.log(`check:license: all ${total} source files carry an SPDX header, and NOTICE agrees`);
+  console.log(
+    `check:license: all ${total} source files open with the SPDX header, ` +
+      'and NOTICE names the same copyright holder',
+  );
 }
