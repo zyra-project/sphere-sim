@@ -65,7 +65,7 @@ export function check(root: string): string[] {
   // A LICENSE file that nothing else names is a licence nobody downstream sees:
   // Zenodo reads CITATION.cff and tooling reads package.json, and neither opens
   // the file. v0.1.0 shipped that way, so the three are now checked together.
-  const pkgLicense = (pkg as { license?: string }).license;
+  const pkgLicense = pkg.license;
   const cffLicense = topLevelScalar(cff, 'license');
   if (fs.existsSync(path.join(root, 'LICENSE'))) {
     if (cffLicense === null) problems.push('a LICENSE file exists but CITATION.cff names no `license`');
