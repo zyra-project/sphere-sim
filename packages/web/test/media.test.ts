@@ -19,6 +19,18 @@ test('a dropped file goes to the loader its type names', () => {
   assert.equal(mediaKind('video/webm', 'earth.webm'), 'video');
   assert.equal(mediaKind('image/jpeg', 'earth.jpg'), 'image');
   assert.equal(mediaKind('image/png', 'earth.png'), 'image');
+  // A model is the SHAPE, not the content, and goes down its own path.
+  assert.equal(mediaKind('model/gltf-binary', 'dome.glb'), 'model');
+  assert.equal(mediaKind('', 'dome.glb'), 'model');
+  assert.equal(mediaKind('', 'scene.gltf'), 'model');
+  assert.equal(mediaKind('DOME.GLB', 'DOME.GLB'), 'model');
+  // The case that made the extension test come FIRST: some systems hand a .glb
+  // over as a generic byte stream. Falling through to the image reader would
+  // have refused it for having a 1.78:1 aspect, which is a baffling thing to
+  // tell somebody who dropped a building.
+  assert.equal(mediaKind('application/octet-stream', 'facade.glb'), 'model');
+  // And a file that merely mentions a model in its NAME is not one.
+  assert.equal(mediaKind('image/png', 'model-render.png'), 'image');
 });
 
 test('a file with no type falls back to its extension', () => {

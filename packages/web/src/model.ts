@@ -30,14 +30,16 @@
  * in separate workers makes that structural instead of a comment.
  */
 
-import type { ProjectorPose, RigCalibration } from '../../calibration/src/index.ts';
+import type { ProjectorPose, RigCalibration, SurfaceMesh } from '../../calibration/src/index.ts';
 import { projectorRotationMatrix } from '../../sim/src/geometry.ts';
 import { pixelToRay, prepareRig, worldToPixel, worldToPixelUnbounded } from '../../sim/src/optics.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
 import type { MetricSet } from '../../sim/src/metrics/index.ts';
 import { renderTwoRigRoomView } from '../../sim/src/misregistration.ts';
-import { renderProjectorView } from '../../sim/src/render.ts';
+import { defaultScene, renderProjectorView, renderRoomView } from '../../sim/src/render.ts';
+import { meshSurface } from '../../sim/src/mesh/surface.ts';
+import { isIlluminatedAt } from '../../sim/src/coverage.ts';
 import type { ViewerCamera } from '../../sim/src/render.ts';
 import { buildWorld } from './rigs.ts';
 import { framebufferSentence, projectorFacts, readingsFrom, rigFacts } from './readout.ts';
@@ -51,6 +53,8 @@ import type {
   SeamLine,
   SeamPatch,
   WarpMesh,
+  SurfaceRequest,
+  SurfaceResponse,
 } from './protocol.ts';
 
 /**
@@ -685,5 +689,129 @@ export function computeModel(req: ModelRequest): ModelResponse {
     parityMs,
     metricsMs,
     densityScale: req.densityScale,
+  };
+}
+
+/**
+ * Light a dropped model and send back a picture of it, plus what it turned out
+ * to be.
+ *
+ * `docs/ARBITRARY-SHAPES.md` Phase 1. Deliberately NOT part of `computeModel`:
+ * that path feeds every number the page prints against PARAMETERS.md §7, and §7
+ * is a set of statements about one 130-inch sphere. Answering it about a
+ * visitor's building would be a claim nobody measured. This computes a picture
+ * and three plain facts about coverage, and no gate.
+ *
+ * ## What the numbers mean, and what they deliberately do not
+ *
+ * `litFraction`, `meanOverlap` and `shadowedFraction` are honest on any shape,
+ * because each is a count over EQUAL-AREA samples of the surface itself — no
+ * latitude, no limb, no blend. `shadowedFraction` is the one that cannot exist
+ * on a sphere: it counts area that faces a projector and lands on its raster and
+ * is dark anyway, because the model is in its own way.
+ *
+ * What is NOT reported is anything about the blend, the seams or the mask.
+ * `blendModelApplies` refuses all three off a sphere, so the rendered picture
+ * shows hard footprint edges rather than crossfades — a true statement about
+ * coverage instead of a smooth gradient that would be a false one.
+ */
+export function computeSurface(req: SurfaceRequest): SurfaceResponse {
+  const world = buildWorld(req.settings);
+  if (req.mesh === null) {
+    return { kind: 'surface', id: req.id, ok: true, frame: null, facts: null };
+  }
+
+  const surface = meshSurface(req.mesh);
+  const truth = prepareRig(world.truthRig, surface);
+  const scene = defaultScene(world.image);
+
+  const width = Math.max(16, Math.round(req.width));
+  const height = Math.max(16, Math.round(req.height));
+  const az = (req.camera.azimuthDeg * Math.PI) / 180;
+  const el = (req.camera.elevationDeg * Math.PI) / 180;
+  // Framed against the MODEL's own size rather than the sphere's, so a 30 m
+  // facade and a 30 cm prop both arrive filling the frame instead of as a dot or
+  // as the inside of a wall.
+  const r = Math.max(req.camera.rangeM, surface.boundsRadiusM * 2.5);
+  const camera: ViewerCamera = {
+    position: {
+      x: r * Math.cos(el) * Math.cos(az),
+      y: r * Math.cos(el) * Math.sin(az),
+      z: r * Math.sin(el),
+    },
+    target: surface.bounds.centre,
+    upHint: { x: 0, y: 0, z: 1 },
+    fovHDeg: req.camera.fovHDeg,
+    width,
+    height,
+  };
+
+  const frame = renderRoomView(truth, scene, camera, {
+    samplesPerPixel: 1,
+    // The floor is drawn against the SPHERE's centre height, which says nothing
+    // about where a dropped model sits. Off until a model can state its own
+    // placement, rather than drawn somewhere arbitrary and believed.
+    drawFloor: false,
+  });
+
+  // Coverage over the model's own surface. Equal-area samples, so an ordinary
+  // mean is already an area-weighted mean.
+  const samples = surface.sampleArea(4000);
+  let lit = 0;
+  let contributors = 0;
+  let shadowed = 0;
+  for (const sample of samples) {
+    let reached = 0;
+    let blocked = false;
+    for (const p of truth.projectors) {
+      if (isIlluminatedAt(sample.point, sample.normal, p)) {
+        reached++;
+        continue;
+      }
+      // Faces the lens and lands on the raster, and is dark anyway: the model is
+      // in its own way. The one question a sphere never has to ask.
+      if (
+        surface.facesLens(sample.point, sample.normal, p.lens) &&
+        worldToPixel(p, sample.point) !== null
+      ) {
+        blocked = true;
+      }
+    }
+    if (reached > 0) {
+      lit++;
+      contributors += reached;
+    } else if (blocked) {
+      shadowed++;
+    }
+  }
+  const n = Math.max(1, samples.length);
+
+  return {
+    kind: 'surface',
+    id: req.id,
+    ok: true,
+    frame: {
+      width,
+      height,
+      data: frame.data,
+      caption: `${req.mesh.name}, lit by the rig`,
+      // A room view is radiance, exactly as the capture thumbnails are — NOT a
+      // projector's own frame, which is already through conventions.ts §P's
+      // encode. Labelling it 'display' would encode it a second time on the way
+      // to the canvas.
+      space: 'linear',
+    },
+    facts: {
+      name: req.mesh.name,
+      triangles: req.mesh.triangleCount,
+      vertices: req.mesh.vertexCount,
+      hasUvs: req.mesh.uvs !== null,
+      hasNormals: req.mesh.normals !== null,
+      boundsRadiusM: surface.boundsRadiusM,
+      areaM2: surface.areaM2,
+      litFraction: lit / n,
+      meanOverlap: lit > 0 ? contributors / lit : 0,
+      shadowedFraction: shadowed / n,
+    },
   };
 }

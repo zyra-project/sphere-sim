@@ -20,7 +20,7 @@
  * can see.
  */
 
-import type { RigCalibration } from '../../calibration/src/index.ts';
+import type { RigCalibration, SurfaceMesh } from '../../calibration/src/index.ts';
 import type { Settings } from './settings.ts';
 import type { Reading, RigFact } from './readout.ts';
 
@@ -281,8 +281,83 @@ export interface FramesResponse {
 
 export type FramesMessage = FramesResponse | WorkerFailure;
 
+/**
+ * Light a dropped model instead of the sphere, and send back a picture of it.
+ *
+ * `docs/ARBITRARY-SHAPES.md` Phase 1. A THIRD request kind rather than a field
+ * on {@link ModelRequest}, and the separation is the point: the metrics path is
+ * the sphere's, it feeds every number the page prints, and its request is sent
+ * on every settling slider. Threading a mesh through it would put a hierarchy
+ * traversal in the interactive loop and make a §7 metric answerable about a
+ * shape §7 was never written for. This path renders a picture and reports what
+ * the model is; it computes no gate and moves no metric.
+ *
+ * The mesh crosses as typed arrays, which is what this protocol is FOR — its own
+ * header says "plain JSON plus transferable typed arrays". That is exactly why
+ * the mesh is not on `RigCalibration`, whose contract is JSON: see `prepareRig`.
+ */
+export interface SurfaceRequest {
+  kind: 'surface';
+  id: number;
+  settings: Settings;
+  /** The model to light. `null` puts the sphere back. */
+  mesh: SurfaceMesh | null;
+  /** Width of the room view to render. The height follows the aspect. */
+  width: number;
+  height: number;
+  /** Where the viewer stands, in the same terms the parity camera uses. */
+  camera: { azimuthDeg: number; elevationDeg: number; rangeM: number; fovHDeg: number };
+}
+
+/** What a model turned out to be, once read and built. */
+export interface SurfaceFacts {
+  name: string;
+  triangles: number;
+  vertices: number;
+  hasUvs: boolean;
+  hasNormals: boolean;
+  /** Bounding radius in metres, and the surface area the tracer measured. */
+  boundsRadiusM: number;
+  areaM2: number;
+  /**
+   * Fraction of the model's AREA that at least one projector reaches, and the
+   * mean number that reach a point.
+   *
+   * Equal-area samples, so an ordinary mean is already an area-weighted mean —
+   * see `sim/src/metrics/sampling.ts` for why that property is worth having.
+   */
+  litFraction: number;
+  meanOverlap: number;
+  /**
+   * Fraction of the area that faces a projector and lands on its raster, and is
+   * dark anyway because the model is in its own way.
+   *
+   * The number that does not exist on a sphere, and the reason a projection
+   * surface needs more than a coverage angle.
+   */
+  shadowedFraction: number;
+}
+
+export interface SurfaceResponse {
+  kind: 'surface';
+  id: number;
+  ok: true;
+  frame: FrameImage | null;
+  facts: SurfaceFacts | null;
+}
+
+export type SurfaceMessage = SurfaceResponse | WorkerFailure;
+
 export interface WorkerFailure {
-  kind: 'model' | 'solve' | 'frames';
+  /**
+   * The kind of the REQUEST that failed, not of the worker that failed it.
+   *
+   * `worker/model.ts` says why: this shell answers several request kinds on one
+   * port, and labelling a failed frame render `'model'` sent it down the metrics
+   * path on the page. Every kind that can be requested has to appear here, or a
+   * failure on that path narrows to `never` and the page cannot print it.
+   */
+  kind: 'model' | 'solve' | 'frames' | 'surface';
   id: number;
   ok: false;
   /** What went wrong, in a sentence the page can print. */

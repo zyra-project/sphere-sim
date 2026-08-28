@@ -9,14 +9,28 @@
  * it, so a 128×96 float render crosses the boundary without being cloned.
  */
 
-import { computeFrames, computeModel } from '../src/model.ts';
-import type { FramesRequest, ModelRequest, WorkerFailure } from '../src/protocol.ts';
+import { computeFrames, computeModel, computeSurface } from '../src/model.ts';
+import type {
+  FramesRequest,
+  ModelRequest,
+  SurfaceRequest,
+  WorkerFailure,
+} from '../src/protocol.ts';
 
 declare const self: DedicatedWorkerGlobalScope;
 
-self.onmessage = (event: MessageEvent<ModelRequest | FramesRequest>): void => {
+self.onmessage = (event: MessageEvent<ModelRequest | FramesRequest | SurfaceRequest>): void => {
   const req = event.data;
   try {
+    // A dropped model, lit by the rig. Its own kind rather than a field on the
+    // metrics request: that path answers PARAMETERS.md §7 about a sphere and
+    // runs on every settling slider, and neither of those should acquire a
+    // bounding volume hierarchy. See `computeSurface`.
+    if (req.kind === 'surface') {
+      const reply = computeSurface(req);
+      self.postMessage(reply, reply.frame ? [reply.frame.data.buffer] : []);
+      return;
+    }
     // A frame on its own, for the lightbox: same renderer, no metrics, and a
     // compositor calibration the caller names rather than the one applied.
     if (req.kind === 'frames') {

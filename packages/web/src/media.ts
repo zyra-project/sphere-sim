@@ -15,8 +15,14 @@
  * a planet, just one whose poles are in the wrong place.
  */
 
-/** Everything the page will try to put on the sphere. */
-export type MediaKind = 'image' | 'video';
+/**
+ * Everything the page will accept from a drop.
+ *
+ * `'model'` is not content — it is the SHAPE the content goes on, which is a
+ * different question from the other two and goes down a different path
+ * entirely. See `docs/ARBITRARY-SHAPES.md`.
+ */
+export type MediaKind = 'image' | 'video' | 'model';
 
 /**
  * Which loader a dropped file goes to.
@@ -24,8 +30,17 @@ export type MediaKind = 'image' | 'video';
  * The MIME type first, because that is what the browser actually knows, and the
  * extension only as a fallback: a file dragged out of some archive tools arrives
  * with an empty `type`, and `.mp4` is not ambiguous.
+ *
+ * A model is checked BEFORE the image and video rules rather than after. Some
+ * systems hand `.glb` over as `application/octet-stream` and a few as
+ * `model/gltf-binary`, and neither of those starts with `image/` — but the
+ * extension test has to come first anyway, because a stream type that fell
+ * through to the default would be read as an image and refused for having a
+ * 1.78:1 aspect, which is a baffling thing to tell somebody who dropped a
+ * building.
  */
 export function mediaKind(mimeType: string, fileName: string): MediaKind {
+  if (/^model\//.test(mimeType) || /\.(glb|gltf)$/i.test(fileName)) return 'model';
   if (mimeType.startsWith('video/')) return 'video';
   if (mimeType.startsWith('image/')) return 'image';
   return /\.(mp4|m4v|webm|mov|ogv)$/i.test(fileName) ? 'video' : 'image';

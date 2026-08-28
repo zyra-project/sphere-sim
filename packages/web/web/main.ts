@@ -89,6 +89,9 @@ import type {
   SolveMessage,
   SolveRequest,
   SolveResponse,
+  SurfaceFacts,
+  SurfaceMessage,
+  SurfaceRequest,
   WarpMesh,
 } from '../src/protocol.ts';
 import type { DisplayGl } from './gl.ts';
@@ -103,6 +106,8 @@ import {
   withFrozenContent,
 } from './gl.ts';
 import { equirectAspectError, mediaKind } from '../src/media.ts';
+import { readGlb } from '../../meshio/src/glb.ts';
+import type { MeshLoadReport, SurfaceMesh } from '../../calibration/src/index.ts';
 
 // ---------------------------------------------------------------------------
 // State
@@ -326,6 +331,25 @@ async function loadMarble(): Promise<void> {
   requestModel(true);
 }
 let customError = '';
+
+/**
+ * A dropped model, and what the tracer made of it.
+ *
+ * `docs/ARBITRARY-SHAPES.md` Phase 1. Deliberately a SIDE panel rather than the
+ * live view: the display shader intersects a sphere analytically, and teaching
+ * it to traverse a hierarchy is Phase 2. Putting a model into the GL view now
+ * would mean the picture on screen was still a sphere while the page claimed a
+ * building — so the mesh is rendered on the CPU, by `packages/sim`, and shown
+ * beside the live view with that difference stated rather than hidden.
+ */
+let droppedMesh: SurfaceMesh | null = null;
+let meshReport: MeshLoadReport | null = null;
+let meshFacts: SurfaceFacts | null = null;
+let meshFrame: FrameImage | null = null;
+let meshError = '';
+let meshBusy = false;
+let meshSeq = 0;
+
 /** Which image the model worker has been sent, so it is sent exactly once. */
 let sentImageId = '';
 /** The same, for the solve worker: separate process, separate cache. */
@@ -869,6 +893,82 @@ function chipRow(
   return wrap;
 }
 
+/**
+ * What a dropped model produced: the picture, the coverage, and what the reader
+ * refused.
+ *
+ * ## Why this is beside the live view and not in it
+ *
+ * The display shader intersects a sphere analytically; teaching it to traverse a
+ * bounding volume hierarchy is Phase 2 of `docs/ARBITRARY-SHAPES.md`. So the
+ * model is rendered by `packages/sim` on the CPU, in the worker, and shown here.
+ *
+ * The alternative — quietly loading a model while the canvas keeps drawing a
+ * ball — is the one thing this page must not do. Every number it prints comes
+ * from the model rather than the picture precisely so that the two can never
+ * drift apart unnoticed, and a mesh in the metrics with a sphere on screen would
+ * be that drift, installed on purpose.
+ */
+function modelBlock(): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  if (meshError) {
+    const err = el('p', { className: 'note', textContent: meshError });
+    err.style.color = 'var(--warn)';
+    out.push(err);
+  }
+  if (droppedMesh === null) return out;
+
+  out.push(el('h3', { textContent: 'Dropped model' }));
+
+  if (meshFrame) {
+    const canvas = el('canvas');
+    canvas.width = meshFrame.width;
+    canvas.height = meshFrame.height;
+    canvas.style.width = '100%';
+    canvas.style.height = 'auto';
+    canvas.style.display = 'block';
+    paintFrame(canvas, meshFrame);
+    out.push(canvas);
+  }
+
+  const f = meshFacts;
+  if (f) {
+    const rows: string[] = [
+      `${f.triangles.toLocaleString()} triangles, ${f.vertices.toLocaleString()} vertices`,
+      `${f.areaM2.toFixed(2)} m² of surface, ${(2 * f.boundsRadiusM).toFixed(2)} m across`,
+      `${(100 * f.litFraction).toFixed(1)}% of the area is lit, ${f.meanOverlap.toFixed(2)} projectors deep on average`,
+      `${(100 * f.shadowedFraction).toFixed(1)}% faces a projector and is dark anyway — the model is in its own way`,
+    ];
+    if (!f.hasUvs) {
+      rows.push('no UV set, so it has no content — coverage and overlap still hold');
+    }
+    if (!f.hasNormals) rows.push('no normals in the file; the winding supplies them');
+    for (const r of rows) out.push(el('p', { className: 'note tiny', textContent: r }));
+  } else if (meshBusy) {
+    out.push(el('p', { className: 'note tiny', textContent: 'Lighting the model…' }));
+  }
+
+  // Everything the reader dropped on the floor, named. A model that arrives with
+  // half its geometry missing has to say so.
+  for (const s of meshReport?.skipped ?? []) {
+    const note = el('p', { className: 'note tiny', textContent: s });
+    note.style.color = 'var(--warn)';
+    out.push(note);
+  }
+
+  const caveat = el('p', {
+    className: 'note tiny',
+    textContent:
+      'The live view above is still the sphere — the display shader intersects one analytically, ' +
+      'and a mesh on the GPU is the next phase. This picture is the same scene traced on the CPU ' +
+      'by the model. Blending and the polar mask are switched OFF for a model rather than ' +
+      'approximated, so each projector stops at a hard edge: that edge is where its footprint ' +
+      'really ends, and a crossfade here would be a guess dressed as a measurement.',
+  });
+  out.push(caveat);
+  return out;
+}
+
 /** The authored explanation for a control, for rows that render as chips. */
 function helpFor(key: SettingKey): string {
   return CONTROLS.find((c) => c.key === key)?.help ?? '';
@@ -960,11 +1060,78 @@ async function readEquirect(file: File): Promise<EquirectImage> {
  * video too" has to be true of both or it is a feature nobody finds.
  */
 async function loadCustomMedia(file: File): Promise<void> {
-  if (mediaKind(file.type, file.name) === 'video') {
+  const kind = mediaKind(file.type, file.name);
+  // A model is not content — it is the shape the content goes on — so it takes
+  // a different path entirely and leaves whatever is on the sphere alone.
+  if (kind === 'model') {
+    await loadCustomModel(file);
+    return;
+  }
+  if (kind === 'video') {
     await loadCustomVideo(file);
     return;
   }
   await loadCustomImage(file);
+}
+
+/**
+ * Read a dropped `.glb` and ask the model worker to light it.
+ *
+ * The reader is `packages/meshio`, which neither `sim` nor `solver` may import —
+ * see that package's README for why a loader is the most plausible-looking thing
+ * to share across the boundary and the one that must not be.
+ *
+ * Everything it refuses is SHOWN. A model that arrives with half its geometry
+ * missing has to say so, or somebody studies a coverage figure for a shape they
+ * did not load.
+ */
+async function loadCustomModel(file: File): Promise<void> {
+  meshError = '';
+  meshFacts = null;
+  meshFrame = null;
+  try {
+    const report = readGlb(new Uint8Array(await file.arrayBuffer()), { name: file.name });
+    meshReport = report;
+    droppedMesh = report.mesh;
+    if (report.mesh === null) {
+      meshError =
+        report.skipped.length > 0
+          ? `nothing in ${file.name} could be lit: ${report.skipped.join('; ')}`
+          : `${file.name} holds no geometry this page can use.`;
+      renderControls();
+      return;
+    }
+    requestSurface();
+  } catch (err) {
+    droppedMesh = null;
+    meshReport = null;
+    meshError = err instanceof Error ? err.message : String(err);
+  }
+  renderControls();
+}
+
+/** Ask the worker for a CPU render of the dropped model, and the coverage facts. */
+function requestSurface(): void {
+  if (droppedMesh === null) return;
+  meshBusy = true;
+  const req: SurfaceRequest = {
+    kind: 'surface',
+    id: ++meshSeq,
+    settings: state.settings,
+    mesh: droppedMesh,
+    width: 320,
+    height: 240,
+    camera: {
+      azimuthDeg: state.settings.viewAzDeg,
+      elevationDeg: state.settings.viewElDeg,
+      rangeM: state.settings.viewRangeM,
+      fovHDeg: state.settings.viewFovDeg,
+    },
+  };
+  // NOT transferred: the page keeps the mesh so it can re-render from another
+  // angle without asking the reader to parse the file again.
+  modelWorker.postMessage(req);
+  renderControls();
 }
 
 async function loadCustomImage(file: File): Promise<void> {
@@ -1362,8 +1529,25 @@ function postModel(fine: boolean): void {
   renderReadout();
 }
 
-modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage>): void => {
+modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage | SurfaceMessage>): void => {
   const msg = event.data;
+  // A dropped model, rendered on the CPU. Its own id sequence, like the
+  // lightbox's frames, so it can never be mistaken for a stale metrics reply and
+  // release the metrics lock.
+  if (msg.kind === 'surface') {
+    if (msg.id !== meshSeq) return;
+    meshBusy = false;
+    if (!msg.ok) {
+      meshError = msg.error;
+      meshFrame = null;
+      meshFacts = null;
+    } else {
+      meshFrame = msg.frame;
+      meshFacts = msg.facts;
+    }
+    renderControls();
+    return;
+  }
   // A frame the lightbox asked for, on its own id sequence. It carries no
   // metrics and must not be mistaken for a stale model reply.
   if (msg.kind === 'frames') {
@@ -2788,7 +2972,8 @@ function roomSection(): HTMLElement[] {
       className: 'note tiny',
       textContent:
         'Drop a file anywhere on the page, or use the chip. Any 2:1 equirectangular map, still or ' +
-        'an .mp4 — which loops. Read in the page, never sent anywhere.',
+        'an .mp4 — which loops. A .glb goes somewhere else: it is read as the SHAPE to light ' +
+        'rather than as content, and appears below. Read in the page, never sent anywhere.',
     }),
   );
 
@@ -2805,6 +2990,7 @@ function roomSection(): HTMLElement[] {
     err.style.color = 'var(--warn)';
     out.push(err);
   }
+  for (const node of modelBlock()) out.push(node);
   // Said out loud, because the failure it reports is otherwise silent: the
   // sphere keeps playing from a texture that works while the model sits on a
   // frame that never arrived, and the only symptom is a parity number nobody can

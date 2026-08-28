@@ -292,6 +292,31 @@ like a blend, and be a claim about a shape nobody measured. **A visible seam is 
 true statement about coverage; a smooth gradient would be a false one.** Phase 3
 replaces the predicate with a screen-space distance to the footprint edge.
 
+**A dropped `.glb` reaches the app.** `mediaKind` routes a model away from the
+content path — it is the shape the content goes on, which is a different
+question — and `packages/meshio` reads it in the page. A third worker request
+kind, `'surface'`, lights it and returns a CPU render plus three facts that are
+honest on any shape because each is a count over equal-area samples of the
+surface itself: what fraction of the area is lit, how many projectors deep it is
+on average, and **what fraction faces a projector and is dark anyway because the
+model is in its own way** — the number that cannot exist on a sphere.
+
+It is a third request kind rather than a field on the metrics request, and that
+matters: the metrics path answers PARAMETERS.md §7 about a 130-inch sphere and
+re-runs on every settling slider. Threading a mesh through it would put a
+hierarchy traversal in the interactive loop and make a §7 gate answerable about a
+shape §7 was never written for.
+
+**The live view stays the sphere, and the page says so.** The display shader
+intersects one analytically; a mesh on the GPU is Phase 2. Quietly loading a
+model while the canvas keeps drawing a ball is the one thing this page must not
+do — every number it prints comes from the model rather than the picture
+precisely so the two cannot drift apart unnoticed, and a mesh in the metrics with
+a sphere on screen would be that drift, installed on purpose. So the model is
+traced on the CPU, shown beside the live view, and the caption states the
+difference along with the fact that blending and the mask are switched off rather
+than approximated.
+
 **Still to do:** carrying a mesh through `RigCalibration` itself — see below for
 why that is deliberately not this change.
 
@@ -398,7 +423,7 @@ cross. Until then the surface is passed to `prepareRig`, which gets a model on
 screen without putting a landmine in the type both models share.
 
 **Gates, re-measured on the Phase 1 head:** bench still byte-identical to the
-pre-refactor baseline (5,563,347 characters), 886 tests pass, `progress:reference:check`
+pre-refactor baseline (5,563,347 characters), 889 tests pass, `progress:reference:check`
 clean, boundary lint clean across 198 files.
 
 *Estimate: 1–2 weeks. Support OBJ second; GLB first is the cheaper 80%.*
