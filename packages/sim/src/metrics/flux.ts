@@ -64,7 +64,6 @@
  */
 
 import type { ProjectorIntrinsics, RigCalibration } from '../../../calibration/src/index.ts';
-import { raySphereIntersect } from '../geometry.ts';
 import type { PreparedProjector } from '../optics.ts';
 import { analyticOffSphereFloor, pixelToRay, prepareRig } from '../optics.ts';
 import { dot } from '../vec.ts';
@@ -138,15 +137,14 @@ export const OFF_SPHERE_EXCESS_GATE: MetricGate = {
     "invariant to the projector's aspect ratio, which §7's absolute 52% is not.",
 };
 
-function hits(proj: PreparedProjector, u: number, v: number, radiusM: number): boolean {
-  return raySphereIntersect(proj.lens, pixelToRay(proj, u, v), radiusM) !== null;
+function hits(proj: PreparedProjector, u: number, v: number): boolean {
+  return proj.surface.intersect(proj.lens, pixelToRay(proj, u, v)) !== null;
 }
 
 /** Bisect between a known miss and a known hit; returns the boundary column. */
 function edgeBetween(
   proj: PreparedProjector,
   v: number,
-  radiusM: number,
   uMiss: number,
   uHit: number,
 ): number {
@@ -154,7 +152,7 @@ function edgeBetween(
   let hi = uHit;
   for (let i = 0; i < 50; i++) {
     const mid = 0.5 * (lo + hi);
-    if (hits(proj, mid, v, radiusM)) hi = mid;
+    if (hits(proj, mid, v)) hi = mid;
     else lo = mid;
   }
   return 0.5 * (lo + hi);
@@ -164,7 +162,6 @@ function edgeBetween(
 function rowLitWidth(
   proj: PreparedProjector,
   v: number,
-  radiusM: number,
   coarse: number,
 ): { width: number; contiguous: boolean } {
   const resX = proj.cal.intrinsics.resX;
@@ -173,7 +170,7 @@ function rowLitWidth(
   let last = -1;
   for (let k = 0; k < coarse; k++) {
     const u = ((k + 0.5) / coarse) * resX;
-    if (hits(proj, u, v, radiusM)) {
+    if (hits(proj, u, v)) {
       flags[k] = 1;
       if (first < 0) first = k;
       last = k;
@@ -189,19 +186,19 @@ function rowLitWidth(
   // run off the raster, so the raster edge itself has to be tested.
   const left =
     first === 0
-      ? hits(proj, 0, v, radiusM)
+      ? hits(proj, 0, v)
         ? 0
-        : edgeBetween(proj, v, radiusM, 0, uAt(0))
-      : edgeBetween(proj, v, radiusM, uAt(first - 1), uAt(first));
+        : edgeBetween(proj, v, 0, uAt(0))
+      : edgeBetween(proj, v, uAt(first - 1), uAt(first));
   // `edgeBetween` maintains "lo is a miss, hi is a hit" and so works with the
   // miss on either side of the hit; the right edge just passes them the other
   // way round.
   const right =
     last === coarse - 1
-      ? hits(proj, resX, v, radiusM)
+      ? hits(proj, resX, v)
         ? resX
-        : edgeBetween(proj, v, radiusM, resX, uAt(last))
-      : edgeBetween(proj, v, radiusM, uAt(last + 1), uAt(last));
+        : edgeBetween(proj, v, resX, uAt(last))
+      : edgeBetween(proj, v, uAt(last + 1), uAt(last));
 
   return { width: Math.max(0, right - left), contiguous: runs === 1 };
 }
@@ -209,7 +206,6 @@ function rowLitWidth(
 /** Fraction of one projector's raster AREA that misses the sphere. */
 function offSphereByRasterArea(
   proj: PreparedProjector,
-  radiusM: number,
   rows: number,
   coarse: number,
 ): { fraction: number; nonConvexRows: number } {
@@ -218,7 +214,7 @@ function offSphereByRasterArea(
   let nonConvexRows = 0;
   for (let r = 0; r < rows; r++) {
     const v = ((r + 0.5) / rows) * it.resY;
-    const row = rowLitWidth(proj, v, radiusM, coarse);
+    const row = rowLitWidth(proj, v, coarse);
     if (!row.contiguous) nonConvexRows++;
     lit += row.width / it.resX;
   }
@@ -239,7 +235,7 @@ function offSphereByRasterArea(
  * A plain grid, not row bisection: this is a diagnostic and half a percent of
  * boundary error is immaterial to it.
  */
-function offSphereBySolidAngle(proj: PreparedProjector, radiusM: number, grid: number): number {
+function offSphereBySolidAngle(proj: PreparedProjector, grid: number): number {
   const it = proj.cal.intrinsics;
   const cols = grid;
   const rows = Math.max(1, Math.round((grid * it.resY) / it.resX));
@@ -253,7 +249,7 @@ function offSphereBySolidAngle(proj: PreparedProjector, radiusM: number, grid: n
       const cos = dot(ray, proj.axis);
       const w = cos > 0 ? cos * cos * cos : 0;
       total += w;
-      if (raySphereIntersect(proj.lens, ray, radiusM) === null) missed += w;
+      if (proj.surface.intersect(proj.lens, ray) === null) missed += w;
     }
   }
   return total > 0 ? missed / total : NaN;
@@ -302,13 +298,13 @@ export function computeOffSphereFlux(
 
   const perProjector: ProjectorFlux[] = rig.projectors.map((p) => {
     const it = p.cal.intrinsics;
-    const area = offSphereByRasterArea(p, rig.radiusM, rows, coarse);
+    const area = offSphereByRasterArea(p, rows, coarse);
     const cfg = configuredOffSphereFloor(it, p.distanceM, rig.radiusM);
     return {
       id: p.cal.id,
       index: p.index,
       absoluteFraction: area.fraction,
-      solidAngleFraction: offSphereBySolidAngle(p, rig.radiusM, solidGrid),
+      solidAngleFraction: offSphereBySolidAngle(p, solidGrid),
       aspectFloor: analyticOffSphereFloor(it.resX / it.resY),
       configuredFloor: cfg.floor,
       excessAboveConfiguredFloor: area.fraction - cfg.floor,
@@ -333,7 +329,7 @@ export function computeOffSphereFlux(
     const coarseRows = Math.max(8, Math.round(rows / 4));
     const coarseAbs =
       rig.projectors.reduce(
-        (acc, p) => acc + offSphereByRasterArea(p, rig.radiusM, coarseRows, coarse).fraction,
+        (acc, p) => acc + offSphereByRasterArea(p, coarseRows, coarse).fraction,
         0,
       ) / n;
     // A tenth of the one-point misaim budget.

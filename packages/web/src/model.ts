@@ -31,7 +31,7 @@
  */
 
 import type { ProjectorPose, RigCalibration } from '../../calibration/src/index.ts';
-import { projectorRotationMatrix, raySphereIntersect } from '../../sim/src/geometry.ts';
+import { projectorRotationMatrix } from '../../sim/src/geometry.ts';
 import { pixelToRay, prepareRig, worldToPixel, worldToPixelUnbounded } from '../../sim/src/optics.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
@@ -412,7 +412,7 @@ function paintedAt(
   const px = worldToPixel(c, target);
   if (!px) return null;
   const ray = pixelToRay(t, px.u, px.v);
-  const hit = raySphereIntersect(t.lens, ray, truth.radiusM);
+  const hit = truth.surface.intersect(t.lens, ray);
   return hit ? hit.point : null;
 }
 
@@ -488,7 +488,7 @@ function warpMeshes(
         const ray = pixelToRay(c, pu, pv);
         // The sphere is centred on the world origin (conventions.ts §W), so the
         // lens position is the ray origin as it stands.
-        const hit = raySphereIntersect(c.lens, ray, compositor.radiusM);
+        const hit = compositor.surface.intersect(c.lens, ray);
         if (!hit) continue;
         const back = t ? worldToPixelUnbounded(t, hit.point) : null;
         if (!back) continue;

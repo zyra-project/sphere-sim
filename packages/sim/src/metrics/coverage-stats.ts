@@ -39,7 +39,6 @@
  */
 
 import type { RigCalibration } from '../../../calibration/src/index.ts';
-import { latLonToWorld } from '../geometry.ts';
 import type { Vec3 } from '../vec.ts';
 import type { PreparedRig } from '../optics.ts';
 import { prepareRig } from '../optics.ts';
@@ -56,7 +55,7 @@ import { createScalarField } from './types.ts';
 import type { ConvergenceReport, CountField, SamplingReport, ScalarField } from './types.ts';
 import { convergenceOf } from './types.ts';
 import type { Stats } from './sampling.ts';
-import { densityPair, equalAreaLattice, latticeWeightSr, percentile, summarise } from './sampling.ts';
+import { densityPair, latticeWeightSr, percentile, summarise } from './sampling.ts';
 
 export interface CoverageStatsOptions {
   sampleCount?: number;
@@ -131,7 +130,7 @@ function pointStats(
 }
 
 function coverageOver(rig: PreparedRig, count: number): CoverageCore {
-  const lattice = equalAreaLattice(count);
+  const lattice = rig.surface.sampleArea(count);
   const n = rig.projectors.length;
   const multiplicityCounts = new Array<number>(n + 1).fill(0);
   const incidences: number[] = [];
@@ -140,8 +139,7 @@ function coverageOver(rig: PreparedRig, count: number): CoverageCore {
   let maxMultiplicity = 0;
 
   for (const s of lattice) {
-    const point = latLonToWorld(s.latDeg, s.lonDeg, rig.radiusM);
-    const { multiplicity: m, bestIncidence: best } = pointStats(point, s.unit, rig.projectors);
+    const { multiplicity: m, bestIncidence: best } = pointStats(s.point, s.normal, rig.projectors);
     multiplicityCounts[m]++;
     if (m > maxMultiplicity) maxMultiplicity = m;
     if (m > 0) {
@@ -170,7 +168,7 @@ function coverageFields(
     for (let x = 0; x < width; x++) {
       const lonDeg = -180 + ((x + 0.5) / width) * 360;
       const idx = y * width + x;
-      const point = latLonToWorld(latDeg, lonDeg, rig.radiusM);
+      const point = rig.surface.pointAt({ latDeg, lonDeg });
       const normal = { x: point.x * invR, y: point.y * invR, z: point.z * invR };
       const { multiplicity: m, bestIncidence: best } = pointStats(point, normal, rig.projectors);
       multiplicityField.data[idx] = m;

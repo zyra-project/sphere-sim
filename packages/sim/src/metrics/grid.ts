@@ -106,7 +106,7 @@
 import type { RigCalibration } from '../../../calibration/src/index.ts';
 import type { Vec3 } from '../vec.ts';
 import { DEG2RAD } from '../vec.ts';
-import { latLonToWorld, raySphereIntersect, worldLonToTextureLon, worldToLatLon } from '../geometry.ts';
+import { worldLonToTextureLon } from '../geometry.ts';
 import { graticuleCoverage } from '../equirect.ts';
 import type { PreparedRig } from '../optics.ts';
 import { pixelToRay, prepareRig, worldToPixel } from '../optics.ts';
@@ -285,9 +285,9 @@ function lazyRaster(
 
   /** The pattern value along one ray out of the lens. */
   const sampleAt = (u: number, v: number): number => {
-    const surface = raySphereIntersect(proj.lens, pixelToRay(proj, u, v), content.radiusM);
+    const surface = content.surface.intersect(proj.lens, pixelToRay(proj, u, v));
     if (surface === null) return 0;
-    const ll = worldToLatLon(surface.point);
+    const ll = content.surface.coordAt(surface.point);
     const texLon = worldLonToTextureLon(ll.lonDeg, content.rotationOffsetDeg);
     // emphasizeAxes off: the doubled-width equator and prime meridian have a
     // different profile from the rest of the graticule, and near longitude 0 the
@@ -614,9 +614,8 @@ export function computeGridDisplacement(
   const measure = (latStep: number, reject: GridRejections): GridMeasurement[] => {
     const out: GridMeasurement[] = [];
     for (const cand of candidatesFor(latStep)) {
-      const point = latLonToWorld(cand.latDeg, cand.lonDeg, content.radiusM);
-      const invR = 1 / content.radiusM;
-      const normal = { x: point.x * invR, y: point.y * invR, z: point.z * invR };
+      const point = content.surface.pointAt({ latDeg: cand.latDeg, lonDeg: cand.lonDeg });
+      const normal = content.surface.normalAt(point);
       // PARAMETERS.md §4.4: "The simulator must model the mask, or seam metrics
       // will report failures in a region nobody projects onto."
       const mask = polarMask(cand.latDeg, content.blend, maskInterpretation);
@@ -698,13 +697,15 @@ export function computeGridDisplacement(
       const pointAt =
         cand.orientation === 'meridian'
           ? (sMm: number): Vec3 =>
-              latLonToWorld(
-                cand.latDeg,
-                cand.lineDeg + sMm / (radiusMm * Math.max(1e-6, cosLat)) / DEG2RAD,
-                content.radiusM,
-              )
+              content.surface.pointAt({
+                latDeg: cand.latDeg,
+                lonDeg: cand.lineDeg + sMm / (radiusMm * Math.max(1e-6, cosLat)) / DEG2RAD,
+              })
           : (sMm: number): Vec3 =>
-              latLonToWorld(cand.lineDeg + sMm / radiusMm / DEG2RAD, cand.lonDeg, content.radiusM);
+              content.surface.pointAt({
+                latDeg: cand.lineDeg + sMm / radiusMm / DEG2RAD,
+                lonDeg: cand.lonDeg,
+              });
 
       // Shrink the window until both ends lie inside BOTH projectors' coverage.
       // Toward the poles the overlap between two projectors narrows faster than

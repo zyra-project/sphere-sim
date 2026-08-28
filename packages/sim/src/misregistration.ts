@@ -46,7 +46,7 @@
 import type { ChannelTriplet, Vec3 } from '../../calibration/src/index.ts';
 import type { RgbImage } from './equirect.ts';
 import { createImage } from './equirect.ts';
-import { raySphereIntersect, worldLonToTextureLon, worldToLatLon } from './geometry.ts';
+import { worldLonToTextureLon } from './geometry.ts';
 import { contentAt } from './render.ts';
 import type { PreparedRig } from './optics.ts';
 import { pixelToRay, worldToPixel } from './optics.ts';
@@ -168,7 +168,7 @@ export function traceTwoRig(
   scene: Scene,
   shading: ReturnType<typeof lambertianShading> = lambertianShading(),
 ): ChannelTriplet {
-  const hit = raySphereIntersect(origin, dir, physical.radiusM);
+  const hit = physical.surface.intersect(origin, dir);
   if (hit === null) return BLACK;
   const point = hit.point;
   const invR = 1 / physical.radiusM;
@@ -210,9 +210,9 @@ export function traceTwoRig(
         const w = (du ? tu : 1 - tu) * (dv ? tv : 1 - tv);
         if (w <= 0) continue;
         const ray = pixelToRay(cProj, i0 + du + 0.5, j0 + dv + 0.5);
-        const back = raySphereIntersect(cProj.lens, ray, content.radiusM);
+        const back = content.surface.intersect(cProj.lens, ray);
         if (back === null) continue;
-        const ll = worldToLatLon(back.point);
+        const ll = content.surface.coordAt(back.point);
         // Image plus the analytic graticule. See `Scene.graticule`: the pattern
         // the gate measures must not be displayed at the resolution of whatever
         // texture it was baked into.

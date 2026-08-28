@@ -109,7 +109,6 @@ import { GATES, PARAMETER_TABLE } from '../../../calibration/src/parameters.ts';
 import type { ParamClass } from '../../../calibration/src/parameters.ts';
 import type { Vec3 } from '../vec.ts';
 import { DEG2RAD, RAD2DEG, dot, scale, sub, wrapDeg180 } from '../vec.ts';
-import { latLonToWorld, raySphereIntersect, worldToLatLon } from '../geometry.ts';
 import type { PreparedRig } from '../optics.ts';
 import { pixelToRay, prepareRig, worldToPixel } from '../optics.ts';
 import type { MaskInterpretation } from '../coverage.ts';
@@ -129,7 +128,7 @@ import type { Scene } from '../render.ts';
 import { blendedSignal } from '../render.ts';
 import type { ConvergenceReport, MetricResult, SamplingReport } from './types.ts';
 import { convergenceOf, gateById, makeMetric } from './types.ts';
-import { densityPair, equalAreaLattice, percentile } from './sampling.ts';
+import { densityPair, percentile } from './sampling.ts';
 
 // ---------------------------------------------------------------------------
 // The step estimator
@@ -435,9 +434,9 @@ function evaluatePoint(point: Vec3, ctx: FieldContext): PointEval {
     let weight = 0;
     const c = ctx.content.projectors[i];
     const ray = pixelToRay(c, px.u, px.v);
-    const hit = raySphereIntersect(c.lens, ray, ctx.content.radiusM);
+    const hit = ctx.content.surface.intersect(c.lens, ray);
     if (hit !== null) {
-      const ll = worldToLatLon(hit.point);
+      const ll = ctx.content.surface.coordAt(hit.point);
       const mask = polarMask(ll.latDeg, ctx.content.blend, ctx.maskInterpretation);
       weight = coverageAndWeights(hit.point, ctx.content).weights[i] * mask;
       signal = blendedSignal(ctx.target, weight, ctx.scene.encodeGamma);
@@ -457,7 +456,7 @@ function evaluatePoint(point: Vec3, ctx: FieldContext): PointEval {
     });
   }
 
-  const ll = worldToLatLon(point);
+  const ll = ctx.physical.surface.coordAt(point);
   const contentCoverage = coverageAndWeights(point, ctx.content);
   let contentContributors = 0;
   for (const lit of contentCoverage.lit) if (lit) contentContributors++;
@@ -776,7 +775,7 @@ function seamLongitude(
   const azA = lensAzimuthDeg(rig, a);
   const delta = wrapDeg180(lensAzimuthDeg(rig, b) - azA);
   const weightsAt = (offset: number): number[] =>
-    coverageAndWeights(latLonToWorld(latDeg, azA + offset, rig.radiusM), rig).weights;
+    coverageAndWeights(rig.surface.pointAt({ latDeg, lonDeg: azA + offset }), rig).weights;
   const difference = (offset: number): number => {
     const w = weightsAt(offset);
     return w[a] - w[b];
@@ -823,7 +822,7 @@ function sampleTrack(
   if (!(cosLat > 1e-6)) return out;
   for (let s = -halfWidthDeg; s <= halfWidthDeg + 1e-9; s += spacingDeg) {
     const lonDeg = centreLonDeg + (s + offsetDeg) / cosLat;
-    const point = latLonToWorld(latDeg, lonDeg, ctx.physical.radiusM);
+    const point = ctx.physical.surface.pointAt({ latDeg, lonDeg });
     const ev = evaluatePoint(point, ctx);
     if (ev.mask <= 0 || ev.contentContributors < 1) continue;
     out.push({ s, rgb: shadeAt(ev, ctx), contributors: ev.contentContributors });
@@ -1108,7 +1107,7 @@ function measureBlackUplift(
   whiteRgb: ChannelTriplet,
   keepWorst: boolean,
 ): BlackUpliftReport {
-  const lattice = equalAreaLattice(count);
+  const lattice = ctx.physical.surface.sampleArea(count);
   const ratios: number[] = [];
   const deltas: number[] = [];
   let projectorOnly = 0;
@@ -1117,7 +1116,7 @@ function measureBlackUplift(
   let worstDeltaE: BlackUpliftReading | null = null;
 
   for (const s of lattice) {
-    const point = latLonToWorld(s.latDeg, s.lonDeg, ctx.physical.radiusM);
+    const point = s.point;
     const ev = evaluatePoint(point, ctx);
     if (ev.mask <= 0) continue;
     if (ev.contributions.length < 2) continue;
@@ -1162,8 +1161,8 @@ function measureBlackUplift(
 
     if (keepWorst) {
       const reading: BlackUpliftReading = {
-        latDeg: s.latDeg,
-        lonDeg: s.lonDeg,
+        latDeg: s.coord.latDeg,
+        lonDeg: s.coord.lonDeg,
         contributors: ev.contributions.length,
         overlapY,
         singleY,
@@ -1216,14 +1215,14 @@ function measureDivergence(
 ): DivergenceReport {
   const matched = channelMatchedTransferSet(ctx.transfers);
   const summary = summariseTransfers(ctx.transfers);
-  const lattice = equalAreaLattice(count);
+  const lattice = ctx.physical.surface.sampleArea(count);
   const lums: number[] = [];
   const deltas: number[] = [];
   let overlapSamples = 0;
   let worst: DivergenceReport['worst'] = null;
 
   for (const s of lattice) {
-    const point = latLonToWorld(s.latDeg, s.lonDeg, ctx.physical.radiusM);
+    const point = s.point;
     const ev = evaluatePoint(point, ctx);
     if (ev.mask <= 0 || ev.contributions.length < 2) continue;
     overlapSamples++;
@@ -1240,7 +1239,7 @@ function measureDivergence(
     lums.push(lum);
     deltas.push(de);
     if (worst === null || de > worst.deltaE) {
-      worst = { latDeg: s.latDeg, lonDeg: s.lonDeg, luminanceFraction: lum, deltaE: de };
+      worst = { latDeg: s.coord.latDeg, lonDeg: s.coord.lonDeg, luminanceFraction: lum, deltaE: de };
     }
   }
 

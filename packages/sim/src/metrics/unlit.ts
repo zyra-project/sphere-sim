@@ -52,7 +52,6 @@
  */
 
 import type { BlendCalibration, RigCalibration } from '../../../calibration/src/index.ts';
-import { latLonToWorld } from '../geometry.ts';
 import type { PreparedRig } from '../optics.ts';
 import { prepareRig } from '../optics.ts';
 import type { MaskInterpretation } from '../coverage.ts';
@@ -60,7 +59,7 @@ import { coverageBoundaryLatitude, isIlluminatedAt, polarMask } from '../coverag
 import { DEG2RAD } from '../vec.ts';
 import type { ConvergenceReport, MetricGate, MetricResult, SamplingReport } from './types.ts';
 import { convergenceOf, makeMetric } from './types.ts';
-import { densityPair, equalAreaLattice } from './sampling.ts';
+import { densityPair } from './sampling.ts';
 
 export interface UnlitOptions {
   /** Equal-area lattice size over the whole sphere, before restriction. */
@@ -144,15 +143,15 @@ function readingFor(
   keepExamples: boolean,
 ): UnlitReading {
   const onsetLatDeg = maskOnsetLatitude(rig.blend, interpretation);
-  const lattice = equalAreaLattice(count);
+  const lattice = rig.surface.sampleArea(count);
 
   let samplesInDomain = 0;
   let unlitSamples = 0;
   const examples: { latDeg: number; lonDeg: number }[] = [];
   for (const s of lattice) {
-    if (Math.abs(s.latDeg) > onsetLatDeg) continue;
+    if (Math.abs(s.coord.latDeg) > onsetLatDeg) continue;
     samplesInDomain++;
-    const point = latLonToWorld(s.latDeg, s.lonDeg, rig.radiusM);
+    const point = s.point;
     let lit = false;
     for (const p of rig.projectors) {
       if (isIlluminatedAt(point, p)) {
@@ -163,7 +162,7 @@ function readingFor(
     if (!lit) {
       unlitSamples++;
       if (keepExamples && examples.length < 32) {
-        examples.push({ latDeg: s.latDeg, lonDeg: s.lonDeg });
+        examples.push({ latDeg: s.coord.latDeg, lonDeg: s.coord.lonDeg });
       }
     }
   }

@@ -1,6 +1,6 @@
 # Arbitrary shapes: a feasibility study
 
-**Status: STUDY. Nothing here has been implemented.** This document answers a
+**Status: STUDY, with Phase 0 landed.** Phases 1–5 are unimplemented. This document answers a
 question — how hard would it be to let a user drop in a GLB or an OBJ, put the
 projectors wherever they like, and get real projection mapping out — and proposes
 a plan. It changes no constant, no gate and no line of code.
@@ -198,23 +198,52 @@ and it would be self-inflicted.
 
 ## The plan
 
-### Phase 0 — the seam. No behaviour change.
+### Phase 0 — the seam. No behaviour change. **LANDED**
 
-Define `Surface` in `packages/sim`:
+`packages/sim/src/surface.ts` defines `Surface`, and `SphereSurface` implements
+it by delegating to the same `geometry.ts` functions the call sites used to call
+themselves:
 
 ```
-intersect(origin, dir, tMin) -> { t, point, normal, uv } | null
-sampleArea(n)                -> equal-area surface samples
-bounds()                     -> centre, radius, and an AABB
+intersect(origin, dir, tMin?) -> { t, point, normal } | null
+coordAt(point)                -> the content coordinate there
+pointAt(coord)                -> the surface point at a content coordinate
+normalAt(point)               -> outward unit normal
+sampleArea(n)                 -> equal-area surface samples
 ```
 
-`SphereSurface` implements it from the existing `raySphereIntersect` and
-`fibonacciLattice`. Every current call site routes through the interface.
+Every direct sphere call in `packages/sim/src` now goes through it, as do the
+consumers in `packages/bench`, `packages/web` and `packages/experiments`. Two
+places deliberately do NOT follow the seam, and each says why in situ:
 
-**Gate: `bench-results.json` byte-identical, `progress:reference:check` clean,
-all tests green.** Nothing else counts as done.
+- `packages/harness/src/glsl.ts` and `packages/harness/src/reference.ts` — the
+  shader and its line-for-line transliteration. Their whole job is to be an
+  independent re-implementation, so routing them through the simulator's seam
+  would delete the thing the parity chain measures. Phase 2's territory.
+- `pickMarker` in `packages/web/src/uniforms.ts` — it picks against `PackedRig`,
+  the flat Float32Array payload the shader is handed, so it has to answer the
+  question the *shader* would answer. Until the GPU learns about shapes, a seam
+  there would let the picker and the picture disagree about what was hit.
 
-*Estimate: 3–5 days.*
+**Measured, not asserted:**
+
+| Gate | Result |
+| --- | --- |
+| `bench --scenarios 12 --seed 1234` against the same command before the change | **identical** — 5,563,347 characters, `env` and per-scenario `timings` removed |
+| `progress:reference:check` | clean: multiplicity ≤ 2, four-lobed scallop, boundary matches closed form |
+| `npm test` | 852 pass, 0 fail (8 new, in `test/surface.test.ts`) |
+| `typecheck`, `lint:boundary`, `check:license`, `build:app`, `smoke:app` | green |
+
+What the interface deliberately does **not** yet carry: a bounding volume
+hierarchy, per-triangle UVs, and a shadow query that is more than "does this
+point face the lens". Those arrive with a mesh that can exercise them. The
+content coordinate is still a latitude and a longitude — widening it now would
+mean inventing a coordinate no implementation uses, and the conversion would
+move arithmetic that the byte-identity gate exists to pin.
+
+*Estimated 3–5 days; the seam itself came in under that because the call sites
+were uniform. The estimate stands for anyone repeating it — most of the time
+went on establishing the baseline and reading each call site, not on typing.*
 
 ### Phase 1 — a mesh on the CPU
 

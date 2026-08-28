@@ -63,7 +63,6 @@ import type { ChannelTriplet, RigCalibration } from '../../calibration/src/index
 import { PARAMETER_TABLE } from '../../calibration/src/parameters.ts';
 import type { RgbImage } from '../../sim/src/equirect.ts';
 import { createImage } from '../../sim/src/equirect.ts';
-import { raySphereIntersect } from '../../sim/src/geometry.ts';
 import type { PreparedProjector, PreparedRig } from '../../sim/src/optics.ts';
 import { prepareRig, worldToPixel } from '../../sim/src/optics.ts';
 import type {
@@ -482,7 +481,7 @@ function traceGeometry(
       const dir = { x: dx / len, y: dy / len, z: dz / len };
       traced++;
 
-      const hit = raySphereIntersect(origin, dir, radiusM);
+      const hit = proj.surface.intersect(origin, dir);
       if (hit === null) {
         geom.onSphere[i] = 0;
         geom.lit[i] = 0;
@@ -504,7 +503,7 @@ function traceGeometry(
               // and a real capture has one.
               const inv = 1 / dist;
               const toward = { x: -lx * inv, y: -ly * inv, z: -lz * inv };
-              const blocked = raySphereIntersect(proj.lens, toward, radiusM);
+              const blocked = proj.surface.intersect(proj.lens, toward);
               if (blocked === null || blocked.t >= dist) {
                 const px = worldToPixel(proj, rp);
                 if (px !== null) {

@@ -22,7 +22,6 @@
 import type { BlendCalibration } from '../../calibration/src/index.ts';
 import type { Vec3 } from './vec.ts';
 import { DEG2RAD, RAD2DEG, clamp, dot, sub, wrapDeg180 } from './vec.ts';
-import { latLonToWorld } from './geometry.ts';
 import type { PreparedProjector, PreparedRig } from './optics.ts';
 import { worldToPixel } from './optics.ts';
 import { normalizeWeights, rampWeight } from './blend.ts';
@@ -59,7 +58,7 @@ export { rampValue } from './blend.ts';
  * the whole point of the off-sphere-flux metric.
  */
 export function isIlluminated(latDeg: number, lonDeg: number, projector: PreparedProjector): boolean {
-  const point = latLonToWorld(latDeg, lonDeg, projector.radiusM);
+  const point = projector.surface.pointAt({ latDeg, lonDeg });
   return isIlluminatedAt(point, projector);
 }
 
@@ -117,9 +116,8 @@ export function incidenceCosine(
   lonDeg: number,
   projector: PreparedProjector,
 ): number {
-  const point = latLonToWorld(latDeg, lonDeg, projector.radiusM);
-  const inv = 1 / projector.radiusM;
-  const normal = { x: point.x * inv, y: point.y * inv, z: point.z * inv };
+  const point = projector.surface.pointAt({ latDeg, lonDeg });
+  const normal = projector.surface.normalAt(point);
   return incidenceCosineAt(point, normal, projector.lens);
 }
 
@@ -138,7 +136,7 @@ export function incidenceCosine(
  * The count is computed by asking each projector, not by trusting the argument.
  */
 export function overlapMultiplicity(latDeg: number, lonDeg: number, rig: PreparedRig): number {
-  const point = latLonToWorld(latDeg, lonDeg, rig.radiusM);
+  const point = rig.surface.pointAt({ latDeg, lonDeg });
   let n = 0;
   for (const p of rig.projectors) if (isIlluminatedAt(point, p)) n++;
   return n;
@@ -146,7 +144,7 @@ export function overlapMultiplicity(latDeg: number, lonDeg: number, rig: Prepare
 
 /** Which projectors light this point, by index. */
 export function contributors(latDeg: number, lonDeg: number, rig: PreparedRig): number[] {
-  const point = latLonToWorld(latDeg, lonDeg, rig.radiusM);
+  const point = rig.surface.pointAt({ latDeg, lonDeg });
   const out: number[] = [];
   for (const p of rig.projectors) if (isIlluminatedAt(point, p)) out.push(p.index);
   return out;
@@ -236,7 +234,7 @@ export function polarMask(
  * summing to one.
  */
 export function blendWeights(latDeg: number, lonDeg: number, rig: PreparedRig): number[] {
-  const point = latLonToWorld(latDeg, lonDeg, rig.radiusM);
+  const point = rig.surface.pointAt({ latDeg, lonDeg });
   return blendWeightsAt(point, rig);
 }
 

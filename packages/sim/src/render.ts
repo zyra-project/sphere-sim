@@ -25,7 +25,7 @@
 import type { ChannelTriplet, Vec3 } from '../../calibration/src/index.ts';
 import type { EquirectImage, RgbImage } from './equirect.ts';
 import { createImage, graticuleCoverage, sampleEquirect } from './equirect.ts';
-import { latLonToWorld, raySphereIntersect, worldLonToTextureLon, worldToLatLon } from './geometry.ts';
+import { worldLonToTextureLon } from './geometry.ts';
 import type { PreparedRig } from './optics.ts';
 import { pixelToRay, worldToPixel } from './optics.ts';
 import { coverageAndWeights, isIlluminatedAt, polarMask } from './coverage.ts';
@@ -206,9 +206,8 @@ export interface SurfaceSample {
 }
 
 export function sampleSurface(point: Vec3, rig: PreparedRig, scene: Scene): SurfaceSample {
-  const inv = 1 / rig.radiusM;
-  const normal = { x: point.x * inv, y: point.y * inv, z: point.z * inv };
-  const ll = worldToLatLon(point);
+  const normal = rig.surface.normalAt(point);
+  const ll = rig.surface.coordAt(point);
   const texLon = worldLonToTextureLon(ll.lonDeg, rig.rotationOffsetDeg);
   // `contentAt`, never `sampleEquirect` directly: the graticule is drawn
   // analytically over the image, so a renderer that reads the texture is
@@ -267,7 +266,7 @@ export function renderProjectorView(
         // offsets are exactly (0.5, 0.5), i.e. the pixel centre — and at the
         // default step of 1 the coordinate is exactly `x + 0.5` as before.
         const ray = pixelToRay(proj, (x + ox) * stepX, (y + oy) * stepY);
-        const hit = raySphereIntersect(proj.lens, ray, rig.radiusM);
+        const hit = rig.surface.intersect(proj.lens, ray);
         if (!hit) continue;
         const surf = sampleSurface(hit.point, rig, scene);
         const sig = blendedSignal(surf.target, surf.weights[index], scene.encodeGamma);
@@ -480,7 +479,7 @@ function traceRoomRay(
   shading: ShadingModel,
   ctx: RoomTraceContext,
 ): ChannelTriplet {
-  const hit = raySphereIntersect(origin, dir, rig.radiusM);
+  const hit = rig.surface.intersect(origin, dir);
   if (hit) {
     const surf = sampleSurface(hit.point, rig, scene);
     const contributions: ProjectorContribution[] = [];
@@ -540,7 +539,7 @@ function shadeFloor(point: Vec3, rig: PreparedRig, scene: Scene): ChannelTriplet
     if (cos <= 0) continue;
     const dir = scale(toLensVec, 1 / distanceM);
     // Shadow test: does the sphere sit between the floor point and the lens?
-    const occl = raySphereIntersect(point, dir, rig.radiusM, 1e-6);
+    const occl = rig.surface.intersect(point, dir, 1e-6);
     if (occl && occl.t < distanceM) continue;
     // Is the floor point even inside this projector's cone?
     if (worldToPixel(p, point) === null) continue;
@@ -657,7 +656,7 @@ export function surfacePointVisibility(
   lonDeg: number,
   rig: PreparedRig,
 ): { projector: number; u: number; v: number }[] {
-  const point = latLonToWorld(latDeg, lonDeg, rig.radiusM);
+  const point = rig.surface.pointAt({ latDeg, lonDeg });
   const out: { projector: number; u: number; v: number }[] = [];
   for (const p of rig.projectors) {
     if (!isIlluminatedAt(point, p)) continue;

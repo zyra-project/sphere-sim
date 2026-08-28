@@ -24,6 +24,8 @@ import { NOMINAL_SILHOUETTE_MARGIN_FRAC } from '../../calibration/src/convention
 import type { Mat3 } from './vec.ts';
 import { DEG2RAD, RAD2DEG, matTVec, matVec, normalize, sub } from './vec.ts';
 import { projectorRotationMatrix } from './geometry.ts';
+import type { Surface } from './surface.ts';
+import { sphereSurface } from './surface.ts';
 
 /**
  * A projector with its per-render invariants precomputed.
@@ -52,6 +54,15 @@ export interface PreparedProjector {
   /** Principal point in pixels, lens shift included. conventions.ts §I. */
   cx: number;
   cy: number;
+  /**
+   * The surface this projector was prepared against.
+   *
+   * The route to the shape for everything downstream — `coverage.ts`,
+   * `render.ts` and the metrics all ask this rather than naming the sphere.
+   * See `surface.ts` for why {@link PreparedProjector.radiusM} survives beside
+   * it rather than being replaced by it.
+   */
+  surface: Surface;
   /** Sphere radius this projector was prepared against, metres. */
   radiusM: number;
   /** Distance from the lens to the sphere centre, metres. `d_proj`. */
@@ -70,6 +81,8 @@ export interface PreparedProjector {
 export interface PreparedRig {
   /** The calibration this was built from, kept so nothing has to be re-derived. */
   rig: RigCalibration;
+  /** The shape the light lands on. See `surface.ts`. */
+  surface: Surface;
   radiusM: number;
   centerHeightM: number;
   rotationOffsetDeg: number;
@@ -79,9 +92,10 @@ export interface PreparedRig {
 
 export function prepareProjector(
   cal: ProjectorCalibration,
-  radiusM: number,
+  surface: Surface,
   index: number,
 ): PreparedProjector {
+  const radiusM = surface.boundsRadiusM;
   const rotation = projectorRotationMatrix(cal.pose);
   const it = cal.intrinsics;
   const fx = it.resX / 2 / Math.tan((it.fovHDeg * DEG2RAD) / 2);
@@ -107,6 +121,7 @@ export function prepareProjector(
     // pins it with a non-zero shift.
     cx: it.resX / 2 + it.shiftH * (it.resX / 2),
     cy: it.resY / 2 - it.shiftV * (it.resY / 2),
+    surface,
     radiusM,
     distanceM,
     limbCos,
@@ -421,12 +436,18 @@ export function fovVDeg(it: ProjectorIntrinsics): number {
  * with the same seed to disagree in the last bit.
  */
 export function prepareRig(rig: RigCalibration): PreparedRig {
+  // One surface per rig, shared by every projector. Building it once is not an
+  // optimisation: a surface built twice is two objects that a `===` check can
+  // tell apart, and Phase 1's mesh will carry a bounding volume hierarchy that
+  // nobody wants rebuilt four times per prepare.
+  const surface = sphereSurface(rig.sphere.radiusM);
   return {
     rig,
+    surface,
     radiusM: rig.sphere.radiusM,
     centerHeightM: rig.sphere.centerHeightM,
     rotationOffsetDeg: rig.sphere.rotationOffsetDeg,
     blend: rig.blend,
-    projectors: rig.projectors.map((p, i) => prepareProjector(p, rig.sphere.radiusM, i)),
+    projectors: rig.projectors.map((p, i) => prepareProjector(p, surface, i)),
   };
 }

@@ -15,7 +15,7 @@ import { DEFAULT_ROOM_SPILL, roomHit } from '../../../bench/src/capture.ts';
 import { deriveSeed } from '../../../bench/src/random.ts';
 import { PRESETS, makeScenario } from '../../../bench/src/scenarios.ts';
 import { runScenario } from '../../../bench/src/run.ts';
-import { raySphereIntersect } from '../../../sim/src/geometry.ts';
+import { sphereSurface } from '../../../sim/src/surface.ts';
 import { cameraPixelToRay } from '../../../bench/src/camera.ts';
 import { buildWorld } from '../../../bench/src/run.ts';
 import type { CellSpec } from './design.ts';
@@ -336,7 +336,7 @@ export function runPoint(spec: CellSpec, seedIndex: number): PointRun {
   // the world is cheap and exactly reproducible; it is the same construction
   // `runScenario` made from the same scenario.
   const world = buildWorld(scenario);
-  const radiusM = world.truthRig.sphere.radiusM;
+  const surface = sphereSurface(world.truthRig.sphere.radiusM);
   const spill = spillFor(spec);
   const floorZ = -world.truthRig.sphere.centerHeightM;
   let offSphere = 0;
@@ -346,7 +346,7 @@ export function runPoint(spec: CellSpec, seedIndex: number): PointRun {
   for (const c of result.capture.correspondences) {
     const cam = world.cameras[c.camera];
     const dir = cameraPixelToRay(cam, c.camU, c.camV);
-    if (raySphereIntersect(cam.pose.position, dir, radiusM) !== null) continue;
+    if (surface.intersect(cam.pose.position, dir) !== null) continue;
     offSphere++;
     if (spill === null) continue;
     const p = roomHit(cam.pose.position, dir, spill, floorZ);
