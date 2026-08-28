@@ -23,6 +23,7 @@
 import type { RigCalibration, SurfaceMesh } from '../../calibration/src/index.ts';
 import type { Settings } from './settings.ts';
 import type { Reading, RigFact } from './readout.ts';
+import type { ProjectorPlacement } from '../../sim/src/placement.ts';
 
 /** A downscale of the live camera, for the CPU half of the parity check. */
 export interface ParityCameraRequest {
@@ -307,6 +308,21 @@ export interface SurfaceRequest {
   height: number;
   /** Where the viewer stands, in the same terms the parity camera uses. */
   camera: { azimuthDeg: number; elevationDeg: number; rangeM: number; fovHDeg: number };
+  /**
+   * A rig placed by hand, replacing the one `settings` describes.
+   *
+   * Only on this request kind, and that is the same argument the request kind
+   * itself was made for. The metrics path answers PARAMETERS.md §7 about a
+   * 130-inch sphere lit by an SOS rig of two to four projectors in quadrant
+   * viewports; a rig of six on a wall is not that machine, and letting one reach
+   * §7 would put a gate score on screen for an installation the gate was never
+   * written about. Here the reported numbers — lit fraction, mean overlap,
+   * self-shadowed fraction — are counts over the surface's own area and stay
+   * true whatever is pointing at it.
+   *
+   * Plain data, because it crosses to the worker by structured clone.
+   */
+  placements?: ProjectorPlacement[];
 }
 
 /** What a model turned out to be, once read and built. */

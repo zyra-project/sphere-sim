@@ -39,6 +39,7 @@ import type { MetricSet } from '../../sim/src/metrics/index.ts';
 import { renderTwoRigRoomView } from '../../sim/src/misregistration.ts';
 import { defaultScene, renderProjectorView, renderRoomView } from '../../sim/src/render.ts';
 import { meshSurface } from '../../sim/src/mesh/surface.ts';
+import { placedRig } from '../../sim/src/placement.ts';
 import { isIlluminatedAt } from '../../sim/src/coverage.ts';
 import type { ViewerCamera } from '../../sim/src/render.ts';
 import { buildWorld } from './rigs.ts';
@@ -740,10 +741,19 @@ const FRAME_MARGIN = 1.4;
  * on a sphere: it counts area that faces a projector and lands on its raster and
  * is dark anyway, because the model is in its own way.
  *
- * What is NOT reported is anything about the blend, the seams or the mask.
- * `blendModelApplies` refuses all three off a sphere, so the rendered picture
- * shows hard footprint edges rather than crossfades — a true statement about
- * coverage instead of a smooth gradient that would be a false one.
+ * The picture DOES crossfade: the blend off a sphere is a geodesic distance to
+ * the edge of each projector's own footprint. What stays refused is the polar
+ * mask, which is a statement about a ceiling mount over a sphere and has no
+ * meaning on a dropped model — `blendModelApplies` is where that decision lives.
+ *
+ * ## A rig placed by hand
+ *
+ * `req.placements` replaces the rig `settings` describes with an explicit one,
+ * of any size and any arrangement. It is accepted HERE and nowhere else, for the
+ * same reason this request kind exists at all: the metrics path answers §7 about
+ * a 130-inch sphere lit by an SOS rig, and six projectors on a wall are not that
+ * machine. The three numbers reported here are counts over the surface's own
+ * area, and stay true whatever is pointing at it.
  */
 export function computeSurface(req: SurfaceRequest): SurfaceResponse {
   const world = buildWorld(req.settings);
@@ -752,7 +762,22 @@ export function computeSurface(req: SurfaceRequest): SurfaceResponse {
   }
 
   const surface = meshSurface(req.mesh);
-  const truth = prepareRig(world.truthRig, surface);
+  // The placed rig keeps the scene the settings describe — sphere radius, height,
+  // rotation, blend — and replaces only where the light comes from. Anything
+  // else would make moving a projector silently change the room too.
+  const rigCal =
+    req.placements && req.placements.length > 0
+      ? placedRig({
+          projectors: req.placements,
+          radiusM: world.truthRig.sphere.radiusM,
+          centerHeightM: world.truthRig.sphere.centerHeightM,
+          rotationOffsetDeg: world.truthRig.sphere.rotationOffsetDeg,
+          resX: world.truthRig.projectors[0]?.intrinsics.resX,
+          resY: world.truthRig.projectors[0]?.intrinsics.resY,
+          blend: world.truthRig.blend,
+        })
+      : world.truthRig;
+  const truth = prepareRig(rigCal, surface);
   const scene = defaultScene(world.image);
 
   const width = Math.max(16, Math.round(req.width));

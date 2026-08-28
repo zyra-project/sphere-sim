@@ -1855,6 +1855,91 @@ async function main(): Promise<void> {
           `  model: preview ${((preview.nonBlack / preview.total) * 100).toFixed(1)}% lit\n`,
         );
       }
+
+      // Phase 4: place the projectors by hand and add a fifth.
+      //
+      // The chain this proves is the one that cannot be checked from a unit
+      // test: a click reaches `customPlacements`, the placements cross to the
+      // worker by structured clone, `placedRig` accepts a count the SOS
+      // framebuffer has no quadrant for, and the model comes back lit. Five is
+      // the number that matters — four would pass even if the cap were still
+      // there.
+      const placed = await cdp.evaluate<string>(`(() => {
+        const byText = (t) => [...document.querySelectorAll('button.chip')]
+          .find((b) => b.textContent.trim() === t) ?? null;
+        const start = byText('Place by hand');
+        if (!start) return 'no "Place by hand" control appeared beside the model';
+        start.click();
+        const add = byText('add a projector');
+        if (!add) return 'no "add a projector" control after placing by hand';
+        add.click();
+        const inputs = document.querySelectorAll('input[type="number"]');
+        if (inputs.length < 30) return 'expected six fields for each of five projectors, got ' + inputs.length;
+        return '';
+      })()`);
+      if (placed !== '') {
+        failures.push(`placing projectors by hand failed: ${placed}`);
+      } else {
+        let litAfter = '';
+        const placeDeadline = Date.now() + 30_000;
+        while (Date.now() < placeDeadline) {
+          await sleep(300);
+          litAfter = await cdp.evaluate<string>(
+            "document.querySelector('[data-smoke=\"model-lit\"]')?.textContent?.trim() ?? ''",
+          );
+          const n = Number.parseFloat(litAfter);
+          if (Number.isFinite(n) && n > 0) break;
+        }
+        const after = Number.parseFloat(litAfter);
+        if (!Number.isFinite(after) || after <= 0) {
+          failures.push(
+            'a five-projector hand-placed rig lit nothing — `placedRig` did not reach the worker',
+          );
+        } else {
+          process.stdout.write(`  model: five hand-placed projectors light ${after.toFixed(1)}%\n`);
+        }
+
+        // And the placements have to CHANGE the answer, or the step above would
+        // pass with them ignored: the fixture is fully lit by the nominal rig,
+        // so five projectors reporting 100% is the same number four would give.
+        // Removing all but one is the edit whose effect cannot be mistaken.
+        const stripped = await cdp.evaluate<string>(`(() => {
+          for (let guard = 0; guard < 12; guard++) {
+            const remove = [...document.querySelectorAll('button.chip')]
+              .filter((b) => b.textContent.trim() === 'remove');
+            if (remove.length === 0) break;
+            remove[remove.length - 1].click();
+          }
+          const left = [...document.querySelectorAll('button.chip')]
+            .filter((b) => b.textContent.trim() === 'remove').length;
+          return left === 0 ? '' : left + ' projectors could not be removed';
+        })()`);
+        if (stripped !== '') {
+          failures.push(`stripping the rig to one projector failed: ${stripped}`);
+        } else {
+          let litOne = '';
+          const oneDeadline = Date.now() + 30_000;
+          while (Date.now() < oneDeadline) {
+            await sleep(300);
+            litOne = await cdp.evaluate<string>(
+              "document.querySelector('[data-smoke=\"model-lit\"]')?.textContent?.trim() ?? ''",
+            );
+            const n = Number.parseFloat(litOne);
+            if (Number.isFinite(n) && n < after - 1) break;
+          }
+          const one = Number.parseFloat(litOne);
+          if (!Number.isFinite(one)) {
+            failures.push('a one-projector rig reported no coverage figure at all');
+          } else if (one >= after) {
+            failures.push(
+              `one projector reports ${one}% against ${after}% for five — the placements are ` +
+                'reaching the worker but not being used',
+            );
+          } else {
+            process.stdout.write(`  model: stripped to one projector, ${one.toFixed(1)}% lit\n`);
+          }
+        }
+      }
     }
 
     for (const e of cdp.pageErrors) failures.push(`uncaught in the page: ${e.split('\n')[0]}`);

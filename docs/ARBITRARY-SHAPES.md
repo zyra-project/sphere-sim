@@ -1,7 +1,7 @@
 # Arbitrary shapes: a feasibility study
 
-**Status: Phases 0 and 1 landed, Phase 3 landing out of order.** Phases 2, 4 and 5
-are unimplemented. This document answers a question — how hard would it be to let
+**Status: Phases 0, 1 and 4 landed; Phase 3 all but the polar mask.** Phase 2 (a
+mesh on the GPU) and Phase 5 (the solve) are unimplemented. This document answers a question — how hard would it be to let
 a user drop in a GLB or an OBJ, put the projectors wherever they like, and get
 real projection mapping out — and proposes a plan. It began as a study that
 changed no constant, no gate and no line of code; each landed phase below now
@@ -563,7 +563,7 @@ question about the parameter, not about the geometry.
 
 *Estimate: 1–2 weeks; the blend and the export are in.*
 
-### Phase 4 — projectors anywhere. **IN PROGRESS**
+### Phase 4 — projectors anywhere. **LANDED**
 
 **The model side landed.** `packages/sim/src/placement.ts` builds a rig from
 explicit placements: any count, any arrangement, each projector framed from its
@@ -610,10 +610,28 @@ the circle. That admits the spec's own N=3 rig (widest gap exactly 180° where a
 quadrant went dark) and rejects two lenses 90° apart, which A-06 already says is
 not an installation anybody would build.
 
-**Still to do in Phase 4:** the panel. Numeric XYZ and yaw/pitch/roll per
-projector, and dropping the four-projector cap from the control that offers it.
+**The panel landed, under the dropped model rather than beside the install
+controls.** That placement is the whole design decision. The install controls
+describe the SOS sphere and refuse a fifth projector in so many words — §3.4's
+framebuffer has four quadrants and §2 supports 2, 3 and 4 — and **that refusal is
+still right**, because every §7 gate on this page is a number about that machine.
+A six-projector rig answering them would be a score for an installation nobody
+described.
 
-*Estimate: ~1 week, and the model half is in.*
+So a hand-placed rig reaches only the surface request, whose three numbers are
+counts over the model's own area and stay true whatever is pointing at it. It is
+the same argument that made the surface a separate worker request in Phase 1,
+applied to the rig instead of the shape. The four-projector chip row keeps its
+cap and its explanation; the explanation now says where the limit *isn't*.
+
+`tools/smoke-app.ts` drives it end to end, and the second half of that check is
+the one that matters: five hand-placed projectors light the fixture 100%, which
+is also what four would report, so the test then strips the rig to a single
+projector and requires the number to fall. It reports 50.0% — exactly half an
+octahedron's faces — which proves the placements are being *used* rather than
+merely delivered.
+
+*Estimate: ~1 week. Landed.*
 
 ### Phase 5 — the solve
 

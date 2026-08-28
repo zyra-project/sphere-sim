@@ -65,6 +65,7 @@ import {
 } from '../src/settings.ts';
 import {
   buildViewer,
+  buildAsBuilt,
   buildWorld,
   CONTENT_DECODE_GAMMA,
   framingRangeM,
@@ -107,6 +108,9 @@ import {
 } from './gl.ts';
 import { equirectAspectError, mediaKind } from '../src/media.ts';
 import { containerOf, readGlb } from '../../meshio/src/glb.ts';
+import type { ProjectorPlacement } from '../../sim/src/placement.ts';
+import { isRing } from '../../sim/src/placement.ts';
+import { aimAtPoint } from '../../sim/src/geometry.ts';
 import type { MeshLoadReport, SurfaceMesh } from '../../calibration/src/index.ts';
 
 // ---------------------------------------------------------------------------
@@ -350,6 +354,20 @@ let meshError = '';
 let meshBusy = false;
 /** A surface pass asked for while the worker was busy. See `requestSurface`. */
 let queuedSurface = false;
+/**
+ * A rig placed by hand, or `null` for the one the install settings describe.
+ *
+ * Module state rather than a `Setting`, and not because it is easier: a
+ * `Setting` is one number with a slider, a min and a max, and this is a list of
+ * six-vectors that grows and shrinks. Forcing it into that shape would give it a
+ * slider it cannot have and a preset comparison it cannot answer. `droppedMesh`
+ * lives here for the same reason.
+ *
+ * It reaches only the SURFACE request. See `SurfaceRequest.placements`: a rig of
+ * six on a wall must not arrive at the §7 gates, which are about a different
+ * machine.
+ */
+let customPlacements: ProjectorPlacement[] | null = null;
 let meshSeq = 0;
 
 /** Which image the model worker has been sent, so it is sent exactly once. */
@@ -895,6 +913,229 @@ function chipRow(
   return wrap;
 }
 
+/** One editable number in a projector's placement row. */
+function placementField(
+  label: string,
+  value: number,
+  step: number,
+  onChange: (v: number) => void,
+): HTMLElement {
+  const wrap = el('label', { className: 'note tiny' });
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+  wrap.style.gap = '2px';
+  wrap.style.flex = '1 1 0';
+  wrap.style.minWidth = '0';
+  const input = el('input', { type: 'number', value: String(round3(value)), step: String(step) });
+  input.style.width = '100%';
+  input.style.minWidth = '0';
+  input.addEventListener('change', () => {
+    const v = Number.parseFloat(input.value);
+    // A field left mid-edit or cleared must not silently place a projector at
+    // NaN, which renders as a black frame with no error anywhere.
+    if (!Number.isFinite(v)) {
+      input.value = String(round3(value));
+      return;
+    }
+    onChange(v);
+  });
+  wrap.append(el('span', { textContent: label }), input);
+  return wrap;
+}
+
+function round3(v: number): number {
+  return Math.round(v * 1000) / 1000;
+}
+
+/** The placements the install settings imply, as a starting point to edit. */
+function placementsFromInstall(): ProjectorPlacement[] {
+  const rig = buildAsBuilt(state.settings);
+  return rig.projectors.map((p) => ({
+    position: { ...p.pose.position },
+    yawDeg: p.pose.yawDeg,
+    pitchDeg: p.pose.pitchDeg,
+    rollDeg: p.pose.rollDeg,
+  }));
+}
+
+/**
+ * Put the projectors where you like — `docs/ARBITRARY-SHAPES.md` Phase 4.
+ *
+ * ## Why this lives under the dropped model and not beside the install controls
+ *
+ * The install controls describe the SOS sphere: two to four projectors in
+ * quadrant viewports, and the panel refuses a fifth in so many words, because
+ * §3.4's framebuffer has four quadrants and PARAMETERS.md §2 supports 2, 3 and
+ * 4. That refusal is still right — every §7 gate on this page is a number about
+ * that machine, and a six-projector rig answering them would be a score for an
+ * installation nobody described.
+ *
+ * A rig placed by hand therefore reaches only the model preview, whose three
+ * numbers are counts over the surface's own area and stay true whatever is
+ * pointing at it. The same argument that made the surface a separate worker
+ * request makes free placement a separate rig.
+ */
+function placementBlock(): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  if (droppedMesh === null) return out;
+
+  out.push(el('h3', { textContent: 'Projectors' }));
+
+  if (customPlacements === null) {
+    out.push(
+      el('p', {
+        className: 'note tiny',
+        textContent:
+          'Lit by the install above — ' +
+          `${Math.round(state.settings.projectorCount)} projectors on the nominal ring. ` +
+          'Take them off the ring to put them anywhere, in any number.',
+      }),
+    );
+    const start = el('button', { className: 'chip', textContent: 'Place by hand' });
+    start.addEventListener('click', () => {
+      customPlacements = placementsFromInstall();
+      requestSurface();
+      renderControls();
+    });
+    const row = el('div', { className: 'chips' });
+    row.append(start);
+    out.push(row);
+    return out;
+  }
+
+  const places = customPlacements;
+  places.forEach((place, i) => {
+    const card = el('div');
+    card.style.display = 'flex';
+    card.style.flexDirection = 'column';
+    card.style.gap = '4px';
+    card.style.marginBottom = '8px';
+
+    const head = el('div');
+    head.style.display = 'flex';
+    head.style.justifyContent = 'space-between';
+    head.style.alignItems = 'center';
+    head.append(el('strong', { className: 'note tiny', textContent: place.id ?? `P${i + 1}` }));
+    if (places.length > 1) {
+      const drop = el('button', { className: 'chip', textContent: 'remove', title: 'Take this projector out of the rig' });
+      drop.addEventListener('click', () => {
+        places.splice(i, 1);
+        requestSurface();
+        renderControls();
+      });
+      head.append(drop);
+    }
+    card.append(head);
+
+    const set = (): void => {
+      requestSurface();
+      renderControls();
+    };
+    const xyz = el('div');
+    xyz.style.display = 'flex';
+    xyz.style.gap = '6px';
+    xyz.append(
+      placementField('x m', place.position.x, 0.1, (v) => {
+        place.position = { ...place.position, x: v };
+        set();
+      }),
+      placementField('y m', place.position.y, 0.1, (v) => {
+        place.position = { ...place.position, y: v };
+        set();
+      }),
+      placementField('z m', place.position.z, 0.1, (v) => {
+        place.position = { ...place.position, z: v };
+        set();
+      }),
+    );
+    card.append(xyz);
+
+    const ypr = el('div');
+    ypr.style.display = 'flex';
+    ypr.style.gap = '6px';
+    ypr.append(
+      placementField('yaw°', place.yawDeg ?? 0, 1, (v) => {
+        place.yawDeg = v;
+        set();
+      }),
+      placementField('pitch°', place.pitchDeg ?? 0, 1, (v) => {
+        place.pitchDeg = v;
+        set();
+      }),
+      placementField('roll°', place.rollDeg ?? 0, 1, (v) => {
+        place.rollDeg = v;
+        set();
+      }),
+    );
+    card.append(ypr);
+    out.push(card);
+  });
+
+  const actions = el('div', { className: 'chips' });
+  const add = el('button', { className: 'chip', textContent: 'add a projector' });
+  add.addEventListener('click', () => {
+    // A new lens goes where the last one is, moved along, aimed at the object.
+    // Dropping it at the origin would put it inside whatever is being lit.
+    const last = places[places.length - 1];
+    const r = Math.hypot(last.position.x, last.position.y) || 5.18;
+    const az = Math.atan2(last.position.y, last.position.x) + Math.PI / 4;
+    const position = { x: r * Math.cos(az), y: r * Math.sin(az), z: last.position.z };
+    const aim = aimAtPoint(position, { x: 0, y: 0, z: 0 });
+    places.push({ position, yawDeg: aim.yawDeg, pitchDeg: aim.pitchDeg, rollDeg: 0 });
+    requestSurface();
+    renderControls();
+  });
+  const aimAll = el('button', {
+    className: 'chip',
+    textContent: 'aim all at the model',
+    title: 'Re-point every projector at the world origin, keeping it where it stands.',
+  });
+  aimAll.addEventListener('click', () => {
+    for (const place of places) {
+      const aim = aimAtPoint(place.position, { x: 0, y: 0, z: 0 });
+      place.yawDeg = aim.yawDeg;
+      place.pitchDeg = aim.pitchDeg;
+    }
+    requestSurface();
+    renderControls();
+  });
+  const back = el('button', {
+    className: 'chip',
+    textContent: 'back to the install',
+    title: 'Discard the hand-placed rig and light the model from the install above.',
+  });
+  back.addEventListener('click', () => {
+    customPlacements = null;
+    requestSurface();
+    renderControls();
+  });
+  actions.append(add, aimAll, back);
+  out.push(actions);
+
+  out.push(
+    el('p', {
+      className: 'note tiny',
+      textContent:
+        `${places.length} projectors, laid out as viewports of one framebuffer — ` +
+        'SOS drives a spanned X screen and that does not stop being true off the ring. ' +
+        'Each is framed from its own throw, so a nearer lens gets a wider field.',
+    }),
+  );
+
+  if (!isRing(places)) {
+    const note = el('p', {
+      className: 'note tiny',
+      textContent:
+        'These lenses do not ring the object. The sector blend reading (A-37) measures a ' +
+        "longitude wedge from each lens's azimuth, which presumes a ring — it is off here, and " +
+        "the crossfade is the geodesic distance to each projector's own footprint edge instead.",
+    });
+    out.push(note);
+  }
+
+  return out;
+}
+
 /**
  * What a dropped model produced: the picture, the coverage, and what the reader
  * refused.
@@ -1171,6 +1412,9 @@ function requestSurface(): void {
     id: ++meshSeq,
     settings: state.settings,
     mesh: droppedMesh,
+    ...(customPlacements && customPlacements.length > 0
+      ? { placements: customPlacements }
+      : {}),
     width: 320,
     height: 240,
     camera: {
@@ -2730,12 +2974,14 @@ function installSection(): HTMLElement[] {
       {
         label: '5 or 6',
         title:
-          'Not offered, and the reason is one of the three facts this project exists to reproduce: ' +
-          'SOS drives every projector from ONE framebuffer split into four quadrant viewports ' +
-          '(§3.4), so a fifth projector has no quadrant to be. PARAMETERS.md §2 supports 2, 3 and ' +
-          '4 and nothing else. A six-projector ring is a perfectly buildable thing — it is just a ' +
-          'different display from the one this simulates, and pretending otherwise here would put ' +
-          'a number on screen for a machine that does not exist.',
+          'Not offered HERE, and the reason is one of the three facts this project exists to ' +
+          'reproduce: SOS drives every projector from ONE framebuffer split into four quadrant ' +
+          'viewports (§3.4), so a fifth projector has no quadrant to be. PARAMETERS.md §2 ' +
+          'supports 2, 3 and 4 and nothing else, and every §7 gate on this page is a number about ' +
+          'that machine — a five-projector rig answering them would be a score for an ' +
+          'installation nobody described. The simulator itself has no such limit: drop a model ' +
+          'and the panel beside it will place any number of projectors anywhere, reporting ' +
+          'coverage over the surface rather than gates about a sphere.',
         on: false,
         onPick: () => {},
       },
@@ -3055,6 +3301,7 @@ function roomSection(): HTMLElement[] {
     out.push(err);
   }
   for (const node of modelBlock()) out.push(node);
+  for (const node of placementBlock()) out.push(node);
   // Said out loud, because the failure it reports is otherwise silent: the
   // sphere keeps playing from a texture that works while the model sits on a
   // frame that never arrived, and the only symptom is a parity number nobody can
