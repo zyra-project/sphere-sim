@@ -306,6 +306,25 @@ function report(failures: readonly string[]): void {
   process.stdout.write('smoke-app: the shader compiled, the workers replied, the picture is lit.\n');
 }
 
+/**
+ * How long to wait for Chromium to open its debugging port.
+ *
+ * Thirty seconds was too tight and it failed CI on a commit that passed
+ * locally, with the browser never reaching the point of loading a page — so
+ * the failure said nothing about the app and everything about the runner. The
+ * workflow starts two of these concurrently and swiftshader means the whole
+ * renderer is on the CPU, so a cold start on a contended runner can take a
+ * while.
+ *
+ * Raising a timeout is usually the wrong instinct, because it trades a fast red
+ * for a slow red. It is right here only because the other half of this change
+ * removes the case it would have hidden: a browser that dies now fails
+ * immediately with its own stderr instead of waiting out the budget. What is
+ * left for the budget to catch is genuine slowness, and for that the only cost
+ * of being generous is the time a real hang takes to report.
+ */
+const BROWSER_START_MS = 90_000;
+
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
   const browser = findBrowser(opts.browser);
@@ -337,14 +356,36 @@ async function main(): Promise<void> {
   child.stderr.on('data', (chunk) => {
     stderr += String(chunk);
   });
+  // Whether the process is gone, which is a different failure from a slow one
+  // and deserves a different answer. Recorded rather than polled, because a
+  // child that exits between two polls of the port file would otherwise be
+  // indistinguishable from one that is merely taking its time.
+  let exited: number | null = null;
+  child.on('exit', (code) => {
+    exited = code ?? -1;
+  });
 
   try {
     // Chromium writes the port it chose into the profile directory.
     const portFile = path.join(profile, 'DevToolsActivePort');
-    const deadline = Date.now() + 30_000;
+    const deadline = Date.now() + BROWSER_START_MS;
     while (!fs.existsSync(portFile)) {
+      // A browser that DIED is not a browser that is slow. Waiting out the full
+      // budget for a process that is already gone turns an immediate answer —
+      // its own stderr, which says what it could not do — into a minute of
+      // silence followed by a timeout, and a timeout is the one message that
+      // sends the reader to look at the wrong thing.
+      if (exited !== null) {
+        throw new Error(
+          `Chromium exited with code ${exited} before it opened a debugging port.\n` +
+            `${stderr.split('\n').slice(-8).join('\n')}`,
+        );
+      }
       if (Date.now() > deadline) {
-        throw new Error(`Chromium did not start.\n${stderr.split('\n').slice(-8).join('\n')}`);
+        throw new Error(
+          `Chromium did not open a debugging port within ${BROWSER_START_MS / 1000}s.\n` +
+            `${stderr.split('\n').slice(-8).join('\n')}`,
+        );
       }
       await sleep(150);
     }
