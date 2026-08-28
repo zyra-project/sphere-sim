@@ -169,7 +169,23 @@ export class MeshSurface implements Surface {
       y: origin.y + dir.y * hit.t,
       z: origin.z + dir.z * hit.t,
     };
-    return { t: hit.t, point, normal: this.normalOfHit(hit.triangle, hit.u, hit.v) };
+    const idx = this.mesh.indices;
+    return {
+      t: hit.t,
+      point,
+      normal: this.normalOfHit(hit.triangle, hit.u, hit.v),
+      // The face is known exactly here. Carrying it is the whole point: every
+      // consumer that would otherwise call `locate` and re-derive it by search
+      // now gets the triangle the ray actually struck.
+      location: {
+        triangle: hit.triangle,
+        a: idx[3 * hit.triangle],
+        b: idx[3 * hit.triangle + 1],
+        c: idx[3 * hit.triangle + 2],
+        u: hit.u,
+        v: hit.v,
+      },
+    };
   }
 
   /**
@@ -264,12 +280,14 @@ export class MeshSurface implements Surface {
     return this.cachedAdjacency;
   }
 
-  coordAt(point: Vec3): SurfaceCoord {
-    // The nearest point on the surface decides the coordinate, found by asking
-    // the hierarchy which triangle a ray from just outside would meet. A caller
-    // holding a hit already knows the answer more cheaply, which is why
-    // `intersect` returns it; this path exists for a world point that arrived
-    // some other way.
+  coordAt(point: Vec3, location?: SurfaceLocation | null): SurfaceCoord {
+    // The exact answer, when the caller kept the face the point came from.
+    // `intersect` and `sampleArea` both know it and now both carry it, so this
+    // is the ordinary path rather than the optimization it looks like.
+    if (location) return this.coordOfTriangle(location.triangle, location.u, location.v);
+    // Otherwise the face has to be found again from the point alone, which is
+    // a SEARCH and not an inverse — see `nearestTriangle` for what it assumes.
+    // This path is for a world point that arrived some other way.
     const nearest = this.nearestTriangle(point);
     if (nearest === null) return { latDeg: 0, lonDeg: 0 };
     return this.coordOfTriangle(nearest.triangle, nearest.u, nearest.v);
@@ -323,7 +341,8 @@ export class MeshSurface implements Surface {
     return this.bounds.centre;
   }
 
-  normalAt(point: Vec3): Vec3 {
+  normalAt(point: Vec3, location?: SurfaceLocation | null): Vec3 {
+    if (location) return this.normalOfHit(location.triangle, location.u, location.v);
     const nearest = this.nearestTriangle(point);
     if (nearest === null) return { x: 0, y: 0, z: 1 };
     return this.normalOfHit(nearest.triangle, nearest.u, nearest.v);
@@ -386,6 +405,8 @@ export class MeshSurface implements Surface {
         point,
         normal: this.normalOfHit(t, bu, bv),
         coord: this.coordOfTriangle(t, bu, bv),
+        // Chosen by the sampler, so it is exact and free.
+        location: { triangle: t, a: i0, b: i1, c: i2, u: bu, v: bv },
       };
     }
     return out;
@@ -459,11 +480,28 @@ export class MeshSurface implements Surface {
    * The triangle a world point lies on, found by shooting a short ray INWARD at
    * it from just outside, along the direction from the bounds centre.
    *
-   * A true closest-point-on-mesh query would be the general answer and is much
-   * heavier; every caller in this package hands over a point that came off the
-   * surface in the first place, so the cheap version answers the question they
-   * are actually asking. A point genuinely off the surface gets `null` and the
-   * caller's documented fallback.
+   * **THIS IS A SEARCH, NOT A NEAREST-TRIANGLE QUERY, AND IT ASSUMES A
+   * STAR-SHAPED BODY.** A radial ray from the bounds centre meets the owning
+   * face first only if the model is visible in its entirety from that centre.
+   * Give it a fold, a concavity, or a shell with an inner wall and the ray can
+   * graze the owning face tangentially or reach a nearer one instead — so the
+   * answer is a triangle NEAR the point rather than the triangle the point is
+   * on, for a point that is exactly on the surface. That is a real limitation,
+   * not a rounding one, and on a model with an overhang it puts the interpolated
+   * normal, content coordinate and blend weight on the wrong face.
+   *
+   * It is a fallback rather than the main path, which is what makes it
+   * tolerable. Every point that came from {@link MeshSurface.intersect} or
+   * {@link MeshSurface.sampleArea} now carries its own `SurfaceLocation`, and
+   * the callers pass it — so the face is known exactly and this function is
+   * never consulted. What reaches here is a world point that arrived some other
+   * way and has no face attached, where the alternatives are this or nothing.
+   *
+   * The general answer is a true closest-point-on-mesh query over the BVH
+   * (descend by box distance, keep the best point-triangle distance, prune on
+   * it). It is correct for any topology and costs a second traversal kernel.
+   * Worth writing the day a caller needs a face for a point it did not trace;
+   * until then this would be paying for generality nothing exercises.
    *
    * ## Why the window is a percent of the model and not a few microns
    *

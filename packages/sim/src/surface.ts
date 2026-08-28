@@ -109,6 +109,20 @@ export interface SurfaceHit {
   point: Vec3;
   /** Outward unit normal at the intersection. */
   normal: Vec3;
+  /**
+   * Which face was hit, and where in it — absent on a surface with no faces.
+   *
+   * Carried because the intersection ALREADY KNEW it. Dropping it here is what
+   * forces {@link Surface.locate} to find the triangle again from the point
+   * alone, and that search is a proxy — see `MeshSurface`'s `nearestTriangle`,
+   * which is exact only for a star-shaped body. So a hit that travels without
+   * its location can come back attached to a different triangle than the one it
+   * struck, on a model with a fold or a concavity.
+   *
+   * Optional rather than nullable so `SphereHit` stays assignable and the
+   * sphere's hit path allocates exactly what it allocated before.
+   */
+  location?: SurfaceLocation;
 }
 
 /**
@@ -133,6 +147,13 @@ export interface SurfaceAreaSample {
   point: Vec3;
   normal: Vec3;
   coord: SurfaceCoord;
+  /**
+   * Which face this sample came from — absent on a surface with no faces.
+   *
+   * Same reason as {@link SurfaceHit.location}: the sampler chose the triangle,
+   * so a consumer that needs it should be handed it rather than search for it.
+   */
+  location?: SurfaceLocation;
 }
 
 /**
@@ -190,14 +211,27 @@ export interface Surface {
    */
   intersect(origin: Vec3, dir: Vec3, tMin?: number): SurfaceHit | null;
 
-  /** Content coordinate of a point on the surface. */
-  coordAt(point: Vec3): SurfaceCoord;
+  /**
+   * Content coordinate of a point on the surface.
+   *
+   * `location` is the face the point came from, when the caller has one — from
+   * a {@link SurfaceHit} or a {@link SurfaceAreaSample}. Passing it makes the
+   * answer EXACT rather than merely close: without it a tessellated surface has
+   * to work out which face the point belongs to, and the only tool for that is
+   * a search that assumes a star-shaped body. Ignored by a surface that has no
+   * faces, where the coordinate is closed-form from the point.
+   */
+  coordAt(point: Vec3, location?: SurfaceLocation | null): SurfaceCoord;
 
   /** The surface point at a content coordinate — the inverse of {@link coordAt}. */
   pointAt(coord: SurfaceCoord): Vec3;
 
-  /** Outward unit normal at a point known to be ON the surface. */
-  normalAt(point: Vec3): Vec3;
+  /**
+   * Outward unit normal at a point known to be ON the surface.
+   *
+   * Takes `location` for the same reason {@link Surface.coordAt} does.
+   */
+  normalAt(point: Vec3, location?: SurfaceLocation | null): Vec3;
 
   /**
    * `n` points spread evenly over the surface, each standing for the same area.
@@ -287,7 +321,8 @@ export class SphereSurface implements Surface {
     return raySphereIntersect(origin, dir, this.radiusM, tMin);
   }
 
-  coordAt(point: Vec3): SurfaceCoord {
+  /** `location` is ignored: a sphere has no faces and this is already exact. */
+  coordAt(point: Vec3, _location?: SurfaceLocation | null): SurfaceCoord {
     return worldToLatLon(point);
   }
 
@@ -295,7 +330,8 @@ export class SphereSurface implements Surface {
     return latLonToWorld(coord.latDeg, coord.lonDeg, this.radiusM);
   }
 
-  normalAt(point: Vec3): Vec3 {
+  /** `location` is ignored, as in {@link SphereSurface.coordAt}. */
+  normalAt(point: Vec3, _location?: SurfaceLocation | null): Vec3 {
     return scale(point, 1 / this.radiusM);
   }
 

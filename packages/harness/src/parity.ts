@@ -301,7 +301,7 @@ export function simProjectorSamples(
       const hit = prepared.surface.intersect(proj.lens, ray);
       const o = 3 * (y * width + x);
       if (!hit) continue;
-      const surf = sampleSurface(hit.point, prepared, scene);
+      const surf = sampleSurface(hit.point, prepared, scene, hit.location);
       const sig = blendedSignal(surf.target, surf.weights[index], scene.encodeGamma);
       data[o] = sig.r;
       data[o + 1] = sig.g;

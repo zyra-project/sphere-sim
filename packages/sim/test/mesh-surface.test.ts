@@ -722,3 +722,108 @@ test('the polar mask is refused on a mesh rather than applied to a texture row',
   const onMesh = sampleSurface(p, prepareRig(cal, meshSurface(uvSphere(192, 96))), scene);
   assert.equal(onMesh.mask, 1, 'a mesh has no ceiling mount, so nothing is masked');
 });
+
+// ---------------------------------------------------------------------------
+// Carrying the face, rather than searching for it again
+// ---------------------------------------------------------------------------
+
+/** A flat wall in the x = 0 plane, unwrapped over the whole UV square. */
+function wall(halfSizeM = 1): SurfaceMesh {
+  const s = halfSizeM;
+  return {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'wall',
+    positions: Float64Array.from([0, -s, -s, 0, s, -s, 0, s, s, 0, -s, s]),
+    indices: Uint32Array.from([0, 1, 2, 0, 2, 3]),
+    normals: null,
+    uvs: Float32Array.from([0, 0, 1, 0, 1, 1, 0, 1]),
+    vertexCount: 4,
+    triangleCount: 2,
+  };
+}
+
+test('a flat wall is the case the triangle search cannot answer at all', () => {
+  // `nearestTriangle` shoots a ray from the bounds centre THROUGH the point. A
+  // flat wall's bounds centre lies IN its own plane, so that ray is exactly
+  // tangent to the surface and finds nothing — for every point on it.
+  //
+  // This is not a pathological fixture. A wall is the most ordinary
+  // projection-mapping subject there is, and the failure is total rather than
+  // marginal: without the face, the whole wall reports one content coordinate
+  // and a normal perpendicular to itself.
+  const surface = meshSurface(wall());
+  assert.deepEqual(surface.bounds.centre, { x: 0, y: 0, z: 0 }, 'the centre is in the plane');
+
+  for (const [y, z] of [
+    [0.4, 0.3],
+    [-0.5, 0.6],
+    [0.2, -0.7],
+  ]) {
+    const hit = surface.intersect({ x: 3, y, z }, { x: -1, y: 0, z: 0 });
+    assert.ok(hit !== null, 'the ray must reach the wall');
+    assert.ok(hit.location !== undefined, 'the hit must carry the face it struck');
+
+    // The search: nothing found, on a point that is exactly on the surface.
+    assert.equal(surface.locate(hit.point), null);
+
+    // Answered from the face the ray struck.
+    const normal = surface.normalAt(hit.point, hit.location);
+    assert.deepEqual(normal, { x: 1, y: 0, z: 0 }, 'the wall faces +x');
+
+    // Answered by searching: a normal at right angles to the actual surface,
+    // which makes every facing test and every incidence cosine wrong.
+    assert.deepEqual(surface.normalAt(hit.point), { x: 0, y: 0, z: 1 });
+
+    // And the content coordinate is a real coordinate rather than the fallback.
+    const coord = surface.coordAt(hit.point, hit.location);
+    assert.notDeepEqual(coord, { latDeg: 0, lonDeg: 0 });
+    assert.deepEqual(surface.coordAt(hit.point), { latDeg: 0, lonDeg: 0 });
+  }
+});
+
+test('every point of a wall gets its own content coordinate', () => {
+  // The consequence of the above, stated as the thing a user would see: before
+  // the face travelled with the hit, the entire wall sampled one texel.
+  const surface = meshSurface(wall());
+  const seen = new Set<string>();
+  for (let i = 0; i < 8; i++) {
+    for (let j = 0; j < 8; j++) {
+      const y = -0.9 + (1.8 * i) / 7;
+      const z = -0.9 + (1.8 * j) / 7;
+      const hit = surface.intersect({ x: 3, y, z }, { x: -1, y: 0, z: 0 });
+      if (hit === null) continue;
+      const c = surface.coordAt(hit.point, hit.location);
+      seen.add(`${c.latDeg.toFixed(4)},${c.lonDeg.toFixed(4)}`);
+    }
+  }
+  assert.equal(seen.size, 64, `expected 64 distinct coordinates, got ${seen.size}`);
+});
+
+test('area samples carry their face too, and it is the one they were drawn from', () => {
+  const surface = meshSurface(uvSphere(32, 16));
+  for (const sample of surface.sampleArea(64)) {
+    assert.ok(sample.location !== undefined, 'a sample must carry its face');
+    // The sample was BUILT by interpolating that triangle, so asking the
+    // surface for the coordinate at that face must reproduce the sample's own.
+    const coord = surface.coordAt(sample.point, sample.location);
+    assert.equal(coord.latDeg, sample.coord.latDeg);
+    assert.equal(coord.lonDeg, sample.coord.lonDeg);
+  }
+});
+
+test('the sphere carries no face, because it has none', () => {
+  // Not an omission: `location` absent is the honest answer for a surface with
+  // no triangles, and it is why the field is optional rather than nullable —
+  // `SphereHit` stays assignable and the sphere's hit path allocates what it
+  // always allocated.
+  const surface = sphereSurface(0.8636);
+  const hit = surface.intersect({ x: 0, y: 0, z: 5 }, { x: 0, y: 0, z: -1 });
+  assert.ok(hit !== null);
+  assert.equal(hit.location, undefined);
+  assert.equal(surface.sampleArea(4)[0].location, undefined);
+  // And passing one anyway changes nothing, since a sphere's answers are closed
+  // form from the point.
+  const bogus = { triangle: 7, a: 0, b: 1, c: 2, u: 0.25, v: 0.25 };
+  assert.deepEqual(surface.normalAt(hit.point, bogus), surface.normalAt(hit.point));
+  assert.deepEqual(surface.coordAt(hit.point, bogus), surface.coordAt(hit.point));
+});

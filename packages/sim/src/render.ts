@@ -30,6 +30,7 @@ import type { PreparedRig } from './optics.ts';
 import { pixelToRay, worldToPixel } from './optics.ts';
 import { coverageAndWeights, isIlluminatedAt, polarMask } from './coverage.ts';
 import { blendModelApplies } from './surface.ts';
+import type { SurfaceLocation } from './surface.ts';
 import type { MaskInterpretation } from './coverage.ts';
 import type { ProjectorContribution, ShadeInput, ShadingModel } from './shading.ts';
 import { lambertianShading } from './shading.ts';
@@ -206,9 +207,24 @@ export interface SurfaceSample {
   mask: number;
 }
 
-export function sampleSurface(point: Vec3, rig: PreparedRig, scene: Scene): SurfaceSample {
-  const normal = rig.surface.normalAt(point);
-  const ll = rig.surface.coordAt(point);
+export function sampleSurface(
+  point: Vec3,
+  rig: PreparedRig,
+  scene: Scene,
+  /**
+   * The face the point came from, when the caller traced it.
+   *
+   * All three callers hold a {@link SurfaceHit} and pass its location. That
+   * matters here more than anywhere: this one function asks the surface three
+   * separate questions about the same point — its normal, its content
+   * coordinate, and its coverage — so without the face it ran three independent
+   * searches for a triangle the ray had already found, and on a concave model
+   * all three could land on a different one.
+   */
+  at?: SurfaceLocation | null,
+): SurfaceSample {
+  const normal = rig.surface.normalAt(point, at);
+  const ll = rig.surface.coordAt(point, at);
   const texLon = worldLonToTextureLon(ll.lonDeg, rig.rotationOffsetDeg);
   // `contentAt`, never `sampleEquirect` directly: the graticule is drawn
   // analytically over the image, so a renderer that reads the texture is
@@ -224,7 +240,7 @@ export function sampleSurface(point: Vec3, rig: PreparedRig, scene: Scene): Surf
   const mask = blendModelApplies(rig.surface)
     ? polarMask(ll.latDeg, rig.blend, scene.maskInterpretation)
     : 1;
-  const { weights, lit } = coverageAndWeights(point, normal, rig);
+  const { weights, lit } = coverageAndWeights(point, normal, rig, at);
   for (let i = 0; i < weights.length; i++) weights[i] *= mask;
   return { point, normal, latDeg: ll.latDeg, lonDeg: ll.lonDeg, target, weights, lit, mask };
 }
@@ -274,7 +290,7 @@ export function renderProjectorView(
         const ray = pixelToRay(proj, (x + ox) * stepX, (y + oy) * stepY);
         const hit = rig.surface.intersect(proj.lens, ray);
         if (!hit) continue;
-        const surf = sampleSurface(hit.point, rig, scene);
+        const surf = sampleSurface(hit.point, rig, scene, hit.location);
         const sig = blendedSignal(surf.target, surf.weights[index], scene.encodeGamma);
         r += sig.r;
         g += sig.g;
@@ -487,7 +503,7 @@ function traceRoomRay(
 ): ChannelTriplet {
   const hit = rig.surface.intersect(origin, dir);
   if (hit) {
-    const surf = sampleSurface(hit.point, rig, scene);
+    const surf = sampleSurface(hit.point, rig, scene, hit.location);
     const contributions: ProjectorContribution[] = [];
     for (let i = 0; i < rig.projectors.length; i++) {
       // Every projector whose light REACHES this point contributes, even at

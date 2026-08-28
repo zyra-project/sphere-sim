@@ -144,7 +144,7 @@ export function buildWarpExport(
         continue;
       }
 
-      const coord = rig.surface.coordAt(hit.point);
+      const coord = rig.surface.coordAt(hit.point, hit.location);
       // The sphere's texture is anchored to the world by a mechanical rotation;
       // a mesh's UV is anchored by its own unwrap and has no such offset.
       const texLon = masked
@@ -152,7 +152,7 @@ export function buildWarpExport(
         : coord.lonDeg;
       const tex = coordToUv({ latDeg: coord.latDeg, lonDeg: texLon });
 
-      const { weights } = coverageAndWeights(hit.point, hit.normal, rig);
+      const { weights } = coverageAndWeights(hit.point, hit.normal, rig, hit.location);
       const mask = masked ? polarMask(coord.latDeg, rig.blend, interpretation) : 1;
       const intensity = weights[index] * mask;
 

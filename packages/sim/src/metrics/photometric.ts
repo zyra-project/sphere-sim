@@ -435,9 +435,9 @@ function evaluatePoint(point: Vec3, ctx: FieldContext): PointEval {
     const ray = pixelToRay(c, px.u, px.v);
     const hit = ctx.content.surface.intersect(c.lens, ray);
     if (hit !== null) {
-      const ll = ctx.content.surface.coordAt(hit.point);
+      const ll = ctx.content.surface.coordAt(hit.point, hit.location);
       const mask = polarMask(ll.latDeg, ctx.content.blend, ctx.maskInterpretation);
-      weight = coverageAndWeights(hit.point, hit.normal, ctx.content).weights[i] * mask;
+      weight = coverageAndWeights(hit.point, hit.normal, ctx.content, hit.location).weights[i] * mask;
       signal = blendedSignal(ctx.target, weight, ctx.scene.encodeGamma);
     }
 

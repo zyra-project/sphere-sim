@@ -26,6 +26,7 @@ import type { PreparedProjector, PreparedRig } from './optics.ts';
 import { worldToPixel } from './optics.ts';
 import { normalizeWeights, rampWeight } from './blend.ts';
 import { blendModelApplies } from './surface.ts';
+import type { SurfaceLocation } from './surface.ts';
 import { blendWidthM, footprintDistanceAt } from './footprint.ts';
 
 // conventions.ts §B's ramp algebra lives in `blend.ts`, which knows nothing about
@@ -289,6 +290,16 @@ export function coverageAndWeights(
   point: Vec3,
   normal: Vec3,
   rig: PreparedRig,
+  /**
+   * The face this point came from, when the caller has one.
+   *
+   * A caller holding a {@link SurfaceHit} or a {@link SurfaceAreaSample} knows
+   * the triangle exactly. Without it this function has to find the face again
+   * from the point alone, and `MeshSurface.nearestTriangle` does that with a
+   * radial ray — exact for a star-shaped body and a guess for anything with a
+   * fold, which is precisely the shape somebody drops on the page.
+   */
+  at?: SurfaceLocation | null,
 ): { weights: number[]; lit: boolean[] } {
   const n = rig.projectors.length;
   const weights = new Array<number>(n).fill(0);
@@ -302,8 +313,9 @@ export function coverageAndWeights(
   const blended = blendModelApplies(rig.surface);
   // One lookup for every projector: the footprint fields are all indexed by the
   // same vertices, so locating the point once serves them all. `null` on a
-  // sphere, where nothing below runs.
-  const location = blended ? null : rig.surface.locate(point);
+  // sphere, where nothing below runs — and the caller's own face when it has
+  // one, which is both exact and free where the search is neither.
+  const location = blended ? null : (at ?? rig.surface.locate(point));
   const widthM = blended ? 0 : blendWidthM(blend.widthDeg, rig.surface.extentRadiusM);
   // Each projector's share of the circle, from where its NEIGHBOURS actually are
   // rather than from `360 / n`.

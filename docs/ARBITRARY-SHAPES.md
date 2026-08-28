@@ -397,7 +397,7 @@ map. Closed with a barycentric tolerance, which is a practical fix and not a
 proof — **Woop et al. (2013) give a provably crack-free ray-triangle test, and
 that is the upgrade if the mesh path ever has to carry a §7-style gate.**
 
-**Two findings about the Phase 0 interface**, which is the sort of thing only a
+**Three findings about the Phase 0 interface**, which is the sort of thing only a
 second implementation can produce:
 
 - `pointAt` is not invertible on a mesh. A UV maps to a point only if some
@@ -411,6 +411,29 @@ second implementation can produce:
   fudge — it means a dome unwrapped equirectangularly shows exactly the content a
   sphere would — but `latDeg`/`lonDeg` are now a transport rather than a
   geographic fact, and Phase 2 should rename them.
+- **A ray hit had to carry the face it struck, and originally did not.** The
+  interface returned `{ t, point, normal }`, so a consumer needing the triangle
+  — for a content coordinate, or for the blend's per-vertex field — had to find
+  it again from the point alone. `MeshSurface` did that by shooting a short ray
+  from the bounding centre through the point, which is a search assuming a
+  **star-shaped** body, not a nearest-triangle query.
+
+  Review raised it as a concavity problem; measuring it found something plainer.
+  **A flat wall breaks it completely**, and a wall is the most ordinary
+  projection-mapping subject there is: its bounding centre lies *in* its own
+  plane, so the radial ray is exactly tangent and finds nothing at every point.
+  Before the fix the entire wall reported one content coordinate — a whole
+  surface sampling a single texel — and a normal at right angles to itself,
+  which makes every facing test and every incidence cosine wrong.
+
+  The information was never missing, only discarded: `intersectBvh` already
+  returned the triangle and the barycentrics, and `sampleArea` already chose the
+  triangle. `SurfaceHit` and `SurfaceAreaSample` now carry a `SurfaceLocation`,
+  and `coordAt`, `normalAt`, `coverageAndWeights` and `sampleSurface` take one.
+  The search survives only as the fallback for a point that arrived without a
+  face, and its doc now states what it assumes. A true closest-point query over
+  the BVH remains the general answer, worth writing the day a caller needs a
+  face for a point it did not trace.
 
 **Why the mesh is NOT a field on `RigCalibration` yet.** That is the right
 destination and it is not yet the right change. `RigCalibration`'s own contract
