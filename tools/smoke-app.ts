@@ -1689,6 +1689,133 @@ async function main(): Promise<void> {
       process.stdout.write(`  phone: pinch moved the camera ${before.toFixed(1)} → ${after.toFixed(1)} m\n`);
     }
 
+    // ------------------------------------------------------------------
+    // Drop a .glb, and prove the whole chain ran.
+    //
+    // Everything else in this file exercises the sphere. This is the one check
+    // that a MODEL survives the round trip, and it is worth an end-to-end test
+    // rather than unit coverage alone because the chain crosses four boundaries
+    // that no single unit test spans: a File read in the page, `packages/meshio`
+    // parsing it, a structured clone into the model worker, a bounding volume
+    // hierarchy built there, `packages/sim` tracing the rig against it, and a
+    // Float32 frame transferred back and painted.
+    //
+    // The GLB is SYNTHESISED here rather than checked in as a fixture, for the
+    // reason `packages/meshio/test/glb.test.ts` gives: a fixture proves the
+    // reader agrees with whatever exporter produced it. It is also the smallest
+    // thing that can be lit — an octahedron, eight triangles — because this
+    // check is about the plumbing and not about the geometry.
+    const dropped = await cdp.evaluate<string>(`(() => {
+      // Eight triangles around six vertices, wound outward, sized to sit where
+      // the rig is aimed. Y-up, as the glTF spec requires and as the reader
+      // expects to have to rotate.
+      const r = 0.8636;
+      const pos = [r,0,0, -r,0,0, 0,r,0, 0,-r,0, 0,0,r, 0,0,-r];
+      // Wound OUTWARD — every face's normal must point away from the centre, or
+      // the rig reaches nothing and the model renders as pure ambient. The first
+      // version of this fixture had all eight faces inward and this check caught
+      // it, reporting 0% of the area lit against a preview that still looked
+      // like a picture. That is the same signature a mirroring up-axis
+      // conversion would produce, which is why the assertion below tests the
+      // coverage figure rather than only that a picture arrived.
+      const idx = [0,2,4, 4,2,1, 1,2,5, 5,2,0, 4,3,0, 1,3,4, 5,3,1, 0,3,5];
+      const posBytes = new Uint8Array(new Float32Array(pos).buffer);
+      const idxBytes = new Uint8Array(new Uint32Array(idx).buffer);
+      const bin = new Uint8Array(posBytes.length + idxBytes.length);
+      bin.set(posBytes, 0); bin.set(idxBytes, posBytes.length);
+      const doc = {
+        asset: { version: '2.0' },
+        scene: 0,
+        scenes: [{ nodes: [0], name: 'smoke' }],
+        nodes: [{ mesh: 0 }],
+        meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1, mode: 4 }] }],
+        accessors: [
+          { bufferView: 0, componentType: 5126, count: 6, type: 'VEC3' },
+          { bufferView: 1, componentType: 5125, count: idx.length, type: 'SCALAR' },
+        ],
+        bufferViews: [
+          { buffer: 0, byteOffset: 0, byteLength: posBytes.length },
+          { buffer: 0, byteOffset: posBytes.length, byteLength: idxBytes.length },
+        ],
+        buffers: [{ byteLength: bin.length }],
+      };
+      const json = new TextEncoder().encode(JSON.stringify(doc));
+      const pad = (n) => (4 - (n % 4)) % 4;
+      const total = 12 + 8 + json.length + pad(json.length) + 8 + bin.length + pad(bin.length);
+      const out = new Uint8Array(total);
+      const dv = new DataView(out.buffer);
+      dv.setUint32(0, 0x46546c67, true); dv.setUint32(4, 2, true); dv.setUint32(8, total, true);
+      let at = 12;
+      dv.setUint32(at, json.length + pad(json.length), true);
+      dv.setUint32(at + 4, 0x4e4f534a, true);
+      out.set(json, at + 8);
+      out.fill(0x20, at + 8 + json.length, at + 8 + json.length + pad(json.length));
+      at += 8 + json.length + pad(json.length);
+      dv.setUint32(at, bin.length + pad(bin.length), true);
+      dv.setUint32(at + 4, 0x004e4942, true);
+      out.set(bin, at + 8);
+
+      try {
+        const file = new File([out], 'smoke.glb', { type: 'model/gltf-binary' });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        window.dispatchEvent(new DragEvent('drop', {
+          dataTransfer: dt, bubbles: true, cancelable: true,
+        }));
+        return '';
+      } catch (err) {
+        return String(err);
+      }
+    })()`);
+    if (dropped !== '') {
+      failures.push(`dropping a .glb threw in the page: ${dropped}`);
+    } else {
+      // The lit fraction is the one number that proves every link ran.
+      let lit = '';
+      const modelDeadline = Date.now() + 30_000;
+      while (Date.now() < modelDeadline) {
+        await sleep(300);
+        lit = await cdp.evaluate<string>(
+          "document.querySelector('[data-smoke=\"model-lit\"]')?.textContent?.trim() ?? ''",
+        );
+        if (lit !== '') break;
+      }
+      const percent = Number.parseFloat(lit);
+      if (lit === '') {
+        failures.push('a dropped .glb never produced a coverage figure — the surface path is dead');
+      } else if (!Number.isFinite(percent) || percent <= 0) {
+        // A model the rig cannot reach at all means the mesh arrived in the
+        // wrong frame — which is exactly what a missed Y-up conversion looks
+        // like, and it would be invisible in the picture alone.
+        failures.push(`a dropped .glb reports ${percent}% of its area lit, so nothing reached it`);
+      } else {
+        process.stdout.write(`  model: a dropped .glb is ${percent.toFixed(1)}% lit\n`);
+      }
+
+      // And the preview is a picture rather than an empty rectangle.
+      const preview = await cdp.evaluate<{ nonBlack: number; total: number } | null>(`(() => {
+        const c = document.querySelector('[data-smoke="model-preview"]');
+        if (!c) return null;
+        const off = document.createElement('canvas');
+        off.width = 48; off.height = 36;
+        const ctx = off.getContext('2d');
+        ctx.drawImage(c, 0, 0, off.width, off.height);
+        const d = ctx.getImageData(0, 0, off.width, off.height).data;
+        let nonBlack = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] + d[i+1] + d[i+2] > 12) nonBlack++;
+        return { nonBlack, total: d.length / 4 };
+      })()`);
+      if (!preview) {
+        failures.push('a dropped .glb produced no preview canvas');
+      } else if (preview.nonBlack === 0) {
+        failures.push('the dropped model rendered as a uniformly black rectangle');
+      } else {
+        process.stdout.write(
+          `  model: preview ${((preview.nonBlack / preview.total) * 100).toFixed(1)}% lit\n`,
+        );
+      }
+    }
+
     for (const e of cdp.pageErrors) failures.push(`uncaught in the page: ${e.split('\n')[0]}`);
     for (const e of cdp.consoleErrors) failures.push(`console error: ${e.split('\n')[0]}`);
 

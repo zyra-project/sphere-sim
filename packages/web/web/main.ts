@@ -922,6 +922,7 @@ function modelBlock(): HTMLElement[] {
 
   if (meshFrame) {
     const canvas = el('canvas');
+    canvas.dataset.smoke = 'model-preview';
     canvas.width = meshFrame.width;
     canvas.height = meshFrame.height;
     canvas.style.width = '100%';
@@ -933,10 +934,22 @@ function modelBlock(): HTMLElement[] {
 
   const f = meshFacts;
   if (f) {
+    // `data-smoke` on the lit fraction: it is the one number that proves the
+    // whole chain ran — bytes read in the page, mesh across to the worker,
+    // hierarchy built, rig traced against it, reply painted. `tools/smoke-app.ts`
+    // drops a synthesised GLB and reads exactly this.
+    const litRow = el('p', {
+      className: 'note tiny',
+      textContent:
+        `${(100 * f.litFraction).toFixed(1)}% of the area is lit, ` +
+        `${f.meanOverlap.toFixed(2)} projectors deep on average`,
+    });
+    litRow.dataset.smoke = 'model-lit';
+    out.push(litRow);
+
     const rows: string[] = [
       `${f.triangles.toLocaleString()} triangles, ${f.vertices.toLocaleString()} vertices`,
       `${f.areaM2.toFixed(2)} m² of surface, ${(2 * f.boundsRadiusM).toFixed(2)} m across`,
-      `${(100 * f.litFraction).toFixed(1)}% of the area is lit, ${f.meanOverlap.toFixed(2)} projectors deep on average`,
       `${(100 * f.shadowedFraction).toFixed(1)}% faces a projector and is dark anyway — the model is in its own way`,
     ];
     if (!f.hasUvs) {
@@ -1093,6 +1106,13 @@ async function loadCustomModel(file: File): Promise<void> {
     const report = readGlb(new Uint8Array(await file.arrayBuffer()), { name: file.name });
     meshReport = report;
     droppedMesh = report.mesh;
+    // Take the reader to the panel that shows it. A dropped IMAGE announces
+    // itself — it appears on the sphere — but a model's whole result lives in
+    // one section, and the panel opens on `projectors`. Dropping a building and
+    // having the page respond by doing nothing visible is the same as it not
+    // working, and `tools/smoke-app.ts` reported exactly that before this line
+    // existed.
+    state.section = 'room';
     if (report.mesh === null) {
       meshError =
         report.skipped.length > 0
@@ -1106,6 +1126,7 @@ async function loadCustomModel(file: File): Promise<void> {
     droppedMesh = null;
     meshReport = null;
     meshError = err instanceof Error ? err.message : String(err);
+    state.section = 'room';
   }
   renderControls();
 }
