@@ -82,7 +82,10 @@ test('§3.4: a framebuffer that is not the spanned X screen is rejected', () => 
   // version of the right answer.
   const rig = nominalRig();
   const broken = { ...rig, framebuffer: { width: 1920, height: 1080 } };
-  assert.throws(() => assertFramebufferTopology(broken), /ONE framebuffer split 2x2/);
+  // Matched on the invariant rather than on the SOS split: the check is
+  // per-viewport and holds for any tiling (see `placement.ts`), so a message
+  // naming 2x2 was describing the nominal rig rather than what is enforced.
+  assert.throws(() => assertFramebufferTopology(broken), /must resolve to exactly its own/);
 
   const offEdge = {
     ...rig,

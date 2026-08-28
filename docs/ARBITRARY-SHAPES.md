@@ -563,16 +563,57 @@ question about the parameter, not about the geometry.
 
 *Estimate: 1–2 weeks; the blend and the export are in.*
 
-### Phase 4 — projectors anywhere
+### Phase 4 — projectors anywhere. **IN PROGRESS**
 
-Free six-degree-of-freedom placement in the panel — numeric XYZ and yaw/pitch/roll
-per projector, or a viewport gizmo — dropping the quadrant-azimuth constraint and
-the four-projector cap. Generalize the framebuffer layout beyond the 2×2 SOS
-split, which means `assertFramebufferTopology` needs a second reading rather than
-a relaxation.
+**The model side landed.** `packages/sim/src/placement.ts` builds a rig from
+explicit placements: any count, any arrangement, each projector framed from its
+own throw, laid out as viewports of one framebuffer by `gridViewports`.
 
-*Estimate: ~1 week. Cheap, because `ProjectorPose` is already 6-DOF; this is a
-UI and a validation change, not a geometry change.*
+**A second builder rather than more parameters on `nominalRig`.** The nominal
+rig's azimuth slots, its cap of four and its always-2×2 framebuffer are not
+limitations to relax — they *are* PARAMETERS.md, and every scored number in
+`bench-results.json` is a statement about that rig. Widening it until it could
+also express an arbitrary rig would leave nothing naming the installation the
+gates are about. The two meet at one assertion: `placedRig` handed the nominal
+geometry must reproduce `nominalRig()` field for field, because a generalization
+that cannot express the case it generalizes is not one.
+
+**`assertFramebufferTopology` needed no relaxation, and this document was wrong
+to say it would.** The check is per-viewport — each viewport times the
+framebuffer equals that projector's raster, and lies inside it — which is as
+true of six projectors in a 3×2 grid as of the SOS quadrants. Only its error
+*message* named the 2×2 split. What generalizes is the framebuffer layout;
+what stays is the invariant, and the single framebuffer itself: §3.4 discusses
+and rejects the multi-window shape, so six projectors on a wall are still one
+framebuffer split six ways.
+
+**Two things the implementation forced.**
+
+`aimAtSphereCenter` could not be rewritten in terms of the general
+`aimAtPoint`, and the reason is the sphere's arithmetic again. The first negates
+the position, the second subtracts it from the target; for every non-zero
+component those are bit-identical, but an exactly-zero component comes out `-0`
+one way and `+0` the other, and both `atan2` and `asin` read that sign. Every
+nominal lens sits at the sphere's own height, so **all four carry `pitchDeg:
+-0`** where the general form gives `+0`. Measured, not argued — and then measured
+again to show it is inert: the two rigs produce bit-identical rays at 60 pixels
+per projector and bit-identical coverage weights over a 408-point grid. The
+functions stay separate anyway, because `bench-results.json` is byte-compared
+and the nominal rig is what produces it.
+
+`isRing` — which decides whether the sector blend's assumption holds — was
+written against radius and height, and that tests for a **cylinder**. Three
+projectors on one wall sat within 7% of the mean radius at identical height and
+passed as a ring while occupying 44° of arc. A ring also requires the lenses to
+go most of the way *round*: no gap between neighbouring azimuths wider than half
+the circle. That admits the spec's own N=3 rig (widest gap exactly 180° where a
+quadrant went dark) and rejects two lenses 90° apart, which A-06 already says is
+not an installation anybody would build.
+
+**Still to do in Phase 4:** the panel. Numeric XYZ and yaw/pitch/roll per
+projector, and dropping the four-projector cap from the control that offers it.
+
+*Estimate: ~1 week, and the model half is in.*
 
 ### Phase 5 — the solve
 
