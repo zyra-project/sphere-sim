@@ -25,6 +25,7 @@ import { DEG2RAD, RAD2DEG, clamp, dot, sub, wrapDeg180 } from './vec.ts';
 import type { PreparedProjector, PreparedRig } from './optics.ts';
 import { worldToPixel } from './optics.ts';
 import { normalizeWeights, rampWeight } from './blend.ts';
+import { blendModelApplies } from './surface.ts';
 
 // conventions.ts §B's ramp algebra lives in `blend.ts`, which knows nothing about
 // the sphere. This module decides WHERE each projector's blend region is and how
@@ -294,6 +295,10 @@ export function coverageAndWeights(
   const blend = rig.blend;
   const width = blend.widthDeg > 0 ? blend.widthDeg : 1e-9;
   const sector = blend.region === 'sector';
+  // Refused rather than approximated on anything but a sphere. See
+  // `blendModelApplies` for why a crossfade derived from a bounding sphere would
+  // be a false statement rather than a rough one.
+  const blended = blendModelApplies(rig.surface);
   // Each projector's share of the circle, from where its NEIGHBOURS actually are
   // rather than from `360 / n`.
   //
@@ -308,6 +313,14 @@ export function coverageAndWeights(
     const p = rig.projectors[i];
     if (!isIlluminatedAt(point, normal, p)) continue;
     lit[i] = true;
+
+    if (!blended) {
+      // Equal shares among whoever reaches this point. Not a blend — the
+      // ABSENCE of one, which draws a hard seam at each footprint edge and says
+      // exactly where each projector stops.
+      weights[i] = 1;
+      continue;
+    }
 
     // theta: angular distance from the sub-projector point. The surface normal
     // is point/R and the sub-projector direction is the lens direction, so the

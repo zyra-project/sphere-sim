@@ -29,7 +29,12 @@ import { buildBvh, intersectBvh, meshBounds, occludedBvh, rayTriangle } from '..
 import { aimAtSphereCenter, latLonToWorld, raySphereIntersect, worldToLatLon } from '../src/geometry.ts';
 import { prepareProjector, worldToPixel } from '../src/optics.ts';
 import { isIlluminatedAt } from '../src/coverage.ts';
-import { sphereSurface } from '../src/surface.ts';
+import { blendModelApplies, sphereSurface } from '../src/surface.ts';
+import { prepareRig } from '../src/optics.ts';
+import { coverageAndWeights } from '../src/coverage.ts';
+import { nominalRig } from '../src/scene.ts';
+import { defaultScene, sampleSurface } from '../src/render.ts';
+import { flatField } from '../src/equirect.ts';
 import type { Surface } from '../src/surface.ts';
 import { radicalInverse } from '../src/random.ts';
 
@@ -636,4 +641,93 @@ test('the sphere ignores the passed normal, on purpose and provably', () => {
   const downN = { x: 0, y: 0, z: -1 };
   assert.equal(mesh.facesLens(p, upN, { x: 0, y: 0, z: 5 }), true);
   assert.equal(mesh.facesLens(p, downN, { x: 0, y: 0, z: 5 }), false);
+});
+
+// ---------------------------------------------------------------------------
+// A mesh through the ordinary entry point, and what it refuses to claim
+// ---------------------------------------------------------------------------
+
+test('prepareRig takes a surface, and the sphere default is unchanged', () => {
+  const cal = nominalRig();
+  const asSphere = prepareRig(cal);
+  assert.equal(asSphere.surface.kind, 'sphere');
+  assert.equal(asSphere.radiusM, cal.sphere.radiusM);
+  for (const p of asSphere.projectors) assert.equal(p.surface, asSphere.surface);
+
+  const ms = meshSurface(uvSphere(64, 32));
+  const asMesh = prepareRig(cal, ms);
+  assert.equal(asMesh.surface, ms);
+  for (const p of asMesh.projectors) assert.equal(p.surface, ms);
+  // `radiusM` follows the SURFACE. On a mesh rig the sphere calibration
+  // describes a ball nobody is lighting, and a metric reading `radiusM` would be
+  // measuring it.
+  assert.equal(asMesh.radiusM, ms.boundsRadiusM);
+});
+
+test('the blend is REFUSED on a mesh, not approximated from a bounding sphere', () => {
+  const cal = nominalRig();
+  const ms = meshSurface(uvSphere(96, 48));
+  const rig = prepareRig(cal, ms);
+  assert.equal(blendModelApplies(ms), false);
+  assert.equal(blendModelApplies(rig.surface), false);
+
+  // A point in the middle of a two-projector overlap. On the sphere the limb
+  // ramp puts it at a 50/50 plateau; on the mesh there is no ramp at all, so the
+  // contributors split evenly — which is the same 0.5 here, and would NOT be for
+  // three contributors or at a ramp's edge.
+  const point = latLonToWorld(0, 45, R);
+  const normal = ms.normalAt(point);
+  const { weights, lit } = coverageAndWeights(point, normal, rig);
+  const contributors = lit.filter(Boolean).length;
+  assert.ok(contributors >= 2, `expected an overlap, got ${contributors} contributors`);
+  const sum = weights.reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(sum - 1) < 1e-12, `weights must still sum to one, got ${sum}`);
+  for (let i = 0; i < weights.length; i++) {
+    const want = lit[i] ? 1 / contributors : 0;
+    assert.ok(
+      Math.abs(weights[i] - want) < 1e-12,
+      `projector ${i}: expected an equal share ${want}, got ${weights[i]}`,
+    );
+  }
+});
+
+test('the equal split is visible where the limb ramp would have crossfaded', () => {
+  // Walking toward a footprint edge, the sphere's weight falls away smoothly and
+  // the mesh's does not. That difference IS the refusal, and a test that only
+  // looked at an overlap centre would miss it.
+  const cal = nominalRig();
+  const sphereRig = prepareRig(cal);
+  const meshRig = prepareRig(cal, meshSurface(uvSphere(192, 96)));
+  let sphereDistinct = 0;
+  let meshDistinct = 0;
+  const seen = { sphere: new Set<string>(), mesh: new Set<string>() };
+  for (let lonDeg = 0; lonDeg <= 80; lonDeg += 2) {
+    const p = latLonToWorld(0, lonDeg, R);
+    const sw = coverageAndWeights(p, sphereRig.surface.normalAt(p), sphereRig).weights;
+    const mw = coverageAndWeights(p, meshRig.surface.normalAt(p), meshRig).weights;
+    seen.sphere.add(sw.map((w) => w.toFixed(4)).join(','));
+    seen.mesh.add(mw.map((w) => w.toFixed(4)).join(','));
+  }
+  sphereDistinct = seen.sphere.size;
+  meshDistinct = seen.mesh.size;
+  // The ramp produces a continuum of weight vectors; the refusal produces only
+  // the handful of equal splits the contributor count allows.
+  assert.ok(
+    sphereDistinct > meshDistinct * 3,
+    `expected the sphere ramp to be far richer than the mesh split, got ${sphereDistinct} vs ${meshDistinct}`,
+  );
+  assert.ok(meshDistinct <= 4, `an equal split can only take a few values, got ${meshDistinct}`);
+});
+
+test('the polar mask is refused on a mesh rather than applied to a texture row', () => {
+  const cal = nominalRig();
+  const image = flatField(64, 32, { r: 1, g: 1, b: 1 });
+  const scene = defaultScene(image);
+  // Deep in the masked band: on the sphere the mask kills it outright.
+  const p = latLonToWorld(-80, 20, R);
+  const onSphere = sampleSurface(p, prepareRig(cal), scene);
+  assert.equal(onSphere.mask, 0, 'the sphere must mask its south polar cap');
+
+  const onMesh = sampleSurface(p, prepareRig(cal, meshSurface(uvSphere(192, 96))), scene);
+  assert.equal(onMesh.mask, 1, 'a mesh has no ceiling mount, so nothing is masked');
 });

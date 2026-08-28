@@ -29,6 +29,7 @@ import { worldLonToTextureLon } from './geometry.ts';
 import type { PreparedRig } from './optics.ts';
 import { pixelToRay, worldToPixel } from './optics.ts';
 import { coverageAndWeights, isIlluminatedAt, polarMask } from './coverage.ts';
+import { blendModelApplies } from './surface.ts';
 import type { MaskInterpretation } from './coverage.ts';
 import type { ProjectorContribution, ShadeInput, ShadingModel } from './shading.ts';
 import { lambertianShading } from './shading.ts';
@@ -217,7 +218,12 @@ export function sampleSurface(point: Vec3, rig: PreparedRig, scene: Scene): Surf
   // grid and the frame the projector was supposedly sending had none. See
   // `test/content.test.ts`, which now refuses to let the two disagree.
   const target = contentAt(scene, ll.latDeg, texLon);
-  const mask = polarMask(ll.latDeg, rig.blend, scene.maskInterpretation);
+  // The polar mask keys on latitude, and off a sphere `ll.latDeg` is a UV
+  // coordinate wearing a latitude's name. Refused rather than applied to a row
+  // of texture. See `blendModelApplies`.
+  const mask = blendModelApplies(rig.surface)
+    ? polarMask(ll.latDeg, rig.blend, scene.maskInterpretation)
+    : 1;
   const { weights, lit } = coverageAndWeights(point, normal, rig);
   for (let i = 0; i < weights.length; i++) weights[i] *= mask;
   return { point, normal, latDeg: ll.latDeg, lonDeg: ll.lonDeg, target, weights, lit, mask };

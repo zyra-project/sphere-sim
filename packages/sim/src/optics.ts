@@ -435,16 +435,50 @@ export function fovVDeg(it: ProjectorIntrinsics): number {
  * are computed exactly once per run — cheaper, and one fewer way for two runs
  * with the same seed to disagree in the last bit.
  */
-export function prepareRig(rig: RigCalibration): PreparedRig {
+/**
+ * A rig with every projector prepared, against `rig.sphere` or against a surface
+ * the caller supplies.
+ *
+ * ## Why the mesh arrives here and not in `RigCalibration`
+ *
+ * The obvious move for `docs/ARBITRARY-SHAPES.md` Phase 1 is a `mesh?:
+ * SurfaceMesh` field on `RigCalibration`, so a rig names its own shape. It is
+ * the right destination and it is not yet the right change, because
+ * `RigCalibration`'s own contract says "serialized to JSON, passed between A and
+ * B" — and a `SurfaceMesh` is typed arrays. `JSON.stringify` turns a
+ * `Float64Array` into an object keyed by stringified indices: a 100k-triangle
+ * model becomes tens of megabytes of `{"0":0.123,"1":...}` that reads back as
+ * something which is not a mesh.
+ *
+ * (It would not break the bench today — `bench-results.json` carries no
+ * `RigCalibration`; `inputs.injected` is a perturbation record that happens to
+ * have a `projectors` key. But the type's documented contract is the contract,
+ * and the solver returns one of these.)
+ *
+ * Fixing that properly means deciding how a calibration carries a mesh across
+ * JSON — beside it as a `.bin`, or as the source file's own bytes to re-read,
+ * as `packages/calibration/src/mesh.ts` sketches. That is a decision about the
+ * boundary object, and it belongs with Phase 5, where the solver actually needs
+ * a mesh to cross. Until then the surface is passed in, which gets a model on
+ * screen without putting a landmine in the type that both models share.
+ *
+ * Omit it and the rig is a sphere built from `rig.sphere.radiusM`, which is what
+ * every existing caller gets and why this change moves no bytes.
+ */
+export function prepareRig(rig: RigCalibration, surfaceOverride?: Surface): PreparedRig {
   // One surface per rig, shared by every projector. Building it once is not an
   // optimisation: a surface built twice is two objects that a `===` check can
-  // tell apart, and Phase 1's mesh will carry a bounding volume hierarchy that
-  // nobody wants rebuilt four times per prepare.
-  const surface = sphereSurface(rig.sphere.radiusM);
+  // tell apart, and a mesh carries a bounding volume hierarchy that nobody wants
+  // rebuilt four times per prepare.
+  const surface = surfaceOverride ?? sphereSurface(rig.sphere.radiusM);
   return {
     rig,
     surface,
-    radiusM: rig.sphere.radiusM,
+    // The SURFACE's radius, not `rig.sphere.radiusM`. They are the same number
+    // for a sphere and must be, or this change would move bytes; for a mesh the
+    // sphere calibration describes a ball that is not being lit, and a metric
+    // reading `radiusM` would be measuring it.
+    radiusM: surface.boundsRadiusM,
     centerHeightM: rig.sphere.centerHeightM,
     rotationOffsetDeg: rig.sphere.rotationOffsetDeg,
     blend: rig.blend,

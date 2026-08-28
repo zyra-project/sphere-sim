@@ -301,3 +301,41 @@ export class SphereSurface implements Surface {
 export function sphereSurface(radiusM: number): Surface {
   return new SphereSurface(radiusM);
 }
+
+/**
+ * Does PARAMETERS.md's blend-and-mask model mean anything on this surface?
+ *
+ * It is written for a sphere, in two places that both stop being defined the
+ * moment the surface is not one:
+ *
+ *  - **The blend ramp.** `coverage.ts` measures `t` inward from
+ *    `theta_max = acos(R/d)` — the sphere's LIMB. An arbitrary mesh has no
+ *    single limb angle, and a `MeshSurface` would hand back the angular radius
+ *    of its BOUNDING SPHERE, which is a number rather than an answer: it is not
+ *    the distance to the edge of the projector's footprint, which is what a
+ *    crossfade needs. The `'sector'` reading is worse — it assigns longitude
+ *    wedges from lens azimuth, which presumes a ring of lenses around a
+ *    rotationally symmetric object.
+ *  - **The polar mask.** `set bottommask 60,70` is a fact about a sphere hanging
+ *    from a ceiling mount that occludes its north cap. On a mesh the latitude it
+ *    keys on is a UV coordinate wearing a latitude's name, so the mask would
+ *    attenuate by texture row.
+ *
+ * So on anything but a sphere both are REFUSED rather than approximated: every
+ * projector that reaches a point contributes equally, and the mask is 1.
+ *
+ * That produces hard seams where each projector's footprint ends, and that is
+ * the point. A crossfade computed from a bounding sphere would look like a
+ * blend, photograph like a blend, and be a claim about a shape nobody measured —
+ * which is the failure `docs/ARBITRARY-SHAPES.md` exists to prevent. A visible
+ * seam is a true statement about coverage; a smooth gradient would be a false
+ * one.
+ *
+ * Phase 3 replaces this with a screen-space distance to the footprint edge,
+ * which is what projection-mapping software actually does and which must
+ * degenerate to the limb ramp on a sphere. This predicate is the single place
+ * that decision is made, so that is the one line Phase 3 changes.
+ */
+export function blendModelApplies(surface: Surface): boolean {
+  return surface.kind === 'sphere';
+}

@@ -268,10 +268,32 @@ unconditionally, which is not a stub: a convex body cannot come between a point
 on itself and anything outside it, and that is precisely why the whole of Phase 0
 could treat "faces the lens" as the entire visibility test.
 
-**Still to do:** `renderRoomView` drawing a mesh, and carrying a mesh through
-`RigCalibration` so a rig can name one. Until that second one lands the mesh path
-is reachable through `prepareProjector` but not through a calibration, which is
-why the coverage test builds its projector by hand.
+`prepareRig` takes an optional `Surface`, so a mesh reaches the renderer through
+the ordinary entry point. **`renderRoomView` needed no work at all** — Phase 0
+routed it through `rig.surface` and the coverage wiring finished the job.
+Measured rather than assumed: swapping a `MeshSurface` (a 192×96 tessellated
+sphere) into a `PreparedRig` gives 648 camera-ray hits either way, a mean
+absolute difference of 5.7e-5 in linear radiance against the analytic sphere, and
+about 4.5× the render time for a hierarchy traversal against a closed form.
+
+**The blend and the polar mask are REFUSED off a sphere, not approximated.**
+`blendModelApplies` is the single place that decision is made. Both are written
+for a sphere and stop being defined on anything else: the ramp measures `t`
+inward from `theta_max = acos(R/d)`, the sphere's limb, and a mesh would hand
+back the angular radius of its *bounding sphere* — a number, not an answer,
+because it is not the distance to the edge of the projector's footprint. The mask
+keys on a latitude that off a sphere is a UV coordinate wearing a latitude's
+name.
+
+So on a mesh every projector reaching a point contributes equally and the mask is
+1. That draws hard seams where each footprint ends, and that is the point: a
+crossfade computed from a bounding sphere would look like a blend, photograph
+like a blend, and be a claim about a shape nobody measured. **A visible seam is a
+true statement about coverage; a smooth gradient would be a false one.** Phase 3
+replaces the predicate with a screen-space distance to the footprint edge.
+
+**Still to do:** carrying a mesh through `RigCalibration` itself — see below for
+why that is deliberately not this change.
 
 **Where the byte-identity gate nearly broke, and what it forced.** The obvious
 implementation of `SphereSurface.facesLens` uses the normal it is passed. It is
@@ -357,8 +379,26 @@ second implementation can produce:
   sphere would — but `latDeg`/`lonDeg` are now a transport rather than a
   geographic fact, and Phase 2 should rename them.
 
+**Why the mesh is NOT a field on `RigCalibration` yet.** That is the right
+destination and it is not yet the right change. `RigCalibration`'s own contract
+says "serialized to JSON, passed between A and B", and a `SurfaceMesh` is typed
+arrays: `JSON.stringify` turns a `Float64Array` into an object keyed by
+stringified indices, so a 100k-triangle model becomes tens of megabytes of
+`{"0":0.123,"1":…}` that reads back as something which is not a mesh. It would
+not break the bench today — `bench-results.json` carries no `RigCalibration`;
+`inputs.injected` is a perturbation record that merely has a `projectors` key —
+but the type's documented contract is the contract, and the solver returns one of
+these.
+
+Doing it properly means deciding how a calibration carries a mesh across JSON:
+beside it as a `.bin`, or as the source file's own bytes to re-read, as
+`packages/calibration/src/mesh.ts` sketches. That is a decision about the boundary
+object, and it belongs with Phase 5, where the solver actually needs a mesh to
+cross. Until then the surface is passed to `prepareRig`, which gets a model on
+screen without putting a landmine in the type both models share.
+
 **Gates, re-measured on the Phase 1 head:** bench still byte-identical to the
-pre-refactor baseline (5,563,347 characters), 882 tests pass, `progress:reference:check`
+pre-refactor baseline (5,563,347 characters), 886 tests pass, `progress:reference:check`
 clean, boundary lint clean across 198 files.
 
 *Estimate: 1–2 weeks. Support OBJ second; GLB first is the cheaper 80%.*
