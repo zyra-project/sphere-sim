@@ -257,11 +257,44 @@ boundary). `packages/sim/src/mesh/bvh.ts` and `mesh/surface.ts`: the simulator's
 own bounding volume hierarchy, its own ray-triangle test, self-occlusion, and
 area-weighted triangle sampling that replaces the Fibonacci lattice on the mesh
 path. `MeshSurface` is the second `Surface` implementation, which is what turns
-Phase 0 from a rename into an abstraction.
+Phase 0 from a rename into an abstraction. And `packages/meshio` — the GLB
+reader.
 
-**Still to do:** the GLB reader; wiring `occluded` into `coverage.ts` so
-`isIlluminatedAt` stops assuming convexity; `renderRoomView` drawing a mesh; and
-carrying a mesh through `RigCalibration` so a rig can name one.
+**Still to do:** wiring `occluded` into `coverage.ts` so `isIlluminatedAt` stops
+assuming convexity; `renderRoomView` drawing a mesh; and carrying a mesh through
+`RigCalibration` so a rig can name one.
+
+**Where the reader had to live, and why that is not a detail.** R1 lets `sim` and
+`solver` import `calibration` and nothing else, so a loader cannot sit anywhere
+either model can reach. A GLB reader is the most plausible-looking thing anyone
+would ever want to share across that boundary — pure IO, no geometry, and
+duplicating it feels like waste. That is precisely the argument that would be
+made for sharing a PRNG, and then a distortion model. So it is its own leaf
+package, and `packages/meshio/test/boundary.test.ts` names it so whoever is about
+to make the argument finds the answer.
+
+What the reader handles is chosen from what real exporters emit rather than from
+what the spec minimally requires: the node hierarchy with transforms accumulated
+down the tree, TRS and matrix nodes, instancing, interleaved buffer views,
+normalized integer attributes, and non-uniform scale carried through the inverse
+transpose. What it refuses — non-triangle primitives, Draco, external buffers,
+sparse accessors — it **names in the report** rather than dropping in silence,
+because a model that arrives with half its geometry missing has to say so.
+
+**The up axis is the trap.** glTF is Y-up; this repository is Z-up, and the rig,
+the floor plane and the polar mask are all written against that. A reader that
+skipped the conversion would lay every model on its side, which reads as "the
+exporter is odd" rather than as a bug in the reader. The conversion is a rotation
+about +X, so it cannot mirror and the winding survives — a mirroring conversion
+would turn a closed model inside out and every surface would face away from its
+projector, visible as a sphere lit from within.
+
+Its tests build GLB files byte by byte from the specification rather than
+checking in an exporter's output: a fixture proves only that the reader agrees
+with whatever that one tool wrote, and the cases that break a loader are the ones
+a single exporter never produces. The load-bearing check runs bytes all the way
+to geometry — a tessellated sphere written as a GLB, read back, built into
+`MeshSurface`, and intersected against `raySphereIntersect`.
 
 **How the mesh path is checked.** A ray-triangle intersector is easy to write and
 hard to be sure of: a wrong one still renders something, and on an arbitrary
@@ -299,8 +332,8 @@ second implementation can produce:
   geographic fact, and Phase 2 should rename them.
 
 **Gates, re-measured on the Phase 1 head:** bench still byte-identical to the
-pre-refactor baseline (5,563,347 characters), 861 tests pass, boundary lint clean
-across 194 files.
+pre-refactor baseline (5,563,347 characters), 879 tests pass, `progress:reference:check`
+clean, boundary lint clean across 198 files.
 
 *Estimate: 1–2 weeks. Support OBJ second; GLB first is the cheaper 80%.*
 
