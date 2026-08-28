@@ -18,6 +18,7 @@ export * from './geometry.ts';
 export * from './surface.ts';
 export * from './mesh/bvh.ts';
 export * from './mesh/surface.ts';
+export * from './warp.ts';
 export * from './optics.ts';
 export * from './blend.ts';
 export * from './coverage.ts';

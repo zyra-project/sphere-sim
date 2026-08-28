@@ -1,9 +1,11 @@
 # Arbitrary shapes: a feasibility study
 
-**Status: STUDY, with Phase 0 landed.** Phases 1–5 are unimplemented. This document answers a
-question — how hard would it be to let a user drop in a GLB or an OBJ, put the
-projectors wherever they like, and get real projection mapping out — and proposes
-a plan. It changes no constant, no gate and no line of code.
+**Status: Phases 0 and 1 landed, Phase 3 landing out of order.** Phases 2, 4 and 5
+are unimplemented. This document answers a question — how hard would it be to let
+a user drop in a GLB or an OBJ, put the projectors wherever they like, and get
+real projection mapping out — and proposes a plan. It began as a study that
+changed no constant, no gate and no line of code; each landed phase below now
+also records what building it cost and where the study was wrong.
 
 ## The question is really four questions
 
@@ -450,13 +452,93 @@ deliberately, with `parity.ts` re-derived to say what it now measures.
 
 *Estimate: 1–2 weeks, plus whatever the parity tolerance re-derivation costs.*
 
-### Phase 3 — projection mapping proper
+### Phase 3 — projection mapping proper. **IN PROGRESS, out of order**
 
-Screen-space footprint blend, replacing the limb ramp, with the sphere case
-pinned as a regression. Mask in surface UV. Warp-mesh export in a standard
-interchange form. The warp computation itself already exists.
+**Taken before Phase 2, deliberately.** The phases are numbered by dependency and
+this one does not depend on Phase 2: the blend and the warp are computed on the
+CPU from a surface intersection, and putting a mesh in the fragment shader would
+not change a digit of either. Ordering them 2-then-3 was an assumption that the
+GPU comes first because it is what you see. It does not: Phase 2 makes the live
+view stop lying about the shape, Phase 3 makes the output loadable by a player,
+and only the second one is on the path to something you could take to a wall. The
+numbers are identities — commits and tests refer to them — so they are not
+renumbered; only the order changed.
 
-*Estimate: 1–2 weeks.*
+**The footprint blend LANDED, and it is not the algorithm this section
+prescribed.** The original text said screen-space distance transform. That was
+wrong for a reason the arithmetic states plainly, recorded in the tier list above
+and measured before being discarded: `w_width` is an angle on the *surface*, a
+screen-space field measures angle at the *lens*, and near a limb — where the ramp
+lives — those diverge until the ramp is wider than the footprint it ramps across.
+Built, measured at **0.46** of a normalized weight away from the closed form, and
+deleted.
+
+What replaced it is the same distance measured along the surface:
+`packages/sim/src/footprint.ts` runs a multi-source Dijkstra over welded mesh
+edges from every vertex the projector does *not* light, so the field is the
+geodesic distance inward from the edge of that projector's footprint. The
+acceptance test is that it degenerates to the sphere's closed form, and it does so
+algebraically rather than approximately — on a sphere the footprint is a cap
+bounded at `theta_max`, so the surface distance to its edge is
+`R(theta_max − theta)` and dividing by the width as an arc gives
+`(theta_max − theta)/w`, which is the closed form identically. Measured departure:
+0.093 at 96×48, 0.0099 at 192×96, 0.0099 again at 384×192 — it converges and then
+stops, because a path constrained to mesh edges is a few percent longer than one
+free to cut across faces. Fast marching would remove that residue for a
+per-triangle eikonal solve.
+
+The general form subsumes more than the sphere's did. The sphere's ramp has one
+kind of edge, the limb; a mesh footprint has three — the raster edge, the
+terminator, and a shadow edge — and all three are edges of one set, the points
+`isIlluminatedAt` says the projector lights. So a shadow edge feathers exactly
+like a raster edge, and two projectors crossfade across the shadow a model casts
+on itself. No sphere has ever needed that.
+
+**The warp-and-blend export LANDED.** `packages/sim/src/warp.ts` writes Paul
+Bourke's warp-mesh format — the one dome and planetarium players read directly.
+Per node of a projector's raster: send the pixel out through the rig, find where
+it lands, and write which texel belongs there and how brightly. It is the
+projection-mapping deliverable, and it is worth being explicit that it is a
+*different computation* from the `warpMeshes` already in
+`packages/web/src/model.ts`, which measures the disagreement between two
+calibrations (two rigs in, a displacement out). This takes one rig — the true
+one, or a recovered one — and writes the correction (one rig in, a texel and an
+intensity out).
+
+Bourke's format was chosen over MPCDI because its fifth field is an intensity
+multiplier, so **warp and blend leave in one file**. A geometry-only format would
+need the blend shipped beside it in something else, and the two would drift.
+MPCDI is the right second target and costs a ZIP writer and a PFM writer to say
+what this says in twelve lines.
+
+Two conventions flip between this repository and the format, and neither
+announces itself when wrong — each produces a picture that is plainly a picture,
+just upside down or mirrored, which reads as a bad model export rather than as a
+bug here. Raster `v` runs down and display `y` runs up; equirectangular `v` runs
+down from the north pole and texture `v` runs up. Both are pinned against a
+hand-computed node rather than against a comment.
+
+One decision inside the format matters more than it looks. A node whose ray
+misses the object is written with `intensity = -1`, the format's own "no data",
+rather than a zero. A zero is a black pixel the projector still emits its black
+floor into — the rectangle of glow around every real installation — and −1 tells
+the player to draw nothing at all.
+
+**A test premise, not the code, was wrong once here.** The polar mask looked
+absent from the sphere's export until the export was interrogated: at a 31×31
+grid the deepest node reaches latitude −65.5°, above the −70° full-mask
+threshold, so "find a fully masked node" finds nothing while the mask is working
+correctly (0.3394 where the mask value is 0.422). The test now compares each
+export against *its own* blend weight, which is a decision about the mask rather
+than a search for a magic number.
+
+**Still to do in Phase 3:** the mask in surface UV. It is the last piece of the
+sphere's blend model that is still refused rather than generalized, and it is the
+harder half — `set bottommask` is a statement about a ceiling mount over a
+physical sphere, and what it should mean on a model that has no such mount is a
+question about the parameter, not about the geometry.
+
+*Estimate: 1–2 weeks; the blend and the export are in.*
 
 ### Phase 4 — projectors anywhere
 
@@ -489,8 +571,14 @@ visitor's mesh has been measured either.
 ## So: could it support arbitrary projection mapping?
 
 Yes, and it is closer than the sphere framing suggests, because the warp mesh —
-the thing a projection-mapping product actually ships — is already built and is
-already derived from nothing but a surface intersection.
+the thing a projection-mapping product actually ships — is derived from nothing
+but a surface intersection, and that intersection is now behind an interface a
+mesh implements. Phase 3 turned the claim into a file: `buildWarpExport` writes
+warp and blend together in a format a dome player loads. Note the correction the
+work forced on this paragraph, though — what was "already built" when this was
+written was `warpMeshes`, which measures how wrong a config file is. The
+*correction* had to be written; it is a short path from the same trace, but it is
+not the same computation.
 
 What Phases 0–4 would *not* buy is any way to know the result is right. On the
 sphere, that is the entire point of the repository: the solver recovers a
