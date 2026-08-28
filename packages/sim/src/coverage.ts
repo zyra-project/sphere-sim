@@ -26,6 +26,7 @@ import type { PreparedProjector, PreparedRig } from './optics.ts';
 import { worldToPixel } from './optics.ts';
 import { normalizeWeights, rampWeight } from './blend.ts';
 import { blendModelApplies } from './surface.ts';
+import { blendWidthM, footprintDistanceAt } from './footprint.ts';
 
 // conventions.ts §B's ramp algebra lives in `blend.ts`, which knows nothing about
 // the sphere. This module decides WHERE each projector's blend region is and how
@@ -299,6 +300,11 @@ export function coverageAndWeights(
   // `blendModelApplies` for why a crossfade derived from a bounding sphere would
   // be a false statement rather than a rough one.
   const blended = blendModelApplies(rig.surface);
+  // One lookup for every projector: the footprint fields are all indexed by the
+  // same vertices, so locating the point once serves them all. `null` on a
+  // sphere, where nothing below runs.
+  const location = blended ? null : rig.surface.locate(point);
+  const widthM = blended ? 0 : blendWidthM(blend.widthDeg, rig.surface.boundsRadiusM);
   // Each projector's share of the circle, from where its NEIGHBOURS actually are
   // rather than from `360 / n`.
   //
@@ -315,10 +321,24 @@ export function coverageAndWeights(
     lit[i] = true;
 
     if (!blended) {
-      // Equal shares among whoever reaches this point. Not a blend — the
-      // ABSENCE of one, which draws a hard seam at each footprint edge and says
-      // exactly where each projector stops.
-      weights[i] = 1;
+      // The general blend: how deep inside this projector's own footprint the
+      // point sits, measured in its raster by `footprint.ts`. It replaces the
+      // limb ramp on any surface that has no limb, and it handles the raster
+      // edge, the terminator and a shadow edge with one rule because all three
+      // are edges of the same set.
+      //
+      // Falls back to an equal share only when no field was built, which means
+      // a caller assembled a `PreparedRig` by hand. Better a hard seam than a
+      // silent zero.
+      const field = rig.footprints?.[i] ?? null;
+      if (field === null || location === null) {
+        // No field, or a point the surface could not place on a face. Better a
+        // hard seam than a silent zero.
+        weights[i] = 1;
+        continue;
+      }
+      const d = footprintDistanceAt(field, location);
+      weights[i] = rampWeight(blend.rampShape, d / widthM, blend.rampGamma);
       continue;
     }
 

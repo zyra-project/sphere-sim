@@ -25,7 +25,10 @@ import type { Mat3 } from './vec.ts';
 import { DEG2RAD, RAD2DEG, matTVec, matVec, normalize, sub } from './vec.ts';
 import { projectorRotationMatrix } from './geometry.ts';
 import type { Surface } from './surface.ts';
-import { sphereSurface } from './surface.ts';
+import { blendModelApplies, sphereSurface } from './surface.ts';
+import { buildFootprintField } from './footprint.ts';
+import type { FootprintField } from './footprint.ts';
+import type { MeshSurface } from './mesh/surface.ts';
 
 /**
  * A projector with its per-render invariants precomputed.
@@ -83,6 +86,20 @@ export interface PreparedRig {
   rig: RigCalibration;
   /** The shape the light lands on. See `surface.ts`. */
   surface: Surface;
+  /**
+   * One footprint distance field per projector, or `null` on a surface whose
+   * blend has a closed form.
+   *
+   * `null` for a sphere, always — `blendModelApplies` is true there, the limb
+   * ramp is exact, and building a field would trace sixteen thousand rays per
+   * projector to reproduce arithmetic that already exists. It is also what keeps
+   * this change byte-identical: the sphere path never touches any of it.
+   *
+   * Built at PREPARE time rather than lazily. A field built on first use would
+   * be built inside whichever render happened to run first, so its cost would
+   * land on an arbitrary frame and `prepareRig` would look cheaper than it is.
+   */
+  footprints: (FootprintField | null)[] | null;
   radiusM: number;
   centerHeightM: number;
   rotationOffsetDeg: number;
@@ -471,6 +488,12 @@ export function prepareRig(rig: RigCalibration, surfaceOverride?: Surface): Prep
   // tell apart, and a mesh carries a bounding volume hierarchy that nobody wants
   // rebuilt four times per prepare.
   const surface = surfaceOverride ?? sphereSurface(rig.sphere.radiusM);
+  const projectors = rig.projectors.map((p, i) => prepareProjector(p, surface, i));
+
+  // Only where the closed form does not apply. On a sphere this is `null` and
+  // nothing below runs, which is what keeps the sphere path byte-identical.
+  const footprints = blendModelApplies(surface) ? null : buildFootprints(surface, projectors);
+
   return {
     rig,
     surface,
@@ -482,6 +505,47 @@ export function prepareRig(rig: RigCalibration, surfaceOverride?: Surface): Prep
     centerHeightM: rig.sphere.centerHeightM,
     rotationOffsetDeg: rig.sphere.rotationOffsetDeg,
     blend: rig.blend,
-    projectors: rig.projectors.map((p, i) => prepareProjector(p, surface, i)),
+    projectors,
+    footprints,
   };
+}
+
+/**
+ * One geodesic footprint field per projector, over the mesh's own vertices.
+ *
+ * Here rather than in `footprint.ts` because it needs `worldToPixel` and the
+ * surface's own visibility pair, and `coverage.ts` imports `footprint.ts` — so
+ * putting the assembly there would close a cycle. `footprint.ts` owns the graph
+ * and the search; this owns what "lit" means, which is `isIlluminatedAt`'s
+ * three tests in `isIlluminatedAt`'s order, cheapest rejection first.
+ */
+function buildFootprints(
+  surface: Surface,
+  projectors: PreparedProjector[],
+): (FootprintField | null)[] | null {
+  const mesh = meshOf(surface);
+  if (mesh === null) return null;
+  const adjacency = mesh.adjacency;
+  const positions = mesh.mesh.positions;
+  const normalsOf = mesh.mesh.normals;
+  return projectors.map((p) =>
+    buildFootprintField(mesh.mesh, adjacency, mesh.boundsRadiusM, (i) => {
+      const point = { x: positions[3 * i], y: positions[3 * i + 1], z: positions[3 * i + 2] };
+      // A vertex normal when the file supplied one; otherwise the outward
+      // direction from the model centre, which is the best a bare position can
+      // do and is only used to reject a vertex that plainly faces away.
+      const normal =
+        normalsOf === null
+          ? surface.normalAt(point)
+          : { x: normalsOf[3 * i], y: normalsOf[3 * i + 1], z: normalsOf[3 * i + 2] };
+      if (!surface.facesLens(point, normal, p.lens)) return false;
+      if (worldToPixel(p, point) === null) return false;
+      return !surface.shadowed(point, p.lens);
+    }),
+  );
+}
+
+/** The mesh behind a surface, or `null` when there is not one. */
+function meshOf(surface: Surface): MeshSurface | null {
+  return surface.kind === 'mesh' ? (surface as MeshSurface) : null;
 }

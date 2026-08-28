@@ -205,7 +205,20 @@ test('the interface carries what the call sites use and nothing dead', () => {
   // about convexity that nothing enforced. They are two methods rather than one
   // because their costs differ by orders of magnitude — the facing test runs
   // first and the shadow ray last, after the raster has rejected most points.
-  const expected = ['intersect', 'coordAt', 'pointAt', 'normalAt', 'sampleArea', 'facesLens', 'shadowed'];
+  // Widened a second time, by Phase 3. `locate` is what lets a caller
+  // interpolate a per-vertex field — the geodesic footprint distance — and it is
+  // needed ONCE per point rather than once per projector, which is why it
+  // returns a location rather than a value.
+  const expected = [
+    'intersect',
+    'coordAt',
+    'pointAt',
+    'normalAt',
+    'sampleArea',
+    'facesLens',
+    'shadowed',
+    'locate',
+  ];
   const proto = SphereSurface.prototype as unknown as Record<string, unknown>;
   const actual = Object.getOwnPropertyNames(proto).filter(
     (k) => k !== 'constructor' && typeof proto[k] === 'function',

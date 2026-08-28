@@ -664,42 +664,34 @@ test('prepareRig takes a surface, and the sphere default is unchanged', () => {
   assert.equal(asMesh.radiusM, ms.boundsRadiusM);
 });
 
-test('the blend is REFUSED on a mesh, not approximated from a bounding sphere', () => {
+test('a mesh takes its own blend path, not the sphere closed form', () => {
   const cal = nominalRig();
   const ms = meshSurface(uvSphere(96, 48));
   const rig = prepareRig(cal, ms);
-  assert.equal(blendModelApplies(ms), false);
-  assert.equal(blendModelApplies(rig.surface), false);
+  assert.equal(blendModelApplies(ms), false, 'the limb ramp must not claim a mesh');
+  assert.ok(rig.footprints !== null, 'a mesh rig must carry footprint fields');
 
-  // A point in the middle of a two-projector overlap. On the sphere the limb
-  // ramp puts it at a 50/50 plateau; on the mesh there is no ramp at all, so the
-  // contributors split evenly — which is the same 0.5 here, and would NOT be for
-  // three contributors or at a ramp's edge.
+  // Dead centre between two projectors: symmetry puts it at 50/50 under either
+  // rule, which is why this point alone cannot tell them apart. It is here to
+  // check the invariant that holds regardless — the weights are normalized —
+  // and `test/footprint.test.ts` is where the two rules are actually compared.
   const point = latLonToWorld(0, 45, R);
-  const normal = ms.normalAt(point);
-  const { weights, lit } = coverageAndWeights(point, normal, rig);
-  const contributors = lit.filter(Boolean).length;
-  assert.ok(contributors >= 2, `expected an overlap, got ${contributors} contributors`);
+  const { weights, lit } = coverageAndWeights(point, ms.normalAt(point), rig);
+  assert.ok(lit.filter(Boolean).length >= 2, 'expected an overlap at the seam');
   const sum = weights.reduce((a, b) => a + b, 0);
-  assert.ok(Math.abs(sum - 1) < 1e-12, `weights must still sum to one, got ${sum}`);
-  for (let i = 0; i < weights.length; i++) {
-    const want = lit[i] ? 1 / contributors : 0;
-    assert.ok(
-      Math.abs(weights[i] - want) < 1e-12,
-      `projector ${i}: expected an equal share ${want}, got ${weights[i]}`,
-    );
-  }
+  assert.ok(Math.abs(sum - 1) < 1e-12, `weights must sum to one, got ${sum}`);
 });
 
-test('the equal split is visible where the limb ramp would have crossfaded', () => {
-  // Walking toward a footprint edge, the sphere's weight falls away smoothly and
-  // the mesh's does not. That difference IS the refusal, and a test that only
-  // looked at an overlap centre would miss it.
+test('a mesh crossfades across a seam as richly as the sphere does', () => {
+  // This test used to assert the OPPOSITE. Phase 1 refused to blend off a
+  // sphere, so the mesh produced only the handful of equal splits a contributor
+  // count allows, and the assertion pinned that — deliberately, so the refusal
+  // could not be quietly lost. Phase 3 replaced the refusal with a geodesic
+  // footprint ramp, and this is the same walk now measuring that the mesh has
+  // become a continuum rather than a staircase.
   const cal = nominalRig();
   const sphereRig = prepareRig(cal);
   const meshRig = prepareRig(cal, meshSurface(uvSphere(192, 96)));
-  let sphereDistinct = 0;
-  let meshDistinct = 0;
   const seen = { sphere: new Set<string>(), mesh: new Set<string>() };
   for (let lonDeg = 0; lonDeg <= 80; lonDeg += 2) {
     const p = latLonToWorld(0, lonDeg, R);
@@ -708,15 +700,14 @@ test('the equal split is visible where the limb ramp would have crossfaded', () 
     seen.sphere.add(sw.map((w) => w.toFixed(4)).join(','));
     seen.mesh.add(mw.map((w) => w.toFixed(4)).join(','));
   }
-  sphereDistinct = seen.sphere.size;
-  meshDistinct = seen.mesh.size;
-  // The ramp produces a continuum of weight vectors; the refusal produces only
-  // the handful of equal splits the contributor count allows.
+  assert.ok(seen.mesh.size > 10, `the mesh blend is a staircase: ${seen.mesh.size} distinct values`);
+  // Comparable richness, not identical: the two are the same formula reached by
+  // different routes, and `test/footprint.test.ts` measures how far apart they
+  // land.
   assert.ok(
-    sphereDistinct > meshDistinct * 3,
-    `expected the sphere ramp to be far richer than the mesh split, got ${sphereDistinct} vs ${meshDistinct}`,
+    seen.mesh.size > seen.sphere.size / 2,
+    `the mesh blend is far coarser than the sphere's: ${seen.mesh.size} vs ${seen.sphere.size}`,
   );
-  assert.ok(meshDistinct <= 4, `an equal split can only take a few values, got ${meshDistinct}`);
 });
 
 test('the polar mask is refused on a mesh rather than applied to a texture row', () => {

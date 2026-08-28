@@ -92,11 +92,17 @@ would produce a plausible picture computed from a quantity that no longer exists
   region (AMENDMENTS A-37) is worse: it hands each projector a longitude wedge
   measured from lens azimuth, which presumes a ring of lenses around a
   rotationally symmetric object.
-  The general form, and what projection-mapping software actually does, is a
-  **screen-space distance to the footprint edge**: rasterize each projector's
-  footprint on the surface, distance-transform it, ramp on that. It is a
-  different algorithm — and it must degenerate to the current one on a sphere,
-  which is the acceptance test that keeps it honest.
+  > **This originally proposed a screen-space distance transform — rasterize each
+  > projector's footprint in its own raster, distance-transform it, ramp on that.
+  > Implementing it proved that wrong.** `w_width` is an angle ON THE SURFACE —
+  > 20° of arc, about 0.30 m at R = 0.8636 — and a screen-space field can only
+  > measure angle AT THE LENS. Near a limb, which is exactly where the ramp
+  > lives, the two diverge violently: at the nominal rig, 20° at the lens is 73
+  > cells of a 128-cell field while the sphere's whole silhouette is 35 cells in
+  > radius, so the ramp comes out wider than the footprint and can never
+  > complete. Measured against the closed form it departed by **0.46** of a
+  > normalized weight, on a scale whose whole range is 1. Phase 3 records what
+  > replaced it: the same distance, measured along the surface instead.
 - **Self-occlusion.** A sphere is convex, so `dot(normal, lens − point) > 0` plus
   a raster-bounds test *is* the visibility test, and `isIlluminatedAt` is
   complete as written. A mesh is not convex. Every point needs a real shadow ray
@@ -290,7 +296,7 @@ So on a mesh every projector reaching a point contributes equally and the mask i
 crossfade computed from a bounding sphere would look like a blend, photograph
 like a blend, and be a claim about a shape nobody measured. **A visible seam is a
 true statement about coverage; a smooth gradient would be a false one.** Phase 3
-replaces the predicate with a screen-space distance to the footprint edge.
+replaces the predicate with a geodesic distance to the footprint edge.
 
 **A dropped `.glb` reaches the app.** `mediaKind` routes a model away from the
 content path — it is the shape the content goes on, which is a different

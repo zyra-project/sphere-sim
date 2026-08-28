@@ -63,6 +63,25 @@ import { latLonToWorld, raySphereIntersect, worldToLatLon } from './geometry.ts'
 import { equalAreaLattice } from './metrics/sampling.ts';
 import { scale } from './vec.ts';
 
+/** Where a point sits on a tessellated surface. See {@link Surface.locate}. */
+export interface SurfaceLocation {
+  triangle: number;
+  /**
+   * The face's three vertex indices, carried rather than left to be looked up.
+   *
+   * A caller interpolating a per-vertex field would otherwise need the mesh's
+   * index buffer, which would put a mesh-shaped hole in every interface it
+   * passes through. The location describes itself instead.
+   */
+  a: number;
+  b: number;
+  c: number;
+  /** Barycentric weight of the second corner. */
+  u: number;
+  /** Barycentric weight of the third corner. */
+  v: number;
+}
+
 /**
  * Which shape an implementation is.
  *
@@ -173,6 +192,21 @@ export interface Surface {
   sampleArea(n: number): SurfaceAreaSample[];
 
   /**
+   * Which triangle a point sits on, and where in it — or `null` on a surface
+   * with no triangles.
+   *
+   * `SphereSurface` answers `null`, and that is the honest answer rather than a
+   * stub: a sphere has no faces, and every quantity a caller would interpolate
+   * across one it can compute in closed form instead.
+   *
+   * The mesh blend needs it, and needs it ONCE per point rather than once per
+   * projector: every projector's footprint field is indexed by the same
+   * vertices, so one lookup serves them all. That is why it returns a location
+   * rather than a value.
+   */
+  locate(point: Vec3): SurfaceLocation | null;
+
+  /**
    * Is the lens above this point's local horizon?
    *
    * Half of the visibility test, and the cheap half. `coverage.ts` runs it
@@ -266,6 +300,17 @@ export class SphereSurface implements Surface {
    */
   facesLens(point: Vec3, _normal: Vec3, lens: Vec3): boolean {
     return point.x * (lens.x - point.x) + point.y * (lens.y - point.y) + point.z * (lens.z - point.z) > 0;
+  }
+
+  /**
+   * A sphere has no triangles, so there is nothing to locate a point within.
+   *
+   * Not a gap: every quantity the mesh interpolates across a face, a sphere
+   * computes in closed form — which is exactly why `blendModelApplies` keeps it
+   * on its own path.
+   */
+  locate(_point: Vec3): SurfaceLocation | null {
+    return null;
   }
 
   /**

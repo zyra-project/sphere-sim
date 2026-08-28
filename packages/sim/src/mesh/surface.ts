@@ -45,7 +45,15 @@
  */
 
 import type { SurfaceMesh, Vec3 } from '../../../calibration/src/index.ts';
-import type { Surface, SurfaceAreaSample, SurfaceCoord, SurfaceHit } from '../surface.ts';
+import type {
+  Surface,
+  SurfaceAreaSample,
+  SurfaceCoord,
+  SurfaceHit,
+  SurfaceLocation,
+} from '../surface.ts';
+import { buildAdjacency } from '../footprint.ts';
+import type { MeshAdjacency } from '../footprint.ts';
 import type { Bvh } from './bvh.ts';
 import { buildBvh, intersectBvh, meshBounds, occludedBvh } from './bvh.ts';
 import type { MeshBounds } from './bvh.ts';
@@ -81,6 +89,11 @@ export class MeshSurface implements Surface {
   readonly boundsRadiusM: number;
 
   private readonly bvh: Bvh;
+  /**
+   * Built lazily: only the blend needs it, and only off a sphere. A mesh loaded
+   * purely to be looked at should not pay for a graph it never walks.
+   */
+  private cachedAdjacency: MeshAdjacency | null = null;
   /** Cumulative triangle area, for the equal-area sampler. `cdf[n-1]` is the total. */
   private readonly cdf: Float64Array;
   /** Geometric (flat) unit normal per triangle, from the winding. */
@@ -218,6 +231,31 @@ export class MeshSurface implements Surface {
       bias,
       distance,
     );
+  }
+
+  /**
+   * Which triangle a point sits on. The public form of the search `coordAt` and
+   * `normalAt` already use, promoted because the blend needs it once per point
+   * and would otherwise pay for it once per projector.
+   */
+  locate(point: Vec3): SurfaceLocation | null {
+    const hit = this.nearestTriangle(point);
+    if (hit === null) return null;
+    const idx = this.mesh.indices;
+    return {
+      triangle: hit.triangle,
+      a: idx[3 * hit.triangle],
+      b: idx[3 * hit.triangle + 1],
+      c: idx[3 * hit.triangle + 2],
+      u: hit.u,
+      v: hit.v,
+    };
+  }
+
+  /** Vertex adjacency, welded by position. Built once, on demand. */
+  get adjacency(): MeshAdjacency {
+    this.cachedAdjacency ??= buildAdjacency(this.mesh, this.boundsRadiusM);
+    return this.cachedAdjacency;
   }
 
   coordAt(point: Vec3): SurfaceCoord {
