@@ -106,7 +106,7 @@ import {
   withFrozenContent,
 } from './gl.ts';
 import { equirectAspectError, mediaKind } from '../src/media.ts';
-import { readGlb } from '../../meshio/src/glb.ts';
+import { containerOf, readGlb } from '../../meshio/src/glb.ts';
 import type { MeshLoadReport, SurfaceMesh } from '../../calibration/src/index.ts';
 
 // ---------------------------------------------------------------------------
@@ -348,6 +348,8 @@ let meshFacts: SurfaceFacts | null = null;
 let meshFrame: FrameImage | null = null;
 let meshError = '';
 let meshBusy = false;
+/** A surface pass asked for while the worker was busy. See `requestSurface`. */
+let queuedSurface = false;
 let meshSeq = 0;
 
 /** Which image the model worker has been sent, so it is sent exactly once. */
@@ -974,9 +976,10 @@ function modelBlock(): HTMLElement[] {
     textContent:
       'The live view above is still the sphere — the display shader intersects one analytically, ' +
       'and a mesh on the GPU is the next phase. This picture is the same scene traced on the CPU ' +
-      'by the model. Blending and the polar mask are switched OFF for a model rather than ' +
-      'approximated, so each projector stops at a hard edge: that edge is where its footprint ' +
-      'really ends, and a crossfade here would be a guess dressed as a measurement.',
+      'by the model. Projectors DO crossfade here: the blend is a geodesic distance to the edge ' +
+      "of each projector's own footprint, which feathers a shadow edge exactly as it feathers a " +
+      'raster edge. The polar mask is still switched off rather than approximated — it is a ' +
+      'statement about a ceiling mount over a sphere, and a dropped model has no such mount.',
   });
   out.push(caveat);
   return out;
@@ -1103,7 +1106,26 @@ async function loadCustomModel(file: File): Promise<void> {
   meshFacts = null;
   meshFrame = null;
   try {
-    const report = readGlb(new Uint8Array(await file.arrayBuffer()), { name: file.name });
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    // `mediaKind` routes anything that looks like a model here, which is the
+    // right call — it is a model, and refusing it as a badly-shaped image would
+    // be baffling. But only the binary container has a reader, so the refusal
+    // has to name the actual format rather than let `readGlb` report that a
+    // .gltf file is not glTF.
+    const container = containerOf(bytes);
+    if (container !== 'glb') {
+      droppedMesh = null;
+      meshReport = null;
+      meshError =
+        container === 'gltf-json'
+          ? `${file.name} is a JSON .gltf. This page reads the binary container — ` +
+            're-export as .glb (in Blender, glTF Binary) so the geometry travels in one file.'
+          : `${file.name} is not a glTF binary. This page reads .glb; OBJ is not implemented yet.`;
+      state.section = 'room';
+      renderControls();
+      return;
+    }
+    const report = readGlb(bytes, { name: file.name });
     meshReport = report;
     droppedMesh = report.mesh;
     // Take the reader to the panel that shows it. A dropped IMAGE announces
@@ -1134,6 +1156,15 @@ async function loadCustomModel(file: File): Promise<void> {
 /** Ask the worker for a CPU render of the dropped model, and the coverage facts. */
 function requestSurface(): void {
   if (droppedMesh === null) return;
+  // One in flight at a time. The trace walks a BVH over every camera ray and
+  // then samples four thousand points of surface, so a burst of settled passes
+  // would queue work faster than the worker retires it and the preview would
+  // fall further behind the controls the longer somebody used them.
+  if (meshBusy) {
+    queuedSurface = true;
+    return;
+  }
+  queuedSurface = false;
   meshBusy = true;
   const req: SurfaceRequest = {
     kind: 'surface',
@@ -1460,6 +1491,13 @@ function paritySamples(): number {
  * arriving a millisecond later.
  */
 function requestModel(fine: boolean): void {
+  // A dropped model's preview and its three coverage figures come from the same
+  // rig the sphere metrics do, so every slider that moves the rig makes them
+  // stale — and stale is the one thing this panel must not be, because the
+  // numbers beside the picture are the whole reason the picture is there. They
+  // refresh on the SETTLED pass only: the trace is a BVH walk, far too
+  // expensive for the every-frame pass a drag produces.
+  if (fine) requestSurface();
   if (modelPending) {
     queuedModel = { fine: fine || (queuedModel?.fine ?? false) };
     return;
@@ -1558,6 +1596,11 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage | Surf
   if (msg.kind === 'surface') {
     if (msg.id !== meshSeq) return;
     meshBusy = false;
+    // Whatever settled while this pass was running, now that the worker is free.
+    if (queuedSurface) {
+      queuedSurface = false;
+      requestSurface();
+    }
     if (!msg.ok) {
       meshError = msg.error;
       meshFrame = null;
@@ -3315,7 +3358,10 @@ function renderControls(): void {
 function pickImage(): void {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'image/*,video/*';
+  // `.glb` is listed because the note beside this chip says a model can be
+  // dropped OR chosen. Without it the picker hides every model file and the
+  // advertised path silently does not work.
+  input.accept = 'image/*,video/*,model/gltf-binary,.glb';
   input.addEventListener('change', () => {
     const file = input.files?.[0];
     if (file) void loadCustomMedia(file);

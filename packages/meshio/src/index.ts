@@ -18,4 +18,4 @@
  */
 
 export type { GlbOptions } from './glb.ts';
-export { readGlb } from './glb.ts';
+export { containerOf, readGlb } from './glb.ts';

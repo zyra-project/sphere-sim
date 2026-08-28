@@ -19,7 +19,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
 import type { SurfaceMesh } from '../../calibration/src/index.ts';
-import { blendWidthM, buildAdjacency } from '../src/footprint.ts';
+import { blendWidthM, buildAdjacency, footprintDistanceAt } from '../src/footprint.ts';
 import { meshSurface } from '../src/mesh/surface.ts';
 import { prepareRig } from '../src/optics.ts';
 import { coverageAndWeights } from '../src/coverage.ts';
@@ -210,18 +210,41 @@ test('the footprint blend is a real ramp, not a step', () => {
 
 test('the blend falls to zero at a footprint edge rather than stepping off it', () => {
   const mesh = prepareRig(nominalRig(), meshSurface(uvSphere(192, 96)));
-  // Toward the pole, past where any projector reaches: the last lit sample must
-  // be carrying a SMALL weight, not a full one, or the ramp is not reaching the
-  // edge it is supposed to feather.
-  let lastLitWeight = Number.NaN;
-  for (let latDeg = 60; latDeg <= 85; latDeg += 0.5) {
+  // This walk must read the RAW ramp depth, not `coverageAndWeights`.
+  //
+  // The first version of this test asserted only that some lit sample was
+  // found, which a step function passes — and it could not have done better,
+  // because the weights it looked at are normalized. Toward the pole exactly
+  // one projector still reaches, so normalization divides its weight by itself
+  // and returns 1 no matter what the ramp did. The quantity that carries the
+  // property is the depth INSIDE the footprint, before any normalization.
+  const width = blendWidthM(mesh.blend.widthDeg, mesh.surface.extentRadiusM);
+  let lastDepth = Number.NaN;
+  let deepest = 0;
+  for (let latDeg = 0; latDeg <= 85; latDeg += 0.5) {
     const p = latLonToWorld(latDeg, 45, R);
-    const { weights, lit } = coverageAndWeights(p, mesh.surface.normalAt(p), mesh);
-    if (!lit.some(Boolean)) break;
-    const total = weights.reduce((a, b) => a + b, 0);
-    if (total > 0) lastLitWeight = Math.max(...weights);
+    const { lit } = coverageAndWeights(p, mesh.surface.normalAt(p), mesh);
+    const i = lit.findIndex(Boolean);
+    if (i < 0) break;
+    const field = mesh.footprints?.[i];
+    const at = mesh.surface.locate(p);
+    if (field === undefined || field === null || at === null) continue;
+    lastDepth = footprintDistanceAt(field, at) / width;
+    if (lastDepth > deepest) deepest = lastDepth;
   }
-  assert.ok(Number.isFinite(lastLitWeight), 'nothing was lit on the walk toward the pole');
+  assert.ok(Number.isFinite(lastDepth), 'nothing was lit on the walk toward the pole');
+  // Well inside the footprint the depth passes 1, which is a full-weight point:
+  // without this the bound below could be met by a ramp that never rises.
+  assert.ok(deepest > 1, `the walk never reached full depth; deepest was ${deepest.toFixed(3)}`);
+  // And the LAST lit sample sits inside the feather, not at full weight. The
+  // bound is measured rather than chosen: the walk's final lit sample comes out
+  // at 0.034 of a width, so 0.25 leaves an order of magnitude of headroom for
+  // the sampling step while still failing any ramp that steps off its edge at
+  // full weight.
+  assert.ok(
+    lastDepth < 0.25,
+    `the last lit sample is ${lastDepth.toFixed(3)} of a width deep, so the ramp steps off its edge`,
+  );
 });
 
 // ---------------------------------------------------------------------------

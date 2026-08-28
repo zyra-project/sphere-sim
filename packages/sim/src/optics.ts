@@ -529,7 +529,7 @@ function buildFootprints(
   const positions = mesh.mesh.positions;
   const normalsOf = mesh.mesh.normals;
   return projectors.map((p) =>
-    buildFootprintField(mesh.mesh, adjacency, mesh.boundsRadiusM, (i) => {
+    buildFootprintField(mesh.mesh, adjacency, mesh.extentRadiusM, (i) => {
       const point = { x: positions[3 * i], y: positions[3 * i + 1], z: positions[3 * i + 2] };
       // A vertex normal when the file supplied one; otherwise the outward
       // direction from the model centre, which is the best a bare position can

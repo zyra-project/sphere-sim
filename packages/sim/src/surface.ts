@@ -155,14 +155,32 @@ export interface Surface {
   readonly kind: SurfaceKind;
 
   /**
-   * Radius of a world-frame bounding sphere centred on the world origin.
+   * Radius of a world-frame bounding sphere centred on the WORLD ORIGIN.
    *
    * conventions.ts §W puts the origin at the sphere centre, so for the sphere
    * this IS the surface rather than a bound on it. It is what the limb constant
    * `R/d` of PARAMETERS.md §4.1 is built from, and for a mesh it becomes the
    * bounding radius that the same constant generalizes to.
+   *
+   * Centred on the origin and not on the model, because `d` in `R/d` is the
+   * lens distance from the origin. Mixing an origin-relative distance with a
+   * model-relative radius gives a limb angle for a sphere that does not exist —
+   * and on a translated model the two differ by the whole translation, so it is
+   * not a small error. See {@link Surface.extentRadiusM} for the model's size,
+   * which is the quantity almost everything else wants.
    */
   readonly boundsRadiusM: number;
+
+  /**
+   * Radius of a bounding sphere about the surface's OWN centre — its size.
+   *
+   * Equal to {@link Surface.boundsRadiusM} for the sphere, which sits on the
+   * origin by §W, and smaller for any model that does not. This is the length
+   * scale for everything that is about the object rather than about where the
+   * object is: the shadow-ray bias, the weld tolerance, the search window, the
+   * arc a blend width subtends, and how far back a preview camera belongs.
+   */
+  readonly extentRadiusM: number;
 
   /**
    * Nearest intersection with a ray, or `null`.
@@ -257,6 +275,11 @@ export class SphereSurface implements Surface {
   }
 
   get boundsRadiusM(): number {
+    return this.radiusM;
+  }
+
+  /** The same number: §W puts the sphere's centre on the origin. */
+  get extentRadiusM(): number {
     return this.radiusM;
   }
 

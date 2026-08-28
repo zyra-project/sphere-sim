@@ -101,6 +101,14 @@ export interface MeshBounds {
   centre: Vec3;
   /** Radius of a sphere about {@link MeshBounds.centre} containing every vertex. */
   radiusM: number;
+  /**
+   * Radius of a sphere about the WORLD ORIGIN containing every vertex.
+   *
+   * A different number from {@link MeshBounds.radiusM} for any model that is
+   * not centred, and the one the limb constant `R/d` needs, because `d` is
+   * measured from the origin too.
+   */
+  originRadiusM: number;
 }
 
 /**
@@ -118,7 +126,7 @@ export function meshBounds(mesh: SurfaceMesh): MeshBounds {
   const p = mesh.positions;
   if (mesh.vertexCount === 0) {
     const zero = { x: 0, y: 0, z: 0 };
-    return { min: zero, max: zero, centre: zero, radiusM: 0 };
+    return { min: zero, max: zero, centre: zero, radiusM: 0, originRadiusM: 0 };
   }
   let minX = Infinity;
   let minY = Infinity;
@@ -141,18 +149,25 @@ export function meshBounds(mesh: SurfaceMesh): MeshBounds {
   const cy = 0.5 * (minY + maxY);
   const cz = 0.5 * (minZ + maxZ);
   let r2 = 0;
+  let o2 = 0;
   for (let i = 0; i < mesh.vertexCount; i++) {
-    const dx = p[3 * i] - cx;
-    const dy = p[3 * i + 1] - cy;
-    const dz = p[3 * i + 2] - cz;
+    const x = p[3 * i];
+    const y = p[3 * i + 1];
+    const z = p[3 * i + 2];
+    const dx = x - cx;
+    const dy = y - cy;
+    const dz = z - cz;
     const d2 = dx * dx + dy * dy + dz * dz;
     if (d2 > r2) r2 = d2;
+    const e2 = x * x + y * y + z * z;
+    if (e2 > o2) o2 = e2;
   }
   return {
     min: { x: minX, y: minY, z: minZ },
     max: { x: maxX, y: maxY, z: maxZ },
     centre: { x: cx, y: cy, z: cz },
     radiusM: Math.sqrt(r2),
+    originRadiusM: Math.sqrt(o2),
   };
 }
 

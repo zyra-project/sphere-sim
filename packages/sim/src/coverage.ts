@@ -304,7 +304,7 @@ export function coverageAndWeights(
   // same vertices, so locating the point once serves them all. `null` on a
   // sphere, where nothing below runs.
   const location = blended ? null : rig.surface.locate(point);
-  const widthM = blended ? 0 : blendWidthM(blend.widthDeg, rig.surface.boundsRadiusM);
+  const widthM = blended ? 0 : blendWidthM(blend.widthDeg, rig.surface.extentRadiusM);
   // Each projector's share of the circle, from where its NEIGHBOURS actually are
   // rather than from `360 / n`.
   //
@@ -338,6 +338,25 @@ export function coverageAndWeights(
         continue;
       }
       const d = footprintDistanceAt(field, location);
+      // A lit point the field cannot place inside the footprint.
+      //
+      // The field is per-VERTEX, so it resolves nothing below one triangle. A
+      // triangle whose three corners are all unlit interpolates to distance 0
+      // everywhere inside it — while a point in its interior can still pass
+      // `isIlluminatedAt`, because a footprint smaller than one face lands
+      // between the vertices that measure it. The ramp then returns 0 for a
+      // point this function has ALREADY established is lit, and if every
+      // projector reaching it says the same, `normalizeWeights` leaves the set
+      // alone and the surface renders black exactly where light falls.
+      //
+      // So the same rule as a missing field applies: better a hard seam than a
+      // silent zero. A seam is a visible statement that the tessellation is
+      // coarser than the footprint; a black patch is indistinguishable from
+      // being unlit, which is the one thing it is not.
+      if (!(d > 0)) {
+        weights[i] = 1;
+        continue;
+      }
       weights[i] = rampWeight(blend.rampShape, d / widthM, blend.rampGamma);
       continue;
     }

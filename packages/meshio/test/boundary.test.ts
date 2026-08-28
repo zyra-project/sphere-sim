@@ -67,9 +67,23 @@ test('meshio itself reaches only the boundary object', () => {
     const src = fs.readFileSync(file, 'utf8');
     const specs = [...src.matchAll(/from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
     for (const spec of specs) {
-      if (!spec.startsWith('.')) continue;
-      const target = path.resolve(path.dirname(file), spec);
-      const rel = path.relative(PACKAGES, target).split(path.sep)[0];
+      // A bare `@sphere/*` specifier names a package too, and skipping it left
+      // this test blind to the most direct violation it exists to catch:
+      // `import { meshSurface } from '@sphere/sim'` passed. `tools/boundary-lint.ts`
+      // already resolves these for exactly this reason — the modules call
+      // themselves `@sphere/sim` and `@sphere/calibration` in their own headers,
+      // so the day someone adds a workspaces field or a path alias the form
+      // starts resolving — and a test named "meshio reaches only the boundary
+      // object" should not be the one place that reading is missing.
+      let rel: string;
+      if (spec.startsWith('@sphere/')) {
+        rel = spec.slice('@sphere/'.length).split('/')[0];
+      } else if (spec.startsWith('.')) {
+        const target = path.resolve(path.dirname(file), spec);
+        rel = path.relative(PACKAGES, target).split(path.sep)[0];
+      } else {
+        continue;
+      }
       assert.ok(
         rel === 'calibration' || rel === 'meshio',
         `${path.relative(PACKAGES, file)} imports packages/${rel}; meshio may reach only calibration`,

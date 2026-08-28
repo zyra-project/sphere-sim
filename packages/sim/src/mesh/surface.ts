@@ -87,6 +87,7 @@ export class MeshSurface implements Surface {
   readonly mesh: SurfaceMesh;
   readonly bounds: MeshBounds;
   readonly boundsRadiusM: number;
+  readonly extentRadiusM: number;
 
   private readonly bvh: Bvh;
   /**
@@ -113,7 +114,12 @@ export class MeshSurface implements Surface {
     this.mesh = mesh;
     this.bvh = buildBvh(mesh);
     this.bounds = meshBounds(mesh);
-    this.boundsRadiusM = this.bounds.radiusM;
+    // The contract: `boundsRadiusM` is about the ORIGIN, because the limb
+    // constant pairs it with a lens distance measured from the origin.
+    // `extentRadiusM` is the model's own size, which is what the length scales
+    // below all want. They differ by the model's translation.
+    this.boundsRadiusM = this.bounds.originRadiusM;
+    this.extentRadiusM = this.bounds.radiusM;
 
     const n = mesh.triangleCount;
     this.cdf = new Float64Array(n);
@@ -222,7 +228,7 @@ export class MeshSurface implements Surface {
     const distance = Math.hypot(dx, dy, dz);
     if (distance === 0) return false;
     const inv = 1 / distance;
-    const bias = SHADOW_BIAS_FRACTION * Math.max(this.boundsRadiusM, Number.MIN_VALUE);
+    const bias = SHADOW_BIAS_FRACTION * Math.max(this.extentRadiusM, Number.MIN_VALUE);
     return occludedBvh(
       this.bvh,
       this.mesh,
@@ -254,7 +260,7 @@ export class MeshSurface implements Surface {
 
   /** Vertex adjacency, welded by position. Built once, on demand. */
   get adjacency(): MeshAdjacency {
-    this.cachedAdjacency ??= buildAdjacency(this.mesh, this.boundsRadiusM);
+    this.cachedAdjacency ??= buildAdjacency(this.mesh, this.extentRadiusM);
     return this.cachedAdjacency;
   }
 
@@ -278,6 +284,17 @@ export class MeshSurface implements Surface {
    * islands — a defined answer rather than a NaN, because the callers that reach
    * here are building field maps over a regular lat/lon grid and a NaN there
    * would poison an integral rather than leave a hole.
+   *
+   * **The fallback is not on the surface, and for a mesh with no UVs at all it
+   * is the ONLY answer.** The AABB centre is usually inside the model, so a
+   * caller that takes this point and asks `normalAt` or `isIlluminated` about
+   * it gets a number computed from a place the surface does not occupy. That is
+   * the accepted cost of a total function here, but it bounds what this may be
+   * used for: it answers "where does this content coordinate go", and it is not
+   * a way to obtain a point to shade. Callers that need points ON the surface
+   * should use {@link MeshSurface.sampleArea}, which has neither the ambiguity
+   * nor the fallback, and `coordAt`/`locate` for the direction that is a real
+   * inverse.
    */
   pointAt(coord: SurfaceCoord): Vec3 {
     const uvs = this.mesh.uvs;
@@ -473,7 +490,7 @@ export class MeshSurface implements Surface {
     dx /= len;
     dy /= len;
     dz /= len;
-    const window = SEARCH_FRACTION * Math.max(this.boundsRadiusM, Number.MIN_VALUE);
+    const window = SEARCH_FRACTION * Math.max(this.extentRadiusM, Number.MIN_VALUE);
     const origin: Vec3 = {
       x: point.x + dx * window,
       y: point.y + dy * window,

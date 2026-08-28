@@ -21,6 +21,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
 import { readGlb } from '../src/glb.ts';
+import type { SurfaceMesh } from '../../calibration/src/index.ts';
 import { meshSurface } from '../../sim/src/mesh/surface.ts';
 import { latLonToWorld, raySphereIntersect } from '../../sim/src/geometry.ts';
 
@@ -444,7 +445,11 @@ test('a mesh with no UV set loads, it just has no content', () => {
   assert.ok(meshSurface(report.mesh).areaM2 > 0);
 });
 
-test('a node cycle is a report rather than a stack overflow', () => {
+test('a node cycle is named as a cycle, not as exhausted depth', () => {
+  // This asserted the depth message before the walk could tell the two apart.
+  // It is worth the sharper assertion: "deeper than 256 levels" sends whoever
+  // reads it looking for a deep model, and the file in front of them has two
+  // nodes.
   const report = readGlb(
     buildGlb({
       positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
@@ -455,5 +460,181 @@ test('a node cycle is a report rather than a stack overflow', () => {
       },
     }),
   );
-  assert.ok(report.skipped.some((s) => s.includes('deeper than')));
+  assert.ok(
+    report.skipped.some((s) => s.includes('cycle')),
+    `expected a cycle report, got ${JSON.stringify(report.skipped)}`,
+  );
+  assert.ok(!report.skipped.some((s) => s.includes('deeper than')));
+  // The mesh on the far side of the cycle still loads: the walk refuses to
+  // re-enter a node it is already inside, it does not abandon the file.
+  assert.equal(report.mesh?.triangleCount, 1);
+});
+
+test('a subtree repeated at every level cannot expand exponentially', () => {
+  // Legal, acyclic, and 24 levels deep, so no depth cap sees anything wrong --
+  // but each node lists the one below it TWICE, so a walk that only counts
+  // depth emits 2^24 instances from a document of a few hundred bytes. This is
+  // the case the depth cap was mistaken for covering.
+  const depth = 24;
+  const report = readGlb(
+    buildGlb({
+      positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+      indices: [0, 1, 2],
+      patch: (doc) => {
+        const chain: Record<string, unknown>[] = [];
+        for (let i = 0; i < depth; i++) chain.push({ children: [i + 1, i + 1] });
+        chain.push({ mesh: 0 });
+        doc.scenes = [{ nodes: [0] }];
+        doc.nodes = chain;
+      },
+    }),
+  );
+  assert.ok(
+    report.skipped.some((s) => s.includes('instances')),
+    `expected an instance-count refusal, got ${JSON.stringify(report.skipped)}`,
+  );
+  // It stops at the ceiling rather than running to 2^24.
+  assert.ok((report.mesh?.triangleCount ?? 0) <= 65536);
+});
+
+test('an accessor claiming billions of elements is refused, not allocated', () => {
+  // The count is a number in JSON a stranger uploaded and it sizes an array
+  // this reader creates. Unchecked, `2e9` asks for a 16 GB Float64Array, which
+  // is not an exception -- it is the worker dying with no message.
+  const report = readGlb(
+    buildGlb({
+      positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+      indices: [0, 1, 2],
+      patch: (doc) => {
+        (doc.accessors as Record<string, unknown>[])[0].count = 2_000_000_000;
+      },
+    }),
+  );
+  assert.equal(report.mesh, null);
+  assert.ok(
+    report.skipped.some((s) => s.includes('elements')),
+    `expected a size refusal, got ${JSON.stringify(report.skipped)}`,
+  );
+});
+
+test('an index outside the primitive is refused rather than read as geometry', () => {
+  const report = readGlb(
+    buildGlb({
+      positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+      indices: [0, 1, 99],
+    }),
+  );
+  // `null` rather than an empty mesh, and that is the finding: the primitive's
+  // positions had already been appended when the bad index was found, so before
+  // the reorder this returned a mesh of three vertices and no triangles.
+  assert.equal(report.mesh, null);
+  assert.ok(
+    report.skipped.some((s) => s.includes('index')),
+    `expected an index refusal, got ${JSON.stringify(report.skipped)}`,
+  );
+});
+
+test('a mirrored node transform is un-mirrored, so the model is not inside out', () => {
+  // glTF permits a negative scale. It reverses winding while the index buffer
+  // stays as written, so every face ends up pointing away -- the model loads,
+  // the preview draws a recognizable object, and coverage reads 0%.
+  //
+  // A single triangle cannot show this: it has two sides and no outside. The
+  // fixture is a closed tetrahedron, wound outward, and the property is that
+  // every face still points away from the centroid after the mirror.
+  const tet = {
+    positions: [1, 1, 1, -1, -1, 1, -1, 1, -1, 1, -1, -1],
+    indices: [0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3],
+  };
+  const outward = (m: SurfaceMesh): number => {
+    const p = m.positions;
+    const i = m.indices;
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    for (let v = 0; v < m.vertexCount; v++) {
+      cx += p[3 * v];
+      cy += p[3 * v + 1];
+      cz += p[3 * v + 2];
+    }
+    cx /= m.vertexCount;
+    cy /= m.vertexCount;
+    cz /= m.vertexCount;
+    let facingOut = 0;
+    for (let t = 0; t < m.triangleCount; t++) {
+      const a = 3 * i[3 * t];
+      const b = 3 * i[3 * t + 1];
+      const c = 3 * i[3 * t + 2];
+      const ux = p[b] - p[a];
+      const uy = p[b + 1] - p[a + 1];
+      const uz = p[b + 2] - p[a + 2];
+      const vx = p[c] - p[a];
+      const vy = p[c + 1] - p[a + 1];
+      const vz = p[c + 2] - p[a + 2];
+      const nx = uy * vz - uz * vy;
+      const ny = uz * vx - ux * vz;
+      const nz = ux * vy - uy * vx;
+      // Does the face normal point away from the centroid?
+      if (nx * (p[a] - cx) + ny * (p[a + 1] - cy) + nz * (p[a + 2] - cz) > 0) facingOut++;
+    }
+    return facingOut;
+  };
+
+  const plain = readGlb(buildGlb(tet));
+  assert.ok(plain.mesh !== null);
+  assert.equal(outward(plain.mesh), 4, 'the fixture itself must be wound outward');
+
+  const mirrored = readGlb(
+    buildGlb({
+      ...tet,
+      patch: (doc) => {
+        doc.scenes = [{ nodes: [0] }];
+        doc.nodes = [{ mesh: 0, scale: [1, 1, -1] }];
+      },
+    }),
+  );
+  assert.ok(mirrored.mesh !== null);
+  assert.equal(mirrored.mesh.triangleCount, 4);
+  // Without the corner swap this is 0 of 4 -- every face inward, which is the
+  // exact signature of the bug: a model that loads and lights nothing.
+  assert.equal(
+    outward(mirrored.mesh),
+    4,
+    'a mirrored transform left the model inside out',
+  );
+});
+
+test('a scene that omits its node list is empty, not everything', () => {
+  // `nodes` is optional and its absence means an empty scene. Falling through
+  // to "every node in the file" loads geometry the author excluded.
+  const report = readGlb(
+    buildGlb({
+      positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+      indices: [0, 1, 2],
+      patch: (doc) => {
+        doc.scenes = [{}];
+        doc.scene = 0;
+        doc.nodes = [{ mesh: 0 }];
+      },
+    }),
+  );
+  assert.equal(report.mesh, null);
+});
+
+test('with no scenes at all, a child is not loaded twice', () => {
+  // Every node is a candidate root, but visiting them all literally reaches the
+  // child once through its parent and once from the top-level list -- the same
+  // geometry twice, with the parent transform applied to only one copy.
+  const report = readGlb(
+    buildGlb({
+      positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+      indices: [0, 1, 2],
+      patch: (doc) => {
+        delete doc.scenes;
+        delete doc.scene;
+        doc.nodes = [{ children: [1] }, { mesh: 0 }];
+      },
+    }),
+  );
+  assert.equal(report.mesh?.triangleCount, 1);
 });

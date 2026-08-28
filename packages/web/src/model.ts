@@ -692,6 +692,36 @@ export function computeModel(req: ModelRequest): ModelResponse {
   };
 }
 
+
+/**
+ * The sphere view's default range, the unit the model preview reads zoom in.
+ *
+ * `settings.ts` seeds `viewRangeM` at this and the slider moves around it, so
+ * the ratio is what the user actually expressed — "closer than default" or
+ * "further" — while the metres themselves are about a 130-inch ball and say
+ * nothing about a dropped model.
+ */
+const SPHERE_VIEW_RANGE_M = 10.2;
+
+/**
+ * A floor on the radius a preview is framed against.
+ *
+ * A degenerate model — one vertex, or every vertex coincident — has an extent
+ * of zero, and a camera distance of zero puts the eye inside the geometry with
+ * a divide waiting behind it. A centimetre is far below any model worth
+ * previewing and finite, which is the whole requirement.
+ */
+const MIN_MODEL_RADIUS_M = 0.01;
+
+/**
+ * How much further back than a snug fit a model preview sits, at zoom 1.
+ *
+ * A bounding sphere that exactly fills the frame touches all four edges, and a
+ * model inside it then runs to the edge wherever it comes closest to its own
+ * bound. Four tenths of the fit distance leaves visible space all round.
+ */
+const FRAME_MARGIN = 1.4;
+
 /**
  * Light a dropped model and send back a picture of it, plus what it turned out
  * to be.
@@ -732,14 +762,44 @@ export function computeSurface(req: SurfaceRequest): SurfaceResponse {
   // Framed against the MODEL's own size rather than the sphere's, so a 30 m
   // facade and a 30 cm prop both arrive filling the frame instead of as a dot or
   // as the inside of a wall.
-  const r = Math.max(req.camera.rangeM, surface.boundsRadiusM * 2.5);
+  //
+  // Taking `max` against the sphere view's range did NOT do that, which is the
+  // correction here. `rangeM` is metres for a 130-inch ball — 10.2 of them by
+  // default — so it was a floor no small model could get under: a 30 cm prop
+  // was framed from ten metres and arrived as a dot, exactly the outcome the
+  // paragraph above says it avoids. The slider's value is therefore read as a
+  // dimensionless ZOOM, its ratio to the sphere view's own default, and applied
+  // to a distance derived from the model. Pulling the camera in still works;
+  // it just works in units of the object in front of it.
+  const zoom = req.camera.rangeM / SPHERE_VIEW_RANGE_M;
+  const centre = surface.bounds.centre;
+  const radius = Math.max(surface.extentRadiusM, MIN_MODEL_RADIUS_M);
+  // The distance at which the bounding sphere exactly fills the SMALLER of the
+  // two fields of view, which for a 4:3 preview is the vertical one. Everything
+  // else here is expressed in multiples of it, so the framing follows the lens
+  // rather than a constant that happens to suit one field of view: widen the
+  // FOV slider and the camera moves in to match.
+  const fovV = 2 * Math.atan(Math.tan((req.camera.fovHDeg * Math.PI) / 360) * (height / width));
+  const fit = radius / Math.sin(Math.min((req.camera.fovHDeg * Math.PI) / 180, fovV) / 2);
+  // Floored at `fit` so zoom can never crop the model. The ratio runs below 1
+  // whenever somebody has pulled the sphere view in — the smoke test pinches to
+  // 4.6 of 10.2 metres before it drops anything — and without a floor that put
+  // the camera 0.97 m from an object whose vertices reach 0.86 m: outside the
+  // solid, but with the model overflowing every edge of the frame. A preview
+  // cropped to the silhouette hides the one thing it exists to show, which is
+  // whether the projectors reach the whole of it.
+  const r = Math.max(fit * FRAME_MARGIN * zoom, fit);
   const camera: ViewerCamera = {
+    // Orbiting the MODEL, not the world origin. A model whose author placed it
+    // away from the origin would otherwise be viewed from a point computed
+    // about a centre it does not have — the right distance from the wrong
+    // place, so a translated model drifts out of frame as the camera swings.
     position: {
-      x: r * Math.cos(el) * Math.cos(az),
-      y: r * Math.cos(el) * Math.sin(az),
-      z: r * Math.sin(el),
+      x: centre.x + r * Math.cos(el) * Math.cos(az),
+      y: centre.y + r * Math.cos(el) * Math.sin(az),
+      z: centre.z + r * Math.sin(el),
     },
-    target: surface.bounds.centre,
+    target: centre,
     upHint: { x: 0, y: 0, z: 1 },
     fovHDeg: req.camera.fovHDeg,
     width,
@@ -807,7 +867,7 @@ export function computeSurface(req: SurfaceRequest): SurfaceResponse {
       vertices: req.mesh.vertexCount,
       hasUvs: req.mesh.uvs !== null,
       hasNormals: req.mesh.normals !== null,
-      boundsRadiusM: surface.boundsRadiusM,
+      boundsRadiusM: surface.extentRadiusM,
       areaM2: surface.areaM2,
       litFraction: lit / n,
       meanOverlap: lit > 0 ? contributors / lit : 0,

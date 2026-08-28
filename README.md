@@ -28,7 +28,7 @@ build on any import across that line.
 | [`validation/README.md`](validation/README.md) | Photographs of real installations beside our render. Plausibility only — no metric, no gate, no score |
 | [`docs/EXPERIMENT-1.md`](docs/EXPERIMENT-1.md) | **How many photographs a calibration needs, and whether a phone suffices.** Measured |
 | [`docs/VISIT.md`](docs/VISIT.md) | **The ground-truth visit field card.** What to measure, in cut order, with framing diagrams |
-| [`docs/ARBITRARY-SHAPES.md`](docs/ARBITRARY-SHAPES.md) | **Feasibility study.** What it would take to render an uploaded GLB/OBJ with projectors anywhere, and where the sphere is load-bearing. Nothing implemented |
+| [`docs/ARBITRARY-SHAPES.md`](docs/ARBITRARY-SHAPES.md) | **Feasibility study, and the running record of building it.** What it takes to render an uploaded GLB with projectors anywhere, and where the sphere is load-bearing. Phases 0, 1 and most of 3 are implemented: a `.glb` dropped on the page is traced, lit, blended and exportable as a warp mesh. The live view is still the sphere |
 | [`docs/USAGE-ACCOUNTING.md`](docs/USAGE-ACCOUNTING.md) | What building this cost, in dollars and in kilowatt-hours. The bill is measured; the environmental figure is **PROVISIONAL** |
 | [`skills/usage-report/SKILL.md`](skills/usage-report/SKILL.md) | The same accounting as an installable, project-agnostic Claude Code skill |
 

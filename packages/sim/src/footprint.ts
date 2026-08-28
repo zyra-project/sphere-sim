@@ -290,26 +290,26 @@ export function footprintDistanceAt(field: FootprintField, at: SurfaceLocation):
  * bookkeeping costs more than the duplicates do at these sizes.
  */
 class MinHeap {
-  private readonly node: Int32Array;
-  private readonly key: Float64Array;
+  private node: Int32Array;
+  private key: Float64Array;
   size = 0;
 
   constructor(capacity: number) {
     // Lazy deletion means more entries than nodes. Each vertex can be pushed
-    // once per incoming edge, so the degree sum bounds it; four times the vertex
-    // count covers a triangle mesh comfortably and it grows if it does not.
+    // once per incoming edge, so the degree sum bounds it, and four times the
+    // vertex count is a comfortable start for a triangle mesh.
     const initial = Math.max(16, capacity * 4);
     this.node = new Int32Array(initial);
     this.key = new Float64Array(initial);
   }
 
   push(node: number, key: number): void {
-    if (this.size >= this.node.length) {
-      // Never seen in practice on a manifold mesh, but a degenerate one with a
-      // very high-degree vertex could reach it, and silently dropping an entry
-      // would produce a distance field that is wrong rather than slow.
-      throw new Error('footprint heap overflow: the mesh has an implausible vertex degree');
-    }
+    // It grows, which is what the paragraph above always claimed and what the
+    // code did not do — it threw. `4 * nodeCount` is only comfortable for a
+    // manifold triangle graph: a valid mesh with a high-valence or non-manifold
+    // vertex can hold more entries alive at once, and refusing to prepare a
+    // model because it is unusual is not a decision this heap gets to make.
+    if (this.size >= this.node.length) this.grow();
     let i = this.size++;
     this.node[i] = node;
     this.key[i] = key;
@@ -340,6 +340,15 @@ class MinHeap {
       }
     }
     return top;
+  }
+
+  private grow(): void {
+    const node = new Int32Array(this.node.length * 2);
+    node.set(this.node);
+    this.node = node;
+    const key = new Float64Array(this.key.length * 2);
+    key.set(this.key);
+    this.key = key;
   }
 
   private swap(a: number, b: number): void {

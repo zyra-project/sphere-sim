@@ -56,6 +56,19 @@ const MAGIC_GLTF = 0x46546c67; // 'glTF', little-endian
 const CHUNK_JSON = 0x4e4f534a; // 'JSON'
 const CHUNK_BIN = 0x004e4942; // 'BIN\0'
 
+/**
+ * Ceilings on what a single uploaded file may ask this reader to allocate.
+ *
+ * Not tuning knobs — they are the difference between a refusal and an
+ * out-of-memory kill of the worker, which is a blank page with no message.
+ * Both are set well above any real model: 64M components is a 21-million-vertex
+ * position accessor, and 65,536 mesh instances is more than a city block of
+ * scattered props. A file that exceeds either is malformed or hostile, and both
+ * deserve the same answer, which is a `MeshLoadReport` saying so.
+ */
+const MAX_ELEMENTS = 64 * 1024 * 1024;
+const MAX_INSTANCES = 65536;
+
 /** glTF `primitive.mode`. Only TRIANGLES carries a surface. */
 const MODE_TRIANGLES = 4;
 const MODE_NAMES = [
@@ -261,6 +274,35 @@ interface Gltf {
  * throw for a container that is not a GLB at all, which is a programming error
  * in the caller rather than a property of the model.
  */
+/**
+ * What container these bytes are, by looking at them.
+ *
+ * `mediaKind` classifies a drop by extension and MIME because that is all it
+ * has before the file is read, and it is deliberately generous: something named
+ * `.gltf`, or arriving as `model/obj`, IS a model, and telling whoever dropped
+ * it that their image has the wrong aspect ratio would be worse than useless.
+ * The cost of that generosity is that {@link readGlb} then gets handed
+ * containers it cannot read, and its refusal — "the magic is not glTF" — reads
+ * as nonsense to somebody whose file is glTF, just not the binary flavour.
+ *
+ * So the caller sniffs first and says something true. Format knowledge lives
+ * here rather than in the page.
+ */
+export function containerOf(input: ArrayBuffer | Uint8Array): 'glb' | 'gltf-json' | 'unknown' {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  if (bytes.byteLength >= 12) {
+    const header = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (header.getUint32(0, true) === MAGIC_GLTF) return 'glb';
+  }
+  // JSON glTF: the first non-whitespace byte of an object.
+  for (let i = 0; i < Math.min(bytes.byteLength, 64); i++) {
+    const c = bytes[i];
+    if (c === 0x20 || c === 0x09 || c === 0x0a || c === 0x0d) continue;
+    return c === 0x7b ? 'gltf-json' : 'unknown';
+  }
+  return 'unknown';
+}
+
 export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {}): MeshLoadReport {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   const skipped: string[] = [];
@@ -311,7 +353,16 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
   const accessors = json.accessors ?? [];
   const bufferViews = json.bufferViews ?? [];
 
-  /** Read an accessor into a flat array of numbers. */
+  /**
+   * Read an accessor into a flat array of numbers.
+   *
+   * Every quantity here comes from JSON a stranger uploaded, so the order of
+   * operations matters: the extent is checked BEFORE the output is allocated.
+   * `count` is the size of an array this reader is about to create, and a
+   * forty-byte file can ask for `count: 2e9` — sixteen gigabytes of Float64Array
+   * — which fails as an out-of-memory kill of the worker rather than as a
+   * report. Validating first turns that into `MAX_ELEMENTS` prose.
+   */
   const readAccessor = (index: number): Float64Array | null => {
     const acc = accessors[index];
     if (acc === undefined) return null;
@@ -325,17 +376,37 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
       skipped.push(`accessor type ${acc.type}/${acc.componentType} is not supported`);
       return null;
     }
-    const out = new Float64Array(acc.count * comps);
-    if (acc.bufferView === undefined) return out; // spec: absent view means zeros
+    if (!Number.isSafeInteger(acc.count) || acc.count < 0) {
+      skipped.push(`an accessor declares a count of ${acc.count}, which is not a whole number`);
+      return null;
+    }
+    if (acc.count * comps > MAX_ELEMENTS) {
+      skipped.push(
+        `an accessor declares ${acc.count} elements; this reader stops at ` +
+          `${Math.floor(MAX_ELEMENTS / comps)} for a ${acc.type}`,
+      );
+      return null;
+    }
+    if (acc.bufferView === undefined) return new Float64Array(acc.count * comps); // spec: absent view means zeros
     const view = bufferViews[acc.bufferView];
     if (view === undefined || bin === null) return null;
     const stride = view.byteStride ?? comps * ct.size;
     const base = (view.byteOffset ?? 0) + (acc.byteOffset ?? 0);
+    // The view's own window, not just the BIN chunk. Checking only the chunk
+    // lets a malformed accessor overread into the NEXT view and reinterpret
+    // somebody else's bytes as geometry — which produces a plausible-looking
+    // mesh rather than a refusal, and is the failure this reader least wants.
+    const viewEnd = (view.byteOffset ?? 0) + view.byteLength;
+    if (viewEnd > bin.byteLength) return null;
+    if (acc.count > 0) {
+      const last = base + (acc.count - 1) * stride + (comps - 1) * ct.size + ct.size;
+      if (base < (view.byteOffset ?? 0) || last > viewEnd) return null;
+    }
+    const out = new Float64Array(acc.count * comps);
     const dv = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
     for (let i = 0; i < acc.count; i++) {
       for (let c = 0; c < comps; c++) {
         const at = base + i * stride + c * ct.size;
-        if (at + ct.size > bin.byteLength) return null;
         let value = ct.read(dv, at);
         // glTF `normalized`: integer attributes stand for a value in [0, 1] or
         // [-1, 1]. UVs and normals are routinely stored this way to halve a file,
@@ -399,8 +470,48 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
     const uv =
       prim.attributes.TEXCOORD_0 !== undefined ? readAccessor(prim.attributes.TEXCOORD_0) : null;
 
+    // Indices are read and validated HERE, before a single vertex is appended.
+    // The append is what cannot be undone cheaply: a primitive that fails after
+    // pushing its positions leaves vertices no triangle references, and those
+    // orphans are not inert — they enter the bounds, so they move the model's
+    // centre, its radius, the preview framing and the blend scale, all from a
+    // primitive that was reported as skipped.
+    let tris: Uint32Array | null = null;
+    if (prim.indices !== undefined) {
+      const idx = readAccessor(prim.indices);
+      if (idx === null) {
+        skippedPrimitives++;
+        return;
+      }
+      const n = Math.floor(idx.length / 3) * 3;
+      tris = new Uint32Array(n);
+      for (let i = 0; i < n; i++) {
+        const v = idx[i];
+        // An index outside this primitive's own vertices is not recoverable:
+        // the BVH and the adjacency would read positions that were never
+        // written and return distances and bounds computed from zeros.
+        if (!Number.isInteger(v) || v < 0 || v >= count) {
+          skippedPrimitives++;
+          if (!skipped.some((t) => t.includes('index'))) {
+            skipped.push(
+              `a primitive has an index (${v}) outside its own ${count} vertices`,
+            );
+          }
+          return;
+        }
+        tris[i] = v;
+      }
+    }
+
     const nm = normalMatrix(world);
     const base = positions.length / 3;
+    // A node transform with a negative determinant MIRRORS the model, and a
+    // mirror reverses triangle winding while the index buffer stays as written.
+    // glTF permits a negative scale, so this is a legal file that would arrive
+    // inside out: every face pointing away, nothing lit, and a preview that
+    // still looks like a picture. The up-axis conversion is a rotation and
+    // cannot cause it; only the node transform can.
+    const flip = determinant3(world) < 0;
 
     for (let i = 0; i < count; i++) {
       const x = pos[3 * i];
@@ -437,37 +548,53 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
     if (nrm !== null) anyNormals = true;
     if (uv !== null) anyUvs = true;
 
-    if (prim.indices !== undefined) {
-      const idx = readAccessor(prim.indices);
-      if (idx === null) {
-        skippedPrimitives++;
-        return;
-      }
-      for (let i = 0; i + 2 < idx.length; i += 3) {
-        pushTriangle(indices, base + idx[i], base + idx[i + 1], base + idx[i + 2], yUp);
+    if (tris !== null) {
+      for (let i = 0; i + 2 < tris.length; i += 3) {
+        pushTriangle(indices, base + tris[i], base + tris[i + 1], base + tris[i + 2], flip);
       }
     } else {
       for (let i = 0; i + 2 < count; i += 3) {
-        pushTriangle(indices, base + i, base + i + 1, base + i + 2, yUp);
+        pushTriangle(indices, base + i, base + i + 1, base + i + 2, flip);
       }
     }
   };
 
-  // Walk the scene. A node may be reached twice through separate parents, which
-  // is legal and means the geometry is instanced — so nodes are not marked
-  // visited, but a cycle would not terminate, and glTF forbids one. The depth cap
-  // makes a malformed file a report rather than a stack overflow.
+  // Walk the scene. A node may be reached twice through SEPARATE parents, which
+  // is legal glTF and means the geometry is instanced — so a visited node is not
+  // skipped. What must be caught is a node reached from ITSELF, and the two look
+  // identical to a visited-set: the distinction is whether the repeat is on the
+  // current path or beside it.
+  //
+  // A depth cap alone does not make this safe, which was the previous reading.
+  // Nothing about 256 levels bounds the WORK: a node listing the same child
+  // twice doubles the tree at every level, so a document of a few hundred bytes
+  // expands to 2^256 visits and every one of them is legal, acyclic and under
+  // the cap. Since this parser runs on a file a stranger dropped on the page,
+  // the total is capped too, and the cap is on emitted instances because that is
+  // the quantity that actually costs memory.
   const nodes = json.nodes ?? [];
   const meshes = json.meshes ?? [];
+  const scene = json.scenes?.[json.scene ?? 0];
+  const onPath = new Uint8Array(nodes.length);
+  let instances = 0;
+  let exhausted = false;
   const visit = (nodeIndex: number, parent: Mat4, depth: number): void => {
+    if (exhausted) return;
     if (depth > 256) {
       if (!skipped.some((s) => s.includes('deeper than'))) {
-        skipped.push('the node tree is deeper than 256 levels; it may contain a cycle');
+        skipped.push('the node tree is deeper than 256 levels');
       }
       return;
     }
     const node = nodes[nodeIndex];
     if (node === undefined) return;
+    if (onPath[nodeIndex] === 1) {
+      if (!skipped.some((s) => s.includes('cycle'))) {
+        skipped.push(`node ${nodeIndex} is its own ancestor; the node tree contains a cycle`);
+      }
+      return;
+    }
+    onPath[nodeIndex] = 1;
     const local =
       node.matrix !== undefined && node.matrix.length === 16
         ? (Float64Array.from(node.matrix) as Mat4)
@@ -475,15 +602,23 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
     const world = multiply(parent, local);
     if (node.mesh !== undefined) {
       const mesh = meshes[node.mesh];
-      if (mesh !== undefined) for (const prim of mesh.primitives) emitPrimitive(prim, world);
+      if (mesh !== undefined) {
+        if (++instances > MAX_INSTANCES) {
+          exhausted = true;
+          skipped.push(
+            `the scene expands to more than ${MAX_INSTANCES} mesh instances; ` +
+              `it may repeat a subtree exponentially`,
+          );
+        } else {
+          for (const prim of mesh.primitives) emitPrimitive(prim, world);
+        }
+      }
     }
     for (const child of node.children ?? []) visit(child, world, depth + 1);
+    onPath[nodeIndex] = 0;
   };
 
-  const sceneIndex = json.scene ?? 0;
-  const scene = json.scenes?.[sceneIndex];
-  const roots = scene?.nodes ?? nodes.map((_, i) => i);
-  for (const root of roots) visit(root, identity(), 0);
+  for (const root of sceneRoots(json, nodes.length)) visit(root, identity(), 0);
 
   if (indices.length === 0) {
     return empty(
@@ -513,14 +648,55 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
 }
 
 /**
- * Append a triangle, flipping the winding when the model was mirrored by the
- * up-axis conversion.
+ * Append a triangle, swapping two corners when the node transform mirrored it.
  *
- * `(x, y, z) -> (x, -z, y)` is a rotation, and a rotation preserves handedness,
- * so the winding is untouched — this exists to say so at the one place a reader
- * would otherwise wonder, and to be the single line that changes if a mirroring
- * conversion is ever added.
+ * The up-axis conversion `(x, y, z) -> (x, -z, y)` is a rotation and preserves
+ * handedness, so it never sets `flip`. A node transform can: glTF permits a
+ * negative scale, and a negative determinant turns every outward face inward
+ * while the index buffer says otherwise. That failure is silent in the worst
+ * way — the model loads, the preview draws a recognizable object, and the
+ * coverage reads 0% because every normal points away. This repository has
+ * already been bitten by exactly that signature once, from a hand-built
+ * fixture, which is why it is worth a branch rather than a comment.
  */
-function pushTriangle(out: number[], a: number, b: number, c: number, _yUp: boolean): void {
-  out.push(a, b, c);
+function pushTriangle(out: number[], a: number, b: number, c: number, flip: boolean): void {
+  if (flip) out.push(a, c, b);
+  else out.push(a, b, c);
+}
+
+/**
+ * Which nodes to start the walk from.
+ *
+ * Two cases the obvious `scene?.nodes ?? every node` conflates:
+ *
+ *   - **A scene that omits `nodes`.** The spec makes `nodes` optional, and its
+ *     absence means an EMPTY scene — a file that deliberately shows nothing.
+ *     Falling through to every node loads geometry the author excluded.
+ *   - **A file with no `scenes` at all.** Then every node is a candidate root,
+ *     but taking them all literally visits each child twice: once through its
+ *     parent and once from the top-level list, which duplicates the geometry
+ *     and applies the parent transform to only one of the copies. The roots are
+ *     the nodes nobody claims as a child.
+ */
+function sceneRoots(json: Gltf, nodeCount: number): number[] {
+  const scene = json.scenes?.[json.scene ?? 0];
+  if (scene !== undefined) return scene.nodes ?? [];
+  const claimed = new Uint8Array(nodeCount);
+  for (const node of json.nodes ?? []) {
+    for (const child of node.children ?? []) {
+      if (child >= 0 && child < nodeCount) claimed[child] = 1;
+    }
+  }
+  const roots: number[] = [];
+  for (let i = 0; i < nodeCount; i++) if (claimed[i] === 0) roots.push(i);
+  return roots;
+}
+
+/** Determinant of a 4x4's upper-left 3x3 — negative means the map mirrors. */
+function determinant3(m: Mat4): number {
+  return (
+    m[0] * (m[5] * m[10] - m[9] * m[6]) -
+    m[4] * (m[1] * m[10] - m[9] * m[2]) +
+    m[8] * (m[1] * m[6] - m[5] * m[2])
+  );
 }
