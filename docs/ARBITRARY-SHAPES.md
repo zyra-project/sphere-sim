@@ -260,9 +260,35 @@ path. `MeshSurface` is the second `Surface` implementation, which is what turns
 Phase 0 from a rename into an abstraction. And `packages/meshio` — the GLB
 reader.
 
-**Still to do:** wiring `occluded` into `coverage.ts` so `isIlluminatedAt` stops
-assuming convexity; `renderRoomView` drawing a mesh; and carrying a mesh through
-`RigCalibration` so a rig can name one.
+`isIlluminatedAt` no longer assumes convexity. `Surface` gained `facesLens` and
+`shadowed`, and `coverage.ts` runs three tests cheapest-first — facing, then the
+raster, then the shadow ray — so the hierarchy traversal only happens for points
+that already passed the other two. `SphereSurface.shadowed` returns `false`
+unconditionally, which is not a stub: a convex body cannot come between a point
+on itself and anything outside it, and that is precisely why the whole of Phase 0
+could treat "faces the lens" as the entire visibility test.
+
+**Still to do:** `renderRoomView` drawing a mesh, and carrying a mesh through
+`RigCalibration` so a rig can name one. Until that second one lands the mesh path
+is reachable through `prepareProjector` but not through a calibration, which is
+why the coverage test builds its projector by hand.
+
+**Where the byte-identity gate nearly broke, and what it forced.** The obvious
+implementation of `SphereSurface.facesLens` uses the normal it is passed. It is
+algebraically identical to the old expression — a sphere centred on the world
+origin has its normal parallel to its position, so the two differ by the positive
+factor `1/R` and can never differ in sign. They can differ in the last bit, and
+there is exactly one place where that matters: `coverageBoundaryLatitude` bisects
+sixty times to find the latitude at which this test flips, converging to within
+about 1e-18 of the terminator — the one neighbourhood where two algebraically
+identical expressions round to opposite sides of zero. That boundary feeds
+`unlitPolarAreaFraction`, which feeds `bench-results.json`, which is byte-compared.
+
+So `SphereSurface.facesLens` keeps the original expression and ignores the normal
+it is handed, and a test asserts that passing a deliberately wrong normal changes
+nothing on the sphere while changing the answer on a mesh. The tidier version
+would have been correct mathematics and a diff in a number this document exists
+to hold still.
 
 **Where the reader had to live, and why that is not a detail.** R1 lets `sim` and
 `solver` import `calibration` and nothing else, so a loader cannot sit anywhere
@@ -332,7 +358,7 @@ second implementation can produce:
   geographic fact, and Phase 2 should rename them.
 
 **Gates, re-measured on the Phase 1 head:** bench still byte-identical to the
-pre-refactor baseline (5,563,347 characters), 879 tests pass, `progress:reference:check`
+pre-refactor baseline (5,563,347 characters), 882 tests pass, `progress:reference:check`
 clean, boundary lint clean across 198 files.
 
 *Estimate: 1–2 weeks. Support OBJ second; GLB first is the cheaper 80%.*

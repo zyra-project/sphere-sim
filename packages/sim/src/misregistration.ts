@@ -176,7 +176,7 @@ export function traceTwoRig(
   const contributions: ProjectorContribution[] = [];
   for (let i = 0; i < physical.projectors.length; i++) {
     const phys = physical.projectors[i];
-    if (!isIlluminatedAt(point, phys)) continue;
+    if (!isIlluminatedAt(point, normal, phys)) continue;
     const px = worldToPixel(phys, point);
     if (px === null) continue;
 
@@ -221,7 +221,7 @@ export function traceTwoRig(
           worldLonToTextureLon(ll.lonDeg, content.rotationOffsetDeg),
         );
         const wHere =
-          coverageAndWeights(back.point, content).weights[i] *
+          coverageAndWeights(back.point, content.surface.normalAt(back.point), content).weights[i] *
           polarMask(ll.latDeg, content.blend, scene.maskInterpretation);
         if (wHere > weight) weight = wHere;
         const s = blendedSignal(target, wHere, scene.encodeGamma);

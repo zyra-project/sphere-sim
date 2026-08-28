@@ -27,7 +27,8 @@ function rigWith(region?: 'limb' | 'sector'): RigCalibration {
 
 function weightsAt(rig: RigCalibration, latDeg: number, lonDeg: number): number[] {
   const prepared = prepareRig(rig);
-  return coverageAndWeights(latLonToWorld(latDeg, lonDeg, prepared.radiusM), prepared).weights;
+  const point = latLonToWorld(latDeg, lonDeg, prepared.radiusM);
+  return coverageAndWeights(point, prepared.surface.normalAt(point), prepared).weights;
 }
 
 test('a rig that never mentions the region serializes exactly as it did before the field existed', () => {
@@ -116,7 +117,8 @@ test('a sector still cannot claim light past its own limb', () => {
   const two = { ...nominalRig({ projectorCount: 2 }) };
   const rig = { ...two, blend: { ...two.blend, region: 'sector' as const } };
   const prepared = prepareRig(rig);
-  const pole = coverageAndWeights(latLonToWorld(89, 0, prepared.radiusM), prepared);
+  const polePoint = latLonToWorld(89, 0, prepared.radiusM);
+  const pole = coverageAndWeights(polePoint, prepared.surface.normalAt(polePoint), prepared);
   assert.deepEqual(pole.lit, [false, false], 'the pole is outside every limb and must stay unlit');
   assert.equal(
     pole.weights.reduce((a, b) => a + b, 0),

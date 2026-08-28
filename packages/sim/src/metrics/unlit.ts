@@ -154,7 +154,7 @@ function readingFor(
     const point = s.point;
     let lit = false;
     for (const p of rig.projectors) {
-      if (isIlluminatedAt(point, p)) {
+      if (isIlluminatedAt(point, s.normal, p)) {
         lit = true;
         break;
       }

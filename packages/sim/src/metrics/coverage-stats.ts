@@ -121,7 +121,7 @@ function pointStats(
   let multiplicity = 0;
   let bestIncidence = 0;
   for (const p of projectors) {
-    if (!isIlluminatedAt(point, p)) continue;
+    if (!isIlluminatedAt(point, normal, p)) continue;
     multiplicity++;
     const c = incidenceCosineAt(point, normal, p.lens);
     if (c > bestIncidence) bestIncidence = c;

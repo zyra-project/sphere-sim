@@ -26,7 +26,11 @@ import { test } from 'node:test';
 import type { SurfaceMesh, Vec3 } from '../../calibration/src/index.ts';
 import { MeshSurface, coordToUv, meshSurface, uvToCoord } from '../src/mesh/surface.ts';
 import { buildBvh, intersectBvh, meshBounds, occludedBvh, rayTriangle } from '../src/mesh/bvh.ts';
-import { latLonToWorld, raySphereIntersect, worldToLatLon } from '../src/geometry.ts';
+import { aimAtSphereCenter, latLonToWorld, raySphereIntersect, worldToLatLon } from '../src/geometry.ts';
+import { prepareProjector, worldToPixel } from '../src/optics.ts';
+import { isIlluminatedAt } from '../src/coverage.ts';
+import { sphereSurface } from '../src/surface.ts';
+import type { Surface } from '../src/surface.ts';
 import { radicalInverse } from '../src/random.ts';
 
 const R = 0.8636;
@@ -520,4 +524,116 @@ test('a mesh with no UV set still lights and samples, it just has no content', (
 
 test('the surface reports its kind, which is what the GPU will branch on', () => {
   assert.equal(meshSurface(uvSphere(8, 4)).kind, 'mesh');
+});
+
+// ---------------------------------------------------------------------------
+// The coverage test, which is what the visibility pair exists for
+// ---------------------------------------------------------------------------
+
+/** A floor with a small plate hovering over its middle. */
+function floorAndBlocker(): SurfaceMesh {
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const plate = (z: number, half: number): void => {
+    const base = positions.length / 3;
+    positions.push(-half, -half, z, half, -half, z, half, half, z, -half, half, z);
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  };
+  plate(0, 2); // floor
+  plate(1, 0.3); // the thing that casts the shadow
+  return {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'floor-and-blocker',
+    positions: Float64Array.from(positions),
+    indices: Uint32Array.from(indices),
+    normals: null,
+    uvs: null,
+    vertexCount: positions.length / 3,
+    triangleCount: indices.length / 3,
+  };
+}
+
+/** A projector directly overhead, looking straight down. */
+function overheadProjector(surface: ReturnType<typeof meshSurface> | Surface) {
+  const position = { x: 0, y: 0, z: 5 };
+  const aim = aimAtSphereCenter(position);
+  return prepareProjector(
+    {
+      id: 'P1',
+      pose: { position, yawDeg: aim.yawDeg, pitchDeg: aim.pitchDeg, rollDeg: 0 },
+      intrinsics: {
+        resX: 800,
+        resY: 800,
+        fovHDeg: 60,
+        pixelAspect: 1,
+        shiftH: 0,
+        shiftV: 0,
+        k1: 0,
+        k2: 0,
+        p1: 0,
+        p2: 0,
+      },
+      transfer: {
+        gamma: { r: 2.2, g: 2.2, b: 2.2 },
+        blackFloor: { r: 1 / 800, g: 1 / 800, b: 1 / 800 },
+        gain: { r: 1, g: 1, b: 1 },
+        whitePointK: 6500,
+      },
+      viewport: { x: 0, y: 0, w: 0.5, h: 0.5 },
+    },
+    surface,
+    0,
+  );
+}
+
+test('isIlluminatedAt sees the model shadowing itself', () => {
+  const proj = overheadProjector(meshSurface(floorAndBlocker()));
+  const up = { x: 0, y: 0, z: 1 };
+
+  // Under the blocker. It faces the lens and lands on the raster, so BOTH of the
+  // tests that existed before Phase 1 say lit. Only the shadow ray disagrees,
+  // which is the whole point of this commit.
+  const shaded = { x: 0, y: 0, z: 0 };
+  assert.equal(proj.surface.facesLens(shaded, up, proj.lens), true, 'it does face the lens');
+  assert.ok(worldToPixel(proj, shaded) !== null, 'and it does land on the raster');
+  assert.equal(isIlluminatedAt(shaded, up, proj), false, 'but the blocker is in the way');
+
+  // A step to the side, out from under the blocker.
+  const open = { x: 1, y: 0, z: 0 };
+  assert.equal(isIlluminatedAt(open, up, proj), true, 'nothing blocks this one');
+});
+
+test('a convex surface skips the shadow ray, which is why the sphere path is cheap', () => {
+  const sphere = sphereSurface(R);
+  assert.equal(sphere.shadowed({ x: R, y: 0, z: 0 }, { x: 5.18, y: 0, z: 0 }), false);
+  // The same geometry that shadows on a mesh cannot shadow on a sphere: there is
+  // no second surface to get in the way.
+  const proj = overheadProjector(sphere);
+  const top = { x: 0, y: 0, z: R };
+  assert.equal(isIlluminatedAt(top, { x: 0, y: 0, z: 1 }, proj), true);
+});
+
+test('the sphere ignores the passed normal, on purpose and provably', () => {
+  // `SphereSurface.facesLens` uses the position rather than the normal, because
+  // switching expressions could flip a sign within an ulp of the terminator —
+  // and `coverageBoundaryLatitude` bisects sixty times to land exactly there.
+  // A deliberately wrong normal must therefore change nothing on the sphere.
+  const sphere = sphereSurface(R);
+  const point = latLonToWorld(30, 45, R);
+  const lens = { x: 5.18, y: 0, z: 0 };
+  const right = sphere.normalAt(point);
+  const nonsense = { x: -right.x, y: -right.y, z: -right.z };
+  assert.equal(
+    sphere.facesLens(point, right, lens),
+    sphere.facesLens(point, nonsense, lens),
+    'the sphere derives facing from the position, so the normal cannot matter',
+  );
+  // And a mesh must NOT ignore it — that is the difference the two implementations
+  // exist to express.
+  const mesh = meshSurface(floorAndBlocker());
+  const p = { x: 1, y: 0, z: 0 };
+  const upN = { x: 0, y: 0, z: 1 };
+  const downN = { x: 0, y: 0, z: -1 };
+  assert.equal(mesh.facesLens(p, upN, { x: 0, y: 0, z: 5 }), true);
+  assert.equal(mesh.facesLens(p, downN, { x: 0, y: 0, z: 5 }), false);
 });

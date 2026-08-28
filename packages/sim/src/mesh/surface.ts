@@ -37,11 +37,11 @@
  * ## What a mesh has that a sphere does not
  *
  * Self-occlusion. A sphere is convex, so `dot(normal, lens - point) > 0` is the
- * whole visibility test and `coverage.ts` says so. A mesh occludes itself, and
- * {@link MeshSurface.occluded} is the query that answers it. Wiring that into
- * the coverage test is the next commit, not this one: it changes what
- * `isIlluminatedAt` means for every rig, and that deserves its own diff against
- * the byte-identity gate rather than riding along with a new file.
+ * whole visibility test and `coverage.ts` said so for the whole of Phase 0. A
+ * mesh occludes itself, and {@link MeshSurface.shadowed} is the query that
+ * answers it — now on the `Surface` interface and called by `isIlluminatedAt`,
+ * which is what the previous revision of this note said would happen "in the
+ * commit that makes that change measurable".
  */
 
 import type { SurfaceMesh, Vec3 } from '../../../calibration/src/index.ts';
@@ -157,14 +157,67 @@ export class MeshSurface implements Surface {
    * Is the segment from `origin` to `origin + dir * distance` blocked by the
    * mesh itself?
    *
-   * Not part of `Surface`. It is the query a mesh needs and a sphere does not,
-   * and adding it to the interface would put a method on `SphereSurface` whose
-   * only honest implementation is `return false` — a claim that the model asks a
-   * question it does not ask. It goes on the interface when `coverage.ts` starts
-   * calling it, in the commit that makes that change measurable.
+   * The general form. {@link MeshSurface.shadowed} is the `Surface` method built
+   * on it, and this stays public because a caller that already knows the
+   * direction and the distance — a shading loop that computed both to get the
+   * inverse-square falloff — should not pay to have them derived again.
    */
-  occluded(origin: Vec3, dir: Vec3, distance: number, tMin = 1e-7): boolean {
+  occluded(origin: Vec3, dir: Vec3, distance: number, tMin = SHADOW_BIAS_FRACTION): boolean {
     return occludedBvh(this.bvh, this.mesh, origin, dir, tMin, distance);
+  }
+
+  /**
+   * The facing test, on the surface's REAL normal.
+   *
+   * `SphereSurface` can substitute the position for the normal because a sphere
+   * centred on the origin has them parallel. Nothing else does, and a mesh that
+   * borrowed that shortcut would light every face whose position happens to
+   * point away from the world origin — which for a model that is not centred on
+   * the origin is most of them.
+   */
+  facesLens(point: Vec3, normal: Vec3, lens: Vec3): boolean {
+    return (
+      normal.x * (lens.x - point.x) +
+        normal.y * (lens.y - point.y) +
+        normal.z * (lens.z - point.z) >
+      0
+    );
+  }
+
+  /**
+   * Does the model come between this point and the lens?
+   *
+   * The query Phase 1 exists to make possible, and the one that turns a coverage
+   * map from a statement about angles into a statement about a room: a dome's
+   * own rim shading its floor, a set piece behind a wall, the far side of a
+   * torus. On a sphere the answer is always no, which is why `coverage.ts` was
+   * able to ignore the question until now.
+   *
+   * ## The bias, and why it scales with the model
+   *
+   * A ray leaving the surface it is standing on will hit that surface at `t`
+   * near zero unless it is told not to. A fixed epsilon cannot do that job for
+   * both a 30 cm prop and a 30 m facade — too small and every point shadows
+   * itself into blackness, too large and a thin panel stops casting a shadow
+   * onto whatever is a few millimetres behind it. So the bias is a fraction of
+   * the bounding radius, which is the only length scale the surface knows.
+   */
+  shadowed(point: Vec3, lens: Vec3): boolean {
+    const dx = lens.x - point.x;
+    const dy = lens.y - point.y;
+    const dz = lens.z - point.z;
+    const distance = Math.hypot(dx, dy, dz);
+    if (distance === 0) return false;
+    const inv = 1 / distance;
+    const bias = SHADOW_BIAS_FRACTION * Math.max(this.boundsRadiusM, Number.MIN_VALUE);
+    return occludedBvh(
+      this.bvh,
+      this.mesh,
+      point,
+      { x: dx * inv, y: dy * inv, z: dz * inv },
+      bias,
+      distance,
+    );
   }
 
   coordAt(point: Vec3): SurfaceCoord {
@@ -413,6 +466,20 @@ export class MeshSurface implements Surface {
  * that, so the constraint that binds is the first.
  */
 const SEARCH_FRACTION = 0.01;
+
+/**
+ * How far a shadow ray steps off the surface before it starts looking, as a
+ * fraction of the bounding radius.
+ *
+ * A ray leaving the surface it stands on hits that surface at `t` near zero.
+ * The step past it has to be larger than the floating-point error in the hit
+ * point and smaller than the thinnest gap the model needs to cast a shadow
+ * across — and both of those scale with the model, which is why this is a
+ * fraction rather than a length. One part in a million of the bounding radius
+ * is about a micron on a metre-scale prop and a millimetre on a kilometre of
+ * terrain.
+ */
+const SHADOW_BIAS_FRACTION = 1e-6;
 
 /** {@link MeshSurface}, for callers that would rather not write `new`. */
 export function meshSurface(mesh: SurfaceMesh): MeshSurface {

@@ -171,6 +171,30 @@ export interface Surface {
    * area-weighted percentile, so there is no weight for a metric to forget.
    */
   sampleArea(n: number): SurfaceAreaSample[];
+
+  /**
+   * Is the lens above this point's local horizon?
+   *
+   * Half of the visibility test, and the cheap half. `coverage.ts` runs it
+   * first, then the raster test, then {@link Surface.shadowed} — cheapest
+   * rejection first, because on a mesh the third one costs a hierarchy
+   * traversal and the first two throw most points out before it runs.
+   */
+  facesLens(point: Vec3, normal: Vec3, lens: Vec3): boolean;
+
+  /**
+   * Does the surface come between this point and the lens?
+   *
+   * The other half, and the one a sphere does not have. `SphereSurface` answers
+   * `false` unconditionally and that is not a stub — a convex body cannot come
+   * between a point on itself and anything outside it, which is exactly why
+   * `coverage.ts` got away with a facing test for the whole of Phase 0.
+   *
+   * `packages/sim/src/mesh/surface.ts` said this method would join the interface
+   * "in the commit that makes that change measurable" rather than
+   * speculatively. This is that commit.
+   */
+  shadowed(point: Vec3, lens: Vec3): boolean;
 }
 
 /**
@@ -216,6 +240,43 @@ export class SphereSurface implements Surface {
 
   normalAt(point: Vec3): Vec3 {
     return scale(point, 1 / this.radiusM);
+  }
+
+  /**
+   * The facing test, in the expression the call sites used before `Surface`
+   * existed — and `normal` is deliberately unused.
+   *
+   * A sphere centred on the world origin (conventions.ts §W) has its outward
+   * normal parallel to its own position, so `dot(point, lens - point)` and
+   * `dot(normal, lens - point)` differ by the positive factor `1/R` and can
+   * never differ in SIGN. The sign is all this returns.
+   *
+   * They can, however, differ in the last bit, and there is one place in this
+   * package where that matters: `coverageBoundaryLatitude` bisects sixty times
+   * to find the latitude at which this test flips, converging to within about
+   * 1e-18 of the terminator. That is exactly the neighbourhood where two
+   * algebraically identical expressions can round to opposite sides of zero —
+   * and the boundary it finds feeds `unlitPolarAreaFraction`, which feeds
+   * `bench-results.json`, which is byte-compared.
+   *
+   * So the original expression stays. Using the passed normal here would be
+   * tidier, equally correct as mathematics, and would put a plausible-looking
+   * diff in a number that `docs/ARBITRARY-SHAPES.md` Phase 0 exists to hold
+   * still.
+   */
+  facesLens(point: Vec3, _normal: Vec3, lens: Vec3): boolean {
+    return point.x * (lens.x - point.x) + point.y * (lens.y - point.y) + point.z * (lens.z - point.z) > 0;
+  }
+
+  /**
+   * Never. A sphere is convex, so no part of it lies between a point on its
+   * surface and anything outside it.
+   *
+   * Not a stub: this IS the sphere's answer, and it is the reason the whole of
+   * Phase 0 could treat "faces the lens" as the entire visibility test.
+   */
+  shadowed(_point: Vec3, _lens: Vec3): boolean {
+    return false;
   }
 
   sampleArea(n: number): SurfaceAreaSample[] {

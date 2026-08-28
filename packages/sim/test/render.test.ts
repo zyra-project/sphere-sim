@@ -264,7 +264,7 @@ test('the seam is continuous: no luminance step where the blend hands over', () 
   // black floor.
   const totalAt = (lonDeg: number): number => {
     const point = latLonToWorld(0, lonDeg, rig.radiusM);
-    const { weights, lit } = coverageAndWeights(point, rig);
+    const { weights, lit } = coverageAndWeights(point, rig.surface.normalAt(point), rig);
     let sum = 0;
     for (let i = 0; i < weights.length; i++) {
       if (!lit[i]) continue;

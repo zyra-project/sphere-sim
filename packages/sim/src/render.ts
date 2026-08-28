@@ -218,7 +218,7 @@ export function sampleSurface(point: Vec3, rig: PreparedRig, scene: Scene): Surf
   // `test/content.test.ts`, which now refuses to let the two disagree.
   const target = contentAt(scene, ll.latDeg, texLon);
   const mask = polarMask(ll.latDeg, rig.blend, scene.maskInterpretation);
-  const { weights, lit } = coverageAndWeights(point, rig);
+  const { weights, lit } = coverageAndWeights(point, normal, rig);
   for (let i = 0; i < weights.length; i++) weights[i] *= mask;
   return { point, normal, latDeg: ll.latDeg, lonDeg: ll.lonDeg, target, weights, lit, mask };
 }
@@ -657,9 +657,10 @@ export function surfacePointVisibility(
   rig: PreparedRig,
 ): { projector: number; u: number; v: number }[] {
   const point = rig.surface.pointAt({ latDeg, lonDeg });
+  const normal = rig.surface.normalAt(point);
   const out: { projector: number; u: number; v: number }[] = [];
   for (const p of rig.projectors) {
-    if (!isIlluminatedAt(point, p)) continue;
+    if (!isIlluminatedAt(point, normal, p)) continue;
     const px = worldToPixel(p, point);
     if (px) out.push({ projector: p.index, u: px.u, v: px.v });
   }

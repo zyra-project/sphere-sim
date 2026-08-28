@@ -198,7 +198,14 @@ test('the interface carries what the call sites use and nothing dead', () => {
   // model does something it does not. If a method is added here it should be
   // added because a call site needs it — so this list is the contract, and
   // widening it is a deliberate edit rather than a drive-by.
-  const expected = ['intersect', 'coordAt', 'pointAt', 'normalAt', 'sampleArea'];
+  //
+  // It has been widened once, and this is the record of it. Phase 1 added
+  // `facesLens` and `shadowed` because `coverage.ts`'s `isIlluminatedAt` calls
+  // both: a mesh occludes itself and the old facing-only test was a statement
+  // about convexity that nothing enforced. They are two methods rather than one
+  // because their costs differ by orders of magnitude — the facing test runs
+  // first and the shadow ray last, after the raster has rejected most points.
+  const expected = ['intersect', 'coordAt', 'pointAt', 'normalAt', 'sampleArea', 'facesLens', 'shadowed'];
   const proto = SphereSurface.prototype as unknown as Record<string, unknown>;
   const actual = Object.getOwnPropertyNames(proto).filter(
     (k) => k !== 'constructor' && typeof proto[k] === 'function',

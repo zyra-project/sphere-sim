@@ -422,7 +422,7 @@ function evaluatePoint(point: Vec3, ctx: FieldContext): PointEval {
   for (let i = 0; i < physical.projectors.length; i++) {
     const p = physical.projectors[i];
     // Physics first: does this lens see this point at all?
-    if (!isIlluminatedAt(point, p)) continue;
+    if (!isIlluminatedAt(point, normal, p)) continue;
     const px = worldToPixel(p, point);
     if (px === null) continue;
 
@@ -437,7 +437,7 @@ function evaluatePoint(point: Vec3, ctx: FieldContext): PointEval {
     if (hit !== null) {
       const ll = ctx.content.surface.coordAt(hit.point);
       const mask = polarMask(ll.latDeg, ctx.content.blend, ctx.maskInterpretation);
-      weight = coverageAndWeights(hit.point, ctx.content).weights[i] * mask;
+      weight = coverageAndWeights(hit.point, hit.normal, ctx.content).weights[i] * mask;
       signal = blendedSignal(ctx.target, weight, ctx.scene.encodeGamma);
     }
 
@@ -456,7 +456,7 @@ function evaluatePoint(point: Vec3, ctx: FieldContext): PointEval {
   }
 
   const ll = ctx.physical.surface.coordAt(point);
-  const contentCoverage = coverageAndWeights(point, ctx.content);
+  const contentCoverage = coverageAndWeights(point, ctx.content.surface.normalAt(point), ctx.content);
   let contentContributors = 0;
   for (const lit of contentCoverage.lit) if (lit) contentContributors++;
 
@@ -773,8 +773,10 @@ function seamLongitude(
 ): { lonDeg: number; weight: number } | null {
   const azA = lensAzimuthDeg(rig, a);
   const delta = wrapDeg180(lensAzimuthDeg(rig, b) - azA);
-  const weightsAt = (offset: number): number[] =>
-    coverageAndWeights(rig.surface.pointAt({ latDeg, lonDeg: azA + offset }), rig).weights;
+  const weightsAt = (offset: number): number[] => {
+    const p = rig.surface.pointAt({ latDeg, lonDeg: azA + offset });
+    return coverageAndWeights(p, rig.surface.normalAt(p), rig).weights;
+  };
   const difference = (offset: number): number => {
     const w = weightsAt(offset);
     return w[a] - w[b];

@@ -416,7 +416,7 @@ function localiseLine(
   /** The reconstructed profile at arc-length offset `s`, or `NaN` off-raster. */
   const profileAt = (sMm: number): number => {
     const point = pointAt(sMm);
-    if (!isIlluminatedAt(point, proj)) return NaN;
+    if (!isIlluminatedAt(point, proj.surface.normalAt(point), proj)) return NaN;
     const px = worldToPixel(proj, point);
     if (px === null) return NaN;
     return raster.value(px.u, px.v);
@@ -623,7 +623,7 @@ export function computeGridDisplacement(
         reject.notInBlendRegion++;
         continue;
       }
-      const weights = coverageAndWeights(point, content).weights;
+      const weights = coverageAndWeights(point, normal, content).weights;
       const ranked = weights
         .map((w, i) => ({ w, i }))
         .filter((e) => e.w >= minWeight)
@@ -718,8 +718,9 @@ export function computeGridDisplacement(
         const halfMm = radiusMm * halfDeg * DEG2RAD;
         for (const s of [-halfMm, halfMm]) {
           const p = pointAt(s);
-          if (!isIlluminatedAt(p, physical.projectors[a.i])) return false;
-          if (!isIlluminatedAt(p, physical.projectors[b.i])) return false;
+          const n = physical.surface.normalAt(p);
+          if (!isIlluminatedAt(p, n, physical.projectors[a.i])) return false;
+          if (!isIlluminatedAt(p, n, physical.projectors[b.i])) return false;
         }
         return true;
       };
