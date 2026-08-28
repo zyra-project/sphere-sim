@@ -96,12 +96,25 @@ test('the tMin default matches raySphereIntersect, and a custom tMin is passed t
   const dir = { x: -1, y: 0, z: 0 };
   assert.ok(Object.is(s.intersect(origin, dir)!.t, raySphereIntersect(origin, dir, R)!.t));
 
-  // The shadow query in `render.ts` uses 1e-6 to step off the surface it is
-  // standing on; a seam that dropped the argument would self-shadow every
+  // The shadow query in `render.ts` passes 1e-6 to step off the surface it is
+  // standing on, so a seam that dropped the argument would self-shadow every
   // floor point and the room would go black.
-  const onSurface = { x: R, y: 0, z: 0 };
-  const away = { x: 1, y: 0, z: 0 };
-  assert.equal(s.intersect(onSurface, away, 1e-6), raySphereIntersect(onSurface, away, R, 1e-6));
+  //
+  // The ray has to be chosen so the two cutoffs DISAGREE, which the obvious
+  // choice does not: an outward ray from a point on the sphere returns null
+  // under both, and an assertion built on it passes whether or not `tMin` is
+  // forwarded. This one starts 5e-7 outside the surface pointing in, so its
+  // near root at ~5.0e-7 clears the 1e-9 default and is rejected by 1e-6 —
+  // under which the far root at ~1.73 is returned instead.
+  const justOutside = { x: R + 5e-7, y: 0, z: 0 };
+  const inward = { x: -1, y: 0, z: 0 };
+  const near = s.intersect(justOutside, inward);
+  const far = s.intersect(justOutside, inward, 1e-6);
+  assert.ok(near !== null && far !== null);
+  assert.ok(near.t < 1e-6, `near root should clear the default cutoff, got ${near.t}`);
+  assert.ok(far.t > 1, `1e-6 should skip past the near root, got ${far.t}`);
+  assert.ok(Object.is(near.t, raySphereIntersect(justOutside, inward, R)!.t));
+  assert.ok(Object.is(far.t, raySphereIntersect(justOutside, inward, R, 1e-6)!.t));
 });
 
 test('coordAt is worldToLatLon and pointAt is latLonToWorld, bit for bit', () => {

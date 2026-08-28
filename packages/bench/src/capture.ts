@@ -461,7 +461,6 @@ function traceGeometry(
   const { width, height } = geom;
   const refDist = proj.distanceM - radiusM;
   const refDistSq = refDist * refDist;
-  const invR = 1 / radiusM;
   let traced = 0;
 
   for (let y = 0; y < height; y++) {
@@ -522,9 +521,9 @@ function traceGeometry(
       geom.onRoom[i] = 0;
 
       const p = hit.point;
-      const nx = p.x * invR;
-      const ny = p.y * invR;
-      const nz = p.z * invR;
+      const nx = hit.normal.x;
+      const ny = hit.normal.y;
+      const nz = hit.normal.z;
       const lx = proj.lens.x - p.x;
       const ly = proj.lens.y - p.y;
       const lz = proj.lens.z - p.z;

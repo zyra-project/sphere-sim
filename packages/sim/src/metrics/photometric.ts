@@ -412,8 +412,7 @@ interface PointEval {
  */
 function evaluatePoint(point: Vec3, ctx: FieldContext): PointEval {
   const physical = ctx.physical;
-  const inv = 1 / physical.radiusM;
-  const normal: Vec3 = { x: point.x * inv, y: point.y * inv, z: point.z * inv };
+  const normal: Vec3 = physical.surface.normalAt(point);
   const viewDir =
     ctx.viewFrom === null
       ? normal

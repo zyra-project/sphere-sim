@@ -213,13 +213,17 @@ sampleArea(n)                 -> equal-area surface samples
 ```
 
 Every direct sphere call in `packages/sim/src` now goes through it, as do the
-consumers in `packages/bench`, `packages/web` and `packages/experiments`. Two
-places deliberately do NOT follow the seam, and each says why in situ:
+consumers in `packages/bench`, `packages/web` and `packages/experiments` —
+including `experiments/src/photometric/artifact.ts`, whose `walk` now takes a
+`Surface` rather than a bare radius. Three places deliberately do NOT follow the
+seam, and each says why in situ:
 
 - `packages/harness/src/glsl.ts` and `packages/harness/src/reference.ts` — the
   shader and its line-for-line transliteration. Their whole job is to be an
   independent re-implementation, so routing them through the simulator's seam
   would delete the thing the parity chain measures. Phase 2's territory.
+- `packages/web/src/glsl.ts` — the display shader's own GLSL, which intersects a
+  sphere analytically. Also Phase 2's.
 - `pickMarker` in `packages/web/src/uniforms.ts` — it picks against `PackedRig`,
   the flat Float32Array payload the shader is handed, so it has to answer the
   question the *shader* would answer. Until the GPU learns about shapes, a seam
@@ -231,7 +235,7 @@ places deliberately do NOT follow the seam, and each says why in situ:
 | --- | --- |
 | `bench --scenarios 12 --seed 1234` against the same command before the change | **identical** — 5,563,347 characters, `env` and per-scenario `timings` removed |
 | `progress:reference:check` | clean: multiplicity ≤ 2, four-lobed scallop, boundary matches closed form |
-| `npm test` | 852 pass, 0 fail (8 new, in `test/surface.test.ts`) |
+| `npm test` | 844 pass, 0 fail (8 new, in `test/surface.test.ts`) |
 | `typecheck`, `lint:boundary`, `check:license`, `build:app`, `smoke:app` | green |
 
 What the interface deliberately does **not** yet carry: a bounding volume

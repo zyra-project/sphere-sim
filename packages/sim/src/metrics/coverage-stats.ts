@@ -162,14 +162,13 @@ function coverageFields(
 ): { incidenceField: ScalarField; multiplicityField: CountField } {
   const incidenceField = createScalarField(width, height, NaN);
   const multiplicityField: CountField = { width, height, data: new Uint8Array(width * height) };
-  const invR = 1 / rig.radiusM;
   for (let y = 0; y < height; y++) {
     const latDeg = 90 - ((y + 0.5) / height) * 180;
     for (let x = 0; x < width; x++) {
       const lonDeg = -180 + ((x + 0.5) / width) * 360;
       const idx = y * width + x;
       const point = rig.surface.pointAt({ latDeg, lonDeg });
-      const normal = { x: point.x * invR, y: point.y * invR, z: point.z * invR };
+      const normal = rig.surface.normalAt(point);
       const { multiplicity: m, bestIncidence: best } = pointStats(point, normal, rig.projectors);
       multiplicityField.data[idx] = m;
       // The mask is carried into the map so a reader is not misled into thinking

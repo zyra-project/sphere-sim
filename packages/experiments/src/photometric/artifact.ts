@@ -73,17 +73,16 @@
  */
 
 import type { ChannelTriplet, RigCalibration } from '../../../calibration/src/index.ts';
-import type { FieldSample, Scene, ShadingModel, StepOptions, Vec3 } from '../../../sim/src/index.ts';
+import type { FieldSample, Scene, ShadingModel, StepOptions, Surface, Vec3 } from '../../../sim/src/index.ts';
 import {
   DEFAULT_STEP,
   deltaE2000,
-  equalAreaLattice,
   estimateStep,
-  latLonToWorld,
   linearRgbToLab,
   makeFieldSampler,
   polarMask,
   prepareRig,
+  sphereSurface,
 } from '../../../sim/src/index.ts';
 
 const DEG2RAD = Math.PI / 180;
@@ -126,7 +125,7 @@ interface WalkPoint {
  */
 function walk(
   sample: (point: Vec3) => FieldSample,
-  radiusM: number,
+  surface: Surface,
   blend: RigCalibration['blend'],
   maskInterpretation: Scene['maskInterpretation'],
   options: TrackOptions,
@@ -141,7 +140,7 @@ function walk(
     if (polarMask(latDeg, blend, maskInterpretation) <= 0) continue;
     const lonStep = spacing / cosLat;
     for (let lonDeg = -180; lonDeg < 180 - 1e-9; lonDeg += lonStep) {
-      const point = latLonToWorld(latDeg, lonDeg, radiusM);
+      const point = surface.pointAt({ latDeg, lonDeg });
       const actual = sample(point);
       if (actual.mask <= 0) continue;
       if (actual.contributors < minContributors) continue;
@@ -219,9 +218,10 @@ export function measureMisregistration(
     level: options.level ?? 0.5,
   });
 
+  const physicalSurface = sphereSurface(physicalRig.sphere.radiusM);
   const points = walk(
     actualSampler,
-    physicalRig.sphere.radiusM,
+    physicalSurface,
     contentRig.blend,
     scene.maskInterpretation,
     options,
@@ -234,7 +234,7 @@ export function measureMisregistration(
   let blendResidual = 0;
 
   for (const p of points) {
-    const ideal = idealSampler(latLonToWorld(p.latDeg, p.lonDeg, physicalRig.sphere.radiusM));
+    const ideal = idealSampler(physicalSurface.pointAt({ latDeg: p.latDeg, lonDeg: p.lonDeg }));
     if (!(ideal.luminance > 0)) continue;
     const fraction = Math.abs(p.actual.luminance - ideal.luminance) / ideal.luminance;
     const deltaE = deltaE2000(
@@ -353,7 +353,7 @@ export function measureBlendProfile(
   });
   const points = walk(
     sampler,
-    rig.sphere.radiusM,
+    sphereSurface(rig.sphere.radiusM),
     rig.blend,
     scene.maskInterpretation,
     options,
@@ -384,14 +384,14 @@ export function measureBlendProfile(
   }
 
   const count = options.latticeCount ?? 4000;
-  const lattice = equalAreaLattice(count);
   const prepared = prepareRig(rig);
+  const lattice = prepared.surface.sampleArea(count);
   let lit = 0;
   let smeared = 0;
   let smearedBest = 0;
   let lossSum = 0;
   for (const s of lattice) {
-    const f = sampler(latLonToWorld(s.latDeg, s.lonDeg, prepared.radiusM));
+    const f = sampler(s.point);
     if (f.mask <= 0 || f.contributors < 1) continue;
     lit++;
     if (f.incidenceCosWeighted < SMEAR_INCIDENCE_COS) smeared++;
@@ -452,7 +452,7 @@ export function estimatorScan(
   });
   const points = walk(
     sampler,
-    physicalRig.sphere.radiusM,
+    sphereSurface(physicalRig.sphere.radiusM),
     contentRig.blend,
     scene.maskInterpretation,
     options,

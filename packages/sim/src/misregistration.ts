@@ -171,8 +171,7 @@ export function traceTwoRig(
   const hit = physical.surface.intersect(origin, dir);
   if (hit === null) return BLACK;
   const point = hit.point;
-  const invR = 1 / physical.radiusM;
-  const normal = { x: point.x * invR, y: point.y * invR, z: point.z * invR };
+  const normal = hit.normal;
 
   const contributions: ProjectorContribution[] = [];
   for (let i = 0; i < physical.projectors.length; i++) {
