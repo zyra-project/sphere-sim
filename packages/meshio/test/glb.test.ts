@@ -604,6 +604,43 @@ test('a mirrored node transform is un-mirrored, so the model is not inside out',
   );
 });
 
+test('one primitive without normals drops them for the whole file', () => {
+  // The all-or-nothing policy, enforced rather than described. `any` shipped
+  // the attribute-less primitive's fabricated (0, 0, 0) as real data — a
+  // zero-length normal — and reported the whole mesh as file-shaded.
+  //
+  // Two primitives on one mesh: the first supplies NORMAL and TEXCOORD_0, the
+  // second supplies neither.
+  const report = readGlb(
+    buildGlb({
+      positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+      indices: [0, 1, 2],
+      normals: [0, 0, 1, 0, 0, 1, 0, 0, 1],
+      uvs: [0, 0, 1, 0, 0, 1],
+      patch: (doc) => {
+        const accessors = doc.accessors as Record<string, unknown>[];
+        const meshes = doc.meshes as { primitives: Record<string, unknown>[] }[];
+        // A second primitive reusing the POSITION and index accessors only.
+        const first = meshes[0].primitives[0];
+        meshes[0].primitives.push({
+          attributes: { POSITION: 0 },
+          indices: first.indices,
+          mode: 4,
+        });
+        void accessors;
+      },
+    }),
+  );
+  assert.ok(report.mesh !== null);
+  assert.equal(report.mesh.triangleCount, 2, 'both primitives should have loaded');
+  assert.equal(report.mesh.normals, null, 'one primitive without normals drops the set');
+  assert.equal(report.mesh.uvs, null, 'one primitive without UVs drops the set');
+  // And the report agrees with the mesh rather than with what any one
+  // primitive happened to carry.
+  assert.equal(report.hasNormals, false);
+  assert.equal(report.hasUvs, false);
+});
+
 test('a scene that omits its node list is empty, not everything', () => {
   // `nodes` is optional and its absence means an empty scene. Falling through
   // to "every node in the file" loads geometry the author excluded.

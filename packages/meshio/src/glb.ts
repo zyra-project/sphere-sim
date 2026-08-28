@@ -429,8 +429,17 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
   const normals: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
-  let anyNormals = false;
-  let anyUvs = false;
+  // ALL, not any. The policy at the bottom of this function is all-or-nothing
+  // per file, and `any` produced precisely the failure that paragraph describes:
+  // one primitive with normals and one without shipped the second primitive's
+  // fabricated (0, 0, 0) as real data — a zero-length normal, which is worse
+  // than an absent one — with the report claiming the whole mesh was shaded
+  // from the file. The UV case is the same shape: the attribute-less faces all
+  // sample texel (0, 0), so a building arrives with one wall the colour of a
+  // single pixel.
+  let allNormals = true;
+  let allUvs = true;
+  let accepted = 0;
   let skippedPrimitives = 0;
 
   const yUp = (options.upAxis ?? 'y') === 'y';
@@ -545,8 +554,9 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
         uvs.push(0, 0);
       }
     }
-    if (nrm !== null) anyNormals = true;
-    if (uv !== null) anyUvs = true;
+    accepted++;
+    if (nrm === null) allNormals = false;
+    if (uv === null) allUvs = false;
 
     if (tris !== null) {
       for (let i = 0; i + 2 < tris.length; i += 3) {
@@ -637,14 +647,16 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
     // All-or-nothing per file: a mesh whose normals are present on some
     // primitives and absent on others would shade half of itself from the file
     // and half from the winding, and the seam between them would look like a
-    // lighting bug in the model.
-    normals: anyNormals ? Float64Array.from(normals) : null,
-    uvs: anyUvs ? Float32Array.from(uvs) : null,
+    // lighting bug in the model. So one primitive without them drops the set
+    // for the whole file and every face is shaded from its winding — which is
+    // uniform, and therefore a surface rather than a seam.
+    normals: accepted > 0 && allNormals ? Float64Array.from(normals) : null,
+    uvs: accepted > 0 && allUvs ? Float32Array.from(uvs) : null,
     vertexCount,
     triangleCount: indices.length / 3,
   };
 
-  return { mesh, format: 'glb', skipped, hasNormals: anyNormals, hasUvs: anyUvs };
+  return { mesh, format: 'glb', skipped, hasNormals: mesh.normals !== null, hasUvs: mesh.uvs !== null };
 }
 
 /**
