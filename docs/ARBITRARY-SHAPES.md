@@ -249,14 +249,58 @@ move arithmetic that the byte-identity gate exists to pin.
 were uniform. The estimate stands for anyone repeating it — most of the time
 went on establishing the baseline and reading each call site, not on typing.*
 
-### Phase 1 — a mesh on the CPU
+### Phase 1 — a mesh on the CPU. **IN PROGRESS**
 
-Mesh data type in `packages/calibration` (arrays only). GLB reader — binary
-glTF, a JSON chunk and typed-array accessors, and much easier than OBJ, which
-needs a text parser and carries no canonical normals or UVs. BVH and ray-triangle
-in `packages/sim`. Shadow rays for self-occlusion. Area-weighted triangle
-sampling to replace the Fibonacci lattice on the mesh path. `renderRoomView`
-draws a mesh.
+**Landed:** `SurfaceMesh` in `packages/calibration` (arrays only — R2 proves
+there is no arithmetic in it, so no traversal can be smuggled across the
+boundary). `packages/sim/src/mesh/bvh.ts` and `mesh/surface.ts`: the simulator's
+own bounding volume hierarchy, its own ray-triangle test, self-occlusion, and
+area-weighted triangle sampling that replaces the Fibonacci lattice on the mesh
+path. `MeshSurface` is the second `Surface` implementation, which is what turns
+Phase 0 from a rename into an abstraction.
+
+**Still to do:** the GLB reader; wiring `occluded` into `coverage.ts` so
+`isIlluminatedAt` stops assuming convexity; `renderRoomView` drawing a mesh; and
+carrying a mesh through `RigCalibration` so a rig can name one.
+
+**How the mesh path is checked.** A ray-triangle intersector is easy to write and
+hard to be sure of: a wrong one still renders something, and on an arbitrary
+model there is nothing to compare it against. So the tests tessellate a sphere
+and hold the mesh against `raySphereIntersect` — an independent implementation of
+the same surface — and demand *convergence* rather than a chosen tolerance. Every
+tolerance in that file is derived from the chord sag `R(1 − cos(d/2))` rather
+than hard-coded, because a tolerance nobody can derive is one that gets loosened
+the next time it fails.
+
+That test earned its keep immediately. It found that a ray landing exactly on a
+shared edge was rejected by **both** adjacent triangles and fell straight through
+the surface — the classic watertightness crack. It is not a rare accident and
+that is what makes it serious: a regular tessellation puts its shared edges on
+meridians, a rig aimed down an axis fires rays straight at them, and the dropped
+ray lands in the same place every frame. A random crack is noise; a crack that
+follows the mesh's own seams is a black meridian through the middle of a coverage
+map. Closed with a barycentric tolerance, which is a practical fix and not a
+proof — **Woop et al. (2013) give a provably crack-free ray-triangle test, and
+that is the upgrade if the mesh path ever has to carry a §7-style gate.**
+
+**Two findings about the Phase 0 interface**, which is the sort of thing only a
+second implementation can produce:
+
+- `pointAt` is not invertible on a mesh. A UV maps to a point only if some
+  triangle's UV triangle contains it; there may be several (UV sets may overlap)
+  or none (unwrapped meshes have gaps between islands). It is a search returning
+  the first match in triangle order — deterministic, but a choice rather than an
+  answer. Callers that sample the surface should use `sampleArea`, which has no
+  such ambiguity.
+- The content coordinate is still `{ latDeg, lonDeg }` and now carries UV through
+  the equirectangular convention `sampleEquirect` already defines. That is not a
+  fudge — it means a dome unwrapped equirectangularly shows exactly the content a
+  sphere would — but `latDeg`/`lonDeg` are now a transport rather than a
+  geographic fact, and Phase 2 should rename them.
+
+**Gates, re-measured on the Phase 1 head:** bench still byte-identical to the
+pre-refactor baseline (5,563,347 characters), 861 tests pass, boundary lint clean
+across 194 files.
 
 *Estimate: 1–2 weeks. Support OBJ second; GLB first is the cheaper 80%.*
 

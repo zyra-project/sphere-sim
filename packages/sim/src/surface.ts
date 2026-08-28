@@ -15,10 +15,14 @@
  * `point / radius` — which meant the shape was decided in forty-odd places
  * rather than one.
  *
- * This module collects those four questions behind an interface with exactly
- * one implementation: {@link SphereSurface}, which delegates to the same
- * functions in `geometry.ts` the callers used to call themselves. **It is a
- * seam, not a feature.** Nothing here renders anything new, nothing here can
+ * This module collects those four questions behind an interface. Phase 0 shipped
+ * it with exactly one implementation — {@link SphereSurface}, which delegates to
+ * the same functions in `geometry.ts` the callers used to call themselves.
+ * **That was a seam, not a feature**, and it had to be: a refactor that moved a
+ * number would not have been a seam at all. Phase 1 adds `mesh/surface.ts`'s
+ * `MeshSurface`, which is what turns the interface from a rename into an
+ * abstraction — and its own header records the two places the interface fitted
+ * badly, which is the finding an abstraction with one implementor cannot produce. Nothing here renders anything new, nothing here can
  * load a file, and there is no mesh. `docs/ARBITRARY-SHAPES.md` is the plan this
  * is Phase 0 of, and its acceptance test is the one that matters: the bench must
  * produce a BYTE-IDENTICAL `bench-results.json` across this change. A seam that
@@ -58,6 +62,17 @@ import type { LatLon, SphereHit } from './geometry.ts';
 import { latLonToWorld, raySphereIntersect, worldToLatLon } from './geometry.ts';
 import { equalAreaLattice } from './metrics/sampling.ts';
 import { scale } from './vec.ts';
+
+/**
+ * Which shape an implementation is.
+ *
+ * `'mesh'` arrived with `docs/ARBITRARY-SHAPES.md` Phase 1 and is the reason
+ * this field is not dead weight: Phase 0 could reasonably have been accused of
+ * adding a discriminant nothing discriminates on. The GPU is where it earns its
+ * keep, because a sphere is an analytic intersection in GLSL and a mesh is a
+ * traversal, and no amount of interface hides that difference.
+ */
+export type SurfaceKind = 'sphere' | 'mesh';
 
 /**
  * Where a ray met the surface.
@@ -118,7 +133,7 @@ export interface Surface {
    * will have to, because a sphere is an analytic intersection in GLSL and a
    * mesh is a traversal.
    */
-  readonly kind: 'sphere';
+  readonly kind: SurfaceKind;
 
   /**
    * Radius of a world-frame bounding sphere centred on the world origin.

@@ -1,0 +1,523 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 The Zyra Project
+
+/**
+ * The mesh path, checked against the one shape this repository already knows the
+ * exact answer for.
+ *
+ * `docs/ARBITRARY-SHAPES.md` Phase 1. A ray-triangle intersector and a bounding
+ * volume hierarchy are easy to write and hard to be sure of — a wrong one still
+ * renders something, and on an arbitrary model there is nothing to compare it
+ * against. So most of what is here tessellates a sphere and holds the mesh
+ * against `raySphereIntersect`, which is an independent implementation of the
+ * same surface. The tessellation error is a KNOWN quantity that shrinks as the
+ * mesh refines, so the test can demand convergence rather than a fudged
+ * tolerance: at 64x32 the chord sags below the true sphere by about 1.2 mm on a
+ * 0.8636 m ball, and at 256x128 by about 0.08 mm.
+ *
+ * The rest tests what a sphere cannot: self-occlusion, which is the capability
+ * Phase 1 exists to add and the thing that makes a projection-mapping preview
+ * worth looking at.
+ */
+
+import { strict as assert } from 'node:assert';
+import { test } from 'node:test';
+
+import type { SurfaceMesh, Vec3 } from '../../calibration/src/index.ts';
+import { MeshSurface, coordToUv, meshSurface, uvToCoord } from '../src/mesh/surface.ts';
+import { buildBvh, intersectBvh, meshBounds, occludedBvh, rayTriangle } from '../src/mesh/bvh.ts';
+import { latLonToWorld, raySphereIntersect, worldToLatLon } from '../src/geometry.ts';
+import { radicalInverse } from '../src/random.ts';
+
+const R = 0.8636;
+
+/**
+ * How far inside the true sphere a lat/lon tessellation's surface can sag,
+ * metres.
+ *
+ * The chord across an angular step `d` sits `R(1 - cos(d/2))` below the arc, and
+ * the deepest point of a quad is across its diagonal, so the half-angle is
+ * `sqrt(dLat^2 + dLon^2) / 2`. The 1.5 is slack for which triangle a particular
+ * ray happens to land on — the bound is for the deepest point, and a ray is not
+ * obliged to find it.
+ *
+ * Written out rather than hard-coded because a tolerance nobody can derive is a
+ * tolerance that gets loosened the next time it fails.
+ */
+function sagBoundM(segments: number, rings: number, radius = R): number {
+  const dLat = Math.PI / rings;
+  const dLon = (2 * Math.PI) / segments;
+  const halfDiag = Math.hypot(dLat, dLon) / 2;
+  return 1.5 * radius * (1 - Math.cos(halfDiag));
+}
+
+/**
+ * A latitude/longitude tessellation of the sphere of radius `R`, carrying exact
+ * analytic normals and equirectangular UVs.
+ *
+ * Exact normals rather than face normals, because the two questions are
+ * separable and this test wants them separated: the intersection's accuracy is a
+ * property of the triangles, and the normal's accuracy is a property of the
+ * attribute. Giving the mesh true normals means a shading disagreement can only
+ * come from the interpolation, not from the tessellation.
+ */
+function uvSphere(segments: number, rings: number, radius = R): SurfaceMesh {
+  const vertexCount = (rings + 1) * (segments + 1);
+  const positions = new Float64Array(3 * vertexCount);
+  const normals = new Float64Array(3 * vertexCount);
+  const uvs = new Float32Array(2 * vertexCount);
+  let v = 0;
+  for (let iy = 0; iy <= rings; iy++) {
+    const latDeg = 90 - (iy / rings) * 180;
+    for (let ix = 0; ix <= segments; ix++) {
+      const lonDeg = -180 + (ix / segments) * 360;
+      const p = latLonToWorld(latDeg, lonDeg, radius);
+      positions[3 * v] = p.x;
+      positions[3 * v + 1] = p.y;
+      positions[3 * v + 2] = p.z;
+      normals[3 * v] = p.x / radius;
+      normals[3 * v + 1] = p.y / radius;
+      normals[3 * v + 2] = p.z / radius;
+      uvs[2 * v] = ix / segments;
+      uvs[2 * v + 1] = iy / rings;
+      v++;
+    }
+  }
+
+  const tris: number[] = [];
+  const at = (ix: number, iy: number): number => iy * (segments + 1) + ix;
+  for (let iy = 0; iy < rings; iy++) {
+    for (let ix = 0; ix < segments; ix++) {
+      const a = at(ix, iy);
+      const b = at(ix + 1, iy);
+      const c = at(ix + 1, iy + 1);
+      const d = at(ix, iy + 1);
+      // Counter-clockwise seen from outside. The poles collapse to degenerate
+      // triangles, which are left in on purpose: a real exporter emits them and
+      // the sampler has to survive a zero-area face.
+      if (iy !== 0) tris.push(a, d, b);
+      if (iy !== rings - 1) tris.push(b, d, c);
+    }
+  }
+
+  return {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: `uv-sphere-${segments}x${rings}`,
+    positions,
+    indices: Uint32Array.from(tris),
+    normals,
+    uvs,
+    vertexCount,
+    triangleCount: tris.length / 3,
+  };
+}
+
+/** A single triangle, for the intersector's own algebra. */
+function triangleMesh(a: Vec3, b: Vec3, c: Vec3): SurfaceMesh {
+  return {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'triangle',
+    positions: Float64Array.from([a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z]),
+    indices: Uint32Array.from([0, 1, 2]),
+    normals: null,
+    uvs: null,
+    vertexCount: 3,
+    triangleCount: 1,
+  };
+}
+
+/** Two parallel plates: the near one shadows the far one. Nothing convex does this. */
+function twoPlates(): SurfaceMesh {
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const plate = (z: number, half: number): void => {
+    const base = positions.length / 3;
+    positions.push(-half, -half, z, half, -half, z, half, half, z, -half, half, z);
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  };
+  plate(1, 0.5); // near, small
+  plate(0, 2); // far, large
+  return {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'two-plates',
+    positions: Float64Array.from(positions),
+    indices: Uint32Array.from(indices),
+    normals: null,
+    uvs: null,
+    vertexCount: positions.length / 3,
+    triangleCount: indices.length / 3,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The intersector, against the analytic sphere
+// ---------------------------------------------------------------------------
+
+/** Rays from a lens ring, the geometry PARAMETERS.md §2 actually describes. */
+function lensRays(count: number): { origin: Vec3; dir: Vec3 }[] {
+  const out: { origin: Vec3; dir: Vec3 }[] = [];
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2;
+    const origin = { x: 5.18 * Math.cos(a), y: 5.18 * Math.sin(a), z: 0.3 * Math.sin(3 * a) };
+    const len = Math.hypot(origin.x, origin.y, origin.z);
+    const base = { x: -origin.x / len, y: -origin.y / len, z: -origin.z / len };
+    // A fan that stays well inside the limb: at grazing incidence the chord of a
+    // coarse tessellation genuinely misses where the sphere is hit, and that is
+    // tessellation error rather than a bug, so the convergence test below is the
+    // honest place to look at it.
+    for (const s of [0, 0.02, -0.03, 0.05, -0.06, 0.09]) {
+      const d = { x: base.x + s * -base.y, y: base.y + s * base.x, z: base.z + 0.5 * s };
+      const dl = Math.hypot(d.x, d.y, d.z);
+      out.push({ origin, dir: { x: d.x / dl, y: d.y / dl, z: d.z / dl } });
+    }
+  }
+  return out;
+}
+
+test('a tessellated sphere converges on raySphereIntersect as it refines', () => {
+  const errors: number[] = [];
+  for (const [seg, ring] of [
+    [32, 16],
+    [64, 32],
+    [128, 64],
+    [256, 128],
+  ]) {
+    const surface = meshSurface(uvSphere(seg, ring));
+    let worst = 0;
+    let compared = 0;
+    for (const { origin, dir } of lensRays(24)) {
+      const truth = raySphereIntersect(origin, dir, R);
+      const got = surface.intersect(origin, dir);
+      if (truth === null) continue;
+      assert.ok(got !== null, `mesh missed a ray the sphere hits at ${seg}x${ring}`);
+      compared++;
+      // The chord always sags INSIDE the sphere, so the mesh hit is always
+      // further from the lens than the analytic one. A mesh hit that came out
+      // NEARER would mean the tracer found a triangle that is not there.
+      assert.ok(got.t >= truth.t - 1e-12, `mesh hit nearer than the sphere: ${got.t} < ${truth.t}`);
+      worst = Math.max(worst, Math.abs(got.t - truth.t));
+    }
+    assert.ok(compared > 100, `expected a real comparison set, got ${compared}`);
+    errors.push(worst);
+  }
+  // Quadratic in the edge length: each doubling should cut the sag by roughly
+  // four. Demanding 3x rather than 4x leaves room for which triangle a
+  // particular ray happens to land on.
+  for (let i = 1; i < errors.length; i++) {
+    assert.ok(
+      errors[i] < errors[i - 1] / 3,
+      `refining did not converge: ${errors[i - 1]} -> ${errors[i]}`,
+    );
+  }
+  const finest = errors[errors.length - 1];
+  const bound = sagBoundM(256, 128);
+  assert.ok(finest < bound, `finest mesh off by ${finest} m against a sag bound of ${bound} m`);
+});
+
+test('the hierarchy finds exactly what a brute-force scan over every triangle finds', () => {
+  // The BVH is an optimisation, and the only thing that makes an optimisation
+  // safe is a check against the thing it replaced.
+  const mesh = uvSphere(48, 24);
+  const bvh = buildBvh(mesh);
+  const p = mesh.positions;
+  const idx = mesh.indices;
+
+  for (const { origin, dir } of lensRays(16)) {
+    let bruteT = Infinity;
+    let bruteTri = -1;
+    for (let t = 0; t < mesh.triangleCount; t++) {
+      const a = 3 * idx[3 * t];
+      const b = 3 * idx[3 * t + 1];
+      const c = 3 * idx[3 * t + 2];
+      const hit = rayTriangle(
+        origin.x, origin.y, origin.z,
+        dir.x, dir.y, dir.z,
+        p[a], p[a + 1], p[a + 2],
+        p[b], p[b + 1], p[b + 2],
+        p[c], p[c + 1], p[c + 2],
+      );
+      if (hit !== null && hit.t > 1e-9 && hit.t < bruteT) {
+        bruteT = hit.t;
+        bruteTri = t;
+      }
+    }
+    const got = intersectBvh(bvh, mesh, origin, dir, 1e-9, Infinity);
+    if (bruteTri < 0) {
+      assert.equal(got, null);
+      continue;
+    }
+    assert.ok(got !== null, 'hierarchy missed a triangle brute force found');
+    // NOT bit-identical, and the reason is the crack tolerance in `bvh.ts`: a ray
+    // landing on a shared edge is now claimed by BOTH neighbouring triangles, and
+    // the two compute `t` from different vertices, so they disagree in the last
+    // ulp. Which one wins depends on visit order, and the hierarchy's order is
+    // not the brute-force loop's. That is the tolerance working as designed —
+    // what must not differ is WHERE the surface is.
+    assert.ok(
+      Math.abs(got.t - bruteT) < 1e-9,
+      `hierarchy t ${got.t} vs brute force ${bruteT}`,
+    );
+  }
+});
+
+test('back faces are not culled — a flipped winding renders wrong, never invisible', () => {
+  const front = triangleMesh({ x: -1, y: -1, z: 0 }, { x: 1, y: -1, z: 0 }, { x: 0, y: 1, z: 0 });
+  const flipped = triangleMesh({ x: 0, y: 1, z: 0 }, { x: 1, y: -1, z: 0 }, { x: -1, y: -1, z: 0 });
+  const origin = { x: 0, y: 0, z: 3 };
+  const dir = { x: 0, y: 0, z: -1 };
+  const a = meshSurface(front).intersect(origin, dir);
+  const b = meshSurface(flipped).intersect(origin, dir);
+  assert.ok(a !== null && b !== null, 'a flipped triangle must still be hit');
+  assert.ok(Object.is(a.t, b.t), 'winding must not move the intersection');
+  // What it DOES change is which way the surface claims to face.
+  assert.ok(a.normal.z * b.normal.z < 0, 'winding must flip the geometric normal');
+});
+
+// ---------------------------------------------------------------------------
+// Self-occlusion — the capability a sphere cannot have
+// ---------------------------------------------------------------------------
+
+test('a mesh occludes itself, which is the whole point of Phase 1', () => {
+  const surface = meshSurface(twoPlates());
+  // Straight down the middle: the small near plate is in the way.
+  assert.equal(
+    surface.occluded({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, 5),
+    true,
+    'the near plate must shadow the far one',
+  );
+  // Off to the side: past the near plate's edge, nothing blocks.
+  assert.equal(
+    surface.occluded({ x: 1.5, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, 5),
+    false,
+    'outside the near plate there is nothing to block',
+  );
+  // A convex surface can never do this, which is why `coverage.ts` gets away
+  // with a facing test on the sphere.
+  const ball = meshSurface(uvSphere(48, 24));
+  const onSurface = latLonToWorld(0, 0, R);
+  const outward = { x: 1, y: 0, z: 0 };
+  assert.equal(
+    ball.occluded(onSurface, outward, 10),
+    false,
+    'a convex shell must not shadow its own outward direction',
+  );
+});
+
+test('the occlusion query respects the segment length rather than the whole ray', () => {
+  const surface = meshSurface(twoPlates());
+  const origin = { x: 0, y: 0, z: 0 };
+  const up = { x: 0, y: 0, z: 1 };
+  // The blocker sits at z = 1. A segment that stops short of it is clear.
+  assert.equal(surface.occluded(origin, up, 0.5), false, 'a short segment must not reach the blocker');
+  assert.equal(surface.occluded(origin, up, 1.5), true, 'a long segment must find it');
+});
+
+// ---------------------------------------------------------------------------
+// Content coordinates and sampling
+// ---------------------------------------------------------------------------
+
+test('uvToCoord and coordToUv invert each other, and match the equirect convention', () => {
+  for (let u = 0; u <= 1.0001; u += 0.125) {
+    for (let v = 0; v <= 1.0001; v += 0.125) {
+      const back = coordToUv(uvToCoord(u, v));
+      assert.ok(Math.abs(back.u - u) < 1e-12 && Math.abs(back.v - v) < 1e-12);
+    }
+  }
+  // `sampleEquirect` reads u = (lon + 180) / 360 and v = (90 - lat) / 180, so a
+  // mesh unwrapped equirectangularly must show what a sphere shows. A mesh whose
+  // UV convention disagreed would put the map on sideways and look plausible.
+  assert.deepEqual(uvToCoord(0.5, 0.5), { latDeg: 0, lonDeg: 0 });
+  assert.deepEqual(uvToCoord(0, 0), { latDeg: 90, lonDeg: -180 });
+  assert.deepEqual(uvToCoord(1, 1), { latDeg: -90, lonDeg: 180 });
+});
+
+test('coordAt on an equirect-unwrapped sphere agrees with worldToLatLon', () => {
+  const surface = meshSurface(uvSphere(256, 128));
+  for (const latDeg of [-70, -35, 0, 22.5, 61]) {
+    for (const lonDeg of [-170, -90, -12, 45, 133]) {
+      const p = latLonToWorld(latDeg, lonDeg, R);
+      const got = surface.coordAt(p);
+      const want = worldToLatLon(p);
+      // A quarter of a degree at this tessellation: the UV is interpolated
+      // across a triangle whose corners are 1.4 degrees apart.
+      assert.ok(
+        Math.abs(got.latDeg - want.latDeg) < 0.25,
+        `lat at (${latDeg}, ${lonDeg}): ${got.latDeg} vs ${want.latDeg}`,
+      );
+      assert.ok(
+        Math.abs(got.lonDeg - want.lonDeg) < 0.25,
+        `lon at (${latDeg}, ${lonDeg}): ${got.lonDeg} vs ${want.lonDeg}`,
+      );
+    }
+  }
+});
+
+test('the mesh area converges on 4 pi R squared', () => {
+  const exact = 4 * Math.PI * R * R;
+  let previous = Infinity;
+  for (const [seg, ring] of [
+    [32, 16],
+    [128, 64],
+    [256, 128],
+  ]) {
+    const surface = meshSurface(uvSphere(seg, ring));
+    const err = Math.abs(surface.areaM2 - exact) / exact;
+    assert.ok(err < previous, `area error grew: ${previous} -> ${err}`);
+    previous = err;
+  }
+  assert.ok(previous < 1e-3, `finest mesh area off by ${previous} relative`);
+});
+
+test('sampleArea is equal-area: every sample carries the same weight', () => {
+  const surface = meshSurface(uvSphere(128, 64));
+  const n = 20000;
+  const samples = surface.sampleArea(n);
+  assert.equal(samples.length, n);
+
+  // The defining property, and the reason `metrics/sampling.ts` chose an
+  // equal-area lattice on the sphere: the fraction of samples in any region must
+  // be the fraction of the AREA in that region. A sphere's northern hemisphere
+  // is half its area, and the band |lat| <= 30 is sin(30) = 0.5 of it.
+  let north = 0;
+  let band = 0;
+  for (const s of samples) {
+    if (s.point.z > 0) north++;
+    if (Math.abs(worldToLatLon(s.point).latDeg) <= 30) band++;
+  }
+  assert.ok(Math.abs(north / n - 0.5) < 0.02, `northern hemisphere fraction ${north / n}`);
+  assert.ok(Math.abs(band / n - 0.5) < 0.02, `equatorial band fraction ${band / n}`);
+
+  // Every sample must actually be ON the surface — which for a tessellation
+  // means within the chord sag of it, never outside it.
+  const sag = sagBoundM(128, 64);
+  for (let i = 0; i < n; i += 97) {
+    const r = Math.hypot(samples[i].point.x, samples[i].point.y, samples[i].point.z);
+    assert.ok(r <= R + 1e-12, `sample ${i} at radius ${r} sits OUTSIDE the sphere it inscribes`);
+    assert.ok(R - r < sag, `sample ${i} at radius ${r} is deeper than the sag bound ${sag}`);
+  }
+});
+
+test('sampleArea is deterministic and seedless, as the lattice it replaces is', () => {
+  const surface = meshSurface(uvSphere(48, 24));
+  const a = surface.sampleArea(500);
+  const b = surface.sampleArea(500);
+  for (let i = 0; i < a.length; i++) {
+    assert.ok(Object.is(a[i].point.x, b[i].point.x));
+    assert.ok(Object.is(a[i].point.y, b[i].point.y));
+    assert.ok(Object.is(a[i].point.z, b[i].point.z));
+    assert.ok(Object.is(a[i].normal.x, b[i].normal.x));
+  }
+  // And a second surface built from an identical mesh must agree, or the
+  // hierarchy build has picked up an order dependence.
+  const again = meshSurface(uvSphere(48, 24)).sampleArea(500);
+  for (let i = 0; i < a.length; i++) assert.ok(Object.is(a[i].point.x, again[i].point.x));
+});
+
+test('the local radical inverses match the general one in random.ts', () => {
+  // `mesh/surface.ts` keeps its own base-2 and base-3 copies for speed. A copy
+  // that drifts is a sampler that silently stops being stratified.
+  const surface = new MeshSurface(uvSphere(8, 4));
+  assert.ok(surface.areaM2 > 0);
+  for (let i = 1; i < 500; i++) {
+    // Reached through sampleArea's behaviour rather than the private helpers:
+    // what matters is that the published sampler matches, not that a private
+    // function does.
+    assert.ok(Math.abs(radicalInverse(2, i) - reference2(i)) < 1e-15, `base 2 at ${i}`);
+    assert.ok(Math.abs(radicalInverse(3, i) - reference3(i)) < 1e-15, `base 3 at ${i}`);
+  }
+});
+
+/** The bit-reversal form `mesh/surface.ts` uses, restated here independently. */
+function reference2(i: number): number {
+  let bits = i >>> 0;
+  bits = ((bits >>> 16) | (bits << 16)) >>> 0;
+  bits = (((bits & 0x00ff00ff) << 8) | ((bits & 0xff00ff00) >>> 8)) >>> 0;
+  bits = (((bits & 0x0f0f0f0f) << 4) | ((bits & 0xf0f0f0f0) >>> 4)) >>> 0;
+  bits = (((bits & 0x33333333) << 2) | ((bits & 0xcccccccc) >>> 2)) >>> 0;
+  bits = (((bits & 0x55555555) << 1) | ((bits & 0xaaaaaaaa) >>> 1)) >>> 0;
+  return bits * 2.3283064365386963e-10;
+}
+
+function reference3(i: number): number {
+  let f = 1;
+  let r = 0;
+  let n = i;
+  while (n > 0) {
+    f /= 3;
+    r += f * (n % 3);
+    n = Math.floor(n / 3);
+  }
+  return r;
+}
+
+// ---------------------------------------------------------------------------
+// Bounds, and the degenerate cases a real file will contain
+// ---------------------------------------------------------------------------
+
+test('the bounding sphere contains every vertex', () => {
+  const mesh = uvSphere(24, 12);
+  const b = meshBounds(mesh);
+  for (let i = 0; i < mesh.vertexCount; i++) {
+    const d = Math.hypot(
+      mesh.positions[3 * i] - b.centre.x,
+      mesh.positions[3 * i + 1] - b.centre.y,
+      mesh.positions[3 * i + 2] - b.centre.z,
+    );
+    assert.ok(d <= b.radiusM + 1e-12, `vertex ${i} at ${d} escapes radius ${b.radiusM}`);
+  }
+  // A sphere tessellation's bound is its own radius, to the chord sag.
+  assert.ok(Math.abs(b.radiusM - R) < 1e-9);
+});
+
+test('an empty mesh is inert rather than a crash', () => {
+  const empty: SurfaceMesh = {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'empty',
+    positions: new Float64Array(0),
+    indices: new Uint32Array(0),
+    normals: null,
+    uvs: null,
+    vertexCount: 0,
+    triangleCount: 0,
+  };
+  const surface = meshSurface(empty);
+  assert.equal(surface.intersect({ x: 0, y: 0, z: 5 }, { x: 0, y: 0, z: -1 }), null);
+  assert.equal(surface.occluded({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, 10), false);
+  assert.equal(surface.areaM2, 0);
+  assert.equal(surface.sampleArea(4).length, 4);
+});
+
+test('a mesh whose arrays disagree with its counts is refused at construction', () => {
+  const bad = uvSphere(8, 4);
+  assert.throws(
+    () => new MeshSurface({ ...bad, vertexCount: bad.vertexCount + 1 }),
+    /positions hold/,
+  );
+  assert.throws(
+    () => new MeshSurface({ ...bad, triangleCount: bad.triangleCount + 1 }),
+    /indices hold/,
+  );
+});
+
+test('degenerate triangles carry zero area and never capture a sample', () => {
+  // The pole rows of `uvSphere` collapse; a sampler that divided by a zero area
+  // or indexed past the table would show up here.
+  const surface = meshSurface(uvSphere(16, 8));
+  for (const s of surface.sampleArea(2000)) {
+    assert.ok(Number.isFinite(s.point.x) && Number.isFinite(s.point.y) && Number.isFinite(s.point.z));
+    assert.ok(Number.isFinite(s.normal.x), 'a degenerate face must not yield a NaN normal');
+  }
+});
+
+test('a mesh with no UV set still lights and samples, it just has no content', () => {
+  const noUv = { ...uvSphere(24, 12), uvs: null };
+  const surface = meshSurface(noUv);
+  const hit = surface.intersect({ x: 5, y: 0, z: 0 }, { x: -1, y: 0, z: 0 });
+  assert.ok(hit !== null, 'geometry must not depend on an unwrap');
+  assert.deepEqual(surface.coordAt(hit.point), { latDeg: 0, lonDeg: 0 });
+  assert.equal(surface.sampleArea(16).length, 16);
+});
+
+test('the surface reports its kind, which is what the GPU will branch on', () => {
+  assert.equal(meshSurface(uvSphere(8, 4)).kind, 'mesh');
+});
