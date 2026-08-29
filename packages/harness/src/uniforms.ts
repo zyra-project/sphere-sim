@@ -39,6 +39,12 @@ export interface ProjectorUniforms {
   raster: [number, number, number, number];
   /** Distance to the sphere centre, and `R / d`. */
   limb: [number, number];
+  /**
+   * The distance this projector's output is defined to be 1.0 at —
+   * `PreparedProjector.referenceDistanceM`, PARAMETERS.md Conventions,
+   * "Radiometry".
+   */
+  refDistance: number;
   gamma: ChannelTriplet;
   black: ChannelTriplet;
   gain: ChannelTriplet;
@@ -98,9 +104,12 @@ export interface Uniforms {
    * `bvhIntersect` returns a miss before it fetches anything.
    */
   mesh: MeshUniforms | null;
+  /** Shadow-ray bias and blend width in metres, both scaled to the model. */
+  meshShadowBias: number;
+  meshBlendWidthM: number;
 }
 
-/** The two packed textures and the counts the shader needs to bound its loops. */
+/** The packed textures, the counts, and the two facts about the model itself. */
 export interface MeshUniforms {
   /** `RGBA32F`, `4 * width * height` floats. See `sim/src/mesh/pack.ts`. */
   nodes: Float32Array;
@@ -109,6 +118,27 @@ export interface MeshUniforms {
   triangleWidth: number;
   nodeCount: number;
   triangleCount: number;
+  /**
+   * Per-corner footprint distances, or `null` when none were packed.
+   *
+   * `null` is not "no blend": it is "no field to blend from", and the shader
+   * takes the same hard-seam fallback `coverageAndWeights` takes when
+   * `rig.footprints` is missing.
+   */
+  field?: Float32Array | null;
+  fieldWidth?: number;
+  /**
+   * Where the model's own centre is, and how big it is about that centre —
+   * `Surface.centre` and `Surface.extentRadiusM`.
+   *
+   * Facts, not formulas. Everything derived from them (the radiometric
+   * reference distance, the shadow-ray bias, the blend width in metres) is
+   * computed by {@link buildUniforms} from these, because this module's whole
+   * discipline is that it re-derives rather than importing the simulator's
+   * answers — see the module note.
+   */
+  centre: Vec3;
+  extentRadiusM: number;
 }
 
 /** The shader's code for a ramp shape, or an error naming the ones that exist. */
@@ -185,6 +215,17 @@ export function buildUniforms(
   options: UniformOptions,
 ): Uniforms {
   const radius = rig.sphere.radiusM;
+  // The body being lit: the model when there is one, and otherwise the sphere,
+  // which conventions.ts section W puts on the origin with its radius as its
+  // extent. Written as ONE pair so the three quantities below are one expression
+  // rather than two branches that have to be kept saying the same thing.
+  //
+  // The sphere's centre is EXACTLY zero, and that is load-bearing: subtracting an
+  // exact zero returns its operand unchanged, so `hypot(lens - centre)` receives
+  // the bits `hypot(lens)` receives and the sphere's arithmetic does not move.
+  const mesh = options.mesh ?? null;
+  const centre = mesh === null ? { x: 0, y: 0, z: 0 } : mesh.centre;
+  const extentRadiusM = mesh === null ? radius : mesh.extentRadiusM;
   const projectors: ProjectorUniforms[] = rig.projectors.map((p) => {
     const it = p.intrinsics;
     const fx = it.resX / 2 / Math.tan((it.fovHDeg * DEG2RAD) / 2);
@@ -202,6 +243,10 @@ export function buildUniforms(
       ],
       raster: [it.resX, it.resY, it.k1, it.k2],
       limb: [distanceM, distanceM > 0 ? Math.min(1, radius / distanceM) : 1],
+      // `optics.ts` `prepareProjector`, re-derived: the near point of the body
+      // along the axis from this lens to its centre.
+      refDistance:
+        Math.hypot(lens.x - centre.x, lens.y - centre.y, lens.z - centre.z) - extentRadiusM,
       gamma: { ...p.transfer.gamma },
       black: { ...p.transfer.blackFloor },
       gain: { ...p.transfer.gain },
@@ -258,7 +303,18 @@ export function buildUniforms(
     // The sphere unless a caller attaches a model. Absent rather than empty, so
     // a shader built for the sphere takes the analytic path with no branch on a
     // zero count.
-    mesh: options.mesh ?? null,
+    mesh,
+    // `mesh/surface.ts` SHADOW_BIAS_FRACTION and `footprint.ts` `blendWidthM`,
+    // re-derived. A ray leaving the surface it stands on hits that surface at t
+    // near zero unless told not to, and a fixed epsilon cannot serve a 30 cm prop
+    // and a 30 m facade at once — so the bias is a fraction of the model's own
+    // size, which is the only length scale the surface knows. The blend width is
+    // an ANGLE in the configuration and an arc on the surface here, for the same
+    // reason: a ramp measured in degrees at the lens is not the ramp the blend
+    // means.
+    meshShadowBias: 1e-6 * Math.max(extentRadiusM, Number.MIN_VALUE),
+    meshBlendWidthM:
+      Math.max(rig.blend.widthDeg, 1e-9) * (Math.PI / 180) * Math.max(extentRadiusM, 1e-9),
   };
 }
 

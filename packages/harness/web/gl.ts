@@ -22,7 +22,7 @@
  */
 
 import { FRAGMENT_SHADER, VERTEX_SHADER, glslUniformNames } from '../src/glsl.ts';
-import type { Mat3x3, TextureData, Uniforms } from '../src/uniforms.ts';
+import type { Mat3x3, MeshUniforms, TextureData, Uniforms } from '../src/uniforms.ts';
 
 export interface GlHarness {
   gl: WebGL2RenderingContext;
@@ -31,6 +31,15 @@ export interface GlHarness {
   /** Uniform names the shader declares that the linker did not expose. */
   missingUniforms: string[];
   texture: WebGLTexture;
+  /**
+   * The packed model, on units 1 to 3 — nodes, triangles, footprint field.
+   *
+   * Allocated once and re-uploaded when the model changes, because a hierarchy
+   * is megabytes and a frame is not the place to build one. `meshUploaded` is
+   * what was last put in them, so a redraw of the same model costs nothing.
+   */
+  meshTextures: { nodes: WebGLTexture; triangles: WebGLTexture; field: WebGLTexture };
+  meshUploaded: MeshUniforms | null;
   /** `RGBA32F`, `RGBA16F` or `RGBA8` — whichever the device gave us. */
   textureFormat: string;
   /** True when the parity read-back can be done in float rather than 8-bit. */
@@ -100,6 +109,12 @@ export function createHarnessGl(canvas: HTMLCanvasElement): GlHarness {
 
   const texture = gl.createTexture();
   if (!texture) throw new Error('gl.createTexture returned null');
+  const meshNodes = gl.createTexture();
+  const meshTris = gl.createTexture();
+  const meshField = gl.createTexture();
+  if (!meshNodes || !meshTris || !meshField) {
+    throw new Error('gl.createTexture returned null for the packed model');
+  }
 
   const harness: GlHarness = {
     gl,
@@ -107,6 +122,8 @@ export function createHarnessGl(canvas: HTMLCanvasElement): GlHarness {
     uniforms,
     missingUniforms,
     texture,
+    meshTextures: { nodes: meshNodes, triangles: meshTris, field: meshField },
+    meshUploaded: null,
     textureFormat: floatLinear ? 'RGBA32F' : 'RGBA16F',
     floatReadback: colorFloat,
     readTarget: null,
@@ -147,6 +164,51 @@ export function uploadEquirect(h: GlHarness, tex: TextureData): void {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 }
 
+/**
+ * Put the packed model on units 1 to 3, if it is not there already.
+ *
+ * `RGBA32F` and NEAREST throughout, both load-bearing. The data is coordinates
+ * and indices, not colour: a half-float node bound would move a box by
+ * millimetres and a filtered fetch would return the average of two triangles,
+ * which is not a triangle. `texelFetch` in the shader ignores the filter, but a
+ * driver still requires a complete texture with no mipmaps, and NEAREST plus
+ * CLAMP_TO_EDGE is what makes it complete.
+ *
+ * A `null` model leaves 1x1 placeholders bound. The shader never samples them —
+ * `uMeshMode` is 0 and `bvhIntersect` returns before it fetches — but a sampler
+ * bound to nothing is undefined behaviour on some drivers rather than an unused
+ * uniform, so they are bound anyway.
+ */
+export function uploadMesh(h: GlHarness, mesh: MeshUniforms | null): void {
+  if (h.meshUploaded === mesh) return;
+  const gl = h.gl;
+  const put = (
+    unit: number,
+    tex: WebGLTexture,
+    data: Float32Array | null,
+    width: number,
+  ): void => {
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    const w = data === null ? 1 : width;
+    const height = data === null ? 1 : data.length / (4 * width);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0, gl.RGBA32F, w, height, 0, gl.RGBA, gl.FLOAT,
+      data ?? new Float32Array(4),
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  };
+  put(1, h.meshTextures.nodes, mesh?.nodes ?? null, mesh?.nodeWidth ?? 1);
+  put(2, h.meshTextures.triangles, mesh?.triangles ?? null, mesh?.triangleWidth ?? 1);
+  put(3, h.meshTextures.field, mesh?.field ?? null, mesh?.fieldWidth ?? 1);
+  h.meshUploaded = mesh;
+}
+
 function transposed(m: Mat3x3): number[] {
   // GLSL matrices are column-major; `uniforms.ts` builds row-major. Transposing
   // here rather than passing `transpose = true` keeps the call portable and
@@ -171,6 +233,7 @@ export function setUniforms(h: GlHarness, u: Uniforms): void {
   const intr = new Float32Array(n * 4);
   const rast = new Float32Array(n * 4);
   const limb = new Float32Array(n * 2);
+  const refDistance = new Float32Array(n);
   const gamma = new Float32Array(n * 3);
   const black = new Float32Array(n * 3);
   const gain = new Float32Array(n * 3);
@@ -185,6 +248,7 @@ export function setUniforms(h: GlHarness, u: Uniforms): void {
     intr.set(p.intrinsics, i * 4);
     rast.set(p.raster, i * 4);
     limb.set(p.limb, i * 2);
+    refDistance[i] = p.refDistance;
     gamma.set([p.gamma.r, p.gamma.g, p.gamma.b], i * 3);
     black.set([p.black.r, p.black.g, p.black.b], i * 3);
     gain.set([p.gain.r, p.gain.g, p.gain.b], i * 3);
@@ -194,6 +258,7 @@ export function setUniforms(h: GlHarness, u: Uniforms): void {
   gl.uniform4fv(loc('uIntrinsics'), intr);
   gl.uniform4fv(loc('uRaster'), rast);
   gl.uniform2fv(loc('uLimb'), limb);
+  gl.uniform1fv(loc('uRefDistance'), refDistance);
   gl.uniform3fv(loc('uGamma'), gamma);
   gl.uniform3fv(loc('uBlack'), black);
   gl.uniform3fv(loc('uGain'), gain);
@@ -226,6 +291,18 @@ export function setUniforms(h: GlHarness, u: Uniforms): void {
   gl.uniform1f(loc('uExposure'), u.exposure);
   gl.uniform1f(loc('uDisplayGamma'), u.displayGamma);
   gl.uniform1i(loc('uEquirect'), 0);
+
+  // The model. `uploadMesh` is a no-op when it is already there, so this costs a
+  // pointer comparison on every frame that does not change models.
+  uploadMesh(h, u.mesh);
+  gl.uniform1i(loc('uBvhNodes'), 1);
+  gl.uniform1i(loc('uBvhTris'), 2);
+  gl.uniform1i(loc('uBvhField'), 3);
+  gl.uniform1i(loc('uMeshMode'), u.mesh === null ? 0 : 1);
+  gl.uniform1i(loc('uBvhNodeCount'), u.mesh?.nodeCount ?? 0);
+  gl.uniform1i(loc('uMeshHasField'), u.mesh?.field == null ? 0 : 1);
+  gl.uniform1f(loc('uMeshShadowBias'), u.meshShadowBias);
+  gl.uniform1f(loc('uMeshBlendWidthM'), u.meshBlendWidthM);
 }
 
 /**

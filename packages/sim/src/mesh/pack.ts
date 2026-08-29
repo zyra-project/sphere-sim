@@ -47,14 +47,42 @@
  *
  * The UV rides in the `w` slot each position and normal leaves empty, so a
  * triangle is six fetches rather than nine.
+ *
+ * **Footprint distances**, 3 texels each, one per corner, in the same `order`
+ * sequence:
+ *
+ *     texel 3t + c  (d[proj 0], d[proj 1], d[proj 2], d[proj 3])
+ *
+ * Written only when a rig's fields are supplied; a shader with no field texture
+ * has no general blend to evaluate. Four channels because a framebuffer holds
+ * four viewports (PARAMETERS.md 3.4) and the shaders declare `MAX_PROJ = 4`, so
+ * one texel is one corner's whole answer and the blend costs three fetches for a
+ * face however many projectors are lighting it.
+ *
+ * Per CORNER rather than per vertex, which is the same trade the positions make:
+ * `footprintDistanceAt` interpolates the per-vertex field barycentrically across
+ * the face a hit landed on, so writing the three corners out is exactly what it
+ * reads, without the dependent fetch an index would cost.
  */
 
 import type { SurfaceMesh } from '../../../calibration/src/index.ts';
 import type { Bvh } from './bvh.ts';
+import type { FootprintField } from '../footprint.ts';
 
-/** Texels per node and per triangle. See the module note. */
+/** Texels per node, per triangle, and per triangle of footprint field. */
 export const NODE_TEXELS = 2;
 export const TRI_TEXELS = 6;
+export const FIELD_TEXELS = 3;
+
+/**
+ * Projectors one field texel can carry.
+ *
+ * Four, matching the `MAX_PROJ` both shaders declare and the four viewports
+ * PARAMETERS.md 3.4's framebuffer holds. A rig with more projectors than this
+ * has more than the shaders can light, so the packer refuses rather than
+ * dropping the fifth field into a channel that does not exist.
+ */
+export const FIELD_PROJECTORS = 4;
 
 /**
  * Texel width of both textures.
@@ -86,10 +114,37 @@ export interface PackedBvh {
    * checks this against its own stack depth and refuses rather than renders.
    */
   maxDepth: number;
+  /**
+   * Per-corner footprint distances, or `null` when no fields were supplied.
+   *
+   * `null` is not "no blend": it means the caller had none to give, and the
+   * shader has to fall back the way `coverageAndWeights` does when
+   * `rig.footprints` is missing — a hard seam rather than a silent zero.
+   */
+  field: Float32Array | null;
+  fieldWidth: number;
+  fieldHeight: number;
 }
 
-/** Pack a built hierarchy and its mesh into the texture layout above. */
-export function packBvh(bvh: Bvh, mesh: SurfaceMesh): PackedBvh {
+/**
+ * Pack a built hierarchy and its mesh into the texture layout above.
+ *
+ * `fields` is one footprint distance field per projector, in rig order, as
+ * `prepareRig` builds them; a `null` entry is a projector whose field could not
+ * be built. Omit the argument entirely for a mesh nothing is lighting yet.
+ */
+export function packBvh(
+  bvh: Bvh,
+  mesh: SurfaceMesh,
+  fields?: readonly (FootprintField | null)[] | null,
+): PackedBvh {
+  if (fields != null && fields.length > FIELD_PROJECTORS) {
+    throw new Error(
+      `${fields.length} footprint fields will not fit ${FIELD_PROJECTORS} texel channels; ` +
+        `the shaders light MAX_PROJ = ${FIELD_PROJECTORS} projectors and a fifth field has ` +
+        `nowhere to go`,
+    );
+  }
   const nodeTexels = bvh.nodeCount * NODE_TEXELS;
   const nodeHeight = Math.max(1, Math.ceil(nodeTexels / PACK_WIDTH));
   const nodes = new Float32Array(4 * PACK_WIDTH * nodeHeight);
@@ -143,6 +198,35 @@ export function packBvh(bvh: Bvh, mesh: SurfaceMesh): PackedBvh {
     }
   }
 
+  // The blend, per corner. `footprintDistanceAt` interpolates the per-vertex
+  // field across the face a hit landed on, so the three corners written here are
+  // exactly what a shader needs to reproduce it -- and writing them beside the
+  // triangle keeps the blend one fetch rather than a vertex indirection.
+  let field: Float32Array | null = null;
+  let fieldHeight = 1;
+  if (fields != null && fields.length > 0) {
+    const fieldTexels = triCount * FIELD_TEXELS;
+    fieldHeight = Math.max(1, Math.ceil(fieldTexels / PACK_WIDTH));
+    const out = new Float32Array(4 * PACK_WIDTH * fieldHeight);
+    for (let t = 0; t < triCount; t++) {
+      const tri = bvh.order[t];
+      const base = 4 * FIELD_TEXELS * t;
+      for (let c = 0; c < 3; c++) {
+        const v = idx[3 * tri + c];
+        const at = base + 4 * c;
+        for (let j = 0; j < fields.length; j++) {
+          // A projector with no field leaves its channel at zero, which the
+          // shader reads as "this face is not inside the footprint" -- the same
+          // reading `coverageAndWeights` gives a distance that is not positive,
+          // and it takes the same hard-seam fallback from it.
+          const d = fields[j]?.distance;
+          out[at + j] = d === undefined ? 0 : d[v];
+        }
+      }
+    }
+    field = out;
+  }
+
   return {
     nodes,
     nodeWidth: PACK_WIDTH,
@@ -153,6 +237,9 @@ export function packBvh(bvh: Bvh, mesh: SurfaceMesh): PackedBvh {
     nodeCount: bvh.nodeCount,
     triangleCount: triCount,
     maxDepth: bvh.maxDepth,
+    field,
+    fieldWidth: PACK_WIDTH,
+    fieldHeight,
   };
 }
 
@@ -206,6 +293,21 @@ export interface PackedCorner {
   nz: number;
   u: number;
   v: number;
+}
+
+/**
+ * The footprint distances at corner `c` of packed triangle `t`, one per
+ * projector, or `null` when no field was packed.
+ *
+ * Beside the writer for the reason `readPackedNode` is: a reader and a writer
+ * that disagree about a byte order is the failure this file exists to prevent,
+ * and the shader's own fetch takes this shape.
+ */
+export function readPackedField(packed: PackedBvh, t: number, c: number): number[] | null {
+  const f = packed.field;
+  if (f === null) return null;
+  const at = 4 * FIELD_TEXELS * t + 4 * c;
+  return [f[at], f[at + 1], f[at + 2], f[at + 3]];
 }
 
 /** Read corner `c` of packed triangle `t`. */
