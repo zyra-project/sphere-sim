@@ -340,3 +340,58 @@ function wallAndPanel(): SurfaceMesh {
     triangleCount: indices.length / 3,
   };
 }
+
+test('a flat wall with no file normals is lit, and gets a real blend', () => {
+  // The footprint field asks each vertex whether a projector reaches it. That
+  // question used to be answered with `normalAt(position)` when the file carried
+  // no normals — which re-finds the face by the radial search, and that search
+  // returns NOTHING for a flat wall, so every vertex took the {0,0,1} fallback.
+  // A wall facing a projector on +x then read as facing away, no vertex was lit,
+  // and the whole wall got no blend at all.
+  // Small enough to sit inside the nominal rig's frustum, which frames a
+  // 0.8636 m sphere from 5.18 m and so covers about +/-0.87 m at the origin. A
+  // wall wider than that has every vertex off the raster and would fail this
+  // test for a reason that has nothing to do with normals.
+  const s = 0.4;
+  const wall: SurfaceMesh = {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'wall',
+    positions: Float64Array.from([
+      0, -s, -s, 0, s, -s, 0, s, s, 0, -s, s,
+      // A second row of vertices so the wall has interior structure to feather
+      // across rather than four corners.
+      0, 0, -s, 0, 0, s,
+    ]),
+    indices: Uint32Array.from([0, 1, 4, 0, 4, 5, 0, 5, 3, 1, 2, 4, 2, 5, 4, 2, 3, 5]),
+    normals: null,
+    uvs: null,
+    vertexCount: 6,
+    triangleCount: 6,
+  };
+  const surface = meshSurface(wall);
+
+  // The vertex normals come from the faces, and they face +x or -x — never the
+  // {0,0,1} the point-only search falls back to.
+  for (let i = 0; i < wall.vertexCount; i++) {
+    const n = surface.vertexNormal(i);
+    assert.ok(Math.abs(Math.abs(n.x) - 1) < 1e-9, `vertex ${i} normal ${JSON.stringify(n)}`);
+  }
+
+  // And a projector out on +x lights it, with a field that has somewhere to ramp.
+  const rig = prepareRig(nominalRig(), surface);
+  const field = rig.footprints?.[0];
+  assert.ok(field !== undefined && field !== null, 'a mesh rig must build footprint fields');
+  // EVERY vertex, not merely one. The whole wall faces +x and the projector is
+  // out on +x, so a correct normal lights all six. The `{0, 0, 1}` fallback the
+  // old code took lights exactly those with z < 0 -- `dot((0,0,1), lens - point)`
+  // is `-z` -- which is three of six, so a `lit > 0` assertion would pass on the
+  // bug it exists to catch. Mutation-checked: putting the point-only lookup back
+  // fails this line.
+  let lit = 0;
+  for (let i = 0; i < wall.vertexCount; i++) if (field.distance[i] > 0) lit++;
+  assert.equal(
+    lit,
+    wall.vertexCount,
+    `only ${lit} of ${wall.vertexCount} wall vertices were lit by a projector facing them`,
+  );
+});

@@ -69,6 +69,17 @@ const CHUNK_BIN = 0x004e4942; // 'BIN\0'
 const MAX_ELEMENTS = 64 * 1024 * 1024;
 const MAX_INSTANCES = 65536;
 
+/**
+ * A ceiling on the MERGED mesh, which is the one that actually bounds memory.
+ *
+ * The other two limits are per-accessor and per-instance and their product is
+ * not a bound: a million-vertex mesh instanced three hundred times is under both
+ * and is still gigabytes of Float64Array here. 16 million vertices is a model
+ * far past anything this page can trace interactively, and the refusal names
+ * itself rather than arriving as an out-of-memory kill of the worker.
+ */
+const MAX_OUTPUT_VERTICES = 16 * 1024 * 1024;
+
 /** glTF `primitive.mode`. Only TRIANGLES carries a surface. */
 const MODE_TRIANGLES = 4;
 const MODE_NAMES = [
@@ -437,6 +448,10 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
   // from the file. The UV case is the same shape: the attribute-less faces all
   // sample texel (0, 0), so a building arrives with one wall the colour of a
   // single pixel.
+  // Set once any ceiling is reached, so the walk stops emitting rather than
+  // continuing to refuse one primitive at a time. Declared with the other
+  // accumulators because `emitPrimitive` reads it.
+  let exhausted = false;
   let allNormals = true;
   let allUvs = true;
   let accepted = 0;
@@ -475,9 +490,34 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
       return;
     }
     const count = pos.length / 3;
-    const nrm = prim.attributes.NORMAL !== undefined ? readAccessor(prim.attributes.NORMAL) : null;
-    const uv =
+    // An accessor that read is not yet an accessor that FITS. `readAccessor`
+    // returns a flat array without saying how wide it is, so a NORMAL declared
+    // VEC2, or a TEXCOORD_0 with half as many entries as there are vertices,
+    // comes back non-null and shorter than the loop below reads — appending NaN
+    // normals and undefined UVs into a mesh that then loads and shades wrong.
+    // The shape is checked against POSITION rather than trusted.
+    const nrmRaw =
+      prim.attributes.NORMAL !== undefined ? readAccessor(prim.attributes.NORMAL) : null;
+    const uvRaw =
       prim.attributes.TEXCOORD_0 !== undefined ? readAccessor(prim.attributes.TEXCOORD_0) : null;
+    const nrm = nrmRaw !== null && nrmRaw.length >= 3 * count ? nrmRaw : null;
+    const uv = uvRaw !== null && uvRaw.length >= 2 * count ? uvRaw : null;
+    if (nrmRaw !== null && nrm === null) {
+      if (!skipped.some((t) => t.includes('NORMAL'))) {
+        skipped.push(
+          `a primitive's NORMAL holds ${nrmRaw.length} values for ${count} vertices; ` +
+            `its normals are derived from the winding instead`,
+        );
+      }
+    }
+    if (uvRaw !== null && uv === null) {
+      if (!skipped.some((t) => t.includes('TEXCOORD_0'))) {
+        skipped.push(
+          `a primitive's TEXCOORD_0 holds ${uvRaw.length} values for ${count} vertices; ` +
+            `it is dropped, so the model has no content`,
+        );
+      }
+    }
 
     // Indices are read and validated HERE, before a single vertex is appended.
     // The append is what cannot be undone cheaply: a primitive that fails after
@@ -492,7 +532,19 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
         skippedPrimitives++;
         return;
       }
-      const n = Math.floor(idx.length / 3) * 3;
+      // Not rounded down. A count that is not a whole number of triangles is a
+      // malformed primitive, and silently dropping the remainder accepts it --
+      // appending its vertices, which are then orphans that still move the
+      // bounds, the preview framing and the blend scale while contributing no
+      // surface.
+      if (idx.length === 0 || idx.length % 3 !== 0) {
+        skippedPrimitives++;
+        if (!skipped.some((t) => t.includes('whole triangles'))) {
+          skipped.push(`a primitive has ${idx.length} indices, which is not whole triangles`);
+        }
+        return;
+      }
+      const n = idx.length;
       tris = new Uint32Array(n);
       for (let i = 0; i < n; i++) {
         const v = idx[i];
@@ -510,6 +562,22 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
         }
         tris[i] = v;
       }
+    }
+
+    // The instance ceiling does not bound this. Every accepted instance may
+    // carry up to MAX_ELEMENTS of its own, so a million-vertex mesh instanced a
+    // few hundred times sits under both limits and still expands to gigabytes
+    // here. What has to be bounded is the OUTPUT, cumulatively, before it is
+    // written.
+    if (positions.length / 3 + count > MAX_OUTPUT_VERTICES) {
+      exhausted = true;
+      if (!skipped.some((t) => t.includes('total vertices'))) {
+        skipped.push(
+          `the scene expands past ${MAX_OUTPUT_VERTICES} total vertices; ` +
+            `the rest of it is not read`,
+        );
+      }
+      return;
     }
 
     const nm = normalMatrix(world);
@@ -587,7 +655,6 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
   const scene = json.scenes?.[json.scene ?? 0];
   const onPath = new Uint8Array(nodes.length);
   let instances = 0;
-  let exhausted = false;
   const visit = (nodeIndex: number, parent: Mat4, depth: number): void => {
     if (exhausted) return;
     if (depth > 256) {

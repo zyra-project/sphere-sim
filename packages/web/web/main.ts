@@ -947,6 +947,34 @@ function round3(v: number): number {
   return Math.round(v * 1000) / 1000;
 }
 
+/**
+ * What "the model" means to the aiming controls.
+ *
+ * The dropped mesh's own bounds centre, not the world origin. GLB node
+ * translations are preserved by the reader and the preview camera orbits that
+ * centre, so a legally translated model can sit in frame while an aim at the
+ * origin points every projector somewhere else entirely.
+ */
+function modelAimPoint(): { x: number; y: number; z: number } {
+  if (meshFacts === null || droppedMesh === null) return { x: 0, y: 0, z: 0 };
+  const p = droppedMesh.positions;
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < droppedMesh.vertexCount; i++) {
+    const x = p[3 * i];
+    const y = p[3 * i + 1];
+    const z = p[3 * i + 2];
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (z < minZ) minZ = z;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+    if (z > maxZ) maxZ = z;
+  }
+  if (!Number.isFinite(minX)) return { x: 0, y: 0, z: 0 };
+  return { x: 0.5 * (minX + maxX), y: 0.5 * (minY + maxY), z: 0.5 * (minZ + maxZ) };
+}
+
 /** The placements the install settings imply, as a starting point to edit. */
 function placementsFromInstall(): ProjectorPlacement[] {
   const rig = buildAsBuilt(state.settings);
@@ -1080,7 +1108,7 @@ function placementBlock(): HTMLElement[] {
     const r = Math.hypot(last.position.x, last.position.y) || 5.18;
     const az = Math.atan2(last.position.y, last.position.x) + Math.PI / 4;
     const position = { x: r * Math.cos(az), y: r * Math.sin(az), z: last.position.z };
-    const aim = aimAtPoint(position, { x: 0, y: 0, z: 0 });
+    const aim = aimAtPoint(position, modelAimPoint());
     places.push({ position, yawDeg: aim.yawDeg, pitchDeg: aim.pitchDeg, rollDeg: 0 });
     requestSurface();
     renderControls();
@@ -1088,11 +1116,11 @@ function placementBlock(): HTMLElement[] {
   const aimAll = el('button', {
     className: 'chip',
     textContent: 'aim all at the model',
-    title: 'Re-point every projector at the world origin, keeping it where it stands.',
+    title: "Re-point every projector at the model's own centre, keeping it where it stands.",
   });
   aimAll.addEventListener('click', () => {
     for (const place of places) {
-      const aim = aimAtPoint(place.position, { x: 0, y: 0, z: 0 });
+      const aim = aimAtPoint(place.position, modelAimPoint());
       place.yawDeg = aim.yawDeg;
       place.pitchDeg = aim.pitchDeg;
     }
@@ -1189,6 +1217,17 @@ function modelBlock(): HTMLElement[] {
     });
     litRow.dataset.smoke = 'model-lit';
     out.push(litRow);
+
+    // Which rig produced that number, from the worker's own reply rather than
+    // from the panel beside it. `tools/smoke-app.ts` waits on this: the lit
+    // fraction alone cannot tell a fresh five-projector answer from the stale
+    // four-projector one still on screen.
+    const rigRow = el('p', {
+      className: 'note tiny',
+      textContent: `lit by ${f.projectorCount} projector${f.projectorCount === 1 ? '' : 's'}`,
+    });
+    rigRow.dataset.smoke = 'model-rig';
+    out.push(rigRow);
 
     const rows: string[] = [
       `${f.triangles.toLocaleString()} triangles, ${f.vertices.toLocaleString()} vertices`,
@@ -1412,6 +1451,10 @@ function requestSurface(): void {
     id: ++meshSeq,
     settings: state.settings,
     mesh: droppedMesh,
+    // `suppliedName()`, the same id the metrics path sends, so this names the
+    // entry that path already put in the worker's cache. `contentKey` is a
+    // different thing — the page's own key for whether the GPU texture is stale.
+    customImageId: suppliedName(),
     ...(customPlacements && customPlacements.length > 0
       ? { placements: customPlacements }
       : {}),

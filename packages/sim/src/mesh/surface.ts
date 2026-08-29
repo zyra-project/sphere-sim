@@ -95,6 +95,7 @@ export class MeshSurface implements Surface {
    * purely to be looked at should not pay for a graph it never walks.
    */
   private cachedAdjacency: MeshAdjacency | null = null;
+  private cachedVertexNormals: Float64Array | null = null;
   /** Cumulative triangle area, for the equal-area sampler. `cdf[n-1]` is the total. */
   private readonly cdf: Float64Array;
   /** Geometric (flat) unit normal per triangle, from the winding. */
@@ -272,6 +273,65 @@ export class MeshSurface implements Surface {
       u: hit.u,
       v: hit.v,
     };
+  }
+
+  /**
+   * The outward normal at VERTEX `i` — from the file when it carried normals,
+   * and otherwise from the faces that meet there.
+   *
+   * The area-weighted sum of incident face normals, which is what a vertex
+   * normal means. It exists because the alternative was worse than it looked:
+   * asking `normalAt(position)` re-finds the face by the radial search, which is
+   * exact only for a star-shaped body and returns NOTHING for a flat wall — so
+   * every vertex of a wall got the `{0, 0, 1}` fallback, a wall facing a
+   * projector on +x read as facing away, and the footprint field found no lit
+   * vertex to feather from. A vertex knows its own faces; it should never have
+   * been asked to search for them.
+   */
+  vertexNormal(i: number): Vec3 {
+    const file = this.mesh.normals;
+    if (file !== null) return { x: file[3 * i], y: file[3 * i + 1], z: file[3 * i + 2] };
+    this.cachedVertexNormals ??= this.buildVertexNormals();
+    const n = this.cachedVertexNormals;
+    return { x: n[3 * i], y: n[3 * i + 1], z: n[3 * i + 2] };
+  }
+
+  private buildVertexNormals(): Float64Array {
+    const out = new Float64Array(3 * this.mesh.vertexCount);
+    const p = this.mesh.positions;
+    const idx = this.mesh.indices;
+    for (let t = 0; t < this.mesh.triangleCount; t++) {
+      const i0 = idx[3 * t];
+      const i1 = idx[3 * t + 1];
+      const i2 = idx[3 * t + 2];
+      const ax = p[3 * i1] - p[3 * i0];
+      const ay = p[3 * i1 + 1] - p[3 * i0 + 1];
+      const az = p[3 * i1 + 2] - p[3 * i0 + 2];
+      const bx = p[3 * i2] - p[3 * i0];
+      const by = p[3 * i2 + 1] - p[3 * i0 + 1];
+      const bz = p[3 * i2 + 2] - p[3 * i0 + 2];
+      // NOT normalized: the cross product's length is twice the triangle's area,
+      // so accumulating it raw is the area weighting.
+      const nx = ay * bz - az * by;
+      const ny = az * bx - ax * bz;
+      const nz = ax * by - ay * bx;
+      for (const v of [i0, i1, i2]) {
+        out[3 * v] += nx;
+        out[3 * v + 1] += ny;
+        out[3 * v + 2] += nz;
+      }
+    }
+    for (let v = 0; v < this.mesh.vertexCount; v++) {
+      const len = Math.hypot(out[3 * v], out[3 * v + 1], out[3 * v + 2]);
+      if (len === 0) {
+        out[3 * v + 2] = 1;
+        continue;
+      }
+      out[3 * v] /= len;
+      out[3 * v + 1] /= len;
+      out[3 * v + 2] /= len;
+    }
+    return out;
   }
 
   /** Vertex adjacency, welded by position. Built once, on demand. */

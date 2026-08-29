@@ -67,8 +67,19 @@ export interface ProjectorPlacement {
   rollDeg?: number;
   /** What to point at when yaw and pitch are not given. Defaults to the origin. */
   aimAt?: Vec3;
-  /** Overrides on the frustum this projector would otherwise be given. */
-  intrinsics?: Partial<ProjectorIntrinsics>;
+  /**
+   * Overrides on the frustum this projector would otherwise be given.
+   *
+   * **`resX` and `resY` are not among them.** One framebuffer split into equal
+   * grid cells cannot give two projectors different rasters — the viewport
+   * fraction is the same for every cell, so a projector with a different raster
+   * fails `assertFramebufferTopology` and takes the whole rig down with it.
+   * Advertising the override and then rejecting the rig would be worse than not
+   * offering it, so the type excludes them and {@link placedRig} says so if one
+   * arrives anyway. Mixed rasters need a layout that packs unequal cells, which
+   * is a real feature and not this one.
+   */
+  intrinsics?: Partial<Omit<ProjectorIntrinsics, 'resX' | 'resY'>>;
   transfer?: Partial<ProjectorTransfer>;
 }
 
@@ -173,9 +184,18 @@ export function placedRig(params: PlacedRigParams): RigCalibration {
     // lens is the same distance out so this is one number four times; off a ring
     // it is not, and giving them all the far one's field would have the near
     // ones overshoot the object by metres.
+    // Every projector takes the rig's raster. See `ProjectorPlacement.intrinsics`
+    // for why a per-projector one cannot work under an equal-cell grid.
+    const over = place.intrinsics as Partial<ProjectorIntrinsics> | undefined;
+    if (over?.resX !== undefined || over?.resY !== undefined) {
+      throw new Error(
+        `projector ${i}: resX and resY are per-RIG, not per-projector — one framebuffer ` +
+          `split into equal cells cannot give two projectors different rasters`,
+      );
+    }
     const base = intrinsicsFromThrow({
-      resX: place.intrinsics?.resX ?? resX,
-      resY: place.intrinsics?.resY ?? resY,
+      resX,
+      resY,
       distanceM: distanceM > 0 ? distanceM : radiusM * 2,
       radiusM,
       marginFrac: params.marginFrac,
@@ -206,10 +226,8 @@ export function placedRig(params: PlacedRigParams): RigCalibration {
     blend: nominalBlend(params.blend),
     // Sized from the grid rather than from a doubling, so the invariant
     // `assertFramebufferTopology` checks holds by construction for any count.
-    framebuffer: {
-      width: (projectors[0]?.intrinsics.resX ?? resX) * cols,
-      height: (projectors[0]?.intrinsics.resY ?? resY) * rows,
-    },
+    // From the rig's raster, which every projector now shares by construction.
+    framebuffer: { width: resX * cols, height: resY * rows },
     projectors,
   };
 

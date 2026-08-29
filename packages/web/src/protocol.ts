@@ -323,6 +323,17 @@ export interface SurfaceRequest {
    * Plain data, because it crosses to the worker by structured clone.
    */
   placements?: ProjectorPlacement[];
+  /**
+   * Identifies the content the page is showing, so the preview lights the model
+   * with it rather than with the grey fallback.
+   *
+   * An ID rather than the pixels: the worker already caches the last image the
+   * metrics path sent, keyed exactly this way, and a megabyte of float across
+   * the boundary on every settled slider would cost more than the render. When
+   * the worker has not been sent that image, it falls back — the same
+   * deliberately SILENT-free behaviour `computeModel` documents.
+   */
+  customImageId?: string;
 }
 
 /** What a model turned out to be, once read and built. */
@@ -332,6 +343,15 @@ export interface SurfaceFacts {
   vertices: number;
   hasUvs: boolean;
   hasNormals: boolean;
+  /**
+   * How many projectors lit it, from the rig the worker actually used.
+   *
+   * Reported rather than inferred from the panel, and that is the point: it is
+   * the one number in this reply that proves WHICH rig produced the others. A
+   * page that showed five rows while the worker traced four would otherwise look
+   * exactly like one that worked.
+   */
+  projectorCount: number;
   /** Bounding radius in metres, and the surface area the tracer measured. */
   boundsRadiusM: number;
   areaM2: number;

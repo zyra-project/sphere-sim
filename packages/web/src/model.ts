@@ -756,7 +756,17 @@ const FRAME_MARGIN = 1.4;
  * area, and stay true whatever is pointing at it.
  */
 export function computeSurface(req: SurfaceRequest): SurfaceResponse {
-  const world = buildWorld(req.settings);
+  // The page's own content, when it sent it. Without it `buildWorld` substitutes
+  // its grey fallback, so a reader who had dropped a picture or chosen Blue
+  // Marble saw the model lit by neither — a preview of content that is not the
+  // content on screen.
+  // The content the page is showing, from the cache the metrics path fills.
+  // Without it `buildWorld` substitutes its grey fallback, so a reader who had
+  // dropped a picture or chosen Blue Marble saw the model lit by neither — a
+  // preview of content that is not the content on screen. A request naming an
+  // image this worker has not been sent still falls back rather than guessing.
+  const custom = cachedImageId === (req.customImageId ?? '') ? cachedImage : null;
+  const world = buildWorld(req.settings, undefined, custom);
   if (req.mesh === null) {
     return { kind: 'surface', id: req.id, ok: true, frame: null, facts: null };
   }
@@ -778,7 +788,12 @@ export function computeSurface(req: SurfaceRequest): SurfaceResponse {
         })
       : world.truthRig;
   const truth = prepareRig(rigCal, surface);
-  const scene = defaultScene(world.image);
+  // `world.scene`, not a fresh `defaultScene(world.image)`. The world already
+  // built the scene the controls describe — the graticule, the mask reading, the
+  // ambient level — and rebuilding one from the image alone silently dropped all
+  // three, so the model preview rendered a different room from the live view
+  // beside it.
+  const scene = world.scene;
 
   const width = Math.max(16, Math.round(req.width));
   const height = Math.max(16, Math.round(req.height));
@@ -892,6 +907,7 @@ export function computeSurface(req: SurfaceRequest): SurfaceResponse {
       vertices: req.mesh.vertexCount,
       hasUvs: req.mesh.uvs !== null,
       hasNormals: req.mesh.normals !== null,
+      projectorCount: truth.projectors.length,
       boundsRadiusM: surface.extentRadiusM,
       areaM2: surface.areaM2,
       litFraction: lit / n,

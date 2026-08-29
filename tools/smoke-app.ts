@@ -1880,18 +1880,32 @@ async function main(): Promise<void> {
       if (placed !== '') {
         failures.push(`placing projectors by hand failed: ${placed}`);
       } else {
+        // Wait on the RIG line, not on the coverage figure. The fixture is fully
+        // lit by the four-projector install, so a positive percentage was
+        // already on screen before anything was placed by hand — the loop could
+        // exit on the stale number and the later one-projector check would still
+        // pass even if the worker had capped the rig at four. The rig line comes
+        // from the worker's own reply and names the count it actually traced.
+        let rigLine = '';
         let litAfter = '';
         const placeDeadline = Date.now() + 30_000;
         while (Date.now() < placeDeadline) {
           await sleep(300);
-          litAfter = await cdp.evaluate<string>(
-            "document.querySelector('[data-smoke=\"model-lit\"]')?.textContent?.trim() ?? ''",
+          rigLine = await cdp.evaluate<string>(
+            "document.querySelector('[data-smoke=\"model-rig\"]')?.textContent?.trim() ?? ''",
           );
-          const n = Number.parseFloat(litAfter);
-          if (Number.isFinite(n) && n > 0) break;
+          if (/\b5 projectors\b/.test(rigLine)) break;
         }
+        litAfter = await cdp.evaluate<string>(
+          "document.querySelector('[data-smoke=\"model-lit\"]')?.textContent?.trim() ?? ''",
+        );
         const after = Number.parseFloat(litAfter);
-        if (!Number.isFinite(after) || after <= 0) {
+        if (!/\b5 projectors\b/.test(rigLine)) {
+          failures.push(
+            `the worker never reported a five-projector rig (last said ${JSON.stringify(rigLine)}) ` +
+              '— the any-count path is not reaching it',
+          );
+        } else if (!Number.isFinite(after) || after <= 0) {
           failures.push(
             'a five-projector hand-placed rig lit nothing — `placedRig` did not reach the worker',
           );
@@ -1921,11 +1935,14 @@ async function main(): Promise<void> {
           const oneDeadline = Date.now() + 30_000;
           while (Date.now() < oneDeadline) {
             await sleep(300);
+            const line = await cdp.evaluate<string>(
+              "document.querySelector('[data-smoke=\"model-rig\"]')?.textContent?.trim() ?? ''",
+            );
+            if (!/\b1 projector\b/.test(line)) continue;
             litOne = await cdp.evaluate<string>(
               "document.querySelector('[data-smoke=\"model-lit\"]')?.textContent?.trim() ?? ''",
             );
-            const n = Number.parseFloat(litOne);
-            if (Number.isFinite(n) && n < after - 1) break;
+            break;
           }
           const one = Number.parseFloat(litOne);
           if (!Number.isFinite(one)) {

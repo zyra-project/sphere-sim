@@ -59,7 +59,7 @@
  * this paragraph.
  */
 
-import type { ChannelTriplet } from '../../calibration/src/index.ts';
+import type { ChannelTriplet, SurfaceMesh } from '../../calibration/src/index.ts';
 import type { PreparedRig } from './optics.ts';
 import { pixelToRay } from './optics.ts';
 import { coverageAndWeights, polarMask } from './coverage.ts';
@@ -118,6 +118,20 @@ export function buildWarpExport(
 ): WarpExport {
   const projector = rig.projectors[index];
   if (!projector) throw new Error(`no projector at index ${index}`);
+  // A warp file's whole job is to say which texel belongs at which node. A mesh
+  // with no UV set has no answer to that: `coordAt` returns (0, 0) everywhere,
+  // and the export would be a well-formed file in which every node names the
+  // same texel — plausible enough to load, and a picture of one pixel stretched
+  // over a building. Refused rather than written, because the failure is
+  // invisible until it is on the wall.
+  const meshed = meshOfSurface(rig.surface);
+  if (meshed !== null && meshed.uvs === null) {
+    throw new Error(
+      `${meshed.name} carries no UV set, so there is no texel to send anywhere. ` +
+        `Coverage, overlap and blend are still answerable on it; a warp file is not. ` +
+        `Re-export the model with a UV unwrap.`,
+    );
+  }
   const cols = Math.max(2, Math.floor(options.cols ?? 41));
   const rows = Math.max(2, Math.floor(options.rows ?? 41));
   const it = projector.cal.intrinsics;
@@ -199,6 +213,12 @@ export function formatWarpMesh(exported: WarpExport): string {
     out.push(`${f(n.x)} ${f(n.y)} ${f(n.u)} ${f(n.v)} ${f(n.intensity)}`);
   }
   return `${out.join('\n')}\n`;
+}
+
+/** The mesh behind a surface, or `null` for the analytic sphere. */
+function meshOfSurface(surface: PreparedRig['surface']): SurfaceMesh | null {
+  if (surface.kind !== 'mesh') return null;
+  return (surface as unknown as { mesh: SurfaceMesh }).mesh;
 }
 
 function f(value: number): string {

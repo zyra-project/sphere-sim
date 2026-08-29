@@ -225,7 +225,15 @@ export function sampleSurface(
 ): SurfaceSample {
   const normal = rig.surface.normalAt(point, at);
   const ll = rig.surface.coordAt(point, at);
-  const texLon = worldLonToTextureLon(ll.lonDeg, rig.rotationOffsetDeg);
+  // The sphere's texture is anchored to the world by a MECHANICAL rotation of
+  // the ball; a mesh's UV is anchored by its own unwrap and has no such offset.
+  // Applying `theta_rot` to a model slid its texture sideways by a number that
+  // describes a different object. `buildWarpExport` already made this
+  // distinction and this did not, so the preview and the exported warp file
+  // disagreed about where the content sits.
+  const texLon = blendModelApplies(rig.surface)
+    ? worldLonToTextureLon(ll.lonDeg, rig.rotationOffsetDeg)
+    : ll.lonDeg;
   // `contentAt`, never `sampleEquirect` directly: the graticule is drawn
   // analytically over the image, so a renderer that reads the texture is
   // reading the content with the pattern missing. This is exactly what happened

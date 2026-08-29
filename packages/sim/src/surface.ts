@@ -425,20 +425,32 @@ export function sphereSurface(radiusM: number): Surface {
  *    keys on is a UV coordinate wearing a latitude's name, so the mask would
  *    attenuate by texture row.
  *
- * So on anything but a sphere both are REFUSED rather than approximated: every
- * projector that reaches a point contributes equally, and the mask is 1.
+ * ## What this predicate gates TODAY
  *
- * That produces hard seams where each projector's footprint ends, and that is
- * the point. A crossfade computed from a bounding sphere would look like a
- * blend, photograph like a blend, and be a claim about a shape nobody measured —
- * which is the failure `docs/ARBITRARY-SHAPES.md` exists to prevent. A visible
- * seam is a true statement about coverage; a smooth gradient would be a false
- * one.
+ * **The blend is no longer refused.** Phase 3 replaced the sphere's limb ramp
+ * with a general one — `footprint.ts` measures the geodesic distance to the edge
+ * of each projector's own footprint, which handles the raster edge, the
+ * terminator and a shadow edge with one rule because all three are edges of the
+ * same set. It degenerates to the closed form on a sphere algebraically, not
+ * approximately. So off a sphere this predicate now selects the geodesic ramp
+ * rather than switching blending off.
  *
- * Phase 3 replaces this with a screen-space distance to the footprint edge,
- * which is what projection-mapping software actually does and which must
- * degenerate to the limb ramp on a sphere. This predicate is the single place
- * that decision is made, so that is the one line Phase 3 changes.
+ * **The polar mask still is refused**, and is the only thing left here. On a
+ * mesh the latitude it keys on is a UV coordinate wearing a latitude's name, and
+ * `set bottommask` is a statement about a ceiling mount that a dropped model does
+ * not have. A mask painted onto a model's UV would be inventing a mount nobody
+ * installed — the same error the blend was refused for before there was a
+ * general form. The honest generalization of "a mount blocks light" is an
+ * occluder in the scene, which self-occlusion already handles for the model's
+ * own geometry and which a separate object would extend.
+ *
+ * **This paragraph used to say Phase 3 would use a screen-space distance
+ * transform.** It was written before that was tried, and trying it disproved it:
+ * `w_width` is an angle on the SURFACE and a screen-space field measures angle
+ * at the LENS, which near a limb diverge until the ramp is wider than the
+ * footprint. Measured at 0.46 of a normalized weight from the closed form, then
+ * deleted. The note is kept rather than removed because a maintainer who reaches
+ * for the obvious algorithm should find out here that it was already tried.
  */
 export function blendModelApplies(surface: Surface): boolean {
   return surface.kind === 'sphere';
