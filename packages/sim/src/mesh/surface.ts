@@ -88,6 +88,8 @@ export class MeshSurface implements Surface {
   readonly bounds: MeshBounds;
   readonly boundsRadiusM: number;
   readonly extentRadiusM: number;
+  /** The model's own centre — what `extentRadiusM` is a radius about. */
+  readonly centre: Vec3;
 
   private readonly bvh: Bvh;
   /**
@@ -127,6 +129,7 @@ export class MeshSurface implements Surface {
     // below all want. They differ by the model's translation.
     this.boundsRadiusM = this.bounds.originRadiusM;
     this.extentRadiusM = this.bounds.radiusM;
+    this.centre = this.bounds.centre;
 
     const n = mesh.triangleCount;
     this.cdf = new Float64Array(n);

@@ -477,6 +477,16 @@ test('a document of the wrong SHAPE is a report, never an exception', () => {
       'a bufferView byteLength is a string',
       (d) => ((d.bufferViews as Record<string, unknown>[])[0].byteLength = 'lots'),
     ],
+    // The eleventh through fourteenth cases. `for...of` over a non-array throws
+    // "object is not iterable", and `null` is an object to `typeof` and legal
+    // JSON, so every one of these reached a property read on it.
+    ['buffers is an object', (d) => (d.buffers = {})],
+    ['a buffer entry is null', (d) => (d.buffers = [null])],
+    ['a mesh entry is null', (d) => (d.meshes = [null])],
+    [
+      'a primitive entry is null',
+      (d) => ((d.meshes as Record<string, unknown>[])[0].primitives = [null]),
+    ],
   ];
 
   for (const [name, mutate] of wrong) {
@@ -742,4 +752,77 @@ test('with no scenes at all, a child is not loaded twice', () => {
     }),
   );
   assert.equal(report.mesh?.triangleCount, 1);
+});
+
+test('a required extension this reader does not implement is refused by name', () => {
+  // glTF 2.0 §3.2: a client that does not support everything in
+  // `extensionsRequired` must not load the asset. Not pedantry -- an extension
+  // may redefine what a buffer view MEANS. `EXT_meshopt_compression` does
+  // exactly that, and a reader that ignored the declaration would read
+  // compressed bytes as coordinates and hand back a surface that is well-formed,
+  // plausible, and not the model in the file.
+  const glb = buildGlb({
+    positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+    indices: [0, 1, 2],
+    patch: (d) => (d.extensionsRequired = ['EXT_meshopt_compression']),
+  });
+  const report = readGlb(glb);
+  assert.equal(report.mesh, null, 'the asset must not load');
+  assert.ok(
+    report.skipped.some((t) => t.includes('EXT_meshopt_compression')),
+    `the refusal must name the extension, got ${JSON.stringify(report.skipped)}`,
+  );
+
+  // And the list is what this reader is UNAFFECTED by, not what it implements:
+  // a required material extension changes nothing about positions and indices,
+  // so the same file loads.
+  const material = readGlb(
+    buildGlb({
+      positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+      indices: [0, 1, 2],
+      patch: (d) => (d.extensionsRequired = ['KHR_materials_unlit']),
+    }),
+  );
+  assert.ok(material.mesh !== null, 'a materials-only requirement must not block the geometry');
+});
+
+test('texture coordinates outside [0, 1] are wrapped, and the wrap is reported', () => {
+  // `SurfaceMesh` says its UVs are in [0, 1]; glTF does not, because the default
+  // sampler wrap is REPEAT and a tiled unwrap legitimately writes 2.5 or -0.25.
+  // Passing those through breaks the boundary type where it bites: the Bourke
+  // warp exporter writes a node's UV straight into the file, and a value outside
+  // [0, 1] is that format's marker for "this node is not to be used". A tiled
+  // facade would export as a mesh of holes.
+  const glb = buildGlb({
+    positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+    indices: [0, 1, 2],
+    uvs: [2.5, -0.25, 1, 0, 0.5, 0.5],
+  });
+  const report = readGlb(glb);
+  assert.ok(report.mesh?.uvs != null, 'the UV set must survive');
+  const uv = report.mesh.uvs;
+  const near = (got: number, want: number, what: string): void =>
+    assert.ok(Math.abs(got - want) < 1e-6, `${what}: got ${got}, want ${want}`);
+  near(uv[0], 0.5, '2.5 wraps to 0.5');
+  near(uv[1], 0.75, '-0.25 wraps to 0.75');
+  // An exact 1.0 is the right-hand edge of an atlas and is extremely common.
+  // REPEAT would send it round to 0; inside the range nothing is touched.
+  near(uv[2], 1, 'an exact 1 is left alone');
+  near(uv[4], 0.5, 'a value already inside is untouched');
+
+  for (const v of uv) assert.ok(v >= 0 && v <= 1, `uv ${v} escaped the boundary contract`);
+  assert.ok(
+    report.skipped.some((t) => t.includes('wrapped')),
+    `the wrap must be reported, got ${JSON.stringify(report.skipped)}`,
+  );
+
+  // A file already inside the range says nothing, or the note is noise.
+  const clean = readGlb(
+    buildGlb({
+      positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+      indices: [0, 1, 2],
+      uvs: [0, 0, 1, 0, 0.5, 1],
+    }),
+  );
+  assert.equal(clean.skipped.some((t) => t.includes('wrapped')), false);
 });

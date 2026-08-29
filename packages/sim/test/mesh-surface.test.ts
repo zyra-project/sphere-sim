@@ -34,6 +34,8 @@ import { prepareRig } from '../src/optics.ts';
 import { coverageAndWeights } from '../src/coverage.ts';
 import { nominalRig } from '../src/scene.ts';
 import { defaultScene, sampleSurface } from '../src/render.ts';
+import { renderTwoRigRoomView } from '../src/misregistration.ts';
+import { createImage, setPixel } from '../src/equirect.ts';
 import { flatField } from '../src/equirect.ts';
 import type { Surface } from '../src/surface.ts';
 import { radicalInverse } from '../src/random.ts';
@@ -863,4 +865,166 @@ test('the sphere carries no face, because it has none', () => {
   const bogus = { triangle: 7, a: 0, b: 1, c: 2, u: 0.25, v: 0.25 };
   assert.deepEqual(surface.normalAt(hit.point, bogus), surface.normalAt(hit.point));
   assert.deepEqual(surface.coordAt(hit.point, bogus), surface.coordAt(hit.point));
+});
+
+test('bounds describe the surface, not every vertex the file happened to carry', () => {
+  // glTF permits a primitive to carry positions no index points at, and
+  // exporters leave them behind routinely. They are not surface: nothing traces
+  // them, nothing samples them. But bounds counted them, so a single stray
+  // vertex moved the centre and the radius -- and with them the limb constant,
+  // the shadow bias, the weld tolerance, the blend width, and where a preview
+  // camera stands. The model would be measured as a shape it does not have.
+  const tri: SurfaceMesh = {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'tri-with-a-stray',
+    // Three referenced corners inside a 1 m box, and a fourth vertex 100 m away
+    // that no triangle mentions.
+    positions: Float64Array.from([0, 0, 0, 1, 0, 0, 0, 1, 0, 100, 100, 100]),
+    indices: Uint32Array.from([0, 1, 2]),
+    normals: null,
+    uvs: null,
+    vertexCount: 4,
+    triangleCount: 1,
+  };
+  const surface = meshSurface(tri);
+  assert.ok(
+    surface.extentRadiusM < 1,
+    `a 1 m triangle must not measure ${surface.extentRadiusM} m because of an unused vertex`,
+  );
+  // The farthest REFERENCED corner from the origin is (1, 0, 0), so exactly 1 --
+  // not the 173 m the stray vertex would have made it.
+  assert.equal(surface.boundsRadiusM, 1);
+  assert.deepEqual(surface.centre, { x: 0.5, y: 0.5, z: 0 });
+
+  // The same three corners with no fourth vertex must give the same answer --
+  // that is the claim, not merely "smaller".
+  const clean = meshSurface({
+    ...tri,
+    positions: Float64Array.from([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+    vertexCount: 3,
+  });
+  assert.equal(surface.extentRadiusM, clean.extentRadiusM);
+  assert.equal(surface.boundsRadiusM, clean.boundsRadiusM);
+  assert.deepEqual(surface.centre, clean.centre);
+});
+
+test('the radiometric reference distance is measured to the body, not to the origin', () => {
+  // PARAMETERS.md Conventions, "Radiometry": a projector's output is defined to
+  // be 1.0 at the centre of its own footprint, and `shading.ts` squares that
+  // distance into the inverse-square falloff. The three call sites that built
+  // contributions each wrote `p.distanceM - rig.radiusM` -- a lens distance from
+  // the ORIGIN minus a bound about the origin. On the sphere those are the same
+  // statement. On a model standing away from the origin they are not, and the
+  // error is a brightness the picture gives no sign of.
+  const half = 0.5;
+  const offset = 20;
+  const positions: number[] = [];
+  const indices: number[] = [];
+  // A box of half-size 0.5 centred at x = 20: a facade 20 m out with 0.5 m of
+  // extent, which is the shape the finding is about.
+  for (let i = 0; i < 8; i++) {
+    positions.push(
+      offset + (i & 1 ? half : -half),
+      i & 2 ? half : -half,
+      i & 4 ? half : -half,
+    );
+  }
+  // Any triangulation will do; the bounds are what this measures.
+  indices.push(0, 1, 2, 1, 3, 2, 4, 6, 5, 5, 6, 7, 0, 4, 1, 1, 4, 5);
+  const box: SurfaceMesh = {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'facade',
+    positions: Float64Array.from(positions),
+    indices: Uint32Array.from(indices),
+    normals: null,
+    uvs: null,
+    vertexCount: 8,
+    triangleCount: indices.length / 3,
+  };
+  const surface = meshSurface(box);
+  assert.deepEqual(surface.centre, { x: offset, y: 0, z: 0 });
+
+  const rig = prepareRig(nominalRig(), surface);
+  // The nominal lenses sit about 5.18 m from the origin, so a body at x = 20 is
+  // roughly 15 to 25 m from each of them -- and `boundsRadiusM` is about 20.5,
+  // which is what the old expression subtracted.
+  for (const p of rig.projectors) {
+    const toCentre = Math.hypot(
+      p.lens.x - surface.centre.x,
+      p.lens.y - surface.centre.y,
+      p.lens.z - surface.centre.z,
+    );
+    assert.ok(
+      Math.abs(p.referenceDistanceM - (toCentre - surface.extentRadiusM)) < 1e-12,
+      'the reference distance must be the near point of the BODY along the lens axis',
+    );
+    // And it must not be the old number, or this test would pass on the bug.
+    const old = p.distanceM - surface.boundsRadiusM;
+    assert.ok(
+      Math.abs(p.referenceDistanceM - old) > 1,
+      `origin-relative gave ${old} and body-relative ${p.referenceDistanceM}; ` +
+        'they must differ, or the fixture is not translated enough to prove anything',
+    );
+  }
+});
+
+test('on the sphere the reference distance is the old expression, bit for bit', () => {
+  // The byte-identity gate in one assertion. `SphereSurface.centre` is exactly
+  // zero and its `extentRadiusM` is its radius, so `hypot(lens - centre)` gets
+  // the same bits `hypot(lens)` got and the subtraction is unchanged. A centre
+  // of 1e-18 would be the same statement algebraically and would move the bench.
+  const rig = prepareRig(nominalRig());
+  for (const p of rig.projectors) {
+    assert.equal(p.referenceDistanceM, p.distanceM - p.radiusM);
+  }
+});
+
+test('the two-rig view reads content per face, not from one coordinate for the whole wall', () => {
+  // `renderTwoRigRoomView` traces a second ray back through the CONTENT rig to
+  // ask what should have been at the point the physical rig actually lit. That
+  // second hit carries its face, and this was the last consumer still throwing
+  // it away and re-finding the face radially -- which on a flat wall finds
+  // nothing, for every point, so the whole surface read ONE content coordinate.
+  //
+  // Measuring "the picture varies" does not test that: the blend weight varies
+  // across the wall on its own and makes plenty of levels whether the content
+  // lookup works or not. (It was written that way first, and passed on the bug.)
+  //
+  // So: two content images that are IDENTICAL across the middle and differ only
+  // at one edge. Reading a single coordinate reads the middle, so under the bug
+  // the two render the same image; reading per face reaches the edge, so they
+  // cannot.
+  const surface = meshSurface(wall(0.4));
+  const stripe = (edge: number): ReturnType<typeof createImage> => {
+    const img = createImage(64, 32);
+    for (let y = 0; y < img.height; y++) {
+      for (let x = 0; x < img.width; x++) {
+        const v = x < 8 ? edge : 0.5;
+        setPixel(img, x, y, { r: v, g: v, b: v });
+      }
+    }
+    return img;
+  };
+  const camera = {
+    position: { x: 3, y: 0, z: 0 },
+    target: { x: 0, y: 0, z: 0 },
+    upHint: { x: 0, y: 0, z: 1 },
+    fovHDeg: 40,
+    width: 48,
+    height: 36,
+  };
+  const render = (edge: number): Float32Array => {
+    const scene = defaultScene(stripe(edge), { graticule: null });
+    const rig = prepareRig(nominalRig(), surface);
+    return renderTwoRigRoomView(rig, rig, scene, camera).data;
+  };
+
+  const dark = render(0);
+  const bright = render(1);
+  let differing = 0;
+  for (let i = 0; i < dark.length; i++) if (Math.abs(dark[i] - bright[i]) > 1e-6) differing++;
+  assert.ok(
+    differing > 0,
+    'the two images are identical, so every point read the same content coordinate',
+  );
 });

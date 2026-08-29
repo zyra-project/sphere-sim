@@ -78,6 +78,32 @@ export interface PreparedProjector {
   limbCos: number;
   /** Angular radius of the sphere's silhouette seen from this lens, degrees. */
   limbAngleDeg: number;
+  /**
+   * The distance at which this projector's output is defined to be 1.0, metres.
+   * PARAMETERS.md Conventions, "Radiometry"; `shading.ts` squares it into the
+   * inverse-square falloff.
+   *
+   * The near point of the body along the axis from this lens to the body's
+   * centre: `|lens - centre| - extentRadiusM`. On the sphere, which §W puts on
+   * the origin with `extentRadiusM === radiusM`, that is `d - R` and the same
+   * bits as before.
+   *
+   * It is computed HERE, once, rather than at the three call sites that build
+   * contributions, because each of them was writing `p.distanceM - rig.radiusM`
+   * — a lens distance measured from the ORIGIN minus a bound measured about the
+   * origin. For the sphere those are the same statement. For a model standing
+   * away from the origin they are not: a facade 20 m out with 5 m of extent has
+   * `boundsRadiusM` near 25, so a projector 30 m out gets a reference distance
+   * of 5 for a surface it is actually 10 to 15 m from, and renders at a quarter
+   * brightness or less. Which side of the origin the lens sits on changes the
+   * answer again. Nothing about the picture says so; it is simply dim.
+   *
+   * Negative when the lens is inside the body's bounding sphere — the same
+   * degenerate case {@link PreparedProjector.limbCos} clamps for. Squaring it
+   * makes the falloff positive but meaningless; a projector inside the model is
+   * not a rig this answers questions about.
+   */
+  referenceDistanceM: number;
 }
 
 /** A rig with every projector prepared, plus the sphere it was prepared against. */
@@ -119,6 +145,11 @@ export function prepareProjector(
   const fy = fx * it.pixelAspect;
   const lens = cal.pose.position;
   const distanceM = Math.hypot(lens.x, lens.y, lens.z);
+  // The throw to the BODY, which for the sphere is the throw to the origin and
+  // the same arithmetic: `SphereSurface.centre` is exactly zero, and subtracting
+  // an exact zero returns its operand unchanged.
+  const centre = surface.centre;
+  const throwM = Math.hypot(lens.x - centre.x, lens.y - centre.y, lens.z - centre.z);
   // A lens inside the sphere has no silhouette; clamp rather than produce NaN so
   // a wildly misplaced projector in a sweep degrades instead of exploding.
   const limbCos = distanceM > 0 ? Math.min(1, radiusM / distanceM) : 1;
@@ -143,6 +174,7 @@ export function prepareProjector(
     distanceM,
     limbCos,
     limbAngleDeg: Math.asin(limbCos) * RAD2DEG,
+    referenceDistanceM: throwM - surface.extentRadiusM,
   };
 }
 

@@ -79,7 +79,20 @@ One function changes and the call sites follow.
   this needs a BVH and a ray-triangle test. On the GPU it needs the BVH in
   textures — see Phase 2 for why an SDF is the wrong shortcut here.
 - **The inverse-square reference distance**, `p.distanceM - rig.radiusM`, becomes
-  distance to the model's bounding sphere or to the aim point.
+  distance to the model's bounding sphere or to the aim point. **Done, one round
+  late.** It was written here as mechanical and then not carried out with the
+  rest of Phase 1, and review found it: `distanceM` is measured from the lens to
+  the ORIGIN and `radiusM` was a bound about the origin, which is one statement
+  on a sphere §W puts there and two on a model standing anywhere else. A facade
+  20 m out with 5 m of extent gave a projector 30 m away a reference distance of
+  5 for a surface it was 10 to 15 m from, and rendered it at a quarter
+  brightness — with the sign of the error depending on which side of the origin
+  the lens sat. It is now `|lens − centre| − extentRadiusM`, computed once in
+  `prepareProjector` instead of at the three call sites that each wrote the
+  subtraction out, and `Surface.centre` is the third fact that pair needed:
+  `boundsRadiusM` is a size about the origin, `extentRadiusM` a size about the
+  centre, and without the centre a caller holding both cannot say where the
+  second is measured from.
 - **The floor plane and the room box.** `centerHeightM` becomes the model
   origin's height above the floor and nothing else changes.
 

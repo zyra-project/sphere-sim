@@ -532,7 +532,7 @@ function traceRoomRay(
         distanceM,
         toLens: scale(toLensVec, 1 / distanceM),
         transfer: p.cal.transfer,
-        referenceDistanceM: p.distanceM - rig.radiusM,
+        referenceDistanceM: p.referenceDistanceM,
       });
     }
     const input: ShadeInput = {

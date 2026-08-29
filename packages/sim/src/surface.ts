@@ -204,6 +204,19 @@ export interface Surface {
   readonly extentRadiusM: number;
 
   /**
+   * Where the surface's own centre is, world frame.
+   *
+   * The origin for the sphere, by conventions.ts §W. It is the third of the
+   * three facts this pair needed to be coherent: {@link Surface.boundsRadiusM}
+   * is a size about the ORIGIN, {@link Surface.extentRadiusM} a size about THIS
+   * point, and without it a caller holding both cannot say where the second one
+   * is measured from. Every quantity that pairs a lens with the object — the
+   * throw, the reference distance the radiometry is defined at, where a preview
+   * camera points — needs it.
+   */
+  readonly centre: Vec3;
+
+  /**
    * Nearest intersection with a ray, or `null`.
    *
    * `dir` must be unit length; callers normalize once and reuse the ray many
@@ -315,6 +328,20 @@ export class SphereSurface implements Surface {
   /** The same number: §W puts the sphere's centre on the origin. */
   get extentRadiusM(): number {
     return this.radiusM;
+  }
+
+  /**
+   * The world origin, by §W — and EXACTLY zero, which is load-bearing.
+   *
+   * `prepareProjector` measures the throw as `hypot(lens - centre)` for every
+   * surface. Subtracting an exact zero returns the operand unchanged, negative
+   * zero included, so `hypot` receives the same bits it received when the throw
+   * was written `hypot(lens)` and the sphere's arithmetic does not move. A
+   * centre of, say, `1e-18` would be algebraically the same statement and would
+   * break the byte-identity gate.
+   */
+  get centre(): Vec3 {
+    return { x: 0, y: 0, z: 0 };
   }
 
   intersect(origin: Vec3, dir: Vec3, tMin = 1e-9): SurfaceHit | null {

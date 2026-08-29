@@ -128,13 +128,29 @@ export function meshBounds(mesh: SurfaceMesh): MeshBounds {
     const zero = { x: 0, y: 0, z: 0 };
     return { min: zero, max: zero, centre: zero, radiusM: 0, originRadiusM: 0 };
   }
+  // Over the vertices the TRIANGLES reference, not over every vertex in the
+  // file. glTF permits a primitive to carry positions no index points at, and
+  // exporters leave them behind routinely. They are not surface -- nothing
+  // traces them, nothing samples them -- but counting them here let a single
+  // stray vertex move the centre, the radius, and with them the limb constant,
+  // the shadow bias, the weld tolerance, the blend width and where a preview
+  // camera stands. A model would be measured as a shape it does not have.
+  //
+  // Visiting through the index buffer touches a shared vertex several times,
+  // which costs a few comparisons and changes no answer: min, max and the
+  // farthest distance are all idempotent. A mesh with no indices at all keeps
+  // every vertex, because then there is no better statement to make about it.
+  const idx = mesh.indices;
+  const n = idx.length > 0 ? idx.length : mesh.vertexCount;
+  const at = idx.length > 0 ? (k: number): number => idx[k] : (k: number): number => k;
   let minX = Infinity;
   let minY = Infinity;
   let minZ = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
   let maxZ = -Infinity;
-  for (let i = 0; i < mesh.vertexCount; i++) {
+  for (let k = 0; k < n; k++) {
+    const i = at(k);
     const x = p[3 * i];
     const y = p[3 * i + 1];
     const z = p[3 * i + 2];
@@ -150,7 +166,8 @@ export function meshBounds(mesh: SurfaceMesh): MeshBounds {
   const cz = 0.5 * (minZ + maxZ);
   let r2 = 0;
   let o2 = 0;
-  for (let i = 0; i < mesh.vertexCount; i++) {
+  for (let k = 0; k < n; k++) {
+    const i = at(k);
     const x = p[3 * i];
     const y = p[3 * i + 1];
     const z = p[3 * i + 2];

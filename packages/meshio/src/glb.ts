@@ -88,6 +88,30 @@ const MAX_OUTPUT_BYTES = 192 * 1024 * 1024;
 /** Bytes one merged vertex costs: position + normal (float64) and UV (float32). */
 const BYTES_PER_VERTEX = 3 * 8 + 3 * 8 + 2 * 4;
 
+/**
+ * Extensions a file may REQUIRE without this reader having to understand them.
+ *
+ * glTF 2.0 §3.2 is explicit: a client that does not support every extension in
+ * `extensionsRequired` must not load the asset. That is not pedantry here. An
+ * extension may redefine what a buffer view or an accessor MEANS --
+ * `EXT_meshopt_compression` is exactly that -- and a reader that ignores the
+ * declaration reads compressed bytes as coordinates and produces a surface that
+ * is well-formed, plausible, and not the model.
+ *
+ * So the list is what this reader is provably UNAFFECTED by rather than what it
+ * implements: everything here touches materials, textures or lights, and this
+ * reader takes only positions, normals, UVs and indices. Anything else in
+ * `extensionsRequired` -- including one that is harmless and simply not listed
+ * yet -- is refused by name, which is a message somebody can act on.
+ */
+const IGNORABLE_REQUIRED_EXTENSIONS = [
+  'KHR_materials_',
+  'KHR_texture_',
+  'KHR_lights_punctual',
+  'KHR_materials_variants',
+  'EXT_texture_',
+];
+
 /** glTF `primitive.mode`. Only TRIANGLES carries a surface. */
 const MODE_TRIANGLES = 4;
 const MODE_NAMES = [
@@ -264,6 +288,39 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+/**
+ * A plain object, which is what every `{ ... }` in the {@link Gltf} interface
+ * merely CLAIMS its entries are.
+ *
+ * `null` is the one that catches people: it is an object to `typeof`, it is
+ * legal JSON, and a document holding `meshes: [null]` reaches the code that
+ * reads `.primitives` off it.
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A texture coordinate brought into [0, 1], which is what `SurfaceMesh` says
+ * its UVs are.
+ *
+ * glTF does not require them to be: the default sampler wrap is `REPEAT`, and a
+ * tiled unwrap legitimately writes 2.5 or -0.25. Passing those through breaks
+ * the boundary type's contract, and it breaks it in a place that bites --
+ * `buildWarpExport` writes a node's texture coordinates straight into a Bourke
+ * warp file, where a value outside [0, 1] is the format's marker for "this node
+ * is not to be used". A tiled facade would export as a mesh of holes.
+ *
+ * Wrapping is what `REPEAT` does, so this reproduces the sampler rather than
+ * inventing a policy. Values already inside the range are returned untouched,
+ * which keeps an exact 1.0 -- the right-hand edge of an atlas, and extremely
+ * common -- from wrapping round to the left-hand edge.
+ */
+function wrapUv(x: number): number {
+  if (x >= 0 && x <= 1) return x;
+  return x - Math.floor(x);
+}
+
 /** A finite number, or `null`. Rejects strings, NaN and Infinity alike. */
 function asNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -288,6 +345,7 @@ function asNumbers(value: unknown, n: number): number[] | null {
 }
 
 interface Gltf {
+  extensionsRequired?: string[];
   scene?: number;
   scenes?: { nodes?: number[]; name?: string }[];
   nodes?: {
@@ -419,7 +477,23 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
   // reader cannot follow it: a drag and drop hands over one file, and quietly
   // reading a second one off disk or the network is not something a loader
   // should do on its own.
-  for (const buffer of json.buffers ?? []) {
+  for (const required of asArray(json.extensionsRequired)) {
+    const name = typeof required === 'string' ? required : String(required);
+    if (IGNORABLE_REQUIRED_EXTENSIONS.some((ok) => name.startsWith(ok))) continue;
+    return empty(
+      `the file requires the ${name} extension, which this reader does not implement. ` +
+        `Loading it anyway would read its data as though it were plain glTF and produce ` +
+        `a model that looks right and is not the one in the file. Re-export without it.`,
+    );
+  }
+
+  // `asArray`, not `json.buffers ?? []`. The declared type is an assertion over
+  // `JSON.parse`, so `buffers: {}` is a legal document as far as this code is
+  // concerned and `for...of` on it throws `TypeError: object is not iterable` --
+  // out of a function whose contract is that a bad file becomes a report. An
+  // array holding `null` throws the same way on `.uri`.
+  for (const buffer of asArray(json.buffers)) {
+    if (!isRecord(buffer)) continue;
     if (buffer.uri !== undefined) {
       return empty('the file references an external buffer by URI; export as self-contained GLB');
     }
@@ -550,6 +624,8 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
   let allUvs = true;
   let accepted = 0;
   let skippedPrimitives = 0;
+  /** Whether any TEXCOORD_0 value arrived outside [0, 1]. See `wrapUv`. */
+  let wrappedUvs = false;
 
   const yUp = (options.upAxis ?? 'y') === 'y';
 
@@ -722,7 +798,10 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
       }
 
       if (uv !== null) {
-        uvs.push(uv[2 * i], uv[2 * i + 1]);
+        const u0 = uv[2 * i];
+        const v0 = uv[2 * i + 1];
+        if (u0 < 0 || u0 > 1 || v0 < 0 || v0 > 1) wrappedUvs = true;
+        uvs.push(wrapUv(u0), wrapUv(v0));
       } else {
         uvs.push(0, 0);
       }
@@ -788,7 +867,7 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
     const world = multiply(parent, local);
     if (node.mesh !== undefined) {
       const mesh = meshes[node.mesh];
-      if (mesh !== undefined) {
+      if (isRecord(mesh)) {
         if (++instances > MAX_INSTANCES) {
           exhausted = true;
           skipped.push(
@@ -797,6 +876,12 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
           );
         } else {
           for (const prim of asArray(mesh.primitives)) {
+            // Checked, not cast. `meshes: [{ primitives: [null] }]` is a legal
+            // JSON document and reaches `prim.mode` as a throw otherwise.
+            if (!isRecord(prim)) {
+              skippedPrimitives++;
+              continue;
+            }
             emitPrimitive(
               prim as NonNullable<Gltf['meshes']>[number]['primitives'][number],
               world,
@@ -819,6 +904,16 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
       skippedPrimitives > 0
         ? 'no TRIANGLES primitive survived; see the other entries'
         : 'the file contains no geometry',
+    );
+  }
+
+  // Said rather than done quietly. The wrap reproduces the sampler the file
+  // would have been rendered with, but it is still the reader deciding
+  // something, and a UV set that needed it is a set somebody may want to look
+  // at -- an atlas exported with tiling is one thing, a broken unwrap another.
+  if (wrappedUvs && allUvs) {
+    skipped.push(
+      'some texture coordinates lay outside [0, 1] and were wrapped, as a REPEAT sampler would',
     );
   }
 

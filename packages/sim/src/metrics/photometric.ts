@@ -451,7 +451,7 @@ function evaluatePoint(point: Vec3, ctx: FieldContext): PointEval {
       distanceM,
       toLens: scale(toLensVec, 1 / distanceM),
       transfer: ctx.transfers[i],
-      referenceDistanceM: p.distanceM - physical.radiusM,
+      referenceDistanceM: p.referenceDistanceM,
     });
   }
 

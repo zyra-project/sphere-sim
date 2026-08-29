@@ -133,12 +133,14 @@ export interface MeshLoadReport {
   /** Source format, as detected rather than as claimed by a file extension. */
   format: 'glb' | 'gltf' | 'obj' | null;
   /**
-   * Primitives skipped, and why. A glTF scene routinely holds lines, points and
-   * non-triangle modes that a projection surface has no use for.
+   * What the reader dropped or adjusted, and why. A glTF scene routinely holds
+   * lines, points and non-triangle modes that a projection surface has no use
+   * for, and a file can ask for more than a reader will give it.
    *
-   * Reported rather than silently dropped: a model that arrives with half its
-   * geometry missing should say so, because the alternative is a user studying
-   * a coverage map of a shape that is not the one they loaded.
+   * Reported rather than applied in silence: a model that arrives with half its
+   * geometry missing, or with its texture coordinates changed, should say so —
+   * the alternative is somebody studying a coverage map of a shape that is not
+   * the one they loaded.
    */
   skipped: string[];
   /** Whether the file supplied its own normals, or they must be derived. */
