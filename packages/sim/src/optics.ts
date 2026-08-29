@@ -530,14 +530,16 @@ function buildFootprints(
   return projectors.map((p) =>
     buildFootprintField(mesh.mesh, adjacency, mesh.extentRadiusM, (i) => {
       const point = { x: positions[3 * i], y: positions[3 * i + 1], z: positions[3 * i + 2] };
-      // `vertexNormal`, from the faces that meet at this vertex. The previous
-      // version asked `normalAt(point)` when the file carried no normals, which
-      // re-finds the face by the radial search — and that search returns nothing
-      // for a flat wall, so every vertex of a wall took the `{0, 0, 1}` fallback,
-      // a wall facing a projector on +x read as facing away, and the field found
-      // no lit vertex to feather from. A vertex knows its own faces.
-      const normal = mesh.vertexNormal(i);
-      if (!surface.facesLens(point, normal, p.lens)) return false;
+      // The facing test belongs to the mesh, which knows what a hit at this
+      // vertex is shaded with; asking it here would be a second answer to that.
+      // It was one twice already. First `normalAt(point)`, which re-finds the
+      // face by a radial search that returns nothing for a flat wall — so every
+      // wall vertex took the `{0, 0, 1}` fallback, a wall facing a projector on
+      // +x read as facing away, and the field had no lit vertex to feather from.
+      // Then `vertexNormal(i)`, which fixed the wall but averages across a hard
+      // edge into a direction no adjacent face has, so a cube corner could be
+      // called lit by a normal nothing renders with. See `vertexFacesLens`.
+      if (!mesh.vertexFacesLens(i, p.lens)) return false;
       if (worldToPixel(p, point) === null) return false;
       return !surface.shadowed(point, p.lens);
     }),

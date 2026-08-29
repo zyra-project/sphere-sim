@@ -26,6 +26,8 @@ import { BOULDER_PRESET, CONTENT_CUSTOM, PERFECT_PRESET, noNudge, withNudge } fr
 import { buildWorld } from '../src/rigs.ts';
 import { computeModel, computeSurface } from '../src/model.ts';
 import type { ModelRequest, SurfaceRequest } from '../src/protocol.ts';
+import type { SurfaceResponse } from '../src/protocol.ts';
+import type { ProjectorPlacement } from '../../sim/src/placement.ts';
 import type { SurfaceMesh } from '../../calibration/src/index.ts';
 
 /** A field of one value, so a render's mean says which image was used. */
@@ -393,3 +395,58 @@ function boxWithBaffle(h: number): SurfaceMesh {
     triangleCount: idx.length / 3,
   };
 }
+
+test('the surface cache never answers with a stale build', () => {
+  // `computeSurface` holds the last model built, because it runs on every
+  // settled control and the mesh arrives by structured clone — a fresh copy of
+  // an unchanged model, and a BVH, an adjacency graph and a Dijkstra field per
+  // projector to get back where the previous request already was.
+  //
+  // The failure mode of any such cache is a stale answer, so this measures it
+  // against the thing it is an optimization OF: an unnamed model is never
+  // cached, so the same request without a `meshId` is a cold worker, and every
+  // warm answer has to equal one.
+  const box = boxMesh(0.5);
+  const baffled = boxWithBaffle(0.5);
+  const moved: ProjectorPlacement[] = [
+    { position: { x: 3, y: 0, z: 1 } },
+    { position: { x: -3, y: 0, z: 1 } },
+  ];
+  const ask = (mesh: SurfaceMesh, placements: ProjectorPlacement[] | null, meshId?: string) =>
+    computeSurface({
+      kind: 'surface',
+      id: 9,
+      settings: BOULDER_PRESET,
+      mesh,
+      width: 32,
+      height: 24,
+      camera: { azimuthDeg: 20, elevationDeg: 15, rangeM: 6, fovHDeg: 50 },
+      ...(placements ? { placements } : {}),
+      ...(meshId === undefined ? {} : { meshId }),
+    });
+
+  // Every cold answer first. A cold call clears the cache on its way through, so
+  // taking them later would flush the warm state this is trying to test.
+  const coldBox = ask(box, null);
+  const coldMoved = ask(box, moved);
+  const coldBaffled = ask(baffled, null);
+
+  const same = (got: SurfaceResponse, want: SurfaceResponse, what: string): void => {
+    assert.deepEqual(got.facts, want.facts, `${what}: facts`);
+    assert.deepEqual(got.frame?.data, want.frame?.data, `${what}: picture`);
+  };
+
+  same(ask(box, null, 'm1'), coldBox, 'cold, filling the cache');
+  same(ask(box, null, 'm1'), coldBox, 'the same model and the same rig again');
+  // The two that a cache gets wrong. Without the rig key a moved projector keeps
+  // the old footprint fields; without the model key a different file is answered
+  // with the last one's geometry. Both are mutation-checked: dropping either
+  // comparison from `cachedMesh` fails the matching line here.
+  same(ask(box, moved, 'm1'), coldMoved, 'the same model, projectors moved');
+  same(ask(baffled, null, 'm2'), coldBaffled, 'a different model');
+  same(ask(box, null, 'm1'), coldBox, 'and back to the first model');
+
+  // The rigs really do differ, or the third line above proves nothing.
+  assert.notDeepEqual(coldMoved.facts, coldBox.facts, 'the moved rig must light the box differently');
+  assert.notDeepEqual(coldBaffled.facts, coldBox.facts, 'the baffle must change the facts');
+});

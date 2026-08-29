@@ -96,6 +96,12 @@ export class MeshSurface implements Surface {
    */
   private cachedAdjacency: MeshAdjacency | null = null;
   private cachedVertexNormals: Float64Array | null = null;
+  /**
+   * Which faces meet at each vertex, CSR: `face[start[i] .. start[i + 1])`.
+   * Built only when the file carried no normals, because only then does a
+   * vertex have more than one answer to what it is shaded with.
+   */
+  private cachedIncidence: { start: Uint32Array; face: Uint32Array } | null = null;
   /** Cumulative triangle area, for the equal-area sampler. `cdf[n-1]` is the total. */
   private readonly cdf: Float64Array;
   /** Geometric (flat) unit normal per triangle, from the winding. */
@@ -332,6 +338,68 @@ export class MeshSurface implements Surface {
       out[3 * v + 2] /= len;
     }
     return out;
+  }
+
+  /**
+   * Does the surface AT VERTEX `i` face the lens?
+   *
+   * Here, and not at the call site, because the answer depends on what `i` is
+   * shaded with — and that is `normalOfHit`'s question, a few methods down. A
+   * caller that reached for `vertexNormal(i)` instead would be giving a second
+   * answer to it, and the two disagree exactly where it matters:
+   *
+   * With no normals in the file, a hit is shaded with the FACE normal of
+   * whichever triangle the ray struck. `vertexNormal(i)` averages every face
+   * that meets at `i`, so at a hard edge — a cube corner, the eave of a roof —
+   * it produces a direction no adjacent face has. Test the average and a vertex
+   * can be called lit by a normal nothing is ever rendered with, and the
+   * footprint field stops describing the set that actually gets light. So test
+   * the incident faces themselves: the vertex is lit if ANY face meeting there
+   * would be, which is true precisely when some rendered hit at that corner is.
+   *
+   * With normals in the file, rendering interpolates them, and at the vertex
+   * that interpolation IS the file's vertex normal — one face, one answer, no
+   * disagreement to resolve.
+   *
+   * (Faces are collected by INDEX, not by welded position. A flat-shaded export
+   * duplicates its vertices per face, so each corner keeps its own face and its
+   * own answer; `adjacency` welds them afterwards, which is what lets the field
+   * still flow across the seam. That is the per-face-corner granularity, got
+   * from the mesh's own indexing rather than from a second graph.)
+   */
+  vertexFacesLens(i: number, lens: Vec3): boolean {
+    const p = this.mesh.positions;
+    const point = { x: p[3 * i], y: p[3 * i + 1], z: p[3 * i + 2] };
+    if (this.mesh.normals !== null) {
+      return this.facesLens(point, this.vertexNormal(i), lens);
+    }
+    const inc = (this.cachedIncidence ??= this.buildIncidence());
+    for (let k = inc.start[i]; k < inc.start[i + 1]; k++) {
+      const t = inc.face[k];
+      const normal = {
+        x: this.faceNormals[3 * t],
+        y: this.faceNormals[3 * t + 1],
+        z: this.faceNormals[3 * t + 2],
+      };
+      if (this.facesLens(point, normal, lens)) return true;
+    }
+    return false;
+  }
+
+  private buildIncidence(): { start: Uint32Array; face: Uint32Array } {
+    const idx = this.mesh.indices;
+    const n = this.mesh.vertexCount;
+    const start = new Uint32Array(n + 1);
+    for (let k = 0; k < idx.length; k++) start[idx[k] + 1]++;
+    for (let v = 0; v < n; v++) start[v + 1] += start[v];
+    const face = new Uint32Array(idx.length);
+    // A copy of the offsets, advanced as each face is written. `start` itself
+    // has to survive as the offsets, so it cannot double as the cursor.
+    const cursor = start.slice(0, n);
+    for (let t = 0; t < this.mesh.triangleCount; t++) {
+      for (let c = 0; c < 3; c++) face[cursor[idx[3 * t + c]]++] = t;
+    }
+    return { start, face };
   }
 
   /** Vertex adjacency, welded by position. Built once, on demand. */

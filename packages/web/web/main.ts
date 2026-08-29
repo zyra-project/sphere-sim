@@ -347,6 +347,12 @@ let customError = '';
  * beside the live view with that difference stated rather than hidden.
  */
 let droppedMesh: SurfaceMesh | null = null;
+/**
+ * Names the dropped model for the worker, which receives a structured-clone copy
+ * and so cannot recognise it by identity. Bumped on every accepted file, never
+ * reused. See `SurfaceRequest.meshId`.
+ */
+let droppedMeshId = 0;
 let meshReport: MeshLoadReport | null = null;
 let meshFacts: SurfaceFacts | null = null;
 let meshFrame: FrameImage | null = null;
@@ -1410,6 +1416,7 @@ async function loadCustomModel(file: File): Promise<void> {
     const report = readGlb(bytes, { name: file.name });
     meshReport = report;
     droppedMesh = report.mesh;
+    droppedMeshId++;
     // Take the reader to the panel that shows it. A dropped IMAGE announces
     // itself — it appears on the sphere — but a model's whole result lives in
     // one section, and the panel opens on `projectors`. Dropping a building and
@@ -1453,6 +1460,7 @@ function requestSurface(): void {
     id: ++meshSeq,
     settings: state.settings,
     mesh: droppedMesh,
+    meshId: `mesh:${droppedMeshId}`,
     // `suppliedName()`, the same id the metrics path sends, so this names the
     // entry that path already put in the worker's cache. `contentKey` is a
     // different thing — the page's own key for whether the GPU texture is stale.

@@ -82,14 +82,20 @@ function uvSphere(segments: number, rings: number, radius = R): SurfaceMesh {
 test('display y runs UP while the raster runs down', () => {
   const rig = prepareRig(nominalRig());
   const w = buildWarpExport(rig, 0, { cols: 3, rows: 3 });
+  const it = rig.projectors[0].cal.intrinsics;
+  const aspect = (it.resX * (it.pixelAspect || 1)) / it.resY;
   // Node (0,0) is the raster's TOP-LEFT — v = 0 — and must export as the
   // display's top-left, which is y = +1. Emitting y = -1 there flips every
   // exported frame vertically, and a flipped sphere still looks like a sphere.
-  assert.equal(w.nodes[0].x, -1);
+  //
+  // x is ±ASPECT and y is ±1. This line asserted -1 for x when it was written,
+  // against a reading of the format that turned out to be wrong; see the range
+  // test at the bottom of this file for the format's own words.
+  assert.equal(w.nodes[0].x, -aspect);
   assert.equal(w.nodes[0].y, 1);
   // Bottom-right of the raster is bottom-right of the display.
   const last = w.nodes[w.nodes.length - 1];
-  assert.equal(last.x, 1);
+  assert.equal(last.x, aspect);
   assert.equal(last.y, -1);
   // And the centre node is the centre.
   const mid = w.nodes[1 * 3 + 1];
@@ -277,4 +283,64 @@ test('a mesh export carries no polar mask, because a mesh has no pole', () => {
 
   check(prepareRig(nominalRig()), true);
   check(prepareRig(nominalRig(), meshSurface(uvSphere(96, 48))), false);
+});
+
+// ---------------------------------------------------------------------------
+// The format's own coordinate ranges, quoted
+// ---------------------------------------------------------------------------
+
+test('x spans the display aspect and y spans one, as the format states', () => {
+  // Quoting the format: "the horizontal range (x) will be +- the aspect ratio
+  // and the vertical range (y) will be +- 1 (ie: OpenGL style normalised
+  // coordinates)".
+  //
+  // Normalizing both axes to [-1, 1] is the obvious thing to write, and it
+  // squeezes every non-square projector -- which is every real projector. The
+  // file still looks like a file, which is why this needs a test rather than a
+  // reading.
+  const rig = prepareRig(nominalRig());
+  const it = rig.projectors[0].cal.intrinsics;
+  const aspect = (it.resX * (it.pixelAspect || 1)) / it.resY;
+  assert.ok(aspect > 1.7, `the nominal raster should be widescreen, got ${aspect}`);
+
+  const ex = buildWarpExport(rig, 0, { cols: 5, rows: 5 });
+  const xs = ex.nodes.map((n) => n.x);
+  const ys = ex.nodes.map((n) => n.y);
+
+  // The corners reach exactly +/-aspect and +/-1, because the node grid spans
+  // the raster corner to corner.
+  assert.ok(Math.abs(Math.min(...xs) + aspect) < 1e-12, `min x ${Math.min(...xs)}`);
+  assert.ok(Math.abs(Math.max(...xs) - aspect) < 1e-12, `max x ${Math.max(...xs)}`);
+  assert.ok(Math.abs(Math.min(...ys) + 1) < 1e-12, `min y ${Math.min(...ys)}`);
+  assert.ok(Math.abs(Math.max(...ys) - 1) < 1e-12, `max y ${Math.max(...ys)}`);
+
+  // And the two axes are NOT the same range, which is the whole point.
+  assert.ok(
+    Math.max(...xs) - Math.max(...ys) > 0.7,
+    'x and y came back on the same range, so the aspect was normalized away',
+  );
+});
+
+test('a node with no data is marked both ways the format allows', () => {
+  // The format defines two markers: "Values outside the 0 to 1 range indicate
+  // that the node is not to be used", and of intensity, "negative values
+  // indicate that the node should not be drawn". Texture coordinates are the
+  // primary mechanism, so writing `0 0 -1` -- a VALID texel with a negative
+  // intensity -- is invisible to a player that applies only the first rule.
+  const rig = prepareRig(nominalRig());
+  const text = formatWarpMesh(buildWarpExport(rig, 0, { cols: 9, rows: 9 }));
+  const rows = text.trim().split('\n').slice(2);
+
+  const misses = rows.filter((r) => r.trim().endsWith('-1.000000'));
+  assert.ok(misses.length > 0, 'the sphere does not fill the raster, so some node must miss');
+  for (const r of misses) {
+    const [, , u, v, i] = r.trim().split(/\s+/).map(Number);
+    assert.ok(u < 0 || u > 1, `u ${u} is inside [0, 1], so a uv-checking player would draw it`);
+    assert.ok(v < 0 || v > 1, `v ${v} is inside [0, 1], so a uv-checking player would draw it`);
+    assert.ok(i < 0, `intensity ${i} is not negative`);
+  }
+
+  // Every line still has five fields: the grid is positional and a miss holds
+  // its place.
+  for (const r of rows) assert.equal(r.trim().split(/\s+/).length, 5, r);
 });

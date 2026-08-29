@@ -33,11 +33,26 @@
  *     <x> <y> <u> <v> <i>
  *     ...
  *
- * `2` is the rectangular-mesh type. Nodes run row by row. `x` and `y` are
- * normalized display coordinates in [-1, 1] with **y up**; `u` and `v` are
- * texture coordinates in [0, 1] with **v up**; `i` is the multiplier, and a
- * negative value means "no data here" — the node's ray misses the object
- * entirely and the player should draw nothing.
+ * `2` is the rectangular-mesh type. Nodes run row by row.
+ *
+ * **`x` spans ±ASPECT, not ±1**, and `y` spans ±1 — the format's own words are
+ * "the horizontal range (x) will be +- the aspect ratio and the vertical range
+ * (y) will be +- 1 (ie: OpenGL style normalised coordinates)". Normalizing both
+ * axes to [-1, 1] is the obvious thing to write and it squeezes every
+ * non-square projector, which is every real projector: a 1920x1080 raster comes
+ * back 16:9 of content crammed into a square, and a compliant player shows it
+ * that way. Nothing about the file looks wrong, which is how it survives being
+ * looked at.
+ *
+ * `u` and `v` are texture coordinates in [0, 1] with **v up**, and `i` is a
+ * multiplicative intensity.
+ *
+ * **A node with no data is marked BOTH WAYS.** The format defines two: "Values
+ * outside the 0 to 1 range indicate that the node is not to be used" and, of
+ * intensity, "negative values indicate that the node should not be drawn".
+ * Texture coordinates are the primary mechanism, so a player that checks only
+ * those would draw a node written `0 0 -1` at texel (0, 0) — a valid coordinate.
+ * Writing `-1 -1 -1` satisfies both readings and costs nothing.
  *
  * MPCDI is the heavier industry standard and would be the right second target:
  * a ZIP of XML plus PFM warp maps plus PNG blend maps. It carries more (multiple
@@ -70,7 +85,10 @@ import type { MaskInterpretation } from './coverage.ts';
 
 /** One node of the exported mesh. */
 export interface WarpNode {
-  /** Display position, [-1, 1], y up. */
+  /**
+   * Display position, y up. `x` spans ±the display aspect ratio and `y` spans
+   * ±1 — see the module note; the asymmetry is the format's, not a mistake.
+   */
   x: number;
   y: number;
   /** Texture coordinate, [0, 1], v up. `NaN` when the node reaches nothing. */
@@ -135,6 +153,7 @@ export function buildWarpExport(
   const cols = Math.max(2, Math.floor(options.cols ?? 41));
   const rows = Math.max(2, Math.floor(options.rows ?? 41));
   const it = projector.cal.intrinsics;
+  const aspect = (it.resX * (it.pixelAspect || 1)) / it.resY;
   const masked = blendModelApplies(rig.surface);
   const interpretation = options.maskInterpretation ?? 'latitude';
 
@@ -148,8 +167,11 @@ export function buildWarpExport(
       // the whole frame rather than the centres of a grid inside it.
       const u = (i / (cols - 1)) * it.resX;
       const v = (j / (rows - 1)) * it.resY;
-      // Display coordinates: x right, y UP. Raster v runs down.
-      const x = (u / it.resX) * 2 - 1;
+      // Display coordinates: x right over ±aspect, y UP over ±1. Raster v runs
+      // down. `pixelAspect` belongs in the aspect because the format's number is
+      // about the DISPLAYED rectangle, and a non-square pixel makes that a
+      // different shape from the raster's own ratio.
+      const x = ((u / it.resX) * 2 - 1) * aspect;
       const y = 1 - (v / it.resY) * 2;
 
       const hit = rig.surface.intersect(projector.lens, pixelToRay(projector, u, v));
@@ -157,6 +179,7 @@ export function buildWarpExport(
         nodes[j * cols + i] = { x, y, u: Number.NaN, v: Number.NaN, intensity: -1 };
         continue;
       }
+
 
       const coord = rig.surface.coordAt(hit.point, hit.location);
       // The sphere's texture is anchored to the world by a mechanical rotation;
@@ -207,7 +230,12 @@ export function formatWarpMesh(exported: WarpExport): string {
     if (!(n.intensity >= 0) || !Number.isFinite(n.u) || !Number.isFinite(n.v)) {
       // A node with no data still has to occupy its place in the grid: the
       // format is positional, and skipping a line shifts every node after it.
-      out.push(`${f(n.x)} ${f(n.y)} 0 0 -1`);
+      //
+      // Marked BOTH ways. This used to write `0 0 -1`, which is a valid texel
+      // with a negative intensity — correct by one of the format's two rules and
+      // invisible to a player that applies the other. `-1 -1 -1` is outside
+      // [0, 1] on both texture axes AND negative in intensity.
+      out.push(`${f(n.x)} ${f(n.y)} -1.000000 -1.000000 -1.000000`);
       continue;
     }
     out.push(`${f(n.x)} ${f(n.y)} ${f(n.u)} ${f(n.v)} ${f(n.intensity)}`);

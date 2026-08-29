@@ -395,3 +395,72 @@ test('a flat wall with no file normals is lit, and gets a real blend', () => {
     `only ${lit} of ${wall.vertexCount} wall vertices were lit by a projector facing them`,
   );
 });
+
+test('at a hard edge, a vertex is lit by a normal something is actually rendered with', () => {
+  // A roof ridge, no file normals. The two slopes meet along x = 0 at z = 1 and
+  // fall away to z = 0 at x = +/-1, so their face normals are (1,0,1)/sqrt2 and
+  // (-1,0,1)/sqrt2 and the ridge vertices' area-weighted average is exactly
+  // straight up. That average is a direction NEITHER face has, which is the
+  // whole difficulty: with no normals in the file, every rendered hit is shaded
+  // with one face normal or the other, and never with the average.
+  const s = 0.3;
+  const roof: SurfaceMesh = {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'roof',
+    positions: Float64Array.from([
+      0, -s, 1, 0, s, 1, // ridge
+      1, -s, 0, 1, s, 0, // +x eave
+      -1, -s, 0, -1, s, 0, // -x eave
+    ]),
+    indices: Uint32Array.from([0, 2, 3, 0, 3, 1, 0, 1, 5, 0, 5, 4]),
+    normals: null,
+    uvs: null,
+    vertexCount: 6,
+    triangleCount: 4,
+  };
+  const surface = meshSurface(roof);
+
+  const up = surface.vertexNormal(0);
+  assert.ok(Math.hypot(up.x, up.y, up.z - 1) < 1e-12, `ridge average ${JSON.stringify(up)}`);
+
+  // Out on +x and BELOW the ridge, so the average tilts away from it while the
+  // +x slope still faces it squarely.
+  const lens = { x: 5, y: 0, z: 0.5 };
+  assert.equal(
+    surface.facesLens({ x: 0, y: -s, z: 1 }, up, lens),
+    false,
+    'the averaged normal must tilt away from this lens, or the test proves nothing',
+  );
+  assert.equal(surface.vertexFacesLens(0, lens), true);
+  assert.equal(surface.vertexFacesLens(1, lens), true);
+
+  // And that is not wishful thinking about the ridge: a ray from the same lens
+  // to a point just down the +x slope really is shaded with the face normal the
+  // vertex test accepted. This is the link the finding was about -- the field's
+  // idea of lit and the renderer's have to be the same idea.
+  const target = { x: 0.05, y: 0, z: 0.95 };
+  const d = { x: target.x - lens.x, y: target.y - lens.y, z: target.z - lens.z };
+  const len = Math.hypot(d.x, d.y, d.z);
+  const hit = surface.intersect(lens, { x: d.x / len, y: d.y / len, z: d.z / len });
+  assert.ok(hit !== null, 'the ray must reach the +x slope');
+  const k = Math.SQRT1_2;
+  assert.ok(
+    Math.hypot(hit.normal.x - k, hit.normal.y, hit.normal.z - k) < 1e-9,
+    `hit shaded with ${JSON.stringify(hit.normal)}, not the +x face normal`,
+  );
+  assert.equal(surface.facesLens(hit.point, hit.normal, lens), true);
+
+  // The rule is "any incident face", not "always true": a lens under the roof
+  // faces neither slope. Mutation-checked -- returning `true` unconditionally
+  // fails here, and testing only the average fails the two lines above.
+  assert.equal(surface.vertexFacesLens(0, { x: 0, y: 0, z: -5 }), false);
+
+  // With normals in the file there is no disagreement to resolve: rendering
+  // interpolates them, and at a vertex that interpolation is the file's own
+  // normal. So the file wins, average and incident faces alike ignored.
+  const shaded = meshSurface({
+    ...roof,
+    normals: Float64Array.from([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]),
+  });
+  assert.equal(shaded.vertexFacesLens(0, lens), false);
+});

@@ -39,6 +39,7 @@ import type { MetricSet } from '../../sim/src/metrics/index.ts';
 import { renderTwoRigRoomView } from '../../sim/src/misregistration.ts';
 import { defaultScene, renderProjectorView, renderRoomView } from '../../sim/src/render.ts';
 import { meshSurface } from '../../sim/src/mesh/surface.ts';
+import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
 import { placedRig } from '../../sim/src/placement.ts';
 import { isIlluminatedAt } from '../../sim/src/coverage.ts';
 import type { ViewerCamera } from '../../sim/src/render.ts';
@@ -68,6 +69,34 @@ import type {
  */
 let cachedImage: EquirectImage | null = null;
 let cachedImageId = '';
+
+/**
+ * The last model, built.
+ *
+ * `computeSurface` runs on every settled control — a nudged slider, a swung
+ * camera — and the mesh arrives by structured clone, so a fresh copy each time.
+ * Rebuilding from it means a BVH build, a welded adjacency graph, vertex normals
+ * and a multi-source Dijkstra per projector, all to arrive at exactly what the
+ * last request already computed. For anything bigger than a test fixture that is
+ * the whole cost of the pass.
+ *
+ * Two keys, because two things go stale at different rates. `meshId` is the
+ * model — change it and everything is rebuilt. `rigKey` is the calibration
+ * `prepareRig` was given, serialized: the surface survives a moved projector,
+ * the footprint fields do not, because they are a statement about where that
+ * projector's light falls. `RigCalibration` is JSON by contract (see
+ * `SurfaceRequest`), so stringifying it is an exact comparison and not a
+ * fingerprint that can collide.
+ *
+ * One entry. It holds one model alive in the worker for as long as the page
+ * holds one, which is the same model and the same order of memory.
+ */
+let cachedMesh: {
+  meshId: string;
+  surface: MeshSurface;
+  rigKey: string;
+  rig: PreparedRig;
+} | null = null;
 
 /**
  * The metric set for one rig pair.
@@ -757,10 +786,6 @@ const FRAME_MARGIN = 1.4;
  * area, and stay true whatever is pointing at it.
  */
 export function computeSurface(req: SurfaceRequest): SurfaceResponse {
-  // The page's own content, when it sent it. Without it `buildWorld` substitutes
-  // its grey fallback, so a reader who had dropped a picture or chosen Blue
-  // Marble saw the model lit by neither — a preview of content that is not the
-  // content on screen.
   // The content the page is showing, from the cache the metrics path fills.
   // Without it `buildWorld` substitutes its grey fallback, so a reader who had
   // dropped a picture or chosen Blue Marble saw the model lit by neither — a
@@ -772,15 +797,38 @@ export function computeSurface(req: SurfaceRequest): SurfaceResponse {
     return { kind: 'surface', id: req.id, ok: true, frame: null, facts: null };
   }
 
-  const surface = meshSurface(req.mesh);
+  // A model the worker has already built, or a build. An unnamed model is never
+  // cached: the empty key would make two different files look like one.
+  const meshId = req.meshId ?? '';
+  let surface = meshId !== '' && cachedMesh?.meshId === meshId ? cachedMesh.surface : null;
+  if (surface === null) {
+    surface = meshSurface(req.mesh);
+    // Dropped together. The rig below is prepared ON a surface, and keeping one
+    // past the other would render the frame from a different object than the one
+    // the coverage samples come off.
+    cachedMesh = null;
+  }
   // The placed rig keeps the scene the settings describe — sphere radius, height,
   // rotation, blend — and replaces only where the light comes from. Anything
   // else would make moving a projector silently change the room too.
   const rigCal =
     req.placements && req.placements.length > 0
       ? placedRig({
-          projectors: req.placements,
-          radiusM: world.truthRig.sphere.radiusM,
+          projectors: req.placements.map((place) => ({
+            // Aimed at the MODEL. A placement from the panel carries explicit
+            // angles, so this only decides the throw `placedRig` frames from --
+            // and without it that throw is measured to the world origin, so a
+            // model placed away from the origin is framed for a distance no
+            // projector is at.
+            aimAt: surface.bounds.centre,
+            ...place,
+          })),
+          // The MODEL's extent, not the sphere's. `placedRig` sizes each
+          // projector's field to frame a body of this radius, and handing it the
+          // configured ball meant a 30 m facade and a 30 cm prop were both
+          // framed as though they were a 130-inch sphere -- while the panel says
+          // each projector is framed from its own throw.
+          radiusM: surface.extentRadiusM,
           centerHeightM: world.truthRig.sphere.centerHeightM,
           rotationOffsetDeg: world.truthRig.sphere.rotationOffsetDeg,
           resX: world.truthRig.projectors[0]?.intrinsics.resX,
@@ -788,7 +836,12 @@ export function computeSurface(req: SurfaceRequest): SurfaceResponse {
           blend: world.truthRig.blend,
         })
       : world.truthRig;
-  const truth = prepareRig(rigCal, surface);
+  const rigKey = JSON.stringify(rigCal);
+  const truth =
+    cachedMesh !== null && cachedMesh.rigKey === rigKey
+      ? cachedMesh.rig
+      : prepareRig(rigCal, surface);
+  if (meshId !== '') cachedMesh = { meshId, surface, rigKey, rig: truth };
   // `world.scene`, not a fresh `defaultScene(world.image)`. The world already
   // built the scene the controls describe — the graticule, the mask reading, the
   // ambient level — and rebuilding one from the image alone silently dropped all

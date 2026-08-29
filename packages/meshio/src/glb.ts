@@ -70,15 +70,23 @@ const MAX_ELEMENTS = 64 * 1024 * 1024;
 const MAX_INSTANCES = 65536;
 
 /**
- * A ceiling on the MERGED mesh, which is the one that actually bounds memory.
+ * A ceiling on the merged mesh, expressed in BYTES rather than in vertices.
  *
- * The other two limits are per-accessor and per-instance and their product is
- * not a bound: a million-vertex mesh instanced three hundred times is under both
- * and is still gigabytes of Float64Array here. 16 million vertices is a model
- * far past anything this page can trace interactively, and the refusal names
- * itself rather than arriving as an out-of-memory kill of the worker.
+ * Counting vertices was the previous version and it is not a memory bound. Each
+ * one costs 24 bytes of `Float64Array` position plus 24 of normal plus 8 of UV,
+ * and every one is staged in a plain `number[]` first — so 16 million vertices,
+ * which sounded like a conservative cap, is about 900 MB of typed array and well
+ * over a gigabyte at peak. `readGlb` runs on the page's main thread, so that is
+ * a tab dying rather than a report.
+ *
+ * 192 MB is a model of roughly three million vertices: far past anything this
+ * page traces interactively, and comfortably inside what a browser will hand a
+ * single allocation without complaint.
  */
-const MAX_OUTPUT_VERTICES = 16 * 1024 * 1024;
+const MAX_OUTPUT_BYTES = 192 * 1024 * 1024;
+
+/** Bytes one merged vertex costs: position + normal (float64) and UV (float32). */
+const BYTES_PER_VERTEX = 3 * 8 + 3 * 8 + 2 * 4;
 
 /** glTF `primitive.mode`. Only TRIANGLES carries a surface. */
 const MODE_TRIANGLES = 4;
@@ -384,7 +392,21 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
     const end = start + length;
     if (end > bytes.byteLength) return empty('a chunk runs past the end of the file');
     if (type === CHUNK_JSON && json === null) {
-      json = JSON.parse(new TextDecoder().decode(bytes.subarray(start, end))) as Gltf;
+      // The parse itself, not just the shape of what it returns. The previous
+      // round hardened every field read out of this object and left the call
+      // that produces it bare -- so a valid GLB header wrapping malformed JSON
+      // threw a raw SyntaxError out of a function whose contract is a report.
+      // Hardening the object and not the parse is the same mistake one level up.
+      try {
+        json = JSON.parse(new TextDecoder().decode(bytes.subarray(start, end))) as Gltf;
+      } catch (err) {
+        return empty(
+          `the JSON chunk is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      if (json === null || typeof json !== 'object' || Array.isArray(json)) {
+        return empty('the JSON chunk is not a glTF document');
+      }
     } else if (type === CHUNK_BIN && bin === null) {
       bin = bytes.subarray(start, end);
     }
@@ -416,9 +438,20 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
    * — which fails as an out-of-memory kill of the worker rather than as a
    * report. Validating first turns that into `MAX_ELEMENTS` prose.
    */
-  const readAccessor = (index: number): Float64Array | null => {
+  const readAccessor = (index: number, expectType?: string): Float64Array | null => {
     const acc = accessors[index];
     if (acc === undefined) return null;
+    // The DECLARED type, not the length. Dividing a flat array by three does not
+    // prove it held VEC3s: a VEC4 accessor of three elements has length 12,
+    // reads as four vertices, and regroups somebody's `w` components into
+    // positions. The glTF type is right there in the file and is the only thing
+    // that answers the question.
+    if (expectType !== undefined && acc.type !== expectType) {
+      skipped.push(
+        `an attribute is declared ${String(acc.type)} where ${expectType} is required`,
+      );
+      return null;
+    }
     if (acc.sparse !== undefined) {
       skipped.push('an accessor uses sparse storage, which this reader does not implement');
       return null;
@@ -470,6 +503,16 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
       for (let c = 0; c < comps; c++) {
         const at = base + i * stride + c * ct.size;
         let value = ct.read(dv, at);
+        // Float components come out of the file, and `getFloat32` decodes NaN
+        // and Infinity as happily as it decodes 1.0. A non-finite POSITION
+        // poisons the bounds, the hierarchy, the camera and every coverage
+        // figure -- and none of the JSON-shape checks above can see it, because
+        // this value was never in the JSON. Integer component types cannot be
+        // non-finite, so this only ever rejects a float that really is one.
+        if (!Number.isFinite(value)) {
+          skipped.push('an accessor holds a non-finite value; the primitive is dropped');
+          return null;
+        }
         // glTF `normalized`: integer attributes stand for a value in [0, 1] or
         // [-1, 1]. UVs and normals are routinely stored this way to halve a file,
         // and reading the raw integer instead puts texture coordinates in the
@@ -542,7 +585,7 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
       skippedPrimitives++;
       return;
     }
-    const pos = readAccessor(posIndex);
+    const pos = readAccessor(posIndex, 'VEC3');
     if (pos === null) {
       skippedPrimitives++;
       return;
@@ -555,11 +598,14 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
     // normals and undefined UVs into a mesh that then loads and shades wrong.
     // The shape is checked against POSITION rather than trusted.
     const nrmIndex = asIndex(attrs.NORMAL);
-    const nrmRaw = nrmIndex !== null ? readAccessor(nrmIndex) : null;
+    const nrmRaw = nrmIndex !== null ? readAccessor(nrmIndex, 'VEC3') : null;
     const uvIndex = asIndex(attrs.TEXCOORD_0);
-    const uvRaw = uvIndex !== null ? readAccessor(uvIndex) : null;
-    const nrm = nrmRaw !== null && nrmRaw.length >= 3 * count ? nrmRaw : null;
-    const uv = uvRaw !== null && uvRaw.length >= 2 * count ? uvRaw : null;
+    const uvRaw = uvIndex !== null ? readAccessor(uvIndex, 'VEC2') : null;
+    // Exact, not `>=`: the type is now known, so a VEC3 normal accessor with a
+    // different element count is a mismatch rather than a longer array to index
+    // into.
+    const nrm = nrmRaw !== null && nrmRaw.length === 3 * count ? nrmRaw : null;
+    const uv = uvRaw !== null && uvRaw.length === 2 * count ? uvRaw : null;
     if (nrmRaw !== null && nrm === null) {
       if (!skipped.some((t) => t.includes('NORMAL'))) {
         skipped.push(
@@ -586,7 +632,7 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
     let tris: Uint32Array | null = null;
     const idxIndex = asIndex(prim.indices);
     if (idxIndex !== null) {
-      const idx = readAccessor(idxIndex);
+      const idx = readAccessor(idxIndex, 'SCALAR');
       if (idx === null) {
         skippedPrimitives++;
         return;
@@ -628,12 +674,12 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
     // few hundred times sits under both limits and still expands to gigabytes
     // here. What has to be bounded is the OUTPUT, cumulatively, before it is
     // written.
-    if (positions.length / 3 + count > MAX_OUTPUT_VERTICES) {
+    if ((positions.length / 3 + count) * BYTES_PER_VERTEX > MAX_OUTPUT_BYTES) {
       exhausted = true;
-      if (!skipped.some((t) => t.includes('total vertices'))) {
+      if (!skipped.some((t) => t.includes('total size'))) {
         skipped.push(
-          `the scene expands past ${MAX_OUTPUT_VERTICES} total vertices; ` +
-            `the rest of it is not read`,
+          `the scene expands past ${Math.round(MAX_OUTPUT_BYTES / (1024 * 1024))} MB of ` +
+            `geometry; the rest of it is not read`,
         );
       }
       return;

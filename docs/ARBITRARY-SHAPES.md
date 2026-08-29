@@ -586,11 +586,29 @@ bug here. Raster `v` runs down and display `y` runs up; equirectangular `v` runs
 down from the north pole and texture `v` runs up. Both are pinned against a
 hand-computed node rather than against a comment.
 
-One decision inside the format matters more than it looks. A node whose ray
-misses the object is written with `intensity = -1`, the format's own "no data",
-rather than a zero. A zero is a black pixel the projector still emits its black
-floor into — the rectangle of glow around every real installation — and −1 tells
-the player to draw nothing at all.
+Two decisions inside the format matter more than they look, and both were got
+wrong first.
+
+**A node with no data is marked BOTH ways.** The format defines two markers:
+"values outside the 0 to 1 range indicate that the node is not to be used", of
+texture coordinates, and "negative values indicate that the node should not be
+drawn", of intensity. This wrote `0 0 -1`, on the second rule alone — and `0 0`
+is a perfectly valid texel, so a player applying only the first rule draws the
+node, at the corner of the image. It now writes `-1 -1 -1`, which is outside
+[0, 1] on both texture axes and negative in intensity, and costs nothing. Either
+way it is not a zero intensity: a zero is a black pixel the projector still emits
+its black floor into, which is the rectangle of glow around every real
+installation.
+
+**`x` spans ±the aspect ratio, and only `y` spans ±1.** The format's own words
+are "the horizontal range (x) will be +- the aspect ratio and the vertical range
+(y) will be +- 1". Normalizing both axes to [-1, 1] is the obvious thing to write
+and it squeezes every non-square projector, which is every real projector: a
+1920×1080 raster comes back as 16:9 of content crammed into a square, and a
+compliant player shows it that way. Nothing about the file looks wrong, which is
+how that survives being looked at. `pixelAspect` belongs in the ratio, because
+the format's number is about the displayed rectangle and a non-square pixel makes
+that a different shape from the raster's own ratio.
 
 **A test premise, not the code, was wrong once here.** The polar mask looked
 absent from the sphere's export until the export was interrogated: at a 31×31

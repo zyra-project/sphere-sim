@@ -303,6 +303,21 @@ export interface SurfaceRequest {
   settings: Settings;
   /** The model to light. `null` puts the sphere back. */
   mesh: SurfaceMesh | null;
+  /**
+   * Names WHICH model this is, so the worker can tell a re-render of the same
+   * one from a different file.
+   *
+   * The mesh crosses by structured clone, so the worker receives a fresh copy on
+   * every request and object identity says nothing. Without a name it has to
+   * rebuild the hierarchy, the adjacency graph and the footprint fields from
+   * scratch each time a slider settles, for a model that has not changed. A page
+   * that omits it gets that behaviour — correct, and slower.
+   *
+   * A token the page mints when it accepts a file, not a hash: a hash of a
+   * megabyte of positions on every request is most of the saving back, and the
+   * page already knows the answer for free.
+   */
+  meshId?: string;
   /** Width of the room view to render. The height follows the aspect. */
   width: number;
   height: number;
