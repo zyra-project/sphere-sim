@@ -20,6 +20,13 @@
  * both sides must independently satisfy.
  */
 
+export type {
+  MeshLoadReport,
+  MeshUv,
+  SurfaceMesh,
+  SurfaceMeshSchema,
+} from './mesh.ts';
+
 /** Cartesian vector in the world frame. Metres. */
 export interface Vec3 {
   x: number;

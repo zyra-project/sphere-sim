@@ -243,9 +243,19 @@ export function nominalRig(params: NominalRigParams = {}): RigCalibration {
  * Check the invariant PARAMETERS.md §3.4 states, at construction time.
  *
  * "Any resolution figure must state which it means" — so the simulator states it
- * by asserting it. A rig whose framebuffer is not exactly twice the per-projector
- * raster in each dimension is not modelling a spanned X screen, and every
- * viewport composite downstream would be quietly wrong.
+ * by asserting it. A viewport that does not resolve to its projector's own
+ * raster is not a window onto a shared framebuffer, and every composite
+ * downstream would be quietly wrong.
+ *
+ * **The invariant is per-viewport, not a 2x2 split**, which is worth saying
+ * because the error message used to claim otherwise and
+ * `docs/ARBITRARY-SHAPES.md` recorded this as something Phase 4 would have to
+ * relax. It does not: what is checked is that each viewport times the
+ * framebuffer equals that projector's raster, and that it lies inside the
+ * framebuffer. That is exactly as true of six projectors in a 3x2 grid as of
+ * the SOS quadrants — see `placement.ts`, whose grid is built to satisfy it for
+ * any count. The 2x2 belongs to {@link nominalRig}, which is modelling one
+ * specific installation, not to this check.
  */
 export function assertFramebufferTopology(rig: RigCalibration): void {
   for (const p of rig.projectors) {
@@ -256,9 +266,10 @@ export function assertFramebufferTopology(rig: RigCalibration): void {
       throw new Error(
         `projector ${p.id}: viewport ${vp.w}x${vp.h} of a ` +
           `${rig.framebuffer.width}x${rig.framebuffer.height} framebuffer is ${wpx}x${hpx} px, ` +
-          `but its raster is ${p.intrinsics.resX}x${p.intrinsics.resY}. PARAMETERS.md §3.4: ` +
-          `SOS drives every projector from ONE framebuffer split 2x2, so the X screen is 2x ` +
-          `the per-projector resolution in each dimension.`,
+          `but its raster is ${p.intrinsics.resX}x${p.intrinsics.resY}. Every projector is a ` +
+          `window onto ONE framebuffer, so its viewport must resolve to exactly its own ` +
+          `pixels. PARAMETERS.md §3.4 states this for the SOS rig, where the split is 2x2 ` +
+          `and the X screen is twice the per-projector resolution each way.`,
       );
     }
     if (vp.x < 0 || vp.y < 0 || vp.x + vp.w > 1 + 1e-12 || vp.y + vp.h > 1 + 1e-12) {

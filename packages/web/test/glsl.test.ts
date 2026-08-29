@@ -226,7 +226,7 @@ test('on an uneven ring the wedge rule leaves no lit surface unweighted', () => 
     const lonDeg = -180 + (360 * k) / 3600;
     const lon = (lonDeg * Math.PI) / 180;
     const point = { x: R * Math.cos(lon), y: R * Math.sin(lon), z: 0 };
-    const { weights, lit } = coverageAndWeights(point, rig);
+    const { weights, lit } = coverageAndWeights(point, rig.surface.normalAt(point), rig);
     if (!lit.some(Boolean)) continue;
     litSamples++;
     if (weights.reduce((a, b) => a + b, 0) <= 0) unweighted++;
@@ -244,7 +244,7 @@ test('on an uneven ring the wedge rule leaves no lit surface unweighted', () => 
   // the projector's black floor.
   const lon = (-75 * Math.PI) / 180;
   const probe = { x: R * Math.cos(lon), y: R * Math.sin(lon), z: 0 };
-  const at75 = coverageAndWeights(probe, rig);
+  const at75 = coverageAndWeights(probe, rig.surface.normalAt(probe), rig);
   assert.ok(at75.lit[0], 'P1 does not physically reach -75 degrees, so the probe proves nothing');
   assert.ok(
     at75.weights[0] > 0,

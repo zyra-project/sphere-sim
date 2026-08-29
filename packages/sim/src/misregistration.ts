@@ -46,7 +46,7 @@
 import type { ChannelTriplet, Vec3 } from '../../calibration/src/index.ts';
 import type { RgbImage } from './equirect.ts';
 import { createImage } from './equirect.ts';
-import { raySphereIntersect, worldLonToTextureLon, worldToLatLon } from './geometry.ts';
+import { worldLonToTextureLon } from './geometry.ts';
 import { contentAt } from './render.ts';
 import type { PreparedRig } from './optics.ts';
 import { pixelToRay, worldToPixel } from './optics.ts';
@@ -168,16 +168,15 @@ export function traceTwoRig(
   scene: Scene,
   shading: ReturnType<typeof lambertianShading> = lambertianShading(),
 ): ChannelTriplet {
-  const hit = raySphereIntersect(origin, dir, physical.radiusM);
+  const hit = physical.surface.intersect(origin, dir);
   if (hit === null) return BLACK;
   const point = hit.point;
-  const invR = 1 / physical.radiusM;
-  const normal = { x: point.x * invR, y: point.y * invR, z: point.z * invR };
+  const normal = hit.normal;
 
   const contributions: ProjectorContribution[] = [];
   for (let i = 0; i < physical.projectors.length; i++) {
     const phys = physical.projectors[i];
-    if (!isIlluminatedAt(point, phys)) continue;
+    if (!isIlluminatedAt(point, normal, phys)) continue;
     const px = worldToPixel(phys, point);
     if (px === null) continue;
 
@@ -210,9 +209,15 @@ export function traceTwoRig(
         const w = (du ? tu : 1 - tu) * (dv ? tv : 1 - tv);
         if (w <= 0) continue;
         const ray = pixelToRay(cProj, i0 + du + 0.5, j0 + dv + 0.5);
-        const back = raySphereIntersect(cProj.lens, ray, content.radiusM);
+        const back = content.surface.intersect(cProj.lens, ray);
         if (back === null) continue;
-        const ll = worldToLatLon(back.point);
+        // `back.location`, not the point alone. Every other consumer was moved
+        // onto the face the hit carries; this one kept re-finding it by the
+        // radial search, which is exact only for a star-shaped body and finds
+        // NOTHING for a flat wall. On a mesh that put the whole surface on one
+        // content coordinate with a normal at right angles to itself, inside the
+        // one view whose job is to show two rigs disagreeing.
+        const ll = content.surface.coordAt(back.point, back.location);
         // Image plus the analytic graticule. See `Scene.graticule`: the pattern
         // the gate measures must not be displayed at the resolution of whatever
         // texture it was baked into.
@@ -222,7 +227,7 @@ export function traceTwoRig(
           worldLonToTextureLon(ll.lonDeg, content.rotationOffsetDeg),
         );
         const wHere =
-          coverageAndWeights(back.point, content).weights[i] *
+          coverageAndWeights(back.point, back.normal, content, back.location).weights[i] *
           polarMask(ll.latDeg, content.blend, scene.maskInterpretation);
         if (wHere > weight) weight = wHere;
         const s = blendedSignal(target, wHere, scene.encodeGamma);
@@ -241,7 +246,7 @@ export function traceTwoRig(
       distanceM,
       toLens: scale(toLensVec, 1 / distanceM),
       transfer: phys.cal.transfer,
-      referenceDistanceM: phys.distanceM - physical.radiusM,
+      referenceDistanceM: phys.referenceDistanceM,
     });
   }
 

@@ -65,6 +65,7 @@ import {
 } from '../src/settings.ts';
 import {
   buildViewer,
+  buildAsBuilt,
   buildWorld,
   CONTENT_DECODE_GAMMA,
   framingRangeM,
@@ -89,6 +90,9 @@ import type {
   SolveMessage,
   SolveRequest,
   SolveResponse,
+  SurfaceFacts,
+  SurfaceMessage,
+  SurfaceRequest,
   WarpMesh,
 } from '../src/protocol.ts';
 import type { DisplayGl } from './gl.ts';
@@ -103,6 +107,11 @@ import {
   withFrozenContent,
 } from './gl.ts';
 import { equirectAspectError, mediaKind } from '../src/media.ts';
+import { containerOf, readGlb } from '../../meshio/src/glb.ts';
+import type { ProjectorPlacement } from '../../sim/src/placement.ts';
+import { isRing } from '../../sim/src/placement.ts';
+import { aimAtPoint } from '../../sim/src/geometry.ts';
+import type { MeshLoadReport, SurfaceMesh } from '../../calibration/src/index.ts';
 
 // ---------------------------------------------------------------------------
 // State
@@ -326,6 +335,47 @@ async function loadMarble(): Promise<void> {
   requestModel(true);
 }
 let customError = '';
+
+/**
+ * A dropped model, and what the tracer made of it.
+ *
+ * `docs/ARBITRARY-SHAPES.md` Phase 1. Deliberately a SIDE panel rather than the
+ * live view: the display shader intersects a sphere analytically, and teaching
+ * it to traverse a hierarchy is Phase 2. Putting a model into the GL view now
+ * would mean the picture on screen was still a sphere while the page claimed a
+ * building — so the mesh is rendered on the CPU, by `packages/sim`, and shown
+ * beside the live view with that difference stated rather than hidden.
+ */
+let droppedMesh: SurfaceMesh | null = null;
+/**
+ * Names the dropped model for the worker, which receives a structured-clone copy
+ * and so cannot recognise it by identity. Bumped on every accepted file, never
+ * reused. See `SurfaceRequest.meshId`.
+ */
+let droppedMeshId = 0;
+let meshReport: MeshLoadReport | null = null;
+let meshFacts: SurfaceFacts | null = null;
+let meshFrame: FrameImage | null = null;
+let meshError = '';
+let meshBusy = false;
+/** A surface pass asked for while the worker was busy. See `requestSurface`. */
+let queuedSurface = false;
+/**
+ * A rig placed by hand, or `null` for the one the install settings describe.
+ *
+ * Module state rather than a `Setting`, and not because it is easier: a
+ * `Setting` is one number with a slider, a min and a max, and this is a list of
+ * six-vectors that grows and shrinks. Forcing it into that shape would give it a
+ * slider it cannot have and a preset comparison it cannot answer. `droppedMesh`
+ * lives here for the same reason.
+ *
+ * It reaches only the SURFACE request. See `SurfaceRequest.placements`: a rig of
+ * six on a wall must not arrive at the §7 gates, which are about a different
+ * machine.
+ */
+let customPlacements: ProjectorPlacement[] | null = null;
+let meshSeq = 0;
+
 /** Which image the model worker has been sent, so it is sent exactly once. */
 let sentImageId = '';
 /** The same, for the solve worker: separate process, separate cache. */
@@ -869,6 +919,360 @@ function chipRow(
   return wrap;
 }
 
+/** One editable number in a projector's placement row. */
+function placementField(
+  label: string,
+  value: number,
+  step: number,
+  onChange: (v: number) => void,
+): HTMLElement {
+  const wrap = el('label', { className: 'note tiny' });
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+  wrap.style.gap = '2px';
+  wrap.style.flex = '1 1 0';
+  wrap.style.minWidth = '0';
+  const input = el('input', { type: 'number', value: String(round3(value)), step: String(step) });
+  input.style.width = '100%';
+  input.style.minWidth = '0';
+  input.addEventListener('change', () => {
+    const v = Number.parseFloat(input.value);
+    // A field left mid-edit or cleared must not silently place a projector at
+    // NaN, which renders as a black frame with no error anywhere.
+    if (!Number.isFinite(v)) {
+      input.value = String(round3(value));
+      return;
+    }
+    onChange(v);
+  });
+  wrap.append(el('span', { textContent: label }), input);
+  return wrap;
+}
+
+function round3(v: number): number {
+  return Math.round(v * 1000) / 1000;
+}
+
+/**
+ * What "the model" means to the aiming controls.
+ *
+ * The dropped mesh's own bounds centre, not the world origin. GLB node
+ * translations are preserved by the reader and the preview camera orbits that
+ * centre, so a legally translated model can sit in frame while an aim at the
+ * origin points every projector somewhere else entirely.
+ */
+function modelAimPoint(): { x: number; y: number; z: number } {
+  if (meshFacts === null || droppedMesh === null) return { x: 0, y: 0, z: 0 };
+  const p = droppedMesh.positions;
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < droppedMesh.vertexCount; i++) {
+    const x = p[3 * i];
+    const y = p[3 * i + 1];
+    const z = p[3 * i + 2];
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (z < minZ) minZ = z;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+    if (z > maxZ) maxZ = z;
+  }
+  if (!Number.isFinite(minX)) return { x: 0, y: 0, z: 0 };
+  return { x: 0.5 * (minX + maxX), y: 0.5 * (minY + maxY), z: 0.5 * (minZ + maxZ) };
+}
+
+/** The placements the install settings imply, as a starting point to edit. */
+function placementsFromInstall(): ProjectorPlacement[] {
+  const rig = buildAsBuilt(state.settings);
+  return rig.projectors.map((p) => ({
+    position: { ...p.pose.position },
+    yawDeg: p.pose.yawDeg,
+    pitchDeg: p.pose.pitchDeg,
+    rollDeg: p.pose.rollDeg,
+  }));
+}
+
+/**
+ * Put the projectors where you like — `docs/ARBITRARY-SHAPES.md` Phase 4.
+ *
+ * ## Why this lives under the dropped model and not beside the install controls
+ *
+ * The install controls describe the SOS sphere: two to four projectors in
+ * quadrant viewports, and the panel refuses a fifth in so many words, because
+ * §3.4's framebuffer has four quadrants and PARAMETERS.md §2 supports 2, 3 and
+ * 4. That refusal is still right — every §7 gate on this page is a number about
+ * that machine, and a six-projector rig answering them would be a score for an
+ * installation nobody described.
+ *
+ * A rig placed by hand therefore reaches only the model preview, whose three
+ * numbers are counts over the surface's own area and stay true whatever is
+ * pointing at it. The same argument that made the surface a separate worker
+ * request makes free placement a separate rig.
+ */
+function placementBlock(): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  if (droppedMesh === null) return out;
+
+  out.push(el('h3', { textContent: 'Projectors' }));
+
+  if (customPlacements === null) {
+    out.push(
+      el('p', {
+        className: 'note tiny',
+        textContent:
+          'Lit by the install above — ' +
+          `${Math.round(state.settings.projectorCount)} projectors on the nominal ring. ` +
+          'Take them off the ring to put them anywhere, in any number.',
+      }),
+    );
+    const start = el('button', { className: 'chip', textContent: 'Place by hand' });
+    start.addEventListener('click', () => {
+      customPlacements = placementsFromInstall();
+      requestSurface();
+      renderControls();
+    });
+    const row = el('div', { className: 'chips' });
+    row.append(start);
+    out.push(row);
+    return out;
+  }
+
+  const places = customPlacements;
+  places.forEach((place, i) => {
+    const card = el('div');
+    card.style.display = 'flex';
+    card.style.flexDirection = 'column';
+    card.style.gap = '4px';
+    card.style.marginBottom = '8px';
+
+    const head = el('div');
+    head.style.display = 'flex';
+    head.style.justifyContent = 'space-between';
+    head.style.alignItems = 'center';
+    head.append(el('strong', { className: 'note tiny', textContent: place.id ?? `P${i + 1}` }));
+    if (places.length > 1) {
+      const drop = el('button', { className: 'chip', textContent: 'remove', title: 'Take this projector out of the rig' });
+      drop.addEventListener('click', () => {
+        places.splice(i, 1);
+        requestSurface();
+        renderControls();
+      });
+      head.append(drop);
+    }
+    card.append(head);
+
+    const set = (): void => {
+      requestSurface();
+      renderControls();
+    };
+    const xyz = el('div');
+    xyz.style.display = 'flex';
+    xyz.style.gap = '6px';
+    xyz.append(
+      placementField('x m', place.position.x, 0.1, (v) => {
+        place.position = { ...place.position, x: v };
+        set();
+      }),
+      placementField('y m', place.position.y, 0.1, (v) => {
+        place.position = { ...place.position, y: v };
+        set();
+      }),
+      placementField('z m', place.position.z, 0.1, (v) => {
+        place.position = { ...place.position, z: v };
+        set();
+      }),
+    );
+    card.append(xyz);
+
+    const ypr = el('div');
+    ypr.style.display = 'flex';
+    ypr.style.gap = '6px';
+    ypr.append(
+      placementField('yaw°', place.yawDeg ?? 0, 1, (v) => {
+        place.yawDeg = v;
+        set();
+      }),
+      placementField('pitch°', place.pitchDeg ?? 0, 1, (v) => {
+        place.pitchDeg = v;
+        set();
+      }),
+      placementField('roll°', place.rollDeg ?? 0, 1, (v) => {
+        place.rollDeg = v;
+        set();
+      }),
+    );
+    card.append(ypr);
+    out.push(card);
+  });
+
+  const actions = el('div', { className: 'chips' });
+  const add = el('button', { className: 'chip', textContent: 'add a projector' });
+  add.addEventListener('click', () => {
+    // A new lens goes where the last one is, moved along, aimed at the object.
+    // Dropping it at the origin would put it inside whatever is being lit.
+    const last = places[places.length - 1];
+    const r = Math.hypot(last.position.x, last.position.y) || 5.18;
+    const az = Math.atan2(last.position.y, last.position.x) + Math.PI / 4;
+    const position = { x: r * Math.cos(az), y: r * Math.sin(az), z: last.position.z };
+    const aim = aimAtPoint(position, modelAimPoint());
+    places.push({ position, yawDeg: aim.yawDeg, pitchDeg: aim.pitchDeg, rollDeg: 0 });
+    requestSurface();
+    renderControls();
+  });
+  const aimAll = el('button', {
+    className: 'chip',
+    textContent: 'aim all at the model',
+    title: "Re-point every projector at the model's own centre, keeping it where it stands.",
+  });
+  aimAll.addEventListener('click', () => {
+    for (const place of places) {
+      const aim = aimAtPoint(place.position, modelAimPoint());
+      place.yawDeg = aim.yawDeg;
+      place.pitchDeg = aim.pitchDeg;
+    }
+    requestSurface();
+    renderControls();
+  });
+  const back = el('button', {
+    className: 'chip',
+    textContent: 'back to the install',
+    title: 'Discard the hand-placed rig and light the model from the install above.',
+  });
+  back.addEventListener('click', () => {
+    customPlacements = null;
+    requestSurface();
+    renderControls();
+  });
+  actions.append(add, aimAll, back);
+  out.push(actions);
+
+  out.push(
+    el('p', {
+      className: 'note tiny',
+      textContent:
+        `${places.length} projectors, laid out as viewports of one framebuffer — ` +
+        'SOS drives a spanned X screen and that does not stop being true off the ring. ' +
+        'Each is framed from its own throw, so a nearer lens gets a wider field.',
+    }),
+  );
+
+  if (!isRing(places)) {
+    const note = el('p', {
+      className: 'note tiny',
+      textContent:
+        'These lenses do not ring the object. The sector blend reading (A-37) measures a ' +
+        "longitude wedge from each lens's azimuth, which presumes a ring — it is off here, and " +
+        "the crossfade is the geodesic distance to each projector's own footprint edge instead.",
+    });
+    out.push(note);
+  }
+
+  return out;
+}
+
+/**
+ * What a dropped model produced: the picture, the coverage, and what the reader
+ * refused.
+ *
+ * ## Why this is beside the live view and not in it
+ *
+ * The display shader intersects a sphere analytically; teaching it to traverse a
+ * bounding volume hierarchy is Phase 2 of `docs/ARBITRARY-SHAPES.md`. So the
+ * model is rendered by `packages/sim` on the CPU, in the worker, and shown here.
+ *
+ * The alternative — quietly loading a model while the canvas keeps drawing a
+ * ball — is the one thing this page must not do. Every number it prints comes
+ * from the model rather than the picture precisely so that the two can never
+ * drift apart unnoticed, and a mesh in the metrics with a sphere on screen would
+ * be that drift, installed on purpose.
+ */
+function modelBlock(): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  if (meshError) {
+    const err = el('p', { className: 'note', textContent: meshError });
+    err.style.color = 'var(--warn)';
+    out.push(err);
+  }
+  if (droppedMesh === null) return out;
+
+  out.push(el('h3', { textContent: 'Dropped model' }));
+
+  if (meshFrame) {
+    const canvas = el('canvas');
+    canvas.dataset.smoke = 'model-preview';
+    canvas.width = meshFrame.width;
+    canvas.height = meshFrame.height;
+    canvas.style.width = '100%';
+    canvas.style.height = 'auto';
+    canvas.style.display = 'block';
+    paintFrame(canvas, meshFrame);
+    out.push(canvas);
+  }
+
+  const f = meshFacts;
+  if (f) {
+    // `data-smoke` on the lit fraction: it is the one number that proves the
+    // whole chain ran — bytes read in the page, mesh across to the worker,
+    // hierarchy built, rig traced against it, reply painted. `tools/smoke-app.ts`
+    // drops a synthesised GLB and reads exactly this.
+    const litRow = el('p', {
+      className: 'note tiny',
+      textContent:
+        `${(100 * f.litFraction).toFixed(1)}% of the area is lit, ` +
+        `${f.meanOverlap.toFixed(2)} projectors deep on average`,
+    });
+    litRow.dataset.smoke = 'model-lit';
+    out.push(litRow);
+
+    // Which rig produced that number, from the worker's own reply rather than
+    // from the panel beside it. `tools/smoke-app.ts` waits on this: the lit
+    // fraction alone cannot tell a fresh five-projector answer from the stale
+    // four-projector one still on screen.
+    const rigRow = el('p', {
+      className: 'note tiny',
+      textContent: `lit by ${f.projectorCount} projector${f.projectorCount === 1 ? '' : 's'}`,
+    });
+    rigRow.dataset.smoke = 'model-rig';
+    out.push(rigRow);
+
+    const rows: string[] = [
+      `${f.triangles.toLocaleString()} triangles, ${f.vertices.toLocaleString()} vertices`,
+      `${f.areaM2.toFixed(2)} m² of surface, ${(2 * f.boundsRadiusM).toFixed(2)} m across`,
+      `${(100 * f.shadowedFraction).toFixed(1)}% faces a projector and is dark anyway — the model is in its own way`,
+    ];
+    if (!f.hasUvs) {
+      rows.push('no UV set, so it has no content — coverage and overlap still hold');
+    }
+    if (!f.hasNormals) rows.push('no normals in the file; the winding supplies them');
+    for (const r of rows) out.push(el('p', { className: 'note tiny', textContent: r }));
+  } else if (meshBusy) {
+    out.push(el('p', { className: 'note tiny', textContent: 'Lighting the model…' }));
+  }
+
+  // Everything the reader dropped on the floor, named. A model that arrives with
+  // half its geometry missing has to say so.
+  for (const s of meshReport?.skipped ?? []) {
+    const note = el('p', { className: 'note tiny', textContent: s });
+    note.style.color = 'var(--warn)';
+    out.push(note);
+  }
+
+  const caveat = el('p', {
+    className: 'note tiny',
+    textContent:
+      'The live view above is still the sphere — the display shader intersects one analytically, ' +
+      'and a mesh on the GPU is the next phase. This picture is the same scene traced on the CPU ' +
+      'by the model. Projectors DO crossfade here: the blend is a geodesic distance to the edge ' +
+      "of each projector's own footprint, which feathers a shadow edge exactly as it feathers a " +
+      'raster edge. The polar mask stays off, and that is a decision rather than a gap: it ' +
+      "attenuates a sphere's exposed south cap by latitude, and a model has no pole to " +
+      'measure one from. Masking a band of its texture rows would be a picture of a ' +
+      'parameter rather than of anything on the model.',
+  });
+  out.push(caveat);
+  return out;
+}
+
 /** The authored explanation for a control, for rows that render as chips. */
 function helpFor(key: SettingKey): string {
   return CONTROLS.find((c) => c.key === key)?.help ?? '';
@@ -960,11 +1364,123 @@ async function readEquirect(file: File): Promise<EquirectImage> {
  * video too" has to be true of both or it is a feature nobody finds.
  */
 async function loadCustomMedia(file: File): Promise<void> {
-  if (mediaKind(file.type, file.name) === 'video') {
+  const kind = mediaKind(file.type, file.name);
+  // A model is not content — it is the shape the content goes on — so it takes
+  // a different path entirely and leaves whatever is on the sphere alone.
+  if (kind === 'model') {
+    await loadCustomModel(file);
+    return;
+  }
+  if (kind === 'video') {
     await loadCustomVideo(file);
     return;
   }
   await loadCustomImage(file);
+}
+
+/**
+ * Read a dropped `.glb` and ask the model worker to light it.
+ *
+ * The reader is `packages/meshio`, which neither `sim` nor `solver` may import —
+ * see that package's README for why a loader is the most plausible-looking thing
+ * to share across the boundary and the one that must not be.
+ *
+ * Everything it refuses is SHOWN. A model that arrives with half its geometry
+ * missing has to say so, or somebody studies a coverage figure for a shape they
+ * did not load.
+ */
+async function loadCustomModel(file: File): Promise<void> {
+  meshError = '';
+  meshFacts = null;
+  meshFrame = null;
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    // `mediaKind` routes anything that looks like a model here, which is the
+    // right call — it is a model, and refusing it as a badly-shaped image would
+    // be baffling. But only the binary container has a reader, so the refusal
+    // has to name the actual format rather than let `readGlb` report that a
+    // .gltf file is not glTF.
+    const container = containerOf(bytes);
+    if (container !== 'glb') {
+      droppedMesh = null;
+      meshReport = null;
+      meshError =
+        container === 'gltf-json'
+          ? `${file.name} is a JSON .gltf. This page reads the binary container — ` +
+            're-export as .glb (in Blender, glTF Binary) so the geometry travels in one file.'
+          : `${file.name} is not a glTF binary. This page reads .glb; OBJ is not implemented yet.`;
+      state.section = 'room';
+      renderControls();
+      return;
+    }
+    const report = readGlb(bytes, { name: file.name });
+    meshReport = report;
+    droppedMesh = report.mesh;
+    droppedMeshId++;
+    // Take the reader to the panel that shows it. A dropped IMAGE announces
+    // itself — it appears on the sphere — but a model's whole result lives in
+    // one section, and the panel opens on `projectors`. Dropping a building and
+    // having the page respond by doing nothing visible is the same as it not
+    // working, and `tools/smoke-app.ts` reported exactly that before this line
+    // existed.
+    state.section = 'room';
+    if (report.mesh === null) {
+      meshError =
+        report.skipped.length > 0
+          ? `nothing in ${file.name} could be lit: ${report.skipped.join('; ')}`
+          : `${file.name} holds no geometry this page can use.`;
+      renderControls();
+      return;
+    }
+    requestSurface();
+  } catch (err) {
+    droppedMesh = null;
+    meshReport = null;
+    meshError = err instanceof Error ? err.message : String(err);
+    state.section = 'room';
+  }
+  renderControls();
+}
+
+/** Ask the worker for a CPU render of the dropped model, and the coverage facts. */
+function requestSurface(): void {
+  if (droppedMesh === null) return;
+  // One in flight at a time. The trace walks a BVH over every camera ray and
+  // then samples four thousand points of surface, so a burst of settled passes
+  // would queue work faster than the worker retires it and the preview would
+  // fall further behind the controls the longer somebody used them.
+  if (meshBusy) {
+    queuedSurface = true;
+    return;
+  }
+  queuedSurface = false;
+  meshBusy = true;
+  const req: SurfaceRequest = {
+    kind: 'surface',
+    id: ++meshSeq,
+    settings: state.settings,
+    mesh: droppedMesh,
+    meshId: `mesh:${droppedMeshId}`,
+    // `suppliedName()`, the same id the metrics path sends, so this names the
+    // entry that path already put in the worker's cache. `contentKey` is a
+    // different thing — the page's own key for whether the GPU texture is stale.
+    customImageId: suppliedName(),
+    ...(customPlacements && customPlacements.length > 0
+      ? { placements: customPlacements }
+      : {}),
+    width: 320,
+    height: 240,
+    camera: {
+      azimuthDeg: state.settings.viewAzDeg,
+      elevationDeg: state.settings.viewElDeg,
+      rangeM: state.settings.viewRangeM,
+      fovHDeg: state.settings.viewFovDeg,
+    },
+  };
+  // NOT transferred: the page keeps the mesh so it can re-render from another
+  // angle without asking the reader to parse the file again.
+  modelWorker.postMessage(req);
+  renderControls();
 }
 
 async function loadCustomImage(file: File): Promise<void> {
@@ -1272,6 +1788,13 @@ function paritySamples(): number {
  * arriving a millisecond later.
  */
 function requestModel(fine: boolean): void {
+  // A dropped model's preview and its three coverage figures come from the same
+  // rig the sphere metrics do, so every slider that moves the rig makes them
+  // stale — and stale is the one thing this panel must not be, because the
+  // numbers beside the picture are the whole reason the picture is there. They
+  // refresh on the SETTLED pass only: the trace is a BVH walk, far too
+  // expensive for the every-frame pass a drag produces.
+  if (fine) requestSurface();
   if (modelPending) {
     queuedModel = { fine: fine || (queuedModel?.fine ?? false) };
     return;
@@ -1362,8 +1885,30 @@ function postModel(fine: boolean): void {
   renderReadout();
 }
 
-modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage>): void => {
+modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage | SurfaceMessage>): void => {
   const msg = event.data;
+  // A dropped model, rendered on the CPU. Its own id sequence, like the
+  // lightbox's frames, so it can never be mistaken for a stale metrics reply and
+  // release the metrics lock.
+  if (msg.kind === 'surface') {
+    if (msg.id !== meshSeq) return;
+    meshBusy = false;
+    // Whatever settled while this pass was running, now that the worker is free.
+    if (queuedSurface) {
+      queuedSurface = false;
+      requestSurface();
+    }
+    if (!msg.ok) {
+      meshError = msg.error;
+      meshFrame = null;
+      meshFacts = null;
+    } else {
+      meshFrame = msg.frame;
+      meshFacts = msg.facts;
+    }
+    renderControls();
+    return;
+  }
   // A frame the lightbox asked for, on its own id sequence. It carries no
   // metrics and must not be mistaken for a stale model reply.
   if (msg.kind === 'frames') {
@@ -2482,12 +3027,14 @@ function installSection(): HTMLElement[] {
       {
         label: '5 or 6',
         title:
-          'Not offered, and the reason is one of the three facts this project exists to reproduce: ' +
-          'SOS drives every projector from ONE framebuffer split into four quadrant viewports ' +
-          '(§3.4), so a fifth projector has no quadrant to be. PARAMETERS.md §2 supports 2, 3 and ' +
-          '4 and nothing else. A six-projector ring is a perfectly buildable thing — it is just a ' +
-          'different display from the one this simulates, and pretending otherwise here would put ' +
-          'a number on screen for a machine that does not exist.',
+          'Not offered HERE, and the reason is one of the three facts this project exists to ' +
+          'reproduce: SOS drives every projector from ONE framebuffer split into four quadrant ' +
+          'viewports (§3.4), so a fifth projector has no quadrant to be. PARAMETERS.md §2 ' +
+          'supports 2, 3 and 4 and nothing else, and every §7 gate on this page is a number about ' +
+          'that machine — a five-projector rig answering them would be a score for an ' +
+          'installation nobody described. The simulator itself has no such limit: drop a model ' +
+          'and the panel beside it will place any number of projectors anywhere, reporting ' +
+          'coverage over the surface rather than gates about a sphere.',
         on: false,
         onPick: () => {},
       },
@@ -2788,7 +3335,8 @@ function roomSection(): HTMLElement[] {
       className: 'note tiny',
       textContent:
         'Drop a file anywhere on the page, or use the chip. Any 2:1 equirectangular map, still or ' +
-        'an .mp4 — which loops. Read in the page, never sent anywhere.',
+        'an .mp4 — which loops. A .glb goes somewhere else: it is read as the SHAPE to light ' +
+        'rather than as content, and appears below. Read in the page, never sent anywhere.',
     }),
   );
 
@@ -2805,6 +3353,8 @@ function roomSection(): HTMLElement[] {
     err.style.color = 'var(--warn)';
     out.push(err);
   }
+  for (const node of modelBlock()) out.push(node);
+  for (const node of placementBlock()) out.push(node);
   // Said out loud, because the failure it reports is otherwise silent: the
   // sphere keeps playing from a texture that works while the model sits on a
   // frame that never arrived, and the only symptom is a parity number nobody can
@@ -3108,7 +3658,10 @@ function renderControls(): void {
 function pickImage(): void {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'image/*,video/*';
+  // `.glb` is listed because the note beside this chip says a model can be
+  // dropped OR chosen. Without it the picker hides every model file and the
+  // advertised path silently does not work.
+  input.accept = 'image/*,video/*,model/gltf-binary,.glb';
   input.addEventListener('change', () => {
     const file = input.files?.[0];
     if (file) void loadCustomMedia(file);

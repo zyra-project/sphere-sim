@@ -28,6 +28,7 @@ import {
   worldToPixel,
 } from '../src/optics.ts';
 import { aimAtSphereCenter, angleBetweenDeg, raySphereIntersect } from '../src/geometry.ts';
+import { sphereSurface } from '../src/surface.ts';
 import { DEG2RAD, addScaled, dot } from '../src/vec.ts';
 
 const R = 0.8636;
@@ -53,7 +54,7 @@ function makeProjector(overrides: Partial<ProjectorIntrinsics> = {}, positionZ =
       },
       viewport: { x: 0, y: 0, w: 0.5, h: 0.5 },
     },
-    R,
+    sphereSurface(R),
     0,
   );
 }

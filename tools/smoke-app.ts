@@ -306,6 +306,25 @@ function report(failures: readonly string[]): void {
   process.stdout.write('smoke-app: the shader compiled, the workers replied, the picture is lit.\n');
 }
 
+/**
+ * How long to wait for Chromium to open its debugging port.
+ *
+ * Thirty seconds was too tight and it failed CI on a commit that passed
+ * locally, with the browser never reaching the point of loading a page — so
+ * the failure said nothing about the app and everything about the runner. The
+ * workflow starts two of these concurrently and swiftshader means the whole
+ * renderer is on the CPU, so a cold start on a contended runner can take a
+ * while.
+ *
+ * Raising a timeout is usually the wrong instinct, because it trades a fast red
+ * for a slow red. It is right here only because the other half of this change
+ * removes the case it would have hidden: a browser that dies now fails
+ * immediately with its own stderr instead of waiting out the budget. What is
+ * left for the budget to catch is genuine slowness, and for that the only cost
+ * of being generous is the time a real hang takes to report.
+ */
+const BROWSER_START_MS = 90_000;
+
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
   const browser = findBrowser(opts.browser);
@@ -337,14 +356,36 @@ async function main(): Promise<void> {
   child.stderr.on('data', (chunk) => {
     stderr += String(chunk);
   });
+  // Whether the process is gone, which is a different failure from a slow one
+  // and deserves a different answer. Recorded rather than polled, because a
+  // child that exits between two polls of the port file would otherwise be
+  // indistinguishable from one that is merely taking its time.
+  let exited: number | null = null;
+  child.on('exit', (code) => {
+    exited = code ?? -1;
+  });
 
   try {
     // Chromium writes the port it chose into the profile directory.
     const portFile = path.join(profile, 'DevToolsActivePort');
-    const deadline = Date.now() + 30_000;
+    const deadline = Date.now() + BROWSER_START_MS;
     while (!fs.existsSync(portFile)) {
+      // A browser that DIED is not a browser that is slow. Waiting out the full
+      // budget for a process that is already gone turns an immediate answer —
+      // its own stderr, which says what it could not do — into a minute of
+      // silence followed by a timeout, and a timeout is the one message that
+      // sends the reader to look at the wrong thing.
+      if (exited !== null) {
+        throw new Error(
+          `Chromium exited with code ${exited} before it opened a debugging port.\n` +
+            `${stderr.split('\n').slice(-8).join('\n')}`,
+        );
+      }
       if (Date.now() > deadline) {
-        throw new Error(`Chromium did not start.\n${stderr.split('\n').slice(-8).join('\n')}`);
+        throw new Error(
+          `Chromium did not open a debugging port within ${BROWSER_START_MS / 1000}s.\n` +
+            `${stderr.split('\n').slice(-8).join('\n')}`,
+        );
       }
       await sleep(150);
     }
@@ -1687,6 +1728,235 @@ async function main(): Promise<void> {
       );
     } else {
       process.stdout.write(`  phone: pinch moved the camera ${before.toFixed(1)} → ${after.toFixed(1)} m\n`);
+    }
+
+    // ------------------------------------------------------------------
+    // Drop a .glb, and prove the whole chain ran.
+    //
+    // Everything else in this file exercises the sphere. This is the one check
+    // that a MODEL survives the round trip, and it is worth an end-to-end test
+    // rather than unit coverage alone because the chain crosses four boundaries
+    // that no single unit test spans: a File read in the page, `packages/meshio`
+    // parsing it, a structured clone into the model worker, a bounding volume
+    // hierarchy built there, `packages/sim` tracing the rig against it, and a
+    // Float32 frame transferred back and painted.
+    //
+    // The GLB is SYNTHESISED here rather than checked in as a fixture, for the
+    // reason `packages/meshio/test/glb.test.ts` gives: a fixture proves the
+    // reader agrees with whatever exporter produced it. It is also the smallest
+    // thing that can be lit — an octahedron, eight triangles — because this
+    // check is about the plumbing and not about the geometry.
+    const dropped = await cdp.evaluate<string>(`(() => {
+      // Eight triangles around six vertices, wound outward, sized to sit where
+      // the rig is aimed. Y-up, as the glTF spec requires and as the reader
+      // expects to have to rotate.
+      const r = 0.8636;
+      const pos = [r,0,0, -r,0,0, 0,r,0, 0,-r,0, 0,0,r, 0,0,-r];
+      // Wound OUTWARD — every face's normal must point away from the centre, or
+      // the rig reaches nothing and the model renders as pure ambient. The first
+      // version of this fixture had all eight faces inward and this check caught
+      // it, reporting 0% of the area lit against a preview that still looked
+      // like a picture. That is the same signature a mirroring up-axis
+      // conversion would produce, which is why the assertion below tests the
+      // coverage figure rather than only that a picture arrived.
+      const idx = [0,2,4, 4,2,1, 1,2,5, 5,2,0, 4,3,0, 1,3,4, 5,3,1, 0,3,5];
+      const posBytes = new Uint8Array(new Float32Array(pos).buffer);
+      const idxBytes = new Uint8Array(new Uint32Array(idx).buffer);
+      const bin = new Uint8Array(posBytes.length + idxBytes.length);
+      bin.set(posBytes, 0); bin.set(idxBytes, posBytes.length);
+      const doc = {
+        asset: { version: '2.0' },
+        scene: 0,
+        scenes: [{ nodes: [0], name: 'smoke' }],
+        nodes: [{ mesh: 0 }],
+        meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1, mode: 4 }] }],
+        accessors: [
+          { bufferView: 0, componentType: 5126, count: 6, type: 'VEC3' },
+          { bufferView: 1, componentType: 5125, count: idx.length, type: 'SCALAR' },
+        ],
+        bufferViews: [
+          { buffer: 0, byteOffset: 0, byteLength: posBytes.length },
+          { buffer: 0, byteOffset: posBytes.length, byteLength: idxBytes.length },
+        ],
+        buffers: [{ byteLength: bin.length }],
+      };
+      const json = new TextEncoder().encode(JSON.stringify(doc));
+      const pad = (n) => (4 - (n % 4)) % 4;
+      const total = 12 + 8 + json.length + pad(json.length) + 8 + bin.length + pad(bin.length);
+      const out = new Uint8Array(total);
+      const dv = new DataView(out.buffer);
+      dv.setUint32(0, 0x46546c67, true); dv.setUint32(4, 2, true); dv.setUint32(8, total, true);
+      let at = 12;
+      dv.setUint32(at, json.length + pad(json.length), true);
+      dv.setUint32(at + 4, 0x4e4f534a, true);
+      out.set(json, at + 8);
+      out.fill(0x20, at + 8 + json.length, at + 8 + json.length + pad(json.length));
+      at += 8 + json.length + pad(json.length);
+      dv.setUint32(at, bin.length + pad(bin.length), true);
+      dv.setUint32(at + 4, 0x004e4942, true);
+      out.set(bin, at + 8);
+
+      try {
+        const file = new File([out], 'smoke.glb', { type: 'model/gltf-binary' });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        window.dispatchEvent(new DragEvent('drop', {
+          dataTransfer: dt, bubbles: true, cancelable: true,
+        }));
+        return '';
+      } catch (err) {
+        return String(err);
+      }
+    })()`);
+    if (dropped !== '') {
+      failures.push(`dropping a .glb threw in the page: ${dropped}`);
+    } else {
+      // The lit fraction is the one number that proves every link ran.
+      let lit = '';
+      const modelDeadline = Date.now() + 30_000;
+      while (Date.now() < modelDeadline) {
+        await sleep(300);
+        lit = await cdp.evaluate<string>(
+          "document.querySelector('[data-smoke=\"model-lit\"]')?.textContent?.trim() ?? ''",
+        );
+        if (lit !== '') break;
+      }
+      const percent = Number.parseFloat(lit);
+      if (lit === '') {
+        failures.push('a dropped .glb never produced a coverage figure — the surface path is dead');
+      } else if (!Number.isFinite(percent) || percent <= 0) {
+        // A model the rig cannot reach at all means the mesh arrived in the
+        // wrong frame — which is exactly what a missed Y-up conversion looks
+        // like, and it would be invisible in the picture alone.
+        failures.push(`a dropped .glb reports ${percent}% of its area lit, so nothing reached it`);
+      } else {
+        process.stdout.write(`  model: a dropped .glb is ${percent.toFixed(1)}% lit\n`);
+      }
+
+      // And the preview is a picture rather than an empty rectangle.
+      const preview = await cdp.evaluate<{ nonBlack: number; total: number } | null>(`(() => {
+        const c = document.querySelector('[data-smoke="model-preview"]');
+        if (!c) return null;
+        const off = document.createElement('canvas');
+        off.width = 48; off.height = 36;
+        const ctx = off.getContext('2d');
+        ctx.drawImage(c, 0, 0, off.width, off.height);
+        const d = ctx.getImageData(0, 0, off.width, off.height).data;
+        let nonBlack = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] + d[i+1] + d[i+2] > 12) nonBlack++;
+        return { nonBlack, total: d.length / 4 };
+      })()`);
+      if (!preview) {
+        failures.push('a dropped .glb produced no preview canvas');
+      } else if (preview.nonBlack === 0) {
+        failures.push('the dropped model rendered as a uniformly black rectangle');
+      } else {
+        process.stdout.write(
+          `  model: preview ${((preview.nonBlack / preview.total) * 100).toFixed(1)}% lit\n`,
+        );
+      }
+
+      // Phase 4: place the projectors by hand and add a fifth.
+      //
+      // The chain this proves is the one that cannot be checked from a unit
+      // test: a click reaches `customPlacements`, the placements cross to the
+      // worker by structured clone, `placedRig` accepts a count the SOS
+      // framebuffer has no quadrant for, and the model comes back lit. Five is
+      // the number that matters — four would pass even if the cap were still
+      // there.
+      const placed = await cdp.evaluate<string>(`(() => {
+        const byText = (t) => [...document.querySelectorAll('button.chip')]
+          .find((b) => b.textContent.trim() === t) ?? null;
+        const start = byText('Place by hand');
+        if (!start) return 'no "Place by hand" control appeared beside the model';
+        start.click();
+        const add = byText('add a projector');
+        if (!add) return 'no "add a projector" control after placing by hand';
+        add.click();
+        const inputs = document.querySelectorAll('input[type="number"]');
+        if (inputs.length < 30) return 'expected six fields for each of five projectors, got ' + inputs.length;
+        return '';
+      })()`);
+      if (placed !== '') {
+        failures.push(`placing projectors by hand failed: ${placed}`);
+      } else {
+        // Wait on the RIG line, not on the coverage figure. The fixture is fully
+        // lit by the four-projector install, so a positive percentage was
+        // already on screen before anything was placed by hand — the loop could
+        // exit on the stale number and the later one-projector check would still
+        // pass even if the worker had capped the rig at four. The rig line comes
+        // from the worker's own reply and names the count it actually traced.
+        let rigLine = '';
+        let litAfter = '';
+        const placeDeadline = Date.now() + 30_000;
+        while (Date.now() < placeDeadline) {
+          await sleep(300);
+          rigLine = await cdp.evaluate<string>(
+            "document.querySelector('[data-smoke=\"model-rig\"]')?.textContent?.trim() ?? ''",
+          );
+          if (/\b5 projectors\b/.test(rigLine)) break;
+        }
+        litAfter = await cdp.evaluate<string>(
+          "document.querySelector('[data-smoke=\"model-lit\"]')?.textContent?.trim() ?? ''",
+        );
+        const after = Number.parseFloat(litAfter);
+        if (!/\b5 projectors\b/.test(rigLine)) {
+          failures.push(
+            `the worker never reported a five-projector rig (last said ${JSON.stringify(rigLine)}) ` +
+              '— the any-count path is not reaching it',
+          );
+        } else if (!Number.isFinite(after) || after <= 0) {
+          failures.push(
+            'a five-projector hand-placed rig lit nothing — `placedRig` did not reach the worker',
+          );
+        } else {
+          process.stdout.write(`  model: five hand-placed projectors light ${after.toFixed(1)}%\n`);
+        }
+
+        // And the placements have to CHANGE the answer, or the step above would
+        // pass with them ignored: the fixture is fully lit by the nominal rig,
+        // so five projectors reporting 100% is the same number four would give.
+        // Removing all but one is the edit whose effect cannot be mistaken.
+        const stripped = await cdp.evaluate<string>(`(() => {
+          for (let guard = 0; guard < 12; guard++) {
+            const remove = [...document.querySelectorAll('button.chip')]
+              .filter((b) => b.textContent.trim() === 'remove');
+            if (remove.length === 0) break;
+            remove[remove.length - 1].click();
+          }
+          const left = [...document.querySelectorAll('button.chip')]
+            .filter((b) => b.textContent.trim() === 'remove').length;
+          return left === 0 ? '' : left + ' projectors could not be removed';
+        })()`);
+        if (stripped !== '') {
+          failures.push(`stripping the rig to one projector failed: ${stripped}`);
+        } else {
+          let litOne = '';
+          const oneDeadline = Date.now() + 30_000;
+          while (Date.now() < oneDeadline) {
+            await sleep(300);
+            const line = await cdp.evaluate<string>(
+              "document.querySelector('[data-smoke=\"model-rig\"]')?.textContent?.trim() ?? ''",
+            );
+            if (!/\b1 projector\b/.test(line)) continue;
+            litOne = await cdp.evaluate<string>(
+              "document.querySelector('[data-smoke=\"model-lit\"]')?.textContent?.trim() ?? ''",
+            );
+            break;
+          }
+          const one = Number.parseFloat(litOne);
+          if (!Number.isFinite(one)) {
+            failures.push('a one-projector rig reported no coverage figure at all');
+          } else if (one >= after) {
+            failures.push(
+              `one projector reports ${one}% against ${after}% for five — the placements are ` +
+                'reaching the worker but not being used',
+            );
+          } else {
+            process.stdout.write(`  model: stripped to one projector, ${one.toFixed(1)}% lit\n`);
+          }
+        }
+      }
     }
 
     for (const e of cdp.pageErrors) failures.push(`uncaught in the page: ${e.split('\n')[0]}`);

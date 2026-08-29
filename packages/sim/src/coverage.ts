@@ -22,10 +22,12 @@
 import type { BlendCalibration } from '../../calibration/src/index.ts';
 import type { Vec3 } from './vec.ts';
 import { DEG2RAD, RAD2DEG, clamp, dot, sub, wrapDeg180 } from './vec.ts';
-import { latLonToWorld } from './geometry.ts';
 import type { PreparedProjector, PreparedRig } from './optics.ts';
 import { worldToPixel } from './optics.ts';
 import { normalizeWeights, rampWeight } from './blend.ts';
+import { blendModelApplies } from './surface.ts';
+import type { SurfaceLocation } from './surface.ts';
+import { blendWidthM, footprintDistanceAt } from './footprint.ts';
 
 // conventions.ts §B's ramp algebra lives in `blend.ts`, which knows nothing about
 // the sphere. This module decides WHERE each projector's blend region is and how
@@ -59,17 +61,45 @@ export { rampValue } from './blend.ts';
  * the whole point of the off-sphere-flux metric.
  */
 export function isIlluminated(latDeg: number, lonDeg: number, projector: PreparedProjector): boolean {
-  const point = latLonToWorld(latDeg, lonDeg, projector.radiusM);
-  return isIlluminatedAt(point, projector);
+  const point = projector.surface.pointAt({ latDeg, lonDeg });
+  return isIlluminatedAt(point, projector.surface.normalAt(point), projector);
 }
 
-/** {@link isIlluminated} for a point already in world coordinates. */
-export function isIlluminatedAt(point: Vec3, projector: PreparedProjector): boolean {
-  // normal = point / R, and scaling by a positive constant cannot change the
-  // sign of the dot product, so the division is skipped.
-  const toLens = sub(projector.lens, point);
-  if (dot(point, toLens) <= 0) return false;
-  return worldToPixel(projector, point) !== null;
+/**
+ * {@link isIlluminated} for a point already in world coordinates.
+ *
+ * ## Three tests, cheapest first, and the order is load-bearing
+ *
+ *   1. **Facing.** Is the lens above this point's local horizon? A dot product.
+ *   2. **Raster.** Does the point land inside the projector's frame? A
+ *      projection and two comparisons.
+ *   3. **Shadow.** Does the surface come between the point and the lens? On a
+ *      sphere, free — a convex body cannot occlude itself. On a mesh, a
+ *      hierarchy traversal, and by far the most expensive thing here.
+ *
+ * Running them in that order means the traversal only happens for points that
+ * already face the lens and already land on the raster, which on a typical rig
+ * is a minority. Reordering this is a performance bug that looks like a tidy-up.
+ *
+ * ## Why the normal is a parameter
+ *
+ * Until Phase 1 this function derived the normal from the point, because a
+ * sphere centred on the world origin has them parallel. A mesh does not, so the
+ * caller has to say. Making it a required argument rather than deriving it from
+ * `projector.surface.normalAt(point)` is deliberate: on a mesh that call is a
+ * hierarchy query, and a default that quietly costs one per projector per point
+ * is the kind of hidden cost that only shows up as "the mesh path is slow" long
+ * after anyone remembers why.
+ */
+export function isIlluminatedAt(
+  point: Vec3,
+  normal: Vec3,
+  projector: PreparedProjector,
+): boolean {
+  const surface = projector.surface;
+  if (!surface.facesLens(point, normal, projector.lens)) return false;
+  if (worldToPixel(projector, point) === null) return false;
+  return !surface.shadowed(point, projector.lens);
 }
 
 /**
@@ -117,9 +147,8 @@ export function incidenceCosine(
   lonDeg: number,
   projector: PreparedProjector,
 ): number {
-  const point = latLonToWorld(latDeg, lonDeg, projector.radiusM);
-  const inv = 1 / projector.radiusM;
-  const normal = { x: point.x * inv, y: point.y * inv, z: point.z * inv };
+  const point = projector.surface.pointAt({ latDeg, lonDeg });
+  const normal = projector.surface.normalAt(point);
   return incidenceCosineAt(point, normal, projector.lens);
 }
 
@@ -138,17 +167,19 @@ export function incidenceCosine(
  * The count is computed by asking each projector, not by trusting the argument.
  */
 export function overlapMultiplicity(latDeg: number, lonDeg: number, rig: PreparedRig): number {
-  const point = latLonToWorld(latDeg, lonDeg, rig.radiusM);
+  const point = rig.surface.pointAt({ latDeg, lonDeg });
+  const normal = rig.surface.normalAt(point);
   let n = 0;
-  for (const p of rig.projectors) if (isIlluminatedAt(point, p)) n++;
+  for (const p of rig.projectors) if (isIlluminatedAt(point, normal, p)) n++;
   return n;
 }
 
 /** Which projectors light this point, by index. */
 export function contributors(latDeg: number, lonDeg: number, rig: PreparedRig): number[] {
-  const point = latLonToWorld(latDeg, lonDeg, rig.radiusM);
+  const point = rig.surface.pointAt({ latDeg, lonDeg });
+  const normal = rig.surface.normalAt(point);
   const out: number[] = [];
-  for (const p of rig.projectors) if (isIlluminatedAt(point, p)) out.push(p.index);
+  for (const p of rig.projectors) if (isIlluminatedAt(point, normal, p)) out.push(p.index);
   return out;
 }
 
@@ -236,13 +267,13 @@ export function polarMask(
  * summing to one.
  */
 export function blendWeights(latDeg: number, lonDeg: number, rig: PreparedRig): number[] {
-  const point = latLonToWorld(latDeg, lonDeg, rig.radiusM);
+  const point = rig.surface.pointAt({ latDeg, lonDeg });
   return blendWeightsAt(point, rig);
 }
 
 /** {@link blendWeights} for a point already in world coordinates. */
 export function blendWeightsAt(point: Vec3, rig: PreparedRig): number[] {
-  return coverageAndWeights(point, rig).weights;
+  return coverageAndWeights(point, rig.surface.normalAt(point), rig).weights;
 }
 
 /**
@@ -257,7 +288,18 @@ export function blendWeightsAt(point: Vec3, rig: PreparedRig): number[] {
  */
 export function coverageAndWeights(
   point: Vec3,
+  normal: Vec3,
   rig: PreparedRig,
+  /**
+   * The face this point came from, when the caller has one.
+   *
+   * A caller holding a {@link SurfaceHit} or a {@link SurfaceAreaSample} knows
+   * the triangle exactly. Without it this function has to find the face again
+   * from the point alone, and `MeshSurface.nearestTriangle` does that with a
+   * radial ray — exact for a star-shaped body and a guess for anything with a
+   * fold, which is precisely the shape somebody drops on the page.
+   */
+  at?: SurfaceLocation | null,
 ): { weights: number[]; lit: boolean[] } {
   const n = rig.projectors.length;
   const weights = new Array<number>(n).fill(0);
@@ -265,6 +307,16 @@ export function coverageAndWeights(
   const blend = rig.blend;
   const width = blend.widthDeg > 0 ? blend.widthDeg : 1e-9;
   const sector = blend.region === 'sector';
+  // Refused rather than approximated on anything but a sphere. See
+  // `blendModelApplies` for why a crossfade derived from a bounding sphere would
+  // be a false statement rather than a rough one.
+  const blended = blendModelApplies(rig.surface);
+  // One lookup for every projector: the footprint fields are all indexed by the
+  // same vertices, so locating the point once serves them all. `null` on a
+  // sphere, where nothing below runs — and the caller's own face when it has
+  // one, which is both exact and free where the search is neither.
+  const location = blended ? null : (at ?? rig.surface.locate(point));
+  const widthM = blended ? 0 : blendWidthM(blend.widthDeg, rig.surface.extentRadiusM);
   // Each projector's share of the circle, from where its NEIGHBOURS actually are
   // rather than from `360 / n`.
   //
@@ -277,8 +329,49 @@ export function coverageAndWeights(
 
   for (let i = 0; i < n; i++) {
     const p = rig.projectors[i];
-    if (!isIlluminatedAt(point, p)) continue;
+    if (!isIlluminatedAt(point, normal, p)) continue;
     lit[i] = true;
+
+    if (!blended) {
+      // The general blend: how deep inside this projector's own footprint the
+      // point sits, measured in its raster by `footprint.ts`. It replaces the
+      // limb ramp on any surface that has no limb, and it handles the raster
+      // edge, the terminator and a shadow edge with one rule because all three
+      // are edges of the same set.
+      //
+      // Falls back to an equal share only when no field was built, which means
+      // a caller assembled a `PreparedRig` by hand. Better a hard seam than a
+      // silent zero.
+      const field = rig.footprints?.[i] ?? null;
+      if (field === null || location === null) {
+        // No field, or a point the surface could not place on a face. Better a
+        // hard seam than a silent zero.
+        weights[i] = 1;
+        continue;
+      }
+      const d = footprintDistanceAt(field, location);
+      // A lit point the field cannot place inside the footprint.
+      //
+      // The field is per-VERTEX, so it resolves nothing below one triangle. A
+      // triangle whose three corners are all unlit interpolates to distance 0
+      // everywhere inside it — while a point in its interior can still pass
+      // `isIlluminatedAt`, because a footprint smaller than one face lands
+      // between the vertices that measure it. The ramp then returns 0 for a
+      // point this function has ALREADY established is lit, and if every
+      // projector reaching it says the same, `normalizeWeights` leaves the set
+      // alone and the surface renders black exactly where light falls.
+      //
+      // So the same rule as a missing field applies: better a hard seam than a
+      // silent zero. A seam is a visible statement that the tessellation is
+      // coarser than the footprint; a black patch is indistinguishable from
+      // being unlit, which is the one thing it is not.
+      if (!(d > 0)) {
+        weights[i] = 1;
+        continue;
+      }
+      weights[i] = rampWeight(blend.rampShape, d / widthM, blend.rampGamma);
+      continue;
+    }
 
     // theta: angular distance from the sub-projector point. The surface normal
     // is point/R and the sub-projector direction is the lens direction, so the

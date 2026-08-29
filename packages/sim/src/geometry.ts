@@ -248,6 +248,35 @@ export function aimAtSphereCenter(position: Vec3): { yawDeg: number; pitchDeg: n
 }
 
 /**
+ * Yaw and pitch that point a lens at `position` toward an arbitrary `target`.
+ *
+ * The general form of {@link aimAtSphereCenter}, for a rig whose projectors are
+ * not arranged around the world origin — see `placement.ts`.
+ *
+ * **`aimAtSphereCenter` is NOT reimplemented in terms of this, deliberately.**
+ * It negates the position (`p * -1`); this subtracts (`target - p`). For every
+ * non-zero component those are bit-identical, but a component that is exactly
+ * zero comes out `-0` from the first and `+0` from the second, and `atan2` reads
+ * the sign of zero: a lens at azimuth 0 gives yaw `-180` one way and `+180` the
+ * other. `wrapDeg180` happens to collapse both to `180`, so the two agree today
+ * — `test/placement.test.ts` asserts it on every nominal position rather than
+ * trusting the argument. But `bench-results.json` is byte-compared, and the
+ * sphere's numbers are not worth re-deriving through a different expression to
+ * save six lines. Same reasoning as `SphereSurface.facesLens`.
+ */
+export function aimAtPoint(position: Vec3, target: Vec3): { yawDeg: number; pitchDeg: number } {
+  const dir = normalize({
+    x: target.x - position.x,
+    y: target.y - position.y,
+    z: target.z - position.z,
+  });
+  return {
+    yawDeg: wrapDeg180(Math.atan2(dir.y, dir.x) * RAD2DEG),
+    pitchDeg: Math.asin(Math.max(-1, Math.min(1, dir.z))) * RAD2DEG,
+  };
+}
+
+/**
  * Angular distance in degrees between two directions on the sphere, computed
  * from the chord rather than from the dot product.
  *

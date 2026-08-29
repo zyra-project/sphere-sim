@@ -30,14 +30,18 @@
  * in separate workers makes that structural instead of a comment.
  */
 
-import type { ProjectorPose, RigCalibration } from '../../calibration/src/index.ts';
-import { projectorRotationMatrix, raySphereIntersect } from '../../sim/src/geometry.ts';
+import type { ProjectorPose, RigCalibration, SurfaceMesh } from '../../calibration/src/index.ts';
+import { projectorRotationMatrix } from '../../sim/src/geometry.ts';
 import { pixelToRay, prepareRig, worldToPixel, worldToPixelUnbounded } from '../../sim/src/optics.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
 import type { MetricSet } from '../../sim/src/metrics/index.ts';
 import { renderTwoRigRoomView } from '../../sim/src/misregistration.ts';
-import { renderProjectorView } from '../../sim/src/render.ts';
+import { defaultScene, renderProjectorView, renderRoomView } from '../../sim/src/render.ts';
+import { meshSurface } from '../../sim/src/mesh/surface.ts';
+import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
+import { placedRig } from '../../sim/src/placement.ts';
+import { isIlluminatedAt } from '../../sim/src/coverage.ts';
 import type { ViewerCamera } from '../../sim/src/render.ts';
 import { buildWorld } from './rigs.ts';
 import { framebufferSentence, projectorFacts, readingsFrom, rigFacts } from './readout.ts';
@@ -51,6 +55,8 @@ import type {
   SeamLine,
   SeamPatch,
   WarpMesh,
+  SurfaceRequest,
+  SurfaceResponse,
 } from './protocol.ts';
 
 /**
@@ -63,6 +69,34 @@ import type {
  */
 let cachedImage: EquirectImage | null = null;
 let cachedImageId = '';
+
+/**
+ * The last model, built.
+ *
+ * `computeSurface` runs on every settled control — a nudged slider, a swung
+ * camera — and the mesh arrives by structured clone, so a fresh copy each time.
+ * Rebuilding from it means a BVH build, a welded adjacency graph, vertex normals
+ * and a multi-source Dijkstra per projector, all to arrive at exactly what the
+ * last request already computed. For anything bigger than a test fixture that is
+ * the whole cost of the pass.
+ *
+ * Two keys, because two things go stale at different rates. `meshId` is the
+ * model — change it and everything is rebuilt. `rigKey` is the calibration
+ * `prepareRig` was given, serialized: the surface survives a moved projector,
+ * the footprint fields do not, because they are a statement about where that
+ * projector's light falls. `RigCalibration` is JSON by contract (see
+ * `SurfaceRequest`), so stringifying it is an exact comparison and not a
+ * fingerprint that can collide.
+ *
+ * One entry. It holds one model alive in the worker for as long as the page
+ * holds one, which is the same model and the same order of memory.
+ */
+let cachedMesh: {
+  meshId: string;
+  surface: MeshSurface;
+  rigKey: string;
+  rig: PreparedRig;
+} | null = null;
 
 /**
  * The metric set for one rig pair.
@@ -412,7 +446,7 @@ function paintedAt(
   const px = worldToPixel(c, target);
   if (!px) return null;
   const ray = pixelToRay(t, px.u, px.v);
-  const hit = raySphereIntersect(t.lens, ray, truth.radiusM);
+  const hit = truth.surface.intersect(t.lens, ray);
   return hit ? hit.point : null;
 }
 
@@ -488,7 +522,7 @@ function warpMeshes(
         const ray = pixelToRay(c, pu, pv);
         // The sphere is centred on the world origin (conventions.ts §W), so the
         // lens position is the ray origin as it stands.
-        const hit = raySphereIntersect(c.lens, ray, compositor.radiusM);
+        const hit = compositor.surface.intersect(c.lens, ray);
         if (!hit) continue;
         const back = t ? worldToPixelUnbounded(t, hit.point) : null;
         if (!back) continue;
@@ -685,5 +719,254 @@ export function computeModel(req: ModelRequest): ModelResponse {
     parityMs,
     metricsMs,
     densityScale: req.densityScale,
+  };
+}
+
+
+/**
+ * The sphere view's default range, the unit the model preview reads zoom in.
+ *
+ * `settings.ts` seeds `viewRangeM` at this and the slider moves around it, so
+ * the ratio is what the user actually expressed — "closer than default" or
+ * "further" — while the metres themselves are about a 130-inch ball and say
+ * nothing about a dropped model.
+ */
+const SPHERE_VIEW_RANGE_M = 10.2;
+
+/**
+ * A floor on the radius a preview is framed against.
+ *
+ * A degenerate model — one vertex, or every vertex coincident — has an extent
+ * of zero, and a camera distance of zero puts the eye inside the geometry with
+ * a divide waiting behind it. A centimetre is far below any model worth
+ * previewing and finite, which is the whole requirement.
+ */
+const MIN_MODEL_RADIUS_M = 0.01;
+
+/**
+ * How much further back than a snug fit a model preview sits, at zoom 1.
+ *
+ * A bounding sphere that exactly fills the frame touches all four edges, and a
+ * model inside it then runs to the edge wherever it comes closest to its own
+ * bound. Four tenths of the fit distance leaves visible space all round.
+ */
+const FRAME_MARGIN = 1.4;
+
+/**
+ * Light a dropped model and send back a picture of it, plus what it turned out
+ * to be.
+ *
+ * `docs/ARBITRARY-SHAPES.md` Phase 1. Deliberately NOT part of `computeModel`:
+ * that path feeds every number the page prints against PARAMETERS.md §7, and §7
+ * is a set of statements about one 130-inch sphere. Answering it about a
+ * visitor's building would be a claim nobody measured. This computes a picture
+ * and three plain facts about coverage, and no gate.
+ *
+ * ## What the numbers mean, and what they deliberately do not
+ *
+ * `litFraction`, `meanOverlap` and `shadowedFraction` are honest on any shape,
+ * because each is a count over EQUAL-AREA samples of the surface itself — no
+ * latitude, no limb, no blend. `shadowedFraction` is the one that cannot exist
+ * on a sphere: it counts area that faces a projector and lands on its raster and
+ * is dark anyway, because the model is in its own way.
+ *
+ * The picture DOES crossfade: the blend off a sphere is a geodesic distance to
+ * the edge of each projector's own footprint. What stays refused is the polar
+ * mask: it attenuates a sphere's exposed south cap keyed on absolute latitude,
+ * and a dropped model has neither a pole nor a cap to key on.
+ * `blendModelApplies` is where that decision lives, and states it in full.
+ *
+ * ## A rig placed by hand
+ *
+ * `req.placements` replaces the rig `settings` describes with an explicit one,
+ * of any size and any arrangement. It is accepted HERE and nowhere else, for the
+ * same reason this request kind exists at all: the metrics path answers §7 about
+ * a 130-inch sphere lit by an SOS rig, and six projectors on a wall are not that
+ * machine. The three numbers reported here are counts over the surface's own
+ * area, and stay true whatever is pointing at it.
+ */
+export function computeSurface(req: SurfaceRequest): SurfaceResponse {
+  // The content the page is showing, from the cache the metrics path fills.
+  // Without it `buildWorld` substitutes its grey fallback, so a reader who had
+  // dropped a picture or chosen Blue Marble saw the model lit by neither — a
+  // preview of content that is not the content on screen. A request naming an
+  // image this worker has not been sent still falls back rather than guessing.
+  const custom = cachedImageId === (req.customImageId ?? '') ? cachedImage : null;
+  const world = buildWorld(req.settings, undefined, custom);
+  if (req.mesh === null) {
+    return { kind: 'surface', id: req.id, ok: true, frame: null, facts: null };
+  }
+
+  // A model the worker has already built, or a build. An unnamed model is never
+  // cached: the empty key would make two different files look like one.
+  const meshId = req.meshId ?? '';
+  let surface = meshId !== '' && cachedMesh?.meshId === meshId ? cachedMesh.surface : null;
+  if (surface === null) {
+    surface = meshSurface(req.mesh);
+    // Dropped together. The rig below is prepared ON a surface, and keeping one
+    // past the other would render the frame from a different object than the one
+    // the coverage samples come off.
+    cachedMesh = null;
+  }
+  // The placed rig keeps the scene the settings describe — sphere radius, height,
+  // rotation, blend — and replaces only where the light comes from. Anything
+  // else would make moving a projector silently change the room too.
+  const rigCal =
+    req.placements && req.placements.length > 0
+      ? placedRig({
+          projectors: req.placements.map((place) => ({
+            // Aimed at the MODEL. A placement from the panel carries explicit
+            // angles, so this only decides the throw `placedRig` frames from --
+            // and without it that throw is measured to the world origin, so a
+            // model placed away from the origin is framed for a distance no
+            // projector is at.
+            aimAt: surface.bounds.centre,
+            ...place,
+          })),
+          // The MODEL's extent, not the sphere's. `placedRig` sizes each
+          // projector's field to frame a body of this radius, and handing it the
+          // configured ball meant a 30 m facade and a 30 cm prop were both
+          // framed as though they were a 130-inch sphere -- while the panel says
+          // each projector is framed from its own throw.
+          radiusM: surface.extentRadiusM,
+          centerHeightM: world.truthRig.sphere.centerHeightM,
+          rotationOffsetDeg: world.truthRig.sphere.rotationOffsetDeg,
+          resX: world.truthRig.projectors[0]?.intrinsics.resX,
+          resY: world.truthRig.projectors[0]?.intrinsics.resY,
+          blend: world.truthRig.blend,
+        })
+      : world.truthRig;
+  const rigKey = JSON.stringify(rigCal);
+  const truth =
+    cachedMesh !== null && cachedMesh.rigKey === rigKey
+      ? cachedMesh.rig
+      : prepareRig(rigCal, surface);
+  if (meshId !== '') cachedMesh = { meshId, surface, rigKey, rig: truth };
+  // `world.scene`, not a fresh `defaultScene(world.image)`. The world already
+  // built the scene the controls describe — the graticule, the mask reading, the
+  // ambient level — and rebuilding one from the image alone silently dropped all
+  // three, so the model preview rendered a different room from the live view
+  // beside it.
+  const scene = world.scene;
+
+  const width = Math.max(16, Math.round(req.width));
+  const height = Math.max(16, Math.round(req.height));
+  const az = (req.camera.azimuthDeg * Math.PI) / 180;
+  const el = (req.camera.elevationDeg * Math.PI) / 180;
+  // Framed against the MODEL's own size rather than the sphere's, so a 30 m
+  // facade and a 30 cm prop both arrive filling the frame instead of as a dot or
+  // as the inside of a wall.
+  //
+  // Taking `max` against the sphere view's range did NOT do that, which is the
+  // correction here. `rangeM` is metres for a 130-inch ball — 10.2 of them by
+  // default — so it was a floor no small model could get under: a 30 cm prop
+  // was framed from ten metres and arrived as a dot, exactly the outcome the
+  // paragraph above says it avoids. The slider's value is therefore read as a
+  // dimensionless ZOOM, its ratio to the sphere view's own default, and applied
+  // to a distance derived from the model. Pulling the camera in still works;
+  // it just works in units of the object in front of it.
+  const zoom = req.camera.rangeM / SPHERE_VIEW_RANGE_M;
+  const centre = surface.bounds.centre;
+  const radius = Math.max(surface.extentRadiusM, MIN_MODEL_RADIUS_M);
+  // The distance at which the bounding sphere exactly fills the SMALLER of the
+  // two fields of view, which for a 4:3 preview is the vertical one. Everything
+  // else here is expressed in multiples of it, so the framing follows the lens
+  // rather than a constant that happens to suit one field of view: widen the
+  // FOV slider and the camera moves in to match.
+  const fovV = 2 * Math.atan(Math.tan((req.camera.fovHDeg * Math.PI) / 360) * (height / width));
+  const fit = radius / Math.sin(Math.min((req.camera.fovHDeg * Math.PI) / 180, fovV) / 2);
+  // Floored at `fit` so zoom can never crop the model. The ratio runs below 1
+  // whenever somebody has pulled the sphere view in — the smoke test pinches to
+  // 4.6 of 10.2 metres before it drops anything — and without a floor that put
+  // the camera 0.97 m from an object whose vertices reach 0.86 m: outside the
+  // solid, but with the model overflowing every edge of the frame. A preview
+  // cropped to the silhouette hides the one thing it exists to show, which is
+  // whether the projectors reach the whole of it.
+  const r = Math.max(fit * FRAME_MARGIN * zoom, fit);
+  const camera: ViewerCamera = {
+    // Orbiting the MODEL, not the world origin. A model whose author placed it
+    // away from the origin would otherwise be viewed from a point computed
+    // about a centre it does not have — the right distance from the wrong
+    // place, so a translated model drifts out of frame as the camera swings.
+    position: {
+      x: centre.x + r * Math.cos(el) * Math.cos(az),
+      y: centre.y + r * Math.cos(el) * Math.sin(az),
+      z: centre.z + r * Math.sin(el),
+    },
+    target: centre,
+    upHint: { x: 0, y: 0, z: 1 },
+    fovHDeg: req.camera.fovHDeg,
+    width,
+    height,
+  };
+
+  const frame = renderRoomView(truth, scene, camera, {
+    samplesPerPixel: 1,
+    // The floor is drawn against the SPHERE's centre height, which says nothing
+    // about where a dropped model sits. Off until a model can state its own
+    // placement, rather than drawn somewhere arbitrary and believed.
+    drawFloor: false,
+  });
+
+  // Coverage over the model's own surface. Equal-area samples, so an ordinary
+  // mean is already an area-weighted mean.
+  const samples = surface.sampleArea(4000);
+  let lit = 0;
+  let contributors = 0;
+  let shadowed = 0;
+  for (const sample of samples) {
+    let reached = 0;
+    let blocked = false;
+    for (const p of truth.projectors) {
+      if (isIlluminatedAt(sample.point, sample.normal, p)) {
+        reached++;
+        continue;
+      }
+      // Faces the lens and lands on the raster, and is dark anyway: the model is
+      // in its own way. The one question a sphere never has to ask.
+      if (
+        surface.facesLens(sample.point, sample.normal, p.lens) &&
+        worldToPixel(p, sample.point) !== null
+      ) {
+        blocked = true;
+      }
+    }
+    if (reached > 0) {
+      lit++;
+      contributors += reached;
+    } else if (blocked) {
+      shadowed++;
+    }
+  }
+  const n = Math.max(1, samples.length);
+
+  return {
+    kind: 'surface',
+    id: req.id,
+    ok: true,
+    frame: {
+      width,
+      height,
+      data: frame.data,
+      caption: `${req.mesh.name}, lit by the rig`,
+      // A room view is radiance, exactly as the capture thumbnails are — NOT a
+      // projector's own frame, which is already through conventions.ts §P's
+      // encode. Labelling it 'display' would encode it a second time on the way
+      // to the canvas.
+      space: 'linear',
+    },
+    facts: {
+      name: req.mesh.name,
+      triangles: req.mesh.triangleCount,
+      vertices: req.mesh.vertexCount,
+      hasUvs: req.mesh.uvs !== null,
+      hasNormals: req.mesh.normals !== null,
+      projectorCount: truth.projectors.length,
+      boundsRadiusM: surface.extentRadiusM,
+      areaM2: surface.areaM2,
+      litFraction: lit / n,
+      meanOverlap: lit > 0 ? contributors / lit : 0,
+      shadowedFraction: shadowed / n,
+    },
   };
 }

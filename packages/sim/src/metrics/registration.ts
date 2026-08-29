@@ -51,7 +51,7 @@
 import type { RigCalibration } from '../../../calibration/src/index.ts';
 import type { Vec3 } from '../vec.ts';
 import { DEG2RAD } from '../vec.ts';
-import { angleBetweenDeg, latLonToWorld, raySphereIntersect } from '../geometry.ts';
+import { angleBetweenDeg } from '../geometry.ts';
 import type { PreparedProjector, PreparedRig } from '../optics.ts';
 import { pixelToRay, prepareRig, worldToPixel } from '../optics.ts';
 import type { MaskInterpretation } from '../coverage.ts';
@@ -59,7 +59,7 @@ import { coverageAndWeights, isIlluminatedAt, polarMask } from '../coverage.ts';
 import type { ConvergenceReport, CountField, MetricGate, MetricResult, ScalarField, SamplingReport } from './types.ts';
 import { convergenceOf, createScalarField, makeMetric } from './types.ts';
 import type { Stats } from './sampling.ts';
-import { densityPair, equalAreaLattice, latticeWeightSr, summarise } from './sampling.ts';
+import { densityPair, latticeWeightSr, summarise } from './sampling.ts';
 
 export interface RegistrationOptions {
   /** Equal-area lattice size for the scalar statistics. */
@@ -134,13 +134,14 @@ function placeTexel(
   point: Vec3,
   content: PreparedProjector,
   physical: PreparedProjector,
-  physicalRadiusM: number,
 ): { landed: Vec3 | null; responsible: boolean } {
-  if (!isIlluminatedAt(point, content)) return { landed: null, responsible: false };
+  if (!isIlluminatedAt(point, content.surface.normalAt(point), content)) {
+    return { landed: null, responsible: false };
+  }
   const px = worldToPixel(content, point);
   if (px === null) return { landed: null, responsible: false };
   const ray = pixelToRay(physical, px.u, px.v);
-  const hit = raySphereIntersect(physical.lens, ray, physicalRadiusM);
+  const hit = physical.surface.intersect(physical.lens, ray);
   if (hit === null) return { landed: null, responsible: true };
   return { landed: hit.point, responsible: true };
 }
@@ -179,8 +180,8 @@ export function placeTexelAt(
   content: PreparedRig,
   index: number,
 ): TexelPlacement {
-  const point = latLonToWorld(latDeg, lonDeg, content.radiusM);
-  const r = placeTexel(point, content.projectors[index], physical.projectors[index], physical.radiusM);
+  const point = content.surface.pointAt({ latDeg, lonDeg });
+  const r = placeTexel(point, content.projectors[index], physical.projectors[index]);
   return {
     landed: r.landed,
     responsible: r.responsible,
@@ -221,7 +222,7 @@ function placeAll(
 ): number {
   let count = 0;
   for (let i = 0; i < content.projectors.length; i++) {
-    const r = placeTexel(point, content.projectors[i], physical.projectors[i], physical.radiusM);
+    const r = placeTexel(point, content.projectors[i], physical.projectors[i]);
     landed[i] = r.landed;
     responsible[i] = r.responsible;
     if (r.responsible) count++;
@@ -268,7 +269,7 @@ function registrationOver(
   visibleWeightFloor: number,
   keepSamples: boolean,
 ): RegistrationCore {
-  const lattice = equalAreaLattice(count);
+  const lattice = content.surface.sampleArea(count);
   const n = content.projectors.length;
   const core: RegistrationCore = {
     overlapErrors: [],
@@ -284,12 +285,12 @@ function registrationOver(
   const responsibleFlags: boolean[] = new Array<boolean>(n).fill(false);
 
   for (const s of lattice) {
-    const point = latLonToWorld(s.latDeg, s.lonDeg, content.radiusM);
+    const point = s.point;
     // A fully masked point shows nothing at all, so a disagreement there is not
     // an artifact anybody can see. PARAMETERS.md §4.4: "The simulator must model
     // the mask, or seam metrics will report failures in a region nobody projects
     // onto." That sentence is about exactly this.
-    if (polarMask(s.latDeg, content.blend, maskInterpretation) <= 0) continue;
+    if (polarMask(s.coord.latDeg, content.blend, maskInterpretation) <= 0) continue;
 
     const responsible = placeAll(point, physical, content, landed, responsibleFlags);
     for (let i = 0; i < n; i++) {
@@ -304,7 +305,7 @@ function registrationOver(
 
     // Blend weights come from the CONTENT calibration: they are what the
     // compositor computed, not a property of the physical rig.
-    const weights = coverageAndWeights(point, content).weights;
+    const weights = coverageAndWeights(point, content.surface.normalAt(point), content).weights;
 
     const worst = worstPair(landed, n, physical.radiusM);
     if (worst === null) continue;
@@ -314,8 +315,8 @@ function registrationOver(
     if (worstMinW >= visibleWeightFloor) core.visibleErrors.push(worst.errorMm);
     if (keepSamples) {
       core.samples.push({
-        latDeg: s.latDeg,
-        lonDeg: s.lonDeg,
+        latDeg: s.coord.latDeg,
+        lonDeg: s.coord.lonDeg,
         projectorA: worst.i,
         projectorB: worst.j,
         errorMm: worst.errorMm,
@@ -353,7 +354,7 @@ function registrationField(
     for (let x = 0; x < width; x++) {
       const lonDeg = -180 + ((x + 0.5) / width) * 360;
       const idx = y * width + x;
-      const point = latLonToWorld(latDeg, lonDeg, content.radiusM);
+      const point = content.surface.pointAt({ latDeg, lonDeg });
       if (polarMask(latDeg, content.blend, maskInterpretation) <= 0) continue;
 
       const responsible = placeAll(point, physical, content, landed, responsibleFlags);

@@ -25,10 +25,12 @@
 import type { ChannelTriplet, Vec3 } from '../../calibration/src/index.ts';
 import type { EquirectImage, RgbImage } from './equirect.ts';
 import { createImage, graticuleCoverage, sampleEquirect } from './equirect.ts';
-import { latLonToWorld, raySphereIntersect, worldLonToTextureLon, worldToLatLon } from './geometry.ts';
+import { worldLonToTextureLon } from './geometry.ts';
 import type { PreparedRig } from './optics.ts';
 import { pixelToRay, worldToPixel } from './optics.ts';
 import { coverageAndWeights, isIlluminatedAt, polarMask } from './coverage.ts';
+import { blendModelApplies } from './surface.ts';
+import type { SurfaceLocation } from './surface.ts';
 import type { MaskInterpretation } from './coverage.ts';
 import type { ProjectorContribution, ShadeInput, ShadingModel } from './shading.ts';
 import { lambertianShading } from './shading.ts';
@@ -205,11 +207,33 @@ export interface SurfaceSample {
   mask: number;
 }
 
-export function sampleSurface(point: Vec3, rig: PreparedRig, scene: Scene): SurfaceSample {
-  const inv = 1 / rig.radiusM;
-  const normal = { x: point.x * inv, y: point.y * inv, z: point.z * inv };
-  const ll = worldToLatLon(point);
-  const texLon = worldLonToTextureLon(ll.lonDeg, rig.rotationOffsetDeg);
+export function sampleSurface(
+  point: Vec3,
+  rig: PreparedRig,
+  scene: Scene,
+  /**
+   * The face the point came from, when the caller traced it.
+   *
+   * All three callers hold a {@link SurfaceHit} and pass its location. That
+   * matters here more than anywhere: this one function asks the surface three
+   * separate questions about the same point — its normal, its content
+   * coordinate, and its coverage — so without the face it ran three independent
+   * searches for a triangle the ray had already found, and on a concave model
+   * all three could land on a different one.
+   */
+  at?: SurfaceLocation | null,
+): SurfaceSample {
+  const normal = rig.surface.normalAt(point, at);
+  const ll = rig.surface.coordAt(point, at);
+  // The sphere's texture is anchored to the world by a MECHANICAL rotation of
+  // the ball; a mesh's UV is anchored by its own unwrap and has no such offset.
+  // Applying `theta_rot` to a model slid its texture sideways by a number that
+  // describes a different object. `buildWarpExport` already made this
+  // distinction and this did not, so the preview and the exported warp file
+  // disagreed about where the content sits.
+  const texLon = blendModelApplies(rig.surface)
+    ? worldLonToTextureLon(ll.lonDeg, rig.rotationOffsetDeg)
+    : ll.lonDeg;
   // `contentAt`, never `sampleEquirect` directly: the graticule is drawn
   // analytically over the image, so a renderer that reads the texture is
   // reading the content with the pattern missing. This is exactly what happened
@@ -218,8 +242,13 @@ export function sampleSurface(point: Vec3, rig: PreparedRig, scene: Scene): Surf
   // grid and the frame the projector was supposedly sending had none. See
   // `test/content.test.ts`, which now refuses to let the two disagree.
   const target = contentAt(scene, ll.latDeg, texLon);
-  const mask = polarMask(ll.latDeg, rig.blend, scene.maskInterpretation);
-  const { weights, lit } = coverageAndWeights(point, rig);
+  // The polar mask keys on latitude, and off a sphere `ll.latDeg` is a UV
+  // coordinate wearing a latitude's name. Refused rather than applied to a row
+  // of texture. See `blendModelApplies`.
+  const mask = blendModelApplies(rig.surface)
+    ? polarMask(ll.latDeg, rig.blend, scene.maskInterpretation)
+    : 1;
+  const { weights, lit } = coverageAndWeights(point, normal, rig, at);
   for (let i = 0; i < weights.length; i++) weights[i] *= mask;
   return { point, normal, latDeg: ll.latDeg, lonDeg: ll.lonDeg, target, weights, lit, mask };
 }
@@ -267,9 +296,9 @@ export function renderProjectorView(
         // offsets are exactly (0.5, 0.5), i.e. the pixel centre — and at the
         // default step of 1 the coordinate is exactly `x + 0.5` as before.
         const ray = pixelToRay(proj, (x + ox) * stepX, (y + oy) * stepY);
-        const hit = raySphereIntersect(proj.lens, ray, rig.radiusM);
+        const hit = rig.surface.intersect(proj.lens, ray);
         if (!hit) continue;
-        const surf = sampleSurface(hit.point, rig, scene);
+        const surf = sampleSurface(hit.point, rig, scene, hit.location);
         const sig = blendedSignal(surf.target, surf.weights[index], scene.encodeGamma);
         r += sig.r;
         g += sig.g;
@@ -480,9 +509,9 @@ function traceRoomRay(
   shading: ShadingModel,
   ctx: RoomTraceContext,
 ): ChannelTriplet {
-  const hit = raySphereIntersect(origin, dir, rig.radiusM);
+  const hit = rig.surface.intersect(origin, dir);
   if (hit) {
-    const surf = sampleSurface(hit.point, rig, scene);
+    const surf = sampleSurface(hit.point, rig, scene, hit.location);
     const contributions: ProjectorContribution[] = [];
     for (let i = 0; i < rig.projectors.length; i++) {
       // Every projector whose light REACHES this point contributes, even at
@@ -503,7 +532,7 @@ function traceRoomRay(
         distanceM,
         toLens: scale(toLensVec, 1 / distanceM),
         transfer: p.cal.transfer,
-        referenceDistanceM: p.distanceM - rig.radiusM,
+        referenceDistanceM: p.referenceDistanceM,
       });
     }
     const input: ShadeInput = {
@@ -540,7 +569,7 @@ function shadeFloor(point: Vec3, rig: PreparedRig, scene: Scene): ChannelTriplet
     if (cos <= 0) continue;
     const dir = scale(toLensVec, 1 / distanceM);
     // Shadow test: does the sphere sit between the floor point and the lens?
-    const occl = raySphereIntersect(point, dir, rig.radiusM, 1e-6);
+    const occl = rig.surface.intersect(point, dir, 1e-6);
     if (occl && occl.t < distanceM) continue;
     // Is the floor point even inside this projector's cone?
     if (worldToPixel(p, point) === null) continue;
@@ -657,10 +686,11 @@ export function surfacePointVisibility(
   lonDeg: number,
   rig: PreparedRig,
 ): { projector: number; u: number; v: number }[] {
-  const point = latLonToWorld(latDeg, lonDeg, rig.radiusM);
+  const point = rig.surface.pointAt({ latDeg, lonDeg });
+  const normal = rig.surface.normalAt(point);
   const out: { projector: number; u: number; v: number }[] = [];
   for (const p of rig.projectors) {
-    if (!isIlluminatedAt(point, p)) continue;
+    if (!isIlluminatedAt(point, normal, p)) continue;
     const px = worldToPixel(p, point);
     if (px) out.push({ projector: p.index, u: px.u, v: px.v });
   }

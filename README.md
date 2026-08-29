@@ -22,11 +22,13 @@ build on any import across that line.
 | [`packages/calibration/README.md`](packages/calibration/README.md) | The boundary object, and why it contains no code |
 | [`packages/bench/README.md`](packages/bench/README.md) | The scorer: how a solve is graded, how the gauge is removed, and how to read `bench-results.json` |
 | [`packages/experiments/README.md`](packages/experiments/README.md) | The measurements. Each runs once and is not iterated |
+| [`packages/meshio/README.md`](packages/meshio/README.md) | The model-file reader, and why a loader cannot live where either model can reach it |
 | [`packages/web/README.md`](packages/web/README.md) | **The interactive simulator.** Walk around a projected sphere; press one button to run a real calibration in the browser |
 | [`packages/harness/README.md`](packages/harness/README.md) | The developer harness, and exactly which links of the GPU↔CPU parity chain are verified by execution |
 | [`validation/README.md`](validation/README.md) | Photographs of real installations beside our render. Plausibility only — no metric, no gate, no score |
 | [`docs/EXPERIMENT-1.md`](docs/EXPERIMENT-1.md) | **How many photographs a calibration needs, and whether a phone suffices.** Measured |
 | [`docs/VISIT.md`](docs/VISIT.md) | **The ground-truth visit field card.** What to measure, in cut order, with framing diagrams |
+| [`docs/ARBITRARY-SHAPES.md`](docs/ARBITRARY-SHAPES.md) | **Feasibility study, and the running record of building it.** What it takes to render an uploaded GLB with projectors anywhere, and where the sphere is load-bearing. Phases 0, 1, 3 and 4 are implemented: a `.glb` dropped on the page is traced, lit, blended, and lit by any number of projectors placed anywhere. A Bourke warp-and-blend file is written by `packages/sim/src/warp.ts` — from the library, not yet from a button. Phase 2's traversal is proven against the simulator; the live view is still the sphere |
 | [`docs/USAGE-ACCOUNTING.md`](docs/USAGE-ACCOUNTING.md) | What building this cost, in dollars and in kilowatt-hours. The bill is measured; the environmental figure is **PROVISIONAL** |
 | [`skills/usage-report/SKILL.md`](skills/usage-report/SKILL.md) | The same accounting as an installable, project-agnostic Claude Code skill |
 

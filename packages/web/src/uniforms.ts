@@ -450,6 +450,12 @@ export function pickMarker(u: DisplayUniforms, ndcX: number, ndcY: number): numb
   const dir = eyeRay(u, ndcX, ndcY);
   const origin = { x: u.camPos[0], y: u.camPos[1], z: u.camPos[2] };
 
+  // Deliberately NOT routed through `Surface`, unlike the rest of the model.
+  // This picks against `PackedRig` — the flat Float32Array payload the shader
+  // is handed — so it has to answer the question the SHADER would answer, and
+  // the shader intersects a sphere analytically. Phase 2 of
+  // docs/ARBITRARY-SHAPES.md is where the GPU learns about shapes; until then a
+  // seam here would let the picker and the picture disagree about what was hit.
   const ball = raySphereIntersect(origin, dir, u.physical.radiusM, 1e-9);
   const maxT = ball ? ball.t : 1e9;
 

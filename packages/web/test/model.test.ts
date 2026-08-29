@@ -24,8 +24,11 @@ import { createImage } from '../../sim/src/equirect.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
 import { BOULDER_PRESET, CONTENT_CUSTOM, PERFECT_PRESET, noNudge, withNudge } from '../src/settings.ts';
 import { buildWorld } from '../src/rigs.ts';
-import { computeModel } from '../src/model.ts';
-import type { ModelRequest } from '../src/protocol.ts';
+import { computeModel, computeSurface } from '../src/model.ts';
+import type { ModelRequest, SurfaceRequest } from '../src/protocol.ts';
+import type { SurfaceResponse } from '../src/protocol.ts';
+import type { ProjectorPlacement } from '../../sim/src/placement.ts';
+import type { SurfaceMesh } from '../../calibration/src/index.ts';
 
 /** A field of one value, so a render's mean says which image was used. */
 function flat(value: number): EquirectImage {
@@ -280,4 +283,170 @@ test('a compositor rig for a different set of projectors is refused, not indexed
     // the calibration against.
     assert.equal(reply.gridBaselineMm, null, `${what}: the stale rig was used anyway`);
   }
+});
+
+test('computeSurface lights a dropped model and reports what it is', () => {
+  // A hollow box: convex from outside, so nothing shadows — the control.
+  const box = boxMesh(0.5);
+  const req: SurfaceRequest = {
+    kind: 'surface',
+    id: 1,
+    settings: BOULDER_PRESET,
+    mesh: box,
+    width: 48,
+    height: 36,
+    camera: { azimuthDeg: 35, elevationDeg: 10, rangeM: 6, fovHDeg: 50 },
+  };
+  const reply = computeSurface(req);
+  assert.equal(reply.ok, true);
+  assert.ok(reply.frame !== null, 'a model must produce a picture');
+  assert.equal(reply.frame.width, 48);
+  assert.ok(reply.frame.data.some((v) => v > 0), 'the picture must not be empty');
+  // A room view is radiance. Labelling it 'display' would encode it twice on the
+  // way to the canvas.
+  assert.equal(reply.frame.space, 'linear');
+
+  const f = reply.facts;
+  assert.ok(f !== null);
+  assert.equal(f.triangles, box.triangleCount);
+  assert.equal(f.hasUvs, false);
+  assert.ok(f.litFraction > 0 && f.litFraction <= 1, `litFraction ${f.litFraction}`);
+  assert.ok(f.areaM2 > 0);
+  // Convex: a box cannot get in its own way from outside.
+  assert.equal(f.shadowedFraction, 0, 'a convex shell must shadow nothing');
+});
+
+test('computeSurface reports the shadowing a concave model does to itself', () => {
+  // The same box with a panel hung across the middle, which is exactly the thing
+  // a sphere can never do and the reason the number exists.
+  const shaded = boxWithBaffle(0.5);
+  const reply = computeSurface({
+    kind: 'surface',
+    id: 2,
+    settings: BOULDER_PRESET,
+    mesh: shaded,
+    width: 32,
+    height: 24,
+    camera: { azimuthDeg: 0, elevationDeg: 0, rangeM: 6, fovHDeg: 50 },
+  });
+  assert.ok(reply.ok && reply.facts !== null);
+  assert.ok(
+    reply.facts.shadowedFraction > 0,
+    'a baffle across the box must leave area facing a lens and dark anyway',
+  );
+});
+
+test('computeSurface with no mesh puts the sphere back', () => {
+  const reply = computeSurface({
+    kind: 'surface',
+    id: 3,
+    settings: BOULDER_PRESET,
+    mesh: null,
+    width: 32,
+    height: 24,
+    camera: { azimuthDeg: 0, elevationDeg: 0, rangeM: 6, fovHDeg: 50 },
+  });
+  assert.ok(reply.ok);
+  assert.equal(reply.frame, null);
+  assert.equal(reply.facts, null);
+});
+
+/** An axis-aligned cube shell of half-extent `h`, wound outward. */
+function boxMesh(h: number): SurfaceMesh {
+  const p: number[] = [];
+  const idx: number[] = [];
+  const quad = (a: number[], b: number[], c: number[], d: number[]): void => {
+    const base = p.length / 3;
+    p.push(...a, ...b, ...c, ...d);
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  };
+  quad([-h, -h, h], [h, -h, h], [h, h, h], [-h, h, h]);
+  quad([-h, h, -h], [h, h, -h], [h, -h, -h], [-h, -h, -h]);
+  quad([-h, -h, -h], [h, -h, -h], [h, -h, h], [-h, -h, h]);
+  quad([h, h, -h], [-h, h, -h], [-h, h, h], [h, h, h]);
+  quad([h, -h, -h], [h, h, -h], [h, h, h], [h, -h, h]);
+  quad([-h, h, -h], [-h, -h, -h], [-h, -h, h], [-h, h, h]);
+  return {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'box',
+    positions: Float64Array.from(p),
+    indices: Uint32Array.from(idx),
+    normals: null,
+    uvs: null,
+    vertexCount: p.length / 3,
+    triangleCount: idx.length / 3,
+  };
+}
+
+/** The box, plus a panel across its middle that shadows the far wall. */
+function boxWithBaffle(h: number): SurfaceMesh {
+  const box = boxMesh(h);
+  const p = Array.from(box.positions);
+  const idx = Array.from(box.indices);
+  const base = p.length / 3;
+  p.push(-h, -h, 0, h, -h, 0, h, h, 0, -h, h, 0);
+  idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  return {
+    ...box,
+    name: 'box-with-baffle',
+    positions: Float64Array.from(p),
+    indices: Uint32Array.from(idx),
+    vertexCount: p.length / 3,
+    triangleCount: idx.length / 3,
+  };
+}
+
+test('the surface cache never answers with a stale build', () => {
+  // `computeSurface` holds the last model built, because it runs on every
+  // settled control and the mesh arrives by structured clone — a fresh copy of
+  // an unchanged model, and a BVH, an adjacency graph and a Dijkstra field per
+  // projector to get back where the previous request already was.
+  //
+  // The failure mode of any such cache is a stale answer, so this measures it
+  // against the thing it is an optimization OF: an unnamed model is never
+  // cached, so the same request without a `meshId` is a cold worker, and every
+  // warm answer has to equal one.
+  const box = boxMesh(0.5);
+  const baffled = boxWithBaffle(0.5);
+  const moved: ProjectorPlacement[] = [
+    { position: { x: 3, y: 0, z: 1 } },
+    { position: { x: -3, y: 0, z: 1 } },
+  ];
+  const ask = (mesh: SurfaceMesh, placements: ProjectorPlacement[] | null, meshId?: string) =>
+    computeSurface({
+      kind: 'surface',
+      id: 9,
+      settings: BOULDER_PRESET,
+      mesh,
+      width: 32,
+      height: 24,
+      camera: { azimuthDeg: 20, elevationDeg: 15, rangeM: 6, fovHDeg: 50 },
+      ...(placements ? { placements } : {}),
+      ...(meshId === undefined ? {} : { meshId }),
+    });
+
+  // Every cold answer first. A cold call clears the cache on its way through, so
+  // taking them later would flush the warm state this is trying to test.
+  const coldBox = ask(box, null);
+  const coldMoved = ask(box, moved);
+  const coldBaffled = ask(baffled, null);
+
+  const same = (got: SurfaceResponse, want: SurfaceResponse, what: string): void => {
+    assert.deepEqual(got.facts, want.facts, `${what}: facts`);
+    assert.deepEqual(got.frame?.data, want.frame?.data, `${what}: picture`);
+  };
+
+  same(ask(box, null, 'm1'), coldBox, 'cold, filling the cache');
+  same(ask(box, null, 'm1'), coldBox, 'the same model and the same rig again');
+  // The two that a cache gets wrong. Without the rig key a moved projector keeps
+  // the old footprint fields; without the model key a different file is answered
+  // with the last one's geometry. Both are mutation-checked: dropping either
+  // comparison from `cachedMesh` fails the matching line here.
+  same(ask(box, moved, 'm1'), coldMoved, 'the same model, projectors moved');
+  same(ask(baffled, null, 'm2'), coldBaffled, 'a different model');
+  same(ask(box, null, 'm1'), coldBox, 'and back to the first model');
+
+  // The rigs really do differ, or the third line above proves nothing.
+  assert.notDeepEqual(coldMoved.facts, coldBox.facts, 'the moved rig must light the box differently');
+  assert.notDeepEqual(coldBaffled.facts, coldBox.facts, 'the baffle must change the facts');
 });

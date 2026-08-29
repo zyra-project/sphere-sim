@@ -24,6 +24,11 @@ import { NOMINAL_SILHOUETTE_MARGIN_FRAC } from '../../calibration/src/convention
 import type { Mat3 } from './vec.ts';
 import { DEG2RAD, RAD2DEG, matTVec, matVec, normalize, sub } from './vec.ts';
 import { projectorRotationMatrix } from './geometry.ts';
+import type { Surface } from './surface.ts';
+import { blendModelApplies, sphereSurface } from './surface.ts';
+import { buildFootprintField } from './footprint.ts';
+import type { FootprintField } from './footprint.ts';
+import type { MeshSurface } from './mesh/surface.ts';
 
 /**
  * A projector with its per-render invariants precomputed.
@@ -52,6 +57,15 @@ export interface PreparedProjector {
   /** Principal point in pixels, lens shift included. conventions.ts §I. */
   cx: number;
   cy: number;
+  /**
+   * The surface this projector was prepared against.
+   *
+   * The route to the shape for everything downstream — `coverage.ts`,
+   * `render.ts` and the metrics all ask this rather than naming the sphere.
+   * See `surface.ts` for why {@link PreparedProjector.radiusM} survives beside
+   * it rather than being replaced by it.
+   */
+  surface: Surface;
   /** Sphere radius this projector was prepared against, metres. */
   radiusM: number;
   /** Distance from the lens to the sphere centre, metres. `d_proj`. */
@@ -64,12 +78,54 @@ export interface PreparedProjector {
   limbCos: number;
   /** Angular radius of the sphere's silhouette seen from this lens, degrees. */
   limbAngleDeg: number;
+  /**
+   * The distance at which this projector's output is defined to be 1.0, metres.
+   * PARAMETERS.md Conventions, "Radiometry"; `shading.ts` squares it into the
+   * inverse-square falloff.
+   *
+   * The near point of the body along the axis from this lens to the body's
+   * centre: `|lens - centre| - extentRadiusM`. On the sphere, which §W puts on
+   * the origin with `extentRadiusM === radiusM`, that is `d - R` and the same
+   * bits as before.
+   *
+   * It is computed HERE, once, rather than at the three call sites that build
+   * contributions, because each of them was writing `p.distanceM - rig.radiusM`
+   * — a lens distance measured from the ORIGIN minus a bound measured about the
+   * origin. For the sphere those are the same statement. For a model standing
+   * away from the origin they are not: a facade 20 m out with 5 m of extent has
+   * `boundsRadiusM` near 25, so a projector 30 m out gets a reference distance
+   * of 5 for a surface it is actually 10 to 15 m from, and renders at a quarter
+   * brightness or less. Which side of the origin the lens sits on changes the
+   * answer again. Nothing about the picture says so; it is simply dim.
+   *
+   * Negative when the lens is inside the body's bounding sphere — the same
+   * degenerate case {@link PreparedProjector.limbCos} clamps for. Squaring it
+   * makes the falloff positive but meaningless; a projector inside the model is
+   * not a rig this answers questions about.
+   */
+  referenceDistanceM: number;
 }
 
 /** A rig with every projector prepared, plus the sphere it was prepared against. */
 export interface PreparedRig {
   /** The calibration this was built from, kept so nothing has to be re-derived. */
   rig: RigCalibration;
+  /** The shape the light lands on. See `surface.ts`. */
+  surface: Surface;
+  /**
+   * One footprint distance field per projector, or `null` on a surface whose
+   * blend has a closed form.
+   *
+   * `null` for a sphere, always — `blendModelApplies` is true there, the limb
+   * ramp is exact, and building a field would trace sixteen thousand rays per
+   * projector to reproduce arithmetic that already exists. It is also what keeps
+   * this change byte-identical: the sphere path never touches any of it.
+   *
+   * Built at PREPARE time rather than lazily. A field built on first use would
+   * be built inside whichever render happened to run first, so its cost would
+   * land on an arbitrary frame and `prepareRig` would look cheaper than it is.
+   */
+  footprints: (FootprintField | null)[] | null;
   radiusM: number;
   centerHeightM: number;
   rotationOffsetDeg: number;
@@ -79,15 +135,21 @@ export interface PreparedRig {
 
 export function prepareProjector(
   cal: ProjectorCalibration,
-  radiusM: number,
+  surface: Surface,
   index: number,
 ): PreparedProjector {
+  const radiusM = surface.boundsRadiusM;
   const rotation = projectorRotationMatrix(cal.pose);
   const it = cal.intrinsics;
   const fx = it.resX / 2 / Math.tan((it.fovHDeg * DEG2RAD) / 2);
   const fy = fx * it.pixelAspect;
   const lens = cal.pose.position;
   const distanceM = Math.hypot(lens.x, lens.y, lens.z);
+  // The throw to the BODY, which for the sphere is the throw to the origin and
+  // the same arithmetic: `SphereSurface.centre` is exactly zero, and subtracting
+  // an exact zero returns its operand unchanged.
+  const centre = surface.centre;
+  const throwM = Math.hypot(lens.x - centre.x, lens.y - centre.y, lens.z - centre.z);
   // A lens inside the sphere has no silhouette; clamp rather than produce NaN so
   // a wildly misplaced projector in a sweep degrades instead of exploding.
   const limbCos = distanceM > 0 ? Math.min(1, radiusM / distanceM) : 1;
@@ -107,10 +169,12 @@ export function prepareProjector(
     // pins it with a non-zero shift.
     cx: it.resX / 2 + it.shiftH * (it.resX / 2),
     cy: it.resY / 2 - it.shiftV * (it.resY / 2),
+    surface,
     radiusM,
     distanceM,
     limbCos,
     limbAngleDeg: Math.asin(limbCos) * RAD2DEG,
+    referenceDistanceM: throwM - surface.extentRadiusM,
   };
 }
 
@@ -420,13 +484,101 @@ export function fovVDeg(it: ProjectorIntrinsics): number {
  * are computed exactly once per run — cheaper, and one fewer way for two runs
  * with the same seed to disagree in the last bit.
  */
-export function prepareRig(rig: RigCalibration): PreparedRig {
+/**
+ * A rig with every projector prepared, against `rig.sphere` or against a surface
+ * the caller supplies.
+ *
+ * ## Why the mesh arrives here and not in `RigCalibration`
+ *
+ * The obvious move for `docs/ARBITRARY-SHAPES.md` Phase 1 is a `mesh?:
+ * SurfaceMesh` field on `RigCalibration`, so a rig names its own shape. It is
+ * the right destination and it is not yet the right change, because
+ * `RigCalibration`'s own contract says "serialized to JSON, passed between A and
+ * B" — and a `SurfaceMesh` is typed arrays. `JSON.stringify` turns a
+ * `Float64Array` into an object keyed by stringified indices: a 100k-triangle
+ * model becomes tens of megabytes of `{"0":0.123,"1":...}` that reads back as
+ * something which is not a mesh.
+ *
+ * (It would not break the bench today — `bench-results.json` carries no
+ * `RigCalibration`; `inputs.injected` is a perturbation record that happens to
+ * have a `projectors` key. But the type's documented contract is the contract,
+ * and the solver returns one of these.)
+ *
+ * Fixing that properly means deciding how a calibration carries a mesh across
+ * JSON — beside it as a `.bin`, or as the source file's own bytes to re-read,
+ * as `packages/calibration/src/mesh.ts` sketches. That is a decision about the
+ * boundary object, and it belongs with Phase 5, where the solver actually needs
+ * a mesh to cross. Until then the surface is passed in, which gets a model on
+ * screen without putting a landmine in the type that both models share.
+ *
+ * Omit it and the rig is a sphere built from `rig.sphere.radiusM`, which is what
+ * every existing caller gets and why this change moves no bytes.
+ */
+export function prepareRig(rig: RigCalibration, surfaceOverride?: Surface): PreparedRig {
+  // One surface per rig, shared by every projector. Building it once is not an
+  // optimisation: a surface built twice is two objects that a `===` check can
+  // tell apart, and a mesh carries a bounding volume hierarchy that nobody wants
+  // rebuilt four times per prepare.
+  const surface = surfaceOverride ?? sphereSurface(rig.sphere.radiusM);
+  const projectors = rig.projectors.map((p, i) => prepareProjector(p, surface, i));
+
+  // Only where the closed form does not apply. On a sphere this is `null` and
+  // nothing below runs, which is what keeps the sphere path byte-identical.
+  const footprints = blendModelApplies(surface) ? null : buildFootprints(surface, projectors);
+
   return {
     rig,
-    radiusM: rig.sphere.radiusM,
+    surface,
+    // The SURFACE's radius, not `rig.sphere.radiusM`. They are the same number
+    // for a sphere and must be, or this change would move bytes; for a mesh the
+    // sphere calibration describes a ball that is not being lit, and a metric
+    // reading `radiusM` would be measuring it.
+    radiusM: surface.boundsRadiusM,
     centerHeightM: rig.sphere.centerHeightM,
     rotationOffsetDeg: rig.sphere.rotationOffsetDeg,
     blend: rig.blend,
-    projectors: rig.projectors.map((p, i) => prepareProjector(p, rig.sphere.radiusM, i)),
+    projectors,
+    footprints,
   };
+}
+
+/**
+ * One geodesic footprint field per projector, over the mesh's own vertices.
+ *
+ * Here rather than in `footprint.ts` because it needs `worldToPixel` and the
+ * surface's own visibility pair, and `coverage.ts` imports `footprint.ts` — so
+ * putting the assembly there would close a cycle. `footprint.ts` owns the graph
+ * and the search; this owns what "lit" means, which is `isIlluminatedAt`'s
+ * three tests in `isIlluminatedAt`'s order, cheapest rejection first.
+ */
+function buildFootprints(
+  surface: Surface,
+  projectors: PreparedProjector[],
+): (FootprintField | null)[] | null {
+  const mesh = meshOf(surface);
+  if (mesh === null) return null;
+  const adjacency = mesh.adjacency;
+  const positions = mesh.mesh.positions;
+  return projectors.map((p) =>
+    buildFootprintField(mesh.mesh, adjacency, mesh.extentRadiusM, (i) => {
+      const point = { x: positions[3 * i], y: positions[3 * i + 1], z: positions[3 * i + 2] };
+      // The facing test belongs to the mesh, which knows what a hit at this
+      // vertex is shaded with; asking it here would be a second answer to that.
+      // It was one twice already. First `normalAt(point)`, which re-finds the
+      // face by a radial search that returns nothing for a flat wall — so every
+      // wall vertex took the `{0, 0, 1}` fallback, a wall facing a projector on
+      // +x read as facing away, and the field had no lit vertex to feather from.
+      // Then `vertexNormal(i)`, which fixed the wall but averages across a hard
+      // edge into a direction no adjacent face has, so a cube corner could be
+      // called lit by a normal nothing renders with. See `vertexFacesLens`.
+      if (!mesh.vertexFacesLens(i, p.lens)) return false;
+      if (worldToPixel(p, point) === null) return false;
+      return !surface.shadowed(point, p.lens);
+    }),
+  );
+}
+
+/** The mesh behind a surface, or `null` when there is not one. */
+function meshOf(surface: Surface): MeshSurface | null {
+  return surface.kind === 'mesh' ? (surface as MeshSurface) : null;
 }

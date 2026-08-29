@@ -131,6 +131,14 @@ uniform float uDisplayGamma;         // 0 disables the final encode (linear read
 
 uniform sampler2D uEquirect;
 
+// The mesh, as texels. sim/src/mesh/pack.ts writes this layout and documents
+// it; nothing here decides it. uMeshMode is 0 for the analytic sphere, so a
+// shader compiled without a model still takes the closed form and costs nothing.
+uniform sampler2D uBvhNodes;
+uniform sampler2D uBvhTris;
+uniform int   uMeshMode;
+uniform int   uBvhNodeCount;
+
 in vec2 vUv;
 out vec4 fragColor;
 
@@ -512,6 +520,181 @@ void main() {
 }
 `;
 
+
+/**
+ * The hierarchy traversal, on the GPU — `docs/ARBITRARY-SHAPES.md` Phase 2.
+ *
+ * A transliteration of `sim/src/mesh/bvh.ts`, not a re-derivation: the box slab
+ * test, the Moller-Trumbore triangle, the near-child-first descent and the
+ * epsilons are the same arithmetic in the same order. That is the point of the
+ * parity chain — two implementations of ONE model, so a disagreement is a bug
+ * rather than a design difference.
+ *
+ * ## The stack is fixed and that is a refusal, not a limit
+ *
+ * GLSL has no dynamic allocation, so the traversal stack is a compile-time
+ * array. A hierarchy deeper than it would silently drop the nodes it could not
+ * push and report a miss where there is geometry — a hole in the model that
+ * looks like a modelling error. `packBvh` therefore reports `maxDepth` and the
+ * caller refuses to upload a hierarchy deeper than `BVH_STACK` rather than
+ * rendering one it cannot finish. 32 admits about four billion triangles at the
+ * builder's leaf size, so the refusal is a guard rather than a ceiling anybody
+ * meets.
+ *
+ * ## Why the triangle fetch is six texels and not a vertex indirection
+ *
+ * See `pack.ts`. The short version is that a dependent texture fetch inside this
+ * loop cannot be prefetched, and this loop is where a mesh renderer spends its
+ * time.
+ */
+const CHUNK_MESH = `
+#define BVH_STACK 32
+#define PACK_WIDTH 1024
+#define NODE_TEXELS 2
+#define TRI_TEXELS 6
+
+vec4 packedTexel(sampler2D tex, int i) {
+  return texelFetch(tex, ivec2(i % PACK_WIDTH, i / PACK_WIDTH), 0);
+}
+
+// \`sim/src/mesh/bvh.ts\` \`rayBox\`. Returns the near distance, or -1.0 for a
+// miss -- GLSL has no Infinity to return, so the sentinel changes and every
+// comparison against it changes with it.
+float rayBoxNear(vec3 bmin, vec3 bmax, vec3 origin, vec3 invDir, float tMin, float tMax) {
+  vec3 t0 = (bmin - origin) * invDir;
+  vec3 t1 = (bmax - origin) * invDir;
+  vec3 lo3 = min(t0, t1);
+  vec3 hi3 = max(t0, t1);
+  float lo = max(max(lo3.x, lo3.y), lo3.z);
+  float hi = min(min(hi3.x, hi3.y), hi3.z);
+  if (hi < max(lo, tMin) || lo > tMax) return -1.0;
+  return max(lo, tMin);
+}
+
+// \`sim/src/mesh/bvh.ts\` \`rayTriangle\`. Returns (t, u, v), or t = -1.0 for a
+// miss. BARY_EPS closes the crack a ray landing exactly on a shared edge would
+// otherwise fall through -- both adjacent triangles rejecting it and the surface
+// reporting its own back face.
+vec3 rayTriangleAt(int tri, vec3 origin, vec3 dir) {
+  int base = tri * TRI_TEXELS;
+  vec3 a = packedTexel(uBvhTris, base).xyz;
+  vec3 b = packedTexel(uBvhTris, base + 1).xyz;
+  vec3 c = packedTexel(uBvhTris, base + 2).xyz;
+
+  vec3 e1 = b - a;
+  vec3 e2 = c - a;
+  vec3 pv = cross(dir, e2);
+  float det = dot(e1, pv);
+  if (det > -1e-12 && det < 1e-12) return vec3(-1.0, 0.0, 0.0);
+
+  float inv = 1.0 / det;
+  vec3 tv = origin - a;
+  float u = dot(tv, pv) * inv;
+  if (u < -1e-9 || u > 1.0 + 1e-9) return vec3(-1.0, 0.0, 0.0);
+
+  vec3 qv = cross(tv, e1);
+  float v = dot(dir, qv) * inv;
+  if (v < -1e-9 || u + v > 1.0 + 1e-9) return vec3(-1.0, 0.0, 0.0);
+
+  return vec3(dot(e2, qv) * inv, u, v);
+}
+
+// \`sim/src/mesh/bvh.ts\` \`intersectBvh\`. Returns (t, triangle, u, v), with
+// t < 0.0 for a miss.
+vec4 bvhIntersect(vec3 origin, vec3 dir, float tMin, float tMax) {
+  if (uMeshMode == 0 || uBvhNodeCount == 0) return vec4(-1.0, 0.0, 0.0, 0.0);
+  vec3 invDir = 1.0 / dir;
+
+  float bestT = tMax;
+  vec4 best = vec4(-1.0, 0.0, 0.0, 0.0);
+
+  int stack[BVH_STACK];
+  int sp = 0;
+  stack[sp++] = 0;
+
+  while (sp > 0) {
+    int node = stack[--sp];
+    int na = node * NODE_TEXELS;
+    vec4 lo = packedTexel(uBvhNodes, na);
+    vec4 hi = packedTexel(uBvhNodes, na + 1);
+    if (rayBoxNear(lo.xyz, hi.xyz, origin, invDir, tMin, bestT) < 0.0) continue;
+
+    float link = lo.w;
+    if (link < 0.0) {
+      int from = int(hi.w);
+      int to = from + int(-link);
+      for (int i = from; i < to; i++) {
+        vec3 h = rayTriangleAt(i, origin, dir);
+        if (h.x < 0.0) continue;
+        if (h.x <= tMin || h.x >= bestT) continue;
+        bestT = h.x;
+        best = vec4(h.x, float(i), h.y, h.z);
+      }
+      continue;
+    }
+
+    // Near child first: pushing the far one first means it is popped last, so
+    // the near subtree gets to lower bestT before the far one is tested.
+    int left = node + 1;
+    int right = int(link);
+    int la = left * NODE_TEXELS;
+    int ra = right * NODE_TEXELS;
+    float dLeft = rayBoxNear(
+      packedTexel(uBvhNodes, la).xyz, packedTexel(uBvhNodes, la + 1).xyz,
+      origin, invDir, tMin, bestT);
+    float dRight = rayBoxNear(
+      packedTexel(uBvhNodes, ra).xyz, packedTexel(uBvhNodes, ra + 1).xyz,
+      origin, invDir, tMin, bestT);
+    // !(d < 0.0), not d >= 0.0, and the difference is NaN. An axis-parallel
+    // ray has an infinite reciprocal on that axis, and a slab plane the origin
+    // sits exactly on gives 0 * Infinity = NaN. The simulator descends on a NaN
+    // and the obvious form prunes on it, which is a hole in the model on
+    // exactly the rays a viewer looking down an axis produces.
+    //
+    // GLSL ES 3.0 does NOT guarantee NaN behaviour in min/max, so this
+    // agreement is proven for link (1) and is a KNOWN RISK for link (3). See
+    // packages/harness/README.md.
+    if (dLeft <= dRight) {
+      if (!(dRight < 0.0) && sp < BVH_STACK) stack[sp++] = right;
+      if (!(dLeft < 0.0) && sp < BVH_STACK) stack[sp++] = left;
+    } else {
+      if (!(dLeft < 0.0) && sp < BVH_STACK) stack[sp++] = left;
+      if (!(dRight < 0.0) && sp < BVH_STACK) stack[sp++] = right;
+    }
+  }
+  return best;
+}
+
+// The shading normal at a packed hit. Zero vertex normals mean the file carried
+// none, and the face normal stands in -- the same rule \`MeshSurface.normalOfHit\`
+// follows, so the two renderers shade such a model identically.
+vec3 bvhNormalAt(int tri, float u, float v) {
+  int base = tri * TRI_TEXELS;
+  vec3 n0 = packedTexel(uBvhTris, base + 3).xyz;
+  vec3 n1 = packedTexel(uBvhTris, base + 4).xyz;
+  vec3 n2 = packedTexel(uBvhTris, base + 5).xyz;
+  vec3 n = (1.0 - u - v) * n0 + u * n1 + v * n2;
+  if (dot(n, n) <= 0.0) {
+    vec3 a = packedTexel(uBvhTris, base).xyz;
+    vec3 b = packedTexel(uBvhTris, base + 1).xyz;
+    vec3 c = packedTexel(uBvhTris, base + 2).xyz;
+    n = cross(b - a, c - a);
+  }
+  return normalize(n);
+}
+
+// The content coordinate at a packed hit, through the equirectangular
+// convention \`uvToCoord\` defines: (lat, lon) in degrees.
+vec2 bvhCoordAt(int tri, float u, float v) {
+  int base = tri * TRI_TEXELS;
+  vec2 uv0 = vec2(packedTexel(uBvhTris, base).w, packedTexel(uBvhTris, base + 3).w);
+  vec2 uv1 = vec2(packedTexel(uBvhTris, base + 1).w, packedTexel(uBvhTris, base + 4).w);
+  vec2 uv2 = vec2(packedTexel(uBvhTris, base + 2).w, packedTexel(uBvhTris, base + 5).w);
+  vec2 uv = (1.0 - u - v) * uv0 + u * uv1 + v * uv2;
+  return vec2(90.0 - uv.y * 180.0, uv.x * 360.0 - 180.0);
+}
+`;
+
 /**
  * The chunks, in link order, each named after the `packages/sim` module it
  * mirrors. `test/glsl.test.ts` reads this list.
@@ -521,6 +704,7 @@ export const FRAGMENT_CHUNKS: readonly { name: string; mirrors: string; source: 
   { name: 'wrap', mirrors: 'sim/src/vec.ts', source: CHUNK_WRAP },
   { name: 'sphere', mirrors: 'sim/src/geometry.ts', source: CHUNK_SPHERE },
   { name: 'equirect', mirrors: 'sim/src/equirect.ts', source: CHUNK_EQUIRECT },
+  { name: 'mesh', mirrors: 'sim/src/mesh/bvh.ts + mesh/pack.ts', source: CHUNK_MESH },
   { name: 'mask', mirrors: 'sim/src/coverage.ts', source: CHUNK_MASK },
   { name: 'optics', mirrors: 'sim/src/optics.ts', source: CHUNK_OPTICS },
   { name: 'blend', mirrors: 'sim/src/blend.ts + coverage.ts', source: CHUNK_BLEND },
