@@ -105,6 +105,27 @@ Each is a choice, and the parity number measures it rather than hiding it.
   byte-comparable; a live window supersamples by being looked at for more than
   one frame.
 
+### A known risk in the mesh traversal, stated rather than assumed away
+
+`bvhIntersect` descends a subtree when the box test returns **NaN**, and that is
+not a quirk — it is what `packages/sim` does, so it is what parity requires. An
+axis-parallel ray has an infinite reciprocal on that axis, and a slab plane the
+origin sits exactly on gives `0 * Infinity = NaN`. The simulator's test is
+`!== Infinity`, which admits NaN and descends; the obvious transliteration
+`>= 0` rejects it and prunes a subtree that contains geometry — a hole in the
+model, on exactly the rays a viewer looking straight down an axis produces. That
+bug was written here, and link (1) caught it on the first deep fixture.
+
+**GLSL ES 3.0 does not guarantee NaN behaviour in `min` and `max`.** So the
+agreement is *proven* for link (1) — the reference and the simulator are
+bit-identical over 2000 rays on a float32-exact mesh — and is a **known risk**
+for link (3), where a device that flushes NaN to zero would prune where the
+simulator descends. It cannot be measured in this container. The fix, if a real
+GPU shows it, is to make all three paths NaN-free by nudging an exactly-zero
+direction component before taking its reciprocal, which changes the answer only
+for rays that are exactly axis-parallel. It is not done pre-emptively because it
+would move `packages/sim`'s arithmetic to fix a fault nobody has observed.
+
 ## Everything stays on the GPU
 
 Five viewports are five draw calls into one context, with `gl.viewport` and

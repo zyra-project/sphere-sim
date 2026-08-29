@@ -66,6 +66,15 @@ function vsub(a: Vec3, b: Vec3): Vec3 {
 function vscale(a: Vec3, s: number): Vec3 {
   return { x: a.x * s, y: a.y * s, z: a.z * s };
 }
+/** GLSL `cross`. */
+function vcross(a: Vec3, b: Vec3): Vec3 {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  };
+}
+
 function vdot(a: Vec3, b: Vec3): number {
   return a.x * b.x + a.y * b.y + a.z * b.z;
 }
@@ -571,4 +580,224 @@ export function renderProjectorReference(
     }
   }
   return { width, height, data };
+}
+
+// ---------------------------------------------------------------------------
+// The hierarchy traversal — CHUNK_MESH, line for line
+// ---------------------------------------------------------------------------
+
+/**
+ * `packedTexel`, which in GLSL is a `texelFetch` and here is an offset.
+ *
+ * The layout is `sim/src/mesh/pack.ts`'s and neither side decides it. Returned
+ * as a four-tuple rather than an object because the shader reads `.xyz` and `.w`
+ * off a `vec4` and the transliteration should look like what it mirrors.
+ */
+export function packedTexel(
+  data: Float32Array,
+  width: number,
+  i: number,
+): [number, number, number, number] {
+  // `ivec2(i % width, i / width)` then row-major — which for a flat array is
+  // just `4 * i`, and writing it the long way would obscure that the two agree.
+  const a = 4 * i;
+  return [data[a], data[a + 1], data[a + 2], data[a + 3]];
+}
+
+const PACK_WIDTH_REF = 1024;
+const NODE_TEXELS_REF = 2;
+const TRI_TEXELS_REF = 6;
+const BVH_STACK_REF = 32;
+
+/** `rayBoxNear`. -1 for a miss, as the shader returns, not `Infinity`. */
+export function rayBoxNear(
+  bmin: Vec3,
+  bmax: Vec3,
+  origin: Vec3,
+  invDir: Vec3,
+  tMin: number,
+  tMax: number,
+): number {
+  const t0x = (bmin.x - origin.x) * invDir.x;
+  const t1x = (bmax.x - origin.x) * invDir.x;
+  const t0y = (bmin.y - origin.y) * invDir.y;
+  const t1y = (bmax.y - origin.y) * invDir.y;
+  const t0z = (bmin.z - origin.z) * invDir.z;
+  const t1z = (bmax.z - origin.z) * invDir.z;
+  const lo = Math.max(
+    Math.max(Math.min(t0x, t1x), Math.min(t0y, t1y)),
+    Math.min(t0z, t1z),
+  );
+  const hi = Math.min(
+    Math.min(Math.max(t0x, t1x), Math.max(t0y, t1y)),
+    Math.max(t0z, t1z),
+  );
+  if (hi < Math.max(lo, tMin) || lo > tMax) return -1;
+  return Math.max(lo, tMin);
+}
+
+/** `rayTriangleAt`. `[t, u, v]`, with `t < 0` for a miss. */
+export function rayTriangleAt(
+  u: Uniforms,
+  tri: number,
+  origin: Vec3,
+  dir: Vec3,
+): [number, number, number] {
+  const mesh = u.mesh;
+  if (mesh === null) return [-1, 0, 0];
+  const base = tri * TRI_TEXELS_REF;
+  const ta = packedTexel(mesh.triangles, mesh.triangleWidth, base);
+  const tb = packedTexel(mesh.triangles, mesh.triangleWidth, base + 1);
+  const tc = packedTexel(mesh.triangles, mesh.triangleWidth, base + 2);
+  const a: Vec3 = { x: ta[0], y: ta[1], z: ta[2] };
+  const b: Vec3 = { x: tb[0], y: tb[1], z: tb[2] };
+  const c: Vec3 = { x: tc[0], y: tc[1], z: tc[2] };
+
+  const e1 = vsub(b, a);
+  const e2 = vsub(c, a);
+  const pv = vcross(dir, e2);
+  const det = vdot(e1, pv);
+  if (det > -1e-12 && det < 1e-12) return [-1, 0, 0];
+
+  const inv = 1 / det;
+  const tv = vsub(origin, a);
+  const bu = vdot(tv, pv) * inv;
+  if (bu < -1e-9 || bu > 1 + 1e-9) return [-1, 0, 0];
+
+  const qv = vcross(tv, e1);
+  const bv = vdot(dir, qv) * inv;
+  if (bv < -1e-9 || bu + bv > 1 + 1e-9) return [-1, 0, 0];
+
+  return [vdot(e2, qv) * inv, bu, bv];
+}
+
+/** `bvhIntersect`. `[t, triangle, u, v]`, with `t < 0` for a miss. */
+export function bvhIntersect(
+  u: Uniforms,
+  origin: Vec3,
+  dir: Vec3,
+  tMin: number,
+  tMax: number,
+): [number, number, number, number] {
+  const mesh = u.mesh;
+  if (mesh === null || mesh.nodeCount === 0) return [-1, 0, 0, 0];
+  const invDir: Vec3 = { x: 1 / dir.x, y: 1 / dir.y, z: 1 / dir.z };
+
+  let bestT = tMax;
+  let best: [number, number, number, number] = [-1, 0, 0, 0];
+
+  const stack = new Int32Array(BVH_STACK_REF);
+  let sp = 0;
+  stack[sp++] = 0;
+
+  const box = (node: number): { lo: number[]; hi: number[] } => {
+    const na = node * NODE_TEXELS_REF;
+    return {
+      lo: packedTexel(mesh.nodes, mesh.nodeWidth, na),
+      hi: packedTexel(mesh.nodes, mesh.nodeWidth, na + 1),
+    };
+  };
+
+  while (sp > 0) {
+    const node = stack[--sp];
+    const { lo, hi } = box(node);
+    const near = rayBoxNear(
+      { x: lo[0], y: lo[1], z: lo[2] },
+      { x: hi[0], y: hi[1], z: hi[2] },
+      origin,
+      invDir,
+      tMin,
+      bestT,
+    );
+    if (near < 0) continue;
+
+    const link = lo[3];
+    if (link < 0) {
+      const from = Math.trunc(hi[3]);
+      const to = from + Math.trunc(-link);
+      for (let i = from; i < to; i++) {
+        const h = rayTriangleAt(u, i, origin, dir);
+        if (h[0] < 0) continue;
+        if (h[0] <= tMin || h[0] >= bestT) continue;
+        bestT = h[0];
+        best = [h[0], i, h[1], h[2]];
+      }
+      continue;
+    }
+
+    const left = node + 1;
+    const right = Math.trunc(link);
+    const bl = box(left);
+    const br = box(right);
+    const dLeft = rayBoxNear(
+      { x: bl.lo[0], y: bl.lo[1], z: bl.lo[2] },
+      { x: bl.hi[0], y: bl.hi[1], z: bl.hi[2] },
+      origin, invDir, tMin, bestT,
+    );
+    const dRight = rayBoxNear(
+      { x: br.lo[0], y: br.lo[1], z: br.lo[2] },
+      { x: br.hi[0], y: br.hi[1], z: br.hi[2] },
+      origin, invDir, tMin, bestT,
+    );
+    // `!(d < 0)`, not `d >= 0`, and the difference is NaN.
+    //
+    // An axis-parallel ray has an infinite reciprocal on that axis, and a slab
+    // plane the origin sits exactly on then gives `0 * Infinity = NaN`. The
+    // simulator's test is `!== Infinity`, which ADMITS a NaN and descends; the
+    // obvious transliteration `>= 0` rejects it and prunes a subtree that
+    // contains geometry. That is a hole in the model, on exactly the rays a
+    // viewer looking straight down an axis produces.
+    if (dLeft <= dRight) {
+      if (!(dRight < 0) && sp < BVH_STACK_REF) stack[sp++] = right;
+      if (!(dLeft < 0) && sp < BVH_STACK_REF) stack[sp++] = left;
+    } else {
+      if (!(dLeft < 0) && sp < BVH_STACK_REF) stack[sp++] = left;
+      if (!(dRight < 0) && sp < BVH_STACK_REF) stack[sp++] = right;
+    }
+  }
+  return best;
+}
+
+/** `bvhNormalAt`. Zero vertex normals mean the file carried none. */
+export function bvhNormalAt(u: Uniforms, tri: number, bu: number, bv: number): Vec3 {
+  const mesh = u.mesh;
+  if (mesh === null) return { x: 0, y: 0, z: 1 };
+  const base = tri * TRI_TEXELS_REF;
+  const n0 = packedTexel(mesh.triangles, mesh.triangleWidth, base + 3);
+  const n1 = packedTexel(mesh.triangles, mesh.triangleWidth, base + 4);
+  const n2 = packedTexel(mesh.triangles, mesh.triangleWidth, base + 5);
+  const w0 = 1 - bu - bv;
+  let n: Vec3 = {
+    x: w0 * n0[0] + bu * n1[0] + bv * n2[0],
+    y: w0 * n0[1] + bu * n1[1] + bv * n2[1],
+    z: w0 * n0[2] + bu * n1[2] + bv * n2[2],
+  };
+  if (vdot(n, n) <= 0) {
+    const a = packedTexel(mesh.triangles, mesh.triangleWidth, base);
+    const b = packedTexel(mesh.triangles, mesh.triangleWidth, base + 1);
+    const c = packedTexel(mesh.triangles, mesh.triangleWidth, base + 2);
+    n = vcross(
+      { x: b[0] - a[0], y: b[1] - a[1], z: b[2] - a[2] },
+      { x: c[0] - a[0], y: c[1] - a[1], z: c[2] - a[2] },
+    );
+  }
+  const len = Math.hypot(n.x, n.y, n.z);
+  return len === 0 ? { x: 0, y: 0, z: 1 } : { x: n.x / len, y: n.y / len, z: n.z / len };
+}
+
+/** `bvhCoordAt`. `[latDeg, lonDeg]`, through the equirectangular convention. */
+export function bvhCoordAt(u: Uniforms, tri: number, bu: number, bv: number): [number, number] {
+  const mesh = u.mesh;
+  if (mesh === null) return [0, 0];
+  const base = tri * TRI_TEXELS_REF;
+  const p0 = packedTexel(mesh.triangles, mesh.triangleWidth, base);
+  const p1 = packedTexel(mesh.triangles, mesh.triangleWidth, base + 1);
+  const p2 = packedTexel(mesh.triangles, mesh.triangleWidth, base + 2);
+  const q0 = packedTexel(mesh.triangles, mesh.triangleWidth, base + 3);
+  const q1 = packedTexel(mesh.triangles, mesh.triangleWidth, base + 4);
+  const q2 = packedTexel(mesh.triangles, mesh.triangleWidth, base + 5);
+  const w0 = 1 - bu - bv;
+  const uu = w0 * p0[3] + bu * p1[3] + bv * p2[3];
+  const vv = w0 * q0[3] + bu * q1[3] + bv * q2[3];
+  return [90 - vv * 180, uu * 360 - 180];
 }

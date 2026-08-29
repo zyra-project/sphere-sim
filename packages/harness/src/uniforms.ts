@@ -89,6 +89,26 @@ export interface Uniforms {
   displayGamma: number;
 
   equirect: TextureData;
+
+  /**
+   * The mesh as texels, or `null` for the analytic sphere.
+   *
+   * `sim/src/mesh/pack.ts` writes the layout; this carries it. `null` is the
+   * ordinary case and costs the shader nothing — `uMeshMode` is 0 and
+   * `bvhIntersect` returns a miss before it fetches anything.
+   */
+  mesh: MeshUniforms | null;
+}
+
+/** The two packed textures and the counts the shader needs to bound its loops. */
+export interface MeshUniforms {
+  /** `RGBA32F`, `4 * width * height` floats. See `sim/src/mesh/pack.ts`. */
+  nodes: Float32Array;
+  nodeWidth: number;
+  triangles: Float32Array;
+  triangleWidth: number;
+  nodeCount: number;
+  triangleCount: number;
 }
 
 /** The shader's code for a ramp shape, or an error naming the ones that exist. */
@@ -147,6 +167,8 @@ export interface UniformOptions {
   mode: 'room' | 'projector';
   projIndex?: number;
   drawFloor?: boolean;
+  /** A packed model to trace instead of the analytic sphere. */
+  mesh?: MeshUniforms | null;
   floorRadiusM?: number;
   exposure?: number;
   /** 0 to read back linear radiance; 2.2 to encode for a display. */
@@ -232,6 +254,11 @@ export function buildUniforms(
       height: scene.image.height,
       data: scene.image.data,
     },
+
+    // The sphere unless a caller attaches a model. Absent rather than empty, so
+    // a shader built for the sphere takes the analytic path with no branch on a
+    // zero count.
+    mesh: options.mesh ?? null,
   };
 }
 

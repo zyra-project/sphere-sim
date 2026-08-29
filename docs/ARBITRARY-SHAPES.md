@@ -1,7 +1,8 @@
 # Arbitrary shapes: a feasibility study
 
-**Status: Phases 0, 1 and 4 landed; Phase 3 all but the polar mask.** Phase 2 (a
-mesh on the GPU) and Phase 5 (the solve) are unimplemented. This document answers a question — how hard would it be to let
+**Status: Phases 0, 1 and 4 landed; Phase 3 all but the polar mask; Phase 2's
+traversal landed and proven against the simulator, its shader wiring still to
+do.** Phase 5 (the solve) is unimplemented. This document answers a question — how hard would it be to let
 a user drop in a GLB or an OBJ, put the projectors wherever they like, and get
 real projection mapping out — and proposes a plan. It began as a study that
 changed no constant, no gate and no line of code; each landed phase below now
@@ -459,11 +460,46 @@ clean, boundary lint clean across 198 files.
 
 *Estimate: 1–2 weeks. Support OBJ second; GLB first is the cheaper 80%.*
 
-### Phase 2 — a mesh on the GPU
+### Phase 2 — a mesh on the GPU. **IN PROGRESS**
 
-Pack the BVH into textures and traverse it in the fragment shader, on both the
-physical and the content rig. Update `harness/src/glsl.ts` and its
-transliteration in step.
+**The traversal landed, and its parity with the simulator is proven.**
+`packages/sim/src/mesh/pack.ts` writes the hierarchy and the triangles into two
+`RGBA32F` textures; `harness/src/glsl.ts` gains a `mesh` chunk that traverses
+them; `reference.ts` carries the transliteration; and
+`harness/test/mesh-parity.test.ts` is link (1) for the mesh.
+
+**Two fixtures, because float32 is part of the answer.** The packed textures are
+`Float32Array` — that is what a GPU reads — while `packages/sim` traces in
+float64, so a general mesh cannot agree exactly and a test demanding it would be
+measuring the rounding. The first fixture therefore uses coordinates exactly
+representable in float32, where packing is lossless: **1477 hits over 2000 rays,
+every one agreeing on the triangle and on `t` to the last bit.** The second is an
+ordinary tessellated sphere, where the departure is measured (worst distance
+disagreement under 1e-5 m, fewer than 1% of hits choosing a different triangle at
+a shared edge) rather than assumed small.
+
+**The first deep fixture found a real bug, which is what it was for.** The
+octahedron builds three nodes and one level — enough to pass and not enough to
+mean anything. A crumpled dyadic grid builds 767 nodes and nine levels, and it
+failed immediately on a ray with `dir.y` exactly zero. An axis-parallel ray has
+an infinite reciprocal on that axis, and a slab plane the origin sits exactly on
+gives `0 * Infinity = NaN`. The simulator's box test is `!== Infinity`, which
+**admits** a NaN and descends; the obvious transliteration `>= 0` **rejects** it
+and prunes a subtree containing geometry — a hole in the model, on exactly the
+rays a viewer looking straight down an axis produces. Changing the miss sentinel
+from `Infinity` to `-1`, which GLSL forces, silently changed the NaN semantics
+with it.
+
+That agreement now depends on NaN propagation, and **GLSL ES 3.0 does not
+guarantee NaN behaviour in `min`/`max`**. So it is proven for link (1) and
+recorded as a known risk for link (3) in `packages/harness/README.md`, with the
+fix that would be applied if a real GPU shows it. Not applied pre-emptively,
+because it would move `packages/sim`'s arithmetic to fix a fault nobody has
+observed.
+
+**Still to do in Phase 2:** wiring the traversal into the display shader
+(`web/src/glsl.ts`), the content rig's second intersection, and `pickMarker` —
+the three places Phase 0 deliberately left off the seam.
 
 **A baked SDF is the tempting shortcut and it is the wrong one.** The shader
 already ray-marches SDFs for furniture, so it would be quick — but the parity
