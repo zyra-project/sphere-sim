@@ -525,6 +525,43 @@ test('a mesh with no UV set still lights and samples, it just has no content', (
   assert.ok(hit !== null, 'geometry must not depend on an unwrap');
   assert.deepEqual(surface.coordAt(hit.point), { latDeg: 0, lonDeg: 0 });
   assert.equal(surface.sampleArea(16).length, 16);
+
+  // The other direction is refused rather than answered. `pointAt` used to
+  // return the AABB centre here -- a point usually INSIDE the model -- for every
+  // coordinate it was asked about, so a caller got a complete, smooth, entirely
+  // fabricated field: plausible coverage or displacement numbers over a model
+  // that never had a content mapping. A throw is the honest answer, because
+  // there is no unwrap to consult.
+  assert.throws(
+    () => surface.pointAt({ latDeg: 12, lonDeg: 34 }),
+    /no UV set/,
+    'a mesh with no unwrap must refuse to say where content lands',
+  );
+});
+
+test('a UV gap is still answered, because a gap is not the same as no unwrap', () => {
+  // The distinction the refusal above turns on. One triangle whose unwrap
+  // occupies a tenth of UV space in each axis: coordinates inside it have a real
+  // answer, and coordinates outside fall in the gap between islands -- of which
+  // this mesh has one. The gap keeps the documented centre fallback, because a
+  // caller sweeping a regular lat/lon grid needs a number rather than a hole,
+  // and because a mesh WITH an unwrap can answer most of the grid.
+  const mesh: SurfaceMesh = {
+    ...triangleMesh({ x: 0, y: -1, z: -1 }, { x: 0, y: 1, z: -1 }, { x: 0, y: 0, z: 1 }),
+    uvs: Float32Array.from([0, 0, 0.1, 0, 0, 0.1]),
+  };
+  const surface = meshSurface(mesh);
+
+  // uv (0.02, 0.02) is inside the island: lon = 0.02 * 360 - 180, lat = 90 - 0.02 * 180.
+  const inside = surface.pointAt({ latDeg: 90 - 0.02 * 180, lonDeg: 0.02 * 360 - 180 });
+  assert.ok(
+    Math.abs(inside.x) < 1e-12 && Math.abs(inside.z + 1) < 0.5,
+    `a coordinate inside the island must land on the triangle, got ${JSON.stringify(inside)}`,
+  );
+
+  // uv (0.9, 0.9) is in the gap, and gets the centre rather than a throw.
+  const gap = surface.pointAt({ latDeg: 90 - 0.9 * 180, lonDeg: 0.9 * 360 - 180 });
+  assert.deepEqual(gap, surface.bounds.centre);
 });
 
 test('the surface reports its kind, which is what the GPU will branch on', () => {

@@ -426,25 +426,39 @@ export class MeshSurface implements Surface {
    *
    * See the module note: this is a search, not an inverse, and it returns the
    * first triangle in index order whose UV triangle contains the coordinate.
-   * Returns the mesh centre when the coordinate falls in a gap between UV
+   * Returns the mesh centre when the coordinate falls in a GAP between UV
    * islands — a defined answer rather than a NaN, because the callers that reach
    * here are building field maps over a regular lat/lon grid and a NaN there
-   * would poison an integral rather than leave a hole.
+   * would poison an integral rather than leave a hole. That fallback is not on
+   * the surface: the AABB centre is usually inside the model, so a caller that
+   * takes it and asks `normalAt` or `isIlluminated` gets a number computed from
+   * a place the surface does not occupy. It is the accepted cost of a total
+   * function over a gap, and it bounds what this may be used for — it answers
+   * "where does this content coordinate go", and it is not a way to obtain a
+   * point to shade. Callers that need points ON the surface should use
+   * {@link MeshSurface.sampleArea}, which has neither the ambiguity nor the
+   * fallback, and `coordAt`/`locate` for the direction that is a real inverse.
    *
-   * **The fallback is not on the surface, and for a mesh with no UVs at all it
-   * is the ONLY answer.** The AABB centre is usually inside the model, so a
-   * caller that takes this point and asks `normalAt` or `isIlluminated` about
-   * it gets a number computed from a place the surface does not occupy. That is
-   * the accepted cost of a total function here, but it bounds what this may be
-   * used for: it answers "where does this content coordinate go", and it is not
-   * a way to obtain a point to shade. Callers that need points ON the surface
-   * should use {@link MeshSurface.sampleArea}, which has neither the ambiguity
-   * nor the fallback, and `coordAt`/`locate` for the direction that is a real
-   * inverse.
+   * **A mesh with no UV set at all THROWS, rather than returning that fallback
+   * everywhere.** The two cases look the same in the code and are not the same
+   * thing. A gap is one coordinate with no answer among many that have one; no
+   * UV set is no parameterization, so every coordinate returns the same interior
+   * point and the caller receives a complete, smooth, entirely fabricated field
+   * — plausible numbers for coverage or displacement over a model that never
+   * had a content mapping. Nothing reaches this today (every caller is a lat/lon
+   * metric path, and those run on the sphere), so the throw is a tripwire for
+   * the code that wires a mesh into one of them, not a live path. `buildWarpExport`
+   * refuses the same mesh for the same reason, and says the same fix.
    */
   pointAt(coord: SurfaceCoord): Vec3 {
     const uvs = this.mesh.uvs;
-    if (uvs === null) return this.bounds.centre;
+    if (uvs === null) {
+      throw new Error(
+        `${this.mesh.name} carries no UV set, so a content coordinate maps nowhere on it. ` +
+          `Trace it, sample it, and measure coverage on it; asking where content lands ` +
+          `needs an unwrap. Re-export the model with one.`,
+      );
+    }
     const { u, v } = coordToUv(coord);
     const idx = this.mesh.indices;
     const p = this.mesh.positions;
