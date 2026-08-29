@@ -420,10 +420,11 @@ export function sphereSurface(radiusM: number): Surface {
  *    crossfade needs. The `'sector'` reading is worse — it assigns longitude
  *    wedges from lens azimuth, which presumes a ring of lenses around a
  *    rotationally symmetric object.
- *  - **The polar mask.** `set bottommask 60,70` is a fact about a sphere hanging
- *    from a ceiling mount that occludes its north cap. On a mesh the latitude it
- *    keys on is a UV coordinate wearing a latitude's name, so the mask would
- *    attenuate by texture row.
+ *  - **The polar mask.** `set bottommask 60,70` attenuates the sphere's EXPOSED
+ *    SOUTH cap; the north needs no software mask because a ceiling mount already
+ *    occludes it physically, which is what `bottomOnly` records. On a mesh the
+ *    latitude it keys on is a UV coordinate wearing a latitude's name, so the
+ *    mask would attenuate by texture row.
  *
  * ## What this predicate gates TODAY
  *
@@ -435,14 +436,31 @@ export function sphereSurface(radiusM: number): Surface {
  * approximately. So off a sphere this predicate now selects the geodesic ramp
  * rather than switching blending off.
  *
- * **The polar mask still is refused**, and is the only thing left here. On a
- * mesh the latitude it keys on is a UV coordinate wearing a latitude's name, and
- * `set bottommask` is a statement about a ceiling mount that a dropped model does
- * not have. A mask painted onto a model's UV would be inventing a mount nobody
- * installed — the same error the blend was refused for before there was a
- * general form. The honest generalization of "a mount blocks light" is an
- * occluder in the scene, which self-occlusion already handles for the model's
- * own geometry and which a separate object would extend.
+ * **The polar mask is REFUSED BY DESIGN**, and is the only thing left here. Not
+ * pending — decided.
+ *
+ * The mask attenuates a sphere's exposed south cap, keyed on absolute latitude.
+ * A dropped model has neither a pole nor a cap, and its `latDeg` is a UV
+ * coordinate wearing a latitude's name — so a mask applied there would darken a
+ * band of texture rows chosen by an unwrap, which is not a statement about
+ * anything physical. That is the same error the blend was refused for before
+ * there was a general form, and unlike the blend there is no general form to
+ * find: the quantity has no referent off a sphere.
+ *
+ * **What a mask stands in for is an OCCLUDER**, and that is the honest
+ * generalization. §1 and §4.4 describe a real ceiling mount that physically
+ * blocks the north cap, and this model represents it as a PARAMETER —
+ * `bottomOnly` — rather than as geometry. So the general feature is a scene
+ * object that blocks rays, which does not exist today: `Surface.shadowed`
+ * answers only whether a surface occludes ITSELF, and `web/src/glsl.ts` says of
+ * the room's furniture that "none of it occludes the light, and the trace below
+ * is not told it exists."
+ *
+ * Such a feature has to be ADDITIVE and empty by default. Putting the real mount
+ * in as geometry would replace a parameter with the thing it stands for and move
+ * every number in `bench-results.json`, so the sphere keeps its mask exactly as
+ * it is and occluders exist for models. Reconciling the two is a deliberate
+ * re-baselining, never a side effect.
  *
  * **This paragraph used to say Phase 3 would use a screen-space distance
  * transform.** It was written before that was tried, and trying it disproved it:

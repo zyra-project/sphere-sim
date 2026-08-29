@@ -743,8 +743,9 @@ const FRAME_MARGIN = 1.4;
  *
  * The picture DOES crossfade: the blend off a sphere is a geodesic distance to
  * the edge of each projector's own footprint. What stays refused is the polar
- * mask, which is a statement about a ceiling mount over a sphere and has no
- * meaning on a dropped model — `blendModelApplies` is where that decision lives.
+ * mask: it attenuates a sphere's exposed south cap keyed on absolute latitude,
+ * and a dropped model has neither a pole nor a cap to key on.
+ * `blendModelApplies` is where that decision lives, and states it in full.
  *
  * ## A rig placed by hand
  *

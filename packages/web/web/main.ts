@@ -1258,8 +1258,10 @@ function modelBlock(): HTMLElement[] {
       'and a mesh on the GPU is the next phase. This picture is the same scene traced on the CPU ' +
       'by the model. Projectors DO crossfade here: the blend is a geodesic distance to the edge ' +
       "of each projector's own footprint, which feathers a shadow edge exactly as it feathers a " +
-      'raster edge. The polar mask is still switched off rather than approximated — it is a ' +
-      'statement about a ceiling mount over a sphere, and a dropped model has no such mount.',
+      'raster edge. The polar mask stays off, and that is a decision rather than a gap: it ' +
+      "attenuates a sphere's exposed south cap by latitude, and a model has no pole to " +
+      'measure one from. Masking a band of its texture rows would be a picture of a ' +
+      'parameter rather than of anything on the model.',
   });
   out.push(caveat);
   return out;

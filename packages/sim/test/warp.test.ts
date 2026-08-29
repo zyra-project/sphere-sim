@@ -229,7 +229,7 @@ test('a mesh exports a warp with a real blend in it', () => {
   }
 });
 
-test('a mesh export carries no polar mask, because a mesh has no ceiling mount', () => {
+test('a mesh export carries no polar mask, because a mesh has no pole', () => {
   // Tested as the DECISION rather than by hunting for a fully dark node. At a
   // 31x31 grid the deepest node a projector reaches is about latitude -65.5,
   // which is inside the mask's cosine feather (60 to 70) and short of the full
@@ -271,7 +271,7 @@ test('a mesh export carries no polar mask, because a mesh has no ceiling mount',
     }
     assert.ok(inBand > 3, `expected nodes below latitude -60, got ${inBand}`);
     if (expectMask) assert.ok(attenuated > 0, 'the sphere must attenuate inside the mask feather');
-    else assert.equal(attenuated, 0, 'a mesh must not inherit a mask about a ceiling mount');
+    else assert.equal(attenuated, 0, "a mesh must not inherit a mask keyed on a sphere's latitude");
     return { inBand, attenuated };
   };
 

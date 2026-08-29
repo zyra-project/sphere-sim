@@ -720,7 +720,7 @@ test('the polar mask is refused on a mesh rather than applied to a texture row',
   assert.equal(onSphere.mask, 0, 'the sphere must mask its south polar cap');
 
   const onMesh = sampleSurface(p, prepareRig(cal, meshSurface(uvSphere(192, 96))), scene);
-  assert.equal(onMesh.mask, 1, 'a mesh has no ceiling mount, so nothing is masked');
+  assert.equal(onMesh.mask, 1, 'a mesh has no pole to key a latitude mask on');
 });
 
 // ---------------------------------------------------------------------------

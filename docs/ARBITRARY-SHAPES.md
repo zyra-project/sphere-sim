@@ -1,8 +1,15 @@
 # Arbitrary shapes: a feasibility study
 
-**Status: Phases 0, 1 and 4 landed; Phase 3 all but the polar mask; Phase 2's
-traversal landed and proven against the simulator, its shader wiring still to
-do.** Phase 5 (the solve) is unimplemented. This document answers a question — how hard would it be to let
+**Status: Phases 0, 1, 3 and 4 landed; Phase 2's traversal landed and proven
+against the simulator, its shader wiring still to do.** Phase 5 (the solve) is
+unimplemented. Phase 3 closed by deciding the polar mask is refused rather than
+generalized — see that phase.
+
+A **scene occluder** — an object that blocks projector light without being the
+projection surface — is the feature the mask stands in for. It does not exist,
+and it is not a phase here; it is recorded in Phase 3 with what it would cost.
+
+This document answers a question — how hard would it be to let
 a user drop in a GLB or an OBJ, put the projectors wherever they like, and get
 real projection mapping out — and proposes a plan. It began as a study that
 changed no constant, no gate and no line of code; each landed phase below now
@@ -113,10 +120,12 @@ would produce a plausible picture computed from a quantity that no longer exists
   precisely what makes projection mapping interesting: concavities only one
   projector can reach, hard shadows cast by the object onto itself, and coverage
   holes that are nowhere near a pole.
-- **The polar mask.** `set bottommask 60,70` is a fact about a sphere hanging
-  from a ceiling mount that occludes its north cap. On a mesh it means nothing.
-  Either drop it or generalize it to a painted mask in surface UV — which is what
-  an operator would want anyway.
+- **The polar mask.** `set bottommask 60,70` attenuates the sphere's EXPOSED
+  SOUTH cap; the north needs no software mask because a ceiling mount already
+  occludes it physically, which is what `bottomOnly` records. On a mesh it means
+  nothing — there is no pole and no cap. **Decided in Phase 3: refused, not
+  generalized.** The proposal here to paint a mask in surface UV was wrong; see
+  that phase for why, and for what the mask actually stands in for.
 - **Footprint framing.** `intrinsicsFromThrow` inscribes the sphere's silhouette
   in the raster's minor dimension with margin (AMENDMENTS A-01). For a mesh that
   becomes "fit the projected bounding volume", which is a harder computation and
@@ -591,13 +600,49 @@ correctly (0.3394 where the mask value is 0.422). The test now compares each
 export against *its own* blend weight, which is a decision about the mask rather
 than a search for a magic number.
 
-**Still to do in Phase 3:** the mask in surface UV. It is the last piece of the
-sphere's blend model that is still refused rather than generalized, and it is the
-harder half — `set bottommask` is a statement about a ceiling mount over a
-physical sphere, and what it should mean on a model that has no such mount is a
-question about the parameter, not about the geometry.
+**The polar mask is REFUSED BY DESIGN, which closes Phase 3.** This document
+proposed generalizing it to a painted mask in surface UV. That was wrong, and it
+is worth saying why rather than quietly dropping it.
 
-*Estimate: 1–2 weeks; the blend and the export are in.*
+The mask attenuates a sphere's exposed south cap, keyed on **absolute latitude**.
+The north cap needs no software mask because a ceiling mount physically occludes
+it — that asymmetry is the whole content of `bottomOnly`, and `coverage.ts` states
+it. A dropped model has neither a pole nor a cap, and its `latDeg` is a UV
+coordinate wearing a latitude's name, so a mask applied there would darken a band
+of texture rows chosen by whoever did the unwrap. That is a picture of a
+parameter, not of anything physical.
+
+Unlike the blend, there is no general form to find. The blend's `theta_max`
+turned out to BE "distance inward from where this projector's light stops", which
+generalizes; the mask's latitude is not a disguised general quantity, it is a
+fact about one shape.
+
+**What the mask stands in for is an occluder**, and that is the real
+generalization — a different and more useful feature than a UV mask. It does not
+exist today, and it is worth being precise about how completely it does not:
+
+- `Surface.shadowed(point, lens)` answers only whether a surface occludes
+  ITSELF. `SphereSurface` returns `false` unconditionally; `MeshSurface`
+  traverses its own hierarchy. Nothing else in `isIlluminatedAt` can block a ray.
+- The room's furniture — projector bodies, guard rail, suspension rod — is drawn
+  and does not occlude. `web/src/glsl.ts` says so in those words: "none of it
+  occludes the light, and the trace below is not told it exists."
+
+So the ceiling mount is a real physical occluder that this model carries as a
+PARAMETER rather than as geometry. A scene-occluder feature would let the two be
+the same thing — and immediately runs into the byte-identity gate, because
+putting the mount in as geometry would move every number in
+`bench-results.json`. Such a feature must therefore be **additive and empty by
+default**: occluders for models, the sphere's mask exactly where it is, and
+reconciling them a deliberate re-baselining rather than a side effect.
+
+It is also an interface change rather than a local one. Occlusion currently lives
+ON the surface, and a separate object does not fit there — the question moves up
+from "does the surface block this ray" to "does anything in the scene block it",
+which `isIlluminatedAt` would have to be handed. Small next to Phase 5, but the
+same shape of change.
+
+*Estimate: closed. The blend, the export and this decision are Phase 3.*
 
 ### Phase 4 — projectors anywhere. **LANDED**
 
