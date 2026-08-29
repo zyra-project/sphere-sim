@@ -445,6 +445,74 @@ test('a mesh with no UV set loads, it just has no content', () => {
   assert.ok(meshSurface(report.mesh).areaM2 > 0);
 });
 
+test('a document of the wrong SHAPE is a report, never an exception', () => {
+  // The type declaration over `JSON.parse` is an assertion, not a check. Every
+  // field below is declared as a number or an array and is something else in the
+  // file, and each one used to reach code that assumed the declaration: five of
+  // these ten threw a TypeError out of a function whose contract is that a
+  // merely-unusable file produces a report, and one built a mesh whose positions
+  // were all NaN.
+  //
+  // Written as one table rather than ten tests because the property is one
+  // property -- no shape of document escapes as an exception -- and a table is
+  // where the eleventh case gets added.
+  const wrong: [string, (doc: Record<string, unknown>) => void][] = [
+    ['children is a number', (d) => setNode(d, 'children', 5)],
+    ['children is a string', (d) => setNode(d, 'children', 'abc')],
+    ['translation is a number', (d) => setNode(d, 'translation', 4)],
+    ['rotation is too short', (d) => setNode(d, 'rotation', [0, 0])],
+    ['matrix is a 16-character string', (d) => setNode(d, 'matrix', 'abcdefghijklmnop')],
+    ['primitives is a number', (d) => ((d.meshes as Record<string, unknown>[])[0].primitives = 7)],
+    [
+      'attributes is missing',
+      (d) => delete (d.meshes as { primitives: Record<string, unknown>[] }[])[0].primitives[0].attributes,
+    ],
+    [
+      'attributes is a string',
+      (d) => ((d.meshes as { primitives: Record<string, unknown>[] }[])[0].primitives[0].attributes = 'x'),
+    ],
+    ['scene nodes is a number', (d) => ((d.scenes as Record<string, unknown>[])[0].nodes = 3)],
+    ['accessors is not an array', (d) => (d.accessors = 'no')],
+    [
+      'a bufferView byteLength is a string',
+      (d) => ((d.bufferViews as Record<string, unknown>[])[0].byteLength = 'lots'),
+    ],
+  ];
+
+  for (const [name, mutate] of wrong) {
+    const glb = buildGlb({
+      positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+      indices: [0, 1, 2],
+      patch: mutate,
+    });
+    let report;
+    try {
+      report = readGlb(glb);
+    } catch (err) {
+      assert.fail(`${name} threw instead of reporting: ${(err as Error).message}`);
+    }
+    // Whatever it decides, the numbers it returns have to be numbers.
+    if (report.mesh !== null) {
+      for (const v of report.mesh.positions) {
+        assert.ok(Number.isFinite(v), `${name} produced a non-finite position`);
+      }
+      assert.equal(report.mesh.positions.length, 3 * report.mesh.vertexCount, name);
+      assert.equal(report.mesh.indices.length, 3 * report.mesh.triangleCount, name);
+      for (const i of report.mesh.indices) {
+        assert.ok(i < report.mesh.vertexCount, `${name} produced an out-of-range index`);
+      }
+    }
+  }
+});
+
+/** Set one field on the first node, whatever shape the test wants it to be. */
+function setNode(doc: Record<string, unknown>, key: string, value: unknown): void {
+  doc.scenes = [{ nodes: [0] }];
+  const node: Record<string, unknown> = { mesh: 0 };
+  node[key] = value;
+  doc.nodes = [node];
+}
+
 test('a node cycle is named as a cycle, not as exhausted depth', () => {
   // This asserted the depth message before the walk could tell the two apart.
   // It is worth the sharper assertion: "deeper than 256 levels" sends whoever

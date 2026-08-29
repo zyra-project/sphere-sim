@@ -155,14 +155,14 @@ function multiply(a: Mat4, b: Mat4): Mat4 {
 }
 
 /** glTF TRS -> a matrix. Rotation is a quaternion `[x, y, z, w]`. */
-function composeTrs(
-  t: readonly number[] | undefined,
-  r: readonly number[] | undefined,
-  s: readonly number[] | undefined,
-): Mat4 {
-  const [x, y, z, w] = r ?? [0, 0, 0, 1];
-  const [sx, sy, sz] = s ?? [1, 1, 1];
-  const [tx, ty, tz] = t ?? [0, 0, 0];
+function composeTrs(tRaw: unknown, rRaw: unknown, sRaw: unknown): Mat4 {
+  // Each is optional in the spec and arbitrary in an uploaded file. A field of
+  // the wrong shape falls back to the identity value for that component rather
+  // than destructuring a number (which throws) or a short array (which yields
+  // `undefined` and then a matrix of NaN).
+  const [x, y, z, w] = asNumbers(rRaw, 4) ?? [0, 0, 0, 1];
+  const [sx, sy, sz] = asNumbers(sRaw, 3) ?? [1, 1, 1];
+  const [tx, ty, tz] = asNumbers(tRaw, 3) ?? [0, 0, 0];
   const x2 = x + x;
   const y2 = y + y;
   const z2 = z + z;
@@ -234,6 +234,48 @@ function normalMatrix(m: Mat4): Float64Array {
   out[2] = (d * h - e * g) * inv;
   out[5] = (b * g - a * h) * inv;
   out[8] = (a * e - b * d) * inv;
+  return out;
+}
+
+/**
+ * `JSON.parse` returns whatever was in the file, and the interface below is an
+ * ASSERTION about it rather than a check.
+ *
+ * That distinction is the source of a whole class of fault in this reader and it
+ * is worth stating where the type is declared. `nodes[i].children` is typed
+ * `number[] | undefined`; in an uploaded file it can be a string, an object, or
+ * a number, and `for (const c of node.children ?? [])` then throws a TypeError
+ * — from a function whose contract is that a merely-unusable file produces a
+ * report and never an exception. Measured before this was written: of ten
+ * malformed documents, five threw and one produced a mesh with NaN positions.
+ *
+ * So every field read out of the document goes through one of these. They
+ * coerce or refuse; they never trust the declared type.
+ */
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+/** A finite number, or `null`. Rejects strings, NaN and Infinity alike. */
+function asNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/** A non-negative whole number, or `null` — an index, a count, a byte length. */
+function asIndex(value: unknown): number | null {
+  const n = asNumber(value);
+  return n !== null && Number.isSafeInteger(n) && n >= 0 ? n : null;
+}
+
+/** `n` finite numbers, or `null` if the field is not that. */
+function asNumbers(value: unknown, n: number): number[] | null {
+  if (!Array.isArray(value) || value.length !== n) return null;
+  const out: number[] = [];
+  for (const v of value) {
+    const f = asNumber(v);
+    if (f === null) return null;
+    out.push(f);
+  }
   return out;
 }
 
@@ -401,17 +443,26 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
     if (acc.bufferView === undefined) return new Float64Array(acc.count * comps); // spec: absent view means zeros
     const view = bufferViews[acc.bufferView];
     if (view === undefined || bin === null) return null;
-    const stride = view.byteStride ?? comps * ct.size;
-    const base = (view.byteOffset ?? 0) + (acc.byteOffset ?? 0);
+    // Every one of these is a number in the type and anything at all in the
+    // file. A string byteLength makes the extent checks below compare against
+    // NaN, which is false every way round, so the read proceeds unbounded.
+    const viewLen = asIndex(view.byteLength);
+    const viewOff = asIndex(view.byteOffset ?? 0);
+    const accOff = asIndex(acc.byteOffset ?? 0);
+    if (viewLen === null || viewOff === null || accOff === null) return null;
+    const strideRaw = view.byteStride === undefined ? comps * ct.size : asIndex(view.byteStride);
+    if (strideRaw === null || strideRaw === 0) return null;
+    const stride = strideRaw;
+    const base = viewOff + accOff;
     // The view's own window, not just the BIN chunk. Checking only the chunk
     // lets a malformed accessor overread into the NEXT view and reinterpret
     // somebody else's bytes as geometry — which produces a plausible-looking
     // mesh rather than a refusal, and is the failure this reader least wants.
-    const viewEnd = (view.byteOffset ?? 0) + view.byteLength;
+    const viewEnd = viewOff + viewLen;
     if (viewEnd > bin.byteLength) return null;
     if (acc.count > 0) {
       const last = base + (acc.count - 1) * stride + (comps - 1) * ct.size + ct.size;
-      if (base < (view.byteOffset ?? 0) || last > viewEnd) return null;
+      if (base < viewOff || last > viewEnd) return null;
     }
     const out = new Float64Array(acc.count * comps);
     const dv = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
@@ -479,8 +530,15 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
       }
       return;
     }
-    const posIndex = prim.attributes.POSITION;
-    if (posIndex === undefined) {
+    // `attributes` is required by the spec and optional in a file somebody
+    // uploaded. Reading `.POSITION` off `undefined` throws, from a function whose
+    // whole contract is that a bad file produces a report.
+    const attrs: Record<string, unknown> =
+      prim.attributes !== null && typeof prim.attributes === 'object'
+        ? (prim.attributes as Record<string, unknown>)
+        : {};
+    const posIndex = asIndex(attrs.POSITION);
+    if (posIndex === null) {
       skippedPrimitives++;
       return;
     }
@@ -496,10 +554,10 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
     // comes back non-null and shorter than the loop below reads — appending NaN
     // normals and undefined UVs into a mesh that then loads and shades wrong.
     // The shape is checked against POSITION rather than trusted.
-    const nrmRaw =
-      prim.attributes.NORMAL !== undefined ? readAccessor(prim.attributes.NORMAL) : null;
-    const uvRaw =
-      prim.attributes.TEXCOORD_0 !== undefined ? readAccessor(prim.attributes.TEXCOORD_0) : null;
+    const nrmIndex = asIndex(attrs.NORMAL);
+    const nrmRaw = nrmIndex !== null ? readAccessor(nrmIndex) : null;
+    const uvIndex = asIndex(attrs.TEXCOORD_0);
+    const uvRaw = uvIndex !== null ? readAccessor(uvIndex) : null;
     const nrm = nrmRaw !== null && nrmRaw.length >= 3 * count ? nrmRaw : null;
     const uv = uvRaw !== null && uvRaw.length >= 2 * count ? uvRaw : null;
     if (nrmRaw !== null && nrm === null) {
@@ -526,8 +584,9 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
     // centre, its radius, the preview framing and the blend scale, all from a
     // primitive that was reported as skipped.
     let tris: Uint32Array | null = null;
-    if (prim.indices !== undefined) {
-      const idx = readAccessor(prim.indices);
+    const idxIndex = asIndex(prim.indices);
+    if (idxIndex !== null) {
+      const idx = readAccessor(idxIndex);
       if (idx === null) {
         skippedPrimitives++;
         return;
@@ -672,9 +731,13 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
       return;
     }
     onPath[nodeIndex] = 1;
+    // Sixteen FINITE numbers, not merely something sixteen long: a string of
+    // sixteen characters passes a length check and `Float64Array.from` turns it
+    // into sixteen NaNs, which propagate into every vertex position.
+    const matrix = asNumbers(node.matrix, 16);
     const local =
-      node.matrix !== undefined && node.matrix.length === 16
-        ? (Float64Array.from(node.matrix) as Mat4)
+      matrix !== null
+        ? (Float64Array.from(matrix) as Mat4)
         : composeTrs(node.translation, node.rotation, node.scale);
     const world = multiply(parent, local);
     if (node.mesh !== undefined) {
@@ -687,11 +750,19 @@ export function readGlb(input: ArrayBuffer | Uint8Array, options: GlbOptions = {
               `it may repeat a subtree exponentially`,
           );
         } else {
-          for (const prim of mesh.primitives) emitPrimitive(prim, world);
+          for (const prim of asArray(mesh.primitives)) {
+            emitPrimitive(
+              prim as NonNullable<Gltf['meshes']>[number]['primitives'][number],
+              world,
+            );
+          }
         }
       }
     }
-    for (const child of node.children ?? []) visit(child, world, depth + 1);
+    for (const child of asArray(node.children)) {
+      const c = asIndex(child);
+      if (c !== null) visit(c, world, depth + 1);
+    }
     onPath[nodeIndex] = 0;
   };
 
@@ -759,11 +830,18 @@ function pushTriangle(out: number[], a: number, b: number, c: number, flip: bool
  */
 function sceneRoots(json: Gltf, nodeCount: number): number[] {
   const scene = json.scenes?.[json.scene ?? 0];
-  if (scene !== undefined) return scene.nodes ?? [];
+  if (scene !== undefined) {
+    // An omitted `nodes` is an empty scene; a `nodes` of the wrong shape is a
+    // malformed one, and both name no roots rather than throwing.
+    return asArray(scene.nodes)
+      .map(asIndex)
+      .filter((n): n is number => n !== null);
+  }
   const claimed = new Uint8Array(nodeCount);
-  for (const node of json.nodes ?? []) {
-    for (const child of node.children ?? []) {
-      if (child >= 0 && child < nodeCount) claimed[child] = 1;
+  for (const node of asArray(json.nodes) as NonNullable<Gltf['nodes']>) {
+    for (const child of asArray(node.children)) {
+      const c = asIndex(child);
+      if (c !== null && c < nodeCount) claimed[c] = 1;
     }
   }
   const roots: number[] = [];
