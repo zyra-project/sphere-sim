@@ -526,7 +526,10 @@ vec3 shadeFloor(vec3 point) {
     vec3 dir = toLensVec / distanceM;
     // Whatever is standing in the room, not the sphere specifically. A model
     // that shadows the floor is exactly the thing a sphere could never do.
-    float occl = surfaceIntersect(point, dir, 1e-6).x;
+    // Bounded at the lens: the caller knows how far the ray may travel, and an
+    // unbounded nearest-hit walks the whole hierarchy before discarding
+    // everything past it.
+    float occl = surfaceIntersect(point, dir, 1e-6, distanceM).x;
     if (occl > 0.0 && occl < distanceM) continue;
     vec2 px;
     if (!worldToPixel(i, point, px)) continue;
@@ -545,7 +548,7 @@ vec3 shadeFloor(vec3 point) {
 /** `packages/sim/src/render.ts` `traceRoomRay` and `renderProjectorView`. */
 const CHUNK_TRACE = `
 vec3 traceRoomRay(vec3 origin, vec3 dir) {
-  vec4 hit = surfaceIntersect(origin, dir, 1e-9);
+  vec4 hit = surfaceIntersect(origin, dir, 1e-9, BVH_FAR);
   if (hit.x > 0.0) {
     Surface s = sampleSurface(origin + dir * hit.x, hit);
     return shadeSurface(s, -dir);
@@ -561,7 +564,7 @@ vec3 traceRoomRay(vec3 origin, vec3 dir) {
 
 vec3 projectorPixel(int i, float u, float v) {
   vec3 dir = pixelToRay(i, u, v);
-  vec4 hit = surfaceIntersect(uLens[i], dir, 1e-9);
+  vec4 hit = surfaceIntersect(uLens[i], dir, 1e-9, BVH_FAR);
   if (hit.x < 0.0) return vec3(0.0);
   Surface s = sampleSurface(uLens[i] + dir * hit.x, hit);
   return blendedSignal(s.target, s.weights[i]);
@@ -787,11 +790,11 @@ vec4 bvhFieldAt(int tri, float u, float v) {
 // One place branches on \`uMeshMode\` so the tracer does not have to. The sphere
 // keeps \`raySphereIntersect\` with the same arguments in the same order, which is
 // what makes this a routing change and not an arithmetic one.
-vec4 surfaceIntersect(vec3 origin, vec3 dir, float tMin) {
+vec4 surfaceIntersect(vec3 origin, vec3 dir, float tMin, float tMax) {
   if (uMeshMode == 0) {
     return vec4(raySphereIntersect(origin, dir, uRadius, tMin), -1.0, 0.0, 0.0);
   }
-  return bvhIntersect(origin, dir, tMin, BVH_FAR);
+  return bvhIntersect(origin, dir, tMin, tMax);
 }
 
 // The content coordinate at a packed hit, through the equirectangular

@@ -85,6 +85,18 @@ export const FIELD_TEXELS = 3;
 export const FIELD_PROJECTORS = 4;
 
 /**
+ * The texture coordinate written for a mesh that carries no unwrap.
+ *
+ * The centre of the UV square, because `uvToCoord` sends it to latitude 0,
+ * longitude 0 — which is exactly what `MeshSurface.coordAt` returns for such a
+ * mesh. A zero would be defensible-looking and wrong: it maps to the north pole
+ * at longitude -180, so the GPU would paint the model with one corner texel
+ * while the CPU painted it with another, and the parity check would report a
+ * disagreement across the whole surface that looks like a traversal fault.
+ */
+const NO_UV = 0.5;
+
+/**
  * Texel width of both textures.
  *
  * A power of two, and well under the 2048 minimum `MAX_TEXTURE_SIZE` that WebGL2
@@ -185,7 +197,16 @@ export function packBvh(
       triangles[at] = p[3 * v];
       triangles[at + 1] = p[3 * v + 1];
       triangles[at + 2] = p[3 * v + 2];
-      triangles[at + 3] = uvs === null ? 0 : uvs[2 * v];
+      // NO_UV, not 0, and the difference is a whole renderer disagreeing. A
+      // mesh with no unwrap is legal -- it can be traced, lit and measured, it
+      // simply has no content -- and `MeshSurface.coordAt` answers (0, 0) for
+      // one. The shader has no null to read, so it reads whatever is here
+      // through `uvToCoord`, and a zero comes back as latitude 90, longitude
+      // -180: the north pole at the date line, in the corner of the texture,
+      // for the whole model. This is the UV that maps to the same (0, 0) the
+      // simulator gives, so the two renderers agree about a model neither of
+      // them can really texture.
+      triangles[at + 3] = uvs === null ? NO_UV : uvs[2 * v];
 
       const an = base + 4 * (3 + c);
       // A mesh with no normals in the file gets zeros, and the shader reads that
@@ -194,7 +215,7 @@ export function packBvh(
       triangles[an] = nrm === null ? 0 : nrm[3 * v];
       triangles[an + 1] = nrm === null ? 0 : nrm[3 * v + 1];
       triangles[an + 2] = nrm === null ? 0 : nrm[3 * v + 2];
-      triangles[an + 3] = uvs === null ? 0 : uvs[2 * v + 1];
+      triangles[an + 3] = uvs === null ? NO_UV : uvs[2 * v + 1];
     }
   }
 

@@ -192,6 +192,10 @@ export function uploadEquirect(h: GlHarness, tex: TextureData): void {
  * uniform, so they are bound anyway.
  */
 export function uploadMesh(h: GlHarness, mesh: MeshUniforms | null): void {
+  // Bound first, and every time. The upload below is what the identity guard
+  // skips; the binding is not, because the units do not stay where they were
+  // put. See `bindMesh`.
+  bindMesh(h);
   if (h.meshUploaded === mesh) return;
   const gl = h.gl;
   const put = (
@@ -219,6 +223,38 @@ export function uploadMesh(h: GlHarness, mesh: MeshUniforms | null): void {
   put(2, h.meshTextures.triangles, mesh?.triangles ?? null, mesh?.triangleWidth ?? 1);
   put(3, h.meshTextures.field, mesh?.field ?? null, mesh?.fieldWidth ?? 1);
   h.meshUploaded = mesh;
+  // Unit 0 again. Every bare `bindTexture` in this file means unit 0 -- see
+  // `bindContent` -- so leaving 3 selected would make the next one clobber the
+  // field texture instead of the content.
+  gl.activeTexture(gl.TEXTURE0);
+}
+
+/**
+ * Point the mesh samplers at the mesh textures. Every frame, unlike the upload.
+ *
+ * Binding and uploading were one function and that was the bug. The upload is
+ * skipped when the model has not changed -- a hierarchy is megabytes -- so the
+ * binding was skipped with it, and the units stayed wherever the last piece of
+ * ambient GL state left them. `ensureReadTarget` and `ensureVideoTarget` both
+ * call `bindTexture` with no `activeTexture`, which is unit 0 when the invariant
+ * holds and was unit 3 after an upload: the read-back target landed on
+ * `uBvhField`, and the identity guard meant it was never displaced again. The
+ * blend then sampled the framebuffer's own colour attachment for the life of the
+ * model.
+ *
+ * `bindContent`'s docblock is about precisely this failure, one texture unit
+ * over, found the same way. Binding at the point of use is the fix there and it
+ * is the fix here.
+ */
+function bindMesh(h: GlHarness): void {
+  const gl = h.gl;
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, h.meshTextures.nodes);
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, h.meshTextures.triangles);
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_2D, h.meshTextures.field);
+  gl.activeTexture(gl.TEXTURE0);
 }
 
 function transposed(m: Mat3x3): number[] {
