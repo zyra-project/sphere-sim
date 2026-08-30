@@ -36,7 +36,7 @@ import { nominalRig } from '../../sim/src/scene.ts';
 import { footprintDistanceAt } from '../../sim/src/footprint.ts';
 import type { FootprintField } from '../../sim/src/footprint.ts';
 import { latLonToWorld } from '../../sim/src/geometry.ts';
-import { bvhIntersect, bvhNormalAt, sampleSurface, surfaceIntersect } from '../src/reference.ts';
+import { bvhCoordAt, bvhIntersect, bvhNormalAt, sampleSurface, surfaceIntersect } from '../src/reference.ts';
 import { buildUniforms } from '../src/uniforms.ts';
 import { defaultScene } from '../../sim/src/render.ts';
 import { flatField } from '../../sim/src/equirect.ts';
@@ -531,7 +531,7 @@ function compareShading(
       const dir = { x: -origin.x / len, y: -origin.y / len, z: -origin.z / len };
 
       const simHit = surface.intersect(origin, dir);
-      const refHit = surfaceIntersect(u, origin, dir, 1e-9);
+      const refHit = surfaceIntersect(u, origin, dir, 1e-9, 1e30);
       if (simHit === null || simHit.location == null) {
         assert.ok(refHit[0] < 0, `${label}: the reference found geometry the simulator did not`);
         continue;
@@ -640,3 +640,47 @@ test('and it agrees about a surface that shadows itself, which a sphere never do
     `only ${counts.shadowed} samples were shadowed; the fixture must actually occlude itself`,
   );
 });
+
+test('a mesh with no unwrap reads the same content coordinate in both renderers', () => {
+  // A mesh may legitimately carry no UV set: it can be traced, lit and measured,
+  // it simply has no content. `MeshSurface.coordAt` answers (0, 0) for one.
+  //
+  // The shader has no null to read, so it reads whatever the packer wrote,
+  // through `uvToCoord`. A zero comes back as latitude 90, longitude -180 -- the
+  // north pole at the date line -- so the GPU painted the whole model with one
+  // corner texel while the CPU painted it with another, and the parity check
+  // would report a full-surface disagreement that looks like a traversal fault.
+  const mesh = { ...uvSphere(12, 6, 0.8636, true), uvs: null };
+  const surface = meshSurface(mesh);
+  const bvh = buildBvh(mesh);
+  const packed = packBvh(bvh, mesh);
+  const u = { mesh: { ...packedUniforms(packed), centre: surface.centre, extentRadiusM: surface.extentRadiusM } } as unknown as Uniforms;
+
+  for (let t = 0; t < packed.triangleCount; t += 5) {
+    const sim = surface.coordAt({ x: 0, y: 0, z: 0 }, {
+      triangle: bvh.order[t],
+      a: mesh.indices[3 * bvh.order[t]],
+      b: mesh.indices[3 * bvh.order[t] + 1],
+      c: mesh.indices[3 * bvh.order[t] + 2],
+      u: 0.25,
+      v: 0.25,
+    });
+    const [latDeg, lonDeg] = bvhCoordAt(u, t, 0.25, 0.25);
+    assert.ok(Math.abs(latDeg - sim.latDeg) < 1e-4, `lat ${latDeg} vs ${sim.latDeg}`);
+    assert.ok(Math.abs(lonDeg - sim.lonDeg) < 1e-4, `lon ${lonDeg} vs ${sim.lonDeg}`);
+  }
+});
+
+/** The packed arrays as the uniform block wants them. */
+function packedUniforms(packed: ReturnType<typeof packBvh>) {
+  return {
+    nodes: packed.nodes,
+    nodeWidth: packed.nodeWidth,
+    triangles: packed.triangles,
+    triangleWidth: packed.triangleWidth,
+    nodeCount: packed.nodeCount,
+    triangleCount: packed.triangleCount,
+    field: packed.field,
+    fieldWidth: packed.fieldWidth,
+  };
+}

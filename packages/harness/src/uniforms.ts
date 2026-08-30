@@ -312,7 +312,15 @@ export function buildUniforms(
     // an ANGLE in the configuration and an arc on the surface here, for the same
     // reason: a ramp measured in degrees at the lens is not the ramp the blend
     // means.
-    meshShadowBias: 1e-6 * Math.max(extentRadiusM, Number.MIN_VALUE),
+    // Re-derived, not read off the surface, and deliberately: this module is
+    // the independent half of a parity chain, so it states the formula rather
+    // than importing the answer. Both lengths, matching `Surface.shadowBiasM` --
+    // the model's size AND how far out it stands, because the shader runs this
+    // ray in float32 and the self-intersection residual is an ulp at the world
+    // coordinate rather than at the model's own scale.
+    meshShadowBias:
+      1e-6 *
+      Math.max(extentRadiusM, Math.hypot(centre.x, centre.y, centre.z), Number.MIN_VALUE),
     meshBlendWidthM:
       Math.max(rig.blend.widthDeg, 1e-9) * (Math.PI / 180) * Math.max(extentRadiusM, 1e-9),
   };

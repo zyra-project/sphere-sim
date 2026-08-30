@@ -6,13 +6,22 @@
  *
  * Two rules govern this file:
  *
- *  1. **Nothing is derived here.** Every focal length, principal point, rotation
- *     matrix and limb constant is read off `packages/sim`'s `PreparedProjector`.
- *     Recomputing `fx = resX / 2 / tan(fov/2)` locally would be four lines and
- *     would create a second definition of the camera model that no test compares
- *     against the first. The one arithmetic operation this module performs is
- *     `distanceM - radiusM` for the falloff reference, and it performs it because
- *     the shader needs the difference rather than the pair.
+ *  1. **Nothing about the MODEL is derived here.** Every focal length, principal
+ *     point, rotation matrix, limb constant, falloff reference and shadow bias is
+ *     read off `packages/sim` — `PreparedProjector` for the first four,
+ *     `Surface` for the last two. Recomputing `fx = resX / 2 / tan(fov/2)`
+ *     locally would be four lines and would create a second definition of the
+ *     camera model that no test compares against the first.
+ *
+ *     `distanceM - radiusM` for the falloff reference used to be the one
+ *     exception, and it is gone: it was the right number only for a body the
+ *     world origin sits inside, so `prepareProjector` computes
+ *     `referenceDistanceM` once and this reads it.
+ *
+ *     What this module DOES do is pack — `packBvh` over the surface's own
+ *     hierarchy, and `blendWidthM`, which turns the blend's angle into the arc
+ *     it subtends on this model. Both are transformations of shapes into the
+ *     layout the shader reads, not second opinions about a number.
  *
  *  2. **Both rigs go through the same packer.** {@link packRig} is called twice,
  *     once for the physical calibration and once for the compositor's. A packer
@@ -26,10 +35,10 @@ import { raySphereIntersect } from '../../sim/src/geometry.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import type { Scene, ViewerCamera } from '../../sim/src/render.ts';
 import { cross, dot, normalize, sub, DEG2RAD } from '../../sim/src/vec.ts';
-import { buildBvh } from '../../sim/src/mesh/bvh.ts';
+import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
 import { packBvh } from '../../sim/src/mesh/pack.ts';
 import { blendWidthM } from '../../sim/src/footprint.ts';
-import type { SurfaceMesh, Vec3 } from '../../calibration/src/index.ts';
+import type { Vec3 } from '../../calibration/src/index.ts';
 import type { Surface } from '../../sim/src/surface.ts';
 import { MAX_PROJECTORS } from './glsl.ts';
 import { PROJECTOR_TINTS_LINEAR } from './settings.ts';
@@ -131,18 +140,28 @@ export interface PackedRig {
  * The model a prepared rig is lighting, packed for the shader — or `null` when
  * that rig is lighting the analytic sphere.
  *
- * Reads the surface rather than re-deriving anything: the shadow bias and the
- * blend width are the surface's own two length scales, and a second definition
- * of either is a second thing to keep in agreement. That is the opposite of the
+ * Reads the surface rather than re-deriving: the shadow bias is the surface's
+ * own, and the blend width is `footprint.ts`'s own function applied to it. A
+ * second definition of either is a second thing to keep in agreement. That is the opposite of the
  * choice `packages/harness/src/uniforms.ts` makes, and deliberately: the harness
  * re-derives because it is the independent half of a parity chain, and this is
  * the app.
  */
 export function packMesh(rig: PreparedRig): DisplayMesh | null {
-  const surface = rig.surface;
-  if (surface.kind !== 'mesh') return null;
-  const mesh = (surface as unknown as { mesh: SurfaceMesh }).mesh;
-  const packed = packBvh(buildBvh(mesh), mesh, rig.footprints);
+  if (rig.surface.kind !== 'mesh') return null;
+  // `as MeshSurface`, which is `optics.ts`'s own idiom, rather than a structural
+  // cast through `unknown` to whatever declares a `mesh`. `Surface` is not a
+  // discriminated union, so the check above narrows nothing and SOME cast is
+  // needed -- but this one names the type that actually carries the mesh, so a
+  // future surface answering `kind: 'mesh'` without one fails to compile here
+  // rather than reaching `packBvh` with `undefined`.
+  const surface = rig.surface as MeshSurface;
+  const { mesh } = surface;
+  // The surface's OWN hierarchy, not a second one built over the same mesh.
+  // `packBvh` indexes triangles by `bvh.order`, and `pickMarker` traverses the
+  // surface's; two builds agree only for as long as the build stays
+  // deterministic, and the cost is the dominant one in preparing a model.
+  const packed = packBvh(surface.bvh, mesh, rig.footprints);
   if (packed.maxDepth >= BVH_STACK_DEPTH) {
     // Refused rather than rendered. The shader's traversal stack is a
     // compile-time array, so a deeper hierarchy would silently drop the nodes it
@@ -163,15 +182,14 @@ export function packMesh(rig: PreparedRig): DisplayMesh | null {
     nodeCount: packed.nodeCount,
     triangleCount: packed.triangleCount,
     surface,
-    shadowBias: SHADOW_BIAS_FRACTION * Math.max(surface.extentRadiusM, Number.MIN_VALUE),
+    // The surface's own number, not a third copy of the fraction.
+    shadowBias: surface.shadowBiasM,
     blendWidthM: blendWidthM(rig.blend.widthDeg, surface.extentRadiusM),
   };
 }
 
 /** The shader's `BVH_STACK`. Both shaders declare 32; `packMesh` refuses past it. */
 const BVH_STACK_DEPTH = 32;
-/** `mesh/surface.ts`'s own bias fraction, which it does not export. */
-const SHADOW_BIAS_FRACTION = 1e-6;
 
 export function packRig(rig: PreparedRig): PackedRig {
   const n = MAX_PROJECTORS;

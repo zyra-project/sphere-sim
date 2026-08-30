@@ -452,11 +452,11 @@ vec4 bvhFieldAt(int tri, float u, float v) {
 // with triangle < 0 on the sphere, which has no faces, and t < 0 for a miss.
 // \`radius\` is the sphere's; a mesh ignores it, which is what lets the PHYSICAL
 // and CONTENT rigs share one function while differing in their ball.
-vec4 surfaceIntersect(vec3 origin, vec3 dir, float radius, float tMin) {
+vec4 surfaceIntersect(vec3 origin, vec3 dir, float radius, float tMin, float tMax) {
   if (uMeshMode == 0) {
     return vec4(raySphereIntersect(origin, dir, radius, tMin), -1.0, 0.0, 0.0);
   }
-  return bvhIntersect(origin, dir, tMin, BVH_FAR);
+  return bvhIntersect(origin, dir, tMin, tMax);
 }
 `;
 
@@ -822,7 +822,7 @@ vec3 shadeTwoRig(
       // The CONTENT rig's own intersection -- the second one, against the same
       // MODEL and a different calibration. The model does not change between the
       // two rigs; only what the compositor believes about where its lenses are.
-      vec4 back = surfaceIntersect(uCLens[i], dir, uCRadius, 1e-9);
+      vec4 back = surfaceIntersect(uCLens[i], dir, uCRadius, 1e-9, BVH_FAR);
       if (back.x <= 0.0) continue;
       vec3 xp = uCLens[i] + dir * back.x;
       bool backMesh = back.y >= 0.0;
@@ -930,7 +930,11 @@ vec3 shadeSurface(vec3 point, vec3 normal) {
     if (cosv <= 0.0) continue;
     // Whatever is standing in the room, not the sphere specifically. A model
     // that shadows the floor is exactly what a sphere could never do.
-    float occl = surfaceIntersect(point, toLensVec / distanceM, uRadius, 1e-6).x;
+    // Bounded at the lens. The caller already knows how far the ray may travel,
+    // and an unbounded nearest-hit walks the whole hierarchy before discarding
+    // everything past it -- once per projector, over the floor and room shell,
+    // which is most of the frame.
+    float occl = surfaceIntersect(point, toLensVec / distanceM, uRadius, 1e-6, distanceM).x;
     if (occl > 0.0 && occl < distanceM) continue;
     vec2 px;
     if (!pixelOf(uLens[i], uRot[i], uIntr[i], uRaster[i], point, px)) continue;
@@ -1281,7 +1285,7 @@ vec3 traceScene(vec2 s) {
   vec3 dir = normalize(uCamForward + uCamRight * (s.x * uCamHalf.x) + uCamUp * (s.y * uCamHalf.y));
 
   vec3 c = vec3(0.0);
-  vec4 hit = surfaceIntersect(uCamPos, dir, uRadius, 1e-9);
+  vec4 hit = surfaceIntersect(uCamPos, dir, uRadius, 1e-9, BVH_FAR);
   float t = hit.x;
   float sceneT = t > 0.0 ? t : 1e9;
   if (t > 0.0) {

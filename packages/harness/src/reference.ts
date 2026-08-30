@@ -475,7 +475,7 @@ export function shadeSurface(u: Uniforms, s: Surface, viewDir: Vec3): ChannelTri
     const incidenceCos = vdot(s.normal, toLensVec) / distanceM;
     const nDotL = incidenceCos > 0 ? incidenceCos : 0;
     if (nDotL === 0) continue;
-    const ref = p.limb[0] - u.radius;
+    const ref = p.refDistance;
     const falloff = (ref * ref) / (distanceM * distanceM);
     const k = nDotL * falloff;
     const e = emittedRadianceRgb(u, blendedSignal(u, s.target, s.weights[i]), i);
@@ -515,7 +515,7 @@ export function shadeFloor(u: Uniforms, point: Vec3): ChannelTriplet {
     const dir = vscale(toLensVec, 1 / distanceM);
     // Whatever is standing in the room, not the sphere specifically. A model
     // that shadows the floor is exactly what a sphere could never do.
-    const occl = surfaceIntersect(u, point, dir, 1e-6)[0];
+    const occl = surfaceIntersect(u, point, dir, 1e-6, distanceM)[0];
     if (occl > 0 && occl < distanceM) continue;
     if (worldToPixel(u, i, point) === null) continue;
     const ref = p.refDistance;
@@ -531,7 +531,7 @@ export function shadeFloor(u: Uniforms, point: Vec3): ChannelTriplet {
 
 /** `sim/src/render.ts` `traceRoomRay`. Sphere, then floor, then background. */
 export function traceRoomRay(u: Uniforms, origin: Vec3, dir: Vec3): ChannelTriplet {
-  const hit = surfaceIntersect(u, origin, dir, 1e-9);
+  const hit = surfaceIntersect(u, origin, dir, 1e-9, BVH_FAR_REF);
   if (hit[0] > 0) {
     const s = sampleSurface(u, vadd(origin, vscale(dir, hit[0])), hit);
     return shadeSurface(u, s, vscale(dir, -1));
@@ -548,7 +548,7 @@ export function traceRoomRay(u: Uniforms, origin: Vec3, dir: Vec3): ChannelTripl
 /** `sim/src/render.ts` `renderProjectorView`, one pixel. ENCODED, not radiance. */
 export function projectorPixel(u: Uniforms, i: number, px: number, py: number): ChannelTriplet {
   const dir = pixelToRay(u, i, px, py);
-  const hit = surfaceIntersect(u, u.projectors[i].lens, dir, 1e-9);
+  const hit = surfaceIntersect(u, u.projectors[i].lens, dir, 1e-9, BVH_FAR_REF);
   if (hit[0] < 0) return rgb(0, 0, 0);
   const s = sampleSurface(u, vadd(u.projectors[i].lens, vscale(dir, hit[0])), hit);
   return blendedSignal(u, s.target, s.weights[i]);
@@ -886,9 +886,10 @@ export function surfaceIntersect(
   origin: Vec3,
   dir: Vec3,
   tMin: number,
+  tMax: number,
 ): [number, number, number, number] {
   if (u.mesh === null) return [raySphereIntersect(origin, dir, u.radius, tMin), -1, 0, 0];
-  return bvhIntersect(u, origin, dir, tMin, BVH_FAR_REF);
+  return bvhIntersect(u, origin, dir, tMin, tMax);
 }
 
 /**

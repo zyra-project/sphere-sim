@@ -1028,3 +1028,43 @@ test('the two-rig view reads content per face, not from one coordinate for the w
     'the two images are identical, so every point read the same content coordinate',
   );
 });
+
+test('the shadow bias covers where the model stands, not only how big it is', () => {
+  // The bias is the `tMin` a ray leaving the surface needs so it does not hit
+  // the face it left. It was a fraction of the model's EXTENT alone, which is a
+  // float64 argument: at float64 resolution any positive bias clears the
+  // residual by a billion ulps and nothing shows.
+  //
+  // The shader runs the same ray in float32 over positions `pack.ts` stored as
+  // float32, and there the residual is an ulp AT THE WORLD COORDINATE. A small
+  // model standing far out then got a bias below its own quantization, re-hit
+  // the originating face, and rendered black where it was fully lit -- on the
+  // GPU only.
+  const small = 0.3;
+  const far = 40;
+  const centred = meshSurface(wall(small));
+  const distant = meshSurface({
+    ...wall(small),
+    positions: Float64Array.from(
+      Array.from(wall(small).positions).map((v, i) => (i % 3 === 0 ? v + far : v)),
+    ),
+  });
+  assert.ok(Math.abs(distant.centre.x - far) < 1e-9, `centre ${distant.centre.x}`);
+  assert.equal(distant.extentRadiusM, centred.extentRadiusM, 'same model, moved');
+
+  // Same size, so an extent-only bias would give these two the same number.
+  assert.ok(
+    distant.shadowBiasM > centred.shadowBiasM * 10,
+    `a model ${far} m out needs a larger bias than the same model at the origin; ` +
+      `got ${distant.shadowBiasM} against ${centred.shadowBiasM}`,
+  );
+  // And it clears float32's spacing at that coordinate, which is the whole point.
+  const ulpAtFar = Math.abs(Math.fround(far) - Math.fround(far * (1 + 2 ** -24)));
+  assert.ok(
+    distant.shadowBiasM > ulpAtFar,
+    `bias ${distant.shadowBiasM} is under the float32 ulp ${ulpAtFar} at x = ${far}`,
+  );
+
+  // The sphere answers too, because the interface asks everyone.
+  assert.ok(sphereSurface(0.8636).shadowBiasM > 0);
+});
