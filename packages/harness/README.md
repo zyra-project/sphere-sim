@@ -115,21 +115,38 @@ plates), with **0/6912 over tolerance** in both. The float32 emulation picks the
 same triangle float64 does; a real driver, with its own FMA contraction and
 transcendental precision, does not, about 0.7% of the time.
 
-**Why the verdict is `fail` rather than forgiven.** `judge()` requires both
-`p999 <= tolerance` and `fractionOverTolerance <= BOUNDARY_PIXEL_ALLOWANCE`, and
-those two are not independent. If more than 0.1% of samples are over tolerance
-then the 99.9th-percentile sample *is* one of them, so `p999 > tolerance`
-necessarily — `percentileOk` implies `boundaryOk`, the conjunction reduces to
-`percentileOk` alone, and **the 1% allowance documented for exactly this cause
-actually tolerates 0.101%.** Every measurement above lands in the band between
-the two, where the allowance forgives and the percentile fails. On a sphere the
-boundary population sits under 0.1% and the contradiction never showed.
+**Why the verdict is `fail` rather than forgiven, and why that stays.** `judge()`
+used to require both `p999 <= tolerance` and `fractionOverTolerance <=
+BOUNDARY_PIXEL_ALLOWANCE`, with the allowance at 1%. Those two were never
+independent: if more than 0.1% of samples are over tolerance then the
+99.9th-percentile sample *is* one of them, so `p999 > tolerance` follows. The
+conjunction reduced to the percentile alone, the second clause could not change
+an answer at any input, and **the 1% budget documented for exactly this cause
+enforced 0.101%.** On a sphere the boundary population sits under 0.1%, which is
+why the contradiction never showed.
 
-So the number on screen is real and the verdict on it is not yet meaningful for a
-mesh. Reconciling the two constants changes what the project's headline gate
-means for the sphere as well, so it is a decision rather than a tidy-up, and it
-is not made here. **Until it is, read the mesh rows as a measurement and not as a
-pass/fail.**
+That is now one number: `BOUNDARY_PIXEL_ALLOWANCE` is the fraction the verdict
+sheds, and `VERDICT_PERCENTILE = 1 - BOUNDARY_PIXEL_ALLOWANCE` is derived from
+it, the way `packages/web/src/parity.ts` has always done it. At 0.001 the verdict
+is bit-for-bit the p99.9 it always actually applied, so no track moved.
+
+**The mesh still fails, and that is the right answer rather than a leftover.**
+Widening the budget to the 1% the old comment claimed would blind this gate:
+`test/parity.test.ts` injects a disabled polar mask, which moves only **0.275%**
+of a 96×72 room view, and at p99 that bug is not caught at all — its percentile
+value is exactly zero. A real model bug and a facet-edge tie occupy the same
+range of pixel counts (0.275% against 0.26–0.72%), so **no budget can separate
+them**, and one wide enough to pass a mesh is wide enough to pass a broken mask.
+Shape almost separates them and not reliably enough to gate on: the two large
+injected bugs are 88% and 87% spatially clustered, but the polar mask is 42% on
+19 pixels against the ties' 22–30%.
+
+Ties have to be identified by what they *are* — the two renderers picking
+different triangles at a shared edge, which both already compute — rather than
+budgeted for by counting. That needs the CPU side to report triangle indices
+alongside radiance, so it is its own change and it belongs with the commit that
+gives the live view a model. **Until then, read the mesh rows as a measurement
+and not as a pass/fail.**
 
 **Measured result for link (1):** the delta is **exactly zero** — every channel
 of every pixel, in the room track and all four projector tracks, across six

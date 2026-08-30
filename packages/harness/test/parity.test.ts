@@ -29,8 +29,10 @@ import assert from 'node:assert/strict';
 import {
   BOUNDARY_PIXEL_ALLOWANCE,
   MODEL_TOLERANCE,
+  VERDICT_PERCENTILE,
   checkModelParity,
   comparePixels,
+  judge,
   simProjectorSamples,
 } from '../src/parity.ts';
 import { buildUniforms } from '../src/uniforms.ts';
@@ -104,7 +106,8 @@ test('the GLSL reference and packages/sim agree, on every configuration', () => 
         report.tracks
           .map(
             (t) =>
-              `  ${t.id}: p99.9 ${t.delta.p999.toExponential(3)}, max ${t.delta.maxAbs.toExponential(3)}, ` +
+              `  ${t.id}: p${(VERDICT_PERCENTILE * 100).toFixed(1)} ` +
+              `${t.delta.verdictPercentileValue.toExponential(3)}, max ${t.delta.maxAbs.toExponential(3)}, ` +
               `${t.delta.pixelsOverTolerance}/${t.delta.pixelCount} over tolerance`,
           )
           .join('\n'),
@@ -128,6 +131,91 @@ test('both halves of the model are covered by a track', () => {
   assert.equal(covers.size, 2);
 });
 
+/**
+ * The refactor that produced `judge`'s single clause changed no verdict, checked
+ * rather than asserted.
+ *
+ * `judge` used to be `percentileOk && boundaryOk`, with the allowance at 0.01.
+ * Those were never independent: the percentile sheds `1 - VERDICT_PERCENTILE` of
+ * the samples, so it fails as soon as more than that fraction is over tolerance,
+ * which is a tighter trigger than a 1% budget at every input. This walks the
+ * whole range of over-tolerance counts and asserts the old conjunction and the
+ * new single clause agree on every one of them.
+ *
+ * Walked exhaustively rather than sampled, because the interesting inputs are
+ * the two rounding edges and neither is anywhere near a round number.
+ */
+test('dropping the boundary clause changed no verdict, at any pixel count', () => {
+  const W = 96;
+  const H = 72;
+  const N = W * H;
+  const tolerance = MODEL_TOLERANCE;
+  const OLD_ALLOWANCE = 0.01;
+
+  let disagreements = 0;
+  let sawBoth = 0;
+  for (let over = 0; over <= N; over++) {
+    const a = { width: W, height: H, data: new Float32Array(N * 3) };
+    const b = { width: W, height: H, data: new Float32Array(N * 3) };
+    // Full-amplitude at `over` pixels, exact agreement everywhere else.
+    for (let i = 0; i < over; i++) b.data[3 * i] = 1;
+    const delta = comparePixels(a, b, tolerance);
+
+    const percentileOk = delta.verdictPercentileValue <= tolerance;
+    const oldPass = percentileOk && delta.fractionOverTolerance <= OLD_ALLOWANCE;
+    const newPass = judge('room', 'x', delta, tolerance).pass;
+    if (oldPass !== newPass) disagreements++;
+    if (oldPass) sawBoth++;
+  }
+  assert.equal(
+    disagreements,
+    0,
+    `the two verdicts disagree on ${disagreements} of ${N + 1} inputs; this refactor was not ` +
+      `supposed to move any track`,
+  );
+  // And the walk really did cross the boundary, or it proved nothing: some
+  // inputs must pass and some must fail.
+  assert.ok(sawBoth > 0 && sawBoth < N + 1, `every input gave the same answer (${sawBoth} passes)`);
+});
+
+/**
+ * Why the allowance is 0.001 and cannot be widened to the 0.01 its old comment
+ * claimed, stated as a measurement of a bug this file already injects.
+ *
+ * A disabled polar mask moves a fraction of the room view small enough that a 1%
+ * budget would forgive it outright. Real model bugs and float32 tie-breaking at
+ * a facet edge occupy the same range of pixel COUNTS -- a tessellated sphere's
+ * GPU-vs-CPU ties move 0.26%-0.72% -- so no budget can separate them, and one
+ * wide enough to pass a mesh is wide enough to pass this.
+ */
+test('a widened boundary allowance would stop catching the polar mask', () => {
+  const w = world({ mask_interp: 0 });
+  const good = buildUniforms(w.rig, w.scene, w.viewer, { mode: 'room', displayGamma: 0 });
+  const broken = buildUniforms(w.rig, w.scene, w.viewer, { mode: 'room', displayGamma: 0 });
+  broken.maskLo = 90;
+  broken.maskHi = 90;
+  const delta = comparePixels(
+    renderRoomReference(good, WIDTH, HEIGHT),
+    renderRoomReference(broken, WIDTH, HEIGHT),
+    MODEL_TOLERANCE,
+  );
+
+  assert.ok(judge('room', 'x', delta, MODEL_TOLERANCE).pass === false, 'the mask must be caught');
+  // The measurement that makes the constant load-bearing: this bug is SMALL.
+  assert.ok(
+    delta.fractionOverTolerance < 0.01,
+    `the polar mask moves ${(delta.fractionOverTolerance * 100).toFixed(3)}% of the view, which a ` +
+      `1% allowance would NOT forgive -- so this test no longer demonstrates why the allowance ` +
+      `must stay tight, and the reasoning in parity.ts needs rechecking`,
+  );
+  assert.ok(
+    BOUNDARY_PIXEL_ALLOWANCE < delta.fractionOverTolerance,
+    `the allowance (${BOUNDARY_PIXEL_ALLOWANCE}) is no longer tighter than the polar mask's ` +
+      `${delta.fractionOverTolerance.toFixed(5)}; widening it this far blinds the gate to a term ` +
+      `of the model`,
+  );
+});
+
 test('the check fails when the model is wrong, one term at a time', () => {
   const w = world({ mask_interp: 0 });
   const camera = w.viewer;
@@ -147,9 +235,14 @@ test('the check fails when the model is wrong, one term at a time', () => {
     b.mutate(broken);
     const other = renderRoomReference(broken, WIDTH, HEIGHT);
     const delta = comparePixels(simLike, other, MODEL_TOLERANCE);
-    assert.ok(
-      delta.p999 > MODEL_TOLERANCE || delta.fractionOverTolerance > BOUNDARY_PIXEL_ALLOWANCE,
-      `${b.what} was NOT caught: p99.9 ${delta.p999.toExponential(3)}, ` +
+    // Asked of `judge` rather than of a restatement of its rule. A test that
+    // spells the verdict out a second time is a test that can keep passing after
+    // the verdict changes -- which is the exact failure this file is guarding.
+    assert.equal(
+      judge('room', 'the whole model', delta, MODEL_TOLERANCE).pass,
+      false,
+      `${b.what} was NOT caught: p${(VERDICT_PERCENTILE * 100).toFixed(1)} ` +
+        `${delta.verdictPercentileValue.toExponential(3)}, ` +
         `${(delta.fractionOverTolerance * 100).toFixed(3)}% of pixels over tolerance`,
     );
   }

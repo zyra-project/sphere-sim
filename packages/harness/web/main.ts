@@ -64,9 +64,10 @@ import type { PanelMetric } from '../src/metrics.ts';
 import { computeMetricPanel } from '../src/metrics.ts';
 import type { ParityReport, ParityTrack } from '../src/parity.ts';
 import {
-  BOUNDARY_PIXEL_ALLOWANCE,
   GPU_TOLERANCE,
+  VERDICT_PERCENTILE,
   comparePixels,
+  judge,
   simProjectorSamples,
   summarize,
 } from '../src/parity.ts';
@@ -423,6 +424,16 @@ function runParity(): void {
   renderMetricsPanel();
 }
 
+/**
+ * One link-(3) track: measure the delta, then hand it to the SAME verdict
+ * `checkModelParity` uses for link (1).
+ *
+ * This carried its own copy of that verdict, which is how the two links could
+ * have come to disagree about what a disagreement is. Neither the boundary lint
+ * nor anything else forced the copy -- `judge` was simply module-private, while
+ * this file already imported `comparePixels` and `summarize` from the same
+ * module.
+ */
 function track(
   id: string,
   covers: string,
@@ -430,18 +441,7 @@ function track(
   b: { width: number; height: number; data: Float32Array },
   tolerance: number,
 ): ParityTrack {
-  const delta = comparePixels(a, b, tolerance);
-  const percentileOk = delta.p999 <= tolerance;
-  const boundaryOk = delta.fractionOverTolerance <= BOUNDARY_PIXEL_ALLOWANCE;
-  const reasons: string[] = [];
-  if (!percentileOk) reasons.push(`p99.9 ${delta.p999.toExponential(3)} > ${tolerance.toExponential(1)}`);
-  if (!boundaryOk) {
-    reasons.push(
-      `${(delta.fractionOverTolerance * 100).toFixed(2)}% of pixels over tolerance (allowance ` +
-        `${(BOUNDARY_PIXEL_ALLOWANCE * 100).toFixed(0)}%)`,
-    );
-  }
-  return { id, covers, delta, tolerance, pass: percentileOk && boundaryOk, reason: reasons.join('; ') };
+  return judge(id, covers, comparePixels(a, b, tolerance), tolerance);
 }
 
 // ---------------------------------------------------------------------------
@@ -487,7 +487,7 @@ function parityBlock(): string {
     .map(
       (t) =>
         `<tr class="${t.pass ? '' : 'bad'}"><td>${t.id}</td>
-         <td class="num">${t.delta.p999.toExponential(2)}</td>
+         <td class="num">${t.delta.verdictPercentileValue.toExponential(2)}</td>
          <td class="num">${t.delta.maxAbs.toExponential(2)}</td>
          <td class="num">${t.delta.pixelsOverTolerance}/${t.delta.pixelCount}</td>
          <td class="cov">${t.covers}</td></tr>`,
@@ -495,10 +495,10 @@ function parityBlock(): string {
     .join('');
   return `<div class="parity ${cls}">
     <div class="phead">${parity.pass ? 'GPU ↔ CPU PARITY' : '⚠ GPU AND CPU RENDERERS DISAGREE'}
-      <span class="pval">${parity.worstP999.toExponential(2)}</span>
+      <span class="pval">${parity.worstPercentileValue.toExponential(2)}</span>
       <span class="ptol">tolerance ${parity.tolerance.toExponential(1)} of relative radiance</span></div>
     ${parity.pass ? '' : `<div class="pbody">${parity.summary}</div>`}
-    <table class="ptable"><thead><tr><th>track</th><th>p99.9</th><th>max</th><th>over tol.</th><th>covers</th></tr></thead>
+    <table class="ptable"><thead><tr><th>track</th><th>p${(VERDICT_PERCENTILE * 100).toFixed(1)}</th><th>max</th><th>over tol.</th><th>covers</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <div class="pnote">The GLSL renderer is a SECOND implementation of the simulator's model
       (docs/ARCHITECTURE.md). This is the delta between it and <code>packages/sim</code>'s CPU tracer on
