@@ -58,6 +58,96 @@ There are three links in the chain and they are not equally verified:
 | **(2)** | The shader source is parsed for its function signatures; the reference must expose a counterpart for every one, both directions. | **Yes, structurally.** `test/glsl.test.ts`. This is shape, not arithmetic. |
 | **(3)** | A real GL driver compiling that text into the arithmetic the reference describes. | **No — this container has no GPU and no display.** Measured at runtime in the browser and displayed at the top of the metrics panel. |
 
+### Link (3) covers the mesh path too, now
+
+Phase 2 taught the shader to trace a model, and for a while link (3) did not
+follow: the page had no way to select one, so the mesh path had never executed on
+any GL driver, software or hardware. Every claim about it rested on
+`reference.ts` — float64 TypeScript, which is links (1) and (2). That is a whole
+renderer verified by not being run.
+
+The **Surface** control puts one of two models in front of the projectors, and
+the parity number then covers it. Both are built in `src/fixtures.ts` rather than
+loaded, so a disagreement on screen is about the driver and not about a fetch:
+
+- a **tessellated sphere**, the one shape whose right answer is already known,
+  with the analytic one beside it. `test/fixtures.test.ts` holds the two against
+  each other on the CPU — mean departure 1.2e-2 over lit pixels, which is the
+  faceting — so a fixture problem announces itself there rather than being read
+  on screen as the driver disagreeing;
+- **two plates**, because a sphere is convex and cannot exercise the shadow ray
+  at all. Removing that ray from the reference leaves a tessellated sphere
+  pixel-identical; it took a concave fixture to catch on the CPU and it takes one
+  here.
+
+**What to watch for on real hardware.** `bvhIntersect`'s agreement with the
+simulator depends on a NaN propagating through `min`/`max`, which GLSL ES 3.0
+does not guarantee — see the known risk below. A driver that answers differently
+prunes a subtree containing geometry, which shows up as **holes in the model on
+rays looking straight down an axis**, and as a parity failure concentrated there.
+That is the failure this control exists to be able to see.
+
+### Measured result for link (3) on a mesh: it FAILS, and not for that reason
+
+Run under SwiftShader (`--use-angle=swiftshader`, the same software GL
+`tools/smoke-app.ts` uses), at the page's own 96×72 room and 64×36 projector
+sample grids:
+
+| surface | room p99.9 | room over tol. | projector p99.9 | projector over tol. | verdict |
+| --- | --- | --- | --- | --- | --- |
+| analytic sphere | 1.04e-4 | 0/6912 | 7.84e-5 | 0/2304 | pass |
+| tessellated sphere | **2.28e-1** | 50/6912 (0.72%) | **2.08e-1** | 20/2304 (0.87%) | **fail** |
+| two plates | **4.43e-2** | 18/6912 (0.26%) | 1.61e-6 | 0/2304 | **fail** |
+
+The predicted failure is **not** what happened. There are no holes, nothing is
+concentrated on axis rays, and the picture is lit (30.5% and 15.9% of the canvas).
+The disagreeing samples are **isolated single pixels scattered through the
+interior**, at facet edges — the signature of the two renderers picking different
+adjacent triangles for a ray that lands near a shared edge, which changes the
+flat-shaded normal by a facet angle and so produces a near-full-amplitude delta
+at one sample. `uvSphere(48,24)` has 2208 triangles across ~4200 lit samples, so
+its facets are a couple of pixels wide and almost every sample is near an edge.
+
+**The model itself is not what disagrees.** Rendering the same fixtures at the
+same grid through `reference.ts` against `packages/sim`, headless — links (1) and
+(2), no GPU — gives p99.9 of **3.8e-6** (tessellated sphere) and **2.4e-5** (two
+plates), with **0/6912 over tolerance** in both. The float32 emulation picks the
+same triangle float64 does; a real driver, with its own FMA contraction and
+transcendental precision, does not, about 0.7% of the time.
+
+**Why the verdict is `fail` rather than forgiven, and why that stays.** `judge()`
+used to require both `p999 <= tolerance` and `fractionOverTolerance <=
+BOUNDARY_PIXEL_ALLOWANCE`, with the allowance at 1%. Those two were never
+independent: if more than 0.1% of samples are over tolerance then the
+99.9th-percentile sample *is* one of them, so `p999 > tolerance` follows. The
+conjunction reduced to the percentile alone, the second clause could not change
+an answer at any input, and **the 1% budget documented for exactly this cause
+enforced 0.101%.** On a sphere the boundary population sits under 0.1%, which is
+why the contradiction never showed.
+
+That is now one number: `BOUNDARY_PIXEL_ALLOWANCE` is the fraction the verdict
+sheds, and `VERDICT_PERCENTILE = 1 - BOUNDARY_PIXEL_ALLOWANCE` is derived from
+it, the way `packages/web/src/parity.ts` has always done it. At 0.001 the verdict
+is bit-for-bit the p99.9 it always actually applied, so no track moved.
+
+**The mesh still fails, and that is the right answer rather than a leftover.**
+Widening the budget to the 1% the old comment claimed would blind this gate:
+`test/parity.test.ts` injects a disabled polar mask, which moves only **0.275%**
+of a 96×72 room view, and at p99 that bug is not caught at all — its percentile
+value is exactly zero. A real model bug and a facet-edge tie occupy the same
+range of pixel counts (0.275% against 0.26–0.72%), so **no budget can separate
+them**, and one wide enough to pass a mesh is wide enough to pass a broken mask.
+Shape almost separates them and not reliably enough to gate on: the two large
+injected bugs are 88% and 87% spatially clustered, but the polar mask is 42% on
+19 pixels against the ties' 22–30%.
+
+Ties have to be identified by what they *are* — the two renderers picking
+different triangles at a shared edge, which both already compute — rather than
+budgeted for by counting. That needs the CPU side to report triangle indices
+alongside radiance, so it is its own change and it belongs with the commit that
+gives the live view a model. **Until then, read the mesh rows as a measurement
+and not as a pass/fail.**
+
 **Measured result for link (1):** the delta is **exactly zero** — every channel
 of every pixel, in the room track and all four projector tracks, across six
 configurations (nominal; radial distortion plus lens shift plus roll plus

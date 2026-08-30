@@ -33,6 +33,7 @@
 
 import type { ParamClass } from '../../calibration/src/parameters.ts';
 import { PARAMETER_TABLE } from '../../calibration/src/parameters.ts';
+import { SURFACE_SHAPES } from './fixtures.ts';
 
 export type { ParamClass };
 
@@ -522,6 +523,43 @@ export const CONTROL_GROUPS: readonly ControlGroup[] = [
       fromTable('E_amb', { decimals: 4, step: 0.001 }),
       fromTable('E_amb_chroma', { decimals: 0, step: 25 }),
       fromTable('rho_room', { decimals: 3, step: 0.005 }),
+    ],
+  },
+  {
+    section: 'Phase 2',
+    title: 'What the light lands on',
+    blurb:
+      'docs/ARBITRARY-SHAPES.md Phase 2. The shader can trace a model as well as the analytic sphere, and ' +
+      'this is what puts one in front of it — because the parity number above is link (3) of the chain in ' +
+      'README.md, and until a model reaches this page the mesh path had never run on any GL driver at all.',
+    controls: [
+      local({
+        id: 'surface_shape',
+        symbol: 'surface',
+        label: 'Surface',
+        section: 'Phase 2',
+        // Not a parameter of PARAMETERS.md at all: this changes what shape is
+        // being measured, not a number about the sphere. `DOC` would claim the
+        // document says something about it and `ASSUME` would claim it is a risk
+        // somebody has to carry, and neither is true.
+        klass: 'CFG',
+        kind: 'select',
+        nominal: 0,
+        min: 0,
+        max: 2,
+        step: 1,
+        unit: '',
+        rangeSource: 'harness',
+        affects: 'both',
+        decimals: 0,
+        note:
+          'The two meshes are built in the page, not loaded: a fixture that arrives over the network is one ' +
+          'that can fail to arrive, and the question here is whether the DRIVER agrees with packages/sim. ' +
+          'The tessellated sphere is the shape whose right answer is already known — the analytic one is ' +
+          'beside it. The plates are concave, which a sphere cannot be, and are the only fixture that ' +
+          'exercises the shadow ray at all.',
+        options: SURFACE_SHAPES.map((shape, i) => ({ value: i, label: shape.label })),
+      }),
     ],
   },
   {

@@ -49,12 +49,34 @@ test('every PARAMETERS.md section the harness must cover has controls', () => {
   }
 });
 
+/**
+ * Groups that are NOT a PARAMETERS.md section, named one at a time.
+ *
+ * The rule below exists so the panel maps onto the document: a group with a made
+ * up section number would claim §-authority the document does not give it. But a
+ * harness-local group is legitimate — `surface_shape` changes what SHAPE is being
+ * measured, which is not a parameter of the sphere at all — so the exception is
+ * listed here rather than made by loosening the rule to "starts with a letter".
+ */
+const HARNESS_LOCAL_GROUPS = new Set(['Phase 2']);
+
 test('controls are grouped by section, and every group says what it changes', () => {
   assert.ok(CONTROL_GROUPS.length >= 7);
   for (const g of CONTROL_GROUPS) {
-    assert.ok(g.section.startsWith('§'), `group ${g.title} has no section`);
+    assert.ok(
+      g.section.startsWith('§') || HARNESS_LOCAL_GROUPS.has(g.section),
+      `group ${g.title} has neither a PARAMETERS.md section nor a place in HARNESS_LOCAL_GROUPS`,
+    );
     assert.ok(g.blurb.length > 40, `group ${g.section} has no blurb worth reading`);
     assert.ok(g.controls.length > 0);
+  }
+  // Every listed exception is used, so the set cannot rot into a licence for
+  // anything: a group that stops existing has to be taken out of it.
+  for (const local of HARNESS_LOCAL_GROUPS) {
+    assert.ok(
+      CONTROL_GROUPS.some((g) => g.section === local),
+      `${local} is excused from the section rule and no longer exists`,
+    );
   }
 });
 

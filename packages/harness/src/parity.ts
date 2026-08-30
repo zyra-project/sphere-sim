@@ -100,16 +100,53 @@ export const MODEL_TOLERANCE = 1e-6;
 export const GPU_TOLERANCE = 2e-3;
 
 /**
- * Fraction of pixels allowed to exceed the tolerance because a geometric
- * boundary landed between two samples.
+ * Fraction of pixels the verdict SHEDS, because a geometric boundary landing
+ * between two samples produces a full-amplitude delta at one pixel and that is
+ * not drift.
  *
- * A limb, a coverage edge and a raster edge each contribute roughly one pixel of
- * perimeter. On a 160x120 room view the sphere's outline is a few hundred pixels
- * out of 19 200, so 1% is generous for the real cause and far too tight to hide
- * an actual model difference, which would light up the interior rather than an
- * outline.
+ * ## Why this drives the percentile instead of standing beside it
+ *
+ * This used to be 0.01 and `judge` tested it as a second clause next to
+ * `p999 <= tolerance`. The two were not independent, and not in a harmless way:
+ * if more than 0.1% of samples are over tolerance then the 99.9th-percentile
+ * sample IS one of them, so `p999 > tolerance` follows. `percentileOk` therefore
+ * implied `boundaryOk`, the conjunction reduced to the percentile alone, and the
+ * clause could never change a verdict -- checked against `comparePixels` across
+ * the whole range of over-tolerance counts, there is no input where it does.
+ *
+ * So the number documented as a 1% budget enforced 0.101%, and a reader
+ * reasoning about either constant reasoned wrongly. One number now, and the
+ * percentile derived from it, so the two cannot disagree again.
+ * `packages/web/src/parity.ts` has done it this way all along --
+ * `VERDICT_PERCENTILE = 1 - BOUNDARY_LIT_ALLOWANCE` -- and this is the copy that
+ * drifted.
+ *
+ * ## Why 0.001 and not the 0.01 the old text claimed
+ *
+ * 0.001 reproduces the p99.9 the verdict has always actually applied, so no
+ * track's verdict moves. Widening it to the 0.01 is a real loosening and it
+ * would blind this gate: `test/parity.test.ts` injects a disabled polar mask,
+ * which moves only 0.275% of a 96x72 room view, and at p99 that bug is not
+ * caught at all -- its percentile value is exactly zero.
+ *
+ * That is the whole argument against a wider budget, and it is measured rather
+ * than argued. A real model bug and a facet-edge tie between two float pipelines
+ * occupy the SAME range: the polar mask moves 0.275% of pixels, and a tessellated
+ * sphere's GPU-vs-CPU ties move 0.26%-0.72%. Nothing about a pixel COUNT can
+ * separate them, so a budget wide enough to forgive the ties is wide enough to
+ * forgive the mask. Ties have to be identified by what they are -- the two
+ * renderers picking different triangles at a shared edge -- rather than budgeted
+ * for. See packages/harness/README.md.
  */
-export const BOUNDARY_PIXEL_ALLOWANCE = 0.01;
+export const BOUNDARY_PIXEL_ALLOWANCE = 0.001;
+
+/**
+ * The percentile the verdict is taken at, which is the allowance restated.
+ *
+ * Derived rather than written down, because a second literal is what let the two
+ * drift apart by a factor of ten in the first place.
+ */
+export const VERDICT_PERCENTILE = 1 - BOUNDARY_PIXEL_ALLOWANCE;
 
 export interface PixelDelta {
   /** Worst single-channel absolute difference anywhere in the image. */
@@ -117,8 +154,11 @@ export interface PixelDelta {
   /** Mean absolute difference over every channel of every pixel. */
   meanAbs: number;
   rms: number;
-  /** 99.9th percentile of the per-pixel worst-channel difference. */
-  p999: number;
+  /**
+   * Per-pixel worst-channel difference at {@link VERDICT_PERCENTILE}. This is
+   * the number the verdict is taken on, and the number the panel shows.
+   */
+  verdictPercentileValue: number;
   /** Per-pixel worst-channel difference, median. */
   median: number;
   /** Pixels whose worst-channel difference exceeds the tolerance. */
@@ -181,7 +221,7 @@ export function comparePixels(
     maxAbs,
     meanAbs: n === 0 ? 0 : sumAbs / (3 * n),
     rms: n === 0 ? 0 : Math.sqrt(sumSq / (3 * n)),
-    p999: at(0.999),
+    verdictPercentileValue: at(VERDICT_PERCENTILE),
     median: at(0.5),
     pixelsOverTolerance: over,
     pixelCount: n,
@@ -197,7 +237,7 @@ export interface ParityTrack {
   covers: string;
   delta: PixelDelta;
   tolerance: number;
-  /** True when p999 is inside tolerance AND the boundary count is inside its allowance. */
+  /** True when {@link PixelDelta.verdictPercentileValue} is inside the tolerance. */
   pass: boolean;
   /** Why it failed, or `''`. */
   reason: string;
@@ -209,50 +249,60 @@ export interface ParityReport {
   tolerance: number;
   tracks: ParityTrack[];
   pass: boolean;
-  /** The worst p999 over every track — the single number the UI displays. */
-  worstP999: number;
+  /** The worst verdict-percentile value over every track — the number the UI shows. */
+  worstPercentileValue: number;
   worstMaxAbs: number;
   /** One sentence, ready to print. */
   summary: string;
 }
 
-function judge(id: string, covers: string, delta: PixelDelta, tolerance: number): ParityTrack {
-  const percentileOk = delta.p999 <= tolerance;
-  const boundaryOk = delta.fractionOverTolerance <= BOUNDARY_PIXEL_ALLOWANCE;
-  const reasons: string[] = [];
-  if (!percentileOk) {
-    reasons.push(
-      `p99.9 delta ${delta.p999.toExponential(3)} exceeds ${tolerance.toExponential(1)}`,
-    );
-  }
-  if (!boundaryOk) {
-    reasons.push(
-      `${(delta.fractionOverTolerance * 100).toFixed(2)}% of pixels are over tolerance, above the ` +
-        `${(BOUNDARY_PIXEL_ALLOWANCE * 100).toFixed(0)}% allowance for geometric boundaries`,
-    );
-  }
+/**
+ * One track's verdict. Exported because the harness PAGE judges link (3) with
+ * it: it used to carry a copy, and two copies of a verdict is two verdicts.
+ *
+ * ONE clause, and that is the whole of the change: the old second clause,
+ * `fractionOverTolerance <= BOUNDARY_PIXEL_ALLOWANCE`, could not change an
+ * answer. The percentile sheds `1 - VERDICT_PERCENTILE` of the samples, so it
+ * fails the moment more than that fraction is over tolerance — which is a
+ * TIGHTER trigger than the allowance was, at every input. Dropping it is exact
+ * rather than approximate; the budget it expressed is now expressed by the
+ * percentile it derives.
+ */
+export function judge(
+  id: string,
+  covers: string,
+  delta: PixelDelta,
+  tolerance: number,
+): ParityTrack {
+  const pct = (VERDICT_PERCENTILE * 100).toFixed(1);
+  const pass = delta.verdictPercentileValue <= tolerance;
   return {
     id,
     covers,
     delta,
     tolerance,
-    pass: percentileOk && boundaryOk,
-    reason: reasons.join('; '),
+    pass,
+    reason: pass
+      ? ''
+      : `p${pct} delta ${delta.verdictPercentileValue.toExponential(3)} exceeds ` +
+        `${tolerance.toExponential(1)}, with ${delta.pixelsOverTolerance} of ` +
+        `${delta.pixelCount} samples over it`,
   };
 }
 
 export function summarize(link: 'model' | 'gpu', tracks: ParityTrack[], tolerance: number): ParityReport {
   const pass = tracks.every((t) => t.pass);
-  const worstP999 = tracks.reduce((m, t) => Math.max(m, t.delta.p999), 0);
+  const worstPercentileValue = tracks.reduce((m, t) => Math.max(m, t.delta.verdictPercentileValue), 0);
   const worstMaxAbs = tracks.reduce((m, t) => Math.max(m, t.delta.maxAbs), 0);
   const which = link === 'model' ? 'GLSL reference vs packages/sim' : 'GPU vs packages/sim';
   const summary = pass
-    ? `${which}: agree to ${worstP999.toExponential(2)} at p99.9 (tolerance ${tolerance.toExponential(1)}).`
+    ? `${which}: agree to ${worstPercentileValue.toExponential(2)} at p${(VERDICT_PERCENTILE * 100).toFixed(1)} ` +
+      `(tolerance ${tolerance.toExponential(1)}).`
     : `${which}: DISAGREE. ${tracks
         .filter((t) => !t.pass)
         .map((t) => `${t.id} — ${t.reason}`)
         .join('. ')}`;
-  return { link, tolerance, tracks, pass, worstP999, worstMaxAbs, summary };
+  return { link, tolerance, tracks, pass, worstPercentileValue, worstMaxAbs, summary };
 }
 
 export interface ParityOptions {

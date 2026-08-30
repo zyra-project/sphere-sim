@@ -64,13 +64,20 @@ import type { PanelMetric } from '../src/metrics.ts';
 import { computeMetricPanel } from '../src/metrics.ts';
 import type { ParityReport, ParityTrack } from '../src/parity.ts';
 import {
-  BOUNDARY_PIXEL_ALLOWANCE,
   GPU_TOLERANCE,
+  VERDICT_PERCENTILE,
   comparePixels,
+  judge,
   simProjectorSamples,
   summarize,
 } from '../src/parity.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
+import type { SurfaceMesh } from '../../calibration/src/index.ts';
+import type { Surface } from '../../sim/src/surface.ts';
+import { meshSurface } from '../../sim/src/mesh/surface.ts';
+import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
+import { packBvh } from '../../sim/src/mesh/pack.ts';
+import type { MeshUniforms } from '../src/uniforms.ts';
 import { renderRoomView } from '../../sim/src/render.ts';
 import type { GlHarness } from './gl.ts';
 import { createHarnessGl, drawFullScreen, renderAndRead, setUniforms, uploadEquirect } from './gl.ts';
@@ -201,6 +208,7 @@ function renderFrame(): void {
   const roomCamera = { ...world.viewer, width: rects.room.w, height: rects.room.h };
   const roomUniforms = buildUniforms(world.rig, world.scene, roomCamera, {
     mode: 'room',
+    mesh: surfaceForWorld().packed,
     drawFloor: true,
     exposure: world.exposure,
     displayGamma: 2.2,
@@ -231,6 +239,7 @@ function renderFrame(): void {
     const rh = Math.max(1, Math.round(vp.h * panel.h));
     const u = buildUniforms(world.rig, world.scene, roomCamera, {
       mode: 'projector',
+      mesh: surfaceForWorld().packed,
       projIndex: i,
       displayGamma: 0, // already encoded framebuffer content; do not encode twice
     });
@@ -285,14 +294,94 @@ function positionLabels(rects: { room: Rect; framebuffer: Rect }, dpr: number): 
 // Parity — GPU against packages/sim, on screen
 // ---------------------------------------------------------------------------
 
+/**
+ * The model, and its packed payload, cached on what each of them actually
+ * depends on.
+ *
+ * **Not on object identity, which was the first attempt and never hit once.**
+ * `buildWorld` runs on every control change and `surfaceMeshFor` allocates a
+ * fresh mesh each time, so `world.mesh` is a new object after every slider
+ * event: the check was an unconditional rebuild wearing a cache's clothes, and
+ * the comment above it asserted the opposite. The same mistake as the display
+ * worker's per-request `MeshSurface` and the binder's `meshUploaded`, which is
+ * three times now — an identity check is only a cache when something holds the
+ * identity still.
+ *
+ * **Two levels, because the two halves go stale at different rates.** The
+ * geometry — mesh, hierarchy, welded adjacency — depends on the shape and the
+ * radius, and nothing else; it survives every projector the reader moves. The
+ * FIELD does not: it is a Dijkstra per projector over that geometry, so it
+ * depends on the whole rig, and `RigCalibration` is JSON by contract, which
+ * makes stringifying it an exact comparison rather than a fingerprint that can
+ * collide.
+ *
+ * That split is the point. A hierarchy over the tessellated sphere is thousands
+ * of triangles and this runs on the settled-frame path, which draws five
+ * viewports and then two parity read-backs.
+ */
+let geometryCache: { key: string; mesh: SurfaceMesh; surface: MeshSurface } | null = null;
+let packCache: { key: string; packed: MeshUniforms } | null = null;
+
+function surfaceForWorld(): { surface: Surface | null; packed: MeshUniforms | null } {
+  const shape = world.state.surface_shape ?? 0;
+  if (world.mesh === null) return { surface: null, packed: null };
+
+  const geometryKey = `${shape}|${world.state.R}`;
+  if (geometryCache === null || geometryCache.key !== geometryKey) {
+    const mesh = world.mesh;
+    geometryCache = { key: geometryKey, mesh, surface: meshSurface(mesh) };
+    // The payload was packed from the previous geometry and indexes triangles by
+    // its `order`. Dropped together, or the next frame reads one model's field
+    // through another model's hierarchy.
+    packCache = null;
+  }
+  const { mesh, surface } = geometryCache;
+
+  const packKey = `${geometryKey}|${JSON.stringify(world.rig)}`;
+  if (packCache === null || packCache.key !== packKey) {
+    // Prepared against the rig so the footprint fields exist: the packed field
+    // texture IS the general blend, and without it the shader falls back to a
+    // hard seam everywhere while `packages/sim` ramps -- which the parity number
+    // would report as the two renderers disagreeing rather than as half a
+    // payload.
+    const rig = prepareRig(world.rig, surface);
+    // The surface's OWN hierarchy. `packBvh` indexes triangles by `bvh.order`
+    // and the CPU side of the parity check traverses this same surface, so a
+    // second build would tie the two together only for as long as the build
+    // stays deterministic.
+    const packed = packBvh(surface.bvh, mesh, rig.footprints);
+    packCache = {
+      key: packKey,
+      packed: {
+        nodes: packed.nodes,
+        nodeWidth: packed.nodeWidth,
+        triangles: packed.triangles,
+        triangleWidth: packed.triangleWidth,
+        nodeCount: packed.nodeCount,
+        triangleCount: packed.triangleCount,
+        field: packed.field,
+        fieldWidth: packed.fieldWidth,
+        centre: surface.centre,
+        extentRadiusM: surface.extentRadiusM,
+      },
+    };
+  }
+  return { surface, packed: packCache.packed };
+}
+
 function runParity(): void {
   if (!gl) return;
   try {
     const camera = { ...world.viewer, width: PARITY_W, height: PARITY_H };
-    const prepared = prepareRig(world.rig);
+    // ONE surface for both sides. The GPU gets it as texels and `packages/sim`
+    // gets it as the object those texels were packed from, so a disagreement is
+    // the driver's and not the fixture's.
+    const { surface, packed } = surfaceForWorld();
+    const prepared = prepareRig(world.rig, surface ?? undefined);
 
     const roomU = buildUniforms(world.rig, world.scene, camera, {
       mode: 'room',
+      mesh: packed,
       drawFloor: true,
       exposure: 1,
       displayGamma: 0,
@@ -308,6 +397,7 @@ function runParity(): void {
 
     const projU = buildUniforms(world.rig, world.scene, camera, {
       mode: 'projector',
+      mesh: packed,
       projIndex: 0,
       displayGamma: 0,
     });
@@ -334,6 +424,16 @@ function runParity(): void {
   renderMetricsPanel();
 }
 
+/**
+ * One link-(3) track: measure the delta, then hand it to the SAME verdict
+ * `checkModelParity` uses for link (1).
+ *
+ * This carried its own copy of that verdict, which is how the two links could
+ * have come to disagree about what a disagreement is. Neither the boundary lint
+ * nor anything else forced the copy -- `judge` was simply module-private, while
+ * this file already imported `comparePixels` and `summarize` from the same
+ * module.
+ */
 function track(
   id: string,
   covers: string,
@@ -341,18 +441,7 @@ function track(
   b: { width: number; height: number; data: Float32Array },
   tolerance: number,
 ): ParityTrack {
-  const delta = comparePixels(a, b, tolerance);
-  const percentileOk = delta.p999 <= tolerance;
-  const boundaryOk = delta.fractionOverTolerance <= BOUNDARY_PIXEL_ALLOWANCE;
-  const reasons: string[] = [];
-  if (!percentileOk) reasons.push(`p99.9 ${delta.p999.toExponential(3)} > ${tolerance.toExponential(1)}`);
-  if (!boundaryOk) {
-    reasons.push(
-      `${(delta.fractionOverTolerance * 100).toFixed(2)}% of pixels over tolerance (allowance ` +
-        `${(BOUNDARY_PIXEL_ALLOWANCE * 100).toFixed(0)}%)`,
-    );
-  }
-  return { id, covers, delta, tolerance, pass: percentileOk && boundaryOk, reason: reasons.join('; ') };
+  return judge(id, covers, comparePixels(a, b, tolerance), tolerance);
 }
 
 // ---------------------------------------------------------------------------
@@ -398,7 +487,7 @@ function parityBlock(): string {
     .map(
       (t) =>
         `<tr class="${t.pass ? '' : 'bad'}"><td>${t.id}</td>
-         <td class="num">${t.delta.p999.toExponential(2)}</td>
+         <td class="num">${t.delta.verdictPercentileValue.toExponential(2)}</td>
          <td class="num">${t.delta.maxAbs.toExponential(2)}</td>
          <td class="num">${t.delta.pixelsOverTolerance}/${t.delta.pixelCount}</td>
          <td class="cov">${t.covers}</td></tr>`,
@@ -406,10 +495,10 @@ function parityBlock(): string {
     .join('');
   return `<div class="parity ${cls}">
     <div class="phead">${parity.pass ? 'GPU ↔ CPU PARITY' : '⚠ GPU AND CPU RENDERERS DISAGREE'}
-      <span class="pval">${parity.worstP999.toExponential(2)}</span>
+      <span class="pval">${parity.worstPercentileValue.toExponential(2)}</span>
       <span class="ptol">tolerance ${parity.tolerance.toExponential(1)} of relative radiance</span></div>
     ${parity.pass ? '' : `<div class="pbody">${parity.summary}</div>`}
-    <table class="ptable"><thead><tr><th>track</th><th>p99.9</th><th>max</th><th>over tol.</th><th>covers</th></tr></thead>
+    <table class="ptable"><thead><tr><th>track</th><th>p${(VERDICT_PERCENTILE * 100).toFixed(1)}</th><th>max</th><th>over tol.</th><th>covers</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <div class="pnote">The GLSL renderer is a SECOND implementation of the simulator's model
       (docs/ARCHITECTURE.md). This is the delta between it and <code>packages/sim</code>'s CPU tracer on
