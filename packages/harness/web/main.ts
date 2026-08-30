@@ -74,7 +74,7 @@ import { prepareRig } from '../../sim/src/optics.ts';
 import type { SurfaceMesh } from '../../calibration/src/index.ts';
 import type { Surface } from '../../sim/src/surface.ts';
 import { meshSurface } from '../../sim/src/mesh/surface.ts';
-import { buildBvh } from '../../sim/src/mesh/bvh.ts';
+import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
 import { packBvh } from '../../sim/src/mesh/pack.ts';
 import type { MeshUniforms } from '../src/uniforms.ts';
 import { renderRoomView } from '../../sim/src/render.ts';
@@ -294,50 +294,78 @@ function positionLabels(rects: { room: Rect; framebuffer: Rect }, dpr: number): 
 // ---------------------------------------------------------------------------
 
 /**
- * The model, built once per model rather than once per frame.
+ * The model, and its packed payload, cached on what each of them actually
+ * depends on.
  *
- * A hierarchy over the tessellated sphere is thousands of triangles and this
- * function is on the settled-frame path, which draws five viewports and then two
- * parity read-backs. `world.mesh` is rebuilt only when a slider changes it, so an
- * identity check is the whole cache key.
+ * **Not on object identity, which was the first attempt and never hit once.**
+ * `buildWorld` runs on every control change and `surfaceMeshFor` allocates a
+ * fresh mesh each time, so `world.mesh` is a new object after every slider
+ * event: the check was an unconditional rebuild wearing a cache's clothes, and
+ * the comment above it asserted the opposite. The same mistake as the display
+ * worker's per-request `MeshSurface` and the binder's `meshUploaded`, which is
+ * three times now — an identity check is only a cache when something holds the
+ * identity still.
+ *
+ * **Two levels, because the two halves go stale at different rates.** The
+ * geometry — mesh, hierarchy, welded adjacency — depends on the shape and the
+ * radius, and nothing else; it survives every projector the reader moves. The
+ * FIELD does not: it is a Dijkstra per projector over that geometry, so it
+ * depends on the whole rig, and `RigCalibration` is JSON by contract, which
+ * makes stringifying it an exact comparison rather than a fingerprint that can
+ * collide.
+ *
+ * That split is the point. A hierarchy over the tessellated sphere is thousands
+ * of triangles and this runs on the settled-frame path, which draws five
+ * viewports and then two parity read-backs.
  */
-let preparedSurface: { mesh: SurfaceMesh | null; surface: Surface | null; packed: MeshUniforms | null } = {
-  mesh: null,
-  surface: null,
-  packed: null,
-};
+let geometryCache: { key: string; mesh: SurfaceMesh; surface: MeshSurface } | null = null;
+let packCache: { key: string; packed: MeshUniforms } | null = null;
 
 function surfaceForWorld(): { surface: Surface | null; packed: MeshUniforms | null } {
-  if (preparedSurface.mesh === world.mesh) return preparedSurface;
-  const mesh = world.mesh;
-  if (mesh === null) {
-    preparedSurface = { mesh: null, surface: null, packed: null };
-    return preparedSurface;
+  const shape = world.state.surface_shape ?? 0;
+  if (world.mesh === null) return { surface: null, packed: null };
+
+  const geometryKey = `${shape}|${world.state.R}`;
+  if (geometryCache === null || geometryCache.key !== geometryKey) {
+    const mesh = world.mesh;
+    geometryCache = { key: geometryKey, mesh, surface: meshSurface(mesh) };
+    // The payload was packed from the previous geometry and indexes triangles by
+    // its `order`. Dropped together, or the next frame reads one model's field
+    // through another model's hierarchy.
+    packCache = null;
   }
-  const surface = meshSurface(mesh);
-  // Prepared against the rig so the footprint fields exist: the packed field
-  // texture IS the general blend, and without it the shader falls back to a hard
-  // seam everywhere while `packages/sim` ramps -- which the parity number would
-  // report as the two renderers disagreeing rather than as half a payload.
-  const rig = prepareRig(world.rig, surface);
-  const packed = packBvh(buildBvh(mesh), mesh, rig.footprints);
-  preparedSurface = {
-    mesh,
-    surface,
-    packed: {
-      nodes: packed.nodes,
-      nodeWidth: packed.nodeWidth,
-      triangles: packed.triangles,
-      triangleWidth: packed.triangleWidth,
-      nodeCount: packed.nodeCount,
-      triangleCount: packed.triangleCount,
-      field: packed.field,
-      fieldWidth: packed.fieldWidth,
-      centre: surface.centre,
-      extentRadiusM: surface.extentRadiusM,
-    },
-  };
-  return preparedSurface;
+  const { mesh, surface } = geometryCache;
+
+  const packKey = `${geometryKey}|${JSON.stringify(world.rig)}`;
+  if (packCache === null || packCache.key !== packKey) {
+    // Prepared against the rig so the footprint fields exist: the packed field
+    // texture IS the general blend, and without it the shader falls back to a
+    // hard seam everywhere while `packages/sim` ramps -- which the parity number
+    // would report as the two renderers disagreeing rather than as half a
+    // payload.
+    const rig = prepareRig(world.rig, surface);
+    // The surface's OWN hierarchy. `packBvh` indexes triangles by `bvh.order`
+    // and the CPU side of the parity check traverses this same surface, so a
+    // second build would tie the two together only for as long as the build
+    // stays deterministic.
+    const packed = packBvh(surface.bvh, mesh, rig.footprints);
+    packCache = {
+      key: packKey,
+      packed: {
+        nodes: packed.nodes,
+        nodeWidth: packed.nodeWidth,
+        triangles: packed.triangles,
+        triangleWidth: packed.triangleWidth,
+        nodeCount: packed.nodeCount,
+        triangleCount: packed.triangleCount,
+        field: packed.field,
+        fieldWidth: packed.fieldWidth,
+        centre: surface.centre,
+        extentRadiusM: surface.extentRadiusM,
+      },
+    };
+  }
+  return { surface, packed: packCache.packed };
 }
 
 function runParity(): void {

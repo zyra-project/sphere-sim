@@ -120,5 +120,38 @@ test('the model follows the sphere radius, so a slider cannot put it out of fram
   assert.ok(Math.abs(extent(small) - 0.4) < 1e-9, `${extent(small)}`);
   assert.ok(Math.abs(extent(large) - 1.2) < 1e-9, `${extent(large)}`);
   // And the plates too, or a wide sphere would leave them a speck in the middle.
-  assert.ok(extent(surfaceMeshFor(2, 1.2) as never) > extent(surfaceMeshFor(2, 0.4) as never));
+  // Asserted rather than cast past: `surfaceMeshFor` is nullable on purpose, and
+  // an `as never` here would turn a shape-list regression into a stack trace
+  // from a property read instead of naming what went wrong.
+  const platesSmall = surfaceMeshFor(2, 0.4);
+  const platesLarge = surfaceMeshFor(2, 1.2);
+  assert.ok(platesSmall !== null && platesLarge !== null, 'index 2 must still be the plates');
+  assert.ok(extent(platesLarge) > extent(platesSmall));
+});
+
+test('a rebuilt world produces an equal mesh, which is why identity was never a cache key', () => {
+  // `buildWorld` runs on every control change and `surfaceMeshFor` allocates, so
+  // two worlds built from the same state carry meshes that are equal and NOT the
+  // same object. `web/main.ts` cached the packed payload on that identity and
+  // therefore rebuilt the hierarchy on every slider event while claiming not to.
+  //
+  // The page's own cache is not reachable from here — it is module state behind a
+  // DOM entry point — so this pins the property that makes an identity key wrong,
+  // where a reader of `surfaceMeshFor` will meet it.
+  const a = buildWorld(defaultState(), 'graticule');
+  const b = buildWorld(defaultState(), 'graticule');
+  assert.ok(a.mesh === null && b.mesh === null, 'the default state is the analytic sphere');
+
+  const withMesh = { ...defaultState(), surface_shape: 1 };
+  const first = buildWorld(withMesh, 'graticule').mesh;
+  const second = buildWorld(withMesh, 'graticule').mesh;
+  assert.ok(first !== null && second !== null);
+  assert.notEqual(first, second, 'each build allocates, so identity cannot be the key');
+  assert.deepEqual(first.positions, second.positions, 'and the two are the same model');
+  assert.equal(first.triangleCount, second.triangleCount);
+
+  // What a key CAN be built from: the two state values the geometry depends on.
+  const wider = buildWorld({ ...withMesh, R: 1.2 }, 'graticule').mesh;
+  assert.ok(wider !== null);
+  assert.notDeepEqual(first.positions, wider.positions, 'radius must change the geometry');
 });
