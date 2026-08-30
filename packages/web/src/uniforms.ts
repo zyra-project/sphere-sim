@@ -188,8 +188,24 @@ export function packMesh(rig: PreparedRig): DisplayMesh | null {
   };
 }
 
-/** The shader's `BVH_STACK`. Both shaders declare 32; `packMesh` refuses past it. */
-const BVH_STACK_DEPTH = 32;
+/**
+ * The shader's `BVH_STACK`. Both shaders declare 32; `packMesh` refuses past it.
+ *
+ * The threshold is `maxDepth >= BVH_STACK_DEPTH` and not something more
+ * conservative, because the traversal's peak stack occupancy is exactly
+ * `maxDepth + 1`: popping a node at depth `d` leaves at most one deferred
+ * sibling per ancestor level below it, so the stack holds at most `d` entries
+ * before the pop and `d + 2` is unreachable — the deepest node that pushes
+ * anything is internal, and therefore sits at `maxDepth - 1`. A model whose
+ * hierarchy is 31 deep needs 32 slots and has 32.
+ *
+ * `packages/sim`'s CPU traversal allocates `maxDepth + 2` (`mesh/bvh.ts`), one
+ * slot more than that bound. The spare is slack, not a requirement, and reading
+ * it as one would cost a legitimate model its last level of depth.
+ * `test/glsl.test.ts` pins the bound over real hierarchies and over every tree
+ * shape up to ten leaves, so this stops being an argument.
+ */
+export const BVH_STACK_DEPTH = 32;
 
 export function packRig(rig: PreparedRig): PackedRig {
   const n = MAX_PROJECTORS;
