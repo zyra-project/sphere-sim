@@ -150,17 +150,36 @@ uniform int   uBlendSector;           // 0 limb-inward, 1 longitude sector (A-37
 // The model, as texels. sim/src/mesh/pack.ts writes this layout and documents it;
 // nothing here decides it. uMeshMode is 0 for the analytic sphere, so a shader
 // with no model loaded takes the closed form and pays nothing.
+//
+// GEOMETRY IS SHARED AND CARRIES NO PREFIX, and that is a statement about the
+// model rather than an economy: a misregistration is a disagreement about where
+// the LENSES are, not about what shape is standing in the room. Both rigs trace
+// the same hierarchy, so a \`uCBvhNodes\` would be a second model in a room that
+// has one.
 uniform sampler2D uBvhNodes;
 uniform sampler2D uBvhTris;
-uniform sampler2D uBvhField;          // per-corner footprint distance, one channel per projector
 uniform int   uMeshMode;
 uniform int   uBvhNodeCount;
-uniform int   uMeshHasField;
 // Computed on the CPU by the same expressions sim uses, and passed rather than
-// re-derived: a shader recomputing them from the model's extent would be a second
-// definition of two numbers both renderers have to agree on exactly.
+// re-derived: a shader recomputing it from the model's extent would be a second
+// definition of a number both renderers have to agree on exactly. A property of
+// the SURFACE, so it is shared like the hierarchy is.
 uniform float uMeshShadowBias;
-uniform float uMeshBlendWidthM;
+
+// THE BLEND IS THE COMPOSITOR'S, so its half of the model wears \`uC\` and has no
+// physical twin. buildDisplayUniforms says the same thing about uRampShape,
+// uWidthDeg and uRampGamma -- "the weights belong to the calibration the content
+// was generated against, not to where the light physically landed" -- and these
+// two are the mesh half of exactly that sentence.
+//
+// There is no uBvhField because there is no physical blend to want one. The
+// compositor computes the weights and bakes them into the pixels it sends; a
+// projector emits those pixels and where they land is physics. Declaring a
+// physical field nothing samples would strip in the linker and the page would
+// refuse to start, which is how uLimb went.
+uniform sampler2D uCBvhField;         // per-corner footprint distance, one channel per projector
+uniform int   uCMeshHasField;
+uniform float uCMeshBlendWidthM;
 
 uniform vec3  uEncodeGamma;
 uniform vec3  uReflectance;
@@ -440,11 +459,11 @@ vec2 bvhCoordAt(int tri, float u, float v) {
 // \`pack.ts\` writes the three corners beside the triangle, so this is that
 // interpolation with no vertex indirection.
 vec4 bvhFieldAt(int tri, float u, float v) {
-  if (uMeshHasField == 0) return vec4(0.0);
+  if (uCMeshHasField == 0) return vec4(0.0);
   int base = tri * FIELD_TEXELS;
-  vec4 f0 = packedTexel(uBvhField, base);
-  vec4 f1 = packedTexel(uBvhField, base + 1);
-  vec4 f2 = packedTexel(uBvhField, base + 2);
+  vec4 f0 = packedTexel(uCBvhField, base);
+  vec4 f1 = packedTexel(uCBvhField, base + 1);
+  vec4 f2 = packedTexel(uCBvhField, base + 2);
   return (1.0 - u - v) * f0 + u * f1 + v * f2;
 }
 
@@ -662,7 +681,7 @@ void sectorHalfWidths(int i, out float plusHalf, out float minusHalf) {
 // the overlay draws.
 float contentWeight(vec3 x, vec3 normal, vec4 field, int want, out int count) {
   float width = uWidthDeg > 0.0 ? uWidthDeg : 1e-9;
-  float widthM = uMeshBlendWidthM > 0.0 ? uMeshBlendWidthM : 1e-9;
+  float widthM = uCMeshBlendWidthM > 0.0 ? uCMeshBlendWidthM : 1e-9;
   bool mesh = uMeshMode == 1;
   float sum = 0.0;
   float mine = 0.0;

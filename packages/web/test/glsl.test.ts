@@ -87,6 +87,68 @@ test('the shader carries two complete rigs, field for field', () => {
   assert.ok(names.includes('uRefDistance'));
 });
 
+/**
+ * The mesh half of the same rule, which is where it was being broken.
+ *
+ * `buildDisplayUniforms` says it plainly -- "the weights belong to the
+ * calibration the content was generated against, not to where the light
+ * physically landed" -- and reads `uRampShape`, `uWidthDeg` and `uRampGamma` off
+ * `content.blend`. On a mesh the ramp needs two more things, the per-corner
+ * footprint field and the blend width as an arc, and both were packed from
+ * whichever rig `packMesh` was handed. That is the bug the test above exists to
+ * prevent, arriving through the one door it was not watching.
+ *
+ * There is no physical twin for these, and that is the point rather than an
+ * omission: the compositor computes the weights and bakes them into the pixels
+ * it sends, a projector emits those pixels, and where they land is physics. A
+ * `uBvhField` would be a physical blend, which does not exist -- nothing would
+ * sample it, the linker would strip it, and the page's own guard would refuse to
+ * start. Exactly how `uLimb` went.
+ *
+ * The geometry is the opposite case and is asserted here too, because "add a
+ * `uC` twin" is the wrong repair for it: both rigs trace ONE hierarchy, since a
+ * misregistration is a disagreement about where the lenses are and not about
+ * what shape is in the room.
+ */
+test('the mesh blend belongs to the compositor, and the mesh geometry to neither', () => {
+  const names = glslUniformNames();
+
+  for (const n of ['uCBvhField', 'uCMeshHasField', 'uCMeshBlendWidthM']) {
+    assert.ok(names.includes(n), `the compositor's blend is missing ${n}`);
+  }
+  for (const n of ['uBvhField', 'uMeshHasField', 'uMeshBlendWidthM']) {
+    assert.equal(
+      names.includes(n),
+      false,
+      `${n} is a physical blend term and there is no physical blend; it would strip and the ` +
+        `page would refuse to start`,
+    );
+  }
+
+  // Shared, so neither prefixed nor twinned. `uMeshShadowBias` is a property of
+  // the SURFACE rather than of a rig, which is why it sits with the geometry.
+  for (const n of ['uBvhNodes', 'uBvhTris', 'uBvhNodeCount', 'uMeshMode', 'uMeshShadowBias']) {
+    assert.ok(names.includes(n), `the model is missing ${n}`);
+    assert.equal(
+      names.includes(`uC${n.slice(1)}`),
+      false,
+      `uC${n.slice(1)} would be a second model in a room that has one`,
+    );
+  }
+
+  // And the field is actually READ from the compositor's sampler. Declaring
+  // uCBvhField while bvhFieldAt still fetched a physical one would pass every
+  // assertion above.
+  const field = glslFunctionNames().includes('bvhFieldAt')
+    ? FRAGMENT_SHADER.slice(
+        FRAGMENT_SHADER.indexOf('vec4 bvhFieldAt('),
+        FRAGMENT_SHADER.indexOf('vec4 surfaceIntersect('),
+      )
+    : '';
+  assert.ok(field.includes('uCBvhField'), 'bvhFieldAt must fetch the compositor field');
+  assert.ok(field.includes('uCMeshHasField'), 'bvhFieldAt must test the compositor flag');
+});
+
 test('every uniform the shader declares is set by the binder, and vice versa', () => {
   const declared = new Set(glslUniformNames());
   // `gl.ts` sets the per-rig arrays through one prefixed helper, so the literal
@@ -902,14 +964,104 @@ test('a rig on a model packs a payload the shader can trace, and a sphere packs 
   // hard seam everywhere and the GL view would disagree with the CPU renderer
   // about every overlap -- which the parity readout would report as the
   // renderers disagreeing rather than as half a payload.
-  assert.ok(packed.field !== null, 'a rig with footprint fields must pack them');
+  assert.ok(packed.contentField !== null, 'a rig with footprint fields must pack them');
   // The two lengths the shader cannot derive: both are about the MODEL's size,
   // and a shader that recomputed them would be a second definition of each.
   assert.ok(packed.shadowBias > 0 && packed.shadowBias < surface.extentRadiusM);
   assert.ok(
-    Math.abs(packed.blendWidthM - blendWidthM(world.truthRig.blend.widthDeg, surface.extentRadiusM)) <
-      1e-15,
+    Math.abs(
+      packed.contentBlendWidthM - blendWidthM(world.truthRig.blend.widthDeg, surface.extentRadiusM),
+    ) < 1e-15,
     'the blend width must be the ramp as an ARC on this model, not an angle at the lens',
+  );
+});
+
+/**
+ * Why the attribution above is load-bearing, measured rather than asserted.
+ *
+ * A footprint is computed from where a lens ACTUALLY IS -- `buildFootprints`
+ * walks the model asking `vertexFacesLens`, then runs a multi-source Dijkstra
+ * out from the boundary. Displace the lenses and vertices change which side of a
+ * footprint edge they fall on, so the geodesic field changes with the rig. That
+ * is the whole reason this cannot be one field serving both.
+ *
+ * The disagreement is not a small numerical drift. `footprint.ts` writes a
+ * finite `unreachable` sentinel of order 1e6 for a vertex no path reaches, so a
+ * vertex inside one rig's footprint and outside the other's differs by the
+ * sentinel itself. The shader would ramp smoothly across a face where the
+ * compositor drew a hard seam, and the picture would look like a blend either
+ * way.
+ */
+test('the footprint field moves with the rig, so it must be the compositor rig that packs it', () => {
+  const world = buildWorld(BOULDER_PRESET);
+  const surface = meshSurface(wallMesh());
+  const physical = packMesh(prepareRig(world.truthRig, surface));
+  const content = packMesh(prepareRig(world.compositorRig, surface));
+  assert.ok(physical?.contentField && content?.contentField);
+
+  let differing = 0;
+  let worst = 0;
+  for (let i = 0; i < content.contentField.length; i++) {
+    const d = Math.abs(physical.contentField[i] - content.contentField[i]);
+    if (d > 0) differing++;
+    if (d > worst) worst = d;
+  }
+  assert.ok(
+    differing > 0,
+    'the two rigs pack identical fields, so this preset cannot tell a mis-attributed field ' +
+      'from a correct one and the test below proves nothing',
+  );
+  // Sentinel-sized, i.e. at least one vertex is inside one rig's footprint and
+  // unreachable in the other's. A tolerance-sized difference would be drift;
+  // this is a different answer to "is this point in the footprint at all".
+  assert.ok(
+    worst > 1e3,
+    `the fields differ by only ${worst.toExponential(2)}, which is drift rather than a ` +
+      `footprint boundary moving`,
+  );
+});
+
+/**
+ * One hierarchy is uploaded and both `surfaceIntersect` calls read it. Two rigs
+ * on two surfaces would silently share whichever got packed, and the reader
+ * would be shown a misregistration that is really a substitution.
+ */
+test('the two rigs must be standing in front of the same model', () => {
+  const world = buildWorld(BOULDER_PRESET);
+  const camera = buildViewer(BOULDER_PRESET, 64, 48);
+  const surface = meshSurface(wallMesh());
+  const other = meshSurface(wallMesh(0.6, 2));
+  const content = prepareRig(world.compositorRig, surface);
+  const mesh = packMesh(content);
+
+  assert.throws(
+    () =>
+      buildDisplayUniforms(
+        prepareRig(world.truthRig, other),
+        content,
+        world.scene,
+        camera,
+        { mesh },
+      ),
+    /different surfaces/,
+    'two rigs on two models must be refused, not rendered',
+  );
+
+  // The same call with one surface is fine, and a sphere pair stays free: the
+  // guard must not fire where there is no model to disagree about.
+  assert.ok(
+    buildDisplayUniforms(prepareRig(world.truthRig, surface), content, world.scene, camera, {
+      mesh,
+    }).mesh !== null,
+  );
+  assert.equal(
+    buildDisplayUniforms(
+      prepareRig(world.truthRig),
+      prepareRig(world.compositorRig),
+      world.scene,
+      camera,
+    ).mesh,
+    null,
   );
 });
 
@@ -1030,7 +1182,7 @@ test('the mesh textures are given storage before anything is drawn', () => {
     'meshUploaded starting at null makes the first uploadMesh(h, null) a no-op',
   );
   // And the three placeholders really are three, on the units the shader reads.
-  for (const [unit, name] of [[1, 'nodes'], [2, 'triangles'], [3, 'field']] as const) {
+  for (const [unit, name] of [[1, 'nodes'], [2, 'triangles'], [3, 'contentField']] as const) {
     assert.ok(
       GL_SOURCE.includes(`put(${unit}, h.meshTextures.${name},`),
       `unit ${unit} must carry the ${name} texture`,
