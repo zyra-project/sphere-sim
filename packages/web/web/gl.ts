@@ -23,7 +23,7 @@ import {
   VERTEX_SHADER,
   glslUniformNames,
 } from '../src/glsl.ts';
-import type { DisplayUniforms, PackedRig } from '../src/uniforms.ts';
+import type { DisplayMesh, DisplayUniforms, PackedRig } from '../src/uniforms.ts';
 
 export interface DisplayGl {
   gl: WebGL2RenderingContext;
@@ -32,6 +32,26 @@ export interface DisplayGl {
   /** Uniform names the shader declares that the linker did not expose. */
   missingUniforms: string[];
   texture: WebGLTexture;
+  /**
+   * The packed model, on units 1 to 3 — nodes, triangles, footprint field.
+   *
+   * Allocated once and re-uploaded only when the model changes: a hierarchy is
+   * megabytes and a frame is not the place to build one. `meshUploaded` is what
+   * was last put in them, so a redraw of the same model costs a comparison.
+   */
+  meshTextures: { nodes: WebGLTexture; triangles: WebGLTexture; contentField: WebGLTexture };
+  /**
+   * What is in {@link meshTextures} now, or `undefined` before anything has
+   * been put there.
+   *
+   * THREE states, and collapsing two of them was a bug: `null` means the
+   * placeholders are uploaded, `undefined` means the textures have no storage at
+   * all. Started as `null`, which made `uploadMesh(h, null)` -- the ordinary
+   * no-model case, and the first call every page makes -- return early and leave
+   * the samplers bound to textures that were never defined. `undefined === null`
+   * is false, so the guard needs no special case; the initial value carries it.
+   */
+  meshUploaded: DisplayMesh | null | undefined;
   /** `RGBA32F` or `RGBA16F` — whichever the device gave us. */
   textureFormat: string;
   /** True when the parity read-back can be float rather than 8-bit. */
@@ -121,6 +141,12 @@ export function createDisplayGl(canvas: HTMLCanvasElement): DisplayGl {
   const colorFloat = gl.getExtension('EXT_color_buffer_float') !== null;
   const texture = gl.createTexture();
   if (!texture) throw new Error('gl.createTexture returned null');
+  const meshNodes = gl.createTexture();
+  const meshTris = gl.createTexture();
+  const meshField = gl.createTexture();
+  if (!meshNodes || !meshTris || !meshField) {
+    throw new Error('gl.createTexture returned null for the packed model');
+  }
 
   return {
     gl,
@@ -128,6 +154,9 @@ export function createDisplayGl(canvas: HTMLCanvasElement): DisplayGl {
     uniforms,
     missingUniforms,
     texture,
+    meshTextures: { nodes: meshNodes, triangles: meshTris, contentField: meshField },
+    // `undefined`, not `null`: see the field. `null` is a model that IS uploaded.
+    meshUploaded: undefined,
     textureFormat: floatLinear ? 'RGBA32F' : 'RGBA16F',
     floatReadback: colorFloat,
     readTarget: null,
@@ -327,6 +356,81 @@ export function uploadEquirect(
 }
 
 /**
+ * Put the packed model on units 1 to 3, if it is not there already.
+ *
+ * `RGBA32F` and NEAREST throughout, both load-bearing. This data is coordinates
+ * and indices, not colour: a half-float node bound would move a box by
+ * millimetres, and a filtered fetch would return the average of two triangles,
+ * which is not a triangle. `texelFetch` ignores the filter, but a driver still
+ * requires a complete texture, and NEAREST with CLAMP_TO_EDGE is what makes one.
+ *
+ * A `null` model leaves 1x1 placeholders bound. The shader never samples them —
+ * `uMeshMode` is 0 and `bvhIntersect` returns before it fetches — but a sampler
+ * bound to nothing is undefined behaviour on some drivers rather than an unused
+ * uniform.
+ */
+export function uploadMesh(h: DisplayGl, mesh: DisplayMesh | null): void {
+  // Bound first, and every time. The upload below is what the identity guard
+  // skips; the binding is not, because the units do not stay where they were
+  // put. See `bindMesh`.
+  bindMesh(h);
+  if (h.meshUploaded === mesh) return;
+  const gl = h.gl;
+  const put = (unit: number, tex: WebGLTexture, data: Float32Array | null, width: number): void => {
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    const w = data === null ? 1 : width;
+    const height = data === null ? 1 : data.length / (4 * width);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0, gl.RGBA32F, w, height, 0, gl.RGBA, gl.FLOAT,
+      data ?? new Float32Array(4),
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  };
+  put(1, h.meshTextures.nodes, mesh?.nodes ?? null, mesh?.nodeWidth ?? 1);
+  put(2, h.meshTextures.triangles, mesh?.triangles ?? null, mesh?.triangleWidth ?? 1);
+  put(3, h.meshTextures.contentField, mesh?.contentField ?? null, mesh?.contentFieldWidth ?? 1);
+  h.meshUploaded = mesh;
+  // Unit 0 again. Every bare `bindTexture` in this file means unit 0 -- see
+  // `bindContent` -- so leaving 3 selected would make the next one clobber the
+  // field texture instead of the content.
+  gl.activeTexture(gl.TEXTURE0);
+}
+
+/**
+ * Point the mesh samplers at the mesh textures. Every frame, unlike the upload.
+ *
+ * Binding and uploading were one function and that was the bug. The upload is
+ * skipped when the model has not changed -- a hierarchy is megabytes -- so the
+ * binding was skipped with it, and the units stayed wherever the last piece of
+ * ambient GL state left them. `ensureReadTarget` and `ensureVideoTarget` both
+ * call `bindTexture` with no `activeTexture`, which is unit 0 when the invariant
+ * holds and was unit 3 after an upload: the read-back target landed on
+ * `uCBvhField`, and the identity guard meant it was never displaced again. The
+ * blend then sampled the framebuffer's own colour attachment for the life of the
+ * model.
+ *
+ * `bindContent`'s docblock is about precisely this failure, one texture unit
+ * over, found the same way. Binding at the point of use is the fix there and it
+ * is the fix here.
+ */
+function bindMesh(h: DisplayGl): void {
+  const gl = h.gl;
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, h.meshTextures.nodes);
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, h.meshTextures.triangles);
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_2D, h.meshTextures.contentField);
+  gl.activeTexture(gl.TEXTURE0);
+}
+
+/**
  * Push one rig's arrays under a name prefix.
  *
  * The physical rig's uniforms are `uLens`, `uRot`, …; the compositor's are the
@@ -340,7 +444,11 @@ function setRig(h: DisplayGl, prefix: '' | 'C', rig: PackedRig): void {
   gl.uniformMatrix3fv(loc(`u${prefix}Rot`), false, rig.rot);
   gl.uniform4fv(loc(`u${prefix}Intr`), rig.intrinsics);
   gl.uniform4fv(loc(`u${prefix}Raster`), rig.raster);
-  gl.uniform2fv(loc(`u${prefix}Limb`), rig.limb);
+  // Only the CONTENT rig has a limb constant in the shader now: the physical
+  // rig's went with `uLimb`, which `uRefDistance` replaced. `loc` returns null
+  // for a name the program does not have and the call would be a silent no-op,
+  // so this says the asymmetry out loud instead.
+  if (prefix === 'C') gl.uniform2fv(loc('uCLimb'), rig.limb);
 }
 
 /** Push the whole uniform block. Once per frame; it is not the bottleneck. */
@@ -409,6 +517,22 @@ export function setUniforms(h: DisplayGl, u: DisplayUniforms): void {
   gl.uniform1f(loc('uWallRadius'), u.wallRadius);
   gl.uniform1i(loc('uRailOn'), u.rail);
   gl.uniform1i(loc('uAimGuides'), u.aimGuides);
+
+  // The radiometric reference distance is the PHYSICAL rig's: it is about where
+  // the light actually comes from, not about what the compositor believed.
+  gl.uniform1fv(loc('uRefDistance'), u.physical.refDistance);
+
+  // The model. `uploadMesh` is a no-op when it is already there, so a frame that
+  // does not change models pays a pointer comparison.
+  uploadMesh(h, u.mesh);
+  gl.uniform1i(loc('uBvhNodes'), 1);
+  gl.uniform1i(loc('uBvhTris'), 2);
+  gl.uniform1i(loc('uCBvhField'), 3);
+  gl.uniform1i(loc('uMeshMode'), u.mesh === null ? 0 : 1);
+  gl.uniform1i(loc('uBvhNodeCount'), u.mesh?.nodeCount ?? 0);
+  gl.uniform1i(loc('uCMeshHasField'), u.mesh?.contentField == null ? 0 : 1);
+  gl.uniform1f(loc('uMeshShadowBias'), u.mesh?.shadowBias ?? 0);
+  gl.uniform1f(loc('uCMeshBlendWidthM'), u.mesh?.contentBlendWidthM ?? 0);
 
   gl.uniform1i(loc('uEquirect'), 0);
 }

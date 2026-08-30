@@ -217,6 +217,18 @@ export interface Surface {
   readonly centre: Vec3;
 
   /**
+   * The `tMin` a ray leaving this surface needs so it does not hit the face it
+   * left, metres.
+   *
+   * On the interface because three callers were computing it from a fraction the
+   * mesh module did not export — `MeshSurface.shadowed`, and both GL binders,
+   * one of which is in another package. Three copies of a constant is three
+   * places for it to drift, and a drift here is the CPU shadowing a face the GPU
+   * does not.
+   */
+  readonly shadowBiasM: number;
+
+  /**
    * Nearest intersection with a ray, or `null`.
    *
    * `dir` must be unit length; callers normalize once and reuse the ray many
@@ -342,6 +354,17 @@ export class SphereSurface implements Surface {
    */
   get centre(): Vec3 {
     return { x: 0, y: 0, z: 0 };
+  }
+
+  /**
+   * The sphere's own `intersect` default, which is the number it has always
+   * used. A sphere cannot occlude itself, so no ray leaving it is ever traced
+   * against it and this is a bias nothing spends — but the interface asks every
+   * surface for one, and answering with a number the sphere actually uses is
+   * better than answering zero and inviting a caller to divide by it.
+   */
+  get shadowBiasM(): number {
+    return 1e-9;
   }
 
   intersect(origin: Vec3, dir: Vec3, tMin = 1e-9): SurfaceHit | null {

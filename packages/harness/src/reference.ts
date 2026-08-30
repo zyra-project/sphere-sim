@@ -338,26 +338,69 @@ export interface Surface {
   mask: number;
 }
 
-/** `sim/src/render.ts` `sampleSurface` plus `coverage.ts` `coverageAndWeights`. */
-export function sampleSurface(u: Uniforms, point: Vec3): Surface {
-  const normal = vscale(point, 1 / u.radius);
-  const [latDeg, lonDeg] = worldToLatLon(point);
-  const target = sampleEquirect(u, latDeg, worldLonToTextureLon(u, lonDeg));
-  const mask = polarMask(u, latDeg);
+/**
+ * `sim/src/render.ts` `sampleSurface` plus `coverage.ts` `coverageAndWeights`.
+ *
+ * `hit` is what `surfaceIntersect` returned: `[t, triangle, u, v]`, triangle < 0
+ * on the sphere. The face travels with the point for the reason
+ * `SurfaceLocation` exists on the CPU — a mesh's normal and content coordinate
+ * belong to the FACE that was struck, and re-finding it from the point alone is
+ * a search a flat wall defeats completely.
+ */
+export function sampleSurface(
+  u: Uniforms,
+  point: Vec3,
+  hit: [number, number, number, number],
+): Surface {
+  const tri = Math.trunc(hit[1]);
+  const mesh = hit[1] >= 0;
 
+  let normal: Vec3;
+  let latDeg: number;
+  let lonDeg: number;
+  let target: ChannelTriplet;
+  let mask: number;
+  if (mesh) {
+    normal = bvhNormalAt(u, tri, hit[2], hit[3]);
+    [latDeg, lonDeg] = bvhCoordAt(u, tri, hit[2], hit[3]);
+    // No rotation offset and no polar mask: a model's UV is anchored by its own
+    // unwrap rather than by a mechanical rotation, and it has neither a pole nor
+    // a mount to occlude one.
+    target = sampleEquirect(u, latDeg, lonDeg);
+    mask = 1;
+  } else {
+    normal = vscale(point, 1 / u.radius);
+    [latDeg, lonDeg] = worldToLatLon(point);
+    target = sampleEquirect(u, latDeg, worldLonToTextureLon(u, lonDeg));
+    mask = polarMask(u, latDeg);
+  }
+
+  const field = mesh ? bvhFieldAt(u, tri, hit[2], hit[3]) : [0, 0, 0, 0];
   const width = u.widthDeg > 0 ? u.widthDeg : 1e-9;
+  const widthM = u.meshBlendWidthM > 0 ? u.meshBlendWidthM : 1e-9;
   const weights: number[] = [0, 0, 0, 0];
   const lit: boolean[] = [false, false, false, false];
   let sum = 0;
   for (let i = 0; i < 4; i++) {
     if (i >= u.projCount) continue;
-    if (!isIlluminatedAt(u, i, point)) continue;
-    lit[i] = true;
-    const p = u.projectors[i];
-    const cosTheta = clamp(vdot(point, p.lens) / (u.radius * p.limb[0]), -1, 1);
-    const thetaDeg = Math.acos(cosTheta) * RAD2DEG;
-    const thetaMaxDeg = Math.acos(p.limb[1]) * RAD2DEG;
-    weights[i] = rampWeight(u.rampShape, (thetaMaxDeg - thetaDeg) / width, u.rampGamma);
+    if (mesh) {
+      if (!meshIlluminatedAt(u, i, point, normal)) continue;
+      lit[i] = true;
+      // A distance that is not positive means the field could not place this
+      // point inside the footprint — no field packed, or a footprint smaller
+      // than one face. A hard seam rather than a silent zero: a black patch is
+      // indistinguishable from being unlit, which is what this point is not.
+      const d = field[i];
+      weights[i] = d > 0 ? rampWeight(u.rampShape, d / widthM, u.rampGamma) : 1;
+    } else {
+      if (!isIlluminatedAt(u, i, point)) continue;
+      lit[i] = true;
+      const p = u.projectors[i];
+      const cosTheta = clamp(vdot(point, p.lens) / (u.radius * p.limb[0]), -1, 1);
+      const thetaDeg = Math.acos(cosTheta) * RAD2DEG;
+      const thetaMaxDeg = Math.acos(p.limb[1]) * RAD2DEG;
+      weights[i] = rampWeight(u.rampShape, (thetaMaxDeg - thetaDeg) / width, u.rampGamma);
+    }
     sum += weights[i];
   }
   if (sum > 0) for (let i = 0; i < 4; i++) weights[i] /= sum;
@@ -432,7 +475,7 @@ export function shadeSurface(u: Uniforms, s: Surface, viewDir: Vec3): ChannelTri
     const incidenceCos = vdot(s.normal, toLensVec) / distanceM;
     const nDotL = incidenceCos > 0 ? incidenceCos : 0;
     if (nDotL === 0) continue;
-    const ref = p.limb[0] - u.radius;
+    const ref = p.refDistance;
     const falloff = (ref * ref) / (distanceM * distanceM);
     const k = nDotL * falloff;
     const e = emittedRadianceRgb(u, blendedSignal(u, s.target, s.weights[i]), i);
@@ -470,10 +513,12 @@ export function shadeFloor(u: Uniforms, point: Vec3): ChannelTriplet {
     const cosv = vdot(normal, toLensVec) / distanceM;
     if (cosv <= 0) continue;
     const dir = vscale(toLensVec, 1 / distanceM);
-    const occl = raySphereIntersect(point, dir, u.radius, 1e-6);
+    // Whatever is standing in the room, not the sphere specifically. A model
+    // that shadows the floor is exactly what a sphere could never do.
+    const occl = surfaceIntersect(u, point, dir, 1e-6, distanceM)[0];
     if (occl > 0 && occl < distanceM) continue;
     if (worldToPixel(u, i, point) === null) continue;
-    const ref = p.limb[0] - u.radius;
+    const ref = p.refDistance;
     const falloff = (ref * ref) / (distanceM * distanceM);
     const k = cosv * falloff;
     r += p.gain.r * p.black.r * k;
@@ -486,9 +531,9 @@ export function shadeFloor(u: Uniforms, point: Vec3): ChannelTriplet {
 
 /** `sim/src/render.ts` `traceRoomRay`. Sphere, then floor, then background. */
 export function traceRoomRay(u: Uniforms, origin: Vec3, dir: Vec3): ChannelTriplet {
-  const t = raySphereIntersect(origin, dir, u.radius, 1e-9);
-  if (t > 0) {
-    const s = sampleSurface(u, vadd(origin, vscale(dir, t)));
+  const hit = surfaceIntersect(u, origin, dir, 1e-9, BVH_FAR_REF);
+  if (hit[0] > 0) {
+    const s = sampleSurface(u, vadd(origin, vscale(dir, hit[0])), hit);
     return shadeSurface(u, s, vscale(dir, -1));
   }
   if (u.drawFloor === 0 || dir.z >= 0) return rgb(0, 0, 0);
@@ -503,9 +548,9 @@ export function traceRoomRay(u: Uniforms, origin: Vec3, dir: Vec3): ChannelTripl
 /** `sim/src/render.ts` `renderProjectorView`, one pixel. ENCODED, not radiance. */
 export function projectorPixel(u: Uniforms, i: number, px: number, py: number): ChannelTriplet {
   const dir = pixelToRay(u, i, px, py);
-  const t = raySphereIntersect(u.projectors[i].lens, dir, u.radius, 1e-9);
-  if (t < 0) return rgb(0, 0, 0);
-  const s = sampleSurface(u, vadd(u.projectors[i].lens, vscale(dir, t)));
+  const hit = surfaceIntersect(u, u.projectors[i].lens, dir, 1e-9, BVH_FAR_REF);
+  if (hit[0] < 0) return rgb(0, 0, 0);
+  const s = sampleSurface(u, vadd(u.projectors[i].lens, vscale(dir, hit[0])), hit);
   return blendedSignal(u, s.target, s.weights[i]);
 }
 
@@ -607,7 +652,10 @@ export function packedTexel(
 const PACK_WIDTH_REF = 1024;
 const NODE_TEXELS_REF = 2;
 const TRI_TEXELS_REF = 6;
+const FIELD_TEXELS_REF = 3;
 const BVH_STACK_REF = 32;
+/** The shader's `BVH_FAR`, standing in for the Infinity the simulator passes. */
+const BVH_FAR_REF = 1e30;
 
 /** `rayBoxNear`. -1 for a miss, as the shader returns, not `Infinity`. */
 export function rayBoxNear(
@@ -800,4 +848,63 @@ export function bvhCoordAt(u: Uniforms, tri: number, bu: number, bv: number): [n
   const uu = w0 * p0[3] + bu * p1[3] + bv * p2[3];
   const vv = w0 * q0[3] + bu * q1[3] + bv * q2[3];
   return [90 - vv * 180, uu * 360 - 180];
+}
+
+/** `bvhFieldAt`. The footprint distance at a hit, one entry per projector. */
+export function bvhFieldAt(
+  u: Uniforms,
+  tri: number,
+  bu: number,
+  bv: number,
+): [number, number, number, number] {
+  const mesh = u.mesh;
+  const field = mesh?.field ?? null;
+  if (mesh === null || field == null) return [0, 0, 0, 0];
+  const width = mesh.fieldWidth ?? PACK_WIDTH_REF;
+  const base = tri * FIELD_TEXELS_REF;
+  const f0 = packedTexel(field, width, base);
+  const f1 = packedTexel(field, width, base + 1);
+  const f2 = packedTexel(field, width, base + 2);
+  const w0 = 1 - bu - bv;
+  return [0, 1, 2, 3].map((k) => w0 * f0[k] + bu * f1[k] + bv * f2[k]) as [
+    number,
+    number,
+    number,
+    number,
+  ];
+}
+
+/**
+ * `surfaceIntersect`. `[t, triangle, u, v]`, triangle < 0 on the sphere.
+ *
+ * The one place that branches on which surface this is, so the tracer does not
+ * have to. The sphere keeps `raySphereIntersect` with the same arguments in the
+ * same order: a routing change, not an arithmetic one.
+ */
+export function surfaceIntersect(
+  u: Uniforms,
+  origin: Vec3,
+  dir: Vec3,
+  tMin: number,
+  tMax: number,
+): [number, number, number, number] {
+  if (u.mesh === null) return [raySphereIntersect(origin, dir, u.radius, tMin), -1, 0, 0];
+  return bvhIntersect(u, origin, dir, tMin, tMax);
+}
+
+/**
+ * `meshIlluminatedAt`. `sim/src/coverage.ts` `isIlluminatedAt` on a mesh.
+ *
+ * Faces the lens on the surface's REAL normal, lands on the raster, and is not
+ * in the model's own shadow — the third test being the one a sphere never has to
+ * ask, because a sphere cannot occlude itself.
+ */
+export function meshIlluminatedAt(u: Uniforms, i: number, point: Vec3, normal: Vec3): boolean {
+  const toLens = vsub(u.projectors[i].lens, point);
+  if (vdot(normal, toLens) <= 0) return false;
+  if (worldToPixel(u, i, point) === null) return false;
+  const distanceM = Math.hypot(toLens.x, toLens.y, toLens.z);
+  if (distanceM === 0) return true;
+  const dir: Vec3 = { x: toLens.x / distanceM, y: toLens.y / distanceM, z: toLens.z / distanceM };
+  return bvhIntersect(u, point, dir, u.meshShadowBias, distanceM)[0] < 0;
 }

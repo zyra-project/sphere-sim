@@ -519,9 +519,39 @@ fix that would be applied if a real GPU shows it. Not applied pre-emptively,
 because it would move `packages/sim`'s arithmetic to fix a fault nobody has
 observed.
 
-**Still to do in Phase 2:** wiring the traversal into the display shader
-(`web/src/glsl.ts`), the content rig's second intersection, and `pickMarker` —
-the three places Phase 0 deliberately left off the seam.
+**The wiring is done in both shaders, and the blend had to cross first.** A
+mesh's weight is not a closed form on the angle from a limb; it is the per-vertex
+geodesic field of Phase 3, which `footprintDistanceAt` interpolates across the
+face a hit landed on. A shader cannot follow a `Float64Array` any more than it
+can follow the hierarchy, so `pack.ts` gained a third texture: three texels per
+triangle, one per corner, four channels because a framebuffer holds four
+viewports and both shaders declare `MAX_PROJ = 4`. Per corner rather than per
+vertex, which is the trade the positions already make — a dependent fetch in the
+blend would sit in the same loop the traversal keeps prefetchable.
+
+`surfaceIntersect` is each shader's `Surface.intersect`: one place branches, and
+the sphere keeps `raySphereIntersect` with the same arguments in the same order,
+which is why the bench did not move. `sampleSurface` (harness) and `shadeTwoRig`
+(app) take the HIT rather than a bare point, for the reason `SurfaceLocation`
+exists on the CPU — a mesh's normal and content coordinate belong to the face
+that was struck. The app's content rig takes its second intersection against the
+same model, since a misregistration is a disagreement about where the lenses are
+and not about what shape is standing in the room. `pickMarker` occludes against
+the model too: a marker behind a building is not clickable.
+
+**A sphere cannot exercise the shadow test**, which is worth recording because it
+cost a fixture. Removing the shadow ray from the reference left a tessellated
+sphere pixel-identical — a convex body cannot get in its own way — so the mesh
+parity check carries a second fixture of two plates, where 86 samples face a lens
+and are dark anyway.
+
+**Still to do in Phase 2:** the page itself does not yet hand the display shader
+a model, and it should not until `parity.ts` says what its verdict means on one.
+The allowance for pixels past tolerance was measured against a sphere's single
+smooth silhouette; a mesh has one silhouette per triangle, and about 1% of hits
+at a shared edge pick a different face in float32 than in float64. Handing the
+live view a model before re-deriving that would put a number on screen that had
+quietly changed meaning, which is the failure this document exists to avoid.
 
 **A baked SDF is the tempting shortcut and it is the wrong one.** The shader
 already ray-marches SDFs for furniture, so it would be quick — but the parity

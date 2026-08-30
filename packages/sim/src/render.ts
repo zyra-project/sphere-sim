@@ -574,7 +574,12 @@ function shadeFloor(point: Vec3, rig: PreparedRig, scene: Scene): ChannelTriplet
     // Is the floor point even inside this projector's cone?
     if (worldToPixel(p, point) === null) continue;
 
-    const ref = p.distanceM - rig.radiusM;
+    // `referenceDistanceM`, not `distanceM - rig.radiusM`. Those are the same
+    // number for a body the world origin sits inside and two different numbers
+    // for anything else, which is the whole reason `prepareProjector` computes
+    // it once -- and this floor was the site the fix missed, so the CPU's glow
+    // and the GPU's disagreed on a translated model.
+    const ref = p.referenceDistanceM;
     const falloff = (ref * ref) / (distanceM * distanceM);
     const k = cos * falloff;
     const t = p.cal.transfer;

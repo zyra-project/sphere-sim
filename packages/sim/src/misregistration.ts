@@ -51,6 +51,7 @@ import { contentAt } from './render.ts';
 import type { PreparedRig } from './optics.ts';
 import { pixelToRay, worldToPixel } from './optics.ts';
 import { coverageAndWeights, isIlluminatedAt, polarMask } from './coverage.ts';
+import { blendModelApplies } from './surface.ts';
 import type { ProjectorContribution } from './shading.ts';
 import { lambertianShading } from './shading.ts';
 import type { Scene, ViewerCamera } from './render.ts';
@@ -172,6 +173,11 @@ export function traceTwoRig(
   if (hit === null) return BLACK;
   const point = hit.point;
   const normal = hit.normal;
+  // Whether the sphere's two texture conventions apply: the mechanical rotation
+  // offset and the polar mask. `render.ts` and `warp.ts` both gate on this and
+  // this path did not, so it disagreed with its own shader about every pixel of
+  // a model whenever either was non-zero.
+  const blended = blendModelApplies(content.surface);
 
   const contributions: ProjectorContribution[] = [];
   for (let i = 0; i < physical.projectors.length; i++) {
@@ -221,14 +227,23 @@ export function traceTwoRig(
         // Image plus the analytic graticule. See `Scene.graticule`: the pattern
         // the gate measures must not be displayed at the resolution of whatever
         // texture it was baked into.
+        // The sphere's texture is anchored to the world by a mechanical
+        // rotation; a mesh's UV is anchored by its own unwrap and has no such
+        // offset. `render.ts` and `warp.ts` both make this exception and this
+        // path did not, so the shader -- which does -- disagreed with it about
+        // every pixel of a model whenever the offset was non-zero.
         const target = contentAt(
           scene,
           ll.latDeg,
-          worldLonToTextureLon(ll.lonDeg, content.rotationOffsetDeg),
+          blended ? worldLonToTextureLon(ll.lonDeg, content.rotationOffsetDeg) : ll.lonDeg,
         );
+        // The polar mask attenuates the exposed south cap because the mount
+        // occludes the north one. A dropped model has neither, so it is refused
+        // rather than approximated -- `blendModelApplies` is the same gate
+        // `coverage.ts` and `warp.ts` use.
         const wHere =
           coverageAndWeights(back.point, back.normal, content, back.location).weights[i] *
-          polarMask(ll.latDeg, content.blend, scene.maskInterpretation);
+          (blended ? polarMask(ll.latDeg, content.blend, scene.maskInterpretation) : 1);
         if (wHere > weight) weight = wHere;
         const s = blendedSignal(target, wHere, scene.encodeGamma);
         acc = { r: acc.r + w * s.r, g: acc.g + w * s.g, b: acc.b + w * s.b };

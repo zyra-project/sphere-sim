@@ -97,6 +97,12 @@ uniform mat3  uRot[MAX_PROJ];        // world <- canonical camera frame, convent
 uniform vec4  uIntrinsics[MAX_PROJ]; // fx, fy, cx, cy  (conventions.ts section I)
 uniform vec4  uRaster[MAX_PROJ];     // resX, resY, k1, k2
 uniform vec2  uLimb[MAX_PROJ];       // distance to sphere centre, R/d
+// The distance this projector's output is defined to be 1.0 at -- the near point
+// of the BODY along the lens-to-centre axis, PreparedProjector.referenceDistanceM.
+// A uniform rather than uLimb[i].x - uRadius, which is that number only for a
+// body the world origin sits inside: on a model standing away from the origin the
+// two differ by the whole translation, and the picture is simply dim.
+uniform float uRefDistance[MAX_PROJ];
 uniform vec3  uGamma[MAX_PROJ];
 uniform vec3  uBlack[MAX_PROJ];
 uniform vec3  uGain[MAX_PROJ];
@@ -136,8 +142,17 @@ uniform sampler2D uEquirect;
 // shader compiled without a model still takes the closed form and costs nothing.
 uniform sampler2D uBvhNodes;
 uniform sampler2D uBvhTris;
+uniform sampler2D uBvhField;         // per-corner footprint distance, one channel per projector
 uniform int   uMeshMode;
 uniform int   uBvhNodeCount;
+uniform int   uMeshHasField;         // 0 when no field was packed; the blend falls back
+// Both computed on the CPU by the same expressions sim uses, and passed rather
+// than re-derived, because a shader that recomputed them from the model's extent
+// would be a second definition of two numbers the two renderers have to agree on
+// exactly. sim/src/mesh/surface.ts SHADOW_BIAS_FRACTION and footprint.ts
+// blendWidthM.
+uniform float uMeshShadowBias;
+uniform float uMeshBlendWidthM;
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -306,6 +321,31 @@ bool isIlluminatedAt(int i, vec3 point) {
   vec2 px;
   return worldToPixel(i, point, px);
 }
+
+// \`sim/src/coverage.ts\` \`isIlluminatedAt\` on a mesh: the same three tests in
+// the same order -- faces the lens, lands on the raster, and is not in the
+// model's own shadow.
+//
+// The sphere's version above substitutes the POSITION for the normal, which it
+// may because a sphere centred on the origin has them parallel. A mesh does not,
+// so the normal is passed; and a sphere cannot occlude itself, so the third test
+// exists only here. That third test is what a sphere never had to ask and is the
+// whole reason Phase 1 built a hierarchy.
+//
+// \`bvhIntersect\` where the simulator calls \`occludedBvh\`: a nearest-hit query
+// standing in for an any-hit one. More work, same answer -- both accept a hit
+// on \`t > tMin && t < tMax\`, and "some accepted hit exists" is "the nearest
+// accepted hit exists". Writing a second traversal to save the difference would
+// be a second traversal to keep in parity.
+bool meshIlluminatedAt(int i, vec3 point, vec3 normal) {
+  vec3 toLens = uLens[i] - point;
+  if (dot(normal, toLens) <= 0.0) return false;
+  vec2 px;
+  if (!worldToPixel(i, point, px)) return false;
+  float distanceM = length(toLens);
+  if (distanceM == 0.0) return true;
+  return bvhIntersect(point, toLens / distanceM, uMeshShadowBias, distanceM).x < 0.0;
+}
 `;
 
 /**
@@ -332,28 +372,63 @@ float rampWeight(int shape, float t, float rampGamma) {
   return w == 0.0 ? 0.0 : pow(w, rampGamma);
 }
 
-Surface sampleSurface(vec3 point) {
+// \`hit\` is what \`surfaceIntersect\` returned: (t, triangle, u, v), triangle < 0
+// on the sphere. The face travels with the point for the reason
+// \`SurfaceLocation\` exists on the CPU -- a mesh's normal and content coordinate
+// belong to the FACE that was struck, and re-finding it from the point alone is
+// a search that a flat wall defeats completely.
+Surface sampleSurface(vec3 point, vec4 hit) {
   Surface s;
   s.point = point;
-  s.normal = point / uRadius;
-  vec2 ll = worldToLatLon(point);
+  int tri = int(hit.y);
+  bool mesh = hit.y >= 0.0;
+
+  vec2 ll;
+  if (mesh) {
+    s.normal = bvhNormalAt(tri, hit.z, hit.w);
+    ll = bvhCoordAt(tri, hit.z, hit.w);
+    // No rotation offset and no polar mask. The sphere's texture is anchored to
+    // the world by a mechanical rotation and its mask attenuates a cap the mount
+    // occludes; a model's UV is anchored by its own unwrap and it has neither a
+    // pole nor a mount. \`render.ts\` and \`warp.ts\` make the same two exceptions.
+    s.target = sampleEquirect(ll.x, ll.y);
+    s.mask = 1.0;
+  } else {
+    s.normal = point / uRadius;
+    ll = worldToLatLon(point);
+    s.target = sampleEquirect(ll.x, worldLonToTextureLon(ll.y));
+    s.mask = polarMask(ll.x);
+  }
   s.latDeg = ll.x;
   s.lonDeg = ll.y;
-  s.target = sampleEquirect(ll.x, worldLonToTextureLon(ll.y));
-  s.mask = polarMask(ll.x);
 
+  vec4 field = mesh ? bvhFieldAt(tri, hit.z, hit.w) : vec4(0.0);
   float width = uWidthDeg > 0.0 ? uWidthDeg : 1e-9;
+  float widthM = uMeshBlendWidthM > 0.0 ? uMeshBlendWidthM : 1e-9;
   float sum = 0.0;
   for (int i = 0; i < MAX_PROJ; i++) {
     s.weights[i] = 0.0;
     s.lit[i] = false;
     if (i >= uProjCount) continue;
-    if (!isIlluminatedAt(i, point)) continue;
-    s.lit[i] = true;
-    float cosTheta = clamp(dot(point, uLens[i]) / (uRadius * uLimb[i].x), -1.0, 1.0);
-    float thetaDeg = acos(cosTheta) * RAD2DEG;
-    float thetaMaxDeg = acos(uLimb[i].y) * RAD2DEG;
-    s.weights[i] = rampWeight(uRampShape, (thetaMaxDeg - thetaDeg) / width, uRampGamma);
+    if (mesh) {
+      if (!meshIlluminatedAt(i, point, s.normal)) continue;
+      s.lit[i] = true;
+      // \`coverage.ts\`: how deep inside this projector's own footprint the point
+      // sits, geodesically. A distance that is not positive means the field
+      // could not place it inside -- no field packed, or a footprint smaller
+      // than one face -- and the answer is a hard seam rather than a silent
+      // zero, because a black patch is indistinguishable from being unlit,
+      // which is the one thing this point is not.
+      float d = field[i];
+      s.weights[i] = d > 0.0 ? rampWeight(uRampShape, d / widthM, uRampGamma) : 1.0;
+    } else {
+      if (!isIlluminatedAt(i, point)) continue;
+      s.lit[i] = true;
+      float cosTheta = clamp(dot(point, uLens[i]) / (uRadius * uLimb[i].x), -1.0, 1.0);
+      float thetaDeg = acos(cosTheta) * RAD2DEG;
+      float thetaMaxDeg = acos(uLimb[i].y) * RAD2DEG;
+      s.weights[i] = rampWeight(uRampShape, (thetaMaxDeg - thetaDeg) / width, uRampGamma);
+    }
     sum += s.weights[i];
   }
   if (sum > 0.0) {
@@ -425,7 +500,7 @@ vec3 shadeSurface(Surface s, vec3 viewDir) {
     float incidenceCos = dot(s.normal, toLensVec) / distanceM;
     float nDotL = incidenceCos > 0.0 ? incidenceCos : 0.0;
     if (nDotL == 0.0) continue;
-    float ref = uLimb[i].x - uRadius;
+    float ref = uRefDistance[i];
     float falloff = (ref * ref) / (distanceM * distanceM);
     float k = nDotL * falloff;
     vec3 e = emittedRadianceRgb(blendedSignal(s.target, s.weights[i]), i);
@@ -449,11 +524,16 @@ vec3 shadeFloor(vec3 point) {
     float cosv = dot(normal, toLensVec) / distanceM;
     if (cosv <= 0.0) continue;
     vec3 dir = toLensVec / distanceM;
-    float occl = raySphereIntersect(point, dir, uRadius, 1e-6);
+    // Whatever is standing in the room, not the sphere specifically. A model
+    // that shadows the floor is exactly the thing a sphere could never do.
+    // Bounded at the lens: the caller knows how far the ray may travel, and an
+    // unbounded nearest-hit walks the whole hierarchy before discarding
+    // everything past it.
+    float occl = surfaceIntersect(point, dir, 1e-6, distanceM).x;
     if (occl > 0.0 && occl < distanceM) continue;
     vec2 px;
     if (!worldToPixel(i, point, px)) continue;
-    float ref = uLimb[i].x - uRadius;
+    float ref = uRefDistance[i];
     float falloff = (ref * ref) / (distanceM * distanceM);
     float k = cosv * falloff;
     // The ray that reaches this floor point missed the sphere, so the content is
@@ -468,9 +548,9 @@ vec3 shadeFloor(vec3 point) {
 /** `packages/sim/src/render.ts` `traceRoomRay` and `renderProjectorView`. */
 const CHUNK_TRACE = `
 vec3 traceRoomRay(vec3 origin, vec3 dir) {
-  float t = raySphereIntersect(origin, dir, uRadius, 1e-9);
-  if (t > 0.0) {
-    Surface s = sampleSurface(origin + dir * t);
+  vec4 hit = surfaceIntersect(origin, dir, 1e-9, BVH_FAR);
+  if (hit.x > 0.0) {
+    Surface s = sampleSurface(origin + dir * hit.x, hit);
     return shadeSurface(s, -dir);
   }
   if (uDrawFloor == 0 || dir.z >= 0.0) return vec3(0.0);
@@ -484,9 +564,9 @@ vec3 traceRoomRay(vec3 origin, vec3 dir) {
 
 vec3 projectorPixel(int i, float u, float v) {
   vec3 dir = pixelToRay(i, u, v);
-  float t = raySphereIntersect(uLens[i], dir, uRadius, 1e-9);
-  if (t < 0.0) return vec3(0.0);
-  Surface s = sampleSurface(uLens[i] + dir * t);
+  vec4 hit = surfaceIntersect(uLens[i], dir, 1e-9, BVH_FAR);
+  if (hit.x < 0.0) return vec3(0.0);
+  Surface s = sampleSurface(uLens[i] + dir * hit.x, hit);
   return blendedSignal(s.target, s.weights[i]);
 }
 `;
@@ -552,6 +632,13 @@ const CHUNK_MESH = `
 #define PACK_WIDTH 1024
 #define NODE_TEXELS 2
 #define TRI_TEXELS 6
+#define FIELD_TEXELS 3
+// Stands in for the Infinity the simulator passes as tMax. GLSL has no such
+// literal, and any bound past the scene serves: tMax only ever shrinks as the
+// traversal finds closer hits, so a larger one changes nothing but the first
+// comparison. 1e30 is far outside a room measured in metres and far inside
+// float32's range, so it neither clips geometry nor overflows.
+#define BVH_FAR 1e30
 
 vec4 packedTexel(sampler2D tex, int i) {
   return texelFetch(tex, ivec2(i % PACK_WIDTH, i / PACK_WIDTH), 0);
@@ -681,6 +768,33 @@ vec3 bvhNormalAt(int tri, float u, float v) {
     n = cross(b - a, c - a);
   }
   return normalize(n);
+}
+
+// \`sim/src/footprint.ts\` \`footprintDistanceAt\`, for all four projectors at
+// once. The field is per-VERTEX and interpolated across the face a hit landed
+// on; \`pack.ts\` writes the three corners beside the triangle, so this is that
+// interpolation with no vertex indirection. One channel per projector.
+vec4 bvhFieldAt(int tri, float u, float v) {
+  if (uMeshHasField == 0) return vec4(0.0);
+  int base = tri * FIELD_TEXELS;
+  vec4 f0 = packedTexel(uBvhField, base);
+  vec4 f1 = packedTexel(uBvhField, base + 1);
+  vec4 f2 = packedTexel(uBvhField, base + 2);
+  return (1.0 - u - v) * f0 + u * f1 + v * f2;
+}
+
+// The surface's own intersection, whichever surface this is -- the shader's
+// \`Surface.intersect\`. Returns (t, triangle, u, v) with triangle < 0 on the
+// sphere, which has no faces, and t < 0 for a miss.
+//
+// One place branches on \`uMeshMode\` so the tracer does not have to. The sphere
+// keeps \`raySphereIntersect\` with the same arguments in the same order, which is
+// what makes this a routing change and not an arithmetic one.
+vec4 surfaceIntersect(vec3 origin, vec3 dir, float tMin, float tMax) {
+  if (uMeshMode == 0) {
+    return vec4(raySphereIntersect(origin, dir, uRadius, tMin), -1.0, 0.0, 0.0);
+  }
+  return bvhIntersect(origin, dir, tMin, tMax);
 }
 
 // The content coordinate at a packed hit, through the equirectangular

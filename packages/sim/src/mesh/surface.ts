@@ -90,8 +90,23 @@ export class MeshSurface implements Surface {
   readonly extentRadiusM: number;
   /** The model's own centre — what `extentRadiusM` is a radius about. */
   readonly centre: Vec3;
+  readonly shadowBiasM: number;
 
-  private readonly bvh: Bvh;
+  /**
+   * The hierarchy, readable so nothing has to build a second one.
+   *
+   * Was private, and `packMesh` in `packages/web` therefore called `buildBvh`
+   * again over the same mesh: the dominant preparation cost paid twice, and --
+   * worse -- two hierarchies whose `order` arrays are only equal because the
+   * build happens to be deterministic. `packBvh` indexes triangles BY that
+   * order, and `pickMarker` traverses this one while the picture traverses the
+   * texels packed from the other, so a future tie-break would make the picker
+   * and the picture point at different faces with nothing failing.
+   *
+   * Readonly, and `Bvh` is arrays: a caller can read it, and a caller that
+   * mutates it is a caller doing something this comment cannot help with.
+   */
+  readonly bvh: Bvh;
   /**
    * Built lazily: only the blend needs it, and only off a sphere. A mesh loaded
    * purely to be looked at should not pay for a graph it never walks.
@@ -130,6 +145,16 @@ export class MeshSurface implements Surface {
     this.boundsRadiusM = this.bounds.originRadiusM;
     this.extentRadiusM = this.bounds.radiusM;
     this.centre = this.bounds.centre;
+    // Both lengths: the model's size, and its distance from the origin. See
+    // `shadowed` — the second is what float32 needs and the first is what the
+    // geometry needs.
+    this.shadowBiasM =
+      SHADOW_BIAS_FRACTION *
+      Math.max(
+        this.extentRadiusM,
+        Math.hypot(this.centre.x, this.centre.y, this.centre.z),
+        Number.MIN_VALUE,
+      );
 
     const n = mesh.triangleCount;
     this.cdf = new Float64Array(n);
@@ -245,7 +270,17 @@ export class MeshSurface implements Surface {
    * both a 30 cm prop and a 30 m facade — too small and every point shadows
    * itself into blackness, too large and a thin panel stops casting a shadow
    * onto whatever is a few millimetres behind it. So the bias is a fraction of
-   * the bounding radius, which is the only length scale the surface knows.
+   * a length the surface knows.
+   *
+   * **Of the extent AND of where the model stands**, which the first version got
+   * wrong by using the extent alone. The shader runs this same ray in float32
+   * over positions `pack.ts` stored as float32, so the self-intersection
+   * residual is on the order of the float32 spacing AT THE WORLD COORDINATE:
+   * about 4.8e-7 m at |x| = 6. A 0.6 m model standing six metres out then got a
+   * bias of 6e-7 m — roughly one ulp — and the GPU re-hit the face the ray left,
+   * so a fully lit wall rendered black. On the CPU the same formula is ~1e9 ulps
+   * and nothing showed. `Surface.shadowBiasM` is where the number lives now, so
+   * the binders stop copying the fraction.
    */
   shadowed(point: Vec3, lens: Vec3): boolean {
     const dx = lens.x - point.x;
@@ -254,7 +289,7 @@ export class MeshSurface implements Surface {
     const distance = Math.hypot(dx, dy, dz);
     if (distance === 0) return false;
     const inv = 1 / distance;
-    const bias = SHADOW_BIAS_FRACTION * Math.max(this.extentRadiusM, Number.MIN_VALUE);
+    const bias = this.shadowBiasM;
     return occludedBvh(
       this.bvh,
       this.mesh,

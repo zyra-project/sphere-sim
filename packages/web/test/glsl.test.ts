@@ -32,9 +32,14 @@ import {
   packRig,
   pickMarker,
   pickMarkerNear,
+  packMesh,
   slotOfRigIndex,
+  BVH_STACK_DEPTH,
 } from '../src/uniforms.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
+import { meshSurface } from '../../sim/src/mesh/surface.ts';
+import { blendWidthM } from '../../sim/src/footprint.ts';
+import type { SurfaceMesh } from '../../calibration/src/index.ts';
 import { coverageAndWeights } from '../../sim/src/coverage.ts';
 import { BOULDER_PRESET } from '../src/settings.ts';
 import { CONTENT_DECODE_GAMMA } from '../src/rigs.ts';
@@ -55,12 +60,93 @@ test('the shader carries two complete rigs, field for field', () => {
   // physical rig's distortion or limb constant. The picture stays plausible and
   // every number derived from it is wrong.
   const names = glslUniformNames();
-  const physicalOnly = ['uLens', 'uRot', 'uIntr', 'uRaster', 'uLimb'];
-  for (const n of physicalOnly) {
+  const paired = ['uLens', 'uRot', 'uIntr', 'uRaster'];
+  for (const n of paired) {
     assert.ok(names.includes(n), `the physical rig is missing ${n}`);
     const twin = `uC${n.slice(1)}`;
     assert.ok(names.includes(twin), `the content rig is missing ${twin}, the twin of ${n}`);
   }
+
+  // One deliberate asymmetry, pinned rather than left as a hole in the rule
+  // above. The limb constant is a term of the COMPOSITOR's blend -- the closed
+  // form on the angle from its own limb -- and the physical rig's only use of it
+  // was `uLimb[i].x - uRadius` for the radiometric reference distance, which
+  // Phase 2 replaced with `uRefDistance` because that expression is the right
+  // number only for a body the world origin sits inside.
+  //
+  // So `uLimb` is GONE, not unused: an unread uniform is stripped by the linker
+  // and the page then refuses to start, saying a term of the model has stopped
+  // being applied. The hazard the pairing rule exists for cannot arise here --
+  // there is no physical limb constant left to leak into the compositor's blend.
+  assert.ok(names.includes('uCLimb'), 'the compositor blend needs its own limb constant');
+  assert.equal(
+    names.includes('uLimb'),
+    false,
+    'uLimb is unread since uRefDistance replaced it; declaring it would break the link',
+  );
+  assert.ok(names.includes('uRefDistance'));
+});
+
+/**
+ * The mesh half of the same rule, which is where it was being broken.
+ *
+ * `buildDisplayUniforms` says it plainly -- "the weights belong to the
+ * calibration the content was generated against, not to where the light
+ * physically landed" -- and reads `uRampShape`, `uWidthDeg` and `uRampGamma` off
+ * `content.blend`. On a mesh the ramp needs two more things, the per-corner
+ * footprint field and the blend width as an arc, and both were packed from
+ * whichever rig `packMesh` was handed. That is the bug the test above exists to
+ * prevent, arriving through the one door it was not watching.
+ *
+ * There is no physical twin for these, and that is the point rather than an
+ * omission: the compositor computes the weights and bakes them into the pixels
+ * it sends, a projector emits those pixels, and where they land is physics. A
+ * `uBvhField` would be a physical blend, which does not exist -- nothing would
+ * sample it, the linker would strip it, and the page's own guard would refuse to
+ * start. Exactly how `uLimb` went.
+ *
+ * The geometry is the opposite case and is asserted here too, because "add a
+ * `uC` twin" is the wrong repair for it: both rigs trace ONE hierarchy, since a
+ * misregistration is a disagreement about where the lenses are and not about
+ * what shape is in the room.
+ */
+test('the mesh blend belongs to the compositor, and the mesh geometry to neither', () => {
+  const names = glslUniformNames();
+
+  for (const n of ['uCBvhField', 'uCMeshHasField', 'uCMeshBlendWidthM']) {
+    assert.ok(names.includes(n), `the compositor's blend is missing ${n}`);
+  }
+  for (const n of ['uBvhField', 'uMeshHasField', 'uMeshBlendWidthM']) {
+    assert.equal(
+      names.includes(n),
+      false,
+      `${n} is a physical blend term and there is no physical blend; it would strip and the ` +
+        `page would refuse to start`,
+    );
+  }
+
+  // Shared, so neither prefixed nor twinned. `uMeshShadowBias` is a property of
+  // the SURFACE rather than of a rig, which is why it sits with the geometry.
+  for (const n of ['uBvhNodes', 'uBvhTris', 'uBvhNodeCount', 'uMeshMode', 'uMeshShadowBias']) {
+    assert.ok(names.includes(n), `the model is missing ${n}`);
+    assert.equal(
+      names.includes(`uC${n.slice(1)}`),
+      false,
+      `uC${n.slice(1)} would be a second model in a room that has one`,
+    );
+  }
+
+  // And the field is actually READ from the compositor's sampler. Declaring
+  // uCBvhField while bvhFieldAt still fetched a physical one would pass every
+  // assertion above.
+  const field = glslFunctionNames().includes('bvhFieldAt')
+    ? FRAGMENT_SHADER.slice(
+        FRAGMENT_SHADER.indexOf('vec4 bvhFieldAt('),
+        FRAGMENT_SHADER.indexOf('vec4 surfaceIntersect('),
+      )
+    : '';
+  assert.ok(field.includes('uCBvhField'), 'bvhFieldAt must fetch the compositor field');
+  assert.ok(field.includes('uCMeshHasField'), 'bvhFieldAt must test the compositor flag');
 });
 
 test('every uniform the shader declares is set by the binder, and vice versa', () => {
@@ -113,11 +199,18 @@ test('the content trace evaluates blend, mask and content in the CONTENT rig', (
   const trace = FRAGMENT_CHUNKS.find((c) => c.name === 'trace');
   assert.ok(trace);
   // Step 3 of misregistration.ts: the pixel goes back out through the compositor's
-  // calibration, hits the compositor's sphere, and the weight and the texel are
-  // read there.
+  // calibration, hits the SURFACE, and the weight and the texel are read there.
+  //
+  // The intersection is `surfaceIntersect` rather than `raySphereIntersect` since
+  // Phase 2 -- the same second hit against a model rather than a ball. What this
+  // pins is unchanged and is the only thing that matters here: every argument to
+  // it is the CONTENT rig's. A stray `uLens` or `uRadius` in this expression
+  // would silently make the compositor's beliefs depend on where the projector
+  // physically ended up, which is precisely the disagreement this view exists to
+  // draw.
   assert.ok(trace.source.includes('rayFrom(uCRot[i], uCIntr[i], uCRaster[i].zw'));
-  assert.ok(trace.source.includes('raySphereIntersect(uCLens[i], dir, uCRadius'));
-  assert.ok(trace.source.includes('contentWeight(xp, i, count)'));
+  assert.ok(trace.source.includes('surfaceIntersect(uCLens[i], dir, uCRadius'));
+  assert.ok(trace.source.includes('contentWeight(xp, backNormal, backField, i, count)'));
   // And the emission is from the PHYSICAL lens, with the physical transfer.
   assert.ok(trace.source.includes('uLens[i] - point'));
   assert.ok(trace.source.includes('emittedRadianceRgb(signal, i)'));
@@ -693,5 +786,406 @@ test('every declared function is reachable from the entry point', () => {
   for (const name of names) {
     const calls = FRAGMENT_SHADER.split(`${name}(`).length - 1;
     assert.ok(calls >= 2, `${name} is declared and never called`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The model, as the display shader receives it
+// ---------------------------------------------------------------------------
+
+/** A wall in the plane x = `atX`, centred on y = `atY`, facing along x. */
+function wallMesh(halfSizeM = 0.6, atX = 0, atY = 0): SurfaceMesh {
+  const s = halfSizeM;
+  const x = atX;
+  const y0 = atY - s;
+  const y1 = atY + s;
+  return {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'wall',
+    positions: Float64Array.from([x, y0, -s, x, y1, -s, x, y1, s, x, y0, s]),
+    indices: Uint32Array.from([0, 1, 2, 0, 2, 3]),
+    normals: null,
+    uvs: Float32Array.from([0, 0, 1, 0, 1, 1, 0, 1]),
+    vertexCount: 4,
+    triangleCount: 2,
+  };
+}
+
+/**
+ * Peak stack occupancy of the traversal in `CHUNK_MESH`, for a tree shape.
+ *
+ * Transcribed from the shader's loop rather than imported, and descending into
+ * BOTH children unconditionally, which is the worst case over all rays: it
+ * removes the ray from the question and leaves only the topology. `right < 0`
+ * is a leaf, and the left child is `node + 1`, the layout `mesh/bvh.ts` packs.
+ */
+function peakStack(right: readonly number[]): number {
+  let peak = 1;
+  const stack = [0];
+  while (stack.length > 0) {
+    const node = stack.pop() as number;
+    if (right[node] < 0) continue;
+    stack.push(right[node]);
+    stack.push(node + 1);
+    if (stack.length > peak) peak = stack.length;
+  }
+  return peak;
+}
+
+/** Depth of the deepest node, root at 0 — `buildBvh`'s own `maxDepth`. */
+function treeDepth(right: readonly number[], node = 0, d = 0): number {
+  if (right[node] < 0) return d;
+  return Math.max(treeDepth(right, node + 1, d + 1), treeDepth(right, right[node], d + 1));
+}
+
+/** Every binary tree shape with `leaves` leaves, in that same layout. */
+function* treeShapes(leaves: number): Generator<number[]> {
+  if (leaves === 1) {
+    yield [-1];
+    return;
+  }
+  for (let split = 1; split < leaves; split++) {
+    for (const l of treeShapes(split)) {
+      for (const r of treeShapes(leaves - split)) {
+        const out = [1 + l.length];
+        for (const x of l) out.push(x < 0 ? -1 : x + 1);
+        for (const x of r) out.push(x < 0 ? -1 : x + 1 + l.length);
+        yield out;
+      }
+    }
+  }
+}
+
+/**
+ * The refusal threshold in `packMesh` is exact, and this is what makes it so.
+ *
+ * A review read `packages/sim`'s `new Int32Array(bvh.maxDepth + 2)` as the
+ * traversal NEEDING `maxDepth + 2` slots, which would make a 31-deep hierarchy
+ * overflow the shader's 32 and render with holes. It does not: the CPU's array
+ * carries one spare slot. Tightening the guard on that reading would refuse a
+ * model that traces correctly, and the argument is subtle enough that it is
+ * worth measuring rather than restating — so this asserts the bound directly,
+ * over every tree shape up to ten leaves and over hierarchies the real builder
+ * produces.
+ *
+ * The bound is TIGHT, not merely an upper limit: a balanced tree reaches
+ * `maxDepth + 1` exactly. Asserting only `<=` would pass for a traversal that
+ * had quietly stopped pushing anything.
+ */
+test('the traversal never needs more than maxDepth + 1 slots, and sometimes needs all of them', () => {
+  let shapes = 0;
+  let sawTight = false;
+  for (let leaves = 1; leaves <= 10; leaves++) {
+    for (const right of treeShapes(leaves)) {
+      shapes++;
+      const peak = peakStack(right);
+      const depth = treeDepth(right);
+      assert.ok(
+        peak <= depth + 1,
+        `a ${leaves}-leaf shape of depth ${depth} peaked at ${peak}, past ${depth + 1}`,
+      );
+      if (peak === depth + 1) sawTight = true;
+    }
+  }
+  assert.ok(shapes > 6000, `only ${shapes} shapes enumerated`);
+  assert.ok(sawTight, 'no shape reached maxDepth + 1, so the bound is not the one being measured');
+
+  // A perfectly balanced tree 20 deep — past anything the fixtures build, and
+  // the shape that makes the bound tight at a depth the guard actually cares
+  // about.
+  const balanced = (levels: number): number[] => {
+    if (levels === 0) return [-1];
+    const l = balanced(levels - 1);
+    const r = balanced(levels - 1);
+    const out = [1 + l.length];
+    for (const x of l) out.push(x < 0 ? -1 : x + 1);
+    for (const x of r) out.push(x < 0 ? -1 : x + 1 + l.length);
+    return out;
+  };
+  for (const levels of [1, 5, 12, 20]) {
+    const right = balanced(levels);
+    assert.equal(treeDepth(right), levels);
+    assert.equal(
+      peakStack(right),
+      levels + 1,
+      `a balanced tree ${levels} deep should peak at exactly ${levels + 1}`,
+    );
+  }
+});
+
+/**
+ * The guard, the shader's array and the bound above are three statements of one
+ * number, and nothing else holds them together.
+ *
+ * `BVH_STACK` is a `#define` in shader text; `BVH_STACK_DEPTH` is a TypeScript
+ * constant read by `packMesh`; the bound is a property of the loop. Changing any
+ * one of them alone is what would put holes in a model, and it is exactly the
+ * kind of edit that looks safe in isolation.
+ */
+test('the shader stack, the refusal threshold and the traversal bound are one number', () => {
+  const declared = /#define\s+BVH_STACK\s+(\d+)/.exec(FRAGMENT_SHADER);
+  assert.ok(declared, 'the shader no longer declares BVH_STACK');
+  const slots = Number(declared[1]);
+  assert.equal(
+    BVH_STACK_DEPTH,
+    slots,
+    `packMesh refuses at ${BVH_STACK_DEPTH} but the shader has ${slots} slots`,
+  );
+  // The deepest hierarchy the guard ACCEPTS must still fit, given peak =
+  // maxDepth + 1. Accepting maxDepth = slots - 1 is therefore exactly right,
+  // and accepting maxDepth = slots would be one slot short.
+  assert.equal(
+    (BVH_STACK_DEPTH - 1) + 1,
+    slots,
+    'the deepest accepted hierarchy no longer fits the shader stack exactly',
+  );
+  // Every push is guarded, so an overflow drops a subtree instead of writing out
+  // of bounds. That is why the failure would be a hole rather than a crash, and
+  // why the threshold has to be right rather than merely close.
+  const pushes = FRAGMENT_SHADER.match(/stack\[sp\+\+\]/g) ?? [];
+  const guarded = FRAGMENT_SHADER.match(/sp < BVH_STACK\) stack\[sp\+\+\]/g) ?? [];
+  assert.equal(
+    guarded.length,
+    pushes.length - 1,
+    'every push but the root seed must be guarded by sp < BVH_STACK',
+  );
+});
+
+test('a rig on a model packs a payload the shader can trace, and a sphere packs none', () => {
+  const world = buildWorld(BOULDER_PRESET);
+  assert.equal(packMesh(prepareRig(world.truthRig)), null, 'the sphere is analytic in the shader');
+
+  const surface = meshSurface(wallMesh());
+  const packed = packMesh(prepareRig(world.truthRig, surface));
+  assert.ok(packed !== null);
+  assert.equal(packed.triangleCount, 2);
+  assert.ok(packed.nodeCount > 0);
+  // The blend crosses as texels too. Without it the shader would fall back to a
+  // hard seam everywhere and the GL view would disagree with the CPU renderer
+  // about every overlap -- which the parity readout would report as the
+  // renderers disagreeing rather than as half a payload.
+  assert.ok(packed.contentField !== null, 'a rig with footprint fields must pack them');
+  // The two lengths the shader cannot derive: both are about the MODEL's size,
+  // and a shader that recomputed them would be a second definition of each.
+  assert.ok(packed.shadowBias > 0 && packed.shadowBias < surface.extentRadiusM);
+  assert.ok(
+    Math.abs(
+      packed.contentBlendWidthM - blendWidthM(world.truthRig.blend.widthDeg, surface.extentRadiusM),
+    ) < 1e-15,
+    'the blend width must be the ramp as an ARC on this model, not an angle at the lens',
+  );
+});
+
+/**
+ * Why the attribution above is load-bearing, measured rather than asserted.
+ *
+ * A footprint is computed from where a lens ACTUALLY IS -- `buildFootprints`
+ * walks the model asking `vertexFacesLens`, then runs a multi-source Dijkstra
+ * out from the boundary. Displace the lenses and vertices change which side of a
+ * footprint edge they fall on, so the geodesic field changes with the rig. That
+ * is the whole reason this cannot be one field serving both.
+ *
+ * The disagreement is not a small numerical drift. `footprint.ts` writes a
+ * finite `unreachable` sentinel of order 1e6 for a vertex no path reaches, so a
+ * vertex inside one rig's footprint and outside the other's differs by the
+ * sentinel itself. The shader would ramp smoothly across a face where the
+ * compositor drew a hard seam, and the picture would look like a blend either
+ * way.
+ */
+test('the footprint field moves with the rig, so it must be the compositor rig that packs it', () => {
+  const world = buildWorld(BOULDER_PRESET);
+  const surface = meshSurface(wallMesh());
+  const physical = packMesh(prepareRig(world.truthRig, surface));
+  const content = packMesh(prepareRig(world.compositorRig, surface));
+  assert.ok(physical?.contentField && content?.contentField);
+
+  let differing = 0;
+  let worst = 0;
+  for (let i = 0; i < content.contentField.length; i++) {
+    const d = Math.abs(physical.contentField[i] - content.contentField[i]);
+    if (d > 0) differing++;
+    if (d > worst) worst = d;
+  }
+  assert.ok(
+    differing > 0,
+    'the two rigs pack identical fields, so this preset cannot tell a mis-attributed field ' +
+      'from a correct one and the test below proves nothing',
+  );
+  // Sentinel-sized, i.e. at least one vertex is inside one rig's footprint and
+  // unreachable in the other's. A tolerance-sized difference would be drift;
+  // this is a different answer to "is this point in the footprint at all".
+  assert.ok(
+    worst > 1e3,
+    `the fields differ by only ${worst.toExponential(2)}, which is drift rather than a ` +
+      `footprint boundary moving`,
+  );
+});
+
+/**
+ * One hierarchy is uploaded and both `surfaceIntersect` calls read it. Two rigs
+ * on two surfaces would silently share whichever got packed, and the reader
+ * would be shown a misregistration that is really a substitution.
+ */
+test('the two rigs must be standing in front of the same model', () => {
+  const world = buildWorld(BOULDER_PRESET);
+  const camera = buildViewer(BOULDER_PRESET, 64, 48);
+  const surface = meshSurface(wallMesh());
+  const other = meshSurface(wallMesh(0.6, 2));
+  const content = prepareRig(world.compositorRig, surface);
+  const mesh = packMesh(content);
+
+  assert.throws(
+    () =>
+      buildDisplayUniforms(
+        prepareRig(world.truthRig, other),
+        content,
+        world.scene,
+        camera,
+        { mesh },
+      ),
+    /different surfaces/,
+    'two rigs on two models must be refused, not rendered',
+  );
+
+  // The same call with one surface is fine, and a sphere pair stays free: the
+  // guard must not fire where there is no model to disagree about.
+  assert.ok(
+    buildDisplayUniforms(prepareRig(world.truthRig, surface), content, world.scene, camera, {
+      mesh,
+    }).mesh !== null,
+  );
+  assert.equal(
+    buildDisplayUniforms(
+      prepareRig(world.truthRig),
+      prepareRig(world.compositorRig),
+      world.scene,
+      camera,
+    ).mesh,
+    null,
+  );
+});
+
+test('the display uniforms carry the model, and default to not having one', () => {
+  const world = buildWorld(BOULDER_PRESET);
+  const camera = buildViewer(BOULDER_PRESET, 64, 48);
+  const bare = buildDisplayUniforms(
+    prepareRig(world.truthRig),
+    prepareRig(world.compositorRig),
+    world.scene,
+    camera,
+  );
+  assert.equal(bare.mesh, null, 'no model unless one is passed; the sphere path must stay free');
+
+  // Standing AWAY from the origin, which is the only geometry where the
+  // reference distance's two candidate expressions differ at all: for a model
+  // the origin sits inside, `|lens - centre| - extent` and `distance - radius`
+  // are the same number and a recomputation would pass unnoticed.
+  const surface = meshSurface(wallMesh(0.6, 6));
+  const physical = prepareRig(world.truthRig, surface);
+  const withMesh = buildDisplayUniforms(physical, physical, world.scene, camera, {
+    mesh: packMesh(physical),
+  });
+  assert.ok(withMesh.mesh !== null);
+  // The reference distance is read off the prepared projector rather than
+  // recomputed, so it is the model-relative number `prepareProjector` produced
+  // and not `distance - radius` about the world origin.
+  for (let i = 0; i < physical.projectors.length; i++) {
+    // `Math.fround`, because the payload is a Float32Array: what is being pinned
+    // is that the number came from the prepared projector rather than from a
+    // recomputation, not that float32 holds a float64.
+    assert.equal(
+      withMesh.physical.refDistance[i],
+      Math.fround(physical.projectors[i].referenceDistanceM),
+    );
+  }
+});
+
+test('a click cannot reach a projector standing behind the model', () => {
+  // The picker's whole property: what you can click is what you can see. It held
+  // for a sphere by intersecting one analytically; a model that is not a sphere
+  // needs the model, or a viewer clicks through a building and selects a
+  // projector they cannot see.
+  const world = buildWorld(BOULDER_PRESET);
+  // P1 stands at about x = +5.3, so a camera further out on +x sees it with
+  // nothing else on the ray -- and a wall at x = 6 stands between the two.
+  const surface = meshSurface(wallMesh(0.6, 6));
+  const physical = prepareRig(world.truthRig, surface);
+  const camera = buildViewer(BOULDER_PRESET, 64, 48);
+
+  const lens = {
+    x: physical.projectors[0].lens.x,
+    y: physical.projectors[0].lens.y,
+    z: physical.projectors[0].lens.z,
+  };
+  assert.ok(lens.x > 5, 'this fixture assumes P1 is the projector out on +x');
+  const behind = { x: 9, y: lens.y, z: lens.z };
+  const looking = buildDisplayUniforms(
+    physical,
+    physical,
+    world.scene,
+    { ...camera, position: behind, target: lens },
+    { markerRadiusM: 0.12, mesh: packMesh(physical) },
+  );
+  assert.equal(
+    pickMarker(looking, 0, 0),
+    -1,
+    'the wall is between the camera and that lens, so it must not be pickable',
+  );
+
+  // The control is the same wall MOVED ASIDE, not the wall removed. Removing it
+  // also removes the model, and a picker that had gone back to intersecting a
+  // sphere would still answer -1 above -- because the sphere it falls back to is
+  // the model's origin-centred BOUND, which for a wall standing at x = 6 is a
+  // ball of radius 6 that swallows the whole ray. Shifting the wall in y keeps
+  // that bound and takes the geometry off the line, so only a picker that asks
+  // about the actual triangles can tell the two apart.
+  const aside = meshSurface(wallMesh(0.6, 6, 3));
+  const asidePhysical = prepareRig(world.truthRig, aside);
+  const clear = buildDisplayUniforms(
+    asidePhysical,
+    asidePhysical,
+    world.scene,
+    { ...camera, position: behind, target: lens },
+    { markerRadiusM: 0.12, mesh: packMesh(asidePhysical) },
+  );
+  assert.equal(
+    pickMarker(clear, 0, 0),
+    0,
+    'nothing is on the ray now, so the lens must be pickable again',
+  );
+});
+
+test('the mesh textures are given storage before anything is drawn', () => {
+  // `uploadMesh` skips work when the model it is asked for is the one already
+  // uploaded, which is what keeps a megabyte hierarchy off the per-frame path.
+  // The bug that produced this test is what the INITIAL value of that record has
+  // to be: `null` is a legitimate model -- no model, the 1x1 placeholders -- so
+  // starting the record at `null` made the very first call, which every page
+  // makes with no model, return early. The three textures were created and never
+  // defined, and a sampler bound to an incomplete texture is undefined behaviour
+  // on some drivers rather than an unused uniform.
+  //
+  // Asserted over the SOURCE rather than by calling it, and that is a real
+  // limitation rather than a preference: `web/gl.ts` needs DOM types, the root
+  // tsconfig deliberately gives `packages/sim` none, and a test that imported it
+  // would drag `WebGL2RenderingContext` into the config that keeps the simulator
+  // free of the browser. `smoke:app` cannot cover it either -- software
+  // rendering tolerates an incomplete texture the shader never samples, so the
+  // page comes up looking exactly right. This shipped past a green smoke run and
+  // was caught in review.
+  assert.ok(
+    /meshUploaded: undefined,/.test(GL_SOURCE),
+    'meshUploaded must start as undefined; null is a model that IS uploaded',
+  );
+  assert.ok(
+    !/meshUploaded: null,/.test(GL_SOURCE),
+    'meshUploaded starting at null makes the first uploadMesh(h, null) a no-op',
+  );
+  // And the three placeholders really are three, on the units the shader reads.
+  for (const [unit, name] of [[1, 'nodes'], [2, 'triangles'], [3, 'contentField']] as const) {
+    assert.ok(
+      GL_SOURCE.includes(`put(${unit}, h.meshTextures.${name},`),
+      `unit ${unit} must carry the ${name} texture`,
+    );
   }
 });

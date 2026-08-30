@@ -245,3 +245,24 @@ test('reference.ts does not import packages/sim', async () => {
     );
   }
 });
+
+test('the harness binder gives its mesh textures storage before anything is drawn', async () => {
+  // The same bug as `packages/web/test/glsl.test.ts` pins on the app binder, in
+  // the binder that was written first. `uploadMesh` returns early when the model
+  // asked for is the one already uploaded, and `null` -- no model, the 1x1
+  // placeholders -- is a legitimate model, so a record starting at `null` made
+  // the first call a no-op and left three textures created and never defined.
+  //
+  // Over the source because `web/gl.ts` needs DOM types the root tsconfig
+  // withholds on purpose; see the twin for the whole argument.
+  const fs = await import('node:fs');
+  const url = await import('node:url');
+  const path = await import('node:path');
+  const here = path.dirname(url.fileURLToPath(import.meta.url));
+  const gl = fs.readFileSync(path.join(here, '..', 'web', 'gl.ts'), 'utf8');
+  assert.ok(
+    /meshUploaded: undefined,/.test(gl),
+    'meshUploaded must start as undefined; null is a model that IS uploaded',
+  );
+  assert.ok(!/meshUploaded: null,/.test(gl));
+});
