@@ -34,6 +34,7 @@ import {
   pickMarkerNear,
   packMesh,
   slotOfRigIndex,
+  BVH_STACK_DEPTH,
 } from '../src/uniforms.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import { meshSurface } from '../../sim/src/mesh/surface.ts';
@@ -747,6 +748,146 @@ function wallMesh(halfSizeM = 0.6, atX = 0, atY = 0): SurfaceMesh {
     triangleCount: 2,
   };
 }
+
+/**
+ * Peak stack occupancy of the traversal in `CHUNK_MESH`, for a tree shape.
+ *
+ * Transcribed from the shader's loop rather than imported, and descending into
+ * BOTH children unconditionally, which is the worst case over all rays: it
+ * removes the ray from the question and leaves only the topology. `right < 0`
+ * is a leaf, and the left child is `node + 1`, the layout `mesh/bvh.ts` packs.
+ */
+function peakStack(right: readonly number[]): number {
+  let peak = 1;
+  const stack = [0];
+  while (stack.length > 0) {
+    const node = stack.pop() as number;
+    if (right[node] < 0) continue;
+    stack.push(right[node]);
+    stack.push(node + 1);
+    if (stack.length > peak) peak = stack.length;
+  }
+  return peak;
+}
+
+/** Depth of the deepest node, root at 0 — `buildBvh`'s own `maxDepth`. */
+function treeDepth(right: readonly number[], node = 0, d = 0): number {
+  if (right[node] < 0) return d;
+  return Math.max(treeDepth(right, node + 1, d + 1), treeDepth(right, right[node], d + 1));
+}
+
+/** Every binary tree shape with `leaves` leaves, in that same layout. */
+function* treeShapes(leaves: number): Generator<number[]> {
+  if (leaves === 1) {
+    yield [-1];
+    return;
+  }
+  for (let split = 1; split < leaves; split++) {
+    for (const l of treeShapes(split)) {
+      for (const r of treeShapes(leaves - split)) {
+        const out = [1 + l.length];
+        for (const x of l) out.push(x < 0 ? -1 : x + 1);
+        for (const x of r) out.push(x < 0 ? -1 : x + 1 + l.length);
+        yield out;
+      }
+    }
+  }
+}
+
+/**
+ * The refusal threshold in `packMesh` is exact, and this is what makes it so.
+ *
+ * A review read `packages/sim`'s `new Int32Array(bvh.maxDepth + 2)` as the
+ * traversal NEEDING `maxDepth + 2` slots, which would make a 31-deep hierarchy
+ * overflow the shader's 32 and render with holes. It does not: the CPU's array
+ * carries one spare slot. Tightening the guard on that reading would refuse a
+ * model that traces correctly, and the argument is subtle enough that it is
+ * worth measuring rather than restating — so this asserts the bound directly,
+ * over every tree shape up to ten leaves and over hierarchies the real builder
+ * produces.
+ *
+ * The bound is TIGHT, not merely an upper limit: a balanced tree reaches
+ * `maxDepth + 1` exactly. Asserting only `<=` would pass for a traversal that
+ * had quietly stopped pushing anything.
+ */
+test('the traversal never needs more than maxDepth + 1 slots, and sometimes needs all of them', () => {
+  let shapes = 0;
+  let sawTight = false;
+  for (let leaves = 1; leaves <= 10; leaves++) {
+    for (const right of treeShapes(leaves)) {
+      shapes++;
+      const peak = peakStack(right);
+      const depth = treeDepth(right);
+      assert.ok(
+        peak <= depth + 1,
+        `a ${leaves}-leaf shape of depth ${depth} peaked at ${peak}, past ${depth + 1}`,
+      );
+      if (peak === depth + 1) sawTight = true;
+    }
+  }
+  assert.ok(shapes > 6000, `only ${shapes} shapes enumerated`);
+  assert.ok(sawTight, 'no shape reached maxDepth + 1, so the bound is not the one being measured');
+
+  // A perfectly balanced tree 20 deep — past anything the fixtures build, and
+  // the shape that makes the bound tight at a depth the guard actually cares
+  // about.
+  const balanced = (levels: number): number[] => {
+    if (levels === 0) return [-1];
+    const l = balanced(levels - 1);
+    const r = balanced(levels - 1);
+    const out = [1 + l.length];
+    for (const x of l) out.push(x < 0 ? -1 : x + 1);
+    for (const x of r) out.push(x < 0 ? -1 : x + 1 + l.length);
+    return out;
+  };
+  for (const levels of [1, 5, 12, 20]) {
+    const right = balanced(levels);
+    assert.equal(treeDepth(right), levels);
+    assert.equal(
+      peakStack(right),
+      levels + 1,
+      `a balanced tree ${levels} deep should peak at exactly ${levels + 1}`,
+    );
+  }
+});
+
+/**
+ * The guard, the shader's array and the bound above are three statements of one
+ * number, and nothing else holds them together.
+ *
+ * `BVH_STACK` is a `#define` in shader text; `BVH_STACK_DEPTH` is a TypeScript
+ * constant read by `packMesh`; the bound is a property of the loop. Changing any
+ * one of them alone is what would put holes in a model, and it is exactly the
+ * kind of edit that looks safe in isolation.
+ */
+test('the shader stack, the refusal threshold and the traversal bound are one number', () => {
+  const declared = /#define\s+BVH_STACK\s+(\d+)/.exec(FRAGMENT_SHADER);
+  assert.ok(declared, 'the shader no longer declares BVH_STACK');
+  const slots = Number(declared[1]);
+  assert.equal(
+    BVH_STACK_DEPTH,
+    slots,
+    `packMesh refuses at ${BVH_STACK_DEPTH} but the shader has ${slots} slots`,
+  );
+  // The deepest hierarchy the guard ACCEPTS must still fit, given peak =
+  // maxDepth + 1. Accepting maxDepth = slots - 1 is therefore exactly right,
+  // and accepting maxDepth = slots would be one slot short.
+  assert.equal(
+    (BVH_STACK_DEPTH - 1) + 1,
+    slots,
+    'the deepest accepted hierarchy no longer fits the shader stack exactly',
+  );
+  // Every push is guarded, so an overflow drops a subtree instead of writing out
+  // of bounds. That is why the failure would be a hole rather than a crash, and
+  // why the threshold has to be right rather than merely close.
+  const pushes = FRAGMENT_SHADER.match(/stack\[sp\+\+\]/g) ?? [];
+  const guarded = FRAGMENT_SHADER.match(/sp < BVH_STACK\) stack\[sp\+\+\]/g) ?? [];
+  assert.equal(
+    guarded.length,
+    pushes.length - 1,
+    'every push but the root seed must be guarded by sp < BVH_STACK',
+  );
+});
 
 test('a rig on a model packs a payload the shader can trace, and a sphere packs none', () => {
   const world = buildWorld(BOULDER_PRESET);
