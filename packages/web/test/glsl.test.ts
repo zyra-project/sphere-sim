@@ -861,3 +861,38 @@ test('a click cannot reach a projector standing behind the model', () => {
     'nothing is on the ray now, so the lens must be pickable again',
   );
 });
+
+test('the mesh textures are given storage before anything is drawn', () => {
+  // `uploadMesh` skips work when the model it is asked for is the one already
+  // uploaded, which is what keeps a megabyte hierarchy off the per-frame path.
+  // The bug that produced this test is what the INITIAL value of that record has
+  // to be: `null` is a legitimate model -- no model, the 1x1 placeholders -- so
+  // starting the record at `null` made the very first call, which every page
+  // makes with no model, return early. The three textures were created and never
+  // defined, and a sampler bound to an incomplete texture is undefined behaviour
+  // on some drivers rather than an unused uniform.
+  //
+  // Asserted over the SOURCE rather than by calling it, and that is a real
+  // limitation rather than a preference: `web/gl.ts` needs DOM types, the root
+  // tsconfig deliberately gives `packages/sim` none, and a test that imported it
+  // would drag `WebGL2RenderingContext` into the config that keeps the simulator
+  // free of the browser. `smoke:app` cannot cover it either -- software
+  // rendering tolerates an incomplete texture the shader never samples, so the
+  // page comes up looking exactly right. This shipped past a green smoke run and
+  // was caught in review.
+  assert.ok(
+    /meshUploaded: undefined,/.test(GL_SOURCE),
+    'meshUploaded must start as undefined; null is a model that IS uploaded',
+  );
+  assert.ok(
+    !/meshUploaded: null,/.test(GL_SOURCE),
+    'meshUploaded starting at null makes the first uploadMesh(h, null) a no-op',
+  );
+  // And the three placeholders really are three, on the units the shader reads.
+  for (const [unit, name] of [[1, 'nodes'], [2, 'triangles'], [3, 'field']] as const) {
+    assert.ok(
+      GL_SOURCE.includes(`put(${unit}, h.meshTextures.${name},`),
+      `unit ${unit} must carry the ${name} texture`,
+    );
+  }
+});

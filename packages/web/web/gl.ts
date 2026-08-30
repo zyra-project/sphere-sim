@@ -40,7 +40,18 @@ export interface DisplayGl {
    * was last put in them, so a redraw of the same model costs a comparison.
    */
   meshTextures: { nodes: WebGLTexture; triangles: WebGLTexture; field: WebGLTexture };
-  meshUploaded: DisplayMesh | null;
+  /**
+   * What is in {@link meshTextures} now, or `undefined` before anything has
+   * been put there.
+   *
+   * THREE states, and collapsing two of them was a bug: `null` means the
+   * placeholders are uploaded, `undefined` means the textures have no storage at
+   * all. Started as `null`, which made `uploadMesh(h, null)` -- the ordinary
+   * no-model case, and the first call every page makes -- return early and leave
+   * the samplers bound to textures that were never defined. `undefined === null`
+   * is false, so the guard needs no special case; the initial value carries it.
+   */
+  meshUploaded: DisplayMesh | null | undefined;
   /** `RGBA32F` or `RGBA16F` — whichever the device gave us. */
   textureFormat: string;
   /** True when the parity read-back can be float rather than 8-bit. */
@@ -144,7 +155,8 @@ export function createDisplayGl(canvas: HTMLCanvasElement): DisplayGl {
     missingUniforms,
     texture,
     meshTextures: { nodes: meshNodes, triangles: meshTris, field: meshField },
-    meshUploaded: null,
+    // `undefined`, not `null`: see the field. `null` is a model that IS uploaded.
+    meshUploaded: undefined,
     textureFormat: floatLinear ? 'RGBA32F' : 'RGBA16F',
     floatReadback: colorFloat,
     readTarget: null,

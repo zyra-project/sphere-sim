@@ -39,7 +39,18 @@ export interface GlHarness {
    * what was last put in them, so a redraw of the same model costs nothing.
    */
   meshTextures: { nodes: WebGLTexture; triangles: WebGLTexture; field: WebGLTexture };
-  meshUploaded: MeshUniforms | null;
+  /**
+   * What is in {@link meshTextures} now, or `undefined` before anything has
+   * been put there.
+   *
+   * THREE states, and collapsing two of them was a bug: `null` means the
+   * placeholders are uploaded, `undefined` means the textures have no storage at
+   * all. Started as `null`, which made `uploadMesh(h, null)` -- the ordinary
+   * no-model case, and the first call every page makes -- return early and leave
+   * the samplers bound to textures that were never defined. `undefined === null`
+   * is false, so the guard needs no special case; the initial value carries it.
+   */
+  meshUploaded: MeshUniforms | null | undefined;
   /** `RGBA32F`, `RGBA16F` or `RGBA8` — whichever the device gave us. */
   textureFormat: string;
   /** True when the parity read-back can be done in float rather than 8-bit. */
@@ -123,7 +134,8 @@ export function createHarnessGl(canvas: HTMLCanvasElement): GlHarness {
     missingUniforms,
     texture,
     meshTextures: { nodes: meshNodes, triangles: meshTris, field: meshField },
-    meshUploaded: null,
+    // `undefined`, not `null`: see the field. `null` is a model that IS uploaded.
+    meshUploaded: undefined,
     textureFormat: floatLinear ? 'RGBA32F' : 'RGBA16F',
     floatReadback: colorFloat,
     readTarget: null,
