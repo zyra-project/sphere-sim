@@ -137,17 +137,27 @@ export interface PackedRig {
 }
 
 /**
- * The model a prepared rig is lighting, packed for the shader — or `null` when
- * that rig is lighting the analytic sphere.
+ * The model, packed for the shader — or `null` when the surface is the analytic
+ * sphere.
+ *
+ * **Takes the CONTENT rig, and the parameter is named for it.** The geometry
+ * would be the same either way, because a misregistration is a disagreement
+ * about where the lenses are and not about what shape is in the room. The
+ * FOOTPRINT FIELD would not: a footprint is computed from where a lens actually
+ * is, so a displaced compositor has different footprints, different geodesic
+ * distances, and a different ramp. Everything else the shader blends with —
+ * `uRampShape`, `uWidthDeg`, `uRampGamma` — is already read off `content.blend`
+ * by {@link buildDisplayUniforms}, and this is the half that was not.
  *
  * Reads the surface rather than re-deriving: the shadow bias is the surface's
  * own, and the blend width is `footprint.ts`'s own function applied to it. A
- * second definition of either is a second thing to keep in agreement. That is the opposite of the
- * choice `packages/harness/src/uniforms.ts` makes, and deliberately: the harness
- * re-derives because it is the independent half of a parity chain, and this is
- * the app.
+ * second definition of either is a second thing to keep in agreement. That is
+ * the opposite of the choice `packages/harness/src/uniforms.ts` makes, and
+ * deliberately: the harness re-derives because it is the independent half of a
+ * parity chain, and this is the app.
  */
-export function packMesh(rig: PreparedRig): DisplayMesh | null {
+export function packMesh(content: PreparedRig): DisplayMesh | null {
+  const rig = content;
   if (rig.surface.kind !== 'mesh') return null;
   // `as MeshSurface`, which is `optics.ts`'s own idiom, rather than a structural
   // cast through `unknown` to whatever declares a `mesh`. `Surface` is not a
@@ -177,14 +187,14 @@ export function packMesh(rig: PreparedRig): DisplayMesh | null {
     nodeWidth: packed.nodeWidth,
     triangles: packed.triangles,
     triangleWidth: packed.triangleWidth,
-    field: packed.field,
-    fieldWidth: packed.fieldWidth,
     nodeCount: packed.nodeCount,
     triangleCount: packed.triangleCount,
     surface,
     // The surface's own number, not a third copy of the fraction.
     shadowBias: surface.shadowBiasM,
-    blendWidthM: blendWidthM(rig.blend.widthDeg, surface.extentRadiusM),
+    contentField: packed.field,
+    contentFieldWidth: packed.fieldWidth,
+    contentBlendWidthM: blendWidthM(rig.blend.widthDeg, surface.extentRadiusM),
   };
 }
 
@@ -297,8 +307,6 @@ export interface DisplayMesh {
   nodeWidth: number;
   triangles: Float32Array;
   triangleWidth: number;
-  field: Float32Array | null;
-  fieldWidth: number;
   nodeCount: number;
   triangleCount: number;
   /**
@@ -310,8 +318,27 @@ export interface DisplayMesh {
   surface: Surface;
   /** `SHADOW_BIAS_FRACTION * extentRadiusM`, from the surface itself. */
   shadowBias: number;
-  /** `blendWidthM(widthDeg, extentRadiusM)`: the ramp as an arc, not an angle. */
-  blendWidthM: number;
+  /**
+   * The footprint field, packed from the CONTENT rig, or `null` when none was.
+   *
+   * The name carries the attribution because nothing else can. This is the mesh
+   * half of {@link buildDisplayUniforms}'s `const blend = content.blend` — the
+   * weights belong to the calibration the content was generated against, and a
+   * field packed from the physical rig makes the shader ramp on where the light
+   * really goes while `coverageAndWeights` ramps on where the compositor thought
+   * it went. Both pictures look like a blend. Only one of them is the blend.
+   *
+   * `null` is not "no blend": it is "no field to blend from", and the shader
+   * takes the hard-seam fallback `coverageAndWeights` takes when a rig has no
+   * footprints.
+   */
+  contentField: Float32Array | null;
+  contentFieldWidth: number;
+  /**
+   * `blendWidthM(content.blend.widthDeg, extentRadiusM)`: the ramp as an arc
+   * rather than an angle, and the compositor's arc for the same reason.
+   */
+  contentBlendWidthM: number;
 }
 
 export interface DisplayUniforms {
@@ -477,11 +504,29 @@ export function buildDisplayUniforms(
   // physically landed. Reading them off `physical` would be a subtle and very
   // convincing bug — the picture would still look like a sphere.
   const blend = content.blend;
+  const mesh = options.mesh ?? null;
+  if (mesh !== null && physical.surface !== content.surface) {
+    // ONE hierarchy is uploaded and BOTH `surfaceIntersect` calls read it: the
+    // physical trace that finds where light lands, and the content trace that
+    // asks what the compositor wrote there. There is no `uCBvhNodes` to carry a
+    // second shape, so two rigs on two surfaces would silently agree to use
+    // whichever one got packed — and the reader would be looking at a
+    // misregistration that is really a substitution.
+    //
+    // Identity rather than deep equality, because sharing the object is also
+    // what keeps `bvh.order` common between the geometry and the field packed
+    // over it, and two equal-looking surfaces built separately do not.
+    throw new Error(
+      'the physical and content rigs are on different surfaces; a misregistration is a ' +
+        'disagreement about where the lenses are, not about what shape is in the room, and ' +
+        'the shader has one hierarchy for both',
+    );
+  }
   return {
     projCount: Math.min(MAX_PROJECTORS, physical.projectors.length),
     physical: packRig(physical),
     content: packRig(content),
-    mesh: options.mesh ?? null,
+    mesh,
 
     // Refused, not defaulted -- see the note in packages/harness/src/uniforms.ts.
     rampShape: rampShapeCode(blend.rampShape),

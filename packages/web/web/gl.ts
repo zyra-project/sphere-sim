@@ -39,7 +39,7 @@ export interface DisplayGl {
    * megabytes and a frame is not the place to build one. `meshUploaded` is what
    * was last put in them, so a redraw of the same model costs a comparison.
    */
-  meshTextures: { nodes: WebGLTexture; triangles: WebGLTexture; field: WebGLTexture };
+  meshTextures: { nodes: WebGLTexture; triangles: WebGLTexture; contentField: WebGLTexture };
   /**
    * What is in {@link meshTextures} now, or `undefined` before anything has
    * been put there.
@@ -154,7 +154,7 @@ export function createDisplayGl(canvas: HTMLCanvasElement): DisplayGl {
     uniforms,
     missingUniforms,
     texture,
-    meshTextures: { nodes: meshNodes, triangles: meshTris, field: meshField },
+    meshTextures: { nodes: meshNodes, triangles: meshTris, contentField: meshField },
     // `undefined`, not `null`: see the field. `null` is a model that IS uploaded.
     meshUploaded: undefined,
     textureFormat: floatLinear ? 'RGBA32F' : 'RGBA16F',
@@ -394,7 +394,7 @@ export function uploadMesh(h: DisplayGl, mesh: DisplayMesh | null): void {
   };
   put(1, h.meshTextures.nodes, mesh?.nodes ?? null, mesh?.nodeWidth ?? 1);
   put(2, h.meshTextures.triangles, mesh?.triangles ?? null, mesh?.triangleWidth ?? 1);
-  put(3, h.meshTextures.field, mesh?.field ?? null, mesh?.fieldWidth ?? 1);
+  put(3, h.meshTextures.contentField, mesh?.contentField ?? null, mesh?.contentFieldWidth ?? 1);
   h.meshUploaded = mesh;
   // Unit 0 again. Every bare `bindTexture` in this file means unit 0 -- see
   // `bindContent` -- so leaving 3 selected would make the next one clobber the
@@ -411,7 +411,7 @@ export function uploadMesh(h: DisplayGl, mesh: DisplayMesh | null): void {
  * ambient GL state left them. `ensureReadTarget` and `ensureVideoTarget` both
  * call `bindTexture` with no `activeTexture`, which is unit 0 when the invariant
  * holds and was unit 3 after an upload: the read-back target landed on
- * `uBvhField`, and the identity guard meant it was never displaced again. The
+ * `uCBvhField`, and the identity guard meant it was never displaced again. The
  * blend then sampled the framebuffer's own colour attachment for the life of the
  * model.
  *
@@ -426,7 +426,7 @@ function bindMesh(h: DisplayGl): void {
   gl.activeTexture(gl.TEXTURE2);
   gl.bindTexture(gl.TEXTURE_2D, h.meshTextures.triangles);
   gl.activeTexture(gl.TEXTURE3);
-  gl.bindTexture(gl.TEXTURE_2D, h.meshTextures.field);
+  gl.bindTexture(gl.TEXTURE_2D, h.meshTextures.contentField);
   gl.activeTexture(gl.TEXTURE0);
 }
 
@@ -527,12 +527,12 @@ export function setUniforms(h: DisplayGl, u: DisplayUniforms): void {
   uploadMesh(h, u.mesh);
   gl.uniform1i(loc('uBvhNodes'), 1);
   gl.uniform1i(loc('uBvhTris'), 2);
-  gl.uniform1i(loc('uBvhField'), 3);
+  gl.uniform1i(loc('uCBvhField'), 3);
   gl.uniform1i(loc('uMeshMode'), u.mesh === null ? 0 : 1);
   gl.uniform1i(loc('uBvhNodeCount'), u.mesh?.nodeCount ?? 0);
-  gl.uniform1i(loc('uMeshHasField'), u.mesh?.field == null ? 0 : 1);
+  gl.uniform1i(loc('uCMeshHasField'), u.mesh?.contentField == null ? 0 : 1);
   gl.uniform1f(loc('uMeshShadowBias'), u.mesh?.shadowBias ?? 0);
-  gl.uniform1f(loc('uMeshBlendWidthM'), u.mesh?.blendWidthM ?? 0);
+  gl.uniform1f(loc('uCMeshBlendWidthM'), u.mesh?.contentBlendWidthM ?? 0);
 
   gl.uniform1i(loc('uEquirect'), 0);
 }
