@@ -71,6 +71,12 @@ import {
   summarize,
 } from '../src/parity.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
+import type { SurfaceMesh } from '../../calibration/src/index.ts';
+import type { Surface } from '../../sim/src/surface.ts';
+import { meshSurface } from '../../sim/src/mesh/surface.ts';
+import { buildBvh } from '../../sim/src/mesh/bvh.ts';
+import { packBvh } from '../../sim/src/mesh/pack.ts';
+import type { MeshUniforms } from '../src/uniforms.ts';
 import { renderRoomView } from '../../sim/src/render.ts';
 import type { GlHarness } from './gl.ts';
 import { createHarnessGl, drawFullScreen, renderAndRead, setUniforms, uploadEquirect } from './gl.ts';
@@ -201,6 +207,7 @@ function renderFrame(): void {
   const roomCamera = { ...world.viewer, width: rects.room.w, height: rects.room.h };
   const roomUniforms = buildUniforms(world.rig, world.scene, roomCamera, {
     mode: 'room',
+    mesh: surfaceForWorld().packed,
     drawFloor: true,
     exposure: world.exposure,
     displayGamma: 2.2,
@@ -231,6 +238,7 @@ function renderFrame(): void {
     const rh = Math.max(1, Math.round(vp.h * panel.h));
     const u = buildUniforms(world.rig, world.scene, roomCamera, {
       mode: 'projector',
+      mesh: surfaceForWorld().packed,
       projIndex: i,
       displayGamma: 0, // already encoded framebuffer content; do not encode twice
     });
@@ -285,14 +293,66 @@ function positionLabels(rects: { room: Rect; framebuffer: Rect }, dpr: number): 
 // Parity — GPU against packages/sim, on screen
 // ---------------------------------------------------------------------------
 
+/**
+ * The model, built once per model rather than once per frame.
+ *
+ * A hierarchy over the tessellated sphere is thousands of triangles and this
+ * function is on the settled-frame path, which draws five viewports and then two
+ * parity read-backs. `world.mesh` is rebuilt only when a slider changes it, so an
+ * identity check is the whole cache key.
+ */
+let preparedSurface: { mesh: SurfaceMesh | null; surface: Surface | null; packed: MeshUniforms | null } = {
+  mesh: null,
+  surface: null,
+  packed: null,
+};
+
+function surfaceForWorld(): { surface: Surface | null; packed: MeshUniforms | null } {
+  if (preparedSurface.mesh === world.mesh) return preparedSurface;
+  const mesh = world.mesh;
+  if (mesh === null) {
+    preparedSurface = { mesh: null, surface: null, packed: null };
+    return preparedSurface;
+  }
+  const surface = meshSurface(mesh);
+  // Prepared against the rig so the footprint fields exist: the packed field
+  // texture IS the general blend, and without it the shader falls back to a hard
+  // seam everywhere while `packages/sim` ramps -- which the parity number would
+  // report as the two renderers disagreeing rather than as half a payload.
+  const rig = prepareRig(world.rig, surface);
+  const packed = packBvh(buildBvh(mesh), mesh, rig.footprints);
+  preparedSurface = {
+    mesh,
+    surface,
+    packed: {
+      nodes: packed.nodes,
+      nodeWidth: packed.nodeWidth,
+      triangles: packed.triangles,
+      triangleWidth: packed.triangleWidth,
+      nodeCount: packed.nodeCount,
+      triangleCount: packed.triangleCount,
+      field: packed.field,
+      fieldWidth: packed.fieldWidth,
+      centre: surface.centre,
+      extentRadiusM: surface.extentRadiusM,
+    },
+  };
+  return preparedSurface;
+}
+
 function runParity(): void {
   if (!gl) return;
   try {
     const camera = { ...world.viewer, width: PARITY_W, height: PARITY_H };
-    const prepared = prepareRig(world.rig);
+    // ONE surface for both sides. The GPU gets it as texels and `packages/sim`
+    // gets it as the object those texels were packed from, so a disagreement is
+    // the driver's and not the fixture's.
+    const { surface, packed } = surfaceForWorld();
+    const prepared = prepareRig(world.rig, surface ?? undefined);
 
     const roomU = buildUniforms(world.rig, world.scene, camera, {
       mode: 'room',
+      mesh: packed,
       drawFloor: true,
       exposure: 1,
       displayGamma: 0,
@@ -308,6 +368,7 @@ function runParity(): void {
 
     const projU = buildUniforms(world.rig, world.scene, camera, {
       mode: 'projector',
+      mesh: packed,
       projIndex: 0,
       displayGamma: 0,
     });

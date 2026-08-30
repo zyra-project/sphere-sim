@@ -58,6 +58,35 @@ There are three links in the chain and they are not equally verified:
 | **(2)** | The shader source is parsed for its function signatures; the reference must expose a counterpart for every one, both directions. | **Yes, structurally.** `test/glsl.test.ts`. This is shape, not arithmetic. |
 | **(3)** | A real GL driver compiling that text into the arithmetic the reference describes. | **No — this container has no GPU and no display.** Measured at runtime in the browser and displayed at the top of the metrics panel. |
 
+### Link (3) covers the mesh path too, now
+
+Phase 2 taught the shader to trace a model, and for a while link (3) did not
+follow: the page had no way to select one, so the mesh path had never executed on
+any GL driver, software or hardware. Every claim about it rested on
+`reference.ts` — float64 TypeScript, which is links (1) and (2). That is a whole
+renderer verified by not being run.
+
+The **Surface** control puts one of two models in front of the projectors, and
+the parity number then covers it. Both are built in `src/fixtures.ts` rather than
+loaded, so a disagreement on screen is about the driver and not about a fetch:
+
+- a **tessellated sphere**, the one shape whose right answer is already known,
+  with the analytic one beside it. `test/fixtures.test.ts` holds the two against
+  each other on the CPU — mean departure 1.2e-2 over lit pixels, which is the
+  faceting — so a fixture problem announces itself there rather than being read
+  on screen as the driver disagreeing;
+- **two plates**, because a sphere is convex and cannot exercise the shadow ray
+  at all. Removing that ray from the reference leaves a tessellated sphere
+  pixel-identical; it took a concave fixture to catch on the CPU and it takes one
+  here.
+
+**What to watch for on real hardware.** `bvhIntersect`'s agreement with the
+simulator depends on a NaN propagating through `min`/`max`, which GLSL ES 3.0
+does not guarantee — see the known risk below. A driver that answers differently
+prunes a subtree containing geometry, which shows up as **holes in the model on
+rays looking straight down an axis**, and as a parity failure concentrated there.
+That is the failure this control exists to be able to see.
+
 **Measured result for link (1):** the delta is **exactly zero** — every channel
 of every pixel, in the room track and all four projector tracks, across six
 configurations (nominal; radial distortion plus lens shift plus roll plus

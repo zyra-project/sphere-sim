@@ -20,6 +20,7 @@ import type {
   ChannelTriplet,
   ProjectorCalibration,
   RigCalibration,
+  SurfaceMesh,
   Vec3,
 } from '../../calibration/src/index.ts';
 import { aimAtSphereCenter } from '../../sim/src/geometry.ts';
@@ -29,6 +30,7 @@ import { viewerAt } from '../../sim/src/render.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
 import { flatField, gridAlignmentPattern } from '../../sim/src/equirect.ts';
 import { tintedAmbient } from '../../sim/src/color.ts';
+import { surfaceMeshFor } from './fixtures.ts';
 import type { ShadingModel } from '../../sim/src/shading.ts';
 import { fullShading, lambertianShading } from '../../sim/src/shading.ts';
 import type { HarnessState } from './params.ts';
@@ -79,6 +81,16 @@ export interface World {
   viewer: ViewerCamera;
   shading: ShadingModel;
   pattern: PatternId;
+  /**
+   * The model in front of the projectors, or `null` for the analytic sphere.
+   *
+   * On `World` rather than built at each use, because BOTH sides of the parity
+   * check have to be given the same one: the GPU through `buildUniforms`, and
+   * `packages/sim` through `prepareRig`. Two calls to a builder would be two
+   * chances to hand them different shapes, and the number they produce would
+   * then be measuring that.
+   */
+  mesh: SurfaceMesh | null;
   /** Linear multiplier applied at the final encode only. Not physical. */
   exposure: number;
 }
@@ -230,6 +242,9 @@ export function buildWorld(
     viewer: buildViewer(state, options.viewWidth ?? 320, options.viewHeight ?? 240),
     shading: buildShading(state),
     pattern,
+    // Sized from the sphere's own radius, so a model does not go out of frame
+    // when §1's diameter slider moves.
+    mesh: surfaceMeshFor(state.surface_shape ?? 0, state.R),
     exposure: state.exposure,
   };
 }
