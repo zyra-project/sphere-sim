@@ -26,6 +26,11 @@ import { raySphereIntersect } from '../../sim/src/geometry.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import type { Scene, ViewerCamera } from '../../sim/src/render.ts';
 import { cross, dot, normalize, sub, DEG2RAD } from '../../sim/src/vec.ts';
+import { buildBvh } from '../../sim/src/mesh/bvh.ts';
+import { packBvh } from '../../sim/src/mesh/pack.ts';
+import { blendWidthM } from '../../sim/src/footprint.ts';
+import type { SurfaceMesh, Vec3 } from '../../calibration/src/index.ts';
+import type { Surface } from '../../sim/src/surface.ts';
 import { MAX_PROJECTORS } from './glsl.ts';
 import { PROJECTOR_TINTS_LINEAR } from './settings.ts';
 
@@ -40,6 +45,8 @@ const OVERLAY_CODE: Record<OverlayMode, number> = {
 };
 
 export interface DisplayOptions {
+  /** A packed model to trace instead of the analytic sphere. */
+  mesh?: DisplayMesh | null;
   overlay?: OverlayMode;
   /** How strongly the overlay is mixed over the render. */
   overlayMix?: number;
@@ -109,11 +116,62 @@ export interface PackedRig {
   raster: Float32Array;
   /** `2 * MAX_PROJECTORS`: lens distance to the sphere centre, and R/d. */
   limb: Float32Array;
+  /**
+   * `MAX_PROJECTORS`: the distance each projector's output is defined to be 1.0
+   * at — `PreparedProjector.referenceDistanceM`, read off rather than re-derived.
+   */
+  refDistance: Float32Array;
   /** `3 * MAX_PROJECTORS` each, per-channel transfer. PARAMETERS.md §3.2. */
   gamma: Float32Array;
   black: Float32Array;
   gain: Float32Array;
 }
+
+/**
+ * The model a prepared rig is lighting, packed for the shader — or `null` when
+ * that rig is lighting the analytic sphere.
+ *
+ * Reads the surface rather than re-deriving anything: the shadow bias and the
+ * blend width are the surface's own two length scales, and a second definition
+ * of either is a second thing to keep in agreement. That is the opposite of the
+ * choice `packages/harness/src/uniforms.ts` makes, and deliberately: the harness
+ * re-derives because it is the independent half of a parity chain, and this is
+ * the app.
+ */
+export function packMesh(rig: PreparedRig): DisplayMesh | null {
+  const surface = rig.surface;
+  if (surface.kind !== 'mesh') return null;
+  const mesh = (surface as unknown as { mesh: SurfaceMesh }).mesh;
+  const packed = packBvh(buildBvh(mesh), mesh, rig.footprints);
+  if (packed.maxDepth >= BVH_STACK_DEPTH) {
+    // Refused rather than rendered. The shader's traversal stack is a
+    // compile-time array, so a deeper hierarchy would silently drop the nodes it
+    // could not push and report a miss where there is geometry — a hole in the
+    // model that reads as a modelling error rather than as a limit being hit.
+    throw new Error(
+      `the model's hierarchy is ${packed.maxDepth} deep and the shader's stack is ` +
+        `${BVH_STACK_DEPTH}; it would render with holes in it rather than fail`,
+    );
+  }
+  return {
+    nodes: packed.nodes,
+    nodeWidth: packed.nodeWidth,
+    triangles: packed.triangles,
+    triangleWidth: packed.triangleWidth,
+    field: packed.field,
+    fieldWidth: packed.fieldWidth,
+    nodeCount: packed.nodeCount,
+    triangleCount: packed.triangleCount,
+    surface,
+    shadowBias: SHADOW_BIAS_FRACTION * Math.max(surface.extentRadiusM, Number.MIN_VALUE),
+    blendWidthM: blendWidthM(rig.blend.widthDeg, surface.extentRadiusM),
+  };
+}
+
+/** The shader's `BVH_STACK`. Both shaders declare 32; `packMesh` refuses past it. */
+const BVH_STACK_DEPTH = 32;
+/** `mesh/surface.ts`'s own bias fraction, which it does not export. */
+const SHADOW_BIAS_FRACTION = 1e-6;
 
 export function packRig(rig: PreparedRig): PackedRig {
   const n = MAX_PROJECTORS;
@@ -126,6 +184,7 @@ export function packRig(rig: PreparedRig): PackedRig {
     intrinsics: new Float32Array(4 * n),
     raster: new Float32Array(4 * n),
     limb: new Float32Array(2 * n),
+    refDistance: new Float32Array(n),
     gamma: new Float32Array(3 * n),
     black: new Float32Array(3 * n),
     gain: new Float32Array(3 * n),
@@ -140,6 +199,7 @@ export function packRig(rig: PreparedRig): PackedRig {
       // sides of a branch.
       packed.limb[2 * i] = 1;
       packed.limb[2 * i + 1] = 1;
+      packed.refDistance[i] = 1;
       packed.intrinsics[4 * i] = 1;
       packed.intrinsics[4 * i + 1] = 1;
       packed.raster[4 * i] = 1;
@@ -176,6 +236,7 @@ export function packRig(rig: PreparedRig): PackedRig {
 
     packed.limb[2 * i] = p.distanceM;
     packed.limb[2 * i + 1] = p.limbCos;
+    packed.refDistance[i] = p.referenceDistanceM;
 
     packed.gamma[3 * i] = t.gamma.r;
     packed.gamma[3 * i + 1] = t.gamma.g;
@@ -190,10 +251,46 @@ export function packRig(rig: PreparedRig): PackedRig {
   return packed;
 }
 
+/**
+ * The model as texels, plus the two lengths derived from its own size.
+ *
+ * `sim/src/mesh/pack.ts` writes the layout. Both rigs trace the SAME model: a
+ * misregistration is a disagreement about where the lenses are, not about what
+ * shape is standing in the room.
+ */
+export interface DisplayMesh {
+  nodes: Float32Array;
+  nodeWidth: number;
+  triangles: Float32Array;
+  triangleWidth: number;
+  field: Float32Array | null;
+  fieldWidth: number;
+  nodeCount: number;
+  triangleCount: number;
+  /**
+   * The surface these texels were packed from.
+   *
+   * Carried so `pickMarker` can ask what a ray hits without a third traversal
+   * being written to answer it. Not uploaded — the shader reads the texels.
+   */
+  surface: Surface;
+  /** `SHADOW_BIAS_FRACTION * extentRadiusM`, from the surface itself. */
+  shadowBias: number;
+  /** `blendWidthM(widthDeg, extentRadiusM)`: the ramp as an arc, not an angle. */
+  blendWidthM: number;
+}
+
 export interface DisplayUniforms {
   projCount: number;
   physical: PackedRig;
   content: PackedRig;
+  /**
+   * The model to trace, or `null` for the analytic sphere.
+   *
+   * `null` is the ordinary case and costs the shader nothing: `uMeshMode` is 0
+   * and `bvhIntersect` returns a miss before it fetches anything.
+   */
+  mesh: DisplayMesh | null;
 
   rampShape: number;
   widthDeg: number;
@@ -350,6 +447,7 @@ export function buildDisplayUniforms(
     projCount: Math.min(MAX_PROJECTORS, physical.projectors.length),
     physical: packRig(physical),
     content: packRig(content),
+    mesh: options.mesh ?? null,
 
     // Refused, not defaulted -- see the note in packages/harness/src/uniforms.ts.
     rampShape: rampShapeCode(blend.rampShape),
@@ -451,13 +549,20 @@ export function pickMarker(u: DisplayUniforms, ndcX: number, ndcY: number): numb
   const origin = { x: u.camPos[0], y: u.camPos[1], z: u.camPos[2] };
 
   // Deliberately NOT routed through `Surface`, unlike the rest of the model.
-  // This picks against `PackedRig` — the flat Float32Array payload the shader
-  // is handed — so it has to answer the question the SHADER would answer, and
-  // the shader intersects a sphere analytically. Phase 2 of
-  // docs/ARBITRARY-SHAPES.md is where the GPU learns about shapes; until then a
-  // seam here would let the picker and the picture disagree about what was hit.
-  const ball = raySphereIntersect(origin, dir, u.physical.radiusM, 1e-9);
-  const maxT = ball ? ball.t : 1e9;
+  // This picks against the payload the SHADER is handed, so it has to answer the
+  // question the shader would answer: a marker behind whatever is standing in
+  // the room is not pickable, and "whatever is standing in the room" stopped
+  // being a sphere in Phase 2. A seam here would let the picker and the picture
+  // disagree about what was hit — click through a building and select a
+  // projector the viewer cannot see.
+  //
+  // The mesh path asks the SURFACE, which is the simulator's own float64
+  // traversal over the hierarchy these texels were packed from -- the same
+  // shape, to a different last bit. That difference is nanometres and a click is
+  // pixels, so it cannot change an answer; what would change one is asking about
+  // a different shape. Writing a third traversal here to match float32 exactly
+  // would be a third traversal to keep in agreement.
+  const maxT = occluderDistance(u, origin, dir);
 
   let t = 0.02;
   for (let step = 0; step < PICK_STEPS; step++) {
@@ -482,6 +587,22 @@ export function pickMarker(u: DisplayUniforms, ndcX: number, ndcY: number): numb
 
 /** March steps. The shader's `ROOM_STEPS`; more would only cost a click. */
 const PICK_STEPS = 72;
+
+/**
+ * How far the ray gets before the surface stops it, or effectively forever.
+ *
+ * `1e9` where nothing is hit, matching the shader's own sentinel for the same
+ * thing: a marker in front of empty space is pickable at any distance.
+ */
+function occluderDistance(u: DisplayUniforms, origin: Vec3, dir: Vec3): number {
+  const mesh = u.mesh;
+  if (mesh === null) {
+    const ball = raySphereIntersect(origin, dir, u.physical.radiusM, 1e-9);
+    return ball ? ball.t : 1e9;
+  }
+  const hit = mesh.surface.intersect(origin, dir);
+  return hit === null ? 1e9 : hit.t;
+}
 
 /**
  * The same pick, widened to the size of a fingertip.

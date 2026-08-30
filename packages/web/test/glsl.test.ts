@@ -32,9 +32,13 @@ import {
   packRig,
   pickMarker,
   pickMarkerNear,
+  packMesh,
   slotOfRigIndex,
 } from '../src/uniforms.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
+import { meshSurface } from '../../sim/src/mesh/surface.ts';
+import { blendWidthM } from '../../sim/src/footprint.ts';
+import type { SurfaceMesh } from '../../calibration/src/index.ts';
 import { coverageAndWeights } from '../../sim/src/coverage.ts';
 import { BOULDER_PRESET } from '../src/settings.ts';
 import { CONTENT_DECODE_GAMMA } from '../src/rigs.ts';
@@ -55,12 +59,31 @@ test('the shader carries two complete rigs, field for field', () => {
   // physical rig's distortion or limb constant. The picture stays plausible and
   // every number derived from it is wrong.
   const names = glslUniformNames();
-  const physicalOnly = ['uLens', 'uRot', 'uIntr', 'uRaster', 'uLimb'];
-  for (const n of physicalOnly) {
+  const paired = ['uLens', 'uRot', 'uIntr', 'uRaster'];
+  for (const n of paired) {
     assert.ok(names.includes(n), `the physical rig is missing ${n}`);
     const twin = `uC${n.slice(1)}`;
     assert.ok(names.includes(twin), `the content rig is missing ${twin}, the twin of ${n}`);
   }
+
+  // One deliberate asymmetry, pinned rather than left as a hole in the rule
+  // above. The limb constant is a term of the COMPOSITOR's blend -- the closed
+  // form on the angle from its own limb -- and the physical rig's only use of it
+  // was `uLimb[i].x - uRadius` for the radiometric reference distance, which
+  // Phase 2 replaced with `uRefDistance` because that expression is the right
+  // number only for a body the world origin sits inside.
+  //
+  // So `uLimb` is GONE, not unused: an unread uniform is stripped by the linker
+  // and the page then refuses to start, saying a term of the model has stopped
+  // being applied. The hazard the pairing rule exists for cannot arise here --
+  // there is no physical limb constant left to leak into the compositor's blend.
+  assert.ok(names.includes('uCLimb'), 'the compositor blend needs its own limb constant');
+  assert.equal(
+    names.includes('uLimb'),
+    false,
+    'uLimb is unread since uRefDistance replaced it; declaring it would break the link',
+  );
+  assert.ok(names.includes('uRefDistance'));
 });
 
 test('every uniform the shader declares is set by the binder, and vice versa', () => {
@@ -113,11 +136,18 @@ test('the content trace evaluates blend, mask and content in the CONTENT rig', (
   const trace = FRAGMENT_CHUNKS.find((c) => c.name === 'trace');
   assert.ok(trace);
   // Step 3 of misregistration.ts: the pixel goes back out through the compositor's
-  // calibration, hits the compositor's sphere, and the weight and the texel are
-  // read there.
+  // calibration, hits the SURFACE, and the weight and the texel are read there.
+  //
+  // The intersection is `surfaceIntersect` rather than `raySphereIntersect` since
+  // Phase 2 -- the same second hit against a model rather than a ball. What this
+  // pins is unchanged and is the only thing that matters here: every argument to
+  // it is the CONTENT rig's. A stray `uLens` or `uRadius` in this expression
+  // would silently make the compositor's beliefs depend on where the projector
+  // physically ended up, which is precisely the disagreement this view exists to
+  // draw.
   assert.ok(trace.source.includes('rayFrom(uCRot[i], uCIntr[i], uCRaster[i].zw'));
-  assert.ok(trace.source.includes('raySphereIntersect(uCLens[i], dir, uCRadius'));
-  assert.ok(trace.source.includes('contentWeight(xp, i, count)'));
+  assert.ok(trace.source.includes('surfaceIntersect(uCLens[i], dir, uCRadius'));
+  assert.ok(trace.source.includes('contentWeight(xp, backNormal, backField, i, count)'));
   // And the emission is from the PHYSICAL lens, with the physical transfer.
   assert.ok(trace.source.includes('uLens[i] - point'));
   assert.ok(trace.source.includes('emittedRadianceRgb(signal, i)'));
@@ -694,4 +724,140 @@ test('every declared function is reachable from the entry point', () => {
     const calls = FRAGMENT_SHADER.split(`${name}(`).length - 1;
     assert.ok(calls >= 2, `${name} is declared and never called`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// The model, as the display shader receives it
+// ---------------------------------------------------------------------------
+
+/** A wall in the plane x = `atX`, centred on y = `atY`, facing along x. */
+function wallMesh(halfSizeM = 0.6, atX = 0, atY = 0): SurfaceMesh {
+  const s = halfSizeM;
+  const x = atX;
+  const y0 = atY - s;
+  const y1 = atY + s;
+  return {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'wall',
+    positions: Float64Array.from([x, y0, -s, x, y1, -s, x, y1, s, x, y0, s]),
+    indices: Uint32Array.from([0, 1, 2, 0, 2, 3]),
+    normals: null,
+    uvs: Float32Array.from([0, 0, 1, 0, 1, 1, 0, 1]),
+    vertexCount: 4,
+    triangleCount: 2,
+  };
+}
+
+test('a rig on a model packs a payload the shader can trace, and a sphere packs none', () => {
+  const world = buildWorld(BOULDER_PRESET);
+  assert.equal(packMesh(prepareRig(world.truthRig)), null, 'the sphere is analytic in the shader');
+
+  const surface = meshSurface(wallMesh());
+  const packed = packMesh(prepareRig(world.truthRig, surface));
+  assert.ok(packed !== null);
+  assert.equal(packed.triangleCount, 2);
+  assert.ok(packed.nodeCount > 0);
+  // The blend crosses as texels too. Without it the shader would fall back to a
+  // hard seam everywhere and the GL view would disagree with the CPU renderer
+  // about every overlap -- which the parity readout would report as the
+  // renderers disagreeing rather than as half a payload.
+  assert.ok(packed.field !== null, 'a rig with footprint fields must pack them');
+  // The two lengths the shader cannot derive: both are about the MODEL's size,
+  // and a shader that recomputed them would be a second definition of each.
+  assert.ok(packed.shadowBias > 0 && packed.shadowBias < surface.extentRadiusM);
+  assert.ok(
+    Math.abs(packed.blendWidthM - blendWidthM(world.truthRig.blend.widthDeg, surface.extentRadiusM)) <
+      1e-15,
+    'the blend width must be the ramp as an ARC on this model, not an angle at the lens',
+  );
+});
+
+test('the display uniforms carry the model, and default to not having one', () => {
+  const world = buildWorld(BOULDER_PRESET);
+  const camera = buildViewer(BOULDER_PRESET, 64, 48);
+  const bare = buildDisplayUniforms(
+    prepareRig(world.truthRig),
+    prepareRig(world.compositorRig),
+    world.scene,
+    camera,
+  );
+  assert.equal(bare.mesh, null, 'no model unless one is passed; the sphere path must stay free');
+
+  // Standing AWAY from the origin, which is the only geometry where the
+  // reference distance's two candidate expressions differ at all: for a model
+  // the origin sits inside, `|lens - centre| - extent` and `distance - radius`
+  // are the same number and a recomputation would pass unnoticed.
+  const surface = meshSurface(wallMesh(0.6, 6));
+  const physical = prepareRig(world.truthRig, surface);
+  const withMesh = buildDisplayUniforms(physical, physical, world.scene, camera, {
+    mesh: packMesh(physical),
+  });
+  assert.ok(withMesh.mesh !== null);
+  // The reference distance is read off the prepared projector rather than
+  // recomputed, so it is the model-relative number `prepareProjector` produced
+  // and not `distance - radius` about the world origin.
+  for (let i = 0; i < physical.projectors.length; i++) {
+    // `Math.fround`, because the payload is a Float32Array: what is being pinned
+    // is that the number came from the prepared projector rather than from a
+    // recomputation, not that float32 holds a float64.
+    assert.equal(
+      withMesh.physical.refDistance[i],
+      Math.fround(physical.projectors[i].referenceDistanceM),
+    );
+  }
+});
+
+test('a click cannot reach a projector standing behind the model', () => {
+  // The picker's whole property: what you can click is what you can see. It held
+  // for a sphere by intersecting one analytically; a model that is not a sphere
+  // needs the model, or a viewer clicks through a building and selects a
+  // projector they cannot see.
+  const world = buildWorld(BOULDER_PRESET);
+  // P1 stands at about x = +5.3, so a camera further out on +x sees it with
+  // nothing else on the ray -- and a wall at x = 6 stands between the two.
+  const surface = meshSurface(wallMesh(0.6, 6));
+  const physical = prepareRig(world.truthRig, surface);
+  const camera = buildViewer(BOULDER_PRESET, 64, 48);
+
+  const lens = {
+    x: physical.projectors[0].lens.x,
+    y: physical.projectors[0].lens.y,
+    z: physical.projectors[0].lens.z,
+  };
+  assert.ok(lens.x > 5, 'this fixture assumes P1 is the projector out on +x');
+  const behind = { x: 9, y: lens.y, z: lens.z };
+  const looking = buildDisplayUniforms(
+    physical,
+    physical,
+    world.scene,
+    { ...camera, position: behind, target: lens },
+    { markerRadiusM: 0.12, mesh: packMesh(physical) },
+  );
+  assert.equal(
+    pickMarker(looking, 0, 0),
+    -1,
+    'the wall is between the camera and that lens, so it must not be pickable',
+  );
+
+  // The control is the same wall MOVED ASIDE, not the wall removed. Removing it
+  // also removes the model, and a picker that had gone back to intersecting a
+  // sphere would still answer -1 above -- because the sphere it falls back to is
+  // the model's origin-centred BOUND, which for a wall standing at x = 6 is a
+  // ball of radius 6 that swallows the whole ray. Shifting the wall in y keeps
+  // that bound and takes the geometry off the line, so only a picker that asks
+  // about the actual triangles can tell the two apart.
+  const aside = meshSurface(wallMesh(0.6, 6, 3));
+  const asidePhysical = prepareRig(world.truthRig, aside);
+  const clear = buildDisplayUniforms(
+    asidePhysical,
+    asidePhysical,
+    world.scene,
+    { ...camera, position: behind, target: lens },
+    { markerRadiusM: 0.12, mesh: packMesh(asidePhysical) },
+  );
+  assert.equal(
+    pickMarker(clear, 0, 0),
+    0,
+    'nothing is on the ray now, so the lens must be pickable again',
+  );
 });
