@@ -87,6 +87,50 @@ prunes a subtree containing geometry, which shows up as **holes in the model on
 rays looking straight down an axis**, and as a parity failure concentrated there.
 That is the failure this control exists to be able to see.
 
+### Measured result for link (3) on a mesh: it FAILS, and not for that reason
+
+Run under SwiftShader (`--use-angle=swiftshader`, the same software GL
+`tools/smoke-app.ts` uses), at the page's own 96×72 room and 64×36 projector
+sample grids:
+
+| surface | room p99.9 | room over tol. | projector p99.9 | projector over tol. | verdict |
+| --- | --- | --- | --- | --- | --- |
+| analytic sphere | 1.04e-4 | 0/6912 | 7.84e-5 | 0/2304 | pass |
+| tessellated sphere | **2.28e-1** | 50/6912 (0.72%) | **2.08e-1** | 20/2304 (0.87%) | **fail** |
+| two plates | **4.43e-2** | 18/6912 (0.26%) | 1.61e-6 | 0/2304 | **fail** |
+
+The predicted failure is **not** what happened. There are no holes, nothing is
+concentrated on axis rays, and the picture is lit (30.5% and 15.9% of the canvas).
+The disagreeing samples are **isolated single pixels scattered through the
+interior**, at facet edges — the signature of the two renderers picking different
+adjacent triangles for a ray that lands near a shared edge, which changes the
+flat-shaded normal by a facet angle and so produces a near-full-amplitude delta
+at one sample. `uvSphere(48,24)` has 2208 triangles across ~4200 lit samples, so
+its facets are a couple of pixels wide and almost every sample is near an edge.
+
+**The model itself is not what disagrees.** Rendering the same fixtures at the
+same grid through `reference.ts` against `packages/sim`, headless — links (1) and
+(2), no GPU — gives p99.9 of **3.8e-6** (tessellated sphere) and **2.4e-5** (two
+plates), with **0/6912 over tolerance** in both. The float32 emulation picks the
+same triangle float64 does; a real driver, with its own FMA contraction and
+transcendental precision, does not, about 0.7% of the time.
+
+**Why the verdict is `fail` rather than forgiven.** `judge()` requires both
+`p999 <= tolerance` and `fractionOverTolerance <= BOUNDARY_PIXEL_ALLOWANCE`, and
+those two are not independent. If more than 0.1% of samples are over tolerance
+then the 99.9th-percentile sample *is* one of them, so `p999 > tolerance`
+necessarily — `percentileOk` implies `boundaryOk`, the conjunction reduces to
+`percentileOk` alone, and **the 1% allowance documented for exactly this cause
+actually tolerates 0.101%.** Every measurement above lands in the band between
+the two, where the allowance forgives and the percentile fails. On a sphere the
+boundary population sits under 0.1% and the contradiction never showed.
+
+So the number on screen is real and the verdict on it is not yet meaningful for a
+mesh. Reconciling the two constants changes what the project's headline gate
+means for the sphere as well, so it is a decision rather than a tidy-up, and it
+is not made here. **Until it is, read the mesh rows as a measurement and not as a
+pass/fail.**
+
 **Measured result for link (1):** the delta is **exactly zero** — every channel
 of every pixel, in the room track and all four projector tracks, across six
 configurations (nominal; radial distortion plus lens shift plus roll plus
