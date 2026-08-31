@@ -494,14 +494,46 @@ test('the volatile path list is the one the bench tools know', async () => {
     .filter((s) => s.length > 0);
   assert.deepEqual(declared, VOLATILE_PATHS);
 
-  // And there is still exactly ONE tools-side copy. A second declaration would
-  // restore the drift this test exists to prevent, one file over.
-  for (const name of ['assert-deterministic.ts', 'assert-baseline.ts']) {
-    const src = fs.readFileSync(path.join(root, 'tools', name), 'utf8');
+  // And there is still exactly ONE tools-side copy. A second one would restore
+  // the drift this test exists to prevent, one file over.
+  //
+  // Two checks, because the name check alone was measured to be spelling-bound.
+  // It does catch `export const VOLATILE_PATHS: string[] = [...]` -- the pattern
+  // is unanchored, so `export const` contains `const` -- but a copy of the same
+  // paths under any other name went straight through:
+  //
+  //     const SECOND_PATHS = ['env', 'scenarios[].timings'];
+  //
+  // and that is the copy that matters. The drift this guards against is between
+  // two lists of strings; the identifier they are bound to is incidental.
+  //
+  // Every tool but the one home, rather than the two checkers by name, so a
+  // third tool that grows a copy is covered without anybody remembering to add
+  // it here.
+  const toolsDir = path.join(root, 'tools');
+  const others = fs
+    .readdirSync(toolsDir)
+    .filter((f) => f.endsWith('.ts') && f !== 'bench-normalize.ts')
+    .sort();
+  assert.ok(others.length > 0, 'found no other tools to check, so the guard below proves nothing');
+  for (const name of others) {
+    const src = fs.readFileSync(path.join(toolsDir, name), 'utf8');
     assert.equal(
-      /const VOLATILE_PATHS: string\[\] = \[/.test(src),
+      /const VOLATILE_PATHS\b/.test(src),
       false,
       `tools/${name} declares its own VOLATILE_PATHS; there must be one tools-side copy`,
+    );
+    // EVERY path present as a quoted literal, which means the whole list has
+    // been written out again whatever it was called. Any one path alone must not
+    // trip this: `strip` legitimately compares a key against 'env', and a
+    // message may name a path it is reporting on.
+    const wholeListAgain = VOLATILE_PATHS.every(
+      (p) => src.includes(`'${p}'`) || src.includes(`"${p}"`),
+    );
+    assert.equal(
+      wholeListAgain,
+      false,
+      `tools/${name} writes the volatile list out again; there must be one tools-side copy`,
     );
   }
 });
