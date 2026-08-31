@@ -1842,14 +1842,25 @@ async function main(): Promise<void> {
       const drawsBefore = await cdp.evaluate<string>(
         "document.getElementById('view')?.dataset.draws ?? '0'",
       );
-      const meshDeadline = Date.now() + 60_000;
+      // Sampled together, so a slow answer says WHICH kind of slow it is: frames
+      // going by without the model (a logic problem) reads differently from
+      // frames not going by at all (a scheduling one). On a CI runner this took
+      // 15 s where it takes well under a second here, and the difference is the
+      // whole reason both numbers are printed rather than just the verdict.
+      const meshStart = Date.now();
+      let drawsAt = drawsBefore;
+      const meshDeadline = meshStart + 60_000;
       while (Date.now() < meshDeadline) {
-        tris = await cdp.evaluate<string>(
-          "document.getElementById('view')?.dataset.meshTriangles ?? '0'",
+        const both = await cdp.evaluate<string>(
+          "((el) => (el?.dataset.meshTriangles ?? '0') + '|' + (el?.dataset.draws ?? '0'))" +
+            "(document.getElementById('view'))",
         );
+        [tris, drawsAt] = both.split('|');
         if (tris !== '0') break;
-        await sleep(300);
+        await sleep(100);
       }
+      const meshMs = Date.now() - meshStart;
+      const drewWaiting = Number(drawsAt) - Number(drawsBefore);
       const triangles = Number.parseInt(tris, 10);
       if (!Number.isFinite(triangles) || triangles <= 0) {
         // Say WHICH failure this is. `frame()` catches a throw from `draw()`,
@@ -1867,14 +1878,18 @@ async function main(): Promise<void> {
           fatalText !== ''
             ? `draw() threw and the frame loop stopped: ${fatalText}`
             : drawsAfter === drawsBefore
-              ? `the frame loop is not running (draws stuck at ${drawsAfter})`
-              : `the frame loop ran (${drawsBefore} -> ${drawsAfter} draws) but was handed no model`;
+              ? `the frame loop is not running (draws stuck at ${drawsAfter} for ${meshMs} ms)`
+              : `the frame loop ran (${drawsBefore} -> ${drawsAfter} draws in ${meshMs} ms) ` +
+                'but was handed no model';
         failures.push(
           'a dropped .glb never reached the display shader — the live view is still drawing ' +
             `a sphere while the model card shows the model. ${why}`,
         );
       } else {
-        process.stdout.write(`  model: the display shader is tracing ${triangles} triangles\n`);
+        process.stdout.write(
+          `  model: the display shader is tracing ${triangles} triangles ` +
+            `(${meshMs} ms, ${drewWaiting} frames drawn while waiting)\n`,
+        );
       }
 
       // And the preview is a picture rather than an empty rectangle.
