@@ -1839,7 +1839,10 @@ async function main(): Promise<void> {
       // one reading that separates the two: `draw()` writes it off the uniforms
       // it just submitted, so a number here means the triangles went to the GPU.
       let tris = '0';
-      const meshDeadline = Date.now() + 20_000;
+      const drawsBefore = await cdp.evaluate<string>(
+        "document.getElementById('view')?.dataset.draws ?? '0'",
+      );
+      const meshDeadline = Date.now() + 60_000;
       while (Date.now() < meshDeadline) {
         tris = await cdp.evaluate<string>(
           "document.getElementById('view')?.dataset.meshTriangles ?? '0'",
@@ -1849,9 +1852,26 @@ async function main(): Promise<void> {
       }
       const triangles = Number.parseInt(tris, 10);
       if (!Number.isFinite(triangles) || triangles <= 0) {
+        // Say WHICH failure this is. `frame()` catches a throw from `draw()`,
+        // shows it and stops re-arming, so a dead frame loop and a live one that
+        // saw no model are indistinguishable from the outside — and they need
+        // opposite fixes. The draw counter separates them and `#fatal` carries
+        // the exception when there was one.
+        const fatalText = await cdp.evaluate<string>(
+          "document.getElementById('fatal')?.textContent?.trim() ?? ''",
+        );
+        const drawsAfter = await cdp.evaluate<string>(
+          "document.getElementById('view')?.dataset.draws ?? '0'",
+        );
+        const why =
+          fatalText !== ''
+            ? `draw() threw and the frame loop stopped: ${fatalText}`
+            : drawsAfter === drawsBefore
+              ? `the frame loop is not running (draws stuck at ${drawsAfter})`
+              : `the frame loop ran (${drawsBefore} -> ${drawsAfter} draws) but was handed no model`;
         failures.push(
           'a dropped .glb never reached the display shader — the live view is still drawing ' +
-            'a sphere while the model card shows the model',
+            `a sphere while the model card shows the model. ${why}`,
         );
       } else {
         process.stdout.write(`  model: the display shader is tracing ${triangles} triangles\n`);
