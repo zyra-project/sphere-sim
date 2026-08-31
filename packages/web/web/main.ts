@@ -76,6 +76,7 @@ import {
   worstAimOffender,
   worstPlacementOffender,
 } from '../src/rigs.ts';
+import type { WebWorld } from '../src/rigs.ts';
 import type { Reading, RigFact } from '../src/readout.ts';
 import { buildDisplayUniforms, packMesh, pickMarkerNear, slotOfRigIndex } from '../src/uniforms.ts';
 import type { DisplayMesh, DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
