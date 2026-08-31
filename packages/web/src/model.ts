@@ -643,7 +643,13 @@ export function computeModel(req: ModelRequest): ModelResponse {
     const img = renderTwoRigRoomView(
       prepareRig(world.truthRig, paritySurface ?? undefined),
       prepareRig(world.compositorRig, paritySurface ?? undefined),
-      world.scene,
+      // NO GRATICULE, matching `web/main.ts`'s `checkParity`, which drops it from
+      // the GPU half of this same comparison. See there for the measurement: on
+      // real hardware the graticule is the only term the two renderers disagree
+      // on, because it is evaluated in angle space from the ray-sphere hit and a
+      // driver's sin/cos is not the CPU's. Dropping it on ONE side would compare
+      // a picture with lines against one without.
+      { ...world.scene, graticule: null },
       camera,
       { samplesPerPixel: Math.max(1, req.parity.samplesPerPixel), sampleLattice: 'grid' },
     );

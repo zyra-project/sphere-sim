@@ -397,6 +397,38 @@ function boxWithBaffle(h: number): SurfaceMesh {
   };
 }
 
+test('the parity render draws no graticule, whatever the settings say', () => {
+  // The two halves of this comparison must drop the graticule TOGETHER --
+  // `web/main.ts`'s `checkParity` switches it off on the GPU side, and dropping
+  // it on one side only would compare a picture with lines against one without,
+  // which disagrees at every line and blames the renderers for it.
+  //
+  // Dropped because it is the one term a real driver cannot be held to. Measured
+  // on an RTX 4090: with the graticule off the renderers agree to 4.6e-4, and
+  // with it on 1-3% of lit pixels go over tolerance, the worst by 11x. It is
+  // evaluated in angle space off the ray-sphere hit, so a float32 error there is
+  // divided by cos(incidence) before meeting a steep line edge. See
+  // `packages/web/src/parity.ts`.
+  const parity = { width: 32, height: 24, position: { x: 4, y: 0, z: 1.6 },
+    target: { x: 0, y: 0, z: 1.6 }, fovHDeg: 50, imageShift: 0, samplesPerPixel: 1 };
+
+  const gridOff = computeModel(request({ parity, settings: { ...BOULDER_PRESET, gridOn: 0 } }));
+  const gridOn = computeModel(request({ parity, settings: { ...BOULDER_PRESET, gridOn: 1 } }));
+
+  assert.ok(gridOff.parityImage !== null && gridOn.parityImage !== null);
+  assert.deepEqual(
+    Array.from(gridOn.parityImage.data),
+    Array.from(gridOff.parityImage.data),
+    'the parity render must be identical with the graticule on and off',
+  );
+
+  // And the fixture must be one the graticule would otherwise reach, or this
+  // proves only that two blank images match.
+  const litOff = computeModel(request({ parity, settings: { ...BOULDER_PRESET, gridOn: 0 } }));
+  const shown = litOff.parityImage!.data.some((v) => v > 2e-3);
+  assert.ok(shown, 'the parity frame must have something lit in it for this to mean anything');
+});
+
 test('the parity render traces the model the page asked for, and says which it traced', () => {
   // The coupling the whole mesh display path rests on. The page hands its shader
   // a model as soon as one is dropped; this render is the CPU half the shader is

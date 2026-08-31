@@ -640,10 +640,33 @@ async function main(): Promise<void> {
       }
     }
 
-    const parity = await cdp.evaluate<string>(
-      "document.querySelector('[data-smoke=\"parity\"]')?.dataset.state ?? '(none)'",
-    );
+    // Wait for a VERDICT, not merely for the section to exist. `dataset.state` is
+    // 'pending' whenever the page holds no verdict, and a single read can catch
+    // that legitimately -- the CPU half is a settled pass behind a 260 ms
+    // debounce. Unwaited and unasserted, 'pending' passed silently, so a change
+    // that stopped parity landing AT ALL would have gone unnoticed here. That is
+    // a live risk rather than a hypothetical: `viewKey` retires the reply in
+    // flight whenever the state it was computed for has moved, and a key that is
+    // too strict never lets one through.
+    let parity = '(none)';
+    const parityDeadline = Date.now() + 30_000;
+    while (Date.now() < parityDeadline) {
+      parity = await cdp
+        .evaluate<string>(
+          "document.querySelector('[data-smoke=\"parity\"]')?.dataset.state ?? '(none)'",
+        )
+        .catch(() => '(none)');
+      if (parity !== 'pending') break;
+      await sleep(500);
+    }
     process.stdout.write(`  parity: ${parity}\n`);
+    if (parity === 'pending') {
+      failures.push(
+        'the parity check never reached a verdict — it stayed pending for 30 s. Either no model ' +
+          'pass carried a parity render, or `viewKey` retired every reply before it could be ' +
+          'judged: it must not change between the request going out and the reply landing.',
+      );
+    }
     if (parity === 'bad') {
       const why = await cdp.evaluate<string>(
         "document.querySelector('[data-smoke=\"parity\"]')?.textContent?.trim() ?? ''",
@@ -1730,6 +1753,51 @@ async function main(): Promise<void> {
       process.stdout.write(`  phone: pinch moved the camera ${before.toFixed(1)} → ${after.toFixed(1)} m\n`);
     }
 
+    // Back to a desktop window. `Emulation.setDeviceMetricsOverride` above is a
+    // page-wide override with no scope, so without this everything below runs in
+    // a 2x phone viewport -- and that is not merely cosmetic here: `main.ts`'s
+    // `viewShiftFrac()` shifts the PARITY CAMERA on a narrow layout, so the
+    // model checks would exercise the parity path in a configuration no reader
+    // is in and nobody meant to test.
+    // `maxTouchPoints` omitted, not zeroed: CDP validates it into 1..16 even when
+    // disabling, and passing 0 fails the whole run with
+    // "Touch points must be between 1 and 16".
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await cdp.send('Emulation.clearDeviceMetricsOverride');
+
+    // NO reload here, and that is the point. Clearing the override resizes the
+    // viewport live and the page follows on its own -- `draw()` reads
+    // `window.innerWidth` every frame.
+    //
+    // Navigating instead, which is what this did first, restarts both workers.
+    // The model section below then opened against a COLD surface worker that had
+    // to build a hierarchy and a geodesic field per projector from nothing, and
+    // on a CI runner that pushed the coverage figure past its 30 s budget: the
+    // run failed reporting "a dropped .glb never produced a coverage figure --
+    // the surface path is dead" about a path that was merely starting up, while
+    // the mesh reached the shader in 28 ms two lines later. A reload costs a
+    // cold start that this section cannot afford and does not need.
+    //
+    // Waited on the WIDTH the page actually sees, not on a timer, and asserted
+    // rather than hoped: the whole reason for clearing the override is that
+    // `main.ts`'s `viewShiftFrac()` shifts the parity camera on a narrow layout,
+    // so a model section still running at phone width is measuring the wrong
+    // thing quietly.
+    let wide = 0;
+    for (let i = 0; i < 30; i++) {
+      wide = await cdp.evaluate<number>('window.innerWidth').catch(() => 0);
+      if (wide > PHONE_W) break;
+      await sleep(200);
+    }
+    if (!(wide > PHONE_W)) {
+      failures.push(
+        `the viewport is still ${wide} px wide after clearing the phone override, so the model ` +
+          'checks below would run in phone layout — where viewShiftFrac() shifts the parity camera',
+      );
+      report(failures);
+      return;
+    }
+
     // ------------------------------------------------------------------
     // Drop a .glb, and prove the whole chain ran.
     //
@@ -1844,9 +1912,43 @@ async function main(): Promise<void> {
       );
       // Sampled together, so a slow answer says WHICH kind of slow it is: frames
       // going by without the model (a logic problem) reads differently from
-      // frames not going by at all (a scheduling one). On a CI runner this took
-      // 15 s where it takes well under a second here, and the difference is the
-      // whole reason both numbers are printed rather than just the verdict.
+      // frames not going by at all (a scheduling one).
+      //
+      // ## Why the window is a minute for something that should take 16 ms
+      //
+      // `setDroppedMesh` calls `markDirty()` the moment the file is read, and in
+      // a visible browser the next animation frame draws the model. Headless is
+      // not a visible browser: nothing composites unless something asks it to,
+      // so `requestAnimationFrame` does not free-run and the dirty flag sits
+      // until some other work forces a paint. Traced here, sampling every 100 ms
+      // from the drop:
+      //
+      //     +     8 ms   draws 21   meshTriangles 0
+      //     +  1 156 ms  draws 21   meshTriangles 0   (the worker replied)
+      //     + 12 912 ms  draws 22   meshTriangles 8   (one frame, and it is this one)
+      //
+      // The draw counter does not move for thirteen seconds and then ticks ONCE.
+      // The page is not slow and the loop is not stuck -- no frame was asked for.
+      // The 21 frames before the drop are the preceding steps, each of which
+      // clicks or drags something and forces a paint; this poll only reads
+      // `dataset`, which forces nothing.
+      //
+      // An intermediate version of the reset above RELOADED the page, and this
+      // read 1 ms and 0 frames -- a fresh navigate gives the page plenty of
+      // reasons to paint. That reload was removed, because it restarted both
+      // workers and cost the model section a cold start it could not afford, and
+      // the reading went straight back to 8.9 s and one frame.
+      //
+      // Which is the point. This number swings by four orders of magnitude on
+      // whether something incidental is painting, and not at all on whether the
+      // model reached the shader -- so it is not a budget anything can be sized
+      // against. 20 s was luck -- it passed here at
+      // 11.7 s and failed CI past 20 -- so do not trim it back on the strength
+      // of a 1 ms reading.
+      //
+      // The alternative -- force a frame and assert immediately -- was rejected
+      // because waiting for a repaint the PAGE asked for is what caught the
+      // missing `markDirty` this assertion exists to catch.
       const meshStart = Date.now();
       let drawsAt = drawsBefore;
       const meshDeadline = meshStart + 60_000;
@@ -1947,7 +2049,19 @@ async function main(): Promise<void> {
         // from the worker's own reply and names the count it actually traced.
         let rigLine = '';
         let litAfter = '';
-        const placeDeadline = Date.now() + 30_000;
+        // A minute and a half for work that is milliseconds, because the wait is
+        // not on the work. `requestSurface` and `requestModel` share ONE worker
+        // and `meshBusy` admits one surface pass at a time, so this request
+        // queues behind whatever settled model pass is already running -- and a
+        // settled pass is the expensive one: full-density metrics plus the parity
+        // render. The five geodesic fields it is nominally waiting for are over
+        // an eight-triangle octahedron and cost nothing.
+        //
+        // Sized against the runner rather than this machine. In the CI run that
+        // failed this at 30 s, the mesh poll above took 24 176 ms where it takes
+        // about 9 000 ms here -- 2.7x -- and the same ratio applied to a budget
+        // written locally is how a check passes for a year and then does not.
+        const placeDeadline = Date.now() + 90_000;
         while (Date.now() < placeDeadline) {
           await sleep(300);
           rigLine = await cdp.evaluate<string>(

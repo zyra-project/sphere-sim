@@ -117,12 +117,30 @@ export const DISPLAY_TOLERANCE = 2e-3;
  * (`litOver > max(SHED, allowance * N)`) rather than a larger fraction, because
  * the fraction is exactly what let 727 pixels be shed at the seam close-up.
  *
- * ## The measurement this has NOT had
+ * ## The hardware measurement, which this has now had
  *
- * Every correct-renderer frame above is SwiftShader, a software rasteriser, at
- * one framing. {@link DISPLAY_TOLERANCE} names "a texture unit the GL spec
- * permits reduced precision in", and SwiftShader is the driver least likely to
- * exhibit it. One read-back from a hardware GPU at the three framings settles it.
+ * Every frame the value above was derived from is SwiftShader, a software
+ * rasteriser -- the driver least likely to exhibit the reduced texture-unit
+ * precision {@link DISPLAY_TOLERANCE} names. Read back from an NVIDIA GeForce
+ * RTX 4090 Laptop GPU (driver 32.0.16.1088, hardware accelerated), the model this
+ * check exists to guard AGREES: 0 of 12 288 lit pixels over tolerance, worst
+ * pixel 4.6e-4, 4.3 times under tolerance, against SwiftShader's 3.13e-4 at 6.4.
+ * That holds on the shipped photographic texture and on a flat field alike, so
+ * geometry, ray tracing, the blend, the shading and bilinear content sampling all
+ * survive a real driver at this value.
+ *
+ * ONE term does not, and it is why `checkParity` drops the graticule from both
+ * halves. With the graticule on, the same hardware puts 1-3% of lit pixels over
+ * tolerance, the worst at 2.3e-2 -- eleven times over -- and it worsens with
+ * distance from the sphere while vanishing close up. `graticuleCoverage` works in
+ * ANGLE space off the ray-sphere hit, so a float32 error there becomes an angular
+ * error divided by cos(incidence) and then meets a steep line edge; a far view
+ * shows more grazing surface per pixel. An earlier bound of 5.921e-4 from a
+ * per-op `fround` port of the GLSL was 39x optimistic, because GLSL ES guarantees
+ * only a few ULP for sin/cos/atan and drivers ship approximations. The lines look
+ * correct on screen; this is the driver's trigonometry, not a defect in either
+ * renderer, and no constant here can be sized to accommodate it without also
+ * admitting the defects this check exists to catch.
  *
  * ## And a 0.02-degree camera nudge is not a model of this
  *

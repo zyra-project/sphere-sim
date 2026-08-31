@@ -241,6 +241,63 @@ test('a solve that never settled is not installed as the calibration', () => {
   );
 });
 
+test('the parity verdict is retired by the same events that retire its reply', () => {
+  // `viewKey` retires a reply IN FLIGHT, which is only consulted when one
+  // arrives. The partial-rig path deliberately requests no pass — "draw with it;
+  // compute nothing from it" — so with a solve running and nothing in flight,
+  // widening `viewKey` alone leaves the previous rig's verdict on screen for the
+  // whole solve, beside a picture drawn from a rig it has never seen. Retiring
+  // the reply and retiring the verdict are two different jobs and the first
+  // version of this fix only did the first.
+  const partial = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('      state.compositorRig = msg.partialRig;'),
+    MAIN_SOURCE.indexOf('      state.compositorRig = msg.partialRig;') + 700,
+  );
+  assert.ok(partial.length > 0, 'the partial-rig handler has moved');
+  assert.ok(
+    /^\s*parity = null;$/m.test(partial),
+    'installing a partial rig leaves the previous rig’s verdict on screen',
+  );
+  assert.ok(
+    partial.indexOf('parity = null') < partial.indexOf('markDirty()'),
+    'the frame is redrawn before the verdict it invalidates is cleared',
+  );
+
+  // And the key itself has to be total. Naming fields by hand is correct only
+  // until the next setting is added, so it names `state.settings` wholesale —
+  // plus the two inputs that do not live there.
+  const key = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function viewKey(): string {'),
+    MAIN_SOURCE.indexOf('function paritySamples(): number {'),
+  );
+  assert.ok(key.length > 0, 'viewKey has moved');
+  for (const field of ['state.settings', 'state.compositorRig', 'viewShiftFrac()', 'suppliedName()']) {
+    assert.ok(key.includes(field), `viewKey does not carry ${field}`);
+  }
+  assert.ok(
+    !/state\.settings\./.test(key.slice(key.indexOf('return JSON.stringify'))),
+    'viewKey is back to naming settings one at a time',
+  );
+});
+
+test('two different pictures cannot share one supplied-image id', () => {
+  // `${file.name}:${file.size}` names a FILE, not pixels: re-export a photo at
+  // the same byte length, or crop and re-save to the same length, and the id is
+  // unchanged — so `viewKey` calls a reply rendered from the OLD image current
+  // against the new one on the GPU. That is the false disagreement
+  // `ModelRequest.customImage` already records having been caught by once, at
+  // 15%, which was two pictures rather than two models. Video frames already
+  // carried a monotonic tail; stills did not.
+  assert.ok(
+    /customName = `\$\{file\.name\}:\$\{file\.size\}#\$\{\+\+customImageSeq\}`/.test(MAIN_SOURCE),
+    'a supplied still is identified by name and byte length alone',
+  );
+  assert.ok(
+    /let customImageSeq = 0;/.test(MAIN_SOURCE),
+    'the still counter is not declared',
+  );
+});
+
 test('the page never states convergence it did not get', () => {
   // Both sentences asserted it unconditionally. The worker's progress line read
   // "Bundle adjustment converged in N iterations" whatever happened, and the

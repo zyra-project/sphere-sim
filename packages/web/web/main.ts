@@ -236,6 +236,9 @@ let contentKey = '';
  * copy and is a tenth of a second ahead.
  */
 let customImage: EquirectImage | null = null;
+
+/** Bumped on every accepted image load, so two different pictures cannot share an id. */
+let customImageSeq = 0;
 let customName = '';
 
 /**
@@ -1533,7 +1536,14 @@ async function loadCustomImage(file: File): Promise<void> {
     // whatever was playing exactly where it was.
     stopVideo();
     customImage = image;
-    customName = `${file.name}:${file.size}`;
+    // A monotonic tail, as the video already carries. Name and byte length do not
+    // identify PIXELS: re-export a photo at the same size, or crop and re-save to
+    // the same length, and the id is unchanged -- so `viewKey` would call a reply
+    // rendered from the old image current against the new one on the GPU, which
+    // is the exact false disagreement `ModelRequest.customImage` records having
+    // been caught by once already. The cost is re-sending an image that really is
+    // the same one, which happens once per deliberate load.
+    customName = `${file.name}:${file.size}#${++customImageSeq}`;
     sentImageId = '';
     solveSentImageId = '';
     state.settings = withSetting(state.settings, 'content', CONTENT_CUSTOM);
@@ -1781,25 +1791,46 @@ let modelWanted = -1;
 let parityRequestKey = '';
 
 function viewKey(): string {
-  const s = state.settings;
-  // The sample count belongs in here with the camera: the CPU half is rendered
-  // at whatever it was when the request went out, so changing it has to retire
-  // the reply in flight the same way orbiting does. So does the layout shift —
-  // opening a sheet on a phone re-aims the camera, and a reply computed for the
-  // old aim would be compared against a frame drawn with the new one.
-  // And the CONTENT. With a video, the frame the worker rendered is superseded
-  // every couple of seconds; comparing its answer against the frame now on the
-  // GPU would report the video's own motion as a disagreement between two
-  // renderers. For a still this is a constant and changes nothing.
-  return [
-    s.viewAzDeg,
-    s.viewElDeg,
-    s.viewRangeM,
-    s.viewFovDeg,
-    s.viewSamples,
+  // EVERYTHING the two renderers are given, not a list of the parts that seemed
+  // to matter.
+  //
+  // The CPU half is rendered from the state as it was when the request went out,
+  // and lands about half a second later. Anything that changed in between makes
+  // the reply a picture of a different scene than the frame it is compared
+  // against, and the verdict then reports a disagreement that belongs to neither
+  // renderer. The page has been bitten by exactly that before, over the content
+  // texture -- see `ModelRequest.customImage`, which records a 15% disagreement
+  // that was two pictures rather than two models.
+  //
+  // This used to name seven fields: the camera, the sample count, the layout
+  // shift and the content. Each was there for a real reason, and the set was
+  // still wrong -- `gridOn`, `gridDeg`, `ambient`, `mountError`, `errorSeed`,
+  // `sphereDiaIn`, `roomSpill` and the compositor's own calibration all change
+  // the picture and none of them retired anything. A guard that has to be
+  // extended by hand every time a setting is added is a guard that is correct
+  // only until the next commit.
+  //
+  // The compositor rig is the one that mattered most and was missed: a running
+  // solve replaces it on every step and deliberately requests no new pass ("draw
+  // with it; compute nothing from it"), so the reply in flight was scored
+  // against a frame drawn from a rig it had never seen. That is a FALSE
+  // disagreement, printed at exactly the moment somebody is watching the solve.
+  //
+  // Being total costs nothing, because `touched()` requests a model pass on
+  // every settings change -- a key that retires the reply in flight is always
+  // followed by one that replaces it. During a solve there is deliberately no
+  // such replacement, and the check goes quiet until the result lands, which is
+  // the honest answer rather than a verdict about a gauge.
+  //
+  // `viewShiftFrac` and `suppliedName` stay because neither lives in `settings`:
+  // the first is read off the live panel geometry, the second names the image
+  // itself rather than the setting that selects one.
+  return JSON.stringify([
+    state.settings,
+    state.compositorRig,
     viewShiftFrac().toFixed(3),
     suppliedName(),
-  ].join('|');
+  ]);
 }
 
 /**
@@ -2063,6 +2094,13 @@ solveWorker.onmessage = (event: MessageEvent<SolveMessage>): void => {
       // intermediate has not had the unobservable global rotation removed and a
       // metric taken from one would be measuring the gauge.
       state.compositorRig = msg.partialRig;
+      // And the standing verdict goes with it. `viewKey` retires a reply in
+      // FLIGHT, which is only consulted when one arrives -- and this path
+      // deliberately requests none, so with a solve running and nothing in
+      // flight the previous rig's verdict would sit on screen unchallenged for
+      // the whole solve, beside a picture drawn from a rig it has never seen.
+      // Retiring the reply and retiring the verdict are two different jobs.
+      parity = null;
       markDirty();
     }
     renderReadout();
@@ -2777,7 +2815,31 @@ function checkParity(
     const uniforms = buildDisplayUniforms(
       model.physical,
       model.content,
-      world.scene,
+      // NO GRATICULE, on this side and on the worker's. `packages/web/src/model.ts`
+      // drops it from the CPU half of this same comparison and the two must agree;
+      // `uGridDeg <= 0` is what switches it off in the shader.
+      //
+      // It is dropped because it is the one term in this picture that a real
+      // driver cannot be held to. Measured on an NVIDIA RTX 4090 Laptop GPU
+      // (driver 32.0.16.1088): with the graticule off the two renderers agree to
+      // 4.6e-4, 4.3 times under tolerance, on a photographic texture AND on a flat
+      // field. With it on, 1-3% of lit pixels go over, the worst by 11x, and it
+      // gets worse the further the camera is from the sphere.
+      //
+      // The graticule is computed in ANGLE space from the ray-sphere hit, so a
+      // float32 error in that hit becomes an angular error divided by
+      // cos(incidence) -- and then meets `graticuleCoverage`'s steep edge. Far
+      // views show more grazing surface per pixel, which is exactly the reported
+      // pattern. Nothing here can fix it: GLSL ES guarantees only a few ULP for
+      // sin/cos/atan and drivers ship approximations, so this measures the
+      // driver's trigonometry rather than this project's model.
+      //
+      // What is given up is bounded, and link (2) already covers it: whether the
+      // shader's graticule is the same FORMULA as the model's is checked
+      // function-for-function against `packages/harness/src/reference.ts`. What
+      // this pass is for -- that a driver compiled the light transport into the
+      // arithmetic the model describes -- is untouched, and agrees.
+      { ...world.scene, graticule: null },
       camera,
       // No floor, no overlay and NO EXPOSURE: `renderTwoRigRoomView` has none of
       // the three, so passing any of them here would make the parity number
@@ -5424,8 +5486,9 @@ function parityLine(): HTMLElement {
     el('p', {
       className: 'note tiny',
       textContent:
-        'The floor is off on both sides for this comparison, because the model’s two-calibration ' +
-        'renderer draws none — so the floor is the one part of the shader this does not cover.',
+        'The floor and the graticule are off on both sides for this comparison — the model’s ' +
+        'two-calibration renderer draws no floor, and the graticule measures the driver’s ' +
+        'trigonometry rather than this model. Both are what this number does not cover.',
     }),
   );
   return wrap;
