@@ -2798,7 +2798,31 @@ function checkParity(
     const uniforms = buildDisplayUniforms(
       model.physical,
       model.content,
-      world.scene,
+      // NO GRATICULE, on this side and on the worker's. `packages/web/src/model.ts`
+      // drops it from the CPU half of this same comparison and the two must agree;
+      // `uGridDeg <= 0` is what switches it off in the shader.
+      //
+      // It is dropped because it is the one term in this picture that a real
+      // driver cannot be held to. Measured on an NVIDIA RTX 4090 Laptop GPU
+      // (driver 32.0.16.1088): with the graticule off the two renderers agree to
+      // 4.6e-4, six times under tolerance, on a photographic texture AND on a flat
+      // field. With it on, 1-3% of lit pixels go over, the worst by 11x, and it
+      // gets worse the further the camera is from the sphere.
+      //
+      // The graticule is computed in ANGLE space from the ray-sphere hit, so a
+      // float32 error in that hit becomes an angular error divided by
+      // cos(incidence) -- and then meets `graticuleCoverage`'s steep edge. Far
+      // views show more grazing surface per pixel, which is exactly the reported
+      // pattern. Nothing here can fix it: GLSL ES guarantees only a few ULP for
+      // sin/cos/atan and drivers ship approximations, so this measures the
+      // driver's trigonometry rather than this project's model.
+      //
+      // What is given up is bounded, and link (2) already covers it: whether the
+      // shader's graticule is the same FORMULA as the model's is checked
+      // function-for-function against `packages/harness/src/reference.ts`. What
+      // this pass is for -- that a driver compiled the light transport into the
+      // arithmetic the model describes -- is untouched, and agrees.
+      { ...world.scene, graticule: null },
       camera,
       // No floor, no overlay and NO EXPOSURE: `renderTwoRigRoomView` has none of
       // the three, so passing any of them here would make the parity number
@@ -5445,8 +5469,9 @@ function parityLine(): HTMLElement {
     el('p', {
       className: 'note tiny',
       textContent:
-        'The floor is off on both sides for this comparison, because the model’s two-calibration ' +
-        'renderer draws none — so the floor is the one part of the shader this does not cover.',
+        'The floor and the graticule are off on both sides for this comparison — the model’s ' +
+        'two-calibration renderer draws no floor, and the graticule measures the driver’s ' +
+        'trigonometry rather than this model. Both are what this number does not cover.',
     }),
   );
   return wrap;
