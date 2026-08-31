@@ -1730,6 +1730,43 @@ async function main(): Promise<void> {
       process.stdout.write(`  phone: pinch moved the camera ${before.toFixed(1)} → ${after.toFixed(1)} m\n`);
     }
 
+    // Back to a desktop window. `Emulation.setDeviceMetricsOverride` above is a
+    // page-wide override with no scope, so without this everything below runs in
+    // a 2x phone viewport -- and that is not merely cosmetic here: `main.ts`'s
+    // `viewShiftFrac()` shifts the PARITY CAMERA on a narrow layout, so the
+    // model checks would exercise the parity path in a configuration no reader
+    // is in and nobody meant to test.
+    // `maxTouchPoints` omitted, not zeroed: CDP validates it into 1..16 even when
+    // disabling, and passing 0 fails the whole run with
+    // "Touch points must be between 1 and 16".
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await cdp.send('Emulation.clearDeviceMetricsOverride');
+    await cdp.send('Page.navigate', { url: opts.url });
+    await sleep(1200);
+    // Wait for the app to be UP, not merely for time to pass -- the same
+    // precondition the phone pass waits for above, for the same reason. A
+    // navigate hands back a blank document immediately, and the model section
+    // below opens by dispatching a drop: fire that before the page has
+    // registered its listener and nothing happens, the coverage figure never
+    // appears, and the failure reads "the surface path is dead" while naming
+    // none of this. `dataset.range` is written by `draw()`, so a value there
+    // means the app booted and drew rather than that the HTML arrived.
+    for (let i = 0; i < 30; i++) {
+      const ready = await cdp.evaluate<string>(
+        "document.getElementById('view')?.dataset?.range ?? ''",
+      );
+      if (ready !== '') break;
+      await sleep(500);
+    }
+    if (!(await cdp.evaluate<boolean>("!!document.getElementById('view')"))) {
+      failures.push(
+        'the page has no #view canvas after reloading it back at desktop size — ' +
+          'the reload did not land (is the server this run was pointed at still up?)',
+      );
+      report(failures);
+      return;
+    }
+
     // ------------------------------------------------------------------
     // Drop a .glb, and prove the whole chain ran.
     //
@@ -1844,9 +1881,41 @@ async function main(): Promise<void> {
       );
       // Sampled together, so a slow answer says WHICH kind of slow it is: frames
       // going by without the model (a logic problem) reads differently from
-      // frames not going by at all (a scheduling one). On a CI runner this took
-      // 15 s where it takes well under a second here, and the difference is the
-      // whole reason both numbers are printed rather than just the verdict.
+      // frames not going by at all (a scheduling one).
+      //
+      // ## Why the window is a minute for something that should take 16 ms
+      //
+      // `setDroppedMesh` calls `markDirty()` the moment the file is read, and in
+      // a visible browser the next animation frame draws the model. Headless is
+      // not a visible browser: nothing composites unless something asks it to,
+      // so `requestAnimationFrame` does not free-run and the dirty flag sits
+      // until some other work forces a paint. Traced here, sampling every 100 ms
+      // from the drop:
+      //
+      //     +     8 ms   draws 21   meshTriangles 0
+      //     +  1 156 ms  draws 21   meshTriangles 0   (the worker replied)
+      //     + 12 912 ms  draws 22   meshTriangles 8   (one frame, and it is this one)
+      //
+      // The draw counter does not move for thirteen seconds and then ticks ONCE.
+      // The page is not slow and the loop is not stuck -- no frame was asked for.
+      // The 21 frames before the drop are the preceding steps, each of which
+      // clicks or drags something and forces a paint; this poll only reads
+      // `dataset`, which forces nothing.
+      //
+      // That trace was taken BEFORE the desktop reset above existed, when this
+      // section still ran in the phone viewport and reached it without a reload.
+      // With the reset the value is already there when the poll starts -- 1 ms,
+      // 0 frames -- because a fresh navigate and the readiness wait give the page
+      // plenty of reasons to paint. The window stays a minute anyway: what
+      // changed is that the page now happens to be painting, not the rule that
+      // headless composites only when asked, and nothing here guarantees the
+      // next step leaves it in that state. 20 s was luck -- it passed here at
+      // 11.7 s and failed CI past 20 -- so do not trim it back on the strength
+      // of a 1 ms reading.
+      //
+      // The alternative -- force a frame and assert immediately -- was rejected
+      // because waiting for a repaint the PAGE asked for is what caught the
+      // missing `markDirty` this assertion exists to catch.
       const meshStart = Date.now();
       let drawsAt = drawsBefore;
       const meshDeadline = meshStart + 60_000;
