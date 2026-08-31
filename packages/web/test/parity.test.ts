@@ -462,7 +462,9 @@ test('at the widest view the shed rounds to zero, which is deliberate', () => {
   // The consequence recorded in BOUNDARY_LIT_ALLOWANCE's docblock, pinned here so
   // it is a decision rather than a surprise. The shed is a FRACTION, so it scales
   // with the patch: 24 pixels at the seam close-up's 12 116 lit, and 0.34 -- which
-  // floors to zero -- at the 170 the app's opening view carries. One stray
+  // floors to zero -- at the 170 `BOULDER_PRESET` carries at the widest framing.
+  // (The app opens on `PERFECT_PRESET`, which carries 178 there; both floor to
+  // zero, and the docblock names that one.) One stray
   // full-amplitude pixel therefore fails the check there.
   //
   // Measured against the real driver that never happens: 0 strays in 10 298 lit

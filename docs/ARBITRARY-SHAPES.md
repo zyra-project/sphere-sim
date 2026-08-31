@@ -7,14 +7,16 @@ the projectors, and link (3) passes on both mesh fixtures under a software
 driver. Phase 3 closed by deciding the polar mask is refused rather than
 generalized — see that phase.
 
-**Still open in Phase 2:** the app page does not yet hand its display shader a
-model — `main.ts` passes no surface to `prepareRig` and no `mesh` to
-`buildDisplayUniforms` at any of its three call sites, so `uMeshMode` is 0 in the
-browser. The plan's condition for that was that `packages/web/src/parity.ts` say
-what its verdict means on a mesh.
+**Phase 2 is wired.** The app page hands its display shader the dropped model:
+`main.ts` prepares both rigs on one `MeshSurface` and passes `packMesh`'s result
+to `buildDisplayUniforms`, and the worker traces its parity image on the same
+model and reports which one it used, so the check compares like against like or
+withholds its verdict. `tools/smoke-app.ts` asserts the triangles reach the GPU,
+because every other check in the repo passed throughout the period they did not.
 
-That condition has now been met, and in the opposite direction to the one this
-paragraph used to predict. It said "its value would pass a mesh; its meaning has
+The plan's condition for wiring it was that `packages/web/src/parity.ts` say what
+its verdict means on a mesh. That condition was met first, and in the opposite
+direction to the one this paragraph used to predict. It said "its value would pass a mesh; its meaning has
 not been re-derived", and the first half is true and IS the problem. Measured
 against the real GL read-backs behind `packages/harness/README.md`,
 `BOUNDARY_LIT_ALLOWANCE = 0.06` passes a mesh — and it also passes a mesh whose
@@ -583,12 +585,23 @@ sphere pixel-identical — a convex body cannot get in its own way — so the me
 parity check carries a second fixture of two plates, where 86 samples face a lens
 and are dark anyway.
 
-**Still to do in Phase 2:** the page itself does not yet hand the display shader
-a model. The gate was that `parity.ts` say what its verdict means on one, and it
-now does: the allowance is sized against the real driver's own read-backs rather
-than against a sphere's silhouette, and the denominator no longer counts pixels
-no projector reaches. See `packages/web/src/parity.ts` and the note at the top of
-this document.
+**The page now hands the display shader a model, and the gate that held it back
+is met.** `parity.ts` says what its verdict means on one: the allowance is sized
+against the real driver's own read-backs rather than against a sphere's
+silhouette, and the denominator no longer counts pixels no projector reaches. See
+`packages/web/src/parity.ts` and the note at the top of this document.
+
+**What the wiring cost, recorded because the estimate did not include it.** Four
+edits were foreseeable — one shared surface for both rigs, a two-level memo since
+`draw()` runs per frame, a catch for `packMesh`'s refusal (which reached
+`frame()`, called `fatal()` and stopped re-arming `requestAnimationFrame`, so a
+model one level too deep froze the page), and the same model in `checkParity`. A
+fifth was not: the worker's parity render had to follow the model too, or the
+number on screen compares a picture of a building against a picture of a sphere.
+And a sixth was invisible to every test in the repo — dropping a file marked
+nothing dirty, so `draw()` never re-ran and the live view kept showing a sphere
+while the model card showed the model. All 978 tests, four gates and two mutation
+checks passed on that. The smoke assertion is what caught it.
 
 The reason recorded here for that gate — that "a mesh has one silhouette per
 triangle, and about 1% of hits at a shared edge pick a different face in float32

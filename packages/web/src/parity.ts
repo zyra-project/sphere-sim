@@ -106,7 +106,11 @@ export const DISPLAY_TOLERANCE = 2e-3;
  *
  * The shed is a FRACTION, so it scales with the patch: 24 pixels at the seam
  * close-up's 12 116 lit, and `0.002 x 178 = 0.36` -- which rounds to **zero** --
- * at the 178 the widest view carries. At that view one stray full-amplitude pixel
+ * at the 178 lit pixels `PERFECT_PRESET` carries there, the preset the app opens
+ * on. (`BOULDER_PRESET`, which the tests render, carries 170 at the same
+ * framing; the shed floors to zero either way, and the preset is named here
+ * because the two numbers are otherwise easy to read as a disagreement.) At that
+ * view one stray full-amplitude pixel
  * fails the check. Measured, that never happens; at the 95% bound on the stray
  * rate it would happen in about 5% of frames there. If a hardware driver turns
  * out to produce strays, the answer is an absolute floor on the shed
@@ -138,6 +142,21 @@ export const BOUNDARY_LIT_ALLOWANCE = 0.002;
  */
 function pctText(fraction: number): string {
   return String(Number((fraction * 100).toFixed(3)));
+}
+
+/**
+ * A fraction as a percentage, with enough precision to be compared against
+ * {@link ALLOWANCE_LABEL}.
+ *
+ * Exported because the readout prints the observed value beside the allowance,
+ * and at one decimal the two collapse: 25 of 12 116 lit pixels is 0.206%, which
+ * `toFixed(1)` renders as "0.2% of the lit pixels are over tolerance, above the
+ * 0.2% allowance" -- a sentence that reads as a contradiction and hides why the
+ * verdict failed. Three decimals, trailing zeros dropped, so a round number
+ * still prints round.
+ */
+export function percentLabel(fraction: number): string {
+  return pctText(fraction);
 }
 
 /** The allowance as it is printed: `0.2%`. */
@@ -390,7 +409,7 @@ export function judgeParity(
   }
   if (!boundaryOk) {
     reasons.push(
-      `${(delta.fractionOfLitOverTolerance * 100).toFixed(1)}% of the lit pixels are over ` +
+      `${percentLabel(delta.fractionOfLitOverTolerance)}% of the lit pixels are over ` +
         `tolerance, above the ${ALLOWANCE_LABEL} allowance for ` +
         `geometric boundaries`,
     );

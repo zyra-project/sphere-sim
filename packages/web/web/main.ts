@@ -83,6 +83,7 @@ import type { DisplayMesh, DisplayUniforms, OverlayMode } from '../src/uniforms.
 import type { ParityVerdict } from '../src/parity.ts';
 import {
   ALLOWANCE_LABEL,
+  percentLabel,
   PARITY_HEIGHT,
   PARITY_WIDTH,
   ambientFloorOf,
@@ -1473,6 +1474,13 @@ function setDroppedMesh(mesh: SurfaceMesh | null): void {
   // and the worker both key their caches on. Reusing an id would let a cache
   // answer for the previous model.
   droppedMeshId++;
+  // A new id is not a rejected one until `packMesh` says so.
+  rejectedMeshId = -1;
+  // The standing verdict judged a shape that is no longer on screen. Leaving it
+  // up would put a number about the sphere beside a picture of a building --
+  // and the reader has no way to tell it is stale. A blank readout while the
+  // next pass runs is the honest state; `checkParity` fills it back in.
+  parity = null;
   markDirty();
 }
 
@@ -1871,6 +1879,7 @@ function postModel(fine: boolean): void {
     modelPending = false;
     drainModel();
   }, 10_000);
+  parityMeshIdAsked = displayMeshId();
   const req: ModelRequest = {
     kind: 'model',
     id,
@@ -1942,6 +1951,19 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage | Surf
     } else {
       meshFrame = msg.frame;
       meshFacts = msg.facts;
+      // The worker is now HOLDING this model, which is the earliest moment its
+      // parity image can be traced on the same shape the shader is drawing --
+      // `ModelRequest.meshId` names a model, and the worker answers with the
+      // sphere for one it has not been sent. Without this the readout stayed
+      // blank after a drop until some unrelated control happened to request a
+      // pass, because `requestSurface` asks for a picture and never for a
+      // verdict.
+      //
+      // Only when the SHAPE changed, not on every settled recompute. A surface
+      // reply lands for each settled control while a model is loaded, and asking
+      // for a fine model pass on all of them would roughly double the most
+      // expensive work the page does for a verdict that is already current.
+      if (displayMeshId() !== parityMeshIdAsked) requestModel(true);
     }
     renderControls();
     return;
@@ -2363,6 +2385,24 @@ let rigMovedSinceSolve = false;
 // ---------------------------------------------------------------------------
 
 let dirty = true;
+/** Frames actually drawn. See `canvas.dataset.draws`. */
+let drawCount = 0;
+
+/**
+ * The model named by the last {@link ModelRequest}, so a surface reply can tell
+ * "the shape changed under the verdict" from "the same shape recomputed".
+ */
+let parityMeshIdAsked = '';
+
+/**
+ * The `droppedMeshId` the shader refused, or -1.
+ *
+ * `packMesh` throws on a hierarchy deeper than the shader's traversal stack, and
+ * the page then draws the sphere. This is how {@link displayMeshId} knows to say
+ * so rather than keep naming a model the shader never received.
+ */
+let rejectedMeshId = -1;
+
 function markDirty(): void {
   dirty = true;
 }
@@ -2504,6 +2544,11 @@ function draw(): void {
   // entire time the live view was still drawing a sphere. Read off `uniforms`
   // rather than off `droppedMesh` for that reason.
   canvas.dataset.meshTriangles = String(uniforms.mesh?.triangleCount ?? 0);
+  // Monotonic, so a test can tell "the frame loop stopped" from "it ran and saw
+  // no model". `frame()` catches a throw from here, calls `fatal()` and does NOT
+  // re-arm `requestAnimationFrame`, so those two failures look identical from
+  // outside and need opposite fixes.
+  canvas.dataset.draws = String(++drawCount);
   drawToCanvas(gl, uniforms, w, h);
 }
 
@@ -2666,6 +2711,15 @@ function displayModel(world: WebWorld): DisplayModel {
     // file, and the sphere keeps drawing. See the note above on `fatal()`.
     meshError = err instanceof Error ? err.message : String(err);
     displayModelCache = null;
+    // And the page must now SAY it is drawing a sphere. `displayMeshId()` still
+    // named this model, so `checkParity`'s handshake would have compared the
+    // worker's picture OF THE MODEL against this sphere and passed the check
+    // that exists to stop exactly that -- printing a total disagreement between
+    // two renderers that were handed different shapes. Recording the rejection
+    // is what keeps the two answers to "what is on screen" the same answer.
+    rejectedMeshId = droppedMeshId;
+    parity = null;
+    renderControls();
     return {
       physical: prepareRig(world.truthRig),
       content: prepareRig(world.compositorRig),
@@ -2676,9 +2730,18 @@ function displayModel(world: WebWorld): DisplayModel {
   return { physical, content, mesh };
 }
 
-/** The name the worker knows this model by. `''` is the sphere. See `ModelRequest.meshId`. */
+/**
+ * The model this page is DRAWING, by the name the worker knows it by. `''` is the
+ * sphere. See `ModelRequest.meshId`.
+ *
+ * Not "the model that was dropped": `displayModel` falls back to the sphere when
+ * `packMesh` refuses a hierarchy deeper than the shader's stack, and a page that
+ * kept claiming the model then would have the parity check compare a picture of
+ * the model against a picture of the sphere and report it as a renderer bug.
+ */
 function displayMeshId(): string {
-  return droppedMesh === null ? '' : `mesh:${droppedMeshId}`;
+  if (droppedMesh === null || droppedMeshId === rejectedMeshId) return '';
+  return `mesh:${droppedMeshId}`;
 }
 
 function checkParity(
@@ -5348,7 +5411,10 @@ function parityLine(): HTMLElement {
       className: 'note tiny num',
       textContent:
         `worst pixel ${parity.delta.maxAbs.toExponential(1)} · ` +
-        `${(parity.delta.fractionOfLitOverTolerance * 100).toFixed(1)}% of lit pixels over ` +
+        // The same precision the allowance is printed at. At one decimal the
+        // pair collapses -- "0.2% of lit pixels over tolerance (0.2% allowed)"
+        // reads as a contradiction and hides why the verdict failed.
+        `${percentLabel(parity.delta.fractionOfLitOverTolerance)}% of lit pixels over ` +
         `tolerance (${ALLOWANCE_LABEL} allowed for edges) · ` +
         `${parity.delta.litPixelCount.toLocaleString()} lit of ` +
         `${parity.delta.pixelCount.toLocaleString()} px · CPU ${parity.cpuMs.toFixed(0)} ms`,
