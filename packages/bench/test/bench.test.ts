@@ -125,6 +125,110 @@ test('two runs with the same seed produce identical JSON and identical PNGs', { 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+/**
+ * The other half of the same question, and the half nothing used to ask.
+ *
+ * `assert-deterministic` compares two runs of ONE tree. `assert-baseline`
+ * compares a tree against the numbers the repository has recorded, which is the
+ * check every "the sphere path stays byte-identical" claim in
+ * `docs/ARBITRARY-SHAPES.md` was resting on a person to perform by hand.
+ *
+ * Run against a temporary baseline rather than the repository's own, so this
+ * test says nothing about whether the committed digests are current — that is
+ * CI's job, on the real bench, and a test that duplicated it would either be a
+ * second slow bench run or a tautology.
+ */
+test('assert-baseline records a run and then notices a moved number', { timeout: 600_000 }, () => {
+  const dir = tmpdir('baseline');
+  const a = runBench(optionsIn(dir, { scenarios: 1 }));
+  const file = path.join(dir, 'a.json');
+  const moved = path.join(dir, 'moved.json');
+  fs.writeFileSync(file, stringifyResults(a));
+
+  const tool = path.join(REPO_ROOT, 'tools', 'assert-baseline.ts');
+  // The tool writes and reads `bench-baseline.json` in the working directory,
+  // so it runs with cwd set to the temporary one and never sees the real file.
+  const run = (args: string[]): string =>
+    execFileSync('node', [tool, ...args], { encoding: 'utf8', cwd: dir, stdio: 'pipe' });
+
+  assert.match(run([file, '--update']), /wrote bench-baseline\.json/);
+  assert.match(run([file]), /matches bench-baseline\.json/);
+
+  // Doctor one number, in one scenario, by one part in a billion. The tool must
+  // fail AND name the scenario and the field: "something moved" would leave the
+  // reader to find it in 5.5 MB.
+  const doctored = JSON.parse(stringifyResults(a)) as {
+    scenarios: { id: string; metrics: { value: number }[] }[];
+  };
+  const target = doctored.scenarios[0];
+  target.metrics[0].value += 1e-9;
+  fs.writeFileSync(moved, stringifyResults(doctored));
+
+  let failed = false;
+  try {
+    run([moved]);
+  } catch (e) {
+    failed = true;
+    const stderr = String((e as { stderr?: Buffer }).stderr ?? '');
+    assert.match(stderr, /BENCH BASELINE MOVED/);
+    assert.match(
+      stderr,
+      new RegExp(`scenarios\\[${target.id}\\]\\.metrics`),
+      'the failure must name the scenario and the field that moved',
+    );
+    // And it must say what to do about it in BOTH directions, because the right
+    // response depends on whether the move was intended and the tool cannot know.
+    assert.match(stderr, /--update/);
+  }
+  assert.ok(failed, 'the tool accepted a moved number');
+
+  // A perturbation that keeps the character count identical must still fail.
+  // This is the whole reason the baseline is digests rather than a length: the
+  // manual check this replaces compared character counts, and would have passed.
+  const before = JSON.parse(fs.readFileSync(path.join(dir, 'bench-baseline.json'), 'utf8')) as {
+    characters: number;
+  };
+  const sameLength = JSON.parse(stringifyResults(a)) as {
+    scenarios: { metrics: { value: number }[] }[];
+  };
+  const v = sameLength.scenarios[0].metrics[0].value;
+  // Swap two digits of the mantissa: same serialised width, different number.
+  const text = String(v);
+  const swapped = Number(text.replace(/(\d)(\d)$/, '$2$1'));
+  if (swapped !== v && String(swapped).length === text.length) {
+    sameLength.scenarios[0].metrics[0].value = swapped;
+    fs.writeFileSync(moved, stringifyResults(sameLength));
+    let caught = false;
+    try {
+      run([moved]);
+    } catch (e) {
+      caught = true;
+      const stderr = String((e as { stderr?: Buffer }).stderr ?? '');
+      // The message must SAY the length matched, because that is the fact a
+      // reader needs: the old manual check compared lengths and would have
+      // called this unchanged.
+      assert.match(stderr, /same length, different content/);
+      assert.match(stderr, new RegExp(`${before.characters} recorded`));
+    }
+    assert.ok(caught, 'a same-length change slipped past; the digest is not doing its job');
+  }
+
+  // And the volatile-list check applies here too: the baseline tool must refuse
+  // a file that has widened what is allowed to differ, exactly as its sibling does.
+  const widened = JSON.parse(stringifyResults(a)) as { volatile: string[] };
+  widened.volatile = ['env', 'scenarios[].timings', 'aggregate'];
+  fs.writeFileSync(moved, stringifyResults(widened));
+  let rejected = false;
+  try {
+    run([moved]);
+  } catch {
+    rejected = true;
+  }
+  assert.ok(rejected, 'the tool accepted a widened volatile list');
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('assert-deterministic passes on a matching pair and fails on a doctored one', { timeout: 600_000 }, () => {
   const dir = tmpdir('tool');
   const a = runBench(optionsIn(dir, { scenarios: 1 }));

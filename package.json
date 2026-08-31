@@ -33,7 +33,9 @@
     "ci": "npm run lint:boundary && npm run check:docs && npm run check:citation && npm run check:license && npm run typecheck && npm test && npm run progress:reference:check && npm run build:app && npm run smoke:app",
     "check:docs": "node tools/experiment-tables.ts",
     "check:citation": "node tools/check-citation.ts",
-    "check:license": "node tools/license-header.ts"
+    "check:license": "node tools/license-header.ts",
+    "check:bench": "node tools/assert-baseline.ts bench-results.json",
+    "bench:rebaseline": "node tools/assert-baseline.ts bench-results.json --update"
   },
   "devDependencies": {
     "typescript": "5.9.3",

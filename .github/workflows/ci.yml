@@ -85,6 +85,22 @@ jobs:
           npm run bench -- --scenarios 12 --seed 1234 --out bench-results-2.json --allow-failure
           node tools/assert-deterministic.ts bench-results.json bench-results-2.json
 
+      # The step above asks whether ONE tree agrees with itself. This asks
+      # whether the tree still produces the numbers the repository recorded, and
+      # nothing used to ask it.
+      #
+      # Every "the sphere path stays byte-identical" claim in
+      # docs/ARBITRARY-SHAPES.md was checked by a person running the bench by
+      # hand and comparing against a figure written in prose. That worked while
+      # somebody remembered. A mesh change that reached a shared code path and
+      # moved a sphere number would have gone green.
+      #
+      # No --allow-failure and no auto-update: a gate that repairs itself when it
+      # fails is not a gate. Moving a number is legitimate and takes
+      # `--update` plus a sentence in the commit message saying which moved.
+      - name: Baseline check (the recorded numbers have not moved)
+        run: npm run check:bench
+
       # ...and this step JUDGES. It is the only step allowed to fail on a
       # number, and it has no escape hatch on purpose.
       #

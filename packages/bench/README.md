@@ -271,7 +271,38 @@ The tool carries its **own copy** of the volatile list and refuses to run if the
 file's declaration disagrees. That duplication is the mechanism: with the list in
 only one place, anyone could silence a real determinism failure by adding a field
 name to it. `test/units.test.ts` is the third party that notices when the two
-drift apart.
+drift apart. The copy lives in `tools/bench-normalize.ts`, which both this check
+and the baseline one below read, so the two cannot come to disagree about what a
+difference is.
+
+### The baseline
+
+Determinism asks whether **one tree agrees with itself**. It says nothing about
+whether the tree still produces the numbers it produced last week, and that is
+the claim this project leans on hardest: every phase in
+`docs/ARBITRARY-SHAPES.md` opens by asserting the sphere path is byte-identical
+to what it was before the change, and `SphereSurface.centre` returns an exact
+zero precisely so a refactor cannot move it.
+
+Until recently nothing in CI checked it. The comparison was done by hand, against
+a character count written in prose, and it would have missed two things: a change
+nobody thought to check for, and a change that happens to keep the same length.
+
+```
+npm run check:bench          # this tree still matches bench-baseline.json
+npm run bench:rebaseline     # record new numbers, deliberately
+```
+
+`bench-baseline.json` holds SHA-256 digests rather than the 5.5 MB document —
+one for the whole stripped result, one per top-level section, and one per **field
+per scenario**, keyed by the scenario's own id. So a failure reads
+`$.scenarios[s06-six-cameras].metrics` rather than "something moved", which is
+the difference between reading a diff and hunting for one.
+
+Moving a number is legitimate; moving one silently is not. `--update` rewrites
+the baseline, and it belongs in the same commit as the change, with the reason in
+the message. CI has no auto-update and must not get one — a gate that repairs
+itself when it fails is not a gate.
 
 The check caught two real bugs during construction, and both would have been
 paid for later rather than never. A per-scenario wall clock had leaked into

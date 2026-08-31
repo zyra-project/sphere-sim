@@ -468,22 +468,40 @@ test('stringifyResults writes numeric arrays inline and NaN as null', () => {
   assert.deepEqual(back.a, [1, 2, null, 4]);
 });
 
-test('the volatile path list is the one tools/assert-deterministic.ts knows', async () => {
-  // The determinism tool carries its own copy on purpose — see its module note.
+test('the volatile path list is the one the bench tools know', async () => {
+  // The tools carry their own copy on purpose — see tools/bench-normalize.ts.
   // This test is the third party that notices when the two drift apart, because
   // a silently widened exclusion list is how a determinism check stops checking.
+  //
+  // It reads the TOOLS' copy from its one home. When that copy moved out of
+  // assert-deterministic.ts so the baseline check could share it, this test
+  // failed — which is the behaviour asked of it, and the reason to keep it
+  // pointed at a file rather than at an import: an import would have followed
+  // the move silently and gone on passing.
   const fs = await import('node:fs');
   const url = await import('node:url');
   const path = await import('node:path');
   const here = path.dirname(url.fileURLToPath(import.meta.url));
-  const tool = fs.readFileSync(path.join(here, '..', '..', '..', 'tools', 'assert-deterministic.ts'), 'utf8');
+  const root = path.join(here, '..', '..', '..');
+  const tool = fs.readFileSync(path.join(root, 'tools', 'bench-normalize.ts'), 'utf8');
   // Non-greedy up to the terminating `];`, because one of the paths itself
   // contains a `]` and a naive character class stops inside it.
   const match = /const VOLATILE_PATHS: string\[\] = \[([\s\S]*?)\];/.exec(tool);
-  assert.ok(match !== null, 'could not find VOLATILE_PATHS in the tool');
+  assert.ok(match !== null, 'could not find VOLATILE_PATHS in tools/bench-normalize.ts');
   const declared = match[1]
     .split(',')
     .map((s) => s.trim().replace(/^'|'$/g, ''))
     .filter((s) => s.length > 0);
   assert.deepEqual(declared, VOLATILE_PATHS);
+
+  // And there is still exactly ONE tools-side copy. A second declaration would
+  // restore the drift this test exists to prevent, one file over.
+  for (const name of ['assert-deterministic.ts', 'assert-baseline.ts']) {
+    const src = fs.readFileSync(path.join(root, 'tools', name), 'utf8');
+    assert.equal(
+      /const VOLATILE_PATHS: string\[\] = \[/.test(src),
+      false,
+      `tools/${name} declares its own VOLATILE_PATHS; there must be one tools-side copy`,
+    );
+  }
 });
