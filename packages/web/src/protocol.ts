@@ -67,6 +67,17 @@ export interface ModelRequest {
   /** Omit to skip the parity render — it is the expensive half. */
   parity: ParityCameraRequest | null;
   /**
+   * Which model the parity render should trace, or `''` for the analytic sphere.
+   *
+   * The NAME and not the mesh. A model is megabytes and this request goes across
+   * the boundary on every settled pass, so the geometry travels once, in a
+   * {@link SurfaceRequest}, and the worker keeps it; this names the one it
+   * should already be holding. A name it does not hold falls back to the sphere
+   * and SAYS SO in {@link ModelResponse.parityMeshId} rather than guessing --
+   * see there for why silence would be the dangerous answer.
+   */
+  meshId: string;
+  /**
    * A supplied equirectangular image, in linear light, when the page is showing
    * one — and `null` when it is not.
    *
@@ -102,6 +113,23 @@ export interface ModelResponse {
   readings: Reading[];
   facts: RigFact[];
   framebuffer: string;
+  /**
+   * Which model {@link ModelResponse.parityImage} was actually traced on, or
+   * `''` for the analytic sphere.
+   *
+   * Reported rather than assumed, because the parity check is only meaningful
+   * when both renderers drew the same shape. The page hands its display shader a
+   * model as soon as one is dropped; this worker can only trace one it has been
+   * sent, and a {@link SurfaceRequest} carrying it may not have arrived yet. The
+   * two would then disagree completely, at every lit pixel, and the number on
+   * screen would read as a catastrophic renderer bug instead of as two pictures
+   * of different objects.
+   *
+   * So the page compares this against what it drew and withholds the verdict
+   * when they differ. The check going quiet for a frame is a cost; a red verdict
+   * that means nothing is a fault.
+   */
+  parityMeshId: string;
   /** Worst grid-line displacement, mm. Pulled out because the page leads with it. */
   gridWorstMm: number;
   /** The same number with the compositor believing the config as written. */

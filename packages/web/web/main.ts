@@ -39,7 +39,10 @@
 import type { RigCalibration } from '../../calibration/src/index.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
 import { createImage } from '../../sim/src/equirect.ts';
+import { meshSurface } from '../../sim/src/mesh/surface.ts';
+import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
+import type { PreparedRig } from '../../sim/src/optics.ts';
 import { wrapDeg180 } from '../../sim/src/vec.ts';
 import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
@@ -73,11 +76,19 @@ import {
   worstAimOffender,
   worstPlacementOffender,
 } from '../src/rigs.ts';
+import type { WebWorld } from '../src/rigs.ts';
 import type { Reading, RigFact } from '../src/readout.ts';
-import { buildDisplayUniforms, pickMarkerNear, slotOfRigIndex } from '../src/uniforms.ts';
-import type { DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
+import { buildDisplayUniforms, packMesh, pickMarkerNear, slotOfRigIndex } from '../src/uniforms.ts';
+import type { DisplayMesh, DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
 import type { ParityVerdict } from '../src/parity.ts';
-import { BOUNDARY_LIT_ALLOWANCE, PARITY_HEIGHT, PARITY_WIDTH, judgeParity } from '../src/parity.ts';
+import {
+  ALLOWANCE_LABEL,
+  percentLabel,
+  PARITY_HEIGHT,
+  PARITY_WIDTH,
+  ambientFloorOf,
+  judgeParity,
+} from '../src/parity.ts';
 import type {
   FrameImage,
   ModelMessage,
@@ -1402,7 +1413,7 @@ async function loadCustomModel(file: File): Promise<void> {
     // .gltf file is not glTF.
     const container = containerOf(bytes);
     if (container !== 'glb') {
-      droppedMesh = null;
+      setDroppedMesh(null);
       meshReport = null;
       meshError =
         container === 'gltf-json'
@@ -1415,8 +1426,7 @@ async function loadCustomModel(file: File): Promise<void> {
     }
     const report = readGlb(bytes, { name: file.name });
     meshReport = report;
-    droppedMesh = report.mesh;
-    droppedMeshId++;
+    setDroppedMesh(report.mesh);
     // Take the reader to the panel that shows it. A dropped IMAGE announces
     // itself — it appears on the sphere — but a model's whole result lives in
     // one section, and the panel opens on `projectors`. Dropping a building and
@@ -1434,12 +1444,44 @@ async function loadCustomModel(file: File): Promise<void> {
     }
     requestSurface();
   } catch (err) {
-    droppedMesh = null;
+    setDroppedMesh(null);
     meshReport = null;
     meshError = err instanceof Error ? err.message : String(err);
     state.section = 'room';
   }
   renderControls();
+}
+
+/**
+ * The one place the dropped model changes, because the live view has to be told.
+ *
+ * `draw()` runs only when something has marked the canvas dirty, and dropping a
+ * file marks nothing: the model card is DOM that `renderControls` repaints, and
+ * for as long as the display shader was handed a sphere whatever the reader
+ * loaded, that was enough. It stopped being enough when `draw()` started reading
+ * the model -- the card would show the building and the view beside it would go
+ * on showing a sphere until some unrelated interaction happened to request a
+ * frame. `tools/smoke-app.ts` caught exactly that.
+ *
+ * Assigning through one function rather than at each of the three sites -- the
+ * load, the wrong-container refusal and the catch -- so that clearing the model
+ * repaints too. A view left on a building the reader has just removed is the
+ * same bug wearing the other sign.
+ */
+function setDroppedMesh(mesh: SurfaceMesh | null): void {
+  droppedMesh = mesh;
+  // Bumped on every change including to null, because it is what `displayModel`
+  // and the worker both key their caches on. Reusing an id would let a cache
+  // answer for the previous model.
+  droppedMeshId++;
+  // A new id is not a rejected one until `packMesh` says so.
+  rejectedMeshId = -1;
+  // The standing verdict judged a shape that is no longer on screen. Leaving it
+  // up would put a number about the sphere beside a picture of a building --
+  // and the reader has no way to tell it is stale. A blank readout while the
+  // next pass runs is the honest state; `checkParity` fills it back in.
+  parity = null;
+  markDirty();
 }
 
 /** Ask the worker for a CPU render of the dropped model, and the coverage facts. */
@@ -1837,9 +1879,13 @@ function postModel(fine: boolean): void {
     modelPending = false;
     drainModel();
   }, 10_000);
+  parityMeshIdAsked = displayMeshId();
   const req: ModelRequest = {
     kind: 'model',
     id,
+    // Names the model the parity render must trace, so the worker's picture and
+    // the shader's are of the same shape. See `ModelResponse.parityMeshId`.
+    meshId: displayMeshId(),
     settings: state.settings,
     compositorRig: state.compositorRig,
     densityScale: fine ? 1 : 0.3,
@@ -1905,6 +1951,19 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage | Surf
     } else {
       meshFrame = msg.frame;
       meshFacts = msg.facts;
+      // The worker is now HOLDING this model, which is the earliest moment its
+      // parity image can be traced on the same shape the shader is drawing --
+      // `ModelRequest.meshId` names a model, and the worker answers with the
+      // sphere for one it has not been sent. Without this the readout stayed
+      // blank after a drop until some unrelated control happened to request a
+      // pass, because `requestSurface` asks for a picture and never for a
+      // verdict.
+      //
+      // Only when the SHAPE changed, not on every settled recompute. A surface
+      // reply lands for each settled control while a model is loaded, and asking
+      // for a fine model pass on all of them would roughly double the most
+      // expensive work the page does for a verdict that is already current.
+      if (displayMeshId() !== parityMeshIdAsked) requestModel(true);
     }
     renderControls();
     return;
@@ -1965,7 +2024,7 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage | Surf
   const kept = model?.projectorFrames ?? [];
   const projectorFrames = msg.projectorFrames.map((f, i) => f ?? kept[i] ?? null);
   model = { ...msg, projectorFrames };
-  if (msg.parityImage) checkParity(msg.parityImage, msg.parityMs);
+  if (msg.parityImage) checkParity(msg.parityImage, msg.parityMs, msg.parityMeshId);
   renderReadout();
   renderInspect();
   // LAST, and this is not tidiness.
@@ -2326,6 +2385,24 @@ let rigMovedSinceSolve = false;
 // ---------------------------------------------------------------------------
 
 let dirty = true;
+/** Frames actually drawn. See `canvas.dataset.draws`. */
+let drawCount = 0;
+
+/**
+ * The model named by the last {@link ModelRequest}, so a surface reply can tell
+ * "the shape changed under the verdict" from "the same shape recomputed".
+ */
+let parityMeshIdAsked = '';
+
+/**
+ * The `droppedMeshId` the shader refused, or -1.
+ *
+ * `packMesh` throws on a hierarchy deeper than the shader's traversal stack, and
+ * the page then draws the sphere. This is how {@link displayMeshId} knows to say
+ * so rather than keep naming a model the shader never received.
+ */
+let rejectedMeshId = -1;
+
 function markDirty(): void {
   dirty = true;
 }
@@ -2416,12 +2493,17 @@ function draw(): void {
   const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
   ensureContent(world.image);
   const camera = buildViewer(state.settings, w, h, viewShiftFrac());
+  // The dropped model, if there is one. Until this the live view drew a sphere
+  // whatever the reader had loaded -- the CPU picture on the model card was the
+  // only place the shape appeared, and the view beside it was lying about it.
+  const model = displayModel(world);
   const uniforms = buildDisplayUniforms(
-    prepareRig(world.truthRig),
-    prepareRig(world.compositorRig),
+    model.physical,
+    model.content,
     world.scene,
     camera,
     {
+      mesh: model.mesh,
       overlay: state.overlay,
       highlight: state.highlight,
       slots: world.slots,
@@ -2455,6 +2537,18 @@ function draw(): void {
   // that the page merely survived one.
   canvas.dataset.range = state.settings.viewRangeM.toFixed(3);
   canvas.dataset.az = state.settings.viewAzDeg.toFixed(2);
+  // What the SHADER was handed, which is not the same question as what the page
+  // is holding. A dropped model that never reached the display uniforms looks
+  // exactly like one that did -- the model card renders on the CPU either way --
+  // so a test that only reads the card would have gone on passing through the
+  // entire time the live view was still drawing a sphere. Read off `uniforms`
+  // rather than off `droppedMesh` for that reason.
+  canvas.dataset.meshTriangles = String(uniforms.mesh?.triangleCount ?? 0);
+  // Monotonic, so a test can tell "the frame loop stopped" from "it ran and saw
+  // no model". `frame()` catches a throw from here, calls `fatal()` and does NOT
+  // re-arm `requestAnimationFrame`, so those two failures look identical from
+  // outside and need opposite fixes.
+  canvas.dataset.draws = String(++drawCount);
   drawToCanvas(gl, uniforms, w, h);
 }
 
@@ -2485,6 +2579,10 @@ function renderCameraShot(
   const w = Math.max(16, Math.round(width));
   const h = Math.max(1, Math.round((w * 3) / 4));
   const { world, ceilingM } = solveWorld;
+  // Deliberately NOT `displayModel`: these are the solve's own shots, and the
+  // solve runs on the sphere. Phase 5 is where a model reaches it, and handing
+  // the shader one here would show the reader a picture of geometry the solver
+  // behind it never considered.
   const uniforms = buildDisplayUniforms(
     prepareRig(world.truthRig),
     prepareRig(world.compositorRig),
@@ -2529,12 +2627,141 @@ function renderCameraShot(
 /** How wide the capture thumbnails are rendered. They display at about 120. */
 const SHOT_THUMB_PX = 480;
 
+/**
+ * The dropped model as the display path needs it, or the sphere.
+ *
+ * ## Why this is memoised and `prepareRig` on a sphere is not
+ *
+ * `draw()` runs on every animation frame. On a sphere `prepareRig` is a few
+ * dozen multiplications -- `blendModelApplies` is true, so `buildFootprints`
+ * never runs -- and rebuilding it per frame is cheaper than deciding not to. On
+ * a model none of that holds: `meshSurface` builds a bounding volume hierarchy,
+ * `prepareRig` walks it once per projector to build footprints, and `packMesh`
+ * walks it again to lay out the textures. Doing that sixty times a second would
+ * turn a drag of the exposure slider into a slideshow.
+ *
+ * Two levels, because the two costs have different lifetimes. The GEOMETRY
+ * depends only on which file was dropped, so it survives every slider. The
+ * prepared rigs and the packed field depend on the calibration as well, so they
+ * are keyed on it too -- structurally, because `buildWorld` returns fresh
+ * objects every frame and an identity check would never hit. This mirrors what
+ * `packages/web/src/model.ts` already does inside the worker.
+ *
+ * ## One surface object, deliberately
+ *
+ * Both rigs are prepared on the SAME `MeshSurface`. `buildDisplayUniforms`
+ * refuses anything else, and its reason is the whole design: the shader has one
+ * hierarchy and both of its traces read it.
+ *
+ * ## Why a model that will not fit returns the sphere instead of throwing
+ *
+ * `packMesh` refuses a hierarchy deeper than the shader's traversal stack, and
+ * that refusal used to reach `frame()`, which calls `fatal()` and then returns
+ * WITHOUT re-arming `requestAnimationFrame`. The page would not have rendered
+ * the model wrong; it would have stopped rendering at all, permanently, over a
+ * file the reader could simply have replaced. The refusal now lands in
+ * `meshError`, which the model card already shows, and the view stays on the
+ * sphere it was drawing before.
+ */
+let displayModelCache: {
+  meshId: number;
+  surface: MeshSurface;
+  rigKey: string;
+  physical: PreparedRig;
+  content: PreparedRig;
+  mesh: DisplayMesh | null;
+} | null = null;
+
+interface DisplayModel {
+  physical: PreparedRig;
+  content: PreparedRig;
+  mesh: DisplayMesh | null;
+}
+
+function displayModel(world: WebWorld): DisplayModel {
+  // The sphere path, untouched and uncached. Every phase of this work has opened
+  // by asserting the sphere renders byte-identically to what it did before, and
+  // the cheapest way to keep that true is for the sphere not to enter the new
+  // code at all.
+  if (droppedMesh === null) {
+    return {
+      physical: prepareRig(world.truthRig),
+      content: prepareRig(world.compositorRig),
+      mesh: null,
+    };
+  }
+
+  const rigKey = JSON.stringify([world.truthRig, world.compositorRig]);
+  const hit = displayModelCache;
+  if (hit !== null && hit.meshId === droppedMeshId && hit.rigKey === rigKey) {
+    return { physical: hit.physical, content: hit.content, mesh: hit.mesh };
+  }
+
+  // The surface outlives the calibration: a slider moves the rig, not the model.
+  const surface =
+    hit !== null && hit.meshId === droppedMeshId ? hit.surface : meshSurface(droppedMesh);
+  const physical = prepareRig(world.truthRig, surface);
+  const content = prepareRig(world.compositorRig, surface);
+  let mesh: DisplayMesh | null;
+  try {
+    // The CONTENT rig, which is whose blend the shader needs; see `packMesh`.
+    mesh = packMesh(content);
+  } catch (err) {
+    // Reported where the reader is already looking for what became of their
+    // file, and the sphere keeps drawing. See the note above on `fatal()`.
+    meshError = err instanceof Error ? err.message : String(err);
+    displayModelCache = null;
+    // And the page must now SAY it is drawing a sphere. `displayMeshId()` still
+    // named this model, so `checkParity`'s handshake would have compared the
+    // worker's picture OF THE MODEL against this sphere and passed the check
+    // that exists to stop exactly that -- printing a total disagreement between
+    // two renderers that were handed different shapes. Recording the rejection
+    // is what keeps the two answers to "what is on screen" the same answer.
+    rejectedMeshId = droppedMeshId;
+    parity = null;
+    renderControls();
+    return {
+      physical: prepareRig(world.truthRig),
+      content: prepareRig(world.compositorRig),
+      mesh: null,
+    };
+  }
+  displayModelCache = { meshId: droppedMeshId, surface, rigKey, physical, content, mesh };
+  return { physical, content, mesh };
+}
+
+/**
+ * The model this page is DRAWING, by the name the worker knows it by. `''` is the
+ * sphere. See `ModelRequest.meshId`.
+ *
+ * Not "the model that was dropped": `displayModel` falls back to the sphere when
+ * `packMesh` refuses a hierarchy deeper than the shader's stack, and a page that
+ * kept claiming the model then would have the parity check compare a picture of
+ * the model against a picture of the sphere and report it as a renderer bug.
+ */
+function displayMeshId(): string {
+  if (droppedMesh === null || droppedMeshId === rejectedMeshId) return '';
+  return `mesh:${droppedMeshId}`;
+}
+
 function checkParity(
   cpu: { width: number; height: number; data: Float32Array },
   cpuMs: number,
+  cpuMeshId: string,
 ): void {
   if (!gl) return;
   if (viewKey() !== parityRequestKey) {
+    parity = null;
+    return;
+  }
+  // Both renderers must have drawn the same SHAPE, and only the worker can say
+  // which one it drew: it traces the model it is holding, and the
+  // `SurfaceRequest` carrying a freshly dropped file may not have reached it
+  // yet. Comparing a model against a sphere would disagree at essentially every
+  // lit pixel and print a catastrophic renderer bug that is really two pictures
+  // of different objects. The check going quiet for a pass or two while the
+  // worker catches up is the cheaper mistake, and it is self-clearing.
+  if (cpuMeshId !== displayMeshId()) {
     parity = null;
     return;
   }
@@ -2546,9 +2773,10 @@ function checkParity(
     // model wrong. `ensureContent` is a no-op when it is current.
     ensureContent(world.image);
     const camera = buildViewer(state.settings, cpu.width, cpu.height, viewShiftFrac());
+    const model = displayModel(world);
     const uniforms = buildDisplayUniforms(
-      prepareRig(world.truthRig),
-      prepareRig(world.compositorRig),
+      model.physical,
+      model.content,
       world.scene,
       camera,
       // No floor, no overlay and NO EXPOSURE: `renderTwoRigRoomView` has none of
@@ -2564,6 +2792,9 @@ function checkParity(
       // shader reading a different one would report the difference as a model
       // disagreement. `viewKey` carries it for exactly that reason.
       {
+        // The same model the CPU side traced, checked above. Without this the
+        // shader would draw the sphere while the worker drew the model.
+        mesh: model.mesh,
         overlay: 'none',
         highlight: -1,
         drawFloor: false,
@@ -2581,6 +2812,15 @@ function checkParity(
       gpu = renderAndRead(gl!, uniforms, cpu.width, cpu.height);
     });
     parity = judgeParity(gpu, { width: cpu.width, height: cpu.height, data: cpu.data }, {
+      // The scene's own three numbers, not a constant. `ambient` is a slider and
+      // the check must not count a pixel that only ambient reaches -- such a
+      // pixel agrees by construction and would dilute the denominator until a
+      // misaligned rig read as an aligned one. See `parity.ts` LIT_THRESHOLD.
+      ambientFloor: ambientFloorOf(
+        world.scene.ambient,
+        world.scene.reflectance,
+        world.scene.roomAlbedo,
+      ),
       floatReadback: gpu.float,
       cpuMs,
     });
@@ -5171,8 +5411,11 @@ function parityLine(): HTMLElement {
       className: 'note tiny num',
       textContent:
         `worst pixel ${parity.delta.maxAbs.toExponential(1)} · ` +
-        `${(parity.delta.fractionOfLitOverTolerance * 100).toFixed(1)}% of lit pixels over ` +
-        `tolerance (${(BOUNDARY_LIT_ALLOWANCE * 100).toFixed(0)}% allowed for edges) · ` +
+        // The same precision the allowance is printed at. At one decimal the
+        // pair collapses -- "0.2% of lit pixels over tolerance (0.2% allowed)"
+        // reads as a contradiction and hides why the verdict failed.
+        `${percentLabel(parity.delta.fractionOfLitOverTolerance)}% of lit pixels over ` +
+        `tolerance (${ALLOWANCE_LABEL} allowed for edges) · ` +
         `${parity.delta.litPixelCount.toLocaleString()} lit of ` +
         `${parity.delta.pixelCount.toLocaleString()} px · CPU ${parity.cpuMs.toFixed(0)} ms`,
     }),

@@ -602,6 +602,16 @@ export function computeModel(req: ModelRequest): ModelResponse {
 
   let parityImage: ModelResponse['parityImage'] = null;
   let parityMs = 0;
+  // The model this worker is holding, if it is the one the page asked for. The
+  // page names it rather than sending it; `handleSurface` is what puts it here.
+  // A miss falls through to the sphere and is REPORTED as such -- see
+  // `ModelResponse.parityMeshId`. Never built here on a miss: a build is the
+  // dominant cost on this path and the page would be waiting on a picture it is
+  // going to discard anyway, because a frame it drew on a model cannot be
+  // compared against one traced on a sphere.
+  const paritySurface =
+    req.meshId !== '' && cachedMesh?.meshId === req.meshId ? cachedMesh.surface : null;
+  const parityMeshId = paritySurface === null ? '' : req.meshId;
   if (req.parity) {
     const p1 = performance.now();
     const camera: ViewerCamera = {
@@ -626,9 +636,13 @@ export function computeModel(req: ModelRequest): ModelResponse {
     // This renderer draws no floor (see its `RoomViewOptions`), so the GPU side
     // must not draw one either; `web/main.ts` turns it off for the parity pass
     // only, and the page says which part of the shader is therefore uncovered.
+    // ONE surface object, handed to both. Two `meshSurface` calls over the same
+    // geometry would be two objects a `===` can tell apart -- which is what
+    // `buildDisplayUniforms` refuses on the page side -- and would build the
+    // hierarchy twice for a frame that needs it once.
     const img = renderTwoRigRoomView(
-      prepareRig(world.truthRig),
-      prepareRig(world.compositorRig),
+      prepareRig(world.truthRig, paritySurface ?? undefined),
+      prepareRig(world.compositorRig, paritySurface ?? undefined),
       world.scene,
       camera,
       { samplesPerPixel: Math.max(1, req.parity.samplesPerPixel), sampleLattice: 'grid' },
@@ -716,6 +730,7 @@ export function computeModel(req: ModelRequest): ModelResponse {
     boundarySouthDeg: set.coverage.boundaryLatitudeSouthDeg,
     scatter: set.fields.gridSamples,
     parityImage,
+    parityMeshId,
     parityMs,
     metricsMs,
     densityScale: req.densityScale,

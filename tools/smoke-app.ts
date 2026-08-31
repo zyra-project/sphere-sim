@@ -1833,6 +1833,65 @@ async function main(): Promise<void> {
         process.stdout.write(`  model: a dropped .glb is ${percent.toFixed(1)}% lit\n`);
       }
 
+      // And the LIVE VIEW is drawing it. Everything above is the model card,
+      // which `packages/sim` traces on the CPU and which looked identical for
+      // the whole time the display shader was still handed a sphere. This is the
+      // one reading that separates the two: `draw()` writes it off the uniforms
+      // it just submitted, so a number here means the triangles went to the GPU.
+      let tris = '0';
+      const drawsBefore = await cdp.evaluate<string>(
+        "document.getElementById('view')?.dataset.draws ?? '0'",
+      );
+      // Sampled together, so a slow answer says WHICH kind of slow it is: frames
+      // going by without the model (a logic problem) reads differently from
+      // frames not going by at all (a scheduling one). On a CI runner this took
+      // 15 s where it takes well under a second here, and the difference is the
+      // whole reason both numbers are printed rather than just the verdict.
+      const meshStart = Date.now();
+      let drawsAt = drawsBefore;
+      const meshDeadline = meshStart + 60_000;
+      while (Date.now() < meshDeadline) {
+        const both = await cdp.evaluate<string>(
+          "((el) => (el?.dataset.meshTriangles ?? '0') + '|' + (el?.dataset.draws ?? '0'))" +
+            "(document.getElementById('view'))",
+        );
+        [tris, drawsAt] = both.split('|');
+        if (tris !== '0') break;
+        await sleep(100);
+      }
+      const meshMs = Date.now() - meshStart;
+      const drewWaiting = Number(drawsAt) - Number(drawsBefore);
+      const triangles = Number.parseInt(tris, 10);
+      if (!Number.isFinite(triangles) || triangles <= 0) {
+        // Say WHICH failure this is. `frame()` catches a throw from `draw()`,
+        // shows it and stops re-arming, so a dead frame loop and a live one that
+        // saw no model are indistinguishable from the outside — and they need
+        // opposite fixes. The draw counter separates them and `#fatal` carries
+        // the exception when there was one.
+        const fatalText = await cdp.evaluate<string>(
+          "document.getElementById('fatal')?.textContent?.trim() ?? ''",
+        );
+        const drawsAfter = await cdp.evaluate<string>(
+          "document.getElementById('view')?.dataset.draws ?? '0'",
+        );
+        const why =
+          fatalText !== ''
+            ? `draw() threw and the frame loop stopped: ${fatalText}`
+            : drawsAfter === drawsBefore
+              ? `the frame loop is not running (draws stuck at ${drawsAfter} for ${meshMs} ms)`
+              : `the frame loop ran (${drawsBefore} -> ${drawsAfter} draws in ${meshMs} ms) ` +
+                'but was handed no model';
+        failures.push(
+          'a dropped .glb never reached the display shader — the live view is still drawing ' +
+            `a sphere while the model card shows the model. ${why}`,
+        );
+      } else {
+        process.stdout.write(
+          `  model: the display shader is tracing ${triangles} triangles ` +
+            `(${meshMs} ms, ${drewWaiting} frames drawn while waiting)\n`,
+        );
+      }
+
       // And the preview is a picture rather than an empty rectangle.
       const preview = await cdp.evaluate<{ nonBlack: number; total: number } | null>(`(() => {
         const c = document.querySelector('[data-smoke="model-preview"]');
