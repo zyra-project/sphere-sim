@@ -53,44 +53,95 @@ export const DISPLAY_TOLERANCE = 2e-3;
  * Fraction of LIT pixels allowed past the tolerance because a geometric boundary
  * landed between two samples.
  *
- * **Of lit pixels, and that word is the whole point.** This started as a fraction
- * of the whole frame, and as a fraction of the whole frame it is not a property
- * of the renderers at all — it is a property of how much of the window the sphere
- * happens to fill. Measured at three framings, from a 2.6 m seam close-up to a
- * 10.2 m room shot, against the frame:
+ * **The population this allows for has been counted, and on a correct renderer it
+ * is empty.** Measured against a real GL driver -- the paired read-backs behind
+ * `packages/harness/README.md`'s link-(3) table, at its 96x72 room and 64x36
+ * projector grids, on an analytic sphere, a tessellated sphere and two plates:
+ * **0 of 10 298 lit pixels over {@link DISPLAY_TOLERANCE}**, pooled over four
+ * correct frames. The worst single pixel anywhere is 3.13e-4, six times under the
+ * tolerance, and none reaches a fifth of it. Strays are not a near-miss
+ * phenomenon here; the distribution has a hard ceiling.
  *
- * | framing | boundary | a full 1x mount error |
+ * So this number is NOT sized by boundary noise, because there is none to size it
+ * by. It is sized by what it must still CATCH.
+ *
+ * ## What it must catch, and what 0.06 did with it
+ *
+ * The one real GPU bug this project has found is the self-shadow acne of
+ * `packages/sim/src/mesh/bvh.ts`, and this check is what found it. On the room
+ * track -- the view geometry the app's own parity patch is -- it moves **1.187%**
+ * of lit pixels on a tessellated sphere and **2.198%** on two plates.
+ *
+ * The value this replaced was 0.06, and at 0.06 the verdict printed
+ *
+ *     The picture and the model agree to 2.52e-5 of relative radiance across all
+ *     but the outer 6% of the 4212 lit pixels.
+ *
+ * on the frame carrying it. A defect touching 1.187% of pixels hides entirely
+ * inside the 6% the percentile discards, however wrong those pixels are: the worst
+ * of them differs by 3.85e-1, which is 193x the tolerance. Over the thirteen dumps
+ * -- five injected severities of the bug and its fixes, two tracks each -- 0.06
+ * catches 3 of the 14 judgeable cells. 0.002 catches 13. Not one allowance in the
+ * sweep from 0.06 down to 0.0002 false-alarms on a correct frame.
+ *
+ * | allowance | false alarms | buggy cells caught, of 14 |
  * | --- | --- | --- |
- * | 2.6 m, 34 deg | 6.0% | 40.1% |
- * | 6.2 m, 50 deg | 0.50% | 4.65% |
- * | 10.2 m, 71 deg | 0.073% | 0.70% |
+ * | 0.06 | 0 | 3 |
+ * | 0.01 | 0 | 11 |
+ * | 0.002 | 0 | 13 |
+ * | 0.0005 | 0 | 14 |
  *
- * Two orders of magnitude, for the same two renderers disagreeing by the same
- * amount. A 1%-of-frame allowance happens to sit between the two columns at 6.2 m
- * and nowhere else: at the room shot a COMPLETE misalignment moves 0.70% of the
- * frame and would have passed. The check was silently blind at any wide view.
+ * ## Why 0.002 of that window, which is judgement and not measurement
  *
- * The same measurements against the count of lit pixels:
+ * Measurement gives a window and not a value. The upper bound is hard: the
+ * allowance must sit under 1.187e-2 to see the weakest room-track signature of a
+ * real defect. The lower bound is the stray rate, and zero events in 10 298 lit
+ * pixels puts a 95% upper bound of 2.91e-4 on it by the rule of three. 0.002 is
+ * 6.9x above that bound and 5.9x below the defect it must see. Any value in
+ * [0.001, 0.005] is defensible on this data; what picks 0.002 within it is the
+ * shed at large lit counts, and that reason is a preference rather than a
+ * measurement.
  *
- * | framing | boundary | a full 1x mount error |
- * | --- | --- | --- |
- * | 2.6 m, 34 deg | 2.4% | 40.6% |
- * | 6.2 m, 50 deg | 2.4% | 48.6% |
- * | 10.2 m, 71 deg | 2.0% | 47.8% |
+ * ## The consequence at the widest view, which is deliberate and worth knowing
  *
- * Flat, because both quantities scale with the image of the sphere and so does
- * the denominator. 6% is more than twice the measured worst case, the same
- * doubling rule the frame-fraction version used, and it means the same thing at
- * every zoom. `test/parity.test.ts` pins all six numbers.
+ * The shed is a FRACTION, so it scales with the patch: 24 pixels at the seam
+ * close-up's 12 116 lit, and `0.002 x 178 = 0.36` -- which rounds to **zero** --
+ * at the 178 the widest view carries. At that view one stray full-amplitude pixel
+ * fails the check. Measured, that never happens; at the 95% bound on the stray
+ * rate it would happen in about 5% of frames there. If a hardware driver turns
+ * out to produce strays, the answer is an absolute floor on the shed
+ * (`litOver > max(SHED, allowance * N)`) rather than a larger fraction, because
+ * the fraction is exactly what let 727 pixels be shed at the seam close-up.
  *
- * The boundary column used to read 5-6% and the allowance 12%. What halved it
- * was moving the graticule out of the content texture: a line rasterised into an
- * equirect is reconstructed by two different bilinear samplers on the two sides
- * — a GPU texture unit and `sampleEquirect` — and every pixel of every line was
- * a place they could disagree. Evaluated analytically from the same formula on
- * both sides, the only disagreement left is the geometry the check is for.
+ * ## The measurement this has NOT had
+ *
+ * Every correct-renderer frame above is SwiftShader, a software rasteriser, at
+ * one framing. {@link DISPLAY_TOLERANCE} names "a texture unit the GL spec
+ * permits reduced precision in", and SwiftShader is the driver least likely to
+ * exhibit it. One read-back from a hardware GPU at the three framings settles it.
+ *
+ * ## And a 0.02-degree camera nudge is not a model of this
+ *
+ * It moves 12-16% of lit pixels on the plain analytic sphere where the driver
+ * moves 0.000%: it displaces the surface by about 0.28 mm where float32 displaces
+ * it by about 5e-8 m. `test/parity.test.ts` uses the nudge to test the
+ * DENOMINATOR, which is what it is good for, and this constant must never be
+ * sized against it.
  */
-export const BOUNDARY_LIT_ALLOWANCE = 0.06;
+export const BOUNDARY_LIT_ALLOWANCE = 0.002;
+
+/**
+ * Percentages as a reader wants them, for constants that are no longer whole.
+ *
+ * `(0.002 * 100).toFixed(0)` is `'0'`, and a verdict that offers a "0% allowance"
+ * or reports `p100` of the lit pixels is worse than one that offers no number.
+ */
+function pctText(fraction: number): string {
+  return String(Number((fraction * 100).toFixed(3)));
+}
+
+/** The allowance as it is printed: `0.2%`. */
+export const ALLOWANCE_LABEL = `${pctText(BOUNDARY_LIT_ALLOWANCE)}%`;
 
 /**
  * How far above the ambient floor a pixel must read to count as lit.
@@ -178,6 +229,9 @@ export const NO_AMBIENT: ChannelTriplet = { r: 0, g: 0, b: 0 };
 export const MIN_LIT_PIXELS = 60;
 
 export const VERDICT_PERCENTILE = 1 - BOUNDARY_LIT_ALLOWANCE;
+
+/** The verdict percentile as it is printed: `p99.8`, not `p100`. */
+export const VERDICT_PERCENTILE_LABEL = `p${pctText(VERDICT_PERCENTILE)}`;
 
 export interface ParityDelta {
   /** Worst single-channel absolute difference anywhere in the patch. */
@@ -304,7 +358,6 @@ export function judgeParity(
   const tolerance = options.tolerance ?? (floatReadback ? DISPLAY_TOLERANCE : 1 / 255);
   const delta = compareImages(gpu, cpu, tolerance, options.ambientFloor);
 
-  const pct = (VERDICT_PERCENTILE * 100).toFixed(0);
   const readback = floatReadback ? '' : ' (8-bit read-back — this device has no float framebuffer)';
 
   // Too little on screen to judge is not agreement. Reported as its own state so
@@ -331,14 +384,14 @@ export function judgeParity(
   const reasons: string[] = [];
   if (!percentileOk) {
     reasons.push(
-      `p${pct} of the lit pixels differs by ${delta.verdictPercentileValue.toExponential(2)}, over ` +
+      `${VERDICT_PERCENTILE_LABEL} of the lit pixels differs by ${delta.verdictPercentileValue.toExponential(2)}, over ` +
         `${tolerance.toExponential(1)}`,
     );
   }
   if (!boundaryOk) {
     reasons.push(
       `${(delta.fractionOfLitOverTolerance * 100).toFixed(1)}% of the lit pixels are over ` +
-        `tolerance, above the ${(BOUNDARY_LIT_ALLOWANCE * 100).toFixed(0)}% allowance for ` +
+        `tolerance, above the ${ALLOWANCE_LABEL} allowance for ` +
         `geometric boundaries`,
     );
   }
@@ -352,7 +405,7 @@ export function judgeParity(
     summary: pass
       ? `The picture and the model agree to ${delta.verdictPercentileValue.toExponential(2)} of ` +
         `relative radiance across all but the outer ` +
-        `${(BOUNDARY_LIT_ALLOWANCE * 100).toFixed(0)}% of the ${delta.litPixelCount} lit ` +
+        `${ALLOWANCE_LABEL} of the ${delta.litPixelCount} lit ` +
         `pixels${readback}.`
       : `The picture and the model DISAGREE: ${reasons.join('; ')}${readback}.`,
     floatReadback,

@@ -8,11 +8,31 @@ driver. Phase 3 closed by deciding the polar mask is refused rather than
 generalized — see that phase.
 
 **Still open in Phase 2:** the app page does not yet hand its display shader a
-model. The plan's own condition for that was that `parity.ts` say what its
-verdict means on a mesh, and it now does — but `packages/web/src/parity.ts` has
-its own separate verdict (`BOUNDARY_LIT_ALLOWANCE = 0.06`, p94 over LIT pixels)
-derived against a sphere's single smooth silhouette. Its value would pass a mesh;
-its meaning has not been re-derived. That is the remaining gate.
+model — `main.ts` passes no surface to `prepareRig` and no `mesh` to
+`buildDisplayUniforms` at any of its three call sites, so `uMeshMode` is 0 in the
+browser. The plan's condition for that was that `packages/web/src/parity.ts` say
+what its verdict means on a mesh.
+
+That condition has now been met, and in the opposite direction to the one this
+paragraph used to predict. It said "its value would pass a mesh; its meaning has
+not been re-derived", and the first half is true and IS the problem. Measured
+against the real GL read-backs behind `packages/harness/README.md`,
+`BOUNDARY_LIT_ALLOWANCE = 0.06` passes a mesh — and it also passes a mesh whose
+shader carries the self-shadow acne of Phase 2's own fix, which this very check
+found. On the room track that defect moves 1.187% of lit pixels on a tessellated
+sphere and 2.198% on two plates, with the worst pixel 193× the tolerance, and a
+defect that size hides entirely inside the 6% a p94 percentile discards. Over the
+thirteen driver dumps, 0.06 catches 3 of the 14 judgeable cells.
+
+So the allowance was never too tight for a mesh. It sat 5× above the weakest
+signature it had to see, and the correction was to make it smaller — 0.002, sized
+against that defect rather than against a camera nudge, which overstates the
+population it stood in for by three orders of magnitude. Separately the
+denominator was counting every pixel the surface covers rather than the pixels a
+projector reaches, which let a complete mount error read as agreement on
+geometry that self-occludes. Both are fixed; the remaining gate is the wiring
+itself, plus one read-back from a hardware GPU, since every correct-renderer
+frame measured so far is a software rasteriser.
 
 **What the mesh path cost to make honest**, recorded because the study's estimate
 did not include it: wiring the shaders was the smaller half. Link (3) failed on
@@ -564,12 +584,20 @@ parity check carries a second fixture of two plates, where 86 samples face a len
 and are dark anyway.
 
 **Still to do in Phase 2:** the page itself does not yet hand the display shader
-a model, and it should not until `parity.ts` says what its verdict means on one.
-The allowance for pixels past tolerance was measured against a sphere's single
-smooth silhouette; a mesh has one silhouette per triangle, and about 1% of hits
-at a shared edge pick a different face in float32 than in float64. Handing the
-live view a model before re-deriving that would put a number on screen that had
-quietly changed meaning, which is the failure this document exists to avoid.
+a model. The gate was that `parity.ts` say what its verdict means on one, and it
+now does: the allowance is sized against the real driver's own read-backs rather
+than against a sphere's silhouette, and the denominator no longer counts pixels
+no projector reaches. See `packages/web/src/parity.ts` and the note at the top of
+this document.
+
+The reason recorded here for that gate — that "a mesh has one silhouette per
+triangle, and about 1% of hits at a shared edge pick a different face in float32
+than in float64" — was refuted, and is corrected rather than quietly dropped.
+`packages/harness/README.md` records the retraction; re-counted on the fixture
+the sentence is about, **0 of 4212 primary hits lie within 1e-7 of a triangle
+edge**, which is the scale at which float32 perturbs a barycentric coordinate.
+The gate was real. This was never its mechanism, and it survived two review
+rounds on plausibility because nobody counted the population it needed.
 
 **A baked SDF is the tempting shortcut and it is the wrong one.** The shader
 already ray-marches SDFs for furniture, so it would be quick — but the parity

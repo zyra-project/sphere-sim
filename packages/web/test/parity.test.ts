@@ -12,6 +12,7 @@ import { renderTwoRigRoomView } from '../../sim/src/misregistration.ts';
 import { BOULDER_PRESET, IN_TO_M, PERFECT_PRESET } from '../src/settings.ts';
 import { buildViewer, buildWorld } from '../src/rigs.ts';
 import {
+  ALLOWANCE_LABEL,
   BOUNDARY_LIT_ALLOWANCE,
   DISPLAY_TOLERANCE,
   LIT_THRESHOLD,
@@ -19,6 +20,7 @@ import {
   PARITY_HEIGHT,
   PARITY_WIDTH,
   VERDICT_PERCENTILE,
+  VERDICT_PERCENTILE_LABEL,
   NO_AMBIENT,
   ambientFloorOf,
   compareImages,
@@ -87,10 +89,22 @@ test('the two-rig renderer really does show misregistration', () => {
   );
 });
 
-test('the boundary allowance is what the measurement says, and it is measured against LIT pixels', () => {
-  // Nudge the camera by a hundredth of a degree: only pixels straddling a
-  // discontinuity — the limb, a coverage edge, the mask edge — can change by more
-  // than the tolerance, so the fraction that does IS the boundary fraction.
+test('the of-lit denominator is framing-independent and the whole-frame one is not', () => {
+  // Nudge the camera by a hundredth of a degree and see how the fraction that
+  // moves behaves as the framing changes.
+  //
+  // This test used to compare that fraction against BOUNDARY_LIT_ALLOWANCE, on the
+  // reasoning that "only pixels straddling a discontinuity can change by more than
+  // the tolerance, so the fraction that does IS the boundary fraction". Measured
+  // against a real driver, both halves of that are false: most movers here are
+  // smooth-gradient pixels, and the real boundary population is EMPTY -- 0 of
+  // 10 298 lit pixels. A 0.02-degree nudge displaces the surface by about 0.28 mm
+  // where float32 displaces it by about 5e-8 m, so it overstates the population it
+  // stood in for by three orders of magnitude. The allowance is sized against the
+  // driver now; see `src/parity.ts`.
+  //
+  // What the nudge is still good for is this test's actual subject, which its own
+  // body always was:
   //
   // The point of this test is the DENOMINATOR. Against the whole frame the same
   // renderers disagreeing by the same amount give answers two orders of magnitude
@@ -109,18 +123,6 @@ test('the boundary allowance is what the measurement says, and it is measured ag
       const d = compareImages(base, nudged, DISPLAY_TOLERANCE, SCENE_FLOOR);
       wholeFrame.push(d.fractionOverTolerance);
       ofLit.push(d.fractionOfLitOverTolerance);
-      assert.ok(
-        d.fractionOfLitOverTolerance < BOUNDARY_LIT_ALLOWANCE,
-        `at ${framing.name} ${w}x${h} the boundary is ` +
-          `${(d.fractionOfLitOverTolerance * 100).toFixed(1)}% of lit pixels, at or above the ` +
-          `${(BOUNDARY_LIT_ALLOWANCE * 100).toFixed(0)}% allowance — the check would fail on edge noise`,
-      );
-      assert.ok(
-        d.fractionOfLitOverTolerance > BOUNDARY_LIT_ALLOWANCE / 5,
-        `at ${framing.name} ${w}x${h} the boundary is only ` +
-          `${(d.fractionOfLitOverTolerance * 100).toFixed(2)}% of lit pixels, so the allowance is ` +
-          `more than five times what is needed and is not measuring anything`,
-      );
     }
   }
 
@@ -150,7 +152,13 @@ test('a full misalignment fails the verdict at every framing, which is what the 
     const verdict = judgeParity(a, b, { ambientFloor: SCENE_FLOOR, floatReadback: true });
     assert.equal(verdict.pass, false, `${framing.name}: ${verdict.summary}`);
     assert.equal(verdict.blind, false, `${framing.name}: the patch should have enough lit pixels`);
-    assert.ok(/p88|allowance/.test(verdict.reason), `unhelpful reason: '${verdict.reason}'`);
+    // Derived, not spelled. This read /p88|allowance/ while the label was p94, so
+    // it could only ever match on the word 'allowance' -- it had stopped testing the
+    // percentile arm entirely and went on passing.
+    assert.ok(
+      verdict.reason.includes(VERDICT_PERCENTILE_LABEL) || verdict.reason.includes('allowance'),
+      `unhelpful reason: '${verdict.reason}'`,
+    );
     assert.ok(verdict.summary.includes('DISAGREE'));
 
     const d = compareImages(a, b, DISPLAY_TOLERANCE, SCENE_FLOOR);
@@ -187,12 +195,23 @@ test('a difference spread over the whole image fails on the percentile, not the 
   assert.equal(verdict.pass, false);
   // Derived from the constant rather than spelled, so moving the allowance moves
   // the label and this assertion together instead of pinning a stale number.
-  const label = `p${(VERDICT_PERCENTILE * 100).toFixed(0)}`;
+  const label = VERDICT_PERCENTILE_LABEL;
   assert.ok(
     verdict.reason.startsWith(label),
     `expected the percentile to bind first: '${verdict.reason}'`,
   );
 });
+
+/**
+ * A framing whose patch is big enough to express the allowance at all.
+ *
+ * `BOULDER_PRESET`'s own view is the widest one, and it carries 170 lit pixels --
+ * so `0.002 x 170 = 0.34` spoils ZERO pixels and a fraction near the allowance
+ * cannot be built there. That is not a fixture problem, it is the constant's
+ * documented consequence at small patches, pinned by its own test below. The
+ * spoil-based tests use the seam close-up's 12 116 lit pixels instead.
+ */
+const SPOILABLE = { viewRangeM: 2.6, viewFovDeg: 34, viewElDeg: 0 } as const;
 
 /** Spoil a fraction of the pixels that are lit, leaving the dark ones alone. */
 function spoilLit(img: ReturnType<typeof cpuRender>, fraction: number) {
@@ -223,7 +242,7 @@ test('a handful of full-amplitude edge pixels does not fail the verdict', () => 
   // full-amplitude delta. A max-only verdict would fail at random as the viewer
   // orbits, so the verdict is a percentile with a separate, bounded allowance
   // for boundary pixels.
-  const img = cpuRender();
+  const img = cpuRender({ ...BOULDER_PRESET, ...SPOILABLE });
   const { image, spoil } = spoilLit(img, BOUNDARY_LIT_ALLOWANCE * 0.5);
   const verdict = judgeParity(img, image, { ambientFloor: SCENE_FLOOR, floatReadback: true });
   assert.ok(spoil > 0, 'the fixture must actually spoil some pixels');
@@ -232,7 +251,7 @@ test('a handful of full-amplitude edge pixels does not fail the verdict', () => 
 });
 
 test('spoiling more than the allowance does fail', () => {
-  const img = cpuRender();
+  const img = cpuRender({ ...BOULDER_PRESET, ...SPOILABLE });
   const { image } = spoilLit(img, BOUNDARY_LIT_ALLOWANCE * 2);
   const verdict = judgeParity(img, image, { ambientFloor: SCENE_FLOOR, floatReadback: true });
   assert.equal(verdict.pass, false);
@@ -306,9 +325,17 @@ test('a rig in pieces cannot pass by filling the denominator with ambient-only p
     floatReadback: true,
   });
 
-  // The bug, asserted so this test cannot quietly stop demonstrating anything.
-  assert.equal(withoutFloor.pass, true, 'the fixture must still reproduce the old failure');
+  // The bug, asserted so this test cannot quietly stop demonstrating anything --
+  // and asserted on the FRACTION rather than on pass/fail, because pass/fail also
+  // moves with BOUNDARY_LIT_ALLOWANCE and this test is about the denominator. At
+  // the 6% allowance in force when this was found, 3.58% passed outright.
   assert.equal(withoutFloor.blind, false);
+  assert.ok(
+    withoutFloor.delta.fractionOfLitOverTolerance < 0.06,
+    `undiluted, a complete mount error must look benign here: ` +
+      `${(withoutFloor.delta.fractionOfLitOverTolerance * 100).toFixed(2)}% is not under the 6% ` +
+      `allowance this fixture was built to slip past`,
+  );
 
   // And the fix.
   assert.equal(withFloor.pass, false, `a full mount error must not pass: ${withFloor.summary}`);
@@ -389,6 +416,93 @@ test('the floored denominator is exactly the set of pixels a projector reaches',
       `${framing.name}: compareImages does not count the projector-lit set`,
     );
   }
+});
+
+test('the allowance can see the one real GPU bug this check has found', () => {
+  // The self-shadow acne of `packages/sim/src/mesh/bvh.ts`, which this check
+  // found. Measured against the real driver on the room track -- the view
+  // geometry the app's own parity patch is -- it moves 1.187% of lit pixels on a
+  // tessellated sphere and 2.198% on two plates, with the worst pixel 193x the
+  // tolerance.
+  //
+  // At the allowance this replaced, 0.06, BOTH passed, and the verdict printed
+  // "The picture and the model agree". A defect touching 1.187% of pixels hides
+  // entirely inside the 6% a p94 percentile discards, however wrong those pixels
+  // are. That is the failure this number was changed to fix, and this is the
+  // assertion that would notice it coming back.
+  const img = cpuRender({ ...BOULDER_PRESET, ...SPOILABLE });
+  for (const [what, fraction] of [
+    ['a tessellated sphere', 0.01187],
+    ['two plates', 0.02198],
+  ] as const) {
+    const { image, spoil, lit } = spoilLit(img, fraction);
+    assert.ok(spoil > 0, `${what}: the fixture must actually spoil pixels of ${lit} lit`);
+    const verdict = judgeParity(img, image, {
+      ambientFloor: SCENE_FLOOR,
+      floatReadback: true,
+    });
+    assert.equal(
+      verdict.pass,
+      false,
+      `${what}: a defect over ${(fraction * 100).toFixed(3)}% of lit pixels must not pass ` +
+        `-- ${verdict.summary}`,
+    );
+  }
+
+  // And the bracket on the other side, so this pins the constant rather than
+  // merely bounding it: a defect an order of magnitude under the allowance passes.
+  const { image } = spoilLit(img, BOUNDARY_LIT_ALLOWANCE / 10);
+  assert.equal(
+    judgeParity(img, image, { ambientFloor: SCENE_FLOOR, floatReadback: true }).pass,
+    true,
+  );
+});
+
+test('at the widest view the shed rounds to zero, which is deliberate', () => {
+  // The consequence recorded in BOUNDARY_LIT_ALLOWANCE's docblock, pinned here so
+  // it is a decision rather than a surprise. The shed is a FRACTION, so it scales
+  // with the patch: 24 pixels at the seam close-up's 12 116 lit, and 0.34 -- which
+  // floors to zero -- at the 170 the app's opening view carries. One stray
+  // full-amplitude pixel therefore fails the check there.
+  //
+  // Measured against the real driver that never happens: 0 strays in 10 298 lit
+  // pixels. If a hardware GPU turns out to produce them, the answer named in the
+  // docblock is an absolute floor on the shed, not a larger fraction -- and this
+  // test is where that change would announce itself.
+  const wide = cpuRender();
+  const lit = compareImages(wide, wide, DISPLAY_TOLERANCE, SCENE_FLOOR).litPixelCount;
+  assert.ok(lit < 1 / BOUNDARY_LIT_ALLOWANCE, `the opening view carries ${lit} lit pixels`);
+
+  const one = { ...wide, data: Float32Array.from(wide.data) };
+  for (let i = 0; i < wide.width * wide.height; i++) {
+    if (wide.data[3 * i] > SCENE_FLOOR.r + LIT_THRESHOLD) {
+      one.data[3 * i] = 1;
+      break;
+    }
+  }
+  const verdict = judgeParity(wide, one, { ambientFloor: SCENE_FLOOR, floatReadback: true });
+  assert.equal(verdict.pass, false, 'one stray pixel must fail at a patch this small');
+  assert.equal(verdict.blind, false, `${lit} lit pixels is above MIN_LIT_PIXELS`);
+});
+
+test('the printed labels say the number they claim to say', () => {
+  // Deriving the expected label from the same constant makes an assertion that
+  // cannot fail: the message and the expectation move together and agree with each
+  // other however wrong both are. `(0.998 * 100).toFixed(0)` is '100', so a
+  // verdict would have offered "p100 of the lit pixels" and every test comparing
+  // it against its own copy of that expression would have passed.
+  //
+  // So parse the label back and check it against the constant it describes.
+  assert.match(VERDICT_PERCENTILE_LABEL, /^p[\d.]+$/);
+  assert.ok(
+    Math.abs(Number(VERDICT_PERCENTILE_LABEL.slice(1)) / 100 - VERDICT_PERCENTILE) < 1e-9,
+    `${VERDICT_PERCENTILE_LABEL} does not name ${VERDICT_PERCENTILE}`,
+  );
+  assert.match(ALLOWANCE_LABEL, /^[\d.]+%$/);
+  assert.ok(
+    Math.abs(Number(ALLOWANCE_LABEL.slice(0, -1)) / 100 - BOUNDARY_LIT_ALLOWANCE) < 1e-9,
+    `${ALLOWANCE_LABEL} does not name ${BOUNDARY_LIT_ALLOWANCE}`,
+  );
 });
 
 test('an 8-bit read-back widens the tolerance and says so', () => {

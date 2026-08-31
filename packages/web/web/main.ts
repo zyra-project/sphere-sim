@@ -78,7 +78,7 @@ import { buildDisplayUniforms, pickMarkerNear, slotOfRigIndex } from '../src/uni
 import type { DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
 import type { ParityVerdict } from '../src/parity.ts';
 import {
-  BOUNDARY_LIT_ALLOWANCE,
+  ALLOWANCE_LABEL,
   PARITY_HEIGHT,
   PARITY_WIDTH,
   ambientFloorOf,
@@ -5187,7 +5187,7 @@ function parityLine(): HTMLElement {
       textContent:
         `worst pixel ${parity.delta.maxAbs.toExponential(1)} · ` +
         `${(parity.delta.fractionOfLitOverTolerance * 100).toFixed(1)}% of lit pixels over ` +
-        `tolerance (${(BOUNDARY_LIT_ALLOWANCE * 100).toFixed(0)}% allowed for edges) · ` +
+        `tolerance (${ALLOWANCE_LABEL} allowed for edges) · ` +
         `${parity.delta.litPixelCount.toLocaleString()} lit of ` +
         `${parity.delta.pixelCount.toLocaleString()} px · CPU ${parity.cpuMs.toFixed(0)} ms`,
     }),
