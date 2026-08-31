@@ -1762,9 +1762,6 @@ async function main(): Promise<void> {
     // `maxTouchPoints` omitted, not zeroed: CDP validates it into 1..16 even when
     // disabling, and passing 0 fails the whole run with
     // "Touch points must be between 1 and 16".
-    // `maxTouchPoints` omitted, not zeroed: CDP validates it into 1..16 even when
-    // disabling, and passing 0 fails the whole run with
-    // "Touch points must be between 1 and 16".
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     await cdp.send('Emulation.clearDeviceMetricsOverride');
 
@@ -2052,7 +2049,19 @@ async function main(): Promise<void> {
         // from the worker's own reply and names the count it actually traced.
         let rigLine = '';
         let litAfter = '';
-        const placeDeadline = Date.now() + 30_000;
+        // A minute and a half for work that is milliseconds, because the wait is
+        // not on the work. `requestSurface` and `requestModel` share ONE worker
+        // and `meshBusy` admits one surface pass at a time, so this request
+        // queues behind whatever settled model pass is already running -- and a
+        // settled pass is the expensive one: full-density metrics plus the parity
+        // render. The five geodesic fields it is nominally waiting for are over
+        // an eight-triangle octahedron and cost nothing.
+        //
+        // Sized against the runner rather than this machine. In the CI run that
+        // failed this at 30 s, the mesh poll above took 24 176 ms where it takes
+        // about 9 000 ms here -- 2.7x -- and the same ratio applied to a budget
+        // written locally is how a check passes for a year and then does not.
+        const placeDeadline = Date.now() + 90_000;
         while (Date.now() < placeDeadline) {
           await sleep(300);
           rigLine = await cdp.evaluate<string>(

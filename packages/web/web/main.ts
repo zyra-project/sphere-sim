@@ -236,6 +236,9 @@ let contentKey = '';
  * copy and is a tenth of a second ahead.
  */
 let customImage: EquirectImage | null = null;
+
+/** Bumped on every accepted image load, so two different pictures cannot share an id. */
+let customImageSeq = 0;
 let customName = '';
 
 /**
@@ -1533,7 +1536,14 @@ async function loadCustomImage(file: File): Promise<void> {
     // whatever was playing exactly where it was.
     stopVideo();
     customImage = image;
-    customName = `${file.name}:${file.size}`;
+    // A monotonic tail, as the video already carries. Name and byte length do not
+    // identify PIXELS: re-export a photo at the same size, or crop and re-save to
+    // the same length, and the id is unchanged -- so `viewKey` would call a reply
+    // rendered from the old image current against the new one on the GPU, which
+    // is the exact false disagreement `ModelRequest.customImage` records having
+    // been caught by once already. The cost is re-sending an image that really is
+    // the same one, which happens once per deliberate load.
+    customName = `${file.name}:${file.size}#${++customImageSeq}`;
     sentImageId = '';
     solveSentImageId = '';
     state.settings = withSetting(state.settings, 'content', CONTENT_CUSTOM);
@@ -2084,6 +2094,13 @@ solveWorker.onmessage = (event: MessageEvent<SolveMessage>): void => {
       // intermediate has not had the unobservable global rotation removed and a
       // metric taken from one would be measuring the gauge.
       state.compositorRig = msg.partialRig;
+      // And the standing verdict goes with it. `viewKey` retires a reply in
+      // FLIGHT, which is only consulted when one arrives -- and this path
+      // deliberately requests none, so with a solve running and nothing in
+      // flight the previous rig's verdict would sit on screen unchallenged for
+      // the whole solve, beside a picture drawn from a rig it has never seen.
+      // Retiring the reply and retiring the verdict are two different jobs.
+      parity = null;
       markDirty();
     }
     renderReadout();
@@ -2805,7 +2822,7 @@ function checkParity(
       // It is dropped because it is the one term in this picture that a real
       // driver cannot be held to. Measured on an NVIDIA RTX 4090 Laptop GPU
       // (driver 32.0.16.1088): with the graticule off the two renderers agree to
-      // 4.6e-4, six times under tolerance, on a photographic texture AND on a flat
+      // 4.6e-4, 4.3 times under tolerance, on a photographic texture AND on a flat
       // field. With it on, 1-3% of lit pixels go over, the worst by 11x, and it
       // gets worse the further the camera is from the sphere.
       //

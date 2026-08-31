@@ -124,7 +124,7 @@ export const DISPLAY_TOLERANCE = 2e-3;
  * precision {@link DISPLAY_TOLERANCE} names. Read back from an NVIDIA GeForce
  * RTX 4090 Laptop GPU (driver 32.0.16.1088, hardware accelerated), the model this
  * check exists to guard AGREES: 0 of 12 288 lit pixels over tolerance, worst
- * pixel 4.6e-4, six times under tolerance and alongside SwiftShader's 3.13e-4.
+ * pixel 4.6e-4, 4.3 times under tolerance, against SwiftShader's 3.13e-4 at 6.4.
  * That holds on the shipped photographic texture and on a flat field alike, so
  * geometry, ray tracing, the blend, the shading and bilinear content sampling all
  * survive a real driver at this value.
