@@ -640,10 +640,33 @@ async function main(): Promise<void> {
       }
     }
 
-    const parity = await cdp.evaluate<string>(
-      "document.querySelector('[data-smoke=\"parity\"]')?.dataset.state ?? '(none)'",
-    );
+    // Wait for a VERDICT, not merely for the section to exist. `dataset.state` is
+    // 'pending' whenever the page holds no verdict, and a single read can catch
+    // that legitimately -- the CPU half is a settled pass behind a 260 ms
+    // debounce. Unwaited and unasserted, 'pending' passed silently, so a change
+    // that stopped parity landing AT ALL would have gone unnoticed here. That is
+    // a live risk rather than a hypothetical: `viewKey` retires the reply in
+    // flight whenever the state it was computed for has moved, and a key that is
+    // too strict never lets one through.
+    let parity = '(none)';
+    const parityDeadline = Date.now() + 30_000;
+    while (Date.now() < parityDeadline) {
+      parity = await cdp
+        .evaluate<string>(
+          "document.querySelector('[data-smoke=\"parity\"]')?.dataset.state ?? '(none)'",
+        )
+        .catch(() => '(none)');
+      if (parity !== 'pending') break;
+      await sleep(500);
+    }
     process.stdout.write(`  parity: ${parity}\n`);
+    if (parity === 'pending') {
+      failures.push(
+        'the parity check never reached a verdict — it stayed pending for 30 s. Either no model ' +
+          'pass carried a parity render, or `viewKey` retired every reply before it could be ' +
+          'judged: it must not change between the request going out and the reply landing.',
+      );
+    }
     if (parity === 'bad') {
       const why = await cdp.evaluate<string>(
         "document.querySelector('[data-smoke=\"parity\"]')?.textContent?.trim() ?? ''",
@@ -1739,53 +1762,40 @@ async function main(): Promise<void> {
     // `maxTouchPoints` omitted, not zeroed: CDP validates it into 1..16 even when
     // disabling, and passing 0 fails the whole run with
     // "Touch points must be between 1 and 16".
+    // `maxTouchPoints` omitted, not zeroed: CDP validates it into 1..16 even when
+    // disabling, and passing 0 fails the whole run with
+    // "Touch points must be between 1 and 16".
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     await cdp.send('Emulation.clearDeviceMetricsOverride');
-    await cdp.send('Page.navigate', { url: opts.url });
-    await sleep(1200);
-    // Wait for the app to be UP, not merely for time to pass. A navigate hands
-    // back a blank document immediately, and the model section below opens by
-    // dispatching a drop: fire that before the page has registered its listener
-    // and nothing happens, the coverage figure never appears, and the failure
-    // reads "the surface path is dead" while naming none of this.
+
+    // NO reload here, and that is the point. Clearing the override resizes the
+    // viewport live and the page follows on its own -- `draw()` reads
+    // `window.innerWidth` every frame.
     //
-    // `dataset.range` and not `#view`, because the canvas is in the static HTML
-    // and is therefore present before the bundle has run. Only `draw()` writes
-    // that attribute, so a value there means the app booted AND drew.
+    // Navigating instead, which is what this did first, restarts both workers.
+    // The model section below then opened against a COLD surface worker that had
+    // to build a hierarchy and a geodesic field per projector from nothing, and
+    // on a CI runner that pushed the coverage figure past its 30 s budget: the
+    // run failed reporting "a dropped .glb never produced a coverage figure --
+    // the surface path is dead" about a path that was merely starting up, while
+    // the mesh reached the shader in 28 ms two lines later. A reload costs a
+    // cold start that this section cannot afford and does not need.
     //
-    // The result is kept OUTSIDE the loop and checked. An earlier version let it
-    // expire and then asserted `#view` exists -- which is true of a page whose
-    // script never ran, so a stalled boot fell through to the drop and produced
-    // the very failure this wait is here to prevent. That is the same shape of
-    // defect as the emulation leak above: a precondition stated and not
-    // actually asserted.
-    let ready = '';
+    // Waited on the WIDTH the page actually sees, not on a timer, and asserted
+    // rather than hoped: the whole reason for clearing the override is that
+    // `main.ts`'s `viewShiftFrac()` shifts the parity camera on a narrow layout,
+    // so a model section still running at phone width is measuring the wrong
+    // thing quietly.
+    let wide = 0;
     for (let i = 0; i < 30; i++) {
-      try {
-        ready = await cdp.evaluate<string>(
-          "document.getElementById('view')?.dataset?.range ?? ''",
-        );
-      } catch {
-        // `evaluate` throws when the document is swapped under it, which is what
-        // a navigate does. Not ready YET is the honest reading, not a failure.
-        ready = '';
-      }
-      if (ready !== '') break;
-      await sleep(500);
+      wide = await cdp.evaluate<number>('window.innerWidth').catch(() => 0);
+      if (wide > PHONE_W) break;
+      await sleep(200);
     }
-    if (ready === '') {
-      // Two different faults, and the message says which: a page that never
-      // arrived, and a page that arrived but whose bundle never ran.
-      const hasView = await cdp
-        .evaluate<boolean>("!!document.getElementById('view')")
-        .catch(() => false);
+    if (!(wide > PHONE_W)) {
       failures.push(
-        hasView
-          ? 'the app never drew after reloading back at desktop size — #view is there but ' +
-              'dataset.range was never written, so the bundle did not run (is packages/web/dist ' +
-              'built and current?)'
-          : 'the page has no #view canvas after reloading it back at desktop size — the reload ' +
-              'did not land (is the server this run was pointed at still up?)',
+        `the viewport is still ${wide} px wide after clearing the phone override, so the model ` +
+          'checks below would run in phone layout — where viewShiftFrac() shifts the parity camera',
       );
       report(failures);
       return;
@@ -1926,14 +1936,16 @@ async function main(): Promise<void> {
       // clicks or drags something and forces a paint; this poll only reads
       // `dataset`, which forces nothing.
       //
-      // That trace was taken BEFORE the desktop reset above existed, when this
-      // section still ran in the phone viewport and reached it without a reload.
-      // With the reset the value is already there when the poll starts -- 1 ms,
-      // 0 frames -- because a fresh navigate and the readiness wait give the page
-      // plenty of reasons to paint. The window stays a minute anyway: what
-      // changed is that the page now happens to be painting, not the rule that
-      // headless composites only when asked, and nothing here guarantees the
-      // next step leaves it in that state. 20 s was luck -- it passed here at
+      // An intermediate version of the reset above RELOADED the page, and this
+      // read 1 ms and 0 frames -- a fresh navigate gives the page plenty of
+      // reasons to paint. That reload was removed, because it restarted both
+      // workers and cost the model section a cold start it could not afford, and
+      // the reading went straight back to 8.9 s and one frame.
+      //
+      // Which is the point. This number swings by four orders of magnitude on
+      // whether something incidental is painting, and not at all on whether the
+      // model reached the shader -- so it is not a budget anything can be sized
+      // against. 20 s was luck -- it passed here at
       // 11.7 s and failed CI past 20 -- so do not trim it back on the strength
       // of a 1 ms reading.
       //

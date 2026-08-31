@@ -1781,25 +1781,46 @@ let modelWanted = -1;
 let parityRequestKey = '';
 
 function viewKey(): string {
-  const s = state.settings;
-  // The sample count belongs in here with the camera: the CPU half is rendered
-  // at whatever it was when the request went out, so changing it has to retire
-  // the reply in flight the same way orbiting does. So does the layout shift —
-  // opening a sheet on a phone re-aims the camera, and a reply computed for the
-  // old aim would be compared against a frame drawn with the new one.
-  // And the CONTENT. With a video, the frame the worker rendered is superseded
-  // every couple of seconds; comparing its answer against the frame now on the
-  // GPU would report the video's own motion as a disagreement between two
-  // renderers. For a still this is a constant and changes nothing.
-  return [
-    s.viewAzDeg,
-    s.viewElDeg,
-    s.viewRangeM,
-    s.viewFovDeg,
-    s.viewSamples,
+  // EVERYTHING the two renderers are given, not a list of the parts that seemed
+  // to matter.
+  //
+  // The CPU half is rendered from the state as it was when the request went out,
+  // and lands about half a second later. Anything that changed in between makes
+  // the reply a picture of a different scene than the frame it is compared
+  // against, and the verdict then reports a disagreement that belongs to neither
+  // renderer. The page has been bitten by exactly that before, over the content
+  // texture -- see `ModelRequest.customImage`, which records a 15% disagreement
+  // that was two pictures rather than two models.
+  //
+  // This used to name seven fields: the camera, the sample count, the layout
+  // shift and the content. Each was there for a real reason, and the set was
+  // still wrong -- `gridOn`, `gridDeg`, `ambient`, `mountError`, `errorSeed`,
+  // `sphereDiaIn`, `roomSpill` and the compositor's own calibration all change
+  // the picture and none of them retired anything. A guard that has to be
+  // extended by hand every time a setting is added is a guard that is correct
+  // only until the next commit.
+  //
+  // The compositor rig is the one that mattered most and was missed: a running
+  // solve replaces it on every step and deliberately requests no new pass ("draw
+  // with it; compute nothing from it"), so the reply in flight was scored
+  // against a frame drawn from a rig it had never seen. That is a FALSE
+  // disagreement, printed at exactly the moment somebody is watching the solve.
+  //
+  // Being total costs nothing, because `touched()` requests a model pass on
+  // every settings change -- a key that retires the reply in flight is always
+  // followed by one that replaces it. During a solve there is deliberately no
+  // such replacement, and the check goes quiet until the result lands, which is
+  // the honest answer rather than a verdict about a gauge.
+  //
+  // `viewShiftFrac` and `suppliedName` stay because neither lives in `settings`:
+  // the first is read off the live panel geometry, the second names the image
+  // itself rather than the setting that selects one.
+  return JSON.stringify([
+    state.settings,
+    state.compositorRig,
     viewShiftFrac().toFixed(3),
     suppliedName(),
-  ].join('|');
+  ]);
 }
 
 /**
