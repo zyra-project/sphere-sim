@@ -39,7 +39,10 @@
 import type { RigCalibration } from '../../calibration/src/index.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
 import { createImage } from '../../sim/src/equirect.ts';
+import { meshSurface } from '../../sim/src/mesh/surface.ts';
+import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
+import type { PreparedRig } from '../../sim/src/optics.ts';
 import { wrapDeg180 } from '../../sim/src/vec.ts';
 import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
@@ -74,8 +77,8 @@ import {
   worstPlacementOffender,
 } from '../src/rigs.ts';
 import type { Reading, RigFact } from '../src/readout.ts';
-import { buildDisplayUniforms, pickMarkerNear, slotOfRigIndex } from '../src/uniforms.ts';
-import type { DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
+import { buildDisplayUniforms, packMesh, pickMarkerNear, slotOfRigIndex } from '../src/uniforms.ts';
+import type { DisplayMesh, DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
 import type { ParityVerdict } from '../src/parity.ts';
 import {
   ALLOWANCE_LABEL,
@@ -1846,6 +1849,9 @@ function postModel(fine: boolean): void {
   const req: ModelRequest = {
     kind: 'model',
     id,
+    // Names the model the parity render must trace, so the worker's picture and
+    // the shader's are of the same shape. See `ModelResponse.parityMeshId`.
+    meshId: displayMeshId(),
     settings: state.settings,
     compositorRig: state.compositorRig,
     densityScale: fine ? 1 : 0.3,
@@ -1971,7 +1977,7 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage | Surf
   const kept = model?.projectorFrames ?? [];
   const projectorFrames = msg.projectorFrames.map((f, i) => f ?? kept[i] ?? null);
   model = { ...msg, projectorFrames };
-  if (msg.parityImage) checkParity(msg.parityImage, msg.parityMs);
+  if (msg.parityImage) checkParity(msg.parityImage, msg.parityMs, msg.parityMeshId);
   renderReadout();
   renderInspect();
   // LAST, and this is not tidiness.
@@ -2422,12 +2428,17 @@ function draw(): void {
   const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
   ensureContent(world.image);
   const camera = buildViewer(state.settings, w, h, viewShiftFrac());
+  // The dropped model, if there is one. Until this the live view drew a sphere
+  // whatever the reader had loaded -- the CPU picture on the model card was the
+  // only place the shape appeared, and the view beside it was lying about it.
+  const model = displayModel(world);
   const uniforms = buildDisplayUniforms(
-    prepareRig(world.truthRig),
-    prepareRig(world.compositorRig),
+    model.physical,
+    model.content,
     world.scene,
     camera,
     {
+      mesh: model.mesh,
       overlay: state.overlay,
       highlight: state.highlight,
       slots: world.slots,
@@ -2461,6 +2472,13 @@ function draw(): void {
   // that the page merely survived one.
   canvas.dataset.range = state.settings.viewRangeM.toFixed(3);
   canvas.dataset.az = state.settings.viewAzDeg.toFixed(2);
+  // What the SHADER was handed, which is not the same question as what the page
+  // is holding. A dropped model that never reached the display uniforms looks
+  // exactly like one that did -- the model card renders on the CPU either way --
+  // so a test that only reads the card would have gone on passing through the
+  // entire time the live view was still drawing a sphere. Read off `uniforms`
+  // rather than off `droppedMesh` for that reason.
+  canvas.dataset.meshTriangles = String(uniforms.mesh?.triangleCount ?? 0);
   drawToCanvas(gl, uniforms, w, h);
 }
 
@@ -2491,6 +2509,10 @@ function renderCameraShot(
   const w = Math.max(16, Math.round(width));
   const h = Math.max(1, Math.round((w * 3) / 4));
   const { world, ceilingM } = solveWorld;
+  // Deliberately NOT `displayModel`: these are the solve's own shots, and the
+  // solve runs on the sphere. Phase 5 is where a model reaches it, and handing
+  // the shader one here would show the reader a picture of geometry the solver
+  // behind it never considered.
   const uniforms = buildDisplayUniforms(
     prepareRig(world.truthRig),
     prepareRig(world.compositorRig),
@@ -2535,12 +2557,123 @@ function renderCameraShot(
 /** How wide the capture thumbnails are rendered. They display at about 120. */
 const SHOT_THUMB_PX = 480;
 
+/**
+ * The dropped model as the display path needs it, or the sphere.
+ *
+ * ## Why this is memoised and `prepareRig` on a sphere is not
+ *
+ * `draw()` runs on every animation frame. On a sphere `prepareRig` is a few
+ * dozen multiplications -- `blendModelApplies` is true, so `buildFootprints`
+ * never runs -- and rebuilding it per frame is cheaper than deciding not to. On
+ * a model none of that holds: `meshSurface` builds a bounding volume hierarchy,
+ * `prepareRig` walks it once per projector to build footprints, and `packMesh`
+ * walks it again to lay out the textures. Doing that sixty times a second would
+ * turn a drag of the exposure slider into a slideshow.
+ *
+ * Two levels, because the two costs have different lifetimes. The GEOMETRY
+ * depends only on which file was dropped, so it survives every slider. The
+ * prepared rigs and the packed field depend on the calibration as well, so they
+ * are keyed on it too -- structurally, because `buildWorld` returns fresh
+ * objects every frame and an identity check would never hit. This mirrors what
+ * `packages/web/src/model.ts` already does inside the worker.
+ *
+ * ## One surface object, deliberately
+ *
+ * Both rigs are prepared on the SAME `MeshSurface`. `buildDisplayUniforms`
+ * refuses anything else, and its reason is the whole design: the shader has one
+ * hierarchy and both of its traces read it.
+ *
+ * ## Why a model that will not fit returns the sphere instead of throwing
+ *
+ * `packMesh` refuses a hierarchy deeper than the shader's traversal stack, and
+ * that refusal used to reach `frame()`, which calls `fatal()` and then returns
+ * WITHOUT re-arming `requestAnimationFrame`. The page would not have rendered
+ * the model wrong; it would have stopped rendering at all, permanently, over a
+ * file the reader could simply have replaced. The refusal now lands in
+ * `meshError`, which the model card already shows, and the view stays on the
+ * sphere it was drawing before.
+ */
+let displayModelCache: {
+  meshId: number;
+  surface: MeshSurface;
+  rigKey: string;
+  physical: PreparedRig;
+  content: PreparedRig;
+  mesh: DisplayMesh | null;
+} | null = null;
+
+interface DisplayModel {
+  physical: PreparedRig;
+  content: PreparedRig;
+  mesh: DisplayMesh | null;
+}
+
+function displayModel(world: WebWorld): DisplayModel {
+  // The sphere path, untouched and uncached. Every phase of this work has opened
+  // by asserting the sphere renders byte-identically to what it did before, and
+  // the cheapest way to keep that true is for the sphere not to enter the new
+  // code at all.
+  if (droppedMesh === null) {
+    return {
+      physical: prepareRig(world.truthRig),
+      content: prepareRig(world.compositorRig),
+      mesh: null,
+    };
+  }
+
+  const rigKey = JSON.stringify([world.truthRig, world.compositorRig]);
+  const hit = displayModelCache;
+  if (hit !== null && hit.meshId === droppedMeshId && hit.rigKey === rigKey) {
+    return { physical: hit.physical, content: hit.content, mesh: hit.mesh };
+  }
+
+  // The surface outlives the calibration: a slider moves the rig, not the model.
+  const surface =
+    hit !== null && hit.meshId === droppedMeshId ? hit.surface : meshSurface(droppedMesh);
+  const physical = prepareRig(world.truthRig, surface);
+  const content = prepareRig(world.compositorRig, surface);
+  let mesh: DisplayMesh | null;
+  try {
+    // The CONTENT rig, which is whose blend the shader needs; see `packMesh`.
+    mesh = packMesh(content);
+  } catch (err) {
+    // Reported where the reader is already looking for what became of their
+    // file, and the sphere keeps drawing. See the note above on `fatal()`.
+    meshError = err instanceof Error ? err.message : String(err);
+    displayModelCache = null;
+    return {
+      physical: prepareRig(world.truthRig),
+      content: prepareRig(world.compositorRig),
+      mesh: null,
+    };
+  }
+  displayModelCache = { meshId: droppedMeshId, surface, rigKey, physical, content, mesh };
+  return { physical, content, mesh };
+}
+
+/** The name the worker knows this model by. `''` is the sphere. See `ModelRequest.meshId`. */
+function displayMeshId(): string {
+  return droppedMesh === null ? '' : `mesh:${droppedMeshId}`;
+}
+
 function checkParity(
   cpu: { width: number; height: number; data: Float32Array },
   cpuMs: number,
+  cpuMeshId: string,
 ): void {
   if (!gl) return;
   if (viewKey() !== parityRequestKey) {
+    parity = null;
+    return;
+  }
+  // Both renderers must have drawn the same SHAPE, and only the worker can say
+  // which one it drew: it traces the model it is holding, and the
+  // `SurfaceRequest` carrying a freshly dropped file may not have reached it
+  // yet. Comparing a model against a sphere would disagree at essentially every
+  // lit pixel and print a catastrophic renderer bug that is really two pictures
+  // of different objects. The check going quiet for a pass or two while the
+  // worker catches up is the cheaper mistake, and it is self-clearing.
+  if (cpuMeshId !== displayMeshId()) {
     parity = null;
     return;
   }
@@ -2552,9 +2685,10 @@ function checkParity(
     // model wrong. `ensureContent` is a no-op when it is current.
     ensureContent(world.image);
     const camera = buildViewer(state.settings, cpu.width, cpu.height, viewShiftFrac());
+    const model = displayModel(world);
     const uniforms = buildDisplayUniforms(
-      prepareRig(world.truthRig),
-      prepareRig(world.compositorRig),
+      model.physical,
+      model.content,
       world.scene,
       camera,
       // No floor, no overlay and NO EXPOSURE: `renderTwoRigRoomView` has none of
@@ -2570,6 +2704,9 @@ function checkParity(
       // shader reading a different one would report the difference as a model
       // disagreement. `viewKey` carries it for exactly that reason.
       {
+        // The same model the CPU side traced, checked above. Without this the
+        // shader would draw the sphere while the worker drew the model.
+        mesh: model.mesh,
         overlay: 'none',
         highlight: -1,
         drawFloor: false,

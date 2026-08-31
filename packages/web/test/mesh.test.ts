@@ -18,6 +18,7 @@ function request(over: Partial<ModelRequest> = {}): ModelRequest {
   return {
     kind: 'model',
     id: 1,
+    meshId: '',
     settings: BOULDER_PRESET,
     compositorRig: null,
     densityScale: 0.2,

@@ -41,6 +41,7 @@ function request(over: Partial<ModelRequest> = {}): ModelRequest {
   return {
     kind: 'model',
     id: 1,
+    meshId: '',
     settings: { ...BOULDER_PRESET, content: CONTENT_CUSTOM, gridOn: 0 },
     compositorRig: null,
     densityScale: 0.25,
@@ -395,6 +396,52 @@ function boxWithBaffle(h: number): SurfaceMesh {
     triangleCount: idx.length / 3,
   };
 }
+
+test('the parity render traces the model the page asked for, and says which it traced', () => {
+  // The coupling the whole mesh display path rests on. The page hands its shader
+  // a model as soon as one is dropped; this render is the CPU half the shader is
+  // scored against. If the two draw different shapes the check does not degrade
+  // gracefully -- it disagrees at essentially every lit pixel and prints a
+  // catastrophic renderer bug that is really two pictures of different objects.
+  //
+  // The worker cannot resolve that on its own, because it can only trace a model
+  // it is holding and a `SurfaceRequest` carrying a freshly dropped file may not
+  // have arrived. So it reports which surface it used and the page withholds the
+  // verdict on a mismatch. This pins both halves of that.
+  const box = boxMesh(0.5);
+  const parity = { width: 32, height: 24, position: { x: 4, y: 0, z: 1.6 },
+    target: { x: 0, y: 0, z: 1.6 }, fovHDeg: 50, imageShift: 0, samplesPerPixel: 1 };
+
+  // Warm the worker's cache the only way the page ever does: a surface request.
+  computeSurface({
+    kind: 'surface', id: 1, settings: BOULDER_PRESET, mesh: box, meshId: 'mesh:7',
+    width: 32, height: 24,
+    camera: { azimuthDeg: 20, elevationDeg: 15, rangeM: 6, fovHDeg: 50 },
+  });
+
+  const onSphere = computeModel(request({ parity, meshId: '' }));
+  const onModel = computeModel(request({ parity, meshId: 'mesh:7' }));
+  const unheld = computeModel(request({ parity, meshId: 'mesh:never-sent' }));
+
+  assert.equal(onSphere.parityMeshId, '', 'no model asked for, none reported');
+  assert.equal(onModel.parityMeshId, 'mesh:7', 'the model it holds, reported by name');
+  // The important one: a name it cannot honour must not be echoed back. Echoing
+  // it would tell the page the shapes agree when the picture is of a sphere.
+  assert.equal(unheld.parityMeshId, '', 'a model it does not hold is reported as the sphere');
+
+  // And the reports are true of the pictures, not merely of the bookkeeping.
+  assert.ok(onSphere.parityImage !== null && onModel.parityImage !== null);
+  assert.notDeepEqual(
+    Array.from(onModel.parityImage.data),
+    Array.from(onSphere.parityImage.data),
+    'a box and a sphere must not render identically, or this test proves nothing',
+  );
+  assert.deepEqual(
+    Array.from(unheld.parityImage!.data),
+    Array.from(onSphere.parityImage.data),
+    'the fallback must be the sphere it says it is',
+  );
+});
 
 test('the surface cache never answers with a stale build', () => {
   // `computeSurface` holds the last model built, because it runs on every

@@ -1833,6 +1833,30 @@ async function main(): Promise<void> {
         process.stdout.write(`  model: a dropped .glb is ${percent.toFixed(1)}% lit\n`);
       }
 
+      // And the LIVE VIEW is drawing it. Everything above is the model card,
+      // which `packages/sim` traces on the CPU and which looked identical for
+      // the whole time the display shader was still handed a sphere. This is the
+      // one reading that separates the two: `draw()` writes it off the uniforms
+      // it just submitted, so a number here means the triangles went to the GPU.
+      let tris = '0';
+      const meshDeadline = Date.now() + 20_000;
+      while (Date.now() < meshDeadline) {
+        tris = await cdp.evaluate<string>(
+          "document.getElementById('view')?.dataset.meshTriangles ?? '0'",
+        );
+        if (tris !== '0') break;
+        await sleep(300);
+      }
+      const triangles = Number.parseInt(tris, 10);
+      if (!Number.isFinite(triangles) || triangles <= 0) {
+        failures.push(
+          'a dropped .glb never reached the display shader — the live view is still drawing ' +
+            'a sphere while the model card shows the model',
+        );
+      } else {
+        process.stdout.write(`  model: the display shader is tracing ${triangles} triangles\n`);
+      }
+
       // And the preview is a picture rather than an empty rectangle.
       const preview = await cdp.evaluate<{ nonBlack: number; total: number } | null>(`(() => {
         const c = document.querySelector('[data-smoke="model-preview"]');
