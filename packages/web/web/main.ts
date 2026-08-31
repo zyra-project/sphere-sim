@@ -1412,7 +1412,7 @@ async function loadCustomModel(file: File): Promise<void> {
     // .gltf file is not glTF.
     const container = containerOf(bytes);
     if (container !== 'glb') {
-      droppedMesh = null;
+      setDroppedMesh(null);
       meshReport = null;
       meshError =
         container === 'gltf-json'
@@ -1425,8 +1425,7 @@ async function loadCustomModel(file: File): Promise<void> {
     }
     const report = readGlb(bytes, { name: file.name });
     meshReport = report;
-    droppedMesh = report.mesh;
-    droppedMeshId++;
+    setDroppedMesh(report.mesh);
     // Take the reader to the panel that shows it. A dropped IMAGE announces
     // itself — it appears on the sphere — but a model's whole result lives in
     // one section, and the panel opens on `projectors`. Dropping a building and
@@ -1444,12 +1443,37 @@ async function loadCustomModel(file: File): Promise<void> {
     }
     requestSurface();
   } catch (err) {
-    droppedMesh = null;
+    setDroppedMesh(null);
     meshReport = null;
     meshError = err instanceof Error ? err.message : String(err);
     state.section = 'room';
   }
   renderControls();
+}
+
+/**
+ * The one place the dropped model changes, because the live view has to be told.
+ *
+ * `draw()` runs only when something has marked the canvas dirty, and dropping a
+ * file marks nothing: the model card is DOM that `renderControls` repaints, and
+ * for as long as the display shader was handed a sphere whatever the reader
+ * loaded, that was enough. It stopped being enough when `draw()` started reading
+ * the model -- the card would show the building and the view beside it would go
+ * on showing a sphere until some unrelated interaction happened to request a
+ * frame. `tools/smoke-app.ts` caught exactly that.
+ *
+ * Assigning through one function rather than at each of the three sites -- the
+ * load, the wrong-container refusal and the catch -- so that clearing the model
+ * repaints too. A view left on a building the reader has just removed is the
+ * same bug wearing the other sign.
+ */
+function setDroppedMesh(mesh: SurfaceMesh | null): void {
+  droppedMesh = mesh;
+  // Bumped on every change including to null, because it is what `displayModel`
+  // and the worker both key their caches on. Reusing an id would let a cache
+  // answer for the previous model.
+  droppedMeshId++;
+  markDirty();
 }
 
 /** Ask the worker for a CPU render of the dropped model, and the coverage facts. */
