@@ -384,7 +384,7 @@ export function sampleSurface(
   for (let i = 0; i < 4; i++) {
     if (i >= u.projCount) continue;
     if (mesh) {
-      if (!meshIlluminatedAt(u, i, point, normal)) continue;
+      if (!meshIlluminatedAt(u, i, point, normal, tri)) continue;
       lit[i] = true;
       // A distance that is not positive means the field could not place this
       // point inside the footprint — no field packed, or a footprint smaller
@@ -726,6 +726,20 @@ export function bvhIntersect(
   dir: Vec3,
   tMin: number,
   tMax: number,
+  /**
+   * The PACKED slot the ray left, or -1. Mirrors the shader's `skipTri`.
+   *
+   * A ray from a point on a planar triangle meets that triangle at `t = 0` and
+   * nowhere else, so skipping it removes the near-zero re-hit `tMin` was being
+   * asked to out-run and removes nothing else. An identity rather than an
+   * epsilon, because `tMin` is spent ALONG the ray and clears the facet by only
+   * `tMin * cos(incidence)`.
+   *
+   * A packed slot, not a mesh triangle: this traversal indexes `pack.ts`'s
+   * `order` exactly as the shader does, and `packages/sim` skips in its own
+   * numbering. Each side is handed the index its own primary ray produced.
+   */
+  skipTri: number,
 ): [number, number, number, number] {
   const mesh = u.mesh;
   if (mesh === null || mesh.nodeCount === 0) return [-1, 0, 0, 0];
@@ -764,6 +778,7 @@ export function bvhIntersect(
       const from = Math.trunc(hi[3]);
       const to = from + Math.trunc(-link);
       for (let i = from; i < to; i++) {
+        if (i === skipTri) continue;
         const h = rayTriangleAt(u, i, origin, dir);
         if (h[0] < 0) continue;
         if (h[0] <= tMin || h[0] >= bestT) continue;
@@ -889,7 +904,10 @@ export function surfaceIntersect(
   tMax: number,
 ): [number, number, number, number] {
   if (u.mesh === null) return [raySphereIntersect(origin, dir, u.radius, tMin), -1, 0, 0];
-  return bvhIntersect(u, origin, dir, tMin, tMax);
+  // -1: a camera, a lens and a floor point are on no face of the model, so a
+  // primary ray has nothing to skip. Written here rather than at the call sites
+  // so a primary ray CANNOT be given a face to skip.
+  return bvhIntersect(u, origin, dir, tMin, tMax, -1);
 }
 
 /**
@@ -899,12 +917,18 @@ export function surfaceIntersect(
  * in the model's own shadow — the third test being the one a sphere never has to
  * ask, because a sphere cannot occlude itself.
  */
-export function meshIlluminatedAt(u: Uniforms, i: number, point: Vec3, normal: Vec3): boolean {
+export function meshIlluminatedAt(
+  u: Uniforms,
+  i: number,
+  point: Vec3,
+  normal: Vec3,
+  fromTri: number,
+): boolean {
   const toLens = vsub(u.projectors[i].lens, point);
   if (vdot(normal, toLens) <= 0) return false;
   if (worldToPixel(u, i, point) === null) return false;
   const distanceM = Math.hypot(toLens.x, toLens.y, toLens.z);
   if (distanceM === 0) return true;
   const dir: Vec3 = { x: toLens.x / distanceM, y: toLens.y / distanceM, z: toLens.z / distanceM };
-  return bvhIntersect(u, point, dir, u.meshShadowBias, distanceM)[0] < 0;
+  return bvhIntersect(u, point, dir, u.meshShadowBias, distanceM, fromTri)[0] < 0;
 }

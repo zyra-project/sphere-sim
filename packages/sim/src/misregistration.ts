@@ -182,7 +182,7 @@ export function traceTwoRig(
   const contributions: ProjectorContribution[] = [];
   for (let i = 0; i < physical.projectors.length; i++) {
     const phys = physical.projectors[i];
-    if (!isIlluminatedAt(point, normal, phys)) continue;
+    if (!isIlluminatedAt(point, normal, phys, null)) continue;
     const px = worldToPixel(phys, point);
     if (px === null) continue;
 

@@ -87,7 +87,7 @@ prunes a subtree containing geometry, which shows up as **holes in the model on
 rays looking straight down an axis**, and as a parity failure concentrated there.
 That is the failure this control exists to be able to see.
 
-### Measured result for link (3) on a mesh: it FAILS, and not for that reason
+### Measured result for link (3) on a mesh: it passes, after a real bug was found
 
 Run under SwiftShader (`--use-angle=swiftshader`, the same software GL
 `tools/smoke-app.ts` uses), at the page's own 96×72 room and 64×36 projector
@@ -96,57 +96,75 @@ sample grids:
 | surface | room p99.9 | room over tol. | projector p99.9 | projector over tol. | verdict |
 | --- | --- | --- | --- | --- | --- |
 | analytic sphere | 1.04e-4 | 0/6912 | 7.84e-5 | 0/2304 | pass |
-| tessellated sphere | **2.28e-1** | 50/6912 (0.72%) | **2.08e-1** | 20/2304 (0.87%) | **fail** |
-| two plates | **4.43e-2** | 18/6912 (0.26%) | 1.61e-6 | 0/2304 | **fail** |
+| tessellated sphere | 7.63e-5 | 0/6912 | 5.13e-5 | 0/2304 | pass |
+| two plates | 1.48e-4 | 0/6912 | 1.61e-6 | 0/2304 | pass |
 
-The predicted failure is **not** what happened. There are no holes, nothing is
-concentrated on axis rays, and the picture is lit (30.5% and 15.9% of the canvas).
-The disagreeing samples are **isolated single pixels scattered through the
-interior**, at facet edges — the signature of the two renderers picking different
-adjacent triangles for a ray that lands near a shared edge, which changes the
-flat-shaded normal by a facet angle and so produces a near-full-amplitude delta
-at one sample. `uvSphere(48,24)` has 2208 triangles across ~4200 lit samples, so
-its facets are a couple of pixels wide and almost every sample is near an edge.
+**The first run of this control failed, and finding out why is what it was for.**
+Before the fix below, the two mesh rows read 2.28e-1 with 50/6912 over tolerance
+and 4.43e-2 with 18/6912. Every one of those pixels was **self-shadow acne**: the
+shadow bias is spent ALONG the ray, so it lifts the origin off the facet the ray
+left by only `bias * cos(incidence)`, and at the minimum lit cosine this rig
+produces — 0.0090 — that is a 111× shortfall against the float32 residual in
+`origin + dir * t`. The face re-hit itself and the point reported as shadowed.
 
-**The model itself is not what disagrees.** Rendering the same fixtures at the
-same grid through `reference.ts` against `packages/sim`, headless — links (1) and
-(2), no GPU — gives p99.9 of **3.8e-6** (tessellated sphere) and **2.4e-5** (two
-plates), with **0/6912 over tolerance** in both. The float32 emulation picks the
-same triangle float64 does; a real driver, with its own FMA contraction and
-transcendental precision, does not, about 0.7% of the time.
+Four lines of evidence, three of them on the driver rather than on a model of it:
+scaling the GPU-side bias alone walked the failures 50 → 25 → 18 → 4 → 0 with no
+new failure anywhere; forcing shadow verdicts reproduced every failing pixel
+(50/50, 20/20, 18/18, the plates' to a residual of 1.86e-9); the incidence cosine
+at the shadowed projector had median 0.0295 and max 0.359 against a base rate of
+0.5415, with not one flip above 0.36; and **751 of 751 measured flips were false
+shadows, zero false-lit**, the blocker being the primary ray's own triangle every
+time.
 
-**Why the verdict is `fail` rather than forgiven, and why that stays.** `judge()`
-used to require both `p999 <= tolerance` and `fractionOverTolerance <=
-BOUNDARY_PIXEL_ALLOWANCE`, with the allowance at 1%. Those two were never
-independent: if more than 0.1% of samples are over tolerance then the
-99.9th-percentile sample *is* one of them, so `p999 > tolerance` follows. The
-conjunction reduced to the percentile alone, the second clause could not change
-an answer at any input, and **the 1% budget documented for exactly this cause
-enforced 0.101%.** On a sphere the boundary population sits under 0.1%, which is
-why the contradiction never showed.
+The fix is in `occludedBvh` and its three mirrors: the ray is told which face it
+left, and that face is not a candidate blocker. It is an identity rather than a
+tolerance — a ray from a point on a planar triangle meets that triangle at `t = 0`
+and nowhere else — so `tMin` keeps its value and its job for every other face and
+a concave crease is unchanged. See `packages/sim/src/mesh/bvh.ts`.
 
-That is now one number: `BOUNDARY_PIXEL_ALLOWANCE` is the fraction the verdict
-sheds, and `VERDICT_PERCENTILE = 1 - BOUNDARY_PIXEL_ALLOWANCE` is derived from
-it, the way `packages/web/src/parity.ts` has always done it. At 0.001 the verdict
-is bit-for-bit the p99.9 it always actually applied, so no track moved.
+**An earlier version of this section blamed facet-edge ties, and that was wrong.**
+It is recorded here because the reasoning failed in an instructive way. Two
+refutations killed it: `twoPlates` splits each quad into two coplanar triangles
+that share a diagonal, are wound alike, carry `normals: null` and have affine UV
+maps that agree across it — so a tie there changes the normal, `t`, the content
+coordinate and the blend weight by exactly zero, and its 18 failures could not
+have been ties. And the arithmetic does not reach: float32 perturbs barycentric
+`u,v` by ~1e-7, while **0 of 4212 hits** lie within 1e-7 of an edge (29 within
+1e-3, 2 within 1e-5). The tie population is nil. A plausible mechanism was
+asserted as fact in bold, and it survived because nobody had measured the
+population it needed.
 
-**The mesh still fails, and that is the right answer rather than a leftover.**
-Widening the budget to the 1% the old comment claimed would blind this gate:
-`test/parity.test.ts` injects a disabled polar mask, which moves only **0.275%**
-of a 96×72 room view, and at p99 that bug is not caught at all — its percentile
-value is exactly zero. A real model bug and a facet-edge tie occupy the same
-range of pixel counts (0.275% against 0.26–0.72%), so **no budget can separate
-them**, and one wide enough to pass a mesh is wide enough to pass a broken mask.
-Shape almost separates them and not reliably enough to gate on: the two large
-injected bugs are 88% and 87% spatially clustered, but the polar mask is 42% on
-19 pixels against the ties' 22–30%.
+**The model itself never disagreed**, which was true then and is the reason the
+search ended where it did. The same fixtures at the same grid through
+`reference.ts` against `packages/sim`, headless — links (1) and (2), no GPU —
+give p99.9 of 3.8e-6 and 2.4e-5 with 0/6912 over tolerance. That residue is
+`pack.ts` storing the mesh as `Float32Array` while `MeshSurface` intersects
+`Float64Array` positions; repacking as float64 gives exactly zero. It is
+irreducible — a float texture cannot carry float64 — and 55× under tolerance.
 
-Ties have to be identified by what they *are* — the two renderers picking
-different triangles at a shared edge, which both already compute — rather than
-budgeted for by counting. That needs the CPU side to report triangle indices
-alongside radiance, so it is its own change and it belongs with the commit that
-gives the live view a model. **Until then, read the mesh rows as a measurement
-and not as a pass/fail.**
+**What this fix does not reach.** A mesh carrying a *coincident duplicate* of a
+face — a two-sided card, which is what an exporter emits for zero-thickness
+geometry — still shows the acne, because the twin is a different triangle index
+in the same plane and so is not the face that was skipped. Nothing in
+`packages/meshio` dedups it. Pinned in `packages/sim/test/mesh-surface.test.ts`
+as a property of the geometry.
+
+**Why the verdict logic is one number.** `judge()` used to require both
+`p999 <= tolerance` and `fractionOverTolerance <= BOUNDARY_PIXEL_ALLOWANCE`, with
+the allowance at 1%. Those two were never independent: if more than 0.1% of
+samples are over tolerance then the 99.9th-percentile sample *is* one of them, so
+`p999 > tolerance` follows. The conjunction reduced to the percentile alone, the
+second clause could not change an answer at any input, and **the 1% budget
+enforced 0.101%.** `BOUNDARY_PIXEL_ALLOWANCE` is now the fraction the verdict
+sheds and `VERDICT_PERCENTILE = 1 - BOUNDARY_PIXEL_ALLOWANCE` derives from it,
+the way `packages/web/src/parity.ts` has always done it. At 0.001 that is
+bit-for-bit the p99.9 always actually applied, so no track moved.
+
+**And it stays tight.** `test/parity.test.ts` injects a disabled polar mask, which
+moves only **0.275%** of a 96×72 room view — at p99 that bug is not caught at all,
+its percentile value being exactly zero. Widening the budget to forgive a mesh
+would have forgiven a broken mask. That the mesh now passes on merit, at a p99.9
+*below* the analytic sphere's own, is what a fix looks like as against a budget.
 
 **Measured result for link (1):** the delta is **exactly zero** — every channel
 of every pixel, in the room track and all four projector tracks, across six

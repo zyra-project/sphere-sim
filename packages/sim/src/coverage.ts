@@ -62,7 +62,7 @@ export { rampValue } from './blend.ts';
  */
 export function isIlluminated(latDeg: number, lonDeg: number, projector: PreparedProjector): boolean {
   const point = projector.surface.pointAt({ latDeg, lonDeg });
-  return isIlluminatedAt(point, projector.surface.normalAt(point), projector);
+  return isIlluminatedAt(point, projector.surface.normalAt(point), projector, null);
 }
 
 /**
@@ -95,11 +95,22 @@ export function isIlluminatedAt(
   point: Vec3,
   normal: Vec3,
   projector: PreparedProjector,
+  /**
+   * The face this point was traced onto, or `null`. See {@link Surface.shadowed}.
+   *
+   * The third test is a ray leaving the surface it stands on, and the only thing
+   * that reliably keeps it off the face it left is knowing which face that was.
+   * An epsilon cannot: it is spent along the ray, so it clears the facet by
+   * `bias * cos(incidence)` and the grazing tail walks straight through it.
+   * Required so that a caller which forgot it fails the build rather than
+   * quietly answering a slightly different question from the renderer's.
+   */
+  from: SurfaceLocation | null,
 ): boolean {
   const surface = projector.surface;
   if (!surface.facesLens(point, normal, projector.lens)) return false;
   if (worldToPixel(projector, point) === null) return false;
-  return !surface.shadowed(point, projector.lens);
+  return !surface.shadowed(point, projector.lens, from);
 }
 
 /**
@@ -170,7 +181,7 @@ export function overlapMultiplicity(latDeg: number, lonDeg: number, rig: Prepare
   const point = rig.surface.pointAt({ latDeg, lonDeg });
   const normal = rig.surface.normalAt(point);
   let n = 0;
-  for (const p of rig.projectors) if (isIlluminatedAt(point, normal, p)) n++;
+  for (const p of rig.projectors) if (isIlluminatedAt(point, normal, p, null)) n++;
   return n;
 }
 
@@ -179,7 +190,7 @@ export function contributors(latDeg: number, lonDeg: number, rig: PreparedRig): 
   const point = rig.surface.pointAt({ latDeg, lonDeg });
   const normal = rig.surface.normalAt(point);
   const out: number[] = [];
-  for (const p of rig.projectors) if (isIlluminatedAt(point, normal, p)) out.push(p.index);
+  for (const p of rig.projectors) if (isIlluminatedAt(point, normal, p, null)) out.push(p.index);
   return out;
 }
 
@@ -316,6 +327,13 @@ export function coverageAndWeights(
   // sphere, where nothing below runs — and the caller's own face when it has
   // one, which is both exact and free where the search is neither.
   const location = blended ? null : (at ?? rig.surface.locate(point));
+  // The face the RAY struck, and never the one `locate` guessed. `location`
+  // above may come from `nearestTriangle`, a radial search that is exact only
+  // for a star-shaped body — and a WRONG face here is the one way this can lose
+  // a REAL blocker rather than a spurious one, which is a lit pixel where there
+  // should be a dark one. So the shadow query gets the triangle only when the
+  // caller traced it; a caller that did not keeps the behaviour it had.
+  const traced = at ?? null;
   const widthM = blended ? 0 : blendWidthM(blend.widthDeg, rig.surface.extentRadiusM);
   // Each projector's share of the circle, from where its NEIGHBOURS actually are
   // rather than from `360 / n`.
@@ -329,7 +347,7 @@ export function coverageAndWeights(
 
   for (let i = 0; i < n; i++) {
     const p = rig.projectors[i];
-    if (!isIlluminatedAt(point, normal, p)) continue;
+    if (!isIlluminatedAt(point, normal, p, traced)) continue;
     lit[i] = true;
 
     if (!blended) {

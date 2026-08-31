@@ -573,7 +573,12 @@ function buildFootprints(
       // called lit by a normal nothing renders with. See `vertexFacesLens`.
       if (!mesh.vertexFacesLens(i, p.lens)) return false;
       if (worldToPixel(p, point) === null) return false;
-      return !surface.shadowed(point, p.lens);
+      // No face: this asks about a VERTEX, which lies on every face that meets
+      // there and singles out none. The field is built once on the CPU in
+      // float64 and uploaded, so the GPU never re-runs this query and there is
+      // no parity link to hold. `vertexFacesLens` above already makes the
+      // matching argument for the facing half.
+      return !surface.shadowed(point, p.lens, null);
     }),
   );
 }

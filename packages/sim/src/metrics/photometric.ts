@@ -422,7 +422,7 @@ function evaluatePoint(point: Vec3, ctx: FieldContext): PointEval {
   for (let i = 0; i < physical.projectors.length; i++) {
     const p = physical.projectors[i];
     // Physics first: does this lens see this point at all?
-    if (!isIlluminatedAt(point, normal, p)) continue;
+    if (!isIlluminatedAt(point, normal, p, null)) continue;
     const px = worldToPixel(p, point);
     if (px === null) continue;
 

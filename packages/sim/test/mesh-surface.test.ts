@@ -165,6 +165,61 @@ function twoPlates(): SurfaceMesh {
 // ---------------------------------------------------------------------------
 
 /** Rays from a lens ring, the geometry PARAMETERS.md §2 actually describes. */
+/**
+ * A concave wedge: two quads meeting along y = 0 at an interior angle.
+ *
+ * Defined here rather than imported so this file keeps its own geometry --
+ * `packages/sim` may import `packages/calibration` and nothing else, and the
+ * harness fixtures live on the far side of that line.
+ *
+ * Concave is the point. A convex body cannot shadow itself, so neither existing
+ * mesh fixture (a sphere, two parallel plates) can tell whether the shadow ray
+ * still finds a legitimate near blocker. A crease can: a point on one face at a
+ * shallow enough angle is genuinely occluded by the other.
+ */
+function creaseWedge(halfSize = 0.3, tiltDeg = 60): SurfaceMesh {
+  const s = halfSize;
+  const c = Math.cos((tiltDeg * Math.PI) / 180);
+  const h = Math.sin((tiltDeg * Math.PI) / 180);
+  // Two quads hinged on the y axis, each leaning up and inward.
+  const positions = Float64Array.from([
+    -s * c, -s, s * h, 0, -s, 0, 0, s, 0, -s * c, s, s * h,
+    s * c, -s, s * h, s * c, s, s * h,
+  ]);
+  const indices = Uint32Array.from([0, 1, 2, 0, 2, 3, 1, 4, 5, 1, 5, 2]);
+  return {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'crease',
+    positions,
+    indices,
+    normals: null,
+    uvs: Float32Array.from([0, 0, 0.5, 0, 0.5, 1, 0, 1, 1, 0, 1, 1]),
+    vertexCount: 6,
+    triangleCount: 4,
+  };
+}
+
+/**
+ * A flat quad with every triangle duplicated at the SAME positions in the
+ * opposite winding -- the standard authoring workaround for a two-sided
+ * material, and what a GLB exporter emits for a zero-thickness card.
+ */
+function doubleSidedCard(halfSize = 0.3): SurfaceMesh {
+  const s = halfSize;
+  const positions = Float64Array.from([-s, -s, 0, s, -s, 0, s, s, 0, -s, s, 0]);
+  const indices = Uint32Array.from([0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2]);
+  return {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'double-sided',
+    positions,
+    indices,
+    normals: null,
+    uvs: Float32Array.from([0, 0, 1, 0, 1, 1, 0, 1]),
+    vertexCount: 4,
+    triangleCount: 4,
+  };
+}
+
 function lensRays(count: number): { origin: Vec3; dir: Vec3 }[] {
   const out: { origin: Vec3; dir: Vec3 }[] = [];
   for (let i = 0; i < count; i++) {
@@ -640,21 +695,147 @@ test('isIlluminatedAt sees the model shadowing itself', () => {
   const shaded = { x: 0, y: 0, z: 0 };
   assert.equal(proj.surface.facesLens(shaded, up, proj.lens), true, 'it does face the lens');
   assert.ok(worldToPixel(proj, shaded) !== null, 'and it does land on the raster');
-  assert.equal(isIlluminatedAt(shaded, up, proj), false, 'but the blocker is in the way');
+  assert.equal(isIlluminatedAt(shaded, up, proj, null), false, 'but the blocker is in the way');
 
   // A step to the side, out from under the blocker.
   const open = { x: 1, y: 0, z: 0 };
-  assert.equal(isIlluminatedAt(open, up, proj), true, 'nothing blocks this one');
+  assert.equal(isIlluminatedAt(open, up, proj, null), true, 'nothing blocks this one');
+});
+
+/**
+ * The acne itself, demonstrated and then removed.
+ *
+ * A shading point computed in float32 as `origin + dir * t` lands slightly BELOW
+ * the facet it was computed on. The shadow bias is supposed to absorb that, but
+ * it is spent ALONG the ray -- it lifts the origin off the facet by only
+ * `bias * cos(incidence)` -- so at a grazing angle the ray re-enters its own
+ * face and the point reports itself in shadow. Measured on a real driver before
+ * this fix: 751 of 751 GPU/CPU shadow-verdict flips were false shadows, and the
+ * spurious blocker was the primary ray's own triangle every single time.
+ *
+ * The displacement below is 8e-7 m, the order the driver actually produced, and
+ * the incidence is the minimum lit cosine that rig produced (0.0090).
+ */
+test('a facet cannot shadow itself, which an along-ray bias cannot prevent', () => {
+  const mesh = triangleMesh({ x: -1, y: -1, z: 0 }, { x: 1, y: -1, z: 0 }, { x: 0, y: 1, z: 0 });
+  const surface = meshSurface(mesh);
+  const bias = surface.shadowBiasM;
+
+  // Straight down onto the face, then sunk just below it — what float32 does.
+  const hit = surface.intersect({ x: 0, y: 0, z: 2 }, { x: 0, y: 0, z: -1 });
+  assert.ok(hit !== null, 'the probe ray must land on the face');
+  const displacement = 8e-7;
+  const sunk = { x: hit.point.x, y: hit.point.y, z: hit.point.z - displacement };
+
+  // A lens at a grazing angle: cos(incidence) ~ 0.009.
+  const cos = 0.0090;
+  const far = 100;
+  const lens = { x: far, y: 0, z: sunk.z + far * cos };
+
+  // The whole mechanism, in two comparisons. The displacement is BELOW the bias,
+  // so by the formula's own reading the bias covers it. It does not: the bias is
+  // spent along the ray, so what actually clears the facet is `bias * cos`, and
+  // against THAT the displacement is two orders too big. This is the 111x
+  // amplifier, and it is why two plates flipped on a real driver at a
+  // displacement smaller than their own bias.
+  assert.ok(displacement < bias, `${displacement} should look covered by the bias ${bias}`);
+  assert.ok(
+    displacement > bias * cos,
+    `${displacement} must exceed the REAL clearance ${bias * cos} or there is no acne to remove`,
+  );
+
+  assert.equal(
+    surface.shadowed(sunk, lens, null),
+    true,
+    'without the face, the bias fails to clear it and the facet shadows itself',
+  );
+  assert.equal(
+    surface.shadowed(sunk, lens, hit.location ?? null),
+    false,
+    'told which face it left, the ray cannot re-hit it',
+  );
+});
+
+/**
+ * And the fix is a NO-OP in float64, which is what keeps the CPU picture exactly
+ * where it was.
+ *
+ * `packages/sim` computes the shading point to ~1e-16 of the facet, nine orders
+ * under the bias, so the self-hit the shader suffers cannot occur here at all.
+ * Passing the face therefore must not change a single answer — if it did, the
+ * skip would be removing a legitimate blocker rather than an artefact, and every
+ * metric built on `isIlluminatedAt` would quietly move.
+ */
+test('passing the traced face changes no float64 answer, on a shape that self-shadows', () => {
+  const surface = meshSurface(creaseWedge());
+  const rig = prepareRig(nominalRig(), surface);
+  let compared = 0;
+  let shadowedWithFace = 0;
+  for (const sample of surface.sampleArea(1500)) {
+    for (const p of rig.projectors) {
+      if (!surface.facesLens(sample.point, sample.normal, p.lens)) continue;
+      const withFace = surface.shadowed(sample.point, p.lens, sample.location ?? null);
+      const without = surface.shadowed(sample.point, p.lens, null);
+      assert.equal(withFace, without, `face-skip changed a float64 answer at ${JSON.stringify(sample.point)}`);
+      compared++;
+      if (withFace) shadowedWithFace++;
+    }
+  }
+  assert.ok(compared > 500, `only ${compared} facing pairs; the wedge is not in front of the rig`);
+  // And the wedge really does occlude itself, or the equality above is vacuous.
+  assert.ok(
+    shadowedWithFace > 0,
+    'no sample is shadowed at all, so this proves nothing about keeping real blockers',
+  );
+});
+
+/**
+ * The limitation this does NOT fix, recorded with the geometry that shows it.
+ *
+ * Skipping the face the ray left cannot help when the mesh carries a COINCIDENT
+ * duplicate of that face — a two-sided card, which is what an exporter emits for
+ * zero-thickness geometry. The twin is a different triangle index occupying the
+ * same plane, so it is not skipped and is re-hit at exactly the `t` the original
+ * would have been. Nothing in `packages/meshio` dedups it.
+ *
+ * Pinned as a property of the geometry rather than as a pixel count, so it says
+ * what is true without pretending to measure a driver.
+ */
+test('a coincident duplicate face still shadows, which face-skipping cannot fix', () => {
+  const surface = meshSurface(doubleSidedCard());
+  const hit = surface.intersect({ x: 0, y: 0, z: 2 }, { x: 0, y: 0, z: -1 });
+  assert.ok(hit !== null);
+  const sunk = { x: hit.point.x, y: hit.point.y, z: hit.point.z - 8e-7 };
+  const lens = { x: 100, y: 0, z: sunk.z + 100 * 0.0090 };
+
+  // The twin is a DIFFERENT index, so the skip does not reach it.
+  const own = hit.location?.triangle ?? 0;
+  assert.equal(
+    surface.shadowed(sunk, lens, hit.location ?? null),
+    true,
+    'the coincident twin is not the skipped face, so it still blocks',
+  );
+  // Which is exactly why this is a limitation and not a bug in the skip: there
+  // genuinely IS another triangle at that position, and no rule about the face
+  // the ray left can distinguish it from a real one.
+  const twin = own < 2 ? own + 2 : own - 2;
+  assert.notEqual(own, twin);
+  assert.ok(hit.location);
+  assert.equal(
+    surface.shadowed(sunk, lens, { ...hit.location, triangle: twin }),
+    true,
+    'skipping the twin instead leaves the original, symmetrically',
+  );
 });
 
 test('a convex surface skips the shadow ray, which is why the sphere path is cheap', () => {
   const sphere = sphereSurface(R);
-  assert.equal(sphere.shadowed({ x: R, y: 0, z: 0 }, { x: 5.18, y: 0, z: 0 }), false);
+  assert.equal(sphere.shadowed({ x: R, y: 0, z: 0 }, { x: 5.18, y: 0, z: 0 }, null), false);
   // The same geometry that shadows on a mesh cannot shadow on a sphere: there is
   // no second surface to get in the way.
   const proj = overheadProjector(sphere);
   const top = { x: 0, y: 0, z: R };
-  assert.equal(isIlluminatedAt(top, { x: 0, y: 0, z: 1 }, proj), true);
+  assert.equal(isIlluminatedAt(top, { x: 0, y: 0, z: 1 }, proj, null), true);
 });
 
 test('the sphere ignores the passed normal, on purpose and provably', () => {

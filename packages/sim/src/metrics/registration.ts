@@ -135,7 +135,7 @@ function placeTexel(
   content: PreparedProjector,
   physical: PreparedProjector,
 ): { landed: Vec3 | null; responsible: boolean } {
-  if (!isIlluminatedAt(point, content.surface.normalAt(point), content)) {
+  if (!isIlluminatedAt(point, content.surface.normalAt(point), content, null)) {
     return { landed: null, responsible: false };
   }
   const px = worldToPixel(content, point);
