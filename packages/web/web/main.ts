@@ -77,7 +77,13 @@ import type { Reading, RigFact } from '../src/readout.ts';
 import { buildDisplayUniforms, pickMarkerNear, slotOfRigIndex } from '../src/uniforms.ts';
 import type { DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
 import type { ParityVerdict } from '../src/parity.ts';
-import { BOUNDARY_LIT_ALLOWANCE, PARITY_HEIGHT, PARITY_WIDTH, judgeParity } from '../src/parity.ts';
+import {
+  BOUNDARY_LIT_ALLOWANCE,
+  PARITY_HEIGHT,
+  PARITY_WIDTH,
+  ambientFloorOf,
+  judgeParity,
+} from '../src/parity.ts';
 import type {
   FrameImage,
   ModelMessage,
@@ -2581,6 +2587,15 @@ function checkParity(
       gpu = renderAndRead(gl!, uniforms, cpu.width, cpu.height);
     });
     parity = judgeParity(gpu, { width: cpu.width, height: cpu.height, data: cpu.data }, {
+      // The scene's own three numbers, not a constant. `ambient` is a slider and
+      // the check must not count a pixel that only ambient reaches -- such a
+      // pixel agrees by construction and would dilute the denominator until a
+      // misaligned rig read as an aligned one. See `parity.ts` LIT_THRESHOLD.
+      ambientFloor: ambientFloorOf(
+        world.scene.ambient,
+        world.scene.reflectance,
+        world.scene.roomAlbedo,
+      ),
       floatReadback: gpu.float,
       cpuMs,
     });

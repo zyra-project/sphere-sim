@@ -35,6 +35,7 @@
  * reference into its bundle to reuse forty lines of statistics.
  */
 
+import type { ChannelTriplet } from '../../calibration/src/index.ts';
 import type { RgbImage } from '../../sim/src/equirect.ts';
 
 /**
@@ -92,13 +93,78 @@ export const DISPLAY_TOLERANCE = 2e-3;
 export const BOUNDARY_LIT_ALLOWANCE = 0.06;
 
 /**
- * A pixel counts as lit when either image puts anything there at all.
+ * How far above the ambient floor a pixel must read to count as lit.
  *
- * Deliberately either and not both: a difference that turns a lit pixel black, or
- * a black one lit, is exactly the kind the check exists to catch, and requiring
- * both to be lit would drop it from the denominator AND from the numerator.
+ * Deliberately either image and not both: a difference that turns a lit pixel
+ * black, or a black one lit, is exactly the kind the check exists to catch, and
+ * requiring both to be lit would drop it from the denominator AND from the
+ * numerator.
+ *
+ * **Above the AMBIENT FLOOR, and that phrase is the whole of this fix.** This
+ * used to read "a pixel counts as lit when either image puts anything there at
+ * all", and measured against a real GL driver that sentence selected every pixel
+ * the surface covers: `lambertianShading` starts each shaded point at
+ * `scene.ambient` before any projector contributes, so at the nominal ambient of
+ * 0.04 every hit reads about 18x this threshold whether a lens reaches it or not.
+ * On the three real-driver frames the two sets were not merely similar, they were
+ * identical -- 4232/4232, 4212/4212 and 819/819 pixels.
+ *
+ * That is harmless on a sphere, which is convex and ringed by four projectors, and
+ * it is not harmless in general. Ambient is additive and rig-independent, so it
+ * cancels exactly in every difference: an ambient-only pixel can never enter a
+ * numerator and only ever inflates the denominator. Give the check geometry where
+ * much of the silhouette is out of every projector's reach -- two panels 30 mm
+ * apart, the repo's own `twoPlates` idiom at a fortieth of its separation -- and
+ * the denominator fills with pixels that agree by construction. {@link judgeParity}
+ * then reports a rig in pieces as a rig in agreement.
+ *
+ * The floor is computed rather than guessed, because it is exactly computable:
+ * `scene.reflectance` and `scene.roomAlbedo` are scene constants, not textures,
+ * so an unreached surface pixel reads exactly `ambient x reflectance` and an
+ * unreached floor pixel exactly `ambient x roomAlbedo`. See {@link ambientFloorOf}.
+ *
+ * Excluding a pixel that agrees can only shrink the denominator while leaving the
+ * numerator alone, so every effect of this is to make the check STRICTER. It
+ * cannot manufacture a pass; where it removes everything, the verdict goes blind,
+ * which is the honest answer for a patch no projector lights.
  */
 export const LIT_THRESHOLD = 2e-3;
+
+/**
+ * The radiance a pixel shows when no projector reaches it.
+ *
+ * `lambertianShading` returns `(ambient + sum of contributions) x reflectance`, and
+ * `shadeFloor` returns `(ambient + black-floor leak) x roomAlbedo`. With no
+ * contribution and no leak those collapse to `ambient x reflectance` and
+ * `ambient x roomAlbedo`, and both are exact rather than bounded because
+ * reflectance and roomAlbedo are single scene values -- `render.ts` passes
+ * `scene.reflectance` into every `ShadeInput` -- and not a per-pixel texture.
+ *
+ * The larger of the two is taken so that one floor serves both populations. Where
+ * that over-excludes -- a surface pixel under a very dim lens when `roomAlbedo`
+ * exceeds `reflectance` -- it drops a pixel carrying almost no projector light,
+ * which is the safe direction: see {@link LIT_THRESHOLD}.
+ */
+export function ambientFloorOf(
+  ambient: ChannelTriplet,
+  reflectance: ChannelTriplet,
+  roomAlbedo: number,
+): ChannelTriplet {
+  return {
+    r: ambient.r * Math.max(reflectance.r, roomAlbedo),
+    g: ambient.g * Math.max(reflectance.g, roomAlbedo),
+    b: ambient.b * Math.max(reflectance.b, roomAlbedo),
+  };
+}
+
+/**
+ * The floor for a comparison with no ambient in it at all.
+ *
+ * Named rather than written as three zeros at each call site, so that a test
+ * comparing synthetic images says what it means and cannot be mistaken for a
+ * caller that forgot to pass the scene's real ambient.
+ */
+export const NO_AMBIENT: ChannelTriplet = { r: 0, g: 0, b: 0 };
 
 /**
  * Below this many lit pixels the patch cannot support a percentile and the
@@ -126,7 +192,10 @@ export interface ParityDelta {
   pixelsOverTolerance: number;
   pixelCount: number;
   fractionOverTolerance: number;
-  /** Pixels either image puts light in. The denominator that matters. */
+  /**
+   * Pixels either image lights ABOVE the ambient floor. The denominator that
+   * matters, and see {@link LIT_THRESHOLD} for why the floor is in that sentence.
+   */
   litPixelCount: number;
   /** Of those, how many are over tolerance. */
   litOverTolerance: number;
@@ -153,6 +222,7 @@ export function compareImages(
   a: { width: number; height: number; data: Float32Array },
   b: { width: number; height: number; data: Float32Array },
   tolerance: number,
+  ambientFloor: ChannelTriplet,
 ): ParityDelta {
   if (a.width !== b.width || a.height !== b.height) {
     throw new Error(
@@ -160,6 +230,7 @@ export function compareImages(
         `Comparing a resampled image would measure the resampler.`,
     );
   }
+  const floor = [ambientFloor.r, ambientFloor.g, ambientFloor.b];
   const n = a.width * a.height;
   const perPixel = new Float64Array(n);
   const litDeltas: number[] = [];
@@ -178,7 +249,8 @@ export function compareImages(
       sumAbs += d;
       if (d > pixelMax) pixelMax = d;
       if (d > maxAbs) maxAbs = d;
-      if (x > LIT_THRESHOLD || y > LIT_THRESHOLD) lit = true;
+      const bar = floor[c] + LIT_THRESHOLD;
+      if (x > bar || y > bar) lit = true;
     }
     perPixel[i] = pixelMax;
     if (pixelMax > tolerance) over++;
@@ -212,14 +284,25 @@ export function compareImages(
 export function judgeParity(
   gpu: { width: number; height: number; data: Float32Array },
   cpu: RgbImage,
-  options: { tolerance?: number; floatReadback?: boolean; cpuMs?: number } = {},
+  options: {
+    /**
+     * Required, with no default. A default of zero would silently restore the
+     * denominator this parameter exists to fix, and the caller always knows its
+     * own scene: {@link ambientFloorOf} turns three scene fields into it, and
+     * {@link NO_AMBIENT} says so for a comparison that genuinely has none.
+     */
+    ambientFloor: ChannelTriplet;
+    tolerance?: number;
+    floatReadback?: boolean;
+    cpuMs?: number;
+  },
 ): ParityVerdict {
   // An 8-bit read-back cannot resolve better than 1/255, so holding it to the
   // float tolerance would fail for a reason that has nothing to do with the
   // model. Say so in the summary rather than silently widening the bar.
   const floatReadback = options.floatReadback ?? true;
   const tolerance = options.tolerance ?? (floatReadback ? DISPLAY_TOLERANCE : 1 / 255);
-  const delta = compareImages(gpu, cpu, tolerance);
+  const delta = compareImages(gpu, cpu, tolerance, options.ambientFloor);
 
   const pct = (VERDICT_PERCENTILE * 100).toFixed(0);
   const readback = floatReadback ? '' : ' (8-bit read-back — this device has no float framebuffer)';
