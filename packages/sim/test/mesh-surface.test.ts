@@ -160,11 +160,6 @@ function twoPlates(): SurfaceMesh {
   };
 }
 
-// ---------------------------------------------------------------------------
-// The intersector, against the analytic sphere
-// ---------------------------------------------------------------------------
-
-/** Rays from a lens ring, the geometry PARAMETERS.md §2 actually describes. */
 /**
  * A concave wedge: two quads meeting along y = 0 at an interior angle.
  *
@@ -220,6 +215,11 @@ function doubleSidedCard(halfSize = 0.3): SurfaceMesh {
   };
 }
 
+// ---------------------------------------------------------------------------
+// The intersector, against the analytic sphere
+// ---------------------------------------------------------------------------
+
+/** Rays from a lens ring, the geometry PARAMETERS.md §2 actually describes. */
 function lensRays(count: number): { origin: Vec3; dir: Vec3 }[] {
   const out: { origin: Vec3; dir: Vec3 }[] = [];
   for (let i = 0; i < count; i++) {
