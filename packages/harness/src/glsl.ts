@@ -337,14 +337,21 @@ bool isIlluminatedAt(int i, vec3 point) {
 // on \`t > tMin && t < tMax\`, and "some accepted hit exists" is "the nearest
 // accepted hit exists". Writing a second traversal to save the difference would
 // be a second traversal to keep in parity.
-bool meshIlluminatedAt(int i, vec3 point, vec3 normal) {
+// \`fromTri\` is the face the shading point was traced onto, and it is not a
+// candidate blocker. \`uMeshShadowBias\` is spent ALONG the ray, so it lifts the
+// origin off its own facet by only \`bias * cos(incidence)\` -- at the grazing
+// tail a hundredfold short of the float32 residual in \`origin + dir * t\`, and
+// the face re-hits itself. The bias is unchanged; the one face it cannot clear
+// is simply not asked about. \`sim/src/coverage.ts\` \`isIlluminatedAt\` takes the
+// same argument from the same place, the \`SurfaceLocation\` its caller holds.
+bool meshIlluminatedAt(int i, vec3 point, vec3 normal, int fromTri) {
   vec3 toLens = uLens[i] - point;
   if (dot(normal, toLens) <= 0.0) return false;
   vec2 px;
   if (!worldToPixel(i, point, px)) return false;
   float distanceM = length(toLens);
   if (distanceM == 0.0) return true;
-  return bvhIntersect(point, toLens / distanceM, uMeshShadowBias, distanceM).x < 0.0;
+  return bvhIntersect(point, toLens / distanceM, uMeshShadowBias, distanceM, fromTri).x < 0.0;
 }
 `;
 
@@ -411,7 +418,7 @@ Surface sampleSurface(vec3 point, vec4 hit) {
     s.lit[i] = false;
     if (i >= uProjCount) continue;
     if (mesh) {
-      if (!meshIlluminatedAt(i, point, s.normal)) continue;
+      if (!meshIlluminatedAt(i, point, s.normal, tri)) continue;
       s.lit[i] = true;
       // \`coverage.ts\`: how deep inside this projector's own footprint the point
       // sits, geodesically. A distance that is not positive means the field
@@ -688,7 +695,25 @@ vec3 rayTriangleAt(int tri, vec3 origin, vec3 dir) {
 
 // \`sim/src/mesh/bvh.ts\` \`intersectBvh\`. Returns (t, triangle, u, v), with
 // t < 0.0 for a miss.
-vec4 bvhIntersect(vec3 origin, vec3 dir, float tMin, float tMax) {
+// \`skipTri\` is the face the ray LEFT, or -1. A ray from a point on a planar
+// triangle meets that triangle at t = 0 and nowhere else -- a direction that
+// leaves the plane crosses it once, at the origin, and a direction in the plane
+// is rejected by the |det| test in \`rayTriangleAt\`. So skipping it removes the
+// near-zero re-hit \`tMin\` was being asked to out-run, and removes nothing else.
+// It has to be an identity rather than an epsilon because \`tMin\` is spent ALONG
+// the ray: it clears the facet by only \`tMin * cos(incidence)\`, and at the
+// grazing tail of a real rig that is a hundredfold shortfall against the float32
+// residual in \`origin + dir * t\`. Measured on a real driver: every one of 751
+// GPU/CPU shadow-verdict flips was a false shadow cast by the primary ray's own
+// triangle. \`tMin\` keeps its value and its job for every other face, so a
+// concave crease is bit-for-bit unchanged.
+//
+// The PACKED index -- a position in \`pack.ts\`'s \`order\`, which is the numbering
+// \`best.y\` returns and \`bvhNormalAt\` fetches by. The simulator skips a MESH
+// triangle in its own numbering; \`order\` is the bijection between the two, and
+// each side is handed the index its own primary ray produced. A negative
+// \`skipTri\` matches nothing, so -1 is exactly the behaviour before this change.
+vec4 bvhIntersect(vec3 origin, vec3 dir, float tMin, float tMax, int skipTri) {
   if (uMeshMode == 0 || uBvhNodeCount == 0) return vec4(-1.0, 0.0, 0.0, 0.0);
   vec3 invDir = 1.0 / dir;
 
@@ -711,6 +736,7 @@ vec4 bvhIntersect(vec3 origin, vec3 dir, float tMin, float tMax) {
       int from = int(hi.w);
       int to = from + int(-link);
       for (int i = from; i < to; i++) {
+        if (i == skipTri) continue;
         vec3 h = rayTriangleAt(i, origin, dir);
         if (h.x < 0.0) continue;
         if (h.x <= tMin || h.x >= bestT) continue;
@@ -794,7 +820,10 @@ vec4 surfaceIntersect(vec3 origin, vec3 dir, float tMin, float tMax) {
   if (uMeshMode == 0) {
     return vec4(raySphereIntersect(origin, dir, uRadius, tMin), -1.0, 0.0, 0.0);
   }
-  return bvhIntersect(origin, dir, tMin, tMax);
+  // -1: a camera, a lens and a floor point are on no face of the model, so a
+  // primary ray has nothing to skip. Written here rather than at the three call
+  // sites so a primary ray CANNOT be given a face to skip.
+  return bvhIntersect(origin, dir, tMin, tMax, -1);
 }
 
 // The content coordinate at a packed hit, through the equirectangular

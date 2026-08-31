@@ -364,7 +364,14 @@ vec3 rayTriangleAt(int tri, vec3 origin, vec3 dir) {
 }
 
 // \`sim/src/mesh/bvh.ts\` \`intersectBvh\`. (t, triangle, u, v), t < 0 for a miss.
-vec4 bvhIntersect(vec3 origin, vec3 dir, float tMin, float tMax) {
+// \`skipTri\` is the PACKED slot the ray LEFT, or -1. A ray from a point on a
+// planar triangle meets that triangle at t = 0 and nowhere else, so skipping it
+// removes the near-zero re-hit \`tMin\` was being asked to out-run and removes
+// nothing else. An identity rather than an epsilon, because \`tMin\` is spent
+// ALONG the ray and so clears the facet by only \`tMin * cos(incidence)\` -- at a
+// grazing incidence a hundredfold short of the float32 residual in
+// \`origin + dir * t\`, which is how a face comes to shadow itself.
+vec4 bvhIntersect(vec3 origin, vec3 dir, float tMin, float tMax, int skipTri) {
   if (uMeshMode == 0 || uBvhNodeCount == 0) return vec4(-1.0, 0.0, 0.0, 0.0);
   vec3 invDir = 1.0 / dir;
 
@@ -387,6 +394,7 @@ vec4 bvhIntersect(vec3 origin, vec3 dir, float tMin, float tMax) {
       int from = int(hi.w);
       int to = from + int(-link);
       for (int i = from; i < to; i++) {
+        if (i == skipTri) continue;
         vec3 h = rayTriangleAt(i, origin, dir);
         if (h.x < 0.0) continue;
         if (h.x <= tMin || h.x >= bestT) continue;
@@ -475,7 +483,9 @@ vec4 surfaceIntersect(vec3 origin, vec3 dir, float radius, float tMin, float tMa
   if (uMeshMode == 0) {
     return vec4(raySphereIntersect(origin, dir, radius, tMin), -1.0, 0.0, 0.0);
   }
-  return bvhIntersect(origin, dir, tMin, tMax);
+  // -1: a camera, a lens and a floor point are on no face of the model, so a
+  // primary ray has nothing to skip.
+  return bvhIntersect(origin, dir, tMin, tMax, -1);
 }
 `;
 
@@ -606,13 +616,17 @@ bool illuminated(int i, vec3 point, out vec2 px) {
 // centred on the origin has its position parallel to it; and a model can occlude
 // itself, which is the question a sphere never has to ask and the reason Phase 1
 // built a hierarchy at all.
-bool meshIlluminated(int i, vec3 point, vec3 normal, out vec2 px) {
+// \`fromTri\` is the face the shading point was traced onto and is not a candidate
+// blocker -- the bias cannot clear a facet the ray leaves at a grazing angle, so
+// the one face it cannot clear is not asked about. It keeps its value and its job
+// for every other face, so a concave crease is unchanged.
+bool meshIlluminated(int i, vec3 point, vec3 normal, int fromTri, out vec2 px) {
   vec3 toLens = uLens[i] - point;
   if (dot(normal, toLens) <= 0.0) return false;
   if (!pixelOf(uLens[i], uRot[i], uIntr[i], uRaster[i], point, px)) return false;
   float distanceM = length(toLens);
   if (distanceM == 0.0) return true;
-  return bvhIntersect(point, toLens / distanceM, uMeshShadowBias, distanceM).x < 0.0;
+  return bvhIntersect(point, toLens / distanceM, uMeshShadowBias, distanceM, fromTri).x < 0.0;
 }
 `;
 
@@ -679,7 +693,7 @@ void sectorHalfWidths(int i, out float plusHalf, out float minusHalf) {
 // Returns the normalized weight of projector 'want' and, through 'count', how
 // many content projectors light that point — which is the overlap multiplicity
 // the overlay draws.
-float contentWeight(vec3 x, vec3 normal, vec4 field, int want, out int count) {
+float contentWeight(vec3 x, vec3 normal, vec4 field, int fromTri, int want, out int count) {
   float width = uWidthDeg > 0.0 ? uWidthDeg : 1e-9;
   float widthM = uCMeshBlendWidthM > 0.0 ? uCMeshBlendWidthM : 1e-9;
   bool mesh = uMeshMode == 1;
@@ -699,7 +713,7 @@ float contentWeight(vec3 x, vec3 normal, vec4 field, int want, out int count) {
     if (mesh) {
       float toLensM = length(toLens);
       if (toLensM > 0.0 &&
-          bvhIntersect(x, toLens / toLensM, uMeshShadowBias, toLensM).x >= 0.0) continue;
+          bvhIntersect(x, toLens / toLensM, uMeshShadowBias, toLensM, fromTri).x >= 0.0) continue;
     }
     count++;
     if (mesh) {
@@ -808,7 +822,7 @@ vec3 shadeTwoRig(
   for (int i = 0; i < MAX_PROJ; i++) {
     if (i >= uProjCount) continue;
     vec2 px;
-    if (mesh ? !meshIlluminated(i, point, normal, px) : !illuminated(i, point, px)) continue;
+    if (mesh ? !meshIlluminated(i, point, normal, tri, px) : !illuminated(i, point, px)) continue;
     litCount++;
     if (uHighlight >= 0 && uHighlight != i) continue;
 
@@ -853,7 +867,7 @@ vec3 shadeTwoRig(
       vec3 backNormal = backMesh ? bvhNormalAt(backTri, back.z, back.w) : xp / uCRadius;
       vec4 backField = backMesh ? bvhFieldAt(backTri, back.z, back.w) : vec4(0.0);
       int count;
-      float weight = contentWeight(xp, backNormal, backField, i, count);
+      float weight = contentWeight(xp, backNormal, backField, backTri, i, count);
       if (!backMesh) weight *= polarMask(ll.x);
       overlapCount = max(overlapCount, count);
       if (weight > strongestWeight) {

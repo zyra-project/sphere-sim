@@ -305,7 +305,20 @@ export interface Surface {
    * "in the commit that makes that change measurable" rather than
    * speculatively. This is that commit.
    */
-  shadowed(point: Vec3, lens: Vec3): boolean;
+  /**
+   * `from` is the face the caller TRACED this point onto — the `location` of a
+   * {@link SurfaceHit} or a {@link SurfaceAreaSample} — or `null` when the
+   * caller has none. A surface may not hit the face a ray left: it can only be
+   * met at `t = 0`, so excluding it removes a float-precision re-hit and no real
+   * blocker. A surface with no faces ignores it.
+   *
+   * REQUIRED, not optional, and for the reason `coverage.ts` gives for making
+   * the normal a parameter: a default here is a place to forget, and forgetting
+   * it means two call sites in this package answering the same question
+   * differently. `null` is a statement, and every caller that has no face has to
+   * make it.
+   */
+  shadowed(point: Vec3, lens: Vec3, from: SurfaceLocation | null): boolean;
 }
 
 /**
@@ -429,7 +442,7 @@ export class SphereSurface implements Surface {
    * Not a stub: this IS the sphere's answer, and it is the reason the whole of
    * Phase 0 could treat "faces the lens" as the entire visibility test.
    */
-  shadowed(_point: Vec3, _lens: Vec3): boolean {
+  shadowed(_point: Vec3, _lens: Vec3, _from: SurfaceLocation | null): boolean {
     return false;
   }
 

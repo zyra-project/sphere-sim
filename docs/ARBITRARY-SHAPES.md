@@ -1,9 +1,27 @@
 # Arbitrary shapes: a feasibility study
 
-**Status: Phases 0, 1, 3 and 4 landed; Phase 2's traversal landed and proven
-against the simulator, its shader wiring still to do.** Phase 5 (the solve) is
-unimplemented. Phase 3 closed by deciding the polar mask is refused rather than
+**Status: Phases 0–4 landed. Phase 5 (the solve) is unimplemented.** Phase 2's
+shader wiring landed after this line last claimed it was outstanding; both
+renderers now trace and shade a mesh, the harness page can put one in front of
+the projectors, and link (3) passes on both mesh fixtures under a software
+driver. Phase 3 closed by deciding the polar mask is refused rather than
 generalized — see that phase.
+
+**Still open in Phase 2:** the app page does not yet hand its display shader a
+model. The plan's own condition for that was that `parity.ts` say what its
+verdict means on a mesh, and it now does — but `packages/web/src/parity.ts` has
+its own separate verdict (`BOUNDARY_LIT_ALLOWANCE = 0.06`, p94 over LIT pixels)
+derived against a sphere's single smooth silhouette. Its value would pass a mesh;
+its meaning has not been re-derived. That is the remaining gate.
+
+**What the mesh path cost to make honest**, recorded because the study's estimate
+did not include it: wiring the shaders was the smaller half. Link (3) failed on
+first contact with a real driver, and the cause was a renderer bug rather than a
+tolerance question — self-shadow acne, because the shadow bias is spent along the
+ray and clears a facet by only `bias · cos(incidence)`. At this rig's minimum lit
+cosine of 0.0090 that is a 111× shortfall. Two rounds of analysis blamed
+float32 facet-edge ties before anyone counted the population the explanation
+needed and found it empty. See `packages/harness/README.md`.
 
 A **scene occluder** — an object that blocks projector light without being the
 projection surface — is the feature the mask stands in for. It does not exist,

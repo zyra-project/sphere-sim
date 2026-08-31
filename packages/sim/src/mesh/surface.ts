@@ -282,7 +282,7 @@ export class MeshSurface implements Surface {
    * and nothing showed. `Surface.shadowBiasM` is where the number lives now, so
    * the binders stop copying the fraction.
    */
-  shadowed(point: Vec3, lens: Vec3): boolean {
+  shadowed(point: Vec3, lens: Vec3, from: SurfaceLocation | null): boolean {
     const dx = lens.x - point.x;
     const dy = lens.y - point.y;
     const dz = lens.z - point.z;
@@ -297,6 +297,7 @@ export class MeshSurface implements Surface {
       { x: dx * inv, y: dy * inv, z: dz * inv },
       bias,
       distance,
+      from === null ? -1 : from.triangle,
     );
   }
 

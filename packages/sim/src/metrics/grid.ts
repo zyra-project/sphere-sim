@@ -416,7 +416,7 @@ function localiseLine(
   /** The reconstructed profile at arc-length offset `s`, or `NaN` off-raster. */
   const profileAt = (sMm: number): number => {
     const point = pointAt(sMm);
-    if (!isIlluminatedAt(point, proj.surface.normalAt(point), proj)) return NaN;
+    if (!isIlluminatedAt(point, proj.surface.normalAt(point), proj, null)) return NaN;
     const px = worldToPixel(proj, point);
     if (px === null) return NaN;
     return raster.value(px.u, px.v);
@@ -719,8 +719,8 @@ export function computeGridDisplacement(
         for (const s of [-halfMm, halfMm]) {
           const p = pointAt(s);
           const n = physical.surface.normalAt(p);
-          if (!isIlluminatedAt(p, n, physical.projectors[a.i])) return false;
-          if (!isIlluminatedAt(p, n, physical.projectors[b.i])) return false;
+          if (!isIlluminatedAt(p, n, physical.projectors[a.i], null)) return false;
+          if (!isIlluminatedAt(p, n, physical.projectors[b.i], null)) return false;
         }
         return true;
       };

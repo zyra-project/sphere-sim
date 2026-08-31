@@ -101,7 +101,10 @@ test('the plates shadow themselves, which is the only reason they exist', () => 
     for (const p of rig.projectors) {
       if (!surface.facesLens(sample.point, sample.normal, p.lens)) continue;
       facing++;
-      if (surface.shadowed(sample.point, p.lens)) shadowed++;
+      // The sample's own face, which `sampleArea` traced. Passing it is what
+      // makes this count CROSS-plate occlusion rather than a facet re-hitting
+      // itself: the fixture exists to prove one plate hides the other.
+      if (surface.shadowed(sample.point, p.lens, sample.location ?? null)) shadowed++;
     }
   }
   assert.ok(facing > 0, 'nothing faces a lens, so the fixture is not in the rig at all');

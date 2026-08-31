@@ -695,7 +695,7 @@ export function surfacePointVisibility(
   const normal = rig.surface.normalAt(point);
   const out: { projector: number; u: number; v: number }[] = [];
   for (const p of rig.projectors) {
-    if (!isIlluminatedAt(point, normal, p)) continue;
+    if (!isIlluminatedAt(point, normal, p, null)) continue;
     const px = worldToPixel(p, point);
     if (px) out.push({ projector: p.index, u: px.u, v: px.v });
   }

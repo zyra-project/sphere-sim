@@ -210,7 +210,19 @@ test('the content trace evaluates blend, mask and content in the CONTENT rig', (
   // draw.
   assert.ok(trace.source.includes('rayFrom(uCRot[i], uCIntr[i], uCRaster[i].zw'));
   assert.ok(trace.source.includes('surfaceIntersect(uCLens[i], dir, uCRadius'));
-  assert.ok(trace.source.includes('contentWeight(xp, backNormal, backField, i, count)'));
+  assert.ok(trace.source.includes('contentWeight(xp, backNormal, backField, backTri, i, count)'));
+  // `backTri` is the face the CONTENT ray struck, and it is a content-rig
+  // quantity like every other argument here: it comes from the `back` hit above,
+  // not from the physical `hit`. Passing the PHYSICAL `tri` would make the
+  // compositor's own self-occlusion skip a face chosen by where the projector
+  // physically ended up — the same class of bug the rest of this test guards,
+  // arriving through the shadow ray instead of through the optics.
+  assert.ok(trace.source.includes('int backTri = int(back.y);'));
+  assert.equal(
+    trace.source.includes('contentWeight(xp, backNormal, backField, tri,'),
+    false,
+    'the content occlusion must skip the CONTENT rig\'s face, not the physical one',
+  );
   // And the emission is from the PHYSICAL lens, with the physical transfer.
   assert.ok(trace.source.includes('uLens[i] - point'));
   assert.ok(trace.source.includes('emittedRadianceRgb(signal, i)'));

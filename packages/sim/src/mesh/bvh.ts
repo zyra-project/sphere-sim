@@ -624,6 +624,36 @@ export function occludedBvh(
   dir: Vec3,
   tMin: number,
   tMax: number,
+  /**
+   * A triangle this ray may not hit, or -1.
+   *
+   * The face the ray LEFT, when the caller traced the origin onto one. A ray
+   * from a point on a planar triangle meets that triangle at `t = 0` and nowhere
+   * else: a direction that leaves the plane crosses it exactly once, at the
+   * origin, and a direction lying in the plane is rejected by `rayTriangle`'s
+   * `|det| < EPS` test above. So dropping it loses no legitimate hit — it
+   * removes only the near-zero re-hit `tMin` was being asked to out-run, and
+   * which in float32 it cannot: advancing `tMin` ALONG the ray lifts the origin
+   * off the facet by `tMin * cos(incidence)` and no more, so at the grazing tail
+   * of a real rig (minimum lit cosine 0.0090) it is a 111x shortfall the bias
+   * formula has no term for. Measured on a real driver: 751 of 751 GPU/CPU
+   * shadow-verdict flips were FALSE shadows, and the spurious blocker was the
+   * primary ray's own triangle every single time.
+   *
+   * This is an identity, not a tolerance. `tMin` keeps its value and its job for
+   * every OTHER face, so a concave crease behaves exactly as it did — an
+   * adjacent-facet hit nearer than the bias is still suppressed, and nothing
+   * that is rejected today becomes admitted.
+   *
+   * The MESH triangle index, in this module's own numbering — `bvh.order[i]`,
+   * which is what this traversal reads and what `TriangleHit.triangle` returns.
+   * The shader and `reference.ts` skip a PACKED slot, because that is what THEIR
+   * traversal returns; `bvh.order` is the bijection and each side is handed the
+   * index its own primary ray produced. `MeshSurface.shadowed` takes a
+   * `SurfaceLocation` rather than a bare number so the two cannot be confused by
+   * a caller: a packed slot is a `number` and will not typecheck as one.
+   */
+  skipTriangle = -1,
 ): boolean {
   if (bvh.nodeCount === 0 || mesh.triangleCount === 0) return false;
   const p = mesh.positions;
@@ -647,6 +677,7 @@ export function occludedBvh(
       const to = from + bvh.count[node];
       for (let i = from; i < to; i++) {
         const t = bvh.order[i];
+        if (t === skipTriangle) continue;
         const a = 3 * idx[3 * t];
         const b = 3 * idx[3 * t + 1];
         const c = 3 * idx[3 * t + 2];

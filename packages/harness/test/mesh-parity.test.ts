@@ -222,7 +222,7 @@ test('on a float32-exact mesh the shader traversal agrees with the simulator exa
   let misses = 0;
   for (const { origin, dir } of probeRays(2000, 4)) {
     const cpu = intersectBvh(bvh, mesh, origin, dir, 1e-9, Infinity);
-    const gpu = bvhIntersect(u, origin, dir, 1e-9, Infinity);
+    const gpu = bvhIntersect(u, origin, dir, 1e-9, Infinity, -1);
 
     if (cpu === null) {
       assert.ok(gpu[0] < 0, `simulator missed and the shader hit at t=${gpu[0]}`);
@@ -256,7 +256,7 @@ test('on an ordinary mesh the departure is float32 rounding and is measured', ()
   let differentTriangle = 0;
   for (const { origin, dir } of probeRays(3000, 5)) {
     const cpu = intersectBvh(bvh, mesh, origin, dir, 1e-9, Infinity);
-    const gpu = bvhIntersect(u, origin, dir, 1e-9, Infinity);
+    const gpu = bvhIntersect(u, origin, dir, 1e-9, Infinity, -1);
     if (cpu === null || gpu[0] < 0) continue;
     hits++;
     if (bvh.order[gpu[1]] === cpu.triangle) {
@@ -293,7 +293,7 @@ test('a mesh with no normals falls back to the face normal, as the simulator doe
   const { u } = uniformsFor(mesh);
   const origin: Vec3 = { x: 3, y: 0.1, z: 0.1 };
   const dir: Vec3 = { x: -1, y: 0, z: 0 };
-  const gpu = bvhIntersect(u, origin, dir, 1e-9, Infinity);
+  const gpu = bvhIntersect(u, origin, dir, 1e-9, Infinity, -1);
   assert.ok(gpu[0] > 0, 'the probe ray must hit');
   const n = bvhNormalAt(u, gpu[1], gpu[2], gpu[3]);
   // The octahedron's +x+y+z face has normal (1,1,1)/sqrt(3).
@@ -587,7 +587,7 @@ function compareShading(
         // masquerade as one that does.
         else if (
           surface.facesLens(simHit.point, simHit.normal, rig.projectors[i].lens) &&
-          surface.shadowed(simHit.point, rig.projectors[i].lens)
+          surface.shadowed(simHit.point, rig.projectors[i].lens, simHit.location ?? null)
         ) {
           shadowedCount++;
         }

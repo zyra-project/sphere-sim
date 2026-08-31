@@ -130,13 +130,22 @@ export const GPU_TOLERANCE = 2e-3;
  * caught at all -- its percentile value is exactly zero.
  *
  * That is the whole argument against a wider budget, and it is measured rather
- * than argued. A real model bug and a facet-edge tie between two float pipelines
- * occupy the SAME range: the polar mask moves 0.275% of pixels, and a tessellated
- * sphere's GPU-vs-CPU ties move 0.26%-0.72%. Nothing about a pixel COUNT can
- * separate them, so a budget wide enough to forgive the ties is wide enough to
- * forgive the mask. Ties have to be identified by what they are -- the two
- * renderers picking different triangles at a shared edge -- rather than budgeted
- * for. See packages/harness/README.md.
+ * than argued. The mesh failures that made a wider budget tempting -- 0.72% and
+ * 0.26% of the room view -- sat in the SAME range as that 0.275% mask, so no
+ * pixel COUNT could have separated them and a budget wide enough to pass the
+ * mesh was wide enough to pass the mask.
+ *
+ * They turned out to be a BUG rather than a measurement limit: self-shadow acne,
+ * because the shadow bias is spent along the ray and so clears the facet by only
+ * `bias * cos(incidence)`. Fixed in `packages/sim/src/mesh/bvh.ts` by telling the
+ * shadow ray which face it left. Both fixtures now pass at a p99.9 BELOW the
+ * analytic sphere's own, which is what leaving the budget alone bought.
+ *
+ * An earlier version of this comment blamed facet-edge ties and stated it as
+ * fact. It was wrong -- 0 of 4212 hits lie within 1e-7 of an edge, and one
+ * fixture's coplanar diagonal makes a tie there change nothing at all. See
+ * packages/harness/README.md for the refutation, which is worth reading before
+ * widening this constant on the strength of a mechanism nobody has counted.
  */
 export const BOUNDARY_PIXEL_ALLOWANCE = 0.001;
 

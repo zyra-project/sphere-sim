@@ -918,7 +918,7 @@ export function computeSurface(req: SurfaceRequest): SurfaceResponse {
     let reached = 0;
     let blocked = false;
     for (const p of truth.projectors) {
-      if (isIlluminatedAt(sample.point, sample.normal, p)) {
+      if (isIlluminatedAt(sample.point, sample.normal, p, sample.location ?? null)) {
         reached++;
         continue;
       }
