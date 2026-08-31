@@ -1743,25 +1743,49 @@ async function main(): Promise<void> {
     await cdp.send('Emulation.clearDeviceMetricsOverride');
     await cdp.send('Page.navigate', { url: opts.url });
     await sleep(1200);
-    // Wait for the app to be UP, not merely for time to pass -- the same
-    // precondition the phone pass waits for above, for the same reason. A
-    // navigate hands back a blank document immediately, and the model section
-    // below opens by dispatching a drop: fire that before the page has
-    // registered its listener and nothing happens, the coverage figure never
-    // appears, and the failure reads "the surface path is dead" while naming
-    // none of this. `dataset.range` is written by `draw()`, so a value there
-    // means the app booted and drew rather than that the HTML arrived.
+    // Wait for the app to be UP, not merely for time to pass. A navigate hands
+    // back a blank document immediately, and the model section below opens by
+    // dispatching a drop: fire that before the page has registered its listener
+    // and nothing happens, the coverage figure never appears, and the failure
+    // reads "the surface path is dead" while naming none of this.
+    //
+    // `dataset.range` and not `#view`, because the canvas is in the static HTML
+    // and is therefore present before the bundle has run. Only `draw()` writes
+    // that attribute, so a value there means the app booted AND drew.
+    //
+    // The result is kept OUTSIDE the loop and checked. An earlier version let it
+    // expire and then asserted `#view` exists -- which is true of a page whose
+    // script never ran, so a stalled boot fell through to the drop and produced
+    // the very failure this wait is here to prevent. That is the same shape of
+    // defect as the emulation leak above: a precondition stated and not
+    // actually asserted.
+    let ready = '';
     for (let i = 0; i < 30; i++) {
-      const ready = await cdp.evaluate<string>(
-        "document.getElementById('view')?.dataset?.range ?? ''",
-      );
+      try {
+        ready = await cdp.evaluate<string>(
+          "document.getElementById('view')?.dataset?.range ?? ''",
+        );
+      } catch {
+        // `evaluate` throws when the document is swapped under it, which is what
+        // a navigate does. Not ready YET is the honest reading, not a failure.
+        ready = '';
+      }
       if (ready !== '') break;
       await sleep(500);
     }
-    if (!(await cdp.evaluate<boolean>("!!document.getElementById('view')"))) {
+    if (ready === '') {
+      // Two different faults, and the message says which: a page that never
+      // arrived, and a page that arrived but whose bundle never ran.
+      const hasView = await cdp
+        .evaluate<boolean>("!!document.getElementById('view')")
+        .catch(() => false);
       failures.push(
-        'the page has no #view canvas after reloading it back at desktop size — ' +
-          'the reload did not land (is the server this run was pointed at still up?)',
+        hasView
+          ? 'the app never drew after reloading back at desktop size — #view is there but ' +
+              'dataset.range was never written, so the bundle did not run (is packages/web/dist ' +
+              'built and current?)'
+          : 'the page has no #view canvas after reloading it back at desktop size — the reload ' +
+              'did not land (is the server this run was pointed at still up?)',
       );
       report(failures);
       return;
