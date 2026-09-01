@@ -23,9 +23,11 @@
  *
  * Note what is NOT here: agreement with `packages/sim`'s intersection. It cannot
  * be — `tools/boundary-lint.ts` R1 bans the import and grants tests no
- * exemption, so that comparison can only live in `packages/bench`, which holds
- * both models. That test is the point of writing this independently and it does
- * not exist yet.
+ * exemption, so that comparison lives in `packages/bench`, which holds both
+ * models: `packages/bench/test/mesh-agreement.test.ts`. That test is the point
+ * of writing this independently, and it found two defects that every test in
+ * THIS file passed — a crack at every shared edge, and a NaN in the box test
+ * that sent 151 of 6624 seam rays through the near surface to the far side.
  */
 
 import { test } from 'node:test';

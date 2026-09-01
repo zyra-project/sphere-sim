@@ -1275,12 +1275,18 @@ function modelBlock(): HTMLElement[] {
   // This caption said "the live view above is still the sphere" for as long as
   // that was true, and went on saying it after Phase 2 put the mesh on the GPU —
   // in the same file that passes `mesh: model.mesh` to the display shader every
-  // frame. It is still true on the REJECTION path, where `packMesh` threw on a
-  // hierarchy deeper than the shader's stack and `draw` fell back to the sphere,
-  // so the sentence has to name which case the reader is looking at. The page's
-  // own rule, stated above: quietly drawing a ball while a model is loaded is
-  // the one thing this page must not do.
-  const tracingModel = displayMeshId() !== '';
+  // frame. The page's own rule, stated above: quietly drawing a ball while a
+  // model is loaded is the one thing this page must not do.
+  //
+  // THREE states, not two, and the first correction to this caption got that
+  // wrong. It asked `displayMeshId()`, which means "there is a model and nothing
+  // has rejected it" — true from the instant of the drop, while the canvas still
+  // holds the previous frame and `packMesh` has not yet been given the chance to
+  // refuse. So the caption asserted a GPU trace that had not happened. The
+  // question is about the picture, so it is answered by the picture: `draw`
+  // records what it actually handed the shader.
+  const rejected = droppedMesh !== null && droppedMeshId === rejectedMeshId;
+  const tracingModel = droppedMesh !== null && !rejected && drawnMeshId === droppedMeshId;
   const caveat = el('p', {
     className: 'note tiny',
     textContent:
@@ -1288,8 +1294,11 @@ function modelBlock(): HTMLElement[] {
         ? 'The live view above traces this same model — the display shader walks its BVH on the ' +
           'GPU. This picture is that scene traced independently on the CPU, which is what the ' +
           'agreement check beside it compares. '
-        : 'The live view above is the sphere: this model was refused, so the display shader fell ' +
-          'back and this CPU picture is the only place its shape appears. ') +
+        : rejected
+          ? 'The live view above is the sphere: this model was refused, so the display shader ' +
+            'fell back and this CPU picture is the only place its shape appears. '
+          : 'The live view above has not drawn this model yet — the picture beside it is the ' +
+            'CPU trace, which arrived first. ') +
       'Projectors DO crossfade here: the blend is a geodesic distance to the edge ' +
       "of each projector's own footprint, which feathers a shadow edge exactly as it feathers a " +
       'raster edge. The polar mask stays off, and that is a decision rather than a gap: it ' +
@@ -2437,6 +2446,15 @@ let rigMovedSinceSolve = false;
 // ---------------------------------------------------------------------------
 
 let dirty = true;
+/**
+ * The `droppedMeshId` the display shader was last handed, or `-1` for the sphere.
+ *
+ * Written by `draw` and read by the model card's caption, which is a claim about
+ * the picture beside it and so must be answered by the picture rather than by
+ * the page's intent.
+ */
+let drawnMeshId = -1;
+
 /** Frames actually drawn. See `canvas.dataset.draws`. */
 let drawCount = 0;
 
@@ -2596,6 +2614,14 @@ function draw(): void {
   // entire time the live view was still drawing a sphere. Read off `uniforms`
   // rather than off `droppedMesh` for that reason.
   canvas.dataset.meshTriangles = String(uniforms.mesh?.triangleCount ?? 0);
+  // What the shader was actually GIVEN, recorded at the moment it was given it.
+  // `displayMeshId()` answers "is there a model that has not been rejected",
+  // which is a different question and is true too early: `setDroppedMesh` clears
+  // `rejectedMeshId` and calls `markDirty()`, which SCHEDULES a repaint, while
+  // `rejectedMeshId` is not set until `displayModel` runs inside this function.
+  // A caption reading the former between those two moments claims the GPU is
+  // tracing a model that has neither been drawn nor been vetted by `packMesh`.
+  drawnMeshId = uniforms.mesh === null ? -1 : droppedMeshId;
   // Monotonic, so a test can tell "the frame loop stopped" from "it ran and saw
   // no model". `frame()` catches a throw from here, calls `fatal()` and does NOT
   // re-arm `requestAnimationFrame`, so those two failures look identical from

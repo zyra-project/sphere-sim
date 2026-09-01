@@ -72,9 +72,21 @@ export interface MeshUv {
  *
  * The MODEL frame, not the world frame. conventions.ts §W puts the world origin
  * at the sphere centre; a GLB arrives in whatever frame its author used, at
- * whatever scale, and where it sits in the room is a separate fact — one that
- * Phase 5 makes a solve variable. Keeping the mesh in its own frame is what lets
- * that pose be fitted later without rewriting every vertex.
+ * whatever scale, and where it sits in the room is a separate fact.
+ *
+ * This used to say Phase 5 would make that pose a SOLVE VARIABLE. It will not.
+ * The decision, taken by the author before the solver-side geometry was written,
+ * is that a visitor supplies the model already placed and scaled in world
+ * coordinates: the model contributes no bundle parameters, the gauge stays at
+ * the three global rotations, and `packages/solver/src/mesh.ts` intersects world
+ * rays against world vertices with no model transform to apply.
+ *
+ * The field is still named for the model frame because that is what a GLB
+ * carries and what a loader produces; placing it is the CALLER's job, done once
+ * on load, and the type does not carry a pose because nothing downstream solves
+ * for one. Keeping this note accurate matters more than it looks — the previous
+ * wording is what a reader would have followed to add seven parameters nobody
+ * wants.
  */
 export interface SurfaceMesh {
   schema: SurfaceMeshSchema;

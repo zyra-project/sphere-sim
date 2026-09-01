@@ -233,15 +233,33 @@ The expensive tier, and the one worth protecting rather than working around.
   symmetry, so those three become observable and the machinery is not needed. It
   must not be deleted, though: a cylinder, a dome and a box each have their own
   null space, so the code has to **measure the null space of the model it was
-  handed** rather than assume one. `gauge.nullTolerance` already does exactly
-  this kind of measurement — it detects when floor references make tilt
-  observable — so this is a widening of an existing idea rather than a new one.
-- **The model's pose becomes unknown.** Today the world origin *is* the sphere
-  centre (conventions.ts §W) and the radius is class DOC, and between them
-  translation and scale are pinned. Hand the solver a GLB and where the object
-  sits and how big it is are solve variables: six more parameters, seven with
-  scale. Well-posed, and the classic projection-mapping calibration problem — but
-  new columns in the Jacobian and a new source of ill-conditioning.
+  handed** rather than assume one.
+
+  This paragraph used to end "`gauge.nullTolerance` already does exactly this
+  kind of measurement ... so this is a widening of an existing idea rather than a
+  new one." **The code refutes that.** `floorResponse` (`bundle.ts`) reads exactly
+  two columns — the referenced entity's z and `h_center` — and is the true
+  derivative of the floor row, so it can never see correspondence-block
+  stiffness; run unchanged on a mesh it would report zero floor coupling for
+  azimuth and pin a direction the mesh data determines. The quadratic form a
+  general measurement needs is argued against in the same file, on a units
+  objection that survives on a mesh. Phase 5's gauge item is a NEW statistic, not
+  a widening, and this entry was mis-sized on the strength of that sentence.
+- **The model's pose is HELD, and this bullet used to say the opposite.** It read:
+  "Hand the solver a GLB and where the object sits and how big it is are solve
+  variables: six more parameters, seven with scale." That contradicted the bullet
+  directly above it — which argues a mesh's asymmetry makes the sphere's three
+  rotations observable, so the gauge machinery "is not needed" — and both cannot
+  hold: with a free model pose, rotating rig and model together is null for ANY
+  shape, so the gauge GROWS to six or seven rather than shrinking to zero.
+
+  The author settled it: a visitor supplies the model already placed and scaled
+  in world coordinates. Requiring that is a product decision, not a measurement,
+  and it is the smaller problem — the model contributes no bundle parameters, the
+  gauge stays at the three global rotations, and the mesh Jacobian REPLACES
+  `intersectSphereJacobian` inside the existing camera block instead of adding
+  one. It also largely dissolves the bootstrap's chicken-and-egg below, since a
+  PnP has a known pose to intersect against.
 - **Bootstrap breaks, and this is the hardest single piece.** `initialize.ts`
   reaches a convergent basin partly because a sphere's silhouette is a circle
   from every viewpoint. A mesh's is not. The replacement is PnP from clicked
@@ -836,11 +854,31 @@ merely delivered.
 
 ### Phase 5 — the solve
 
-Mesh intersection in `packages/solver`, written independently of the simulator's.
-Model pose and scale in the bundle. Measured rather than assumed gauge null space.
-A new bootstrap. New scenarios, new gates, and an honest statement of which
-photometric numbers remain PROVISIONAL — all of them, since nothing about a
-visitor's mesh has been measured either.
+**LANDED so far:** mesh intersection in `packages/solver`, written independently
+of the simulator's and shown to agree with it bit-exactly in
+`packages/bench/test/mesh-agreement.test.ts` — the first sim-vs-solver geometry
+test in the repository, for any shape. Plus the mesh hit Jacobian, and a
+central-difference test under the loop that assembles the normal equations,
+which had none.
+
+**NOT started:** the mesh is not in the bundle. `bundle.ts` has not been wired to
+use either piece and the bootstrap is still the sphere's.
+
+**Still to do:** a measured rather than assumed gauge null space — a new
+statistic, not a widening, see the gauge bullet above. A new bootstrap. New
+scenarios and new gates, which cannot be a port: §7's numbers are sphere
+theorems and nobody has measured a mesh installation. And an honest statement of
+which photometric numbers remain PROVISIONAL — all of them, for the same reason.
+
+**No longer in scope:** model pose and scale in the bundle. Pose is held; see the
+pose bullet above.
+
+Two traps to clear before any mesh scenario enters the CI corpus, neither of them
+obvious from the plan: gate waivers are keyed by gate id alone, so a mesh corpus
+reusing `pose_position` would silently inherit A-18's 640 mm ceiling; and a
+crashed solve voids ALL metrics, turning gates NOT-MEASURED, which the waiver
+machinery deliberately refuses to waive — while a mesh bootstrap failing is the
+expected early outcome.
 
 *Estimate: 1–3 months, and the bootstrap is genuinely research.*
 
