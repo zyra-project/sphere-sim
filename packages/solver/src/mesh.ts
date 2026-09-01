@@ -302,20 +302,31 @@ export function resetMeshTraversalStats(): void {
 }
 
 /**
- * Slab test: the interval of `t` over which the ray is inside the box.
+ * Slab test: the entry distance of the ray into the box, or `Infinity`.
  *
- * Returns the entry distance, or `Infinity` for a miss. The reciprocal is passed
- * in rather than recomputed because the traversal tests one ray against many
- * boxes, and a division in that loop is the loop.
+ * Each axis is handled explicitly and an axis the ray does not move along is
+ * SKIPPED rather than divided through, which is the whole point of the shape
+ * below. The compact form — six products against a precomputed reciprocal, then
+ * `max` of the minima against `min` of the maxima — is the version everyone
+ * writes, and it was the version here first. It produces `0 * Infinity` = NaN
+ * whenever a ray has a zero direction component AND the box touches that plane,
+ * and every comparison against NaN is false, so the box is rejected.
  *
- * A zero component of `dir` gives an infinite reciprocal, and the products below
- * are then ±Infinity — which is the right answer (the ray never crosses those
- * two planes) everywhere except when the origin lies exactly ON a slab, where
- * `0 * Infinity` is NaN. The `min`/`max` ordering that follows propagates NaN
- * unpredictably, so the comparison at the end is written to REJECT on NaN: a ray
- * exactly in the plane of a face is reported as a miss of that box. It is a
- * measure-zero case, and reporting a miss loses at worst a coplanar grazing hit
- * that carries no useful incidence anyway.
+ * That was written off in this file as "a measure-zero case ... at worst a
+ * coplanar grazing hit that carries no useful incidence anyway". Both halves
+ * were wrong, and the sim-vs-solver agreement test caught it. It is not measure
+ * zero: an axis-aligned ray meets an axis-aligned tessellation systematically —
+ * a UV sphere's `phi = 0` meridian lies exactly in `y = 0`, so every ray in that
+ * plane hits it. And the hit being lost was not grazing but HEAD ON, at
+ * barycentrics `u = v = 0.5`, the exact centre of an edge. Measured: 151 of 6624
+ * seam rays took the FAR side of a closed sphere because the near-side box had
+ * been rejected on a NaN, a gap of 1.9957 m — the diameter.
+ *
+ * `-0` compares equal to `0`, so a direction component of `-0` takes the skip
+ * branch too, which is the case that actually occurred.
+ *
+ * `far` starts at the best hit so far, so pruning falls out of the same test:
+ * a box whose entry is beyond a hit already found cannot improve on it.
  */
 function slab(
   bounds: Float64Array,
@@ -323,27 +334,61 @@ function slab(
   ox: number,
   oy: number,
   oz: number,
+  dx: number,
+  dy: number,
+  dz: number,
   ix: number,
   iy: number,
   iz: number,
   best: number,
 ): number {
   const b = 6 * node;
-  const t1 = (bounds[b] - ox) * ix;
-  const t2 = (bounds[b + 3] - ox) * ix;
-  const t3 = (bounds[b + 1] - oy) * iy;
-  const t4 = (bounds[b + 4] - oy) * iy;
-  const t5 = (bounds[b + 2] - oz) * iz;
-  const t6 = (bounds[b + 5] - oz) * iz;
+  let near = 0;
+  let far = best;
 
-  const near = Math.max(Math.min(t1, t2), Math.min(t3, t4), Math.min(t5, t6));
-  const far = Math.min(Math.max(t1, t2), Math.max(t3, t4), Math.max(t5, t6));
+  if (dx !== 0) {
+    let t1 = (bounds[b] - ox) * ix;
+    let t2 = (bounds[b + 3] - ox) * ix;
+    if (t1 > t2) {
+      const swap = t1;
+      t1 = t2;
+      t2 = swap;
+    }
+    if (t1 > near) near = t1;
+    if (t2 < far) far = t2;
+  } else if (ox < bounds[b] || ox > bounds[b + 3]) {
+    return Infinity;
+  }
 
-  // `far < 0` is the box behind the origin; `near > far` is a miss; `near > best`
-  // is a box that cannot improve on a hit already found. Written as a positive
-  // test so that a NaN in any operand falls through to the miss.
-  if (far >= 0 && near <= far && near < best) return near > 0 ? near : 0;
-  return Infinity;
+  if (dy !== 0) {
+    let t1 = (bounds[b + 1] - oy) * iy;
+    let t2 = (bounds[b + 4] - oy) * iy;
+    if (t1 > t2) {
+      const swap = t1;
+      t1 = t2;
+      t2 = swap;
+    }
+    if (t1 > near) near = t1;
+    if (t2 < far) far = t2;
+  } else if (oy < bounds[b + 1] || oy > bounds[b + 4]) {
+    return Infinity;
+  }
+
+  if (dz !== 0) {
+    let t1 = (bounds[b + 2] - oz) * iz;
+    let t2 = (bounds[b + 5] - oz) * iz;
+    if (t1 > t2) {
+      const swap = t1;
+      t1 = t2;
+      t2 = swap;
+    }
+    if (t1 > near) near = t1;
+    if (t2 < far) far = t2;
+  } else if (oz < bounds[b + 2] || oz > bounds[b + 5]) {
+    return Infinity;
+  }
+
+  return near <= far ? near : Infinity;
 }
 
 /**
@@ -355,15 +400,42 @@ function slab(
  * a surface. So both sides hit, and {@link MeshHit.cosIncidence} carries the
  * sign for a caller that cares which side it met.
  *
- * `EPS` guards only the determinant, i.e. a ray parallel to the triangle's
- * plane. It is deliberately not a tolerance on the barycentric tests: widening
- * those to admit a near-miss would make adjacent triangles overlap along their
- * shared edge, and a ray hitting the seam would take whichever of the two the
- * traversal reached first. Excluding the seam exactly is the reproducible
- * choice, and `docs/ARBITRARY-SHAPES.md` records the facet-edge-tie question as
- * measured rather than assumed.
+ * Two tolerances, and the second one was got WRONG here first.
+ *
+ * `EPS` guards the determinant, i.e. a ray parallel to the triangle's plane.
+ * Uncontroversial.
+ *
+ * `BARY_EPS` admits a hit slightly outside the triangle, and the first version
+ * of this file argued against having one at all: widening the barycentric tests
+ * makes adjacent triangles overlap along their shared edge, so a ray hitting the
+ * seam hits both, and excluding the seam exactly looked like the reproducible
+ * choice. That reasoning is wrong, and it was wrong in a way this repository had
+ * already found and written down. Without the tolerance, a ray meeting a shared
+ * edge is rejected by BOTH neighbours on opposite sides of the rounding and
+ * falls straight through the surface. Measured on the fixture in
+ * `test/mesh.test.ts`: **71 of 6624 edge rays, 1.07%, missed a CLOSED sphere** —
+ * which is `docs/ARBITRARY-SHAPES.md`'s own figure for the same effect.
+ *
+ * Reproducible is not the same as correct. The dropped rays are not scattered:
+ * a regular tessellation puts its seams on meridians, so the holes line up along
+ * them and stay in the same place on every frame.
+ *
+ * The value matches `packages/sim`'s deliberately. These are two independent
+ * implementations whose agreement is a tested result, and an edge tolerance is
+ * exactly where a difference in the CONSTANT would put them at odds on a whole
+ * class of rays by construction rather than by mistake. At 1e-9 in barycentric
+ * units the enlargement is sub-nanometre on a metre-scale triangle, nine orders
+ * below the tessellation error it sits inside. The cost is a seam ray hitting
+ * both neighbours at the same `t`, and the nearest-hit search below then takes
+ * one of them deterministically.
+ *
+ * This is a tolerance, not a watertightness proof. Woop et al. (2013) give a
+ * ray-triangle test that is crack-free by construction, and `packages/sim`
+ * records it as the upgrade if the mesh path ever has to carry a §7-style gate.
+ * The same applies here, for the same reason.
  */
 const EPS = 1e-12;
+const BARY_EPS = 1e-9;
 
 function rayTriangle(
   positions: Float64Array,
@@ -402,7 +474,7 @@ function rayTriangle(
   const tz = oz - az;
 
   const u = (tx * px + ty * py + tz * pz) * inv;
-  if (u < 0 || u > 1) return Infinity;
+  if (u < -BARY_EPS || u > 1 + BARY_EPS) return Infinity;
 
   // q = t x e1
   const qx = ty * e1z - tz * e1y;
@@ -410,7 +482,7 @@ function rayTriangle(
   const qz = tx * e1y - ty * e1x;
 
   const v = (dx * qx + dy * qy + dz * qz) * inv;
-  if (v < 0 || u + v > 1) return Infinity;
+  if (v < -BARY_EPS || u + v > 1 + BARY_EPS) return Infinity;
 
   const t = (e2x * qx + e2y * qy + e2z * qz) * inv;
   return t > 0 ? t : Infinity;
@@ -451,7 +523,7 @@ export function intersectMesh(index: MeshIndex, origin: Vec3, dir: Vec3): MeshHi
 
   while (sp > 0) {
     const node = stack[--sp];
-    if (slab(bounds, node, ox, oy, oz, ix, iy, iz, best) === Infinity) continue;
+    if (slab(bounds, node, ox, oy, oz, dx, dy, dz, ix, iy, iz, best) === Infinity) continue;
 
     const a = nodes[2 * node];
     const b = nodes[2 * node + 1];
@@ -479,8 +551,8 @@ export function intersectMesh(index: MeshIndex, origin: Vec3, dir: Vec3): MeshHi
     // Interior: `a` is the left child, `b` encodes the right as `-right - 1`.
     const left = a;
     const right = -b - 1;
-    const dl = slab(bounds, left, ox, oy, oz, ix, iy, iz, best);
-    const dr = slab(bounds, right, ox, oy, oz, ix, iy, iz, best);
+    const dl = slab(bounds, left, ox, oy, oz, dx, dy, dz, ix, iy, iz, best);
+    const dr = slab(bounds, right, ox, oy, oz, dx, dy, dz, ix, iy, iz, best);
     if (sp + 2 > MAX_DEPTH) {
       throw new Error(
         `intersectMesh: traversal stack exceeded ${MAX_DEPTH} — the hierarchy is deeper than ` +

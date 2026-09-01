@@ -399,3 +399,49 @@ test('the hierarchy prunes, which no answer-checking test can see', () => {
       'degenerating toward a linear scan',
   );
 });
+
+test('a ray meeting a shared edge does not fall through a closed surface', () => {
+  // The defect this file shipped with, and the reason `BARY_EPS` exists.
+  //
+  // With the barycentric tests taken strictly, a ray meeting the seam between
+  // two triangles is rejected by BOTH — each sees the hit as a hair outside
+  // itself, on opposite sides of the rounding — and passes through a closed
+  // surface. Measured before the fix: 71 of these 6624 rays, 1.07%, missed a
+  // sphere with no hole in it. That is the figure `docs/ARBITRARY-SHAPES.md`
+  // reports for the same effect, and `packages/sim/src/mesh/bvh.ts` records
+  // finding it "on the first try".
+  //
+  // The count matters more than it looks. The holes are not scattered: a regular
+  // tessellation puts its seams on meridians, so they line up and stay put.
+  const mesh = uvSphereMesh(24, 48, 1);
+  const index = buildMeshIndex(mesh);
+  const { positions: P, indices: I } = mesh;
+
+  let through = 0;
+  let fired = 0;
+  for (let t = 0; t < mesh.triangleCount; t++) {
+    for (let e = 0; e < 3; e++) {
+      const p = 3 * I[3 * t + e];
+      const q = 3 * I[3 * t + ((e + 1) % 3)];
+      const m = [(P[p] + P[q]) / 2, (P[p + 1] + P[q + 1]) / 2, (P[p + 2] + P[q + 2]) / 2];
+      const len = Math.hypot(m[0], m[1], m[2]);
+      const d = [m[0] / len, m[1] / len, m[2] / len];
+      fired++;
+      const h = intersectMesh(
+        index,
+        { x: 5 * d[0], y: 5 * d[1], z: 5 * d[2] },
+        { x: -d[0], y: -d[1], z: -d[2] },
+      );
+      // NOT just `h.hit`. A ray that falls through the near seam carries on and
+      // exits the far side, which reports a perfectly good hit about a diameter
+      // further along — so counting misses alone scores a hole in the surface as
+      // a success. This test made exactly that mistake first, and the
+      // sim-vs-solver comparison in `packages/bench` is what caught it: 151 of
+      // these rays were taking the far side. The near surface is at t = 4 for a
+      // unit sphere seen from 5, so anything past the centre is a pass-through.
+      if (!h.hit || h.t > 5) through++;
+    }
+  }
+  assert.ok(fired > 6000, `only ${fired} edge rays — the fixture is too small to be evidence`);
+  assert.equal(through, 0, `${through} of ${fired} rays passed through the near surface at a seam`);
+});
