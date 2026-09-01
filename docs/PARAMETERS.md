@@ -123,8 +123,8 @@ below carry its uncertainty. The *shape* of the coverage field does not change.
 | --- | --- | --- | --- | --- |
 | `res_proj` | Native resolution **per projector** | 1920×1080 or 3840×2160 | `CFG` | **See §3.4 — SOS drives all four from one framebuffer, so the X screen is 2× this in each dimension.** |
 | `PAR` | Pixel aspect ratio | 1.0 | `DOC` | Content guidelines require square pixels. |
-| `T` | Throw ratio | ≈ 3.0 : 1 | `CFG` | Derived: image width ≈ sphere diameter at `d_proj`. Long-throw lens. |
-| `fov_h` | Horizontal field of view | ≈ 18.9° | `SOLVE` | Derived from `T`. |
+| `T` | Throw ratio | **1.36 : 1 – 2.18 : 1** | `CFG` | **Read from the lens.** BenQ LK935 projection-distance table, cross-checked against its f = 14.3–22.9 mm range (A-35). Rev 2's `≈ 3.0 : 1` was inferred from "image width ≈ sphere diameter at `d_proj`" and is beyond this lens's tele end — not achievable at any zoom setting. The zoom ring is continuous over 1.60×, so **the model bounds `T` and the deployed zoom setting pins it**; §8 item 2 records that setting. |
+| `fov_h` | Horizontal field of view | **40.4° (wide) – 25.8° (tele)** | `SOLVE` | Derived from `T`, i.e. from the lens and the recorded zoom. A lens property is independent of where the projector ended up standing, which is what lets a nominal built from it *break* the distance/fov degeneracy instead of encoding one side of the `d_proj` conflict §2 declines to settle. Holding `fov_h` at truth removes 88–97% of the recovered position error for 0.3–3.5% of residual RMS (A-18). |
 | `shift_v`, `shift_h` | Lens shift | 0 | `SOLVE` | Non-zero for ceiling mounts. |
 | `k1, k2` | Radial distortion | 0, 0 | `SOLVE` | **This is what SOS's manual "Vertex Tweaking" stage compensates by hand.** Solving it is what collapses their three stages into one. |
 | `p1, p2` | Tangential distortion | 0, 0 | `ASSUME` | Hold at zero unless residuals demand otherwise. Extra DOF overfits. |
@@ -349,6 +349,10 @@ auto-adjust between frames or the whole set is unusable.**
 1. Tape measure: floor to sphere center; floor to each projector lens; sphere
    center to each projector lens. Settles the `d_proj` conflict.
 2. Projector make and model → throw ratio, native resolution, lens shift range.
+   **And the zoom setting as deployed.** The LK935's zoom ring is continuous over
+   1.60×, so the model number bounds the throw ratio but does not pin it. This is
+   free, it is already a site visit, and A-18 measures it at 88–97% of the pose
+   error — a larger prize than item 1's tape.
 3. X screen resolution from the SOS machine — confirms §3.4.
 4. Grid alignment pattern, photographed from a marked, measured position.
 5. Read the site's actual config: `gamma`, `bottommask`, `viewport` values as

@@ -947,7 +947,19 @@ front of whoever adds a ceiling-mount scenario. See A-19 and A-20.
 
 ## A-18 — correcting A-16: the pose gate is a LENS-KNOWLEDGE gate, and the tape is only the floor beneath it
 
-**Status:** OPEN. Supersedes A-16. Raised by an independent critic and confirmed
+**Status:** OPEN — spec half APPLIED 2026-09-01, consequence not yet realised.
+§3.1 now derives `fov_h` from the lens rather than from `d_proj`, and §8 item 2
+records the zoom setting as deployed; both were this entry's proposed remedy and
+both have landed. It stays OPEN because the remedy was never the point: the
+*purpose* is a reachable pose gate, and that needs the solver's nominal rebuilt
+from the recorded lens and the corpus re-run. Until then `pose_position` still
+reads 162.14 mm against 2, and the three waivers citing this entry are still
+doing real work — `packages/bench/src/waivers.ts:412` voids a waiver whose
+amendment is not OPEN, so closing this now would turn three gates red without
+improving a single number. Note also that the lens alone does not settle
+`fov_h`: A-35 records the zoom ring as continuous, so the model bounds it and
+the deployed setting pins it. That is why §8 item 2 carries the weight.
+Supersedes A-16. Raised by an independent critic and confirmed
 by a second, independent measurement in A-13.
 
 A-16 concluded that §7's pose gate is bound by the floor-reference tape measure,
@@ -1837,7 +1849,14 @@ test file and `packages/solver/README.md`.
 
 ## A-35 — the projector is a BenQ LK935: six §3 values move from ASSUME/inferred to CFG, and one of them is impossible as written
 
-**Status:** OPEN against PARAMETERS.md, ACTED ON in code by round 4. The owner
+**Status:** APPLIED to PARAMETERS.md §3.1 on 2026-09-01 by the author, having been
+ACTED ON in code since round 4. §3.1 now carries the LK935 envelope
+(1.36 : 1 – 2.18 : 1, `fov_h` 40.4°–25.8°) and `T_throw` in
+`packages/calibration/src/parameters.ts` was brought in line with it in the same
+change. The entry stayed OPEN for exactly one reason — "§3.1 still says
+`T ≈ 3.0:1`, which this manual refutes, and only the author can change that" —
+and that reason is now gone. No gate waiver cites A-35, so closing it moves no
+gate. The owner
 supplied the projector's user manual (BenQ LK935, document LK935_UM_EN, 102 pp).
 §3.1 classes the throw ratio `T` as `CFG` — "read from a hardware spec sheet".
 This is that spec sheet. Section 5 below records exactly what the code now does
