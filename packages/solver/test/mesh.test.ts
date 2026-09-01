@@ -36,9 +36,19 @@ import type { SurfaceMesh } from '../../calibration/src/index.ts';
 import {
   buildMeshIndex,
   intersectMesh,
+  intersectMeshJacobian,
   meshTraversalStats,
   resetMeshTraversalStats,
 } from '../src/mesh.ts';
+import {
+  CAM_FOCAL,
+  CAM_PARAM_COUNT,
+  CAM_VPX,
+  type CameraModel,
+  intersectSphereJacobian,
+  zeroCameraRate,
+} from '../src/sphere.ts';
+import { phoneIntrinsics } from './synthetic.ts';
 
 function meshOf(positions: number[], indices: number[], name = 'fixture'): SurfaceMesh {
   return {
@@ -444,4 +454,281 @@ test('a ray meeting a shared edge does not fall through a closed surface', () =>
   }
   assert.ok(fired > 6000, `only ${fired} edge rays — the fixture is too small to be evidence`);
   assert.equal(through, 0, `${through} of ${fired} rays passed through the near surface at a seam`);
+});
+
+// ---------------------------------------------------------------------------
+// The derivative
+// ---------------------------------------------------------------------------
+
+function testCamera(overrides: Partial<CameraModel> = {}): CameraModel {
+  return {
+    position: { x: 2.1, y: -1.4, z: -0.58 },
+    yawDeg: 146.3,
+    pitchDeg: 12.1,
+    rollDeg: -3.4,
+    intrinsics: phoneIntrinsics(640, 480),
+    focalScale: 1,
+    velocity: zeroCameraRate(),
+    ...overrides,
+  };
+}
+
+/**
+ * A coarse sphere on purpose.
+ *
+ * The derivative is exact within a facet and undefined across one, so a central
+ * difference is only meaningful while the perturbed rays stay on the SAME
+ * triangle. Big facets make that easy to arrange and easy to CHECK, which the
+ * test below does rather than assumes — a finite difference taken across a
+ * crease is comparing two different planes and would produce a number that
+ * looks like a tolerance problem and is not.
+ */
+const COARSE = uvSphereMesh(8, 16, 1);
+
+test('the analytic mesh Jacobian matches central differences, on a facet', () => {
+  const index = buildMeshIndex(COARSE);
+  const cam = testCamera();
+  const nx = 0.21;
+  const ny = -0.13;
+
+  const analytic = intersectMeshJacobian(index, cam, nx, ny);
+  assert.ok(analytic.hit.hit, 'the fixture ray misses the mesh');
+
+  // Steps as `sphere.test.ts` uses: metres for position, degrees for angle.
+  const steps = [1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4];
+  const perturb = (i: number, delta: number): CameraModel => {
+    const c: CameraModel = { ...cam, position: { ...cam.position } };
+    if (i === 0) c.position.x += delta;
+    else if (i === 1) c.position.y += delta;
+    else if (i === 2) c.position.z += delta;
+    else if (i === 3) c.yawDeg += delta;
+    else if (i === 4) c.pitchDeg += delta;
+    else c.rollDeg += delta;
+    return c;
+  };
+
+  for (let i = 0; i < 6; i++) {
+    const h = steps[i];
+    const hi = intersectMeshJacobian(index, perturb(i, h), nx, ny);
+    const lo = intersectMeshJacobian(index, perturb(i, -h), nx, ny);
+    // The precondition, asserted rather than hoped for.
+    assert.equal(
+      hi.hit.triangle,
+      analytic.hit.triangle,
+      `column ${i}: the +h ray left the facet, so the difference spans a crease`,
+    );
+    assert.equal(lo.hit.triangle, analytic.hit.triangle, `column ${i}: the -h ray left the facet`);
+
+    const fd = [
+      (hi.hit.point.x - lo.hit.point.x) / (2 * h),
+      (hi.hit.point.y - lo.hit.point.y) / (2 * h),
+      (hi.hit.point.z - lo.hit.point.z) / (2 * h),
+    ];
+    for (let r = 0; r < 3; r++) {
+      const an = analytic.dPoint[r * CAM_PARAM_COUNT + i];
+      assert.ok(
+        Math.abs(fd[r] - an) / Math.max(1, Math.abs(fd[r])) < 1e-5,
+        `dPoint[${r}][${i}] analytic ${an} against central difference ${fd[r]}`,
+      );
+    }
+  }
+});
+
+test('the focal column is filled only when asked, and is right when it is', () => {
+  // The failure this guards is recorded in `SphereHitJacobian`: a parameter was
+  // freed whose Jacobian column was identically zero, the normal equations went
+  // rank deficient by one, and `focalScale` came back as exactly 1.0 however
+  // wrong it was. A column of zeros is not a small error, it is a silent one.
+  const index = buildMeshIndex(COARSE);
+  const cam = testCamera();
+  const nx = 0.21;
+  const ny = -0.13;
+
+  const held = intersectMeshJacobian(index, cam, nx, ny);
+  for (let r = 0; r < 3; r++) {
+    assert.equal(held.dPoint[r * CAM_PARAM_COUNT + CAM_FOCAL], 0, 'the focal column filled itself');
+  }
+
+  // `focalScale` multiplies the normalised coordinate, so d(x,y)/d(focalScale)
+  // is (x, y) itself — the caller owns the intrinsics and supplies this.
+  const dNormalized = { dx: nx, dy: ny };
+  const free = intersectMeshJacobian(index, cam, nx, ny, undefined, undefined, undefined, dNormalized);
+  let magnitude = 0;
+  for (let r = 0; r < 3; r++) {
+    magnitude = Math.max(magnitude, Math.abs(free.dPoint[r * CAM_PARAM_COUNT + CAM_FOCAL]));
+  }
+  assert.ok(magnitude > 1e-6, `the focal column is ${magnitude}, indistinguishable from zero`);
+
+  // Against a central difference in the scale itself.
+  const h = 1e-6;
+  const at = (s: number): { x: number; y: number; z: number } =>
+    intersectMeshJacobian(index, cam, nx * s, ny * s).hit.point;
+  const hi = at(1 + h);
+  const lo = at(1 - h);
+  const fd = [(hi.x - lo.x) / (2 * h), (hi.y - lo.y) / (2 * h), (hi.z - lo.z) / (2 * h)];
+  for (let r = 0; r < 3; r++) {
+    const an = free.dPoint[r * CAM_PARAM_COUNT + CAM_FOCAL];
+    assert.ok(
+      Math.abs(fd[r] - an) / Math.max(1, Math.abs(fd[r])) < 1e-5,
+      `focal column row ${r}: analytic ${an} against central difference ${fd[r]}`,
+    );
+  }
+});
+
+test('the velocity columns are the pose columns through the epoch, by difference', () => {
+  // `pose(t) = pose + velocity * dt` is affine in the rate, so the chain rule is
+  // exact rather than approximate. Asserted by DIFFERENCING the rate, not by
+  // restating the multiplication the code performs — which would pass with the
+  // factor written the wrong way round.
+  const index = buildMeshIndex(COARSE);
+  const dtFrames = 2.5;
+  const nx = 0.21;
+  const ny = -0.13;
+  const base = testCamera();
+
+  // The caller epochs the camera and tells the Jacobian how far it travelled.
+  const epoched = (vpx: number): CameraModel => ({
+    ...base,
+    position: { ...base.position, x: base.position.x + vpx * dtFrames },
+  });
+
+  const analytic = intersectMeshJacobian(
+    index,
+    epoched(0),
+    nx,
+    ny,
+    undefined,
+    undefined,
+    dtFrames,
+  );
+  assert.ok(analytic.hit.hit);
+
+  const h = 1e-6;
+  const hi = intersectMeshJacobian(index, epoched(h), nx, ny).hit.point;
+  const lo = intersectMeshJacobian(index, epoched(-h), nx, ny).hit.point;
+  const fd = [(hi.x - lo.x) / (2 * h), (hi.y - lo.y) / (2 * h), (hi.z - lo.z) / (2 * h)];
+  for (let r = 0; r < 3; r++) {
+    const an = analytic.dPoint[r * CAM_PARAM_COUNT + CAM_VPX];
+    assert.ok(
+      Math.abs(fd[r] - an) / Math.max(1, Math.abs(fd[r])) < 1e-5,
+      `velocity column row ${r}: analytic ${an} against central difference ${fd[r]}`,
+    );
+  }
+
+  // And they stay zero when the solve holds the rate.
+  const stationary = intersectMeshJacobian(index, epoched(0), nx, ny);
+  for (let r = 0; r < 3; r++) {
+    assert.equal(stationary.dPoint[r * CAM_PARAM_COUNT + CAM_VPX], 0);
+  }
+});
+
+test('the derivative is discontinuous across a crease, and the size of the jump is the dihedral', () => {
+  // The claim the docblock makes, measured rather than asserted. This is not a
+  // defect to be fixed by a tolerance — the surface really is C0 and not C1, and
+  // a solve stepping across a facet boundary lands somewhere the linearisation
+  // did not predict. Recording HOW BIG the jump is turns that from a worry into
+  // a number the bench can be pointed at.
+  const index = buildMeshIndex(COARSE);
+  const cam = testCamera();
+
+  // Sweep the normalised coordinate until the hit changes facet, then take the
+  // analytic derivative on either side of the crossing.
+  let crossings = 0;
+  let worstJump = 0;
+  let prev = intersectMeshJacobian(index, cam, -0.3, -0.13);
+  for (let k = 1; k <= 600; k++) {
+    const nx = -0.3 + (0.6 * k) / 600;
+    const here = intersectMeshJacobian(index, cam, nx, -0.13);
+    if (!here.hit.hit || !prev.hit.hit) {
+      prev = here;
+      continue;
+    }
+    if (here.hit.triangle !== prev.hit.triangle) {
+      crossings++;
+      // Compare the translation block, which is the one the bundle uses most.
+      let jump = 0;
+      for (let r = 0; r < 3; r++) {
+        for (let i = 0; i < 3; i++) {
+          const a = here.dPoint[r * CAM_PARAM_COUNT + i];
+          const b = prev.dPoint[r * CAM_PARAM_COUNT + i];
+          jump = Math.max(jump, Math.abs(a - b));
+        }
+      }
+      worstJump = Math.max(worstJump, jump);
+    }
+    prev = here;
+  }
+
+  assert.ok(crossings > 5, `only ${crossings} facet crossings — the sweep is not crossing creases`);
+  // A jump of ZERO would mean the facets are coplanar and this fixture proves
+  // nothing; an enormous one would mean the derivative is wrong rather than
+  // merely one-sided. On an 8x16 sphere the dihedral is about 22 degrees, and a
+  // unit-scale translation derivative turning through that is O(0.1..1).
+  assert.ok(worstJump > 1e-3, `the largest jump is ${worstJump} — the fixture has no creases`);
+  assert.ok(
+    worstJump < 10,
+    `the derivative jumps by ${worstJump} across a crease, far more than the dihedral can ` +
+      'explain — that is a wrong derivative, not a one-sided one',
+  );
+});
+
+test('the mesh derivative converges to the sphere’s closed form, first order in the facet', () => {
+  // The central-difference tests above confirm this code differentiates what it
+  // COMPUTES. They cannot confirm it differentiates the right geometry — a
+  // derivative can be perfectly self-consistent about the wrong surface. This
+  // compares it against a completely independent closed form, `sphere.ts`, on a
+  // mesh that approximates the same sphere.
+  //
+  // The statistic is the MEDIAN, not the worst case, and that is not a way of
+  // being kind to the number. The worst case is set by rays that graze, where
+  // `n . d` approaches zero and the derivative legitimately diverges on both
+  // sides — and where PARAMETERS.md §4.3 has the decode rejecting the
+  // correspondence anyway, at `minCosIncidence = 0.2`. Measuring convergence on
+  // rays the solve would throw away measures the wrong thing.
+  //
+  // Expect FIRST order: the flat normal differs from the true one by about half
+  // the facet's angular size, so halving the facet halves the error. Measured
+  // across five refinements: 1.29e-1, 6.08e-2, 3.30e-2, 1.68e-2, 8.39e-3 — a
+  // clean halving each time, and a factor of 15.4 over a 16x refinement.
+  const cam = testCamera();
+
+  const medianError = (nLat: number, nLon: number): number => {
+    const index = buildMeshIndex(uvSphereMesh(nLat, nLon, 1));
+    const errors: number[] = [];
+    for (let k = 0; k < 300; k++) {
+      const nx = -0.25 + (0.5 * k) / 300;
+      const ny = -0.13 + 0.2 * Math.sin(k * 0.7);
+      const m = intersectMeshJacobian(index, cam, nx, ny);
+      const s = intersectSphereJacobian(cam, nx, ny, 1);
+      if (!m.hit.hit || !s.hit.hit) continue;
+      if (m.hit.cosIncidence < 0.2) continue;
+      let worst = 0;
+      for (let r = 0; r < 3; r++) {
+        for (let i = 0; i < 6; i++) {
+          const d = Math.abs(m.dPoint[r * CAM_PARAM_COUNT + i] - s.dPoint[r * CAM_PARAM_COUNT + i]);
+          if (d > worst) worst = d;
+        }
+      }
+      errors.push(worst);
+    }
+    assert.ok(errors.length > 200, `only ${errors.length} usable rays at ${nLat}x${nLon}`);
+    errors.sort((a, b) => a - b);
+    return errors[Math.floor(errors.length / 2)];
+  };
+
+  const coarse = medianError(16, 32);
+  const fine = medianError(64, 128);
+  const ratio = coarse / fine;
+
+  // A four-fold refinement should buy about four. The band is generous in one
+  // direction only: a ratio far ABOVE 4 would mean the coarse fixture is being
+  // flattered by something other than convergence.
+  assert.ok(
+    ratio > 2.5 && ratio < 8,
+    `refining 4x moved the median error by ${ratio.toFixed(2)}x (${coarse.toExponential(2)} -> ` +
+      `${fine.toExponential(2)}) — first order in the facet size predicts about 4`,
+  );
+  // And the absolute level is where a tessellation error should sit, not where a
+  // wrong formula would.
+  assert.ok(fine < 0.05, `the fine median is ${fine.toExponential(2)}, too large to be faceting`);
 });

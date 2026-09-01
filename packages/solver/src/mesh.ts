@@ -28,16 +28,27 @@
  *
  * Phase 5 holds the model's pose and scale: a visitor supplies geometry already
  * placed in world coordinates, and the mesh contributes no bundle parameters.
- * So this file intersects and nothing more. There is no derivative here — the
- * mesh analogue of `intersectSphereJacobian` is a separate problem (the hit
- * facet changes discontinuously as parameters move, and a tessellated surface's
- * normal is piecewise constant) and it is not solved by pretending a ray-plane
- * derivative covers it.
+ * That decision is why {@link intersectMeshJacobian} below is a REPLACEMENT for
+ * `intersectSphereJacobian` inside the existing camera block rather than a new
+ * parameter block — the camera still moves, so the hit still moves with it, but
+ * the model does not.
  */
 
 import type { SurfaceMesh } from '../../calibration/src/index.ts';
 
-import { vAdd, vScale, type Vec3 } from './linalg.ts';
+import { mat3MulVec, vAdd, vDot, vNorm, vScale, type Vec3 } from './linalg.ts';
+import { rotationWithDerivatives, type RotationWithDerivatives } from './project.ts';
+import {
+  CAM_FOCAL,
+  CAM_PARAM_COUNT,
+  CAM_PITCH,
+  CAM_ROLL,
+  CAM_VELOCITY_OF,
+  CAM_VPX,
+  CAM_VROLL,
+  CAM_YAW,
+  type CameraModel,
+} from './sphere.ts';
 
 /**
  * A ray's nearest intersection with a mesh.
@@ -603,4 +614,150 @@ export function intersectMesh(index: MeshIndex, origin: Vec3, dir: Vec3): MeshHi
     cosIncidence: -(dx * nx + dy * ny + dz * nz),
     triangle: bestTri,
   };
+}
+
+// ---------------------------------------------------------------------------
+// The derivative
+// ---------------------------------------------------------------------------
+
+/**
+ * `intersectMeshJacobian`'s result, matching `SphereHitJacobian`.
+ */
+export interface MeshHitJacobian {
+  hit: MeshHit;
+  /** d(point)/d(camera params), `3 x CAM_PARAM_COUNT` row-major. */
+  dPoint: Float64Array;
+}
+
+/**
+ * Analytic derivative of the surface point with respect to the camera.
+ *
+ * ## The one line that differs from the sphere
+ *
+ * `intersectSphereJacobian` factors into three parts, and only ONE of them
+ * knows what surface it is on. The canonical ray `(1, -x, y)`, the rotation
+ * derivatives, the normalisation projector `(I - d d^T)/|w|`, and the velocity
+ * chain on `pose(t) = pose + velocity * dt` are all statements about a camera
+ * and carry over unchanged. What is sphere-specific is `dt`, and for a plane it
+ * is simpler than for a quadric.
+ *
+ * The hit lies on the facet's plane, so with `n` the unit face normal and `A`
+ * one of its corners, `n . (o + t d - A) = 0` for all parameter values.
+ * Differentiating in place — rather than re-deriving the root, which is the same
+ * trick the sphere version uses —
+ *
+ *     n . do + dt (n . d) + t (n . dd) = 0
+ *     dt = -(n . do + t (n . dd)) / (n . d)
+ *
+ * and then `dX = do + t dd + d dt` as before. `n . d` is `-cosIncidence`, so the
+ * denominator vanishes exactly when the ray runs parallel to the facet — the
+ * analogue of the sphere's limb, and guarded the same way.
+ *
+ * ## What this derivative is honestly not
+ *
+ * **It is exact WITHIN a facet and undefined ACROSS one.** The surface is C0 and
+ * not C1: as the camera moves, the hit crosses from one triangle to its
+ * neighbour and the normal changes discontinuously, so the true derivative does
+ * not exist on that set and the two one-sided limits disagree by the dihedral
+ * angle. This returns the derivative of the facet the ray actually met, which is
+ * the right-hand limit approaching from wherever the camera currently is.
+ *
+ * Two consequences worth stating rather than discovering:
+ *
+ *  1. A Gauss-Newton step that crosses a facet boundary lands somewhere the
+ *     linearisation did not predict. That is a question about CONVERGENCE, and
+ *     it is answerable by running the bench rather than by argument — which is
+ *     the honest place to leave it.
+ *  2. The derivative describes the TESSELLATION, not the shape the tessellation
+ *     approximates. On a mesh standing in for a smooth surface, the residual
+ *     will carry the faceting. That is a modelling statement about the input,
+ *     not an error here, and it is the same statement {@link MeshHit.normal}
+ *     already makes about the flat normal.
+ *
+ * ## On not sharing code with `sphere.ts`
+ *
+ * The camera machinery above is duplicated rather than extracted, and that is
+ * deliberate for now: the sphere path is byte-identical across this whole phase
+ * (`bench-baseline.json`, 188 digests) and the cheapest way to keep it that way
+ * is for it not to enter new code at all. The duplication is ~25 lines and both
+ * copies are pinned by central-difference tests, so a divergence between them
+ * fails a test rather than silently biasing a solve. If a third surface ever
+ * appears, extract then.
+ */
+export function intersectMeshJacobian(
+  index: MeshIndex,
+  cam: CameraModel,
+  x: number,
+  y: number,
+  precomputedRotation?: RotationWithDerivatives,
+  out?: Float64Array,
+  /** Elapsed frames from the reference epoch; fills the six velocity columns. */
+  dtFrames?: number,
+  /** d(x, y)/d(focalScale); fills the focal column. */
+  dNormalized?: { dx: number; dy: number },
+): MeshHitJacobian {
+  const dPoint = out ?? new Float64Array(3 * CAM_PARAM_COUNT);
+  dPoint.fill(0);
+  const rot =
+    precomputedRotation ?? rotationWithDerivatives(cam.yawDeg, cam.pitchDeg, cam.rollDeg);
+  const canonical = { x: 1, y: -x, z: y };
+  const raw = mat3MulVec(rot.r, canonical);
+  const len = vNorm(raw);
+  const dir = vScale(raw, 1 / len);
+  const origin = cam.position;
+
+  const hit = intersectMesh(index, origin, dir);
+  if (!hit.hit) return { hit, dPoint };
+
+  const t = hit.t;
+  const n = hit.normal;
+  // `n . d`, which is `-cosIncidence`. Zero exactly when the ray runs in the
+  // facet's plane, where `t` is not a differentiable function of anything.
+  let denom = n.x * dir.x + n.y * dir.y + n.z * dir.z;
+  if (Math.abs(denom) < 1e-12) denom = denom >= 0 ? 1e-12 : -1e-12;
+
+  // --- translation: do = e_i, dd = 0, so dt = -n_i / (n . d) ---
+  for (let i = 0; i < 3; i++) {
+    const ndo = i === 0 ? n.x : i === 1 ? n.y : n.z;
+    const dt = -ndo / denom;
+    dPoint[0 * CAM_PARAM_COUNT + i] = (i === 0 ? 1 : 0) + dir.x * dt;
+    dPoint[1 * CAM_PARAM_COUNT + i] = (i === 1 ? 1 : 0) + dir.y * dt;
+    dPoint[2 * CAM_PARAM_COUNT + i] = (i === 2 ? 1 : 0) + dir.z * dt;
+  }
+
+  // --- anything that moves the unnormalised direction and nothing else ---
+  // Rotation and focal both land here, exactly as on the sphere: the camera
+  // stays put, `w` changes, and only the source of `dw` differs.
+  const dirSlot = (dw: Vec3, slot: number): void => {
+    const proj = vDot(dir, dw);
+    const dd = {
+      x: (dw.x - dir.x * proj) / len,
+      y: (dw.y - dir.y * proj) / len,
+      z: (dw.z - dir.z * proj) / len,
+    };
+    // do = 0, so dt = -t (n . dd) / (n . d).
+    const dt = (-t * (n.x * dd.x + n.y * dd.y + n.z * dd.z)) / denom;
+    dPoint[0 * CAM_PARAM_COUNT + slot] = t * dd.x + dir.x * dt;
+    dPoint[1 * CAM_PARAM_COUNT + slot] = t * dd.y + dir.y * dt;
+    dPoint[2 * CAM_PARAM_COUNT + slot] = t * dd.z + dir.z * dt;
+  };
+  dirSlot(mat3MulVec(rot.dYaw, canonical), CAM_YAW);
+  dirSlot(mat3MulVec(rot.dPitch, canonical), CAM_PITCH);
+  dirSlot(mat3MulVec(rot.dRoll, canonical), CAM_ROLL);
+
+  if (dNormalized !== undefined) {
+    dirSlot(mat3MulVec(rot.r, { x: 0, y: -dNormalized.dx, z: dNormalized.dy }), CAM_FOCAL);
+  }
+
+  // --- velocity: exact, because the effective pose is affine in the rate ---
+  if (dtFrames !== undefined && dtFrames !== 0) {
+    for (let slot = CAM_VPX; slot <= CAM_VROLL; slot++) {
+      const src = CAM_VELOCITY_OF[slot];
+      dPoint[0 * CAM_PARAM_COUNT + slot] = dtFrames * dPoint[0 * CAM_PARAM_COUNT + src];
+      dPoint[1 * CAM_PARAM_COUNT + slot] = dtFrames * dPoint[1 * CAM_PARAM_COUNT + src];
+      dPoint[2 * CAM_PARAM_COUNT + slot] = dtFrames * dPoint[2 * CAM_PARAM_COUNT + src];
+    }
+  }
+
+  return { hit, dPoint };
 }
