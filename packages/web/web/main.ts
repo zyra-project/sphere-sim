@@ -1271,12 +1271,26 @@ function modelBlock(): HTMLElement[] {
     out.push(note);
   }
 
+  // Which renderer is actually drawing the model, asked rather than assumed.
+  // This caption said "the live view above is still the sphere" for as long as
+  // that was true, and went on saying it after Phase 2 put the mesh on the GPU —
+  // in the same file that passes `mesh: model.mesh` to the display shader every
+  // frame. It is still true on the REJECTION path, where `packMesh` threw on a
+  // hierarchy deeper than the shader's stack and `draw` fell back to the sphere,
+  // so the sentence has to name which case the reader is looking at. The page's
+  // own rule, stated above: quietly drawing a ball while a model is loaded is
+  // the one thing this page must not do.
+  const tracingModel = displayMeshId() !== '';
   const caveat = el('p', {
     className: 'note tiny',
     textContent:
-      'The live view above is still the sphere — the display shader intersects one analytically, ' +
-      'and a mesh on the GPU is the next phase. This picture is the same scene traced on the CPU ' +
-      'by the model. Projectors DO crossfade here: the blend is a geodesic distance to the edge ' +
+      (tracingModel
+        ? 'The live view above traces this same model — the display shader walks its BVH on the ' +
+          'GPU. This picture is that scene traced independently on the CPU, which is what the ' +
+          'agreement check beside it compares. '
+        : 'The live view above is the sphere: this model was refused, so the display shader fell ' +
+          'back and this CPU picture is the only place its shape appears. ') +
+      'Projectors DO crossfade here: the blend is a geodesic distance to the edge ' +
       "of each projector's own footprint, which feathers a shadow edge exactly as it feathers a " +
       'raster edge. The polar mask stays off, and that is a decision rather than a gap: it ' +
       "attenuates a sphere's exposed south cap by latitude, and a model has no pole to " +
