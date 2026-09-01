@@ -147,6 +147,7 @@
 
 import type { ResidualSample } from '../../calibration/src/index.ts';
 import type { Correspondence } from './decode.ts';
+import { intersectMesh, intersectMeshJacobian, type MeshIndex } from './mesh.ts';
 import {
   type Mat3,
   type Vec3,
@@ -394,6 +395,26 @@ export interface BundleOptions {
   free: BundleFreeFlags;
   gauge: GaugeOptions;
   loss: RobustOptions;
+  /**
+   * The surface every camera ray is traced against. Omit for the sphere.
+   *
+   * A `MeshIndex` from `mesh.ts`, built once by the caller and shared: the
+   * hierarchy is walked once per correspondence per trial evaluation, hundreds
+   * of thousands of times across a solve, and rebuilding it per pass would cost
+   * more than the fit.
+   *
+   * The model's pose and scale are HELD (docs/ARBITRARY-SHAPES.md, Phase 5): the
+   * mesh arrives already placed in world coordinates, contributes no bundle
+   * parameters, and the gauge stays at the three global rotations about the
+   * world origin. So this is a swap of the surface the existing camera block is
+   * differentiated against, not a new block — which is why `nSlots`, the
+   * per-correspondence scratch and `readSlot`/`writeSlot` are untouched.
+   *
+   * `state.radiusM` is then not the intersection's business. It still describes
+   * the sphere the rig was CONFIGURED for, and everything that reads it for that
+   * reason — the gauge, the reports, `alignGaugeToReference` — is unaffected.
+   */
+  surface?: MeshIndex | null;
   maxIterations: number;
   initialLambda: number;
   lambdaUp: number;
@@ -1041,6 +1062,8 @@ export interface BundleProblem {
   priors: readonly ParameterPrior[];
   layout: ParamLayout;
   opts: BundleOptions;
+  /** `opts.surface`, resolved once. `null` is the sphere. */
+  surface: MeshIndex | null;
   /** Rejected by an earlier pass, or unusable. Never re-enters the fit. */
   excluded: boolean[];
   projBlocks: BlockIndex[];
@@ -1204,6 +1227,10 @@ export function buildProblem(
     priors: livePriors,
     layout,
     opts,
+    // Resolved once so `evaluate` reads a field rather than an optional every
+    // ray. `?? null` is what makes an omitted option the sphere, which is every
+    // existing caller.
+    surface: opts.surface ?? null,
     excluded: new Array(correspondences.length).fill(false),
     projBlocks,
     camBlocks,
@@ -1333,10 +1360,45 @@ function hitAtEpoch(
   nx: number,
   ny: number,
   radiusM: number,
+  surface: MeshIndex | null,
   wantJacobian: boolean,
   scratch: Float64Array,
   dNormalized?: { dx: number; dy: number },
 ): EpochHit | null {
+  // The mesh path is a separate branch rather than a surface abstraction the
+  // sphere also goes through, and that is deliberate. Every phase of this work
+  // has opened by asserting the sphere path is byte-identical --
+  // `bench-baseline.json` is 188 digests over a corpus that would notice a
+  // changed last bit -- and the cheapest way to keep that true is for the sphere
+  // arithmetic not to move at all. A branch on a null check cannot change a
+  // float; a shared code path reached through an interface can, and would be
+  // discovered as a digest diff with no obvious cause.
+  if (surface !== null) {
+    if (wantJacobian) {
+      const mj = intersectMeshJacobian(
+        surface,
+        e.cam,
+        nx,
+        ny,
+        e.rotJ ?? undefined,
+        scratch,
+        e.dt,
+        dNormalized,
+      );
+      if (!mj.hit.hit) return null;
+      return { point: mj.hit.point, dPoint: mj.dPoint };
+    }
+    const rawM = mat3MulVec(e.rot, { x: 1, y: -nx, z: ny });
+    const lenM = Math.hypot(rawM.x, rawM.y, rawM.z);
+    const invM = 1 / lenM;
+    const hitM = intersectMesh(surface, e.cam.position, {
+      x: rawM.x * invM,
+      y: rawM.y * invM,
+      z: rawM.z * invM,
+    });
+    if (!hitM.hit) return null;
+    return { point: hitM.point, dPoint: null };
+  }
   if (wantJacobian) {
     const hj = intersectSphereJacobian(
       e.cam,
@@ -1502,7 +1564,16 @@ export function evaluate(
     // another, so each is evaluated against the camera as it was when ITS
     // frames were shot. With one pose the two passes are the same pass and the
     // second is skipped entirely.
-    const hitU = hitAtEpoch(eU, nx, ny, state.radiusM, wantJacobian, dPointScratch, dNormalized);
+    const hitU = hitAtEpoch(
+      eU,
+      nx,
+      ny,
+      state.radiusM,
+      problem.surface,
+      wantJacobian,
+      dPointScratch,
+      dNormalized,
+    );
     if (hitU === null) {
       cost += missCost;
       continue;
@@ -1510,7 +1581,16 @@ export function evaluate(
     const hitV =
       eV === eU
         ? hitU
-        : hitAtEpoch(eV, nx, ny, state.radiusM, wantJacobian, dPointScratchV, dNormalized);
+        : hitAtEpoch(
+            eV,
+            nx,
+            ny,
+            state.radiusM,
+            problem.surface,
+            wantJacobian,
+            dPointScratchV,
+            dNormalized,
+          );
     if (hitV === null) {
       cost += missCost;
       continue;
