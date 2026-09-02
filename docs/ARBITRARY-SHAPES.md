@@ -260,11 +260,39 @@ The expensive tier, and the one worth protecting rather than working around.
   `intersectSphereJacobian` inside the existing camera block instead of adding
   one. It also largely dissolves the bootstrap's chicken-and-egg below, since a
   PnP has a known pose to intersect against.
-- **Bootstrap breaks, and this is the hardest single piece.** `initialize.ts`
-  reaches a convergent basin partly because a sphere's silhouette is a circle
-  from every viewpoint. A mesh's is not. The replacement is PnP from clicked
-  correspondences, a marker pass, or a coarse pose search — all of which are
-  standard, and none of which is a small change.
+- **Bootstrap breaks — and MEASUREMENT has moved where.** This bullet used to
+  read: "`initialize.ts` reaches a convergent basin partly because a sphere's
+  silhouette is a circle from every viewpoint. A mesh's is not. The replacement
+  is PnP from clicked correspondences, a marker pass, or a coarse pose search."
+  The named difficulty was that the DLT's 3D points come from intersecting
+  camera rays with the surface, and on a mesh there is nothing to intersect until
+  a model pose exists.
+
+  **That chicken-and-egg is a consequence of a FREE model pose, and the pose is
+  held.** A visitor supplies the model already placed, so there is a known
+  surface to intersect from the first ray. It dissolves. Rungs 1 and 3 needed no
+  change at all — they hand their options straight to `runBundle`, so they have
+  been solving against a dropped mesh since `BundleOptions.surface` landed. Rungs
+  0 and 2 built world points themselves and are now threaded, which was measured
+  to change almost nothing: against a build with those two rungs forced back onto
+  the sphere, across ellipsoids, an offset model and a 45-degree-wrong nominal
+  layout, the differences are chaotic in sign and smaller than the seed-to-seed
+  spread.
+
+  **What actually fails is a strongly ASPHERICAL object.** On a tri-axial
+  ellipsoid (1 : 0.6 : 0.35) the recovered pose is **120–435 mm across six
+  seeds**, against §7's 2 mm. Two measurements say what that is and is not:
+  tripling the correspondences (1 946 → 5 698) makes it **worse**, 133 → 231 mm,
+  so it is a degeneracy rather than sampling; and the field of view goes with it,
+  0.936° then 1.537°, against 0.022–0.054° on near-spherical meshes — the
+  fov/distance valley A-18 measures on the sphere corpus, arriving through a
+  different door.
+
+  The hypothesis, stated as one: rung 1 collapses the search to one dimension by
+  placing every projector at ONE distance along its NOMINAL bearing, and that
+  collapse needs the object to be roughly centrally symmetric about the origin.
+  A rung 1 that searches something other than a single radius is the part of this
+  module that really is research.
 
 ## The recommendation
 
@@ -865,7 +893,10 @@ which had none.
 use either piece and the bootstrap is still the sphere's.
 
 **Still to do:** a measured rather than assumed gauge null space — a new
-statistic, not a widening, see the gauge bullet above. A new bootstrap. New
+statistic, not a widening, see the gauge bullet above. A rung 1 that does not
+collapse the search onto a single radius — see the bootstrap bullet above, where
+the chicken-and-egg turns out to be dissolved and the real failure is measured
+instead. New
 scenarios and new gates, which cannot be a port: §7's numbers are sphere
 theorems and nobody has measured a mesh installation. And an honest statement of
 which photometric numbers remain PROVISIONAL — all of them, for the same reason.

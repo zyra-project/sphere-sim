@@ -196,3 +196,53 @@ test('omitting `surface` is the sphere, and is what every existing caller gets',
     `the sphere path regressed: ${(1000 * score.maxProjectorPositionM).toFixed(3)} mm`,
   );
 });
+
+
+test('the bootstrap reaches a good basin on a mesh, within the envelope it has', () => {
+  // The bootstrap is `initialize.ts`, and this asserts the whole ladder end to
+  // end: it starts from PARAMETERS.md nominals, sweeps `d_proj`, re-derives each
+  // projector three ways, and hands the full solve a state. If any rung were
+  // still consulting a sphere where it should consult the mesh, or if the sweep
+  // landed in the wrong basin, the recovery below would not happen.
+  //
+  // ENVELOPE, and it is a real one. This passes on ellipsoids that deviate
+  // moderately from a sphere. It does NOT pass on a strongly tri-axial body:
+  // measured at 1 : 0.6 : 0.35, the recovered pose is 120-435 mm across six
+  // seeds against §7's 2 mm, and tripling the correspondences makes it worse
+  // rather than better. See the module docblock in `initialize.ts` for the
+  // measurements and the hypothesis. That failure is deliberately NOT asserted
+  // here — a test that pins a known-bad number turns a research problem into a
+  // green tick.
+  const scene = makeScene(1);
+  for (const squash of [0.9, 0.7]) {
+    const index = buildMeshIndex(ellipsoid(scene.truth.radiusM, squash, 192, 384));
+    const corrs = generateCorrespondences(scene.truth, {
+      surface: index,
+      noisePx: 0,
+      sigmaPx: 0.02,
+    });
+    const res = solveFromCorrespondences(
+      scene.nominal,
+      scene.cameraInputs,
+      corrs,
+      floorAtEveryLens(scene),
+      { bundle: { tieProjectorFov: false, surface: index } },
+    );
+    const state = {
+      ...bundleStateFromCalibration(res.calibration, []),
+      cameras: res.extra.cameras,
+    };
+    const score = scoreRecovery(alignToTruth(state, scene.truth), scene.truth);
+    // Measured 2.95 mm at 0.9 and 0.88 mm at 0.7 on this seed. The bound is
+    // loose enough to survive a re-tuned rung without being loose enough to
+    // survive the ladder landing in the wrong basin, which costs hundreds.
+    assert.ok(
+      score.maxProjectorPositionM < 0.01,
+      `squash ${squash}: bootstrap+solve recovered ${(1000 * score.maxProjectorPositionM).toFixed(2)} mm`,
+    );
+    assert.ok(
+      score.maxProjectorRotationDeg < 0.05,
+      `squash ${squash}: rotation ${score.maxProjectorRotationDeg.toFixed(4)} deg`,
+    );
+  }
+});

@@ -34,9 +34,54 @@
  * Rung 2 is what makes the bootstrap robust to a rig that is not laid out the
  * way §2 says. If a site's projectors are not at 0/90/180/270, or the capture
  * indexes them in a different order, the DLT does not notice and does not care.
+ *
+ * ## On a mesh, and where it stops working
+ *
+ * `BundleOptions.surface` reaches every rung. Rungs 1 and 3 needed nothing at
+ * all: they hand `base` straight to `runBundle`, so they have been solving
+ * against a dropped mesh since the bundle was wired. Rungs 0 and 2 built world
+ * points themselves and are now threaded too.
+ *
+ * `docs/ARBITRARY-SHAPES.md` called this module "genuinely research" and named
+ * the reason: the DLT's 3D points come from intersecting camera rays with the
+ * surface, and on a mesh there is nothing to intersect until a model pose
+ * exists. **That chicken-and-egg is a consequence of a FREE model pose, and the
+ * pose is held** — the visitor supplies the model already placed — so there is a
+ * known surface to intersect from the first ray. It dissolves.
+ *
+ * The document was right that this is research and wrong about why, and the
+ * measurements are worth recording because the failure is not where anyone
+ * looked for it.
+ *
+ * **Threading the surface into rungs 0 and 2 changes almost nothing.** Measured
+ * against a build with those two rungs forced back onto the analytic sphere,
+ * across ellipsoids from mildly to strongly deformed, an offset model and a
+ * 45-degree-wrong nominal layout, the differences are chaotic in sign and
+ * smaller than the seed-to-seed spread. It is done because a rung handed a mesh
+ * should not secretly consult a sphere, not because it bought accuracy.
+ *
+ * **What does not work is a strongly ASPHERICAL object.** On a tri-axial
+ * ellipsoid (1 : 0.6 : 0.35) the recovered pose is 120-435 mm across six seeds,
+ * against §7's 2 mm. Two measurements say what that is and is not:
+ *
+ *  - It is not sampling. Tripling the correspondences (1 946 -> 5 698) makes it
+ *    WORSE, 133 -> 231 mm. More data hurting is the signature of a degeneracy,
+ *    not of noise.
+ *  - The field of view goes with it: 0.936 degrees at stride 12 and 1.537 at
+ *    stride 7, against 0.022-0.054 on near-spherical meshes. That is the
+ *    fov/distance valley A-18 measures on the sphere corpus, arriving through a
+ *    different door.
+ *
+ * The likely mechanism, stated as a hypothesis because nothing here has isolated
+ * it: rung 1 collapses the search to one dimension by placing every projector at
+ * ONE distance along its NOMINAL bearing. That collapse needs the object to be
+ * roughly centrally symmetric about the origin, and a tri-axial body is not.
+ * Fixing it means a rung 1 that searches something other than a single radius —
+ * which is a new estimator, and the part of this module that really is research.
  */
 
 import type { Correspondence } from './decode.ts';
+import { boundingRadiusM, intersectMesh, type MeshIndex } from './mesh.ts';
 import {
   type Vec3,
   createRng,
@@ -211,6 +256,35 @@ function correctCameraDistance(
   cam.position = vScale(vNormalize(cam.position), dist);
 }
 
+/**
+ * Where a camera ray meets the object, whichever object that is.
+ *
+ * The bootstrap turns camera pixels into world points in two places — the
+ * footprint centroid and the DLT's correspondences — and both did it against the
+ * analytic sphere. `BundleOptions.surface` already reaches rung 1, because
+ * `bootstrap` spreads the caller's options into `base` and rung 1 hands `base`
+ * straight to `runBundle`, so the sweep has been solving against the mesh since
+ * the bundle was wired. These two sites were the only ones left holding a
+ * sphere.
+ *
+ * A branch rather than a `Surface` interface, for the same reason `hitAtEpoch`
+ * takes one: the sphere path must stay byte-identical across this whole phase,
+ * and a null check before any arithmetic cannot move a float.
+ */
+function surfaceHit(
+  surface: MeshIndex | null,
+  origin: Vec3,
+  dir: Vec3,
+  radiusM: number,
+): { hit: boolean; point: Vec3 } {
+  if (surface !== null) {
+    const m = intersectMesh(surface, origin, dir);
+    return { hit: m.hit, point: m.point };
+  }
+  const s = intersectSphere(origin, dir, radiusM);
+  return { hit: s.hit, point: s.point };
+}
+
 // ---------------------------------------------------------------------------
 // Rung 2a: projector pose from the nominal geometry at a given distance
 // ---------------------------------------------------------------------------
@@ -253,6 +327,7 @@ function poseFromFootprint(
   state: BundleState,
   corrs: readonly Correspondence[],
   distance: number,
+  surface: MeshIndex | null,
 ): ProjectorModel | null {
   let sx = 0;
   let sy = 0;
@@ -262,7 +337,7 @@ function poseFromFootprint(
     const cam = state.cameras[c.camera];
     const n = cameraPixelToNormalized(cam, c.camU, c.camV);
     const ray = rayFromNormalized(cam, n.x, n.y);
-    const hit = intersectSphere(ray.origin, ray.dir, state.radiusM);
+    const hit = surfaceHit(surface, ray.origin, ray.dir, state.radiusM);
     if (!hit.hit) continue;
     sx += hit.point.x;
     sy += hit.point.y;
@@ -590,10 +665,33 @@ export function bootstrap(
   const nCameras = nominal.cameras.length;
   const byCamera = groupByCamera(correspondences, nCameras);
 
+  // The surface the whole ladder reasons about, and how big it is.
+  //
+  // `surface` is already in `base`: the caller's `BundleOptions` were spread in
+  // above, so rung 1's `runBundle` and rung 3's have been solving against the
+  // mesh since the bundle was wired. It is pulled out here for the two rungs
+  // that build world points themselves.
+  //
+  // `objectRadiusM` is the part that cannot be shared. `state.radiusM` is the
+  // radius of the sphere the RIG was configured for, and on a mesh path that
+  // number still describes the configured sphere while the thing in the room is
+  // the model. Every use below that asks "how big is the object" takes the
+  // model's own bounding radius instead; the DLT keeps `state.radiusM`, where
+  // the value is a conditioning constant and any figure of the right order does.
+  const surface = base.surface ?? null;
+  const objectRadiusM = surface !== null ? boundingRadiusM(surface) : nominal.radiusM;
+
   // --- rung 0 ---
   const start = cloneState(nominal);
   for (let c = 0; c < nCameras; c++) {
-    correctCameraDistance(start.cameras[c], byCamera[c], start.radiusM, opts.bootstrapSamples);
+    // `objectRadiusM`, not `start.radiusM`. This rung reads a silhouette: it
+    // fits a cone to the rays that struck the object and converts the half-angle
+    // to a distance through `R / sin(theta)`. On a mesh the silhouette is not a
+    // circle, so the conversion is no longer exact — but the bounding radius is
+    // the conservative substitution, because it can only OVERSTATE the object
+    // and therefore overstate the distance, and this rung is only ever allowed
+    // to pull a camera IN. An overstatement makes it decline to move.
+    correctCameraDistance(start.cameras[c], byCamera[c], objectRadiusM, opts.bootstrapSamples);
   }
 
   // --- rung 1: sweep the d_proj prior, cameras only ---
@@ -672,7 +770,7 @@ export function bootstrap(
         const cam = state.cameras[c.camera];
         const nrm = cameraPixelToNormalized(cam, c.camU, c.camV);
         const ray = rayFromNormalized(cam, nrm.x, nrm.y);
-        const hit = intersectSphere(ray.origin, ray.dir, state.radiusM);
+        const hit = surfaceHit(surface, ray.origin, ray.dir, state.radiusM);
         if (!hit.hit) continue;
         points.push(hit.point);
         pixels.push({ u: c.projU, v: c.projV });
@@ -682,8 +780,14 @@ export function bootstrap(
       const candidates: { source: 'nominal' | 'footprint' | 'dlt'; model: ProjectorModel }[] = [
         { source: projectorSource[p], model: state.projectors[p] },
       ];
-      const footprint = poseFromFootprint(state.projectors[p], state, sampleP, selectedDistanceM);
-      if (footprint && plausibleProjector(footprint, state.radiusM)) {
+      const footprint = poseFromFootprint(
+        state.projectors[p],
+        state,
+        sampleP,
+        selectedDistanceM,
+        surface,
+      );
+      if (footprint && plausibleProjector(footprint, objectRadiusM)) {
         candidates.push({ source: 'footprint', model: footprint });
       }
       const dlt = ransacDlt(
@@ -694,7 +798,7 @@ export function bootstrap(
         opts,
         p * 7919 + round * 104729,
       );
-      if (dlt && plausibleProjector(dlt, state.radiusM)) {
+      if (dlt && plausibleProjector(dlt, objectRadiusM)) {
         candidates.push({ source: 'dlt', model: dlt });
       }
 
@@ -741,7 +845,7 @@ export function bootstrap(
       rejectionPasses: 0,
     }, undefined, priors);
     const plausible = settled.state.projectors.every((m) =>
-      plausibleProjector(m, settled.state.radiusM),
+      plausibleProjector(m, objectRadiusM),
     );
     const score =
       settled.used > 0 && plausible

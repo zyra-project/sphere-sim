@@ -616,6 +616,39 @@ export function intersectMesh(index: MeshIndex, origin: Vec3, dir: Vec3): MeshHi
   };
 }
 
+/**
+ * Radius of the origin-centred sphere that contains the model, metres.
+ *
+ * The mesh analogue of `BundleState.radiusM` — but only for the sense of that
+ * field which means "how big is the thing". `radiusM` carries two roles in the
+ * solver and they part company on a mesh: as a CONDITIONING constant (the DLT
+ * divides world points by it before assembling its design matrix) any value of
+ * the right order does, and as a SIZE it decides whether a camera is too far
+ * away or a projector implausibly close. This is the second one.
+ *
+ * Origin-centred rather than a tight bounding sphere, because the world origin
+ * is where the rest of the solver measures from — `conventions.ts` §W puts it at
+ * the sphere centre, projectors are placed at a distance from it, and the model
+ * arrives already positioned relative to it. A tight sphere around a model
+ * parked off to one side would report a small radius for a large excursion.
+ *
+ * Read off the root node's bounds, so it costs a loop over eight corners and no
+ * traversal at all.
+ */
+export function boundingRadiusM(index: MeshIndex): number {
+  if (index.nodeCount === 0 || index.mesh.triangleCount === 0) return 0;
+  const b = index.bounds;
+  let worst = 0;
+  for (let corner = 0; corner < 8; corner++) {
+    const x = b[corner & 1 ? 3 : 0];
+    const y = b[corner & 2 ? 4 : 1];
+    const z = b[corner & 4 ? 5 : 2];
+    const d = Math.hypot(x, y, z);
+    if (d > worst) worst = d;
+  }
+  return worst;
+}
+
 // ---------------------------------------------------------------------------
 // The derivative
 // ---------------------------------------------------------------------------
