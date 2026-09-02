@@ -96,12 +96,25 @@
  * With `correspondenceStiffness` added to that test the same fixture recovers to
  * 7.6e-11 mm, from the same bootstrap, unchanged. See `GaugeOptions.dataTolerance`.
  *
- * What this leaves genuinely open is smaller than it looked and is still worth
- * doing: rung 1 searches a single radius along nominal bearings, and rung 2's
- * DLT is fed points traced through not-yet-converged cameras. Neither is now
- * known to cost anything — the fixture that was supposed to expose them recovers
- * exactly — so a rung 1 that searches something other than a single radius needs
- * a fixture that first shows the present one failing.
+ * **And the single radius does not bind.** A fixture built to violate both halves
+ * of rung 1's assumption at once — distances spread 4.41 to 6.45 m, wider than
+ * the 5.0-6.5 m prior this sweep searches, and bearings swung 15 to 35 degrees
+ * off §2's 0/90/180/270 — recovers the tri-axial body to 1.4e-10 mm. The sweep
+ * picks 5.00 m, wrong for all four projectors, and the per-projector distances
+ * come back anyway: 4.41/5.13/5.85/6.44. This module's own error is unmoved,
+ * 31.8 mm against 30.6 mm on an on-nominal rig. The shared radius is where rung 1
+ * STARTS its camera-only fit, not a constraint it imposes on the answer.
+ *
+ * That fixture also declines to support the sentence above about rung 2's DLT
+ * being what makes this robust to a rig laid out differently from §2. Mutating
+ * rung 2 to offer no alternative candidate at all — no footprint, no DLT — still
+ * recovers it, so on that fixture the LM settle and the full solve are doing the
+ * work. The DLT's own claim remains an argument without a test.
+ *
+ * What remains open is rung 2's point set, traced through cameras this ladder has
+ * not finished converging — the thing that degrades its DLT. Nothing currently
+ * demonstrates it costing anything, so it needs a fixture before it needs an
+ * estimator.
  */
 
 import type { Correspondence } from './decode.ts';

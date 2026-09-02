@@ -932,12 +932,35 @@ which had none.
 **NOT started:** the mesh is not in the bundle. `bundle.ts` has not been wired to
 use either piece and the bootstrap is still the sphere's.
 
-**Still to do:** a rung 1 that does not collapse the search onto a single
-radius — though that is now a smaller item than it looked, and needs a fixture
-before it needs an estimator: the tri-axial body that was supposed to expose it
-recovers exactly once the gauge stops pinning what it determines, so nothing
-currently demonstrates the single radius costing anything. The measured gauge
-null space is DONE, see the gauge bullet above. New
+**Rung 1's single radius is CLOSED, measured rather than argued.** The item read
+"a rung 1 that does not collapse the search onto a single radius", on the
+hypothesis that placing every projector at one distance along its nominal bearing
+needs a centrally symmetric object. A fixture was built to violate both halves at
+once, well past anything a real site produces: distances spread 4.41 to 6.45 m —
+wider than §2's whole 5.0-6.5 m prior, which is the range the sweep searches —
+and bearings swung 15 to 35 degrees off §2's 0/90/180/270, against its stated
+1-2 degree mount tolerance, on the tri-axial body the hypothesis was about.
+
+The sweep picks one distance and it is wrong for every projector: 5.00 m against
+truths of 4.41, 5.16, 5.83 and 6.45. The per-projector distances come back
+anyway — 4.41 / 5.13 / 5.85 / 6.44 — the bootstrap's own error is unmoved at
+31.8 mm against 30.6 mm on an on-nominal rig, and the solve recovers to
+1.4e-10 mm. The shared radius is where rung 1 STARTS its camera-only fit, not a
+constraint it imposes on the answer. The test asserts the sweep's answer is wrong
+for every projector, so a future per-projector rung 1 has to re-measure rather
+than silently inherit the claim, and reverting the gauge fix takes the same
+fixture to 1669.6 mm, so it is not a test that cannot fail.
+
+It does NOT attribute the recovery, and one mutation is worth recording because
+it refuses to. `initialize.ts` says rung 2's DLT is "what makes the bootstrap
+robust to a rig that is not laid out the way §2 says". Mutating rung 2 to offer
+no alternative candidate at all — no footprint, no DLT, so a projector can only
+ever be the one it started as — leaves this fixture passing. The short LM settle
+inside rung 2, and the full solve after it, are doing the work here. The DLT's
+own claim still has no fixture.
+
+**Still to do:** the measured gauge null space is DONE, see the gauge bullet
+above. New
 scenarios and new gates, which cannot be a port: §7's numbers are sphere
 theorems and nobody has measured a mesh installation. And an honest statement of
 which photometric numbers remain PROVISIONAL — all of them, for the same reason.

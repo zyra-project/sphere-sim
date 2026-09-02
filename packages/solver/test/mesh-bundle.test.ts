@@ -37,6 +37,7 @@ import assert from 'node:assert/strict';
 import type { SurfaceMesh } from '../../calibration/src/index.ts';
 import type { FloorReference } from '../src/bundle.ts';
 import { bundleStateFromCalibration, solveFromCorrespondences } from '../src/index.ts';
+import { bootstrap } from '../src/initialize.ts';
 import { buildMeshIndex } from '../src/mesh.ts';
 import {
   alignToTruth,
@@ -376,5 +377,95 @@ test('the gauge measures the model it was handed, and pins only what that model 
     1,
     `an oblate spheroid is symmetric about z and its azimuth must stay pinned, ` +
       `but the gauge pinned ${oblate.gauge} directions`,
+  );
+});
+
+test('rung 1 sweeps one shared radius along nominal bearings, and neither assumption binds', () => {
+  // `initialize.ts` used to name rung 1 as the reason a strongly aspherical body
+  // failed: "rung 1 collapses the search to one dimension by placing every
+  // projector at ONE distance along its NOMINAL bearing. That collapse needs the
+  // object to be roughly centrally symmetric about the origin, and a tri-axial
+  // body is not." The real defect was the gauge, and that hypothesis was written
+  // without a fixture that could test it. This is the fixture.
+  //
+  // It violates BOTH halves of the assumption at once, well past anything a real
+  // site would produce. The distances span 4.41 to 6.45 m — wider than
+  // PARAMETERS.md §2's whole 5.0-6.5 m prior, which is the range the sweep
+  // searches — and the bearings are swung 15 to 35 degrees off §2's
+  // 0/90/180/270, against the 1-2 degree mount tolerance §2 states. The surface
+  // is the tri-axial body the old hypothesis was about.
+  //
+  // What the test asserts is the interesting half: the sweep's single answer is
+  // WRONG for every projector, and the rig is recovered anyway. The shared radius
+  // is where rung 1 starts its camera-only fit, not a constraint it imposes on
+  // the answer.
+  //
+  // What recovers it is NOT what the module docblock's next sentence would lead
+  // you to expect. That sentence says rung 2's DLT is "what makes the bootstrap
+  // robust to a rig that is not laid out the way §2 says". Mutating rung 2 to
+  // offer NO alternative candidate at all — no footprint, no DLT, so a projector
+  // can only ever be the one it started as — leaves this test passing. On this
+  // fixture the short LM settle inside rung 2, and the full solve after it, do
+  // the work. So this asserts end-to-end robustness to an off-nominal rig and
+  // does not attribute it; the DLT's own claim still has no fixture.
+  //
+  // It is not a test that cannot fail: reverting the gauge's data-observability
+  // test takes this same fixture to 1669.6 mm.
+  const scene = makeScene(1);
+  const spread = [0.85, 1.0, 1.12, 1.25];
+  const swingDeg = [30, -20, 15, -35];
+  scene.truth.projectors.forEach((p, i) => {
+    const a = (swingDeg[i] * Math.PI) / 180;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    const x = p.position.x * spread[i];
+    const y = p.position.y * spread[i];
+    p.position = { x: c * x - s * y, y: s * x + c * y, z: p.position.z * spread[i] };
+    p.yawDeg += swingDeg[i];
+  });
+
+  const index = buildMeshIndex(triaxialEllipsoid(scene.truth.radiusM, 0.6, 0.35, 192, 384));
+  const corrs = generateCorrespondences(scene.truth, {
+    surface: index,
+    noisePx: 0,
+    sigmaPx: 0.02,
+  });
+  const floor = floorAtEveryLens(scene);
+
+  const boot = bootstrap(
+    bundleStateFromCalibration(scene.nominal, scene.cameraInputs),
+    corrs,
+    floor,
+    {},
+    { tieProjectorFov: false, surface: index },
+    [],
+  );
+
+  // The sweep picks ONE distance, and it is wrong for every projector — measured
+  // 5.00 m against truths of 4.41, 5.16, 5.83 and 6.45. If a future rung 1 ever
+  // searched per-projector distances this assertion would start failing, which is
+  // the right way for it to fail: the claim below would then need re-measuring
+  // rather than silently resting on a rung that no longer works this way.
+  for (const p of scene.truth.projectors) {
+    const truthD = Math.hypot(p.position.x, p.position.y, p.position.z);
+    assert.ok(
+      Math.abs(truthD - boot.selectedDistanceM) > 0.1,
+      `the sweep chose ${boot.selectedDistanceM.toFixed(2)} m and a projector sits at ` +
+        `${truthD.toFixed(2)} m — this fixture no longer violates the shared-radius assumption`,
+    );
+  }
+
+  const res = solveFromCorrespondences(scene.nominal, scene.cameraInputs, corrs, floor, {
+    bundle: { tieProjectorFov: false, surface: index },
+  });
+  const state = {
+    ...bundleStateFromCalibration(res.calibration, []),
+    cameras: res.extra.cameras,
+  };
+  const score = scoreRecovery(alignToTruth(state, scene.truth), scene.truth);
+  // Measured 1.4e-10 mm on this seed.
+  assert.ok(
+    score.maxProjectorPositionM < 0.002,
+    `off-nominal rig recovered ${(1000 * score.maxProjectorPositionM).toFixed(4)} mm`,
   );
 });
