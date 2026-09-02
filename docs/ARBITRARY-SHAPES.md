@@ -245,6 +245,46 @@ The expensive tier, and the one worth protecting rather than working around.
   general measurement needs is argued against in the same file, on a units
   objection that survives on a mesh. Phase 5's gauge item is a NEW statistic, not
   a widening, and this entry was mis-sized on the strength of that sentence.
+
+  **DONE, and the prediction in the paragraph above was exactly right — it cost
+  120 to 290 mm before anyone went looking for it.** A tri-axial fixture
+  (1 : 0.6 : 0.35) recovered 133.4, 119.9 and 287.2 mm on three seeds, and the
+  failure was attributed in `initialize.ts` to the bootstrap, with a hypothesis
+  about rung 1's single-radius sweep. Isolating it refuted that: rung 1's
+  distances are right, `dltPose` recovers a tri-axial body to 0.00 mm on
+  consistent data, and `nominal` wins rung 2's comparison on the near-spherical
+  fixture that DOES recover. Ablating the gauge alone took the same fixture to
+  7.6e-11 mm on all three seeds.
+
+  `correspondenceStiffness` (`bundle.ts`) is the new statistic. It answers the
+  units objection rather than dodging it: the ratio is formed on the
+  correspondence block ALONE, with the floor and prior rows subtracted from both
+  the numerator and the mean diagonal, so a uniform rescaling of the decode
+  sigmas cancels exactly and the tape measure never enters. The verdict is taken
+  in the rotation SPACE, by diagonalising the stiffness Gram over whatever the
+  floor test left, for the same reason the floor test is: with few floor
+  references the stiff direction is generally a mixture rather than an axis.
+
+  What it measures, on the azimuth direction, at 192x384, on three seeds each:
+
+  | fixture | stiffness, seeds 1 / 2 / 3 | gauge |
+  |---|---|---|
+  | analytic sphere | -4.3e-19 / -6.0e-19 / -1.6e-18 | pinned |
+  | tessellated sphere | 6.0e-9 / 1.2e-8 / 8.1e-9 | pinned |
+  | oblate 1 : 1 : 0.9 | 5.2e-9 / 7.0e-9 / 5.7e-9 | pinned |
+  | oblate 1 : 1 : 0.7 | 4.6e-9 / 6.5e-9 / 5.0e-9 | pinned |
+  | tri-axial 1 : 0.6 : 0.35 | 1.2e-5 / 1.7e-5 / 1.7e-5 | free |
+
+  The three spheroid rows read alike because they ARE alike: a spheroid is
+  rotationally symmetric about z at every squash, so its azimuth is unobservable
+  in fact and what is left is the accident of where the facets fell — which does
+  not vary with how flat the body is. That leaves a three-order gap with no
+  fixture in it, 1.2e-8 to 1.2e-5. The tolerance is 1e-6, near its geometric
+  middle, and it is chosen rather than derived because the physics has no bright
+  line in it — see `GaugeOptions.dataTolerance`. Every pinned row above recovers
+  to the same number it did before the change, and the analytic sphere is
+  byte-identical across the twelve-scenario baseline: 188 digests, 5 563 347
+  characters, plus `assert-deterministic` across two fresh runs.
 - **The model's pose is HELD, and this bullet used to say the opposite.** It read:
   "Hand the solver a GLB and where the object sits and how big it is are solve
   variables: six more parameters, seven with scale." That contradicted the bullet
@@ -892,11 +932,12 @@ which had none.
 **NOT started:** the mesh is not in the bundle. `bundle.ts` has not been wired to
 use either piece and the bootstrap is still the sphere's.
 
-**Still to do:** a measured rather than assumed gauge null space — a new
-statistic, not a widening, see the gauge bullet above. A rung 1 that does not
-collapse the search onto a single radius — see the bootstrap bullet above, where
-the chicken-and-egg turns out to be dissolved and the real failure is measured
-instead. New
+**Still to do:** a rung 1 that does not collapse the search onto a single
+radius — though that is now a smaller item than it looked, and needs a fixture
+before it needs an estimator: the tri-axial body that was supposed to expose it
+recovers exactly once the gauge stops pinning what it determines, so nothing
+currently demonstrates the single radius costing anything. The measured gauge
+null space is DONE, see the gauge bullet above. New
 scenarios and new gates, which cannot be a port: §7's numbers are sphere
 theorems and nobody has measured a mesh installation. And an honest statement of
 which photometric numbers remain PROVISIONAL — all of them, for the same reason.

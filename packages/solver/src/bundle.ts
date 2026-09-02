@@ -382,6 +382,44 @@ export interface GaugeOptions {
    * candidate before pinning it.
    */
   nullTolerance: number;
+  /**
+   * A candidate direction counts as null when the CORRESPONDENCE residuals
+   * resist it less than this — see `correspondenceStiffness`, whose ratio this
+   * is compared against. Both are dimensionless.
+   *
+   * On a sphere the question is settled by geometry rather than by the number:
+   * a global rotation of the rig about the sphere's centre maps the sphere to
+   * itself, so the stiffness is zero to rounding and any positive tolerance
+   * gives the same verdict. Measured on the analytic sphere: -9.0e-18.
+   *
+   * The number decides only for a mesh, where the answer is a matter of degree,
+   * because the physics has no bright line in it. What is being asked is "is
+   * this direction determined WELL ENOUGH to be worth the conditioning" — the
+   * gauge's own trade — and the boundary is therefore chosen, not derived.
+   * Measured on the azimuth direction at 192x384, on three seeds each:
+   *
+   *     analytic sphere       -4.3e-19  -6.0e-19  -1.6e-18
+   *     tessellated sphere     6.0e-9    1.2e-8    8.1e-9
+   *     oblate 1 : 1 : 0.9     5.2e-9    7.0e-9    5.7e-9
+   *     oblate 1 : 1 : 0.7     4.6e-9    6.5e-9    5.0e-9
+   *     tri-axial 1:0.6:0.35   1.2e-5    1.7e-5    1.7e-5
+   *
+   * The three middle rows must be PINNED, and they read alike because they are
+   * alike: a spheroid is rotationally symmetric about z at EVERY squash, so its
+   * azimuth is unobservable in fact and all that is left is the accident of
+   * where the tessellation's facets fell — which is not a measurement, and does
+   * not vary with how flat the body is. (An earlier draft of this table guessed
+   * 1.4e-7 for the 0.7 spheroid, on the assumption that flatter meant less
+   * symmetric. It does not.) The last row must be FREED: pinning it costs 120 to
+   * 290 mm.
+   *
+   * So the boundary is a three-orders-of-magnitude gap with no fixture inside
+   * it, running from 1.2e-8 to 1.2e-5, and 1e-6 sits near its geometric middle.
+   * A shape landing inside that gap is one whose azimuth is genuinely marginal;
+   * pinning it — the conservative reading, and the one this default takes —
+   * costs a bounded bias rather than an unbounded variance.
+   */
+  dataTolerance: number;
 }
 
 export const DEFAULT_GAUGE_OPTIONS: GaugeOptions = {
@@ -389,6 +427,7 @@ export const DEFAULT_GAUGE_OPTIONS: GaugeOptions = {
   anchorProjectorIndex: 0,
   strength: 1.0,
   nullTolerance: 1e-9,
+  dataTolerance: 1e-6,
 };
 
 export interface BundleOptions {
@@ -1976,6 +2015,115 @@ function floorCoupling(problem: BundleProblem, dir: Float64Array): number {
   return worst;
 }
 
+/**
+ * The floor and prior rows' contribution to `dir^T (J^T J) dir`, and to the sum
+ * of the normal matrix's diagonal.
+ *
+ * Both blocks are reconstructed from `problem` rather than accumulated
+ * alongside the solve, because both are fully determined by the layout and the
+ * reference list: a floor row is `(1/sigma) * (e_z + e_hcenter)` and a prior row
+ * is `(1/sigma) * e_slot`, neither of which depends on the current iterate. That
+ * makes subtracting them from the assembled matrix exact rather than
+ * approximate, and it keeps the correspondence loop — the one hot loop in this
+ * file — untouched.
+ */
+function nonDataQuadratic(
+  problem: BundleProblem,
+  dir: Float64Array,
+): { quad: number; diagSum: number } {
+  const { layout } = problem;
+  const hCol = layout.freeMap[layout.slotCenterHeight];
+  let quad = 0;
+  let diagSum = 0;
+  for (const ref of problem.floor) {
+    const w = 1 / ref.sigmaM;
+    const zSlot =
+      ref.kind === 'camera'
+        ? slotCamera(layout, ref.index, CAM_PZ)
+        : slotProjector(ref.index, PROJ_PZ);
+    const zCol = layout.freeMap[zSlot];
+    let row = 0;
+    if (zCol >= 0) {
+      row += w * dir[zCol];
+      diagSum += w * w;
+    }
+    if (hCol >= 0) {
+      row += w * dir[hCol];
+      diagSum += w * w;
+    }
+    quad += row * row;
+  }
+  for (const pr of problem.priors) {
+    const col = layout.freeMap[pr.slot];
+    if (col < 0) continue;
+    const w = 1 / pr.sigma;
+    quad += w * w * dir[col] * dir[col];
+    diagSum += w * w;
+  }
+  return { quad, diagSum };
+}
+
+/**
+ * How stiff the CORRESPONDENCE residuals are along `dir`, relative to a typical
+ * correspondence-constrained parameter.
+ *
+ * `floorCoupling` above answers "can the floor heights see this rotation?" and
+ * that used to be the whole observability test, because the sentence it opens
+ * with — the correspondence residuals are exactly invariant under every global
+ * rotation — was true for as long as the surface was a sphere centred on the
+ * rotation. It is not true of a mesh. `BundleOptions.surface` holds the model
+ * fixed in world coordinates (docs/ARBITRARY-SHAPES.md, Phase 5), so rotating
+ * the rig and leaving the model behind moves every traced point across the
+ * geometry: a global rotation stops being a symmetry, and the correspondences
+ * measure it. Asking only the floor then pins a direction the data determines,
+ * and — because the gauge is pure damping, it adds to `jtj` and never to `jtr` —
+ * pinning it FREEZES whatever value the bootstrap happened to hand over, which
+ * is PARAMETERS.md §2's nominal azimuth. Measured on a 1 : 0.6 : 0.35 ellipsoid
+ * across three seeds, that was the entire recovery error: 133.4, 119.9 and
+ * 287.2 mm with the gauge on, and 7.6e-11, 7.2e-11 and 4.6e-11 mm with it off.
+ *
+ * The ratio is formed on the correspondence block ALONE. `floorCoupling`'s
+ * docblock rejects `n^T J^T J n` against the mean diagonal for mixing a block
+ * scaled by the decode's sigma with one scaled by a tape measure, so that
+ * halving the decode uncertainty moves the ratio by four and a fixed threshold
+ * silently changes its verdict. That objection is exact, and it is the reason
+ * `nonDataQuadratic` exists: with the floor and prior rows removed from both the
+ * numerator and the denominator, a uniform rescaling of the decode sigmas
+ * multiplies both by the same factor and cancels. What is left is dimensionless
+ * and depends on neither scale — the same property that makes the cosine above
+ * mean something.
+ */
+function correspondenceStiffness(
+  problem: BundleProblem,
+  jtj: Float64Array,
+  n: number,
+  dir: Float64Array,
+): number {
+  let quad = 0;
+  let diagSum = 0;
+  for (let a = 0; a < n; a++) {
+    diagSum += jtj[a * n + a];
+    const da = dir[a];
+    if (da === 0) continue;
+    const base = a * n;
+    let row = 0;
+    for (let b = 0; b < n; b++) row += jtj[base + b] * dir[b];
+    quad += da * row;
+  }
+  const other = nonDataQuadratic(problem, dir);
+  const dataQuad = quad - other.quad;
+  const dataDiag = (diagSum - other.diagSum) / n;
+  // A rig whose correspondences constrain nothing has no scale to measure
+  // against; report zero stiffness so the gauge behaves as it did before.
+  if (!(dataDiag > 0)) return 0;
+  // Returned SIGNED. The form is positive semi-definite in exact arithmetic and
+  // the subtraction can leave it a rounding step below zero on a genuinely null
+  // direction, which every caller reads correctly as "null" — while clamping it
+  // would stop this being a quadratic form, and the Gram assembled from it below
+  // is built by polarisation, which needs one.
+  return dataQuad / dataDiag;
+}
+
 /** A rotation direction the floor cannot measure, and which axes it is made of. */
 interface UnobservedDirection {
   /** Unit vector in the reduced parameter space. */
@@ -2013,6 +2161,8 @@ function gaugeUnobserved(
   problem: BundleProblem,
   candidates: readonly GaugeDirection[],
   nullTolerance: number,
+  stiffness: (dir: Float64Array) => number,
+  dataTolerance: number,
 ): UnobservedDirection[] {
   const k = candidates.length;
   if (k === 0) return [];
@@ -2051,7 +2201,67 @@ function gaugeUnobserved(
     if (floorCoupling(problem, dir) > nullTolerance) continue;
     out.push({ dir, coeffs });
   }
-  return out;
+
+  // --- and the same question asked of the correspondences ---
+  //
+  // See `correspondenceStiffness`: with a mesh held in world coordinates a
+  // global rotation is no longer a symmetry of the correspondence residuals, so
+  // a direction the floor cannot see may still be one the data determines.
+  //
+  // Asked in the SPACE, for the reason the floor test is: the surviving set can
+  // be two- or three-dimensional when few floor references were supplied, and
+  // the stiff direction inside it is generally a mixture rather than one of the
+  // members. Diagonalising the stiffness Gram over the survivors separates them
+  // exactly.
+  //
+  // The unanimous verdicts return the survivors UNTOUCHED rather than rebuilt
+  // from the eigenvectors, and that is not just an optimisation. On a sphere
+  // every eigenvalue is far below the tolerance, so the first branch is the one
+  // taken, and it hands back the very directions the floor test produced — the
+  // renormalisation a rebuild would perform is a division by a norm that is 1.0
+  // only to within rounding, and the gauge rows are the last thing in this file
+  // that may move in its final bit. The mixed branch is reachable only where the
+  // survivors disagree, which no sphere ever produces.
+  const m = out.length;
+  if (m === 0) return out;
+  const stiff = out.map((u) => stiffness(u.dir));
+  if (stiff.every((q) => q <= dataTolerance)) return out;
+  if (m === 1) return [];
+
+  const sGram = new Float64Array(m * m);
+  const scratch = new Float64Array(n);
+  for (let a = 0; a < m; a++) {
+    for (let b = a; b < m; b++) {
+      // The Gram of the stiffness form: the quadratic form of the sum, minus
+      // the two diagonal terms, over two. `correspondenceStiffness` is a
+      // quadratic form, so this is its polarisation identity.
+      for (let i = 0; i < n; i++) scratch[i] = out[a].dir[i] + out[b].dir[i];
+      const q = 0.5 * (stiffness(scratch) - stiff[a] - stiff[b]);
+      sGram[a * m + b] = a === b ? stiff[a] : q;
+      sGram[b * m + a] = sGram[a * m + b];
+    }
+  }
+  const sEig = jacobiEigenSymmetric(sGram, m);
+  const mixed: UnobservedDirection[] = [];
+  for (let j = 0; j < m; j++) {
+    if (sEig.values[j] > dataTolerance) continue;
+    const dir = new Float64Array(n);
+    const coeffs = [0, 0, 0];
+    for (let a = 0; a < m; a++) {
+      const w = sEig.vectors[a * m + j];
+      if (w === 0) continue;
+      const from = out[a].dir;
+      for (let i = 0; i < n; i++) dir[i] += w * from[i];
+      for (let c = 0; c < 3; c++) coeffs[c] += w * out[a].coeffs[c];
+    }
+    let norm = 0;
+    for (let i = 0; i < n; i++) norm += dir[i] * dir[i];
+    norm = Math.sqrt(norm);
+    if (!(norm > 1e-12)) continue;
+    for (let i = 0; i < n; i++) dir[i] /= norm;
+    mixed.push({ dir, coeffs });
+  }
+  return mixed;
 }
 
 // ---------------------------------------------------------------------------
@@ -2489,7 +2699,13 @@ export function levenbergMarquardt(
       // exists to collect. `gaugeUnobserved` decides that in the rotation SPACE
       // rather than on the three world axes, which is the only way to see the
       // mixed direction two references cannot distinguish.
-      const unobserved = gaugeUnobserved(problem, nulls, opts.gauge.nullTolerance);
+      const unobserved = gaugeUnobserved(
+        problem,
+        nulls,
+        opts.gauge.nullTolerance,
+        (dir) => correspondenceStiffness(problem, jtj, n, dir),
+        opts.gauge.dataTolerance,
+      );
 
       // `gaugeFreeAxes` stays a statement about WORLD AXES, and deliberately
       // remains the conservative reading: axis k is reported free only when the

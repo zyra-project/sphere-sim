@@ -100,6 +100,58 @@ function ellipsoid(radiusM: number, squash: number, nLat: number, nLon: number):
   };
 }
 
+/**
+ * A UV ellipsoid with three DIFFERENT semi-axes.
+ *
+ * `ellipsoid` above squashes one axis, which leaves the body rotationally
+ * symmetric about z — a real shape, and useless for asking whether the solve can
+ * recover a rotation the sphere hides, because it hides that rotation too.
+ * Scaling y as well removes the symmetry and makes every global rotation
+ * observable.
+ */
+function triaxialEllipsoid(
+  radiusM: number,
+  scaleY: number,
+  scaleZ: number,
+  nLat: number,
+  nLon: number,
+): SurfaceMesh {
+  const positions: number[] = [];
+  for (let i = 0; i <= nLat; i++) {
+    const theta = (Math.PI * i) / nLat;
+    for (let j = 0; j < nLon; j++) {
+      const phi = (2 * Math.PI * j) / nLon;
+      positions.push(
+        radiusM * Math.sin(theta) * Math.cos(phi),
+        radiusM * scaleY * Math.sin(theta) * Math.sin(phi),
+        radiusM * scaleZ * Math.cos(theta),
+      );
+    }
+  }
+  const at = (i: number, j: number): number => i * nLon + (j % nLon);
+  const indices: number[] = [];
+  for (let i = 0; i < nLat; i++) {
+    for (let j = 0; j < nLon; j++) {
+      const a = at(i, j);
+      const b = at(i + 1, j);
+      const c = at(i + 1, j + 1);
+      const d = at(i, j + 1);
+      if (i !== 0) indices.push(a, b, d);
+      if (i !== nLat - 1) indices.push(b, c, d);
+    }
+  }
+  return {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: `triaxial-${scaleY}-${scaleZ}`,
+    positions: Float64Array.from(positions),
+    indices: Uint32Array.from(indices),
+    normals: null,
+    uvs: null,
+    vertexCount: positions.length / 3,
+    triangleCount: indices.length / 3,
+  };
+}
+
 function floorAtEveryLens(scene: Scene): FloorReference[] {
   return scene.truth.projectors.map((p, i) => ({
     kind: 'projector' as const,
@@ -205,14 +257,18 @@ test('the bootstrap reaches a good basin on a mesh, within the envelope it has',
   // still consulting a sphere where it should consult the mesh, or if the sweep
   // landed in the wrong basin, the recovery below would not happen.
   //
-  // ENVELOPE, and it is a real one. This passes on ellipsoids that deviate
-  // moderately from a sphere. It does NOT pass on a strongly tri-axial body:
-  // measured at 1 : 0.6 : 0.35, the recovered pose is 120-435 mm across six
-  // seeds against §7's 2 mm, and tripling the correspondences makes it worse
-  // rather than better. See the module docblock in `initialize.ts` for the
-  // measurements and the hypothesis. That failure is deliberately NOT asserted
-  // here — a test that pins a known-bad number turns a research problem into a
-  // green tick.
+  // This used to carry an ENVELOPE: "it does NOT pass on a strongly tri-axial
+  // body: measured at 1 : 0.6 : 0.35, the recovered pose is 120-435 mm across
+  // six seeds." That failure was real and it was not the bootstrap's — the
+  // gauge in `bundle.ts` was pinning three rotations the mesh determines, and
+  // freezing them froze what this ladder handed over. The tri-axial fixture now
+  // recovers to 7.6e-11 mm from this same unchanged bootstrap, and it is
+  // asserted directly in the gauge test below.
+  //
+  // The two squash factors stay because they are the cases where the gauge
+  // correctly does NOT stand down: an oblate spheroid is symmetric about z, so
+  // its azimuth really is unobservable and the numbers below are the gauge's
+  // residue rather than a solver error.
   const scene = makeScene(1);
   for (const squash of [0.9, 0.7]) {
     const index = buildMeshIndex(ellipsoid(scene.truth.radiusM, squash, 192, 384));
@@ -245,4 +301,80 @@ test('the bootstrap reaches a good basin on a mesh, within the envelope it has',
       `squash ${squash}: rotation ${score.maxProjectorRotationDeg.toFixed(4)} deg`,
     );
   }
+});
+
+test('the gauge measures the model it was handed, and pins only what that model leaves free', () => {
+  // The inner gauge exists because a SPHERE is rotationally symmetric: rotate
+  // every projector and camera about the centre and no correspondence residual
+  // moves, so three directions carry no information and the normal matrix is
+  // singular along them. `gaugeUnobserved` used to establish that by asking the
+  // floor references alone, which was exactly right for as long as the first
+  // half of that sentence was — the correspondences could not tell one global
+  // rotation from another, so the floor was the only thing that could.
+  //
+  // A held mesh breaks it. The model stays in world coordinates while the rig
+  // turns, so the traced points move across the geometry and the
+  // correspondences DO see the rotation. Asking only the floor then pins a
+  // direction the data determines, and because the gauge is pure damping — it
+  // adds to `jtj`, never to `jtr` — pinning it freezes whatever the bootstrap
+  // handed over, which is PARAMETERS.md §2's nominal azimuth.
+  //
+  // Both arms below are the assertion. The first alone would pass a solver that
+  // simply stopped gauging meshes, and that solver would be wrong: an oblate
+  // spheroid IS rotationally symmetric about z, tessellated or not, and freeing
+  // its azimuth would leave the normal matrix singular in exactly the way the
+  // gauge exists to fix. What has to hold is that the same test gives opposite
+  // answers on the two shapes.
+  const scene = makeScene(1);
+  const run = (mesh: SurfaceMesh): { score: ReturnType<typeof scoreRecovery>; gauge: number } => {
+    const index = buildMeshIndex(mesh);
+    const corrs = generateCorrespondences(scene.truth, {
+      surface: index,
+      noisePx: 0,
+      sigmaPx: 0.02,
+    });
+    const res = solveFromCorrespondences(
+      scene.nominal,
+      scene.cameraInputs,
+      corrs,
+      floorAtEveryLens(scene),
+      { bundle: { tieProjectorFov: false, surface: index } },
+    );
+    const state = {
+      ...bundleStateFromCalibration(res.calibration, []),
+      cameras: res.extra.cameras,
+    };
+    return {
+      score: scoreRecovery(alignToTruth(state, scene.truth), scene.truth),
+      gauge: res.extra.gaugeConstraints,
+    };
+  };
+
+  // A tri-axial body determines all three rotations, so nothing should be
+  // pinned. Measured stiffness on the azimuth direction: 1.9e-5, against the
+  // 1e-6 tolerance. With the direction pinned this fixture recovered 133.4,
+  // 119.9 and 287.2 mm on seeds 1-3; with it left to the data, 7.6e-11.
+  const triaxial = run(triaxialEllipsoid(scene.truth.radiusM, 0.6, 0.35, 192, 384));
+  assert.equal(
+    triaxial.gauge,
+    0,
+    `a tri-axial body determines every global rotation, but the gauge pinned ` +
+      `${triaxial.gauge} of them`,
+  );
+  assert.ok(
+    triaxial.score.maxProjectorPositionM < 0.002,
+    `tri-axial recovered ${(1000 * triaxial.score.maxProjectorPositionM).toFixed(3)} mm`,
+  );
+
+  // An oblate spheroid does not. Its azimuth is unobservable in fact, and the
+  // only thing a tessellation of one adds is the accident of where the facets
+  // fell — 7.9e-9 of stiffness, four orders below where this gauge lets a
+  // direction go. It must still be pinned.
+  const oblate = run(ellipsoid(scene.truth.radiusM, 0.9, 192, 384));
+  assert.equal(
+    oblate.gauge,
+    1,
+    `an oblate spheroid is symmetric about z and its azimuth must stay pinned, ` +
+      `but the gauge pinned ${oblate.gauge} directions`,
+  );
 });

@@ -60,24 +60,48 @@
  * smaller than the seed-to-seed spread. It is done because a rung handed a mesh
  * should not secretly consult a sphere, not because it bought accuracy.
  *
- * **What does not work is a strongly ASPHERICAL object.** On a tri-axial
- * ellipsoid (1 : 0.6 : 0.35) the recovered pose is 120-435 mm across six seeds,
- * against §7's 2 mm. Two measurements say what that is and is not:
+ * **A strongly ASPHERICAL object used not to work, and the reason was not in
+ * this module.** On a tri-axial ellipsoid (1 : 0.6 : 0.35) the recovered pose
+ * was 120-435 mm across six seeds, against §7's 2 mm, and tripling the
+ * correspondences (1 946 -> 5 698) made it WORSE, 133 -> 231 mm. More data
+ * hurting is the signature of a degeneracy rather than of noise, and this
+ * docblock used to name the wrong one.
  *
- *  - It is not sampling. Tripling the correspondences (1 946 -> 5 698) makes it
- *    WORSE, 133 -> 231 mm. More data hurting is the signature of a degeneracy,
- *    not of noise.
- *  - The field of view goes with it: 0.936 degrees at stride 12 and 1.537 at
- *    stride 7, against 0.022-0.054 on near-spherical meshes. That is the
- *    fov/distance valley A-18 measures on the sphere corpus, arriving through a
- *    different door.
+ * It read: "the likely mechanism, stated as a hypothesis because nothing here
+ * has isolated it: rung 1 collapses the search to one dimension by placing every
+ * projector at ONE distance along its NOMINAL bearing. That collapse needs the
+ * object to be roughly centrally symmetric about the origin, and a tri-axial
+ * body is not." Isolating it refuted every step of that.
  *
- * The likely mechanism, stated as a hypothesis because nothing here has isolated
- * it: rung 1 collapses the search to one dimension by placing every projector at
- * ONE distance along its NOMINAL bearing. That collapse needs the object to be
- * roughly centrally symmetric about the origin, and a tri-axial body is not.
- * Fixing it means a rung 1 that searches something other than a single radius —
- * which is a new estimator, and the part of this module that really is research.
+ *  - Rung 1's sweep does pick a wrong distance on a tri-axial body — 6.00 m
+ *    against a truth near 5.19 — but the per-projector distances it hands on are
+ *    right anyway: 5.179/5.126/5.239/5.147 against 5.188/5.158/5.207/5.164. The
+ *    discriminator is rotation, 1.121 degrees against 0.089 on a near-spherical
+ *    mesh, and the collapse to one radius is not what produces it.
+ *  - Rung 2's DLT does degenerate there — 3.9 to 104 px against 0.185 to 0.389
+ *    on a near-spherical mesh — so `nominal` wins the candidate comparison and
+ *    carries §2's 0/90/180/270 assumption forward. But `dltPose` itself is
+ *    sound: given exactly consistent correspondences on the SAME tri-axial
+ *    geometry it recovers the pose to 0.00 mm and 2e-11 px. What it degenerates
+ *    on is the point set, traced through cameras that rung 1 fitted to nominal
+ *    projectors.
+ *  - And none of that was the cause either. `nominal` wins the rung-2 comparison
+ *    on a near-spherical mesh too — 0.046-0.078 px against the DLT's 0.185-0.389
+ *    — and that case recovers.
+ *
+ * The defect was in `bundle.ts`: its inner gauge pinned three global rotations
+ * that a held mesh determines, because `gaugeUnobserved` established
+ * observability from the floor references alone. Freezing them freezes exactly
+ * what this module hands over, which is why every measurement pointed here.
+ * With `correspondenceStiffness` added to that test the same fixture recovers to
+ * 7.6e-11 mm, from the same bootstrap, unchanged. See `GaugeOptions.dataTolerance`.
+ *
+ * What this leaves genuinely open is smaller than it looked and is still worth
+ * doing: rung 1 searches a single radius along nominal bearings, and rung 2's
+ * DLT is fed points traced through not-yet-converged cameras. Neither is now
+ * known to cost anything — the fixture that was supposed to expose them recovers
+ * exactly — so a rung 1 that searches something other than a single radius needs
+ * a fixture that first shows the present one failing.
  */
 
 import type { Correspondence } from './decode.ts';
