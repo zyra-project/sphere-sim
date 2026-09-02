@@ -951,6 +951,19 @@ for every projector, so a future per-projector rung 1 has to re-measure rather
 than silently inherit the claim, and reverting the gauge fix takes the same
 fixture to 1669.6 mm, so it is not a test that cannot fail.
 
+**Why it does not bind is structural, not lucky, and that is what closes the
+item.** The shared radius is the STARTING PLACEMENT of each sweep trial; the
+trial then runs an LM with `projectorPose` free, which moves every projector
+independently. The collapse is undone inside the rung that creates it. A rung 1b
+was written to remove it anyway — a per-projector radial line search over a
+geometric bracket spanning 3.25 to 7.70 m from a 5.00 m pick — and then reverted:
+instrumented on the fixture above it fired on all four projectors and moved none
+of them, because they were already at 4.415 / 5.126 / 5.846 / 6.439 m against
+truths of 4.41 / 5.16 / 5.83 / 6.45. The sweep's own answer is wrong and does not
+matter for the same reason: three seeds chose 5.00, 5.25 and 6.00 m and all three
+recovered to about 1e-10 mm. A per-projector rung 1 is a search with nothing to
+find, so shipping one would add surface area for no measured effect.
+
 It does NOT attribute the recovery, and one mutation is worth recording because
 it refuses to. `initialize.ts` says rung 2's DLT is "what makes the bootstrap
 robust to a rig that is not laid out the way §2 says". Mutating rung 2 to offer

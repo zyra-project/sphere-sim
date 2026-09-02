@@ -111,6 +111,23 @@
  * recovers it, so on that fixture the LM settle and the full solve are doing the
  * work. The DLT's own claim remains an argument without a test.
  *
+ * **And the reason it does not bind is structural, not lucky.** The shared radius
+ * is the STARTING PLACEMENT of each sweep trial, and the trial then runs an LM
+ * with `projectorPose` free, which moves every projector independently. So the
+ * collapse is undone inside the rung that creates it. Built as an experiment and
+ * then reverted: a rung 1b that line-searched each projector's own radius after
+ * the sweep, on its own correspondences, over a geometric bracket spanning 3.25
+ * to 7.70 m from a 5.00 m pick. Instrumented on the off-nominal fixture it fired
+ * on all four projectors and moved none of them, because they were already at
+ * 4.415 / 5.126 / 5.846 / 6.439 m against truths of 4.41 / 5.16 / 5.83 / 6.45.
+ * There was nothing left to refine.
+ *
+ * The sweep's own answer is wrong, and does not matter for the same reason:
+ * three seeds of that fixture chose 5.00, 5.25 and 6.00 m and all three recovered
+ * to about 1e-10 mm, because every trial's LM converges to the same per-projector
+ * radii whichever one it started from. A per-projector rung 1 would be a search
+ * with nothing to find.
+ *
  * What remains open is rung 2's point set, traced through cameras this ladder has
  * not finished converging — the thing that degrades its DLT. Nothing currently
  * demonstrates it costing anything, so it needs a fixture before it needs an
