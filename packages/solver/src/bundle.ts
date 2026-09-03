@@ -476,6 +476,46 @@ export interface BundleOptions {
   stepTol: number;
   gradTol: number;
   /**
+   * A fourth stopping rule, applied ONLY when the surface is a mesh.
+   *
+   * The three above assume what a sphere gives: a smooth residual whose
+   * Gauss-Newton descent is quadratic near the minimum, so the cost, the step
+   * and the gradient all fall to machine precision together and any of them can
+   * be read as "done". A triangle mesh is C0. Its hit Jacobian is exact within a
+   * facet and jumps at every edge, so a step that crosses one lands on a
+   * different tangent plane, the gradient reappears, and the cost jitters at a
+   * level that never falls under `costTol` two steps running. Measured on a
+   * tessellated sphere under the page's sensor noise: the cost reaches its
+   * final value to five figures by accepted step 26 of each pass, then sits
+   * there for the remaining 174 while all three tests fail — twice, because the
+   * rejection pass refits and does it again. The page then refuses a rig whose
+   * worst lens was 12.5 mm from truth, after six minutes, as "did NOT
+   * converge". The trajectory that established this is recorded in
+   * docs/ARBITRARY-SHAPES.md.
+   *
+   * So on a mesh the loop also stops when the relative cost change across the
+   * last `meshPlateauWindow` accepted steps is below `meshPlateauTol`, with the
+   * damping relaxed to `initialLambda` or below — the same stall guard the
+   * two-in-a-row rule encodes: a plateau reached with the damping run up and
+   * the step throttled to nothing is a stall wearing convergence's clothes, and
+   * a plateau of freely accepted steps is not. The rule is gated on the surface
+   * so the sphere path does not evaluate it at all; the twelve-scenario baseline
+   * is what says that gate holds to the last bit.
+   *
+   * The window and tolerance are set from the measured plateau, not chosen.
+   * Per accepted step on that plateau (169 steps), the relative cost change was
+   * 7.6e-13 at the minimum, 2.8e-11 at the median and 4.3e-9 at the maximum —
+   * which is why `costTol` at 1e-12 could not fire twice running. Across a
+   * ten-step window the change is therefore bounded near 4e-8, while during
+   * the descent that precedes the plateau it exceeds 1e-2. A tolerance of 1e-6
+   * sits 23x above the worst plateau spike and four orders below the descent:
+   * it fires on the plateau and cannot fire before it. The damping guard was
+   * confirmed by the rule firing at all — every plateau step was an accepted
+   * step, and each acceptance divides lambda by ten.
+   */
+  meshPlateauWindow: number;
+  meshPlateauTol: number;
+  /**
    * Hard ceiling on trial evaluations, accepted or not. Separate from
    * `maxIterations` so a long line search cannot eat the step budget, and so a
    * pathological problem still terminates.
@@ -684,6 +724,8 @@ export const DEFAULT_BUNDLE_OPTIONS: BundleOptions = {
   costTol: 1e-12,
   stepTol: 1e-9,
   gradTol: 1e-9,
+  meshPlateauWindow: 10,
+  meshPlateauTol: 1e-6,
   maxEvaluations: 2000,
   rejectionPasses: 1,
   varianceComponents: true,
@@ -2508,7 +2550,14 @@ export interface BundleReport {
   iterations: number;
   converged: boolean;
   /** Why the loop stopped. Reported so a stall is never mistaken for convergence. */
-  stopReason: 'cost' | 'step' | 'gradient' | 'maxIterations' | 'lambda' | 'noFreeParams';
+  stopReason:
+    | 'cost'
+    | 'step'
+    | 'gradient'
+    | 'plateau'
+    | 'maxIterations'
+    | 'lambda'
+    | 'noFreeParams';
   cost: number;
   rmsResidualPx: number;
   perProjectorRmsPx: number[];
@@ -2735,6 +2784,10 @@ export function levenbergMarquardt(
   let costPlateaus = 0;
   let converged = false;
   let stopReason: BundleReport['stopReason'] = 'maxIterations';
+  // Accepted-step costs, oldest first, for the mesh plateau rule. Allocated only
+  // on the mesh path: the sphere path must not so much as touch a new array.
+  const plateauCosts: number[] | null =
+    problem.surface !== null && opts.meshPlateauWindow > 0 ? [] : null;
   let gaugeCount = 0;
   let gaugeFreeAxes: boolean[] = [true, true, true];
   let lastDeficiency = 0;
@@ -2865,6 +2918,20 @@ export function levenbergMarquardt(
           }
         } else {
           costPlateaus = 0;
+        }
+        if (!converged && plateauCosts !== null) {
+          // See `BundleOptions.meshPlateauWindow`. Relative change across the
+          // window, on freely accepted steps only.
+          plateauCosts.push(cost);
+          if (plateauCosts.length > opts.meshPlateauWindow) plateauCosts.shift();
+          if (plateauCosts.length === opts.meshPlateauWindow && lambda <= opts.initialLambda) {
+            const oldest = plateauCosts[0];
+            const relWindow = oldest > 0 ? Math.abs(oldest - cost) / oldest : 0;
+            if (relWindow < opts.meshPlateauTol) {
+              converged = true;
+              stopReason = 'plateau';
+            }
+          }
         }
         break;
       }

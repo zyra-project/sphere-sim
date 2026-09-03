@@ -62,6 +62,11 @@ import {
 import { makeBenchRng } from '../../bench/src/random.ts';
 import { scoreRecovery } from '../../bench/src/score.ts';
 import { nominalRig as solverNominalRig, solve } from '../../solver/src/index.ts';
+// Two hierarchies over one mesh, because `packages/sim` and `packages/solver`
+// may not import each other. See `SolveRequest.mesh`.
+import { buildMeshIndex, type MeshIndex } from '../../solver/src/mesh.ts';
+import { meshSurface } from '../../sim/src/mesh/surface.ts';
+import type { Surface } from '../../sim/src/surface.ts';
 // Reached past the barrel deliberately: `DEFAULT_FREE_FLAGS` is the solver's own
 // statement of which parameters PARAMETERS.md §3.1 says to free, and the page
 // must not silently re-default the seven it is not touching.
@@ -275,11 +280,52 @@ export function solverNominalFor(
 let cachedImage: EquirectImage | null = null;
 let cachedImageId = '';
 
+/**
+ * The dropped model's two hierarchies, held across solves.
+ *
+ * Built together and discarded together so they can never describe different
+ * shapes: a cache that refreshed one and kept the other would photograph one
+ * model and calibrate against another, which is exactly the failure the
+ * agreement test in `packages/bench` exists to catch, arriving through a door
+ * no test watches.
+ */
+let cachedMeshId = '';
+let cachedSurface: Surface | null = null;
+let cachedIndex: MeshIndex | null = null;
+
 export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {}): SolveResponse {
   if (req.customImage) {
     cachedImage = req.customImage;
     cachedImageId = req.customImageId;
   }
+  if (req.mesh) {
+    // Both hierarchies are built BEFORE either is stored. The first version
+    // assigned as it went, and a review caught what that allows: `meshSurface`
+    // succeeds, `buildMeshIndex` throws under allocation pressure, and the
+    // cache is left holding the new id and the new capture surface beside the
+    // OLD solver index. The page then believes the model is cached and stops
+    // sending it, and every later solve photographs one body and fits another —
+    // the exact invariant this cache exists to hold, broken by the cache. With
+    // both in locals a throw leaves all three fields as they were, which is a
+    // consistent pair for a model the page still knows it has to resend.
+    const surface = meshSurface(req.mesh);
+    const index = buildMeshIndex(req.mesh);
+    cachedMeshId = req.meshId;
+    cachedSurface = surface;
+    cachedIndex = index;
+  } else if (req.meshId === '') {
+    // The page went back to the sphere. Dropping both is what makes the sphere
+    // path here the same code it was: `surface` omitted and `surface: null`.
+    cachedMeshId = '';
+    cachedSurface = null;
+    cachedIndex = null;
+  }
+  // A stale cache is not a shape to guess at. If the page believes this worker
+  // holds a model it does not, both halves fall back together rather than one
+  // of them tracing a sphere.
+  const meshHeld = req.meshId !== '' && cachedMeshId === req.meshId;
+  const captureSurface = meshHeld ? cachedSurface : null;
+  const solveSurface = meshHeld ? cachedIndex : null;
   const report = (
     phase: SolveProgress['phase'],
     fraction: number,
@@ -354,6 +400,8 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
 
   const t0 = performance.now();
   const capture = captureAndDecode(world.truthRig, cameras, {
+    // Photograph the same shape the bundle below will be fitted against.
+    surface: captureSurface,
     plan,
     conditions: {
       ambient: req.ambient,
@@ -384,7 +432,29 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
         req.settings.roomSpill === 1
           ? { wallRadiusM: req.settings.wallRadiusM, ceilingM: req.settings.ceilingM }
           : null,
-      segmentImage: req.settings.segmentSphere === 1 ? {} : null,
+      // Sphere only, and not because a mesh segmenter would be hard — because
+      // this one answers a question a mesh does not ask. `sphereSegmenter` fits
+      // a CIRCLE to the photograph and rejects everything outside it, which is
+      // sound for the one body whose silhouette is a circle from every angle
+      // and catastrophic for anything else. Measured with it left on: a
+      // tri-axial ellipsoid refused 3 of 3 cameras and decoded ZERO
+      // correspondences, and so did a body squashed by only five per cent —
+      // this is not a strong-deformation limit, it is every mesh.
+      //
+      // Turning it off is not a downgrade for this path, it is the honest
+      // configuration: the payoff quoted below is a measurement about a sphere
+      // in a room, and a segmenter that rejects all the data has no payoff to
+      // trade. With it off, a tri-axial body (1 : 0.7 : 0.5) at the rig's own
+      // radius decodes 26 400 to 26 850 correspondences and recovers to
+      // 14.3 / 13.1 / 8.8 mm across three noise seeds on this page's
+      // configuration, where the analytic sphere gets 17.3 / 15.9 / 8.0.
+      //
+      // What this does NOT do is give a mesh the protection a sphere gets. A
+      // room-lit capture of a model will carry wall spill into the decode with
+      // nothing to mask it. That wants a segmenter that takes the model's own
+      // silhouette, which is a real piece of work and is filed rather than
+      // faked here.
+      segmentImage: req.settings.segmentSphere === 1 && captureSurface === null ? {} : null,
     },
     seed: req.seed,
     decode: { pixelStride: 1, maxCorrespondences: 4000 },
@@ -396,6 +466,41 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     previewFrame: 0,
   });
   const captureMs = performance.now() - t0;
+
+  // A decode that produced nothing is not a calibration, and the bundle will not
+  // say so. Measured before this guard existed, on a mesh whose every camera the
+  // sphere segmenter had refused: zero correspondences, and `runSolve` returned
+  // `converged: true`, a residual of 0.0000 px and a worst-lens error of
+  // 266.951 mm — the untouched bootstrap's own distance from truth, reported as
+  // a result. Every number on the page would have been the nominal rig wearing a
+  // calibration's clothes, and the most confident-looking readout this page can
+  // produce is the one backed by no data at all.
+  //
+  // Thrown rather than reported as a poor score for the reason the projector
+  // guard above is: a person needs the control that caused it and the way back,
+  // and "0 points decoded" in a progress line that scrolls past is neither.
+  if (capture.correspondences.length === 0) {
+    // A refusal is `chosen < 0` and nothing else. A warning beside a valid
+    // `chosen` is a segmentation that went ahead with a caveat — `silhouette.ts`
+    // emits one when two interior components are of similar size and area
+    // decided — and the first version of this guard counted it as a refusal,
+    // so a camera the decode USED was reported as one it threw away. And the
+    // "every camera" sentence is earned only when every camera was: the same
+    // first version would have printed "Every camera was refused (1 of 2)".
+    const examined = capture.silhouettes.length;
+    const refused = capture.silhouettes.filter((sil) => sil.chosen < 0).length;
+    throw new Error(
+      examined > 0 && refused === examined
+        ? `Every camera was refused by the silhouette detector (${refused} of ` +
+          `${examined}), so nothing was decoded. Switch "Segment the sphere" off ` +
+          'and recalibrate.'
+        : 'No points were decoded from the capture, so there is nothing to solve. ' +
+          'Check that the projectors are lighting the object and recalibrate.' +
+          (refused > 0
+            ? ` The silhouette detector also refused ${refused} of ${examined} cameras.`
+            : ''),
+    );
+  }
 
   // Poses, not pictures. The page renders these itself through the display
   // shader, which is the renderer that knows the room has projectors and a
@@ -469,7 +574,10 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     cameras: cameraInputs,
     correspondences: capture.correspondences,
     floorReferences,
-    options: { seed: req.seed, bundle: { free: { ...DEFAULT_FREE_FLAGS } } },
+    options: {
+      seed: req.seed,
+      bundle: { free: { ...DEFAULT_FREE_FLAGS }, surface: solveSurface },
+    },
     onStep: (s) => {
       stepCount++;
       // The optimiser's cost is a robustified sum of squares in its own units.

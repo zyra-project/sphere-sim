@@ -944,9 +944,155 @@ than assuming the sphere's. `mesh-bundle.test.ts` asserts recovery with a
 negative control, and the sphere path is byte-identical across the
 twelve-scenario baseline.
 
-**Still NOT started:** the page cannot do any of it. `packages/web/src/pipeline.ts`
-photographs a sphere (`captureAndDecode`, no surface argument) and solves without
-`surface`, so a dropped model reaches the display shader and nothing else.
+**The page can now do it, and running it found two things no test had.**
+`CaptureOptions.surface` reaches `prepareRig`, the mesh crosses the worker
+boundary as `SolveRequest.mesh`, and the bundle gets it as `bundle.surface`. A
+tri-axial body (1 : 0.7 : 0.5) at the rig's own radius recovers to **14.3 /
+13.1 / 8.8 mm** across three noise seeds on the page's configuration, where the
+analytic sphere gets 17.3 / 15.9 / 8.0.
+
+Neither of the two defects was visible to the test suite, and both were found by
+running the thing rather than asserting about it:
+
+- **The sphere segmenter refused every mesh.** `sphereSegmenter` fits a CIRCLE
+  and rejects what falls outside it, which is sound for the one body whose
+  silhouette is a circle from every angle. On a mesh it refused 3 of 3 cameras
+  and decoded ZERO correspondences — and not only on a strong deformation: a
+  body squashed five per cent was refused just as completely. It is now off
+  whenever a surface is supplied. A mesh therefore gets no protection from room
+  spill, which wants a segmenter taking the model's own silhouette.
+- **A solve with no data reported a confident answer.** With every camera
+  refused, `runSolve` returned `converged: true`, a residual of 0.0000 px and a
+  worst-lens error of 266.951 mm — the untouched bootstrap's own distance from
+  truth, dressed as a result. An empty decode now throws, naming the control
+  that caused it.
+
+**Retracted: the near-sphere numbers this section used to carry.** An earlier
+version of this paragraph reported 259.3 mm at 1 : 0.95 : 0.9, 24.0 mm at
+1 : 0.7 : 0.5, and 83.9 mm with `dataTolerance` raised to 1e-3, and drew a
+gauge-tolerance trade-off from them. Every one of those solves was run on a
+mesh of radius 1.651 m — the SOS sphere from the solver tests — on a rig whose
+sphere is 0.864 m, so each was 1.9× the rig with cameras placed for the smaller
+ball. They measured the wrong object. The tolerance trade-off drawn from them
+does not exist: at the rig's own radius every spheroid pins its azimuth at the
+same angle as the analytic sphere, every tri-axial frees it, and `dataTolerance`
+decides correctly with the value it ships with. The corrected sweep is below:
+first what it found before any accuracy number could be trusted, then the table.
+
+**A spheroid mesh converges and cannot tell, so the page refused it.** The
+sweep's first finding was not about accuracy at all. On the page's own
+configuration — three cameras at 320×240, sensor noise on — every spheroid mesh
+ran to the 400-iteration cap (two passes of 200: the initial fit and the
+rejection refit both), took four to six minutes, and was then refused by the
+page as "did NOT converge". The trajectory of one such solve, a 192×384
+tessellated sphere on seed 1:
+
+```
+accepted step    cost         residual px
+   1             8.0152e+4    1.647
+  26             5.8513e+4    1.407      <- converged
+  51 … 200       5.8513e+4    1.407      <- flat to five figures, 174 more steps
+ 201             5.4365e+4    1.357      <- rejection pass refits
+ 226 … 400       5.4360e+4    1.357      <- flat again to the cap
+last-half improvement: 0.009%
+```
+
+Its worst lens was **12.5 mm** from truth — better than the analytic sphere's
+17.3 on the same seed — and the page threw it away after 338 seconds.
+
+The three stopping rules (`costTol` 1e-12 relative on two consecutive steps,
+`stepTol` and `gradTol` 1e-9 px) assume what a sphere gives: a smooth residual
+whose Gauss-Newton descent is quadratic near the minimum, so cost, step and
+gradient fall to machine precision together. A triangle mesh is C⁰. Its hit
+Jacobian is exact within a facet and jumps at every edge — the property Phase 5
+recorded and left as "the empirical question it is" — so a step that crosses one
+lands on a different tangent plane, the gradient reappears, and the cost jitters
+at a level that never falls under 1e-12 twice running. Measured on that plateau,
+per accepted step: minimum 7.6e-13, median 2.8e-11, maximum 4.3e-9 relative —
+the tolerance sits below the minimum, so the rule that needs it twice running
+cannot fire. The tri-axial rows of the sweep below show the jitter alone is not
+what stalls a solve: with every direction well determined the optimiser settles
+inside a facet and the original rules fire in 24 to 43 steps. It is the bodies
+with a symmetry axis — every spheroid, however far from a sphere — that never
+settle.
+
+`BundleOptions.meshPlateauWindow` / `meshPlateauTol` add a fourth rule on the
+mesh path only: stop when the relative cost change across a window of freely
+accepted steps (damping at or below `initialLambda`, the same stall guard the
+two-in-a-row rule encodes) is below the tolerance — 1e-6 over ten steps, which
+is 23× above the worst plateau spike (10 × 4.3e-9) and four orders below the
+descent phase's ≥1e-2, so it fires on the plateau and cannot fire before it.
+Gated on `surface !== null`, so the sphere path does not evaluate it; the
+twelve-scenario baseline confirms that gate to the last bit. With it, the same
+192×384 solve stops at accepted step 49 in 65 seconds at the same 12.5 mm, and
+the page installs it; the 64×128 solve stops at step 80 in 56 seconds at
+137.5 mm against 137.4 at the cap — which is the point: the rule changes when
+the optimiser stops, and nothing about where.
+
+**The corrected sweep.** Ten shapes × three seeds on the page's own configuration
+(three cameras at 320×240, sensor noise on, `errorSeed` 1–3), every mesh at the
+rig's radius of 0.864 m and tessellated 64×128, run on the solver as it stood
+before the plateau rule so that the iteration column shows the defect. Worst
+lens position error in mm; bold marks a solve that ran to the 400-iteration cap
+(two passes of 200). Gauge: pinned means the stiffness test found an
+unobservable direction and froze it, free means it found none.
+
+| shape | seed 1 | seed 2 | seed 3 | gauge | iterations |
+|---|---|---|---|---|---|
+| *analytic sphere* | 17.3 | 15.9 | 8.0 | pinned | 42 / 43 / 22 |
+| sphere mesh 1:1:1 | **137.4** | 32.2 | **33.4** | pinned | 400 / 69 / 400 |
+| oblate 1:1:0.98 | **80.1** | **51.5** | **34.6** | pinned | 400 / 400 / 400 |
+| oblate 1:1:0.95 | **38.5** | **37.1** | **30.8** | pinned | 400 / 400 / 400 |
+| oblate 1:1:0.9 | **27.7** | **20.6** | **20.3** | pinned | 400 / 400 / 400 |
+| oblate 1:1:0.8 | **16.8** | **12.3** | **11.2** | pinned | 400 / 400 / 400 |
+| oblate 1:1:0.7 | **15.6** | **12.9** | 10.9 | pinned | 400 / 400 / 240 |
+| tri 1:0.95:0.9 | 11.8 | 12.6 | 8.4 | free | 27 / 28 / 29 |
+| tri 1:0.9:0.8 | 12.0 | 11.3 | 11.1 | free | 24 / 24 / 41 |
+| tri 1:0.8:0.6 | 12.2 | 13.2 | 9.7 | free | 24 / 24 / 43 |
+| tri 1:0.7:0.5 | 14.3 | 13.1 | 8.8 | free | 33 / 35 / 33 |
+
+Three things the table says, none of which the retracted numbers did. **Every
+tri-axial matches the analytic sphere** — 8.4 to 14.3 mm against 8.0 to 17.3 —
+and stops under the original rules in 24 to 43 steps, while sixteen of the
+eighteen spheroid rows ran to the cap, so the plateau stall goes with a symmetry
+axis, not with the mesh. **Every spheroid pins and every tri-axial frees**, and
+the pinned angle is the analytic sphere's own to two thousandths of a degree on
+each seed (0.324 / 0.277 / 0.117), so the gauge decides correctly at the
+shipped tolerance on all thirty rows; the trade-off the wrong-radius solves
+showed was the wrong object, not the gauge. **The accuracy gap is a function of
+how nearly spherical the body is**: the tessellated sphere 32 to 137 mm,
+1 : 1 : 0.98 at 35 to 80, 1 : 1 : 0.95 at 31 to 39, 1 : 1 : 0.9 at 20 to 28,
+and from 1 : 1 : 0.8 on (11 to 17) the spheroids sit inside the analytic
+sphere's own range — while still running to the cap, so the stall and the gap
+are two effects, not one.
+
+**What this does not fix, and is recorded as the next measurement.** A nearly
+spherical mesh is less accurate than the sphere it approximates — the tessellated
+sphere at 32 to 137 mm against the same body's analytic 8 to 17 is the cleanest
+comparison in the table, since it changes the representation and nothing else —
+and finer tessellation helps but not monotonically (seed 1: 137.4 mm at 64×128,
+12.5 at 192×384, 23.6 at 384×768), which is the signature of noise rather than
+bias. The reading that fits all thirty rows: a flat facet normal is the
+derivative of the facet, not of the surface the facets approximate, so every
+step carries a Jacobian error that changes at each facet edge. Where the data
+determines every direction — a tri-axial — the optimiser rejects it, settles
+inside a facet and converges in the ordinary way. Where one direction is exactly
+null and held only by the gauge's soft prior — every spheroid — the optimiser
+keeps wandering across facet edges and never satisfies rules built for a smooth
+descent, which is the stall; it costs nothing while the other directions are
+stiff (1 : 1 : 0.8 and 1 : 1 : 0.7 are as accurate as the analytic sphere).
+Where the remaining orientation is itself weakly determined — a flattening of a
+few per cent, or none — the wandering carries error into it, which is the gap.
+Which directions carry the error has not been measured; this is the reading,
+not the proof. The principled fix is a smooth Jacobian — interpolated vertex
+normals, so the derivative describes the curve the tessellation is standing in
+for — which Phase 5 chose against ("a smoothed one describes a curve the
+tessellation does not have") and which would mean the Jacobian no longer
+differentiates exactly what the residual computes, the property its tests
+assert. The tessellated sphere is the fixture for it: if smooth normals take
+32 to 137 mm to the analytic 8 to 17 on the same seeds, the reading above is
+confirmed, and if they do not the gap is somewhere else. This stopping rule
+makes the mesh path usable; that experiment is what would make it accurate.
 
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the
