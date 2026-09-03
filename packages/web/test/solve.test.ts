@@ -418,10 +418,10 @@ test('runSolve calibrates against the dropped model, and the cache hands the nex
   //
   // The shape is tri-axial so a sphere cannot impersonate it — the fixture
   // lesson `packages/solver/test/mesh-bundle.test.ts` records — and the
-  // threshold is set against what was measured here, not against §7: on the
-  // page's own settings this body recovers to 24.0 mm where the analytic
-  // sphere gets 32.0 mm, and a solve that photographed the mesh but fitted a
-  // sphere, or vice versa, lands in the hundreds.
+  // threshold is set against what was measured, not against §7: on the page's
+  // three-camera configuration this body, at the rig's own radius, recovers to
+  // 14.3 / 13.1 / 8.8 mm across three noise seeds where the analytic sphere
+  // gets 17.3 / 15.9 / 8.0, so 60 mm sits four times above the worst seed.
   const radiusM = buildWorld(BOULDER_PRESET, undefined, undefined).truthRig.sphere.radiusM;
   const mesh = ellipsoidMesh(radiusM, 0.7, 0.5);
 
@@ -433,9 +433,10 @@ test('runSolve calibrates against the dropped model, and the cache hands the nex
   );
 
   // The page stops sending a model it believes the worker holds. That request
-  // has to produce the same calibration — if the cache dropped either
-  // hierarchy, this solve would photograph or fit a sphere instead and land
-  // hundreds of millimetres away.
+  // has to produce the same calibration — if the cache dropped the capture
+  // surface this solve would photograph a sphere and decode a different
+  // correspondence count; if it dropped the solve index it would fit a sphere
+  // to the mesh's photographs and recover a different rig. Either fails below.
   const cached = runSolve(request({ mesh: null, meshId: 'mesh:solve-test' }));
   assert.equal(cached.correspondences, first.correspondences, 'the cached solve decoded a different capture');
   assert.equal(

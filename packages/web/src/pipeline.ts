@@ -444,9 +444,10 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
       // Turning it off is not a downgrade for this path, it is the honest
       // configuration: the payoff quoted below is a measurement about a sphere
       // in a room, and a segmenter that rejects all the data has no payoff to
-      // trade. The same fixture with it off decoded 26 960 correspondences and
-      // recovered to 24.0 mm — better than the sphere's own 32.0 mm on this
-      // page's settings.
+      // trade. With it off, a tri-axial body (1 : 0.7 : 0.5) at the rig's own
+      // radius decodes 26 400 to 26 850 correspondences and recovers to
+      // 14.3 / 13.1 / 8.8 mm across three noise seeds on this page's
+      // configuration, where the analytic sphere gets 17.3 / 15.9 / 8.0.
       //
       // What this does NOT do is give a mesh the protection a sphere gets. A
       // room-lit capture of a model will carry wall spill into the decode with

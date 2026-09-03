@@ -947,8 +947,9 @@ twelve-scenario baseline.
 **The page can now do it, and running it found two things no test had.**
 `CaptureOptions.surface` reaches `prepareRig`, the mesh crosses the worker
 boundary as `SolveRequest.mesh`, and the bundle gets it as `bundle.surface`. A
-tri-axial body (1 : 0.7 : 0.5) recovers to **24.0 mm** on the page's own
-settings, against the sphere's 32.0 mm there.
+tri-axial body (1 : 0.7 : 0.5) at the rig's own radius recovers to **14.3 /
+13.1 / 8.8 mm** across three noise seeds on the page's configuration, where the
+analytic sphere gets 17.3 / 15.9 / 8.0.
 
 Neither of the two defects was visible to the test suite, and both were found by
 running the thing rather than asserting about it:
@@ -966,20 +967,81 @@ running the thing rather than asserting about it:
   truth, dressed as a result. An empty decode now throws, naming the control
   that caused it.
 
-**Open, and measured rather than guessed: a NEARLY spherical mesh does badly.**
-At 1 : 0.95 : 0.9 the page recovers 259.3 mm where 1 : 0.7 : 0.5 gets 24.0 mm —
-the wrong way round from intuition, and the gauge is part of it. Its azimuth is
-almost unobservable, `correspondenceStiffness` reads it as determined, and the
-gauge stands down on a direction the data barely fixes. Raising
-`GaugeOptions.dataTolerance` from 1e-6 to 1e-3 pins it and takes that case to
-83.9 mm — while costing the tri-axial body, which goes from 24.0 to 35.7 mm
-because its rotation IS determined and pinning throws that away.
+**Retracted: the near-sphere numbers this section used to carry.** An earlier
+version of this paragraph reported 259.3 mm at 1 : 0.95 : 0.9, 24.0 mm at
+1 : 0.7 : 0.5, and 83.9 mm with `dataTolerance` raised to 1e-3, and drew a
+gauge-tolerance trade-off from them. Every one of those solves was run on a
+mesh of radius 1.651 m — the SOS sphere from the solver tests — on a rig whose
+sphere is 0.864 m, so each was 1.9× the rig with cameras placed for the smaller
+ball. They measured the wrong object. The tolerance trade-off drawn from them
+does not exist: at the rig's own radius every spheroid measured pins its azimuth
+at the same angle as the analytic sphere, the tri-axial frees it, and
+`dataTolerance` decides correctly with the value it ships with. The corrected
+sweep — ten shapes × three seeds at the rig's radius, on the page's own
+configuration — is tabulated in the next entry; what it found first is below.
 
-So there is no single value of that constant that suits both, and 83.9 mm is
-still poor, which says the gauge is not the whole cause. The tolerance has NOT
-been retuned on the strength of one fixture. What this needs is a sweep across
-deformation with seed variance, on the page's noisy configuration rather than
-the solver's noise-free one — the measurements above are single seeds.
+**A spheroid mesh converges and cannot tell, so the page refused it.** The
+sweep's first finding was not about accuracy at all. On the page's own
+configuration — three cameras at 320×240, sensor noise on — every spheroid mesh
+ran to the 400-iteration cap (two passes of 200: the initial fit and the
+rejection refit both), took four to six minutes, and was then refused by the
+page as "did NOT converge". The trajectory of one such solve, a 192×384
+tessellated sphere on seed 1:
+
+```
+accepted step    cost         residual px
+   1             8.0152e+4    1.647
+  26             5.8513e+4    1.407      <- converged
+  51 … 200       5.8513e+4    1.407      <- flat to five figures, 174 more steps
+ 201             5.4365e+4    1.357      <- rejection pass refits
+ 226 … 400       5.4360e+4    1.357      <- flat again to the cap
+last-half improvement: 0.009%
+```
+
+Its worst lens was **12.5 mm** from truth — better than the analytic sphere's
+17.3 on the same seed — and the page threw it away after 338 seconds.
+
+The three stopping rules (`costTol` 1e-12 relative on two consecutive steps,
+`stepTol` and `gradTol` 1e-9 px) assume what a sphere gives: a smooth residual
+whose Gauss-Newton descent is quadratic near the minimum, so cost, step and
+gradient fall to machine precision together. A triangle mesh is C⁰. Its hit
+Jacobian is exact within a facet and jumps at every edge — the property Phase 5
+recorded and left as "the empirical question it is" — so a step that crosses one
+lands on a different tangent plane, the gradient reappears, and the cost jitters
+at a level that never falls under 1e-12 twice running. Measured on that plateau,
+per accepted step: minimum 7.6e-13, median 2.8e-11, maximum 4.3e-9 relative —
+the tolerance sits below the minimum, so the rule that needs it twice running
+cannot fire.
+
+`BundleOptions.meshPlateauWindow` / `meshPlateauTol` add a fourth rule on the
+mesh path only: stop when the relative cost change across a window of freely
+accepted steps (damping at or below `initialLambda`, the same stall guard the
+two-in-a-row rule encodes) is below the tolerance — 1e-6 over ten steps, which
+is 23× above the worst plateau spike (10 × 4.3e-9) and four orders below the
+descent phase's ≥1e-2, so it fires on the plateau and cannot fire before it.
+Gated on `surface !== null`, so the sphere path does not evaluate it; the
+twelve-scenario baseline confirms that gate to the last bit. With it, the same
+192×384 solve stops at accepted step 49 in 65 seconds at the same 12.5 mm, and
+the page installs it; the 64×128 solve stops at step 80 in 56 seconds at
+137.5 mm against 137.4 at the cap — which is the point: the rule changes when
+the optimiser stops, and nothing about where.
+
+**What this does not fix, and is recorded as the next measurement.** Spheroid
+meshes are still less accurate than the analytic sphere on the same rig — on the
+rows measured so far, the sphere mesh at 32 to 137 mm and 1 : 1 : 0.98 at 35 to
+80 against the analytic sphere's 8 to 17, a gap that narrows with deformation to
+11 to 17 mm at 1 : 1 : 0.8 — and finer tessellation helps convergence but not
+monotonically (seed 1: 137.4 mm at 64×128, 12.5 at 192×384, 23.6 at 384×768).
+That gap is the Jacobian itself: a flat facet normal is the derivative of the
+facet, not of the surface the facets approximate, and under noise that
+discrepancy is injected into every step. The principled fix is a smooth
+Jacobian — interpolated vertex normals, so the derivative describes the curve
+the tessellation is standing in for — which Phase 5 chose against ("a smoothed
+one describes a curve the tessellation does not have") and which would mean the
+Jacobian no longer differentiates exactly what the residual computes, the
+property its tests assert. It is the right next experiment and needs a fixture
+before it needs code: this stopping rule makes the mesh path usable; smooth
+normals are what would make it accurate.
 
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the
