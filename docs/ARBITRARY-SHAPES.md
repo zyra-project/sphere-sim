@@ -1027,7 +1027,14 @@ twelve-scenario baseline confirms that gate to the last bit. With it, the same
 192×384 solve stops at accepted step 49 in 65 seconds at the same 12.5 mm, and
 the page installs it; the 64×128 solve stops at step 80 in 56 seconds at
 137.5 mm against 137.4 at the cap — which is the point: the rule changes when
-the optimiser stops, and nothing about where.
+the optimiser stops, and nothing about where. Confirmed afterwards on the whole
+thirty-row sweep below, re-run with the rule on: every row converged and was
+installed, in 24 to 80 steps and 29 to 86 seconds each — 23 minutes for the
+table, where one capped row alone took four to six — with correspondence counts
+and gauge angles identical on every row and the error identical to 0.1 mm on
+all thirty. Two rows took MORE total steps than before (69 to 77, 35 to 36):
+ending the first pass earlier hands the rejection pass a different starting
+point, and it takes its own route to the same answer.
 
 **The corrected sweep.** Ten shapes × three seeds on the page's own configuration
 (three cameras at 320×240, sensor noise on, `errorSeed` 1–3), every mesh at the
