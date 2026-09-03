@@ -1271,12 +1271,35 @@ function modelBlock(): HTMLElement[] {
     out.push(note);
   }
 
+  // Which renderer is actually drawing the model, asked rather than assumed.
+  // This caption said "the live view above is still the sphere" for as long as
+  // that was true, and went on saying it after Phase 2 put the mesh on the GPU —
+  // in the same file that passes `mesh: model.mesh` to the display shader every
+  // frame. The page's own rule, stated above: quietly drawing a ball while a
+  // model is loaded is the one thing this page must not do.
+  //
+  // THREE states, not two, and the first correction to this caption got that
+  // wrong. It asked `displayMeshId()`, which means "there is a model and nothing
+  // has rejected it" — true from the instant of the drop, while the canvas still
+  // holds the previous frame and `packMesh` has not yet been given the chance to
+  // refuse. So the caption asserted a GPU trace that had not happened. The
+  // question is about the picture, so it is answered by the picture: `draw`
+  // records what it actually handed the shader.
+  const rejected = droppedMesh !== null && droppedMeshId === rejectedMeshId;
+  const tracingModel = droppedMesh !== null && !rejected && drawnMeshId === droppedMeshId;
   const caveat = el('p', {
     className: 'note tiny',
     textContent:
-      'The live view above is still the sphere — the display shader intersects one analytically, ' +
-      'and a mesh on the GPU is the next phase. This picture is the same scene traced on the CPU ' +
-      'by the model. Projectors DO crossfade here: the blend is a geodesic distance to the edge ' +
+      (tracingModel
+        ? 'The live view above traces this same model — the display shader walks its BVH on the ' +
+          'GPU. This picture is that scene traced independently on the CPU, which is what the ' +
+          'agreement check beside it compares. '
+        : rejected
+          ? 'The live view above is the sphere: this model was refused, so the display shader ' +
+            'fell back and this CPU picture is the only place its shape appears. '
+          : 'The live view above has not drawn this model yet — the picture beside it is the ' +
+            'CPU trace, which arrived first. ') +
+      'Projectors DO crossfade here: the blend is a geodesic distance to the edge ' +
       "of each projector's own footprint, which feathers a shadow edge exactly as it feathers a " +
       'raster edge. The polar mask stays off, and that is a decision rather than a gap: it ' +
       "attenuates a sphere's exposed south cap by latitude, and a model has no pole to " +
@@ -2423,6 +2446,15 @@ let rigMovedSinceSolve = false;
 // ---------------------------------------------------------------------------
 
 let dirty = true;
+/**
+ * The `droppedMeshId` the display shader was last handed, or `-1` for the sphere.
+ *
+ * Written by `draw` and read by the model card's caption, which is a claim about
+ * the picture beside it and so must be answered by the picture rather than by
+ * the page's intent.
+ */
+let drawnMeshId = -1;
+
 /** Frames actually drawn. See `canvas.dataset.draws`. */
 let drawCount = 0;
 
@@ -2588,6 +2620,32 @@ function draw(): void {
   // outside and need opposite fixes.
   canvas.dataset.draws = String(++drawCount);
   drawToCanvas(gl, uniforms, w, h);
+
+  // What the shader was actually GIVEN, recorded AFTER it was given it.
+  //
+  // `displayMeshId()` answers "is there a model that has not been rejected",
+  // which is a different question and is true too early: `setDroppedMesh` clears
+  // `rejectedMeshId` and calls `markDirty()`, which SCHEDULES a repaint, while
+  // `rejectedMeshId` is not set until `displayModel` runs inside this function.
+  // A caption reading the former between those two moments claims the GPU is
+  // tracing a model that has neither been drawn nor been vetted by `packMesh`.
+  //
+  // Two things about the placement, and both were wrong when this variable was
+  // introduced to fix exactly this class of defect one layer up. The assignment
+  // sat BEFORE `drawToCanvas`, so a draw that threw still recorded the model as
+  // drawn. And nothing rerendered the card when it changed, so the first
+  // successful frame left "has not drawn this model yet" in the DOM until some
+  // unrelated control happened to call `renderControls()`. A caption that is
+  // right only until you look at it is the same bug in a third costume.
+  //
+  // `renderControls` reads state and rebuilds DOM; it does not `markDirty` or
+  // draw, so calling it here cannot re-enter. The guard is what bounds it
+  // anyway: the second pass computes the same id and does not call again.
+  const drawn = uniforms.mesh === null ? -1 : droppedMeshId;
+  if (drawn !== drawnMeshId) {
+    drawnMeshId = drawn;
+    renderControls();
+  }
 }
 
 /**

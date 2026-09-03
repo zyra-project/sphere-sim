@@ -24,8 +24,10 @@ import {
   cloneState,
   evaluate,
   gaugeNullSpace,
+  packState,
   rotationVector,
   runBundle,
+  unpackState,
   type BundleState,
   type FloorReference,
 } from '../src/bundle.ts';
@@ -754,4 +756,227 @@ test('an unusable correspondence is charged for missing; an excluded one is not'
     `excluding ${unusable.length} unusable points did not reduce the cost ` +
       `(${missing.cost} -> ${bankedEval.cost}); the miss penalty is not being charged`,
   );
+});
+
+// ---------------------------------------------------------------------------
+// The assembly loop
+// ---------------------------------------------------------------------------
+
+/**
+ * A base state and problem whose residuals are EXACTLY zero.
+ *
+ * Two things have to line up for that. `generateCorrespondences` traces the
+ * solver's own forward model, so at `scene.truth` there is nothing to disagree
+ * with — but only with `FOUR_LENSES`, because `makeScene` jitters the four
+ * fields of view independently and the default tie would collapse them.
+ *
+ * And the state is round-tripped through `packState`/`unpackState` before
+ * anything is measured against it. Under a tie those two are not inverses: pack
+ * reads one slot per column, unpack writes every slot the column stands for. A
+ * numerical derivative walks the PACKED vector, so it can only be compared
+ * against an analytic one taken at a state the packed vector actually maps to.
+ * Skipping this is not a small error — it moved the curvature ratio below by
+ * fourteen orders of magnitude.
+ */
+function differentiableFixture(seed = 8): {
+  base: BundleState;
+  problem: ReturnType<typeof buildProblem>;
+  v0: Float64Array;
+} {
+  const scene = makeScene(seed);
+  const corrs = generateCorrespondences(scene.truth, { cameraStride: 24 });
+  const problem = buildProblem(scene.truth, corrs, floorAtEveryLens(scene), {
+    ...DEFAULT_BUNDLE_OPTIONS,
+    ...FOUR_LENSES.bundle,
+    free: { ...DEFAULT_FREE_FLAGS },
+    gauge: { ...DEFAULT_GAUGE_OPTIONS },
+    loss: DEFAULT_ROBUST_OPTIONS,
+  });
+  const base = cloneState(scene.truth);
+  const v0 = packState(base, problem.layout);
+  unpackState(v0, base, problem.layout);
+  return { base, problem, v0 };
+}
+
+test('every column of `jtr` is the derivative of the cost it claims to be', () => {
+  // The two COMPONENT Jacobians are central-differenced already — project.test.ts
+  // and sphere.test.ts do it. The loop that ASSEMBLES them into `jtj` and `jtr`
+  // (bundle.ts, the `idx`/`ju`/`jv` gather and the rank-one update under it) is
+  // not differentiated by anything, and it is where the three interesting
+  // mistakes live: a column dropped, a column mis-signed, and a column paired
+  // with the wrong one. Today the only thing standing under it is the eigenvalue
+  // count in 'the global-rotation directions really are null', which catches a
+  // wholly-absent column and nothing finer.
+  //
+  // The identity is exact and holds for every loss kind. With rho the loss and
+  // omega = rho'(s)/s its IRLS weight (robust.ts), the cost is sum(rho(s)) and
+  //
+  //     d(cost)/d(theta) = rho'(s) . ds/d(theta)
+  //                      = omega . (du.wu^2.d(du)/d(theta) + dv.wv^2.d(dv)/d(theta)) . 2
+  //
+  // while the assembly writes `jtr[i] += omega.wu^2.ju.du + omega.wv^2.jv.dv`.
+  // So grad(cost) = 2 . jtr, with no approximation and no dependence on where
+  // the state sits. Measured here: the ratio lands within 1.3e-6 of 2 on all 60
+  // columns.
+  const { base, problem, v0 } = differentiableFixture();
+  const layout = problem.layout;
+  const n = layout.n;
+
+  // OFF the minimum on purpose. At truth the residuals vanish and so does the
+  // gradient, and a test comparing zero against zero would pass with the entire
+  // gather deleted. The offset is deterministic and small enough that no
+  // correspondence changes its `usable` verdict, which would step the cost.
+  const state = cloneState(base);
+  const v = Float64Array.from(v0, (x, i) => x + 1e-3 * (1 + Math.abs(x)) * ((i % 3) - 1));
+  unpackState(v, state, layout);
+
+  const ev = evaluate(state, problem, true);
+  assert.ok(ev.jtr, 'evaluate returned no jtr');
+  const jtr = ev.jtr as Float64Array;
+  assert.ok(ev.contributing > 0, 'no correspondence contributed; the fixture is empty');
+
+  const work = cloneState(state);
+  const costAt = (vec: Float64Array): number => {
+    unpackState(vec, work, layout);
+    return evaluate(work, problem, false).cost;
+  };
+
+  const numeric = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const h = 1e-6 * (1 + Math.abs(v[i]));
+    const vp = Float64Array.from(v);
+    const vm = Float64Array.from(v);
+    vp[i] += h;
+    vm[i] -= h;
+    numeric[i] = (costAt(vp) - costAt(vm)) / (2 * h);
+  }
+
+  let scale = 0;
+  for (let i = 0; i < n; i++) scale = Math.max(scale, Math.abs(2 * jtr[i]));
+  assert.ok(scale > 0, 'the analytic gradient is identically zero');
+
+  for (let i = 0; i < n; i++) {
+    const analytic = 2 * jtr[i];
+    const slot = layout.freeSlots[i];
+    if (Math.abs(analytic) > scale * 1e-9) {
+      const rel = Math.abs(numeric[i] - analytic) / Math.abs(analytic);
+      assert.ok(
+        rel < 1e-4,
+        `column ${i} (slot ${slot}): analytic 2*jtr = ${analytic}, central difference ` +
+          `= ${numeric[i]}, relative error ${rel}`,
+      );
+    } else {
+      // The catch for a DROPPED column: the assembly says this parameter does
+      // not move the cost, so the cost had better not move.
+      assert.ok(
+        Math.abs(numeric[i]) < scale * 1e-6,
+        `column ${i} (slot ${slot}) contributes nothing to jtr, but perturbing it ` +
+          `changes the cost by ${numeric[i]} against a gradient scale of ${scale} ` +
+          '— a column is missing from the assembly',
+      );
+    }
+  }
+});
+
+test('`jtj` is the curvature of the cost, off-diagonals included', () => {
+  // `jtj` is the GAUSS-NEWTON matrix, not the true Hessian: the two differ by a
+  // term in the residuals times their second derivatives. That term is exactly
+  // zero at a zero-residual point, and `generateCorrespondences` gives us one —
+  // so at `base` the identity d^T (2.jtj) d = d^2(cost)/dd^2 is exact rather
+  // than approximate, and can be asserted at 1e-4 instead of hand-waved.
+  //
+  // Directions, not entries. An n-by-n numerical Hessian is O(n^2) evaluations
+  // for a matrix whose failure modes are all visible in O(n): a basis direction
+  // e_i probes jtj[i][i], and a MIXED direction probes the off-diagonals,
+  // because d^T J d expands to the diagonal terms plus twice every cross term.
+  // A column paired with the wrong one survives the basis pass and dies here.
+  const { base, problem, v0 } = differentiableFixture();
+  const layout = problem.layout;
+  const n = layout.n;
+
+  const ev = evaluate(base, problem, true);
+  assert.ok(ev.jtj, 'evaluate returned no jtj');
+  const jtj = ev.jtj as Float64Array;
+  assert.equal(ev.cost, 0, `the fixture is not at a zero-residual point (cost ${ev.cost})`);
+
+  // Parameters here are metres, degrees and unitless distortion coefficients at
+  // once, so a single absolute step is meaningless. Everything below is done in
+  // units of each parameter's own characteristic scale.
+  const S = Float64Array.from(v0, (x) => 1 + Math.abs(x));
+  const H = 1e-6;
+
+  const work = cloneState(base);
+  const costAt = (vec: Float64Array): number => {
+    unpackState(vec, work, layout);
+    return evaluate(work, problem, false).cost;
+  };
+
+  // The largest scaled diagonal, read straight off jtj — no evaluations needed —
+  // to tell a genuinely null direction from a mistake.
+  let maxQ = 0;
+  for (let i = 0; i < n; i++) maxQ = Math.max(maxQ, S[i] * S[i] * jtj[i * n + i]);
+  assert.ok(maxQ > 0, 'jtj has no positive diagonal');
+
+  const probe = (dhat: Float64Array): { ratio: number; q: number } => {
+    const d = Float64Array.from(dhat, (x, i) => x * S[i]);
+    let q = 0;
+    for (let i = 0; i < n; i++) {
+      let row = 0;
+      for (let j = 0; j < n; j++) row += jtj[i * n + j] * d[j];
+      q += d[i] * row;
+    }
+    const vp = Float64Array.from(v0);
+    const vm = Float64Array.from(v0);
+    for (let i = 0; i < n; i++) {
+      vp[i] += H * d[i];
+      vm[i] -= H * d[i];
+    }
+    // cost(base) is exactly zero, so the usual three-point stencil loses its
+    // middle term.
+    return { ratio: (costAt(vp) + costAt(vm)) / (H * H) / (2 * q), q };
+  };
+
+  let checked = 0;
+  let nullish = 0;
+  for (let i = 0; i < n; i++) {
+    const d = new Float64Array(n);
+    d[i] = 1;
+    const r = probe(d);
+    if (r.q < maxQ * 1e-10) {
+      nullish++;
+      continue;
+    }
+    checked++;
+    assert.ok(
+      Math.abs(r.ratio - 1) < 1e-4,
+      `basis direction ${i} (slot ${layout.freeSlots[i]}): d'(2.jtj)d and the second ` +
+        `difference of the cost disagree by ${Math.abs(r.ratio - 1)}`,
+    );
+  }
+  // The gauge is three-dimensional, so a handful of axes lying in it is expected
+  // and a great many would mean the fixture stopped exercising the matrix.
+  assert.ok(
+    checked > n / 2,
+    `only ${checked} of ${n} basis directions carried any curvature (${nullish} near-null)`,
+  );
+
+  // Mixed directions, deterministic rather than random so a failure reproduces.
+  let mixed = 0;
+  for (let k = 0; k < 24; k++) {
+    const d = new Float64Array(n);
+    for (let i = 0; i < n; i++) d[i] = Math.sin(1 + i * 7.3 + k * 2.1);
+    let norm = 0;
+    for (let i = 0; i < n; i++) norm += d[i] * d[i];
+    norm = Math.sqrt(norm);
+    for (let i = 0; i < n; i++) d[i] /= norm;
+    const r = probe(d);
+    if (r.q < maxQ * 1e-10) continue;
+    mixed++;
+    assert.ok(
+      Math.abs(r.ratio - 1) < 1e-4,
+      `mixed direction ${k}: d'(2.jtj)d and the second difference of the cost ` +
+        `disagree by ${Math.abs(r.ratio - 1)} — an off-diagonal is wrong`,
+    );
+  }
+  assert.ok(mixed >= 20, `only ${mixed} mixed directions carried curvature`);
 });

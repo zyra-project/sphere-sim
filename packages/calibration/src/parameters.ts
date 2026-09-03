@@ -234,13 +234,18 @@ export const PARAMETER_TABLE: Record<string, ParamSpec> = {
     name: 'Throw ratio',
     section: '§3.1',
     klass: 'CFG',
-    nominal: 3.0,
+    // Rev 2 read 3.0 and inferred it from "image width ~ sphere diameter at
+    // d_proj". A-35 supplied the lens: the LK935 cannot reach 3.0 at any zoom
+    // setting. The nominal is the MIDPOINT of the envelope and carries no more
+    // authority than that -- the zoom ring is continuous, so the model bounds
+    // T and only the deployed setting pins it (PARAMETERS.md section 8 item 2).
+    nominal: 1.77,
     unit: ':1',
-    min: 2.5,
-    max: 3.5,
-    rangeSource: 'inferred',
+    min: 1.36,
+    max: 2.18,
+    rangeSource: 'stated',
     affects: 'geometry',
-    note: 'Long-throw lens. See docs/AMENDMENTS.md A-01: which raster dimension the sphere diameter matches is not stated, and the two readings differ materially.',
+    note: 'BenQ LK935 projection-distance table, docs/AMENDMENTS.md A-35; the envelope, not a point. A-01 derived T ~ 1.69 from the sphere geometry alone before the manual existed, and 1.687 covers a 1.7272 m sphere from 5.18 m — inside this range and agreeing to three digits, which is the corroboration rev 2\'s 3.0 never had.',
   },
   gamma_R: {
     symbol: 'γ_R',

@@ -233,20 +233,112 @@ The expensive tier, and the one worth protecting rather than working around.
   symmetry, so those three become observable and the machinery is not needed. It
   must not be deleted, though: a cylinder, a dome and a box each have their own
   null space, so the code has to **measure the null space of the model it was
-  handed** rather than assume one. `gauge.nullTolerance` already does exactly
-  this kind of measurement — it detects when floor references make tilt
-  observable — so this is a widening of an existing idea rather than a new one.
-- **The model's pose becomes unknown.** Today the world origin *is* the sphere
-  centre (conventions.ts §W) and the radius is class DOC, and between them
-  translation and scale are pinned. Hand the solver a GLB and where the object
-  sits and how big it is are solve variables: six more parameters, seven with
-  scale. Well-posed, and the classic projection-mapping calibration problem — but
-  new columns in the Jacobian and a new source of ill-conditioning.
-- **Bootstrap breaks, and this is the hardest single piece.** `initialize.ts`
-  reaches a convergent basin partly because a sphere's silhouette is a circle
-  from every viewpoint. A mesh's is not. The replacement is PnP from clicked
-  correspondences, a marker pass, or a coarse pose search — all of which are
-  standard, and none of which is a small change.
+  handed** rather than assume one.
+
+  This paragraph used to end "`gauge.nullTolerance` already does exactly this
+  kind of measurement ... so this is a widening of an existing idea rather than a
+  new one." **The code refutes that.** `floorResponse` (`bundle.ts`) reads exactly
+  two columns — the referenced entity's z and `h_center` — and is the true
+  derivative of the floor row, so it can never see correspondence-block
+  stiffness; run unchanged on a mesh it would report zero floor coupling for
+  azimuth and pin a direction the mesh data determines. The quadratic form a
+  general measurement needs is argued against in the same file, on a units
+  objection that survives on a mesh. Phase 5's gauge item is a NEW statistic, not
+  a widening, and this entry was mis-sized on the strength of that sentence.
+
+  **DONE, and the prediction in the paragraph above was exactly right — it cost
+  120 to 290 mm before anyone went looking for it.** A tri-axial fixture
+  (1 : 0.6 : 0.35) recovered 133.4, 119.9 and 287.2 mm on three seeds, and the
+  failure was attributed in `initialize.ts` to the bootstrap, with a hypothesis
+  about rung 1's single-radius sweep. Isolating it refuted that: rung 1's
+  distances are right, `dltPose` recovers a tri-axial body to 0.00 mm on
+  consistent data, and `nominal` wins rung 2's comparison on the near-spherical
+  fixture that DOES recover. Ablating the gauge alone took the same fixture to
+  7.6e-11 mm on all three seeds.
+
+  `correspondenceStiffness` (`bundle.ts`) is the new statistic. It answers the
+  units objection rather than dodging it: the ratio is formed on the
+  correspondence block ALONE, with the floor and prior rows subtracted from both
+  the numerator and the mean diagonal, so a uniform rescaling of the decode
+  sigmas cancels exactly and the tape measure never enters. The verdict is taken
+  in the rotation SPACE, by diagonalising the stiffness Gram over whatever the
+  floor test left, for the same reason the floor test is: with few floor
+  references the stiff direction is generally a mixture rather than an axis.
+
+  What it measures, on the azimuth direction, at 192x384, on three seeds each:
+
+  | fixture | stiffness, seeds 1 / 2 / 3 | gauge |
+  |---|---|---|
+  | analytic sphere | -4.3e-19 / -6.0e-19 / -1.6e-18 | pinned |
+  | tessellated sphere | 6.0e-9 / 1.2e-8 / 8.1e-9 | pinned |
+  | oblate 1 : 1 : 0.9 | 5.2e-9 / 7.0e-9 / 5.7e-9 | pinned |
+  | oblate 1 : 1 : 0.7 | 4.6e-9 / 6.5e-9 / 5.0e-9 | pinned |
+  | tri-axial 1 : 0.6 : 0.35 | 1.2e-5 / 1.7e-5 / 1.7e-5 | free |
+
+  The three spheroid rows read alike because they ARE alike: a spheroid is
+  rotationally symmetric about z at every squash, so its azimuth is unobservable
+  in fact and what is left is the accident of where the facets fell — which does
+  not vary with how flat the body is. That leaves a three-order gap with no
+  fixture in it, 1.2e-8 to 1.2e-5. The tolerance is 1e-6, near its geometric
+  middle, and it is chosen rather than derived because the physics has no bright
+  line in it — see `GaugeOptions.dataTolerance`. Every pinned row above recovers
+  to the same number it did before the change, and the analytic sphere is
+  byte-identical across the twelve-scenario baseline: 188 digests, 5 563 347
+  characters, plus `assert-deterministic` across two fresh runs.
+- **The model's pose is HELD, and this bullet used to say the opposite.** It read:
+  "Hand the solver a GLB and where the object sits and how big it is are solve
+  variables: six more parameters, seven with scale." That contradicted the bullet
+  directly above it — which argues a mesh's asymmetry makes the sphere's three
+  rotations observable, so the gauge machinery "is not needed" — and both cannot
+  hold: with a free model pose, rotating rig and model together is null for ANY
+  shape, so the gauge GROWS to six or seven rather than shrinking to zero.
+
+  The author settled it: a visitor supplies the model already placed and scaled
+  in world coordinates. Requiring that is a product decision, not a measurement,
+  and it is the smaller problem — the model contributes no bundle parameters, the
+  gauge stays at the three global rotations, and the mesh Jacobian REPLACES
+  `intersectSphereJacobian` inside the existing camera block instead of adding
+  one. It also largely dissolves the bootstrap's chicken-and-egg below, since a
+  PnP has a known pose to intersect against.
+- **Bootstrap breaks — and MEASUREMENT has moved where.** This bullet used to
+  read: "`initialize.ts` reaches a convergent basin partly because a sphere's
+  silhouette is a circle from every viewpoint. A mesh's is not. The replacement
+  is PnP from clicked correspondences, a marker pass, or a coarse pose search."
+  The named difficulty was that the DLT's 3D points come from intersecting
+  camera rays with the surface, and on a mesh there is nothing to intersect until
+  a model pose exists.
+
+  **That chicken-and-egg is a consequence of a FREE model pose, and the pose is
+  held.** A visitor supplies the model already placed, so there is a known
+  surface to intersect from the first ray. It dissolves. Rungs 1 and 3 needed no
+  change at all — they hand their options straight to `runBundle`, so they have
+  been solving against a dropped mesh since `BundleOptions.surface` landed. Rungs
+  0 and 2 built world points themselves and are now threaded, which was measured
+  to change almost nothing: against a build with those two rungs forced back onto
+  the sphere, across ellipsoids, an offset model and a 45-degree-wrong nominal
+  layout, the differences are chaotic in sign and smaller than the seed-to-seed
+  spread.
+
+  **A strongly ASPHERICAL object used to fail, and the cause was not here.** On a
+  tri-axial ellipsoid (1 : 0.6 : 0.35) the recovered pose was **120–435 mm across
+  six seeds** against §7's 2 mm, and tripling the correspondences (1 946 → 5 698)
+  made it **worse**, 133 → 231 mm — a degeneracy rather than sampling, with the
+  field of view going along with it, 0.936° then 1.537° against 0.022–0.054° on
+  near-spherical meshes.
+
+  That was the **gauge**, not the bootstrap: `gaugeUnobserved` was pinning three
+  global rotations a held mesh determines, and because the gauge is pure damping
+  it froze whatever the bootstrap handed over. See the gauge bullet above, and
+  `correspondenceStiffness` in `bundle.ts`. The same fixture now recovers to
+  about **1e-10 mm** on every seed, from the same unchanged bootstrap. The
+  paragraph is kept rather than deleted because the wrong attribution is why the
+  right one took three commits to find.
+
+  The hypothesis, stated as one: rung 1 collapses the search to one dimension by
+  placing every projector at ONE distance along its NOMINAL bearing, and that
+  collapse needs the object to be roughly centrally symmetric about the origin.
+  A rung 1 that searches something other than a single radius is the part of this
+  module that really is research.
 
 ## The recommendation
 
@@ -836,11 +928,81 @@ merely delivered.
 
 ### Phase 5 — the solve
 
-Mesh intersection in `packages/solver`, written independently of the simulator's.
-Model pose and scale in the bundle. Measured rather than assumed gauge null space.
-A new bootstrap. New scenarios, new gates, and an honest statement of which
-photometric numbers remain PROVISIONAL — all of them, since nothing about a
-visitor's mesh has been measured either.
+**LANDED so far:** mesh intersection in `packages/solver`, written independently
+of the simulator's and shown to agree with it bit-exactly in
+`packages/bench/test/mesh-agreement.test.ts` — the first sim-vs-solver geometry
+test in the repository, for any shape. Plus the mesh hit Jacobian, and a
+central-difference test under the loop that assembles the normal equations,
+which had none.
+
+**LANDED since:** the mesh IS in the bundle. `BundleOptions.surface` is resolved
+once in `buildProblem` and selected in `hitAtEpoch`, so both correspondence
+epochs trace it; `bootstrap` threads it through every rung, with rungs 0 and 2
+going via one `surfaceHit` helper and rungs 1 and 3 inheriting it through
+`runBundle`; and `gaugeUnobserved` now measures the model's own null space rather
+than assuming the sphere's. `mesh-bundle.test.ts` asserts recovery with a
+negative control, and the sphere path is byte-identical across the
+twelve-scenario baseline.
+
+**Still NOT started:** the page cannot do any of it. `packages/web/src/pipeline.ts`
+photographs a sphere (`captureAndDecode`, no surface argument) and solves without
+`surface`, so a dropped model reaches the display shader and nothing else.
+
+**Rung 1's single radius is CLOSED, measured rather than argued.** The item read
+"a rung 1 that does not collapse the search onto a single radius", on the
+hypothesis that placing every projector at one distance along its nominal bearing
+needs a centrally symmetric object. A fixture was built to violate both halves at
+once, well past anything a real site produces: distances spread 4.41 to 6.45 m —
+wider than §2's whole 5.0-6.5 m prior, which is the range the sweep searches —
+and bearings swung 15 to 35 degrees off §2's 0/90/180/270, against its stated
+1-2 degree mount tolerance, on the tri-axial body the hypothesis was about.
+
+The sweep picks one distance and it is wrong for every projector: 5.00 m against
+truths of 4.41, 5.16, 5.83 and 6.45. The per-projector distances come back
+anyway — 4.41 / 5.13 / 5.85 / 6.44 — the bootstrap's own error is unmoved at
+31.8 mm against 30.6 mm on an on-nominal rig, and the solve recovers to
+1.4e-10 mm. The shared radius is where rung 1 STARTS its camera-only fit, not a
+constraint it imposes on the answer. The test asserts the sweep's answer is wrong
+for every projector, so a future per-projector rung 1 has to re-measure rather
+than silently inherit the claim, and reverting the gauge fix takes the same
+fixture to 1669.6 mm, so it is not a test that cannot fail.
+
+**Why it does not bind is structural, not lucky, and that is what closes the
+item.** The shared radius is the STARTING PLACEMENT of each sweep trial; the
+trial then runs an LM with `projectorPose` free, which moves every projector
+independently. The collapse is undone inside the rung that creates it. A rung 1b
+was written to remove it anyway — a per-projector radial line search over a
+geometric bracket spanning 3.25 to 7.70 m from a 5.00 m pick — and then reverted:
+instrumented on the fixture above it fired on all four projectors and moved none
+of them, because they were already at 4.415 / 5.126 / 5.846 / 6.439 m against
+truths of 4.41 / 5.16 / 5.83 / 6.45. The sweep's own answer is wrong and does not
+matter for the same reason: three seeds chose 5.00, 5.25 and 6.00 m and all three
+recovered to about 1e-10 mm. A per-projector rung 1 is a search with nothing to
+find, so shipping one would add surface area for no measured effect.
+
+It does NOT attribute the recovery, and one mutation is worth recording because
+it refuses to. `initialize.ts` says rung 2's DLT is "what makes the bootstrap
+robust to a rig that is not laid out the way §2 says". Mutating rung 2 to offer
+no alternative candidate at all — no footprint, no DLT, so a projector can only
+ever be the one it started as — leaves this fixture passing. The short LM settle
+inside rung 2, and the full solve after it, are doing the work here. The DLT's
+own claim still has no fixture.
+
+**Still to do:** the measured gauge null space is DONE, see the gauge bullet
+above. New
+scenarios and new gates, which cannot be a port: §7's numbers are sphere
+theorems and nobody has measured a mesh installation. And an honest statement of
+which photometric numbers remain PROVISIONAL — all of them, for the same reason.
+
+**No longer in scope:** model pose and scale in the bundle. Pose is held; see the
+pose bullet above.
+
+Two traps to clear before any mesh scenario enters the CI corpus, neither of them
+obvious from the plan: gate waivers are keyed by gate id alone, so a mesh corpus
+reusing `pose_position` would silently inherit A-18's 640 mm ceiling; and a
+crashed solve voids ALL metrics, turning gates NOT-MEASURED, which the waiver
+machinery deliberately refuses to waive — while a mesh bootstrap failing is the
+expected early outcome.
 
 *Estimate: 1–3 months, and the bootstrap is genuinely research.*
 
