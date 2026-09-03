@@ -631,6 +631,15 @@ export interface SolveResponse {
    * so this rotation is removed before anything is scored. Its size is reported
    * rather than hidden, because a large gauge with a small residual is a very
    * different result from a small gauge with a small one.
+   *
+   * That first sentence is about a SPHERE, and it stopped being the whole story
+   * when a model could be dropped on the page. A mesh is held in world
+   * coordinates, so turning the rig and leaving the model behind moves every
+   * traced point across the geometry: the rotation becomes observable, and
+   * `gaugeUnobserved` measures rather than assumes it — pinning what the shape
+   * hides and leaving the rest to the data. Expect this near zero on a
+   * tri-axial body, which fixes all three, and unchanged on a sphere or on a
+   * spheroid, which hides its azimuth at every squash.
    */
   gaugeAngleDeg: number;
   captureMs: number;

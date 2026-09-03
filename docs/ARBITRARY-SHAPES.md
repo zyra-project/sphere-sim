@@ -944,9 +944,42 @@ than assuming the sphere's. `mesh-bundle.test.ts` asserts recovery with a
 negative control, and the sphere path is byte-identical across the
 twelve-scenario baseline.
 
-**Still NOT started:** the page cannot do any of it. `packages/web/src/pipeline.ts`
-photographs a sphere (`captureAndDecode`, no surface argument) and solves without
-`surface`, so a dropped model reaches the display shader and nothing else.
+**The page can now do it, and running it found two things no test had.**
+`CaptureOptions.surface` reaches `prepareRig`, the mesh crosses the worker
+boundary as `SolveRequest.mesh`, and the bundle gets it as `bundle.surface`. A
+tri-axial body (1 : 0.7 : 0.5) recovers to **24.0 mm** on the page's own
+settings, against the sphere's 32.0 mm there.
+
+Neither of the two defects was visible to the test suite, and both were found by
+running the thing rather than asserting about it:
+
+- **The sphere segmenter refused every mesh.** `sphereSegmenter` fits a CIRCLE
+  and rejects what falls outside it, which is sound for the one body whose
+  silhouette is a circle from every angle. On a mesh it refused 3 of 3 cameras
+  and decoded ZERO correspondences — and not only on a strong deformation: a
+  body squashed five per cent was refused just as completely. It is now off
+  whenever a surface is supplied. A mesh therefore gets no protection from room
+  spill, which wants a segmenter taking the model's own silhouette.
+- **A solve with no data reported a confident answer.** With every camera
+  refused, `runSolve` returned `converged: true`, a residual of 0.0000 px and a
+  worst-lens error of 266.951 mm — the untouched bootstrap's own distance from
+  truth, dressed as a result. An empty decode now throws, naming the control
+  that caused it.
+
+**Open, and measured rather than guessed: a NEARLY spherical mesh does badly.**
+At 1 : 0.95 : 0.9 the page recovers 259.3 mm where 1 : 0.7 : 0.5 gets 24.0 mm —
+the wrong way round from intuition, and the gauge is part of it. Its azimuth is
+almost unobservable, `correspondenceStiffness` reads it as determined, and the
+gauge stands down on a direction the data barely fixes. Raising
+`GaugeOptions.dataTolerance` from 1e-6 to 1e-3 pins it and takes that case to
+83.9 mm — while costing the tri-axial body, which goes from 24.0 to 35.7 mm
+because its rotation IS determined and pinning throws that away.
+
+So there is no single value of that constant that suits both, and 83.9 mm is
+still poor, which says the gauge is not the whole cause. The tolerance has NOT
+been retuned on the strength of one fixture. What this needs is a sweep across
+deformation with seed variance, on the page's noisy configuration rather than
+the solver's noise-free one — the measurements above are single seeds.
 
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the

@@ -421,7 +421,28 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
         req.settings.roomSpill === 1
           ? { wallRadiusM: req.settings.wallRadiusM, ceilingM: req.settings.ceilingM }
           : null,
-      segmentImage: req.settings.segmentSphere === 1 ? {} : null,
+      // Sphere only, and not because a mesh segmenter would be hard — because
+      // this one answers a question a mesh does not ask. `sphereSegmenter` fits
+      // a CIRCLE to the photograph and rejects everything outside it, which is
+      // sound for the one body whose silhouette is a circle from every angle
+      // and catastrophic for anything else. Measured with it left on: a
+      // tri-axial ellipsoid refused 3 of 3 cameras and decoded ZERO
+      // correspondences, and so did a body squashed by only five per cent —
+      // this is not a strong-deformation limit, it is every mesh.
+      //
+      // Turning it off is not a downgrade for this path, it is the honest
+      // configuration: the payoff quoted below is a measurement about a sphere
+      // in a room, and a segmenter that rejects all the data has no payoff to
+      // trade. The same fixture with it off decoded 26 960 correspondences and
+      // recovered to 24.0 mm — better than the sphere's own 32.0 mm on this
+      // page's settings.
+      //
+      // What this does NOT do is give a mesh the protection a sphere gets. A
+      // room-lit capture of a model will carry wall spill into the decode with
+      // nothing to mask it. That wants a segmenter that takes the model's own
+      // silhouette, which is a real piece of work and is filed rather than
+      // faked here.
+      segmentImage: req.settings.segmentSphere === 1 && captureSurface === null ? {} : null,
     },
     seed: req.seed,
     decode: { pixelStride: 1, maxCorrespondences: 4000 },
@@ -433,6 +454,32 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     previewFrame: 0,
   });
   const captureMs = performance.now() - t0;
+
+  // A decode that produced nothing is not a calibration, and the bundle will not
+  // say so. Measured before this guard existed, on a mesh whose every camera the
+  // sphere segmenter had refused: zero correspondences, and `runSolve` returned
+  // `converged: true`, a residual of 0.0000 px and a worst-lens error of
+  // 266.951 mm — the untouched bootstrap's own distance from truth, reported as
+  // a result. Every number on the page would have been the nominal rig wearing a
+  // calibration's clothes, and the most confident-looking readout this page can
+  // produce is the one backed by no data at all.
+  //
+  // Thrown rather than reported as a poor score for the reason the projector
+  // guard above is: a person needs the control that caused it and the way back,
+  // and "0 points decoded" in a progress line that scrolls past is neither.
+  if (capture.correspondences.length === 0) {
+    const refused = capture.silhouettes.filter(
+      (sil) => sil.chosen < 0 || sil.warnings.length > 0,
+    ).length;
+    throw new Error(
+      refused > 0
+        ? `Every camera was refused by the silhouette detector (${refused} of ` +
+          `${capture.silhouettes.length}), so nothing was decoded. Switch ` +
+          '"Segment the sphere" off and recalibrate.'
+        : 'No points were decoded from the capture, so there is nothing to solve. ' +
+          'Check that the projectors are lighting the object and recalibrate.',
+    );
+  }
 
   // Poses, not pictures. The page renders these itself through the display
   // shader, which is the renderer that knows the room has projectors and a
