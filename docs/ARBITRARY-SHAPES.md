@@ -1107,10 +1107,12 @@ mesh hit Jacobian — and nothing else — for the per-vertex normal interpolate
 the hit, derived from the winding when the mesh carries none. The residual is
 still the facet hit; only the tangent plane the derivative believes the hit
 slides along changes, from the facet's to the curve's. At the derivative level
-that is the second-order object it should be — on this tessellation: a UV
-grid's vertex fans are centrally symmetric, so the derived normals are
-second-order accurate; on an irregular tessellation they, and this mode, are
-first-order with a smaller constant. Against `sphere.ts`'s closed form on a
+that is the second-order object it should be — on this tessellation, away from
+its poles: a UV grid's interior vertex fans are centrally symmetric, so the
+derived normals are second-order accurate (each duplicated pole vertex touches
+one triangle and keeps that facet's normal; the sampled rays avoid them); on an
+irregular tessellation they, and this mode, are first-order with a smaller
+constant. Against `sphere.ts`'s closed form on a
 tessellated unit sphere, median over the same 300 rays and the same incidence
 cut the facet test uses,
 

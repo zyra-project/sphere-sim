@@ -444,6 +444,25 @@ test('runSolve calibrates against the dropped model, and the cache hands the nex
     first.posePositionMm,
     'the cached solve recovered a different rig, so the cache did not hand it the same model',
   );
+  assert.ok(first.stopReason.length > 0, 'the response carries no stop reason');
+
+  // The experiment seam. `runSolve`'s third parameter exists so a measurement
+  // can turn a bundle option on through the page's own configuration; with the
+  // smooth-normal mode the bundle walks a different path on the same capture,
+  // and if the spread were dropped — or `solve` stopped carrying the option to
+  // the bundle — this solve would reproduce `cached` to the bit. An explicit
+  // `'facet'` is the default and must reproduce it exactly.
+  const facet = runSolve(request({ mesh: null, meshId: 'mesh:solve-test' }), undefined, { meshNormal: 'facet' });
+  assert.equal(facet.posePositionMm, first.posePositionMm, 'an explicit facet is not the default');
+  assert.equal(facet.iterations, first.iterations);
+  const smooth = runSolve(request({ mesh: null, meshId: 'mesh:solve-test' }), undefined, { meshNormal: 'smooth' });
+  assert.equal(smooth.correspondences, first.correspondences, 'the mode changed the capture, which it must not');
+  assert.ok(
+    smooth.iterations !== first.iterations ||
+      smooth.residualRmsPx !== first.residualRmsPx ||
+      smooth.posePositionMm !== first.posePositionMm,
+    'meshNormal: smooth reached the bundle and changed nothing — the seam is disconnected',
+  );
 });
 
 test('a spheroid mesh stops when it has converged, instead of running to the cap and being refused', { timeout: 600_000 }, () => {

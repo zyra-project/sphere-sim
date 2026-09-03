@@ -847,7 +847,9 @@ export interface MeshHitJacobian {
  * to `sphere.ts`'s closed form at SECOND order where the facet's converges at
  * first — WHEN the vertex normals are themselves second-order accurate: a
  * file's own normals, or derived normals on a tessellation whose vertex fans
- * are centrally symmetric, which the UV grid every fixture here uses is. On an
+ * are centrally symmetric, which the UV grid every fixture here uses is away
+ * from its poles (each duplicated pole vertex touches one triangle, so its
+ * derived normal is that facet's and first-order). On an
  * irregular tessellation the area-weighted derived normal is only first-order
  * accurate and so is this mode, with about a third of the facet's constant
  * (measured on a 30%-jittered UV sphere: 2.6e-2 → 6.6e-3 → 1.7e-3 against the

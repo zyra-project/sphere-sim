@@ -36,6 +36,7 @@ import assert from 'node:assert/strict';
 
 import type { SurfaceMesh } from '../../calibration/src/index.ts';
 import type { FloorReference } from '../src/bundle.ts';
+import { DEFAULT_BUNDLE_OPTIONS, buildProblem, evaluate } from '../src/bundle.ts';
 import { bundleStateFromCalibration, solveFromCorrespondences } from '../src/index.ts';
 import { bootstrap } from '../src/initialize.ts';
 import { buildMeshIndex } from '../src/mesh.ts';
@@ -548,4 +549,47 @@ test('with few floor references the gauge still pins exactly the direction the s
   // what makes the first assertion a statement about the mixing rather than
   // about the shape.
   assert.equal(gaugeWith(4), 1, 'the azimuth is still the one pinned direction at four references');
+});
+
+test('meshNormal reaches the bundle: same cost, a different Jacobian, and the default is the facet', () => {
+  // The derivative tests in mesh.test.ts call `intersectMeshJacobian` directly.
+  // This is the plumbing: `BundleOptions.meshNormal` has to arrive at
+  // `hitAtEpoch` through `problem.opts`, or the documented experiment is
+  // unreachable while every derivative test stays green. Three evaluations of
+  // ONE state on ONE corpus against ONE mesh, differing only in the option.
+  //
+  // What must be identical and what must not, and why: the residual is the
+  // facet hit in both modes, so the cost — a function of the residuals alone —
+  // is the same number to the bit; the normal equations carry the derivative,
+  // so `jtj` and `jtr` differ; and the default must reproduce an explicit
+  // `'facet'` exactly, because the sphere baseline and every published mesh
+  // number were produced with it.
+  const scene = makeScene(1);
+  const index = buildMeshIndex(ellipsoid(scene.truth.radiusM, 0.9, 64, 128));
+  const corrs = generateCorrespondences(scene.truth, { surface: index, noisePx: 0, sigmaPx: 0.02 });
+  assert.ok(corrs.length > 500, `only ${corrs.length} correspondences`);
+  // The NOMINAL rig with the true cameras: a state away from the optimum, so the
+  // residuals are not zero and the cost is a number worth comparing.
+  const state = { ...bundleStateFromCalibration(scene.nominal, []), cameras: scene.truth.cameras };
+  const problemFor = (meshNormal?: 'facet' | 'smooth') =>
+    buildProblem(state, corrs, floorAtEveryLens(scene), {
+      ...DEFAULT_BUNDLE_OPTIONS,
+      tieProjectorFov: false,
+      surface: index,
+      ...(meshNormal === undefined ? {} : { meshNormal }),
+    });
+  const byDefault = evaluate(state, problemFor(), true);
+  const facet = evaluate(state, problemFor('facet'), true);
+  const smooth = evaluate(state, problemFor('smooth'), true);
+  assert.ok(facet.cost > 0, 'the fixture sits at the optimum, so nothing here is tested');
+  assert.ok(byDefault.jtj !== null && facet.jtj !== null && smooth.jtj !== null);
+
+  assert.equal(facet.cost, byDefault.cost);
+  assert.deepEqual(Array.from(facet.jtj), Array.from(byDefault.jtj), 'an explicit facet is not the default');
+  assert.deepEqual(Array.from(facet.jtr!), Array.from(byDefault.jtr!));
+
+  assert.equal(smooth.cost, facet.cost, 'the mode changed the residual, which it must not');
+  assert.equal(smooth.contributing, facet.contributing);
+  const moved = Array.from(smooth.jtj).filter((v, i) => v !== facet.jtj![i]).length;
+  assert.ok(moved > 0, 'meshNormal: smooth reached the bundle and changed no entry of the normal matrix');
 });

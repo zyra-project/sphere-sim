@@ -768,11 +768,15 @@ test('the smooth derivative converges to the sphere’s closed form at SECOND or
   // The facet test above expects first order: the flat normal is off the true
   // one by about half the facet's angular size. The interpolated vertex normal
   // of THIS tessellated sphere is off by the facet size SQUARED: the vertices
-  // sit on the sphere, and on a UV grid each vertex's fan is centrally
+  // sit on the sphere, and on a UV grid each interior vertex's fan is centrally
   // symmetric, so the area-weighted sum's tangential parts cancel and the
-  // derived normal points along the radius to that order. (On an irregular
-  // tessellation they do not cancel, the derived normal is first-order, and so
-  // is this mode — `intersectMeshJacobian`'s docblock records the measurement.)
+  // derived normal points along the radius to that order. The exception is the
+  // poles: `uvSphereMesh` duplicates each pole vertex `nLon` times and each
+  // duplicate touches one triangle, so its derived normal is that facet's and
+  // first-order — the ray set below stays away from them. (On an irregular
+  // tessellation the fans do not cancel anywhere, the derived normal is
+  // first-order, and so is this mode — `intersectMeshJacobian`'s docblock
+  // records the measurement.)
   // So refining four times should buy about sixteen, not four. This is
   // the derivative-level statement of the experiment docs/ARBITRARY-SHAPES.md
   // records: whether the curve's derivative, rather than the facet's, is what a
@@ -793,7 +797,8 @@ test('the smooth derivative converges to the sphere’s closed form at SECOND or
       if (f.hit.cosIncidence < 0.2) continue;
       // Same hit, same point: the mode changes the derivative and nothing else.
       assert.equal(m.hit.triangle, f.hit.triangle);
-      assert.equal(m.hit.point.x, f.hit.point.x);
+      assert.deepEqual(m.hit.point, f.hit.point);
+      assert.equal(m.hit.t, f.hit.t);
       let worstF = 0;
       let worstM = 0;
       for (let r = 0; r < 3; r++) {
@@ -827,6 +832,84 @@ test('the smooth derivative converges to the sphere’s closed form at SECOND or
     fine.smooth * 10 < fine.facet,
     `fine: smooth ${fine.smooth.toExponential(2)} against facet ${fine.facet.toExponential(2)}`,
   );
+});
+
+test('a mesh that carries its own normals has them honoured over the derived ones', () => {
+  // `vertexNormalsOf` takes `SurfaceMesh.normals` when the file supplies them
+  // and derives from the winding only when it does not. Every other fixture in
+  // this file is `normals: null`, so this is the one place the first branch is
+  // exercised. Two fixtures on the same 16x32 sphere: exact radial normals,
+  // which are what the derived ones approximate; and the same normals rigidly
+  // turned by ten degrees about z, which nothing about the geometry would ever
+  // derive. If supplied normals were ignored, both would reproduce the
+  // derived-normal derivative to the bit. (Exact normals are not asserted to
+  // beat derived ones ray by ray: on this grid the derived normals are already
+  // second-order accurate, and at 16x32 the interpolation across a facet, not
+  // the corner normals, is what the remaining error is made of — measured, the
+  // exact ones win on about half the rays.)
+  const cam = testCamera();
+  const base = uvSphereMesh(16, 32, 1);
+  const radial = Float64Array.from(base.positions); // unit sphere: position IS the normal
+  const c = Math.cos((10 * Math.PI) / 180);
+  const s = Math.sin((10 * Math.PI) / 180);
+  const turned = new Float64Array(radial.length);
+  for (let v = 0; v < base.vertexCount; v++) {
+    const x = radial[3 * v];
+    const y = radial[3 * v + 1];
+    turned[3 * v] = c * x - s * y;
+    turned[3 * v + 1] = s * x + c * y;
+    turned[3 * v + 2] = radial[3 * v + 2];
+  }
+  const derivedIndex = buildMeshIndex(base);
+  const radialIndex = buildMeshIndex({ ...base, normals: radial });
+  const turnedIndex = buildMeshIndex({ ...base, normals: turned });
+
+  let radialDiffers = 0;
+  let turnedDiffers = 0;
+  let rays = 0;
+  const radialErr: number[] = [];
+  const derivedErr: number[] = [];
+  const facetErr: number[] = [];
+  for (let k = 0; k < 300; k++) {
+    const nx = -0.25 + (0.5 * k) / 300;
+    const ny = -0.13 + 0.2 * Math.sin(k * 0.7);
+    const d = SMOOTH(derivedIndex, cam, nx, ny);
+    const r = SMOOTH(radialIndex, cam, nx, ny);
+    const t = SMOOTH(turnedIndex, cam, nx, ny);
+    const truth = intersectSphereJacobian(cam, nx, ny, 1);
+    if (!d.hit.hit || !truth.hit.hit || d.hit.cosIncidence < 0.2) continue;
+    rays++;
+    // Same mesh, same hit, whatever the normals say.
+    assert.equal(r.hit.triangle, d.hit.triangle);
+    assert.deepEqual(t.hit.point, d.hit.point);
+    const worst = (j: Float64Array): number => {
+      let w = 0;
+      for (let i = 0; i < 3 * CAM_PARAM_COUNT; i++) w = Math.max(w, Math.abs(j[i] - truth.dPoint[i]));
+      return w;
+    };
+    const f = intersectMeshJacobian(derivedIndex, cam, nx, ny);
+    radialErr.push(worst(r.dPoint));
+    derivedErr.push(worst(d.dPoint));
+    facetErr.push(worst(f.dPoint));
+    if (Array.from(r.dPoint).some((v, i) => v !== d.dPoint[i])) radialDiffers++;
+    if (Array.from(t.dPoint).some((v, i) => v !== d.dPoint[i])) turnedDiffers++;
+  }
+  assert.ok(rays > 200, `only ${rays} usable rays`);
+  const median = (xs: number[]): number => xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+  // The branch is read: supplied normals change the derivative — on every ray
+  // when they are turned, and on nearly every ray even when they are the exact
+  // normals the derived ones approximate to second order.
+  assert.equal(turnedDiffers, rays, `turned normals left ${rays - turnedDiffers} derivatives unchanged`);
+  assert.ok(radialDiffers > 0.9 * rays, `exact normals changed only ${radialDiffers} of ${rays} derivatives`);
+  // And they are used AS normals: the exact ones give a derivative as close to
+  // the closed form as the derived ones (within a factor of two either way) and
+  // an order of magnitude closer than the facet's — a transposed index or a
+  // stride error here would show up as neither.
+  const mr = median(radialErr);
+  const md = median(derivedErr);
+  const mf = median(facetErr);
+  assert.ok(mr < 2 * md && md < 2 * mr, `exact ${mr.toExponential(2)} against derived ${md.toExponential(2)}`);
+  assert.ok(mr * 10 < mf, `exact ${mr.toExponential(2)} against facet ${mf.toExponential(2)}`);
 });
 
 test('the smooth derivative does NOT match central differences of the facet hit — that is the trade, stated', () => {
