@@ -463,9 +463,11 @@ test('a spheroid mesh stops when it has converged, instead of running to the cap
   // `meshPlateauWindow` / `meshPlateauTol` add a fourth rule on the mesh path
   // only: stop when the cost has not moved across a window of freely accepted
   // steps. This asserts the three things that rule is for. It is NOT an
-  // accuracy assertion — the spheroid accuracy gap (30-140 mm against the
-  // analytic sphere's 8-17 across seeds) is a separate question about the
-  // Jacobian itself and is recorded in docs/ARBITRARY-SHAPES.md as open.
+  // accuracy assertion — the near-sphere accuracy gap (the tessellated sphere
+  // at 32-137 mm against the analytic sphere's 8-17 across seeds, gone by a
+  // twenty per cent squash, absent for every tri-axial) is a separate question
+  // about the Jacobian itself and is recorded in docs/ARBITRARY-SHAPES.md as
+  // open.
   const radiusM = buildWorld(BOULDER_PRESET, undefined, undefined).truthRig.sphere.radiusM;
   const mesh = ellipsoidMesh(radiusM, 1, 1, 192, 384);
 
