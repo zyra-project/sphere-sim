@@ -567,6 +567,9 @@ function metricsById(set: MetricSet | null): Map<string, MetricResult> {
 export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
   const gates: GateSummary[] = buildRecoveryGates(results);
   const unscored = new Map<string, string>();
+  const surfaceScenarioIds = new Set(
+    results.filter((r) => (r.scenario.surface ?? null) !== null).map((r) => r.scenario.id),
+  );
 
   for (const gate of GATES) {
     if (gate.phase !== 'geometry') continue;
@@ -581,6 +584,16 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
     let provisional = false;
     let worst: { scenario: string; value: number } | null = null;
     for (const r of results) {
+      // A body that is not the sphere has no §7 geometry to score: the metrics
+      // are defined on `rig.sphere`, and `run.ts` does not compute them for it.
+      // NOT MEASURABLE rather than unmeasured — the scenario owes nothing here,
+      // and no waiver's ceiling is asked to vouch for a number nobody has. Its
+      // recovery gates are scored above like any other's. (`?? null`: a test
+      // fixture that never heard of surfaces is a sphere, not a mesh.)
+      if ((r.scenario.surface ?? null) !== null) {
+        notMeasurable.push(r.scenario.id);
+        continue;
+      }
       const m = metricsById(r.metrics).get(gate.id);
       // `metrics: null` — the metric computation threw and run.ts swallowed it
       // into a per-scenario `error` the gate step never reads. Recorded rather
@@ -628,10 +641,18 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
     // list — so a metric that threw on every scenario removed its own gate from
     // the judgement and the build stayed green with §7's seam and unlit gates
     // simply not judged.
+    //
+    // A scenario whose body is not the sphere does not keep a gate alive on its
+    // own: it is NOT MEASURABLE on every §7 gate by construction, and a gate the
+    // sphere scenarios did not score either — `off_sphere_flux` is unscored on
+    // the whole corpus — would otherwise arrive in the judgement with nothing
+    // scored and be read as NOT-MEASURED, failing the build over a metric no
+    // scenario in the run was ever going to produce.
+    const notMeasurableOnSphere = notMeasurable.filter((id) => !surfaceScenarioIds.has(id));
     if (
       scored === 0 &&
       values.length === 0 &&
-      notMeasurable.length === 0 &&
+      notMeasurableOnSphere.length === 0 &&
       unmeasured.length === 0
     ) {
       continue;
@@ -683,6 +704,11 @@ export function buildGates(results: readonly ScenarioResult[]): GatesBlock {
     const unmeasured: string[] = [];
     let provisional = false;
     for (const r of results) {
+      // Not the sphere: nothing computed on the sphere applies, as above.
+      if ((r.scenario.surface ?? null) !== null) {
+        notMeasurable.push(r.scenario.id);
+        continue;
+      }
       const m = metricsById(r.metrics).get(id);
       // Two different absences. `metrics: null` means the computation threw and
       // this scenario owes a number it never produced; `m.gate === null` means
@@ -840,6 +866,11 @@ function scenarioInputs(s: Scenario, r: ScenarioResult): Record<string, unknown>
     },
     maskInterpretation: s.maskInterpretation,
     freeFov: s.freeFov,
+    // Present only when there is a body other than the sphere. A `surface: null`
+    // on every sphere scenario would be a new key in twelve recorded `inputs`
+    // blocks and would move their digests without moving a number; the baseline
+    // is there to catch numbers moving, not keys arriving.
+    ...(s.surface === null ? {} : { surface: s.surface }),
     floorReferenceCount: s.floorReferenceCount,
     floorSigmaM: s.floorSigmaM,
     cameras: {

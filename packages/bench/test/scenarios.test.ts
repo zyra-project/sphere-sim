@@ -179,3 +179,58 @@ test('presets differ only in cost, not in what is being asked', () => {
     assert.notEqual(quick[i].cameras.resX, thorough[i].cameras.resX);
   }
 });
+
+test('mesh is the SAME rig and the same capture as nominal, with the sphere replaced', () => {
+  // The paired-comparison rule again: the difference between `mesh` and
+  // `nominal` has to be the body and nothing else, or it measures two rigs.
+  const paired = ARCHETYPE_NAMES.indexOf('mesh');
+  const partner = ARCHETYPE_NAMES.indexOf('nominal');
+  assert.equal(paired, ARCHETYPE_NAMES.length - 1, 'new archetypes go on the end');
+  for (const seed of [1234, 77, 20240001]) {
+    const a = makeScenario(seed, partner, PRESETS.default);
+    const b = makeScenario(seed, paired, PRESETS.default);
+    assert.equal(a.seed, b.seed, 'the pair must share a seed');
+    assert.equal(a.surface, null);
+    assert.deepEqual(b.surface, { kind: 'ellipsoid', scaleY: 0.8, scaleZ: 0.6, nLat: 64, nLon: 128 });
+    // The WHOLE scenario, not a hand-picked subset of it: with the identity
+    // fields and the body normalised away, nothing else — cameras, jitter,
+    // clock, pattern, floor references, projector layout, misalignment — may
+    // differ, or the pair measures two rigs and calls the difference the body.
+    const identity = { index: 0, id: '', archetype: '', question: '', surface: null };
+    assert.deepEqual({ ...a, ...identity }, { ...b, ...identity });
+  }
+  const cycle = ARCHETYPE_NAMES.length;
+  assert.equal(
+    makeScenario(1234, paired + cycle, PRESETS.default).seed,
+    makeScenario(1234, partner + cycle, PRESETS.default).seed,
+  );
+});
+
+test('only the mesh archetype puts a body other than the sphere in the world, and it puts it on both sides', () => {
+  // `surface` is what the cameras photograph and `meshIndex` what the bundle
+  // fits. One without the other is the failure #14's cache existed to prevent:
+  // a photograph of one shape fitted to another. Both or neither, per scenario.
+  for (let i = 0; i < ARCHETYPE_NAMES.length; i++) {
+    const s = makeScenario(31, i, PRESETS.quick);
+    const world = buildWorld(s);
+    if (ARCHETYPE_NAMES[i] === 'mesh') {
+      assert.notEqual(s.surface, null);
+      assert.ok(world.surface !== null, 'the cameras would photograph a sphere');
+      assert.ok(world.meshIndex !== null, 'the bundle would fit a sphere');
+      // Built at the rig's own radius: the ellipsoid's long axis is the sphere.
+      const r = world.truthRig.sphere.radiusM;
+      let maxX = 0;
+      let maxZ = 0;
+      for (let k = 0; k < world.meshIndex.mesh.vertexCount; k++) {
+        maxX = Math.max(maxX, Math.abs(world.meshIndex.mesh.positions[3 * k]));
+        maxZ = Math.max(maxZ, Math.abs(world.meshIndex.mesh.positions[3 * k + 2]));
+      }
+      assert.ok(Math.abs(maxX - r) < 1e-9, `long axis ${maxX} vs radius ${r}`);
+      assert.ok(Math.abs(maxZ - 0.6 * r) < 1e-9, `short axis ${maxZ} vs 0.6 x ${r}`);
+    } else {
+      assert.equal(s.surface, null);
+      assert.equal(world.surface, null);
+      assert.equal(world.meshIndex, null);
+    }
+  }
+});

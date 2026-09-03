@@ -1,20 +1,20 @@
 {
   "schema": "sphere-sim/bench-baseline@1",
-  "command": "bench --scenarios 12 --seed 1234",
+  "command": "bench --scenarios 13 --seed 1234",
   "volatile": [
     "env",
     "scenarios[].timings"
   ],
-  "characters": 5563347,
+  "characters": 6031516,
   "digests": {
-    "$": "ccaab2840beb5771",
+    "$": "f1fbd0ce63d5b017",
     "$.schema": "7e5cea3a7342c285",
     "$.volatile": "fc4a51bb292e5197",
-    "$.run": "bab38601341dafe1",
-    "$.gates": "bfe59de618ea03cf",
-    "$.aggregate": "86392435663d7c0e",
+    "$.run": "679d02dbc547537f",
+    "$.gates": "be9d990db40c0041",
+    "$.aggregate": "1b93715cfe08bb27",
     "$.notes": "cf5de4ae5dfa671c",
-    "$.scenarios": "d0eac301f856edf8",
+    "$.scenarios": "df9ef498e9e6061b",
     "$.scenarios[s00-clean]": "d45ec2be8777c79b",
     "$.scenarios[s00-clean].index": "5feceb66ffc86f38",
     "$.scenarios[s00-clean].id": "db96c519f2996467",
@@ -194,6 +194,21 @@
     "$.scenarios[s11-fov-held].metricsPass": "fcbcf165908dd18a",
     "$.scenarios[s11-fov-held].baseline": "41851c46f02f13a4",
     "$.scenarios[s11-fov-held].artifacts": "0b4912ab86f4c739",
-    "$.scenarios[s11-fov-held].error": "74234e98afe7498f"
+    "$.scenarios[s11-fov-held].error": "74234e98afe7498f",
+    "$.scenarios[s12-mesh]": "da24ddfbffdd3a5b",
+    "$.scenarios[s12-mesh].index": "6b51d431df5d7f14",
+    "$.scenarios[s12-mesh].id": "eb5179be1dc29210",
+    "$.scenarios[s12-mesh].archetype": "0d43b71408db6622",
+    "$.scenarios[s12-mesh].question": "d279ef3618e62656",
+    "$.scenarios[s12-mesh].seed": "505b935e088d062f",
+    "$.scenarios[s12-mesh].inputs": "11abac5853103b4e",
+    "$.scenarios[s12-mesh].capture": "1e63f96b8f6cd668",
+    "$.scenarios[s12-mesh].solver": "b0a012b314523f0c",
+    "$.scenarios[s12-mesh].recovery": "79236d131eab8934",
+    "$.scenarios[s12-mesh].metrics": "4f53cda18c2baa0c",
+    "$.scenarios[s12-mesh].metricsPass": "74234e98afe7498f",
+    "$.scenarios[s12-mesh].baseline": "74234e98afe7498f",
+    "$.scenarios[s12-mesh].artifacts": "a12862c1b4e95379",
+    "$.scenarios[s12-mesh].error": "74234e98afe7498f"
   }
 }

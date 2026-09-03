@@ -1027,7 +1027,14 @@ twelve-scenario baseline confirms that gate to the last bit. With it, the same
 192×384 solve stops at accepted step 49 in 65 seconds at the same 12.5 mm, and
 the page installs it; the 64×128 solve stops at step 80 in 56 seconds at
 137.5 mm against 137.4 at the cap — which is the point: the rule changes when
-the optimiser stops, and nothing about where.
+the optimiser stops, and nothing about where. Confirmed afterwards on the whole
+thirty-row sweep below, re-run with the rule on: every row converged and was
+installed, in 24 to 80 steps and 29 to 86 seconds each — 23 minutes for the
+table, where one capped row alone took four to six — with correspondence counts
+and gauge angles identical on every row and the error identical to 0.1 mm on
+all thirty. Two rows took MORE total steps than before (69 to 77, 35 to 36):
+ending the first pass earlier hands the rejection pass a different starting
+point, and it takes its own route to the same answer.
 
 **The corrected sweep.** Ten shapes × three seeds on the page's own configuration
 (three cameras at 320×240, sensor noise on, `errorSeed` 1–3), every mesh at the
@@ -1134,21 +1141,68 @@ ever be the one it started as — leaves this fixture passing. The short LM sett
 inside rung 2, and the full solve after it, are doing the work here. The DLT's
 own claim still has no fixture.
 
-**Still to do:** the measured gauge null space is DONE, see the gauge bullet
-above. New
-scenarios and new gates, which cannot be a port: §7's numbers are sphere
-theorems and nobody has measured a mesh installation. And an honest statement of
-which photometric numbers remain PROVISIONAL — all of them, for the same reason.
+**The corpus has a scenario whose body is not a sphere, and CI judges it.**
+`packages/bench`'s thirteenth archetype, `mesh`, is `nominal`'s rig, cameras and
+photons — it borrows `nominal`'s seed the way `fov-held` borrows `two-cameras`'
+— with the sphere replaced by a tri-axial ellipsoid, 1 : 0.8 : 0.6 at the
+sphere's radius, tessellated 64×128. The cameras photograph it through
+`CaptureOptions.surface` and the bundle fits it through `BundleOptions.surface`,
+from two hierarchies built off the one mesh. Paired with `nominal` at the default
+preset, three root seeds, worst projector:
+
+| root seed | body | position mm | rotation deg | camera deg | h_center mm |
+|---|---|---|---|---|---|
+| 1234 | sphere | 33.2 | 0.038 | 0.010 | 2.4 |
+| 1234 | ellipsoid | 33.1 | 0.171 | 0.003 | 2.4 |
+| 77 | sphere | 26.7 | 0.035 | 0.033 | 3.5 |
+| 77 | ellipsoid | 14.9 | 0.042 | 0.003 | 3.5 |
+| 20240001 | sphere | 24.3 | 0.051 | 0.046 | 0.5 |
+| 20240001 | ellipsoid | 25.5 | 0.116 | 0.007 | 0.5 |
+
+Position is the sphere's to within the seed's own scatter on two seeds (33.1
+against 33.2, 25.5 against 24.3) and materially better on the third (14.9
+against 26.7). Camera rotation is better on every seed, which is what a body with no
+symmetry axis should do for the apparatus looking at it. `h_center` is the tape
+measure's and does not know what body it measured. The one cost is the projector
+rotation: two to four times the sphere's on two seeds of three — inside A-12's
+shift/pointing degeneracy (0.01 of shift is 0.172°) and far inside its waiver's
+6.3° ceiling, and not yet attributed. The scenario is what makes that a number
+CI carries rather than a sentence here.
+
+It is scored on the recovery gates and on nothing else. §7's geometric metrics
+are computed by `sim/metrics` on `rig.sphere` whatever body the cameras saw, so
+for this scenario they would describe an installation that is not in the room;
+`run.ts` does not compute them and `results.ts` reports the scenario NOT
+MEASURABLE on each of them — visible, counted, deciding nothing — a third state
+beside PASS/FAIL and the fatal NOT-MEASURED of a crashed solve. The twelve sphere
+scenarios' digests did not move: the new `inputs.surface` key is written only
+when there is a surface, and the baseline check lists exactly the new scenario's
+paths plus the run, aggregate and gate blocks that now include it.
+
+**Still to do:** the measured gauge null space is DONE (the gauge bullet above)
+and the first mesh scenario is DONE (the entry above). New GATES for a mesh
+remain open and cannot be a port: §7's numbers are sphere theorems and nobody has
+measured a mesh installation, which is why the scenario reports the sphere's
+gates NOT MEASURABLE rather than inventing a mesh version of them. And an honest
+statement of which photometric numbers remain PROVISIONAL — all of them, for the
+same reason.
 
 **No longer in scope:** model pose and scale in the bundle. Pose is held; see the
 pose bullet above.
 
-Two traps to clear before any mesh scenario enters the CI corpus, neither of them
-obvious from the plan: gate waivers are keyed by gate id alone, so a mesh corpus
-reusing `pose_position` would silently inherit A-18's 640 mm ceiling; and a
-crashed solve voids ALL metrics, turning gates NOT-MEASURED, which the waiver
-machinery deliberately refuses to waive — while a mesh bootstrap failing is the
-expected early outcome.
+Two traps this entry named before the mesh scenario existed, and how it cleared
+them. Gate waivers are matched by gate id alone, and `pose_position`,
+`pose_rotation` and `grid_displacement` covered every archetype with
+`scenarios: null` — so the mesh scenario, which fails the 2 mm pose gate as every
+archetype does, would have been waived under A-18 without anyone deciding that
+A-18 applies to it. Every waiver now names its archetypes; `mesh` is named on the
+two pose gates with the paired measurement above in the reason; and a future
+archetype that fails a waived gate fails the build until someone writes down why
+the amendment covers it. And a crashed solve voids ALL metrics and turns gates
+NOT-MEASURED, which the waiver machinery deliberately refuses to waive — the fate
+a mesh scenario with `metrics: null` would have met on every §7 gate at once, had
+`results.ts` not learned to tell a body that owes §7 nothing from a computation
+that threw.
 
 *Estimate: 1–3 months, and the bootstrap is genuinely research.*
 

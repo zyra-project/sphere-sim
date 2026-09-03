@@ -30,6 +30,8 @@ import type { RigCalibration } from '../../calibration/src/index.ts';
 import { PARAMETER_TABLE } from '../../calibration/src/parameters.ts';
 import { gridAlignmentPattern } from '../../sim/src/equirect.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
+import type { Surface } from '../../sim/src/surface.ts';
+import { meshSurface } from '../../sim/src/mesh/surface.ts';
 import type { Perturbation } from '../../sim/src/scene.ts';
 import { injectMisalignment, nominalRig as simNominalRig } from '../../sim/src/scene.ts';
 import { defaultScene, viewerAt } from '../../sim/src/render.ts';
@@ -49,6 +51,9 @@ import {
 // `fov-held` archetype needs to change exactly one of them without silently
 // re-defaulting the other seven.
 import { DEFAULT_FREE_FLAGS } from '../../solver/src/bundle.ts';
+// Also past the barrel: the solver's own hierarchy of a mesh, built here so the
+// bundle fits exactly the body the cameras photographed.
+import { buildMeshIndex, type MeshIndex } from '../../solver/src/mesh.ts';
 import type { SimulatedCamera } from './camera.ts';
 import { placeCameras } from './camera.ts';
 import type { CaptureResult } from './capture.ts';
@@ -60,6 +65,7 @@ import type { BenchPreset, Scenario } from './scenarios.ts';
 import { scaledMisalignment } from './scenarios.ts';
 import type { RecoveryScore } from './score.ts';
 import { scoreRecovery } from './score.ts';
+import { ellipsoidMesh } from './surfaces.ts';
 import { colorizeFieldWithGaps, renderTwoRigRoomView, writePng } from './views.ts';
 
 /**
@@ -81,6 +87,17 @@ export interface ScenarioWorld {
   cameras: SimulatedCamera[];
   /** Nominal handed to the solver, built by the SOLVER's own construction. */
   solverNominal: RigCalibration;
+  /**
+   * The body, when the scenario's `surface` is not null: one mesh built twice,
+   * once for each side of the bench. `surface` is what the cameras photograph
+   * (`packages/sim`); `meshIndex` is what the bundle fits (`packages/solver`).
+   * Two hierarchies rather than one because boundary-lint R1 keeps `sim` and
+   * `solver` from sharing code, and `test/mesh-agreement.test.ts` is where the
+   * two are checked against each other. Both null for the sphere, which is every
+   * archetype but `mesh`.
+   */
+  surface: Surface | null;
+  meshIndex: MeshIndex | null;
 }
 
 const CONTENT_WIDTH = 1024;
@@ -116,6 +133,16 @@ export function buildWorld(scenario: Scenario): ScenarioWorld {
     blend: scenario.blend,
   });
   const misaligned = injectMisalignment(asBuilt, scenario.seed, scaledMisalignment(scenario));
+
+  // The body, at the rig's own radius and in the sphere's own frame. Built from
+  // the scenario's spec rather than carried on the rig — `optics.ts` explains
+  // above `prepareRig` why a mesh does not live in `RigCalibration` yet.
+  const mesh =
+    scenario.surface === null
+      ? null
+      : ellipsoidMesh(scenario.surface, misaligned.rig.sphere.radiusM);
+  const surface = mesh === null ? null : meshSurface(mesh);
+  const meshIndex = mesh === null ? null : buildMeshIndex(mesh);
 
   const image = gridAlignmentPattern({
     width: CONTENT_WIDTH,
@@ -162,6 +189,8 @@ export function buildWorld(scenario: Scenario): ScenarioWorld {
     scene,
     cameras,
     solverNominal,
+    surface,
+    meshIndex,
   };
 }
 
@@ -308,15 +337,23 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
       clock: scenario.degradation.clock,
       minIncidenceCos: 0.2,
       roomSpill: scenario.degradation.roomSpill,
-      segmentImage: options.segmentImage === true ? {} : null,
+      // Both segmenters fit a CIRCLE to the sphere's silhouette and refuse what
+      // falls outside it, which for any other body is every camera:
+      // `packages/web/src/pipeline.ts` measured 3 of 3 cameras refused and zero
+      // correspondences decoded with one left on for a mesh. Off for a mesh
+      // whatever the caller asked; the bench itself never asks.
+      segmentImage: options.segmentImage === true && world.surface === null ? {} : null,
     },
+    // The body the cameras photograph. Null — the sphere — for every archetype
+    // the twelve-scenario baseline was recorded with.
+    surface: world.surface,
     seed: scenario.seed,
     decode: {
       pixelStride: 1,
       maxCorrespondences: options.preset.maxCorrespondencesPerPair,
       // Built from the NOMINAL rig — what the operator starts from — and never
       // from `world.truthRig`, which is two lines above and is ground truth.
-      segmentation: options.segmentSphere === true
+      segmentation: options.segmentSphere === true && world.surface === null
         ? sphereSegmenter({
             radiusM: world.solverNominal.sphere.radiusM,
             projectors: bundleStateFromCalibration(world.solverNominal, []).projectors,
@@ -328,6 +365,10 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
       // reject something needs to be able to move it, and moving it by editing
       // `DEFAULT_DECODE_OPTIONS` would move every published number with it.
       ...(options.decode ?? {}),
+      // ...except a segmenter, which a caller's `decode` could otherwise hand a
+      // mesh scenario after the guard above declined to build one. Reasserted
+      // after the spread so the invariant holds whatever the run options say.
+      ...(world.surface === null ? {} : { segmentation: null }),
     },
     // One frame kept as an artifact: the fourth Gray plane of the u axis, which
     // is coarse enough to read as a pattern in a thumbnail and fine enough to
@@ -384,7 +425,12 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
       floorReferences,
       options: {
         seed: scenario.seed,
-        bundle: { free: { ...DEFAULT_FREE_FLAGS, projectorFov: scenario.freeFov } },
+        bundle: {
+          free: { ...DEFAULT_FREE_FLAGS, projectorFov: scenario.freeFov },
+          // The body the bundle fits: the solver's own hierarchy of the mesh the
+          // cameras photographed, or null for the sphere.
+          surface: world.meshIndex,
+        },
       },
     });
   } catch (e) {
@@ -414,8 +460,14 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
   }
   const tScore = Date.now();
 
+  // PARAMETERS.md §7's geometric metrics are defined on the sphere: `sim/metrics`
+  // samples `rig.sphere` whatever body the cameras saw. For a mesh scenario they
+  // would describe a body that is not in the room, so they are not computed, and
+  // `results.ts` reports the scenario NOT MEASURABLE on those gates rather than
+  // letting a sphere's numbers stand in for it.
+  const metricsApply = world.surface === null;
   let metrics: MetricSet | null = null;
-  if (recovery !== null) {
+  if (recovery !== null && metricsApply) {
     try {
       metrics = computeGeometricMetrics(world.truthRig, world.scene, {
         contentRig: recovery.alignedRig,
@@ -429,7 +481,7 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
   const tMetrics = Date.now();
 
   let baseline: MetricSet | null = null;
-  if (options.baseline) {
+  if (options.baseline && metricsApply) {
     try {
       baseline = computeGeometricMetrics(world.truthRig, world.scene, {
         contentRig: world.documentedRig,
@@ -483,7 +535,10 @@ function writeArtifacts(
   options: RunOptions,
 ): ScenarioArtifacts {
   const size = options.preset.renderSize;
-  const physical = prepareRig(world.truthRig);
+  // Every rig in the picture wears the body that is in the room. A room view of
+  // a sphere for a mesh scenario would be a picture of a different installation.
+  const body = world.surface ?? undefined;
+  const physical = prepareRig(world.truthRig, body);
   // A viewer at the guard rail, adult eye height, looking at a SEAM. The seam is
   // where PARAMETERS.md §7's grid gate lives and where a doubled line shows;
   // framing on a projector's own meridian would put the most forgiving part of
@@ -492,7 +547,7 @@ function writeArtifacts(
 
   const before = renderTwoRigRoomView(
     physical,
-    prepareRig(world.documentedRig),
+    prepareRig(world.documentedRig, body),
     world.scene,
     camera,
     { samplesPerPixel: 4, seed: scenario.seed },
@@ -510,7 +565,7 @@ function writeArtifacts(
   if (recovery !== null) {
     const after = renderTwoRigRoomView(
       physical,
-      prepareRig(recovery.alignedRig),
+      prepareRig(recovery.alignedRig, body),
       world.scene,
       camera,
       { samplesPerPixel: 4, seed: scenario.seed },
