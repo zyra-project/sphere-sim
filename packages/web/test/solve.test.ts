@@ -366,9 +366,13 @@ test('segmentation ships on, and the presets agree', () => {
 });
 
 /** A UV ellipsoid, squashed in y and in z so no rotation of a sphere reproduces it. */
-function ellipsoidMesh(radiusM: number, scaleY: number, scaleZ: number): SurfaceMesh {
-  const nLat = 48;
-  const nLon = 96;
+function ellipsoidMesh(
+  radiusM: number,
+  scaleY: number,
+  scaleZ: number,
+  nLat = 48,
+  nLon = 96,
+): SurfaceMesh {
   const positions: number[] = [];
   for (let i = 0; i <= nLat; i++) {
     const theta = (Math.PI * i) / nLat;
@@ -439,4 +443,46 @@ test('runSolve calibrates against the dropped model, and the cache hands the nex
     first.posePositionMm,
     'the cached solve recovered a different rig, so the cache did not hand it the same model',
   );
+});
+
+test('a spheroid mesh stops when it has converged, instead of running to the cap and being refused', { timeout: 600_000 }, () => {
+  // The mesh path's convergence defect, measured before this rule existed.
+  //
+  // A tessellated sphere on the page's own noisy configuration reached its
+  // final cost to five figures by accepted step 26 of each pass and then sat
+  // there for the remaining 174 — twice, because the rejection pass refits —
+  // while all three stopping tests failed. `costTol`, `stepTol` and `gradTol`
+  // assume a smooth residual whose descent is quadratic near the minimum; a C0
+  // mesh's hit Jacobian jumps at every facet edge, so the gradient reappears
+  // each time a step crosses one and the cost jitters above 1e-12 forever. At
+  // 192x384 the solve landed at 12.5 mm — better than the analytic sphere's
+  // 17.3 on the same seed — and the page refused to install it as "did NOT
+  // converge", after 338 seconds.
+  //
+  // `meshPlateauWindow` / `meshPlateauTol` add a fourth rule on the mesh path
+  // only: stop when the cost has not moved across a window of freely accepted
+  // steps. This asserts the three things that rule is for. It is NOT an
+  // accuracy assertion — the spheroid accuracy gap (30-140 mm against the
+  // analytic sphere's 8-17 across seeds) is a separate question about the
+  // Jacobian itself and is recorded in docs/ARBITRARY-SHAPES.md as open.
+  const radiusM = buildWorld(BOULDER_PRESET, undefined, undefined).truthRig.sphere.radiusM;
+  const mesh = ellipsoidMesh(radiusM, 1, 1, 192, 384);
+
+  const t0 = performance.now();
+  const res = runSolve(request({ mesh, meshId: 'mesh:plateau-test', settings: { ...BOULDER_PRESET, errorSeed: 1 } }));
+  const seconds = (performance.now() - t0) / 1000;
+
+  assert.ok(res.converged, `a converged spheroid solve was reported unconverged after ${res.iterations} iterations`);
+  assert.ok(
+    res.iterations < 200,
+    `the plateau rule did not fire: ${res.iterations} iterations (the cap is 200 per pass, 400 over two)`,
+  );
+  // The answer the rule stops on is the answer the 400-step run reached: the
+  // plateau IS the minimum. Loose, because it is a noisy solve on one seed.
+  assert.ok(
+    res.posePositionMm < 60,
+    `stopping on the plateau lost accuracy: ${res.posePositionMm.toFixed(1)} mm against 12.5 measured at the cap`,
+  );
+  // And it is fast enough to be a page interaction rather than a coffee break.
+  assert.ok(seconds < 120, `the solve took ${seconds.toFixed(0)} s`);
 });
