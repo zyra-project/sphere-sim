@@ -469,3 +469,83 @@ test('rung 1 sweeps one shared radius along nominal bearings, and neither assump
     `off-nominal rig recovered ${(1000 * score.maxProjectorPositionM).toFixed(4)} mm`,
   );
 });
+
+test('with few floor references the gauge still pins exactly the direction the shape hides', () => {
+  // The branch below the one the test above reaches. With four floor references
+  // exactly one rotation survives the floor test — the azimuth — so the verdict
+  // is a single yes or no. Supply FEWER and two or three survive together, and
+  // `gaugeUnobserved` has to decide among them as a subspace.
+  //
+  // An oblate spheroid is the fixture because its answer is not symmetric: it is
+  // rotationally symmetric about z, so its azimuth is unobservable in fact,
+  // while a TILT of it is plainly visible. Exactly one of the two survivors must
+  // be pinned, and a solver that pinned both or neither is wrong in a way this
+  // catches — both mutations fail it.
+  //
+  // ## What this test does NOT establish, having been checked
+  //
+  // Two properties of that branch are argued rather than demonstrated here, and
+  // the difference matters because the comment on this test asserted both before
+  // the mutations were run.
+  //
+  // The MIXING — reading the verdict off eigenvectors of the stiffness form
+  // rather than off each survivor alone — is not discriminated. Replacing the
+  // eigendecomposition with a per-survivor test still passes, because on this
+  // fixture the individual stiffnesses (1.18e-6 and 5.20e-9) already straddle
+  // the 1e-6 tolerance and give the same count. The mixing is still right:
+  // measured with no floor references, the survivors carry 1.18e-6, 9.95e-7 and
+  // 5.20e-9 while the eigenvalues are 5.02e-9, 7.85e-7 and 1.39e-6 — the
+  // smallest is BELOW every individual survivor, so the direction the data
+  // cannot see is genuinely a combination. It just does not change a COUNT on
+  // any fixture in this repository.
+  //
+  // The WHITENING is not discriminated either. `gaugeUnobserved` solves the
+  // generalised problem `S w = lambda D w` against the survivors' own overlap
+  // because they are not mutually orthogonal — measured off-diagonals of 0.0034
+  // and -0.0031 on this rig, from packing metres of position and degrees of yaw
+  // into one vector. Without it the eigenvalue is stiffness times squared
+  // length while the direction returned is normalised. Measured, the two part
+  // company by about 0.4% (naive 2.72e-5 and 1.20e-4 against generalised 2.71e-5
+  // and 1.21e-4, at two floor references where the overlap is 4.65e-3), and no
+  // verdict on any fixture here turns on 0.4%. A fixture that separated them
+  // would be one tuned until a stiffness sat within 0.4% of the tolerance, which
+  // would test the tolerance rather than the code.
+  //
+  // So: this asserts the branch reaches the right answer, and the argument plus
+  // those measurements carry the rest. Saying so is better than a test name that
+  // claims the coverage it does not have.
+  const scene = makeScene(1);
+  const index = buildMeshIndex(ellipsoid(scene.truth.radiusM, 0.9, 192, 384));
+  const corrs = generateCorrespondences(scene.truth, {
+    surface: index,
+    noisePx: 0,
+    sigmaPx: 0.02,
+  });
+
+  const gaugeWith = (floorCount: number): number => {
+    const res = solveFromCorrespondences(
+      scene.nominal,
+      scene.cameraInputs,
+      corrs,
+      floorAtEveryLens(scene).slice(0, floorCount),
+      { bundle: { tieProjectorFov: false, surface: index } },
+    );
+    return res.extra.gaugeConstraints;
+  };
+
+  // One floor reference: two directions survive it, and the mixed branch runs.
+  // Measured eigenvalues 5.02e-9 and 1.18e-6 against the 1e-6 tolerance — the
+  // spheroid's azimuth pinned, its tilt left to the data.
+  assert.equal(
+    gaugeWith(1),
+    1,
+    'an oblate spheroid hides its azimuth and shows its tilt, so exactly one of ' +
+      'the two directions surviving a single floor reference should be pinned',
+  );
+
+  // And four references, where the floor test alone leaves one direction and the
+  // mixed branch is never entered. Same answer by a different route, which is
+  // what makes the first assertion a statement about the mixing rather than
+  // about the shape.
+  assert.equal(gaugeWith(4), 1, 'the azimuth is still the one pinned direction at four references');
+});

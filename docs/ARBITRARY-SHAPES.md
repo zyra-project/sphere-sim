@@ -319,14 +319,20 @@ The expensive tier, and the one worth protecting rather than working around.
   layout, the differences are chaotic in sign and smaller than the seed-to-seed
   spread.
 
-  **What actually fails is a strongly ASPHERICAL object.** On a tri-axial
-  ellipsoid (1 : 0.6 : 0.35) the recovered pose is **120–435 mm across six
-  seeds**, against §7's 2 mm. Two measurements say what that is and is not:
-  tripling the correspondences (1 946 → 5 698) makes it **worse**, 133 → 231 mm,
-  so it is a degeneracy rather than sampling; and the field of view goes with it,
-  0.936° then 1.537°, against 0.022–0.054° on near-spherical meshes — the
-  fov/distance valley A-18 measures on the sphere corpus, arriving through a
-  different door.
+  **A strongly ASPHERICAL object used to fail, and the cause was not here.** On a
+  tri-axial ellipsoid (1 : 0.6 : 0.35) the recovered pose was **120–435 mm across
+  six seeds** against §7's 2 mm, and tripling the correspondences (1 946 → 5 698)
+  made it **worse**, 133 → 231 mm — a degeneracy rather than sampling, with the
+  field of view going along with it, 0.936° then 1.537° against 0.022–0.054° on
+  near-spherical meshes.
+
+  That was the **gauge**, not the bootstrap: `gaugeUnobserved` was pinning three
+  global rotations a held mesh determines, and because the gauge is pure damping
+  it froze whatever the bootstrap handed over. See the gauge bullet above, and
+  `correspondenceStiffness` in `bundle.ts`. The same fixture now recovers to
+  about **1e-10 mm** on every seed, from the same unchanged bootstrap. The
+  paragraph is kept rather than deleted because the wrong attribution is why the
+  right one took three commits to find.
 
   The hypothesis, stated as one: rung 1 collapses the search to one dimension by
   placing every projector at ONE distance along its NOMINAL bearing, and that
@@ -929,8 +935,18 @@ test in the repository, for any shape. Plus the mesh hit Jacobian, and a
 central-difference test under the loop that assembles the normal equations,
 which had none.
 
-**NOT started:** the mesh is not in the bundle. `bundle.ts` has not been wired to
-use either piece and the bootstrap is still the sphere's.
+**LANDED since:** the mesh IS in the bundle. `BundleOptions.surface` is resolved
+once in `buildProblem` and selected in `hitAtEpoch`, so both correspondence
+epochs trace it; `bootstrap` threads it through every rung, with rungs 0 and 2
+going via one `surfaceHit` helper and rungs 1 and 3 inheriting it through
+`runBundle`; and `gaugeUnobserved` now measures the model's own null space rather
+than assuming the sphere's. `mesh-bundle.test.ts` asserts recovery with a
+negative control, and the sphere path is byte-identical across the
+twelve-scenario baseline.
+
+**Still NOT started:** the page cannot do any of it. `packages/web/src/pipeline.ts`
+photographs a sphere (`captureAndDecode`, no surface argument) and solves without
+`surface`, so a dropped model reaches the display shader and nothing else.
 
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the

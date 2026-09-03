@@ -2228,37 +2228,101 @@ function gaugeUnobserved(
   if (stiff.every((q) => q <= dataTolerance)) return out;
   if (m === 1) return [];
 
+  // The two Grams. `sGram` is the stiffness form in the survivors' own basis,
+  // built by polarisation because `stiffness` is a quadratic form; `dGram` is
+  // that basis's own overlap.
+  //
+  // `dGram` is not the identity, and assuming it was is a defect this code
+  // carried until a review caught it. The survivors are each normalised
+  // individually, but they are combinations of `gaugeNullSpace`'s three global
+  // rotations, and THOSE are not mutually orthogonal in the packed parameter
+  // space — a metre of projector position and a degree of projector yaw sit in
+  // the same vector with no common unit to make them so. Measured on the
+  // four-projector rig: off-diagonals of 0.0034 and -0.0031, and nothing bounds
+  // them on a rig laid out less symmetrically.
+  //
+  // The consequence is not cosmetic. An ordinary eigendecomposition of `sGram`
+  // returns Rayleigh quotients in a skewed basis, so its eigenvalue for a
+  // mixture is that mixture's stiffness times its squared length — while the
+  // direction handed back is normalised. Comparing the one against
+  // `dataTolerance` and returning the other pins or frees by a number that is
+  // off by `|dir|^2`.
   const sGram = new Float64Array(m * m);
+  const dGram = new Float64Array(m * m);
   const scratch = new Float64Array(n);
   for (let a = 0; a < m; a++) {
     for (let b = a; b < m; b++) {
-      // The Gram of the stiffness form: the quadratic form of the sum, minus
-      // the two diagonal terms, over two. `correspondenceStiffness` is a
-      // quadratic form, so this is its polarisation identity.
       for (let i = 0; i < n; i++) scratch[i] = out[a].dir[i] + out[b].dir[i];
-      const q = 0.5 * (stiffness(scratch) - stiff[a] - stiff[b]);
-      sGram[a * m + b] = a === b ? stiff[a] : q;
+      sGram[a * m + b] = a === b ? stiff[a] : 0.5 * (stiffness(scratch) - stiff[a] - stiff[b]);
       sGram[b * m + a] = sGram[a * m + b];
+      let d = 0;
+      for (let i = 0; i < n; i++) d += out[a].dir[i] * out[b].dir[i];
+      dGram[a * m + b] = d;
+      dGram[b * m + a] = d;
     }
   }
-  const sEig = jacobiEigenSymmetric(sGram, m);
+
+  // So solve the GENERALISED problem `S w = lambda D w`, whose eigenvalue is
+  // stiffness per unit direction by construction. Done by whitening rather than
+  // by a Cholesky, because the symmetric eigensolver needed for it is already
+  // here: with `D = U L U'`, the substitution `w = D^-1/2 y` turns it into the
+  // ordinary problem `(D^-1/2 S D^-1/2) y = lambda y`.
+  const dEig = jacobiEigenSymmetric(dGram, m);
+  // Near-dependent survivors make `D^-1/2` explode and the verdict meaningless.
+  // Pinning them all is the conservative reading and matches what this function
+  // does everywhere else it cannot tell.
+  if (!(dEig.values[0] > 1e-12 * Math.max(1, dEig.values[m - 1]))) return out;
+
+  const white = new Float64Array(m * m);
+  for (let a = 0; a < m; a++) {
+    for (let b = 0; b < m; b++) {
+      let acc = 0;
+      for (let k = 0; k < m; k++) {
+        acc += (dEig.vectors[a * m + k] * dEig.vectors[b * m + k]) / Math.sqrt(dEig.values[k]);
+      }
+      white[a * m + b] = acc;
+    }
+  }
+  const whitened = new Float64Array(m * m);
+  for (let a = 0; a < m; a++) {
+    for (let b = 0; b < m; b++) {
+      let acc = 0;
+      for (let i = 0; i < m; i++) {
+        for (let j = 0; j < m; j++) acc += white[a * m + i] * sGram[i * m + j] * white[j * m + b];
+      }
+      whitened[a * m + b] = acc;
+    }
+  }
+
+  const sEig = jacobiEigenSymmetric(whitened, m);
   const mixed: UnobservedDirection[] = [];
   for (let j = 0; j < m; j++) {
     if (sEig.values[j] > dataTolerance) continue;
+    // Undo the whitening: the generalised eigenvector is `w = D^-1/2 y`.
+    const w = new Float64Array(m);
+    for (let a = 0; a < m; a++) {
+      let acc = 0;
+      for (let b = 0; b < m; b++) acc += white[a * m + b] * sEig.vectors[b * m + j];
+      w[a] = acc;
+    }
     const dir = new Float64Array(n);
     const coeffs = [0, 0, 0];
     for (let a = 0; a < m; a++) {
-      const w = sEig.vectors[a * m + j];
-      if (w === 0) continue;
+      if (w[a] === 0) continue;
       const from = out[a].dir;
-      for (let i = 0; i < n; i++) dir[i] += w * from[i];
-      for (let c = 0; c < 3; c++) coeffs[c] += w * out[a].coeffs[c];
+      for (let i = 0; i < n; i++) dir[i] += w[a] * from[i];
+      for (let c = 0; c < 3; c++) coeffs[c] += w[a] * out[a].coeffs[c];
     }
     let norm = 0;
     for (let i = 0; i < n; i++) norm += dir[i] * dir[i];
     norm = Math.sqrt(norm);
     if (!(norm > 1e-12)) continue;
     for (let i = 0; i < n; i++) dir[i] /= norm;
+    // `coeffs` is a statement about the three world axes and `gaugeFreeAxes`
+    // reads it as one, summing squares against 1. The generalised eigenvector
+    // is normalised in the D metric, not this one, so it is scaled here to
+    // match the direction it labels.
+    for (let c = 0; c < 3; c++) coeffs[c] /= norm;
     mixed.push({ dir, coeffs });
   }
   return mixed;

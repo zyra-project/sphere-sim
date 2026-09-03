@@ -2614,20 +2614,38 @@ function draw(): void {
   // entire time the live view was still drawing a sphere. Read off `uniforms`
   // rather than off `droppedMesh` for that reason.
   canvas.dataset.meshTriangles = String(uniforms.mesh?.triangleCount ?? 0);
-  // What the shader was actually GIVEN, recorded at the moment it was given it.
-  // `displayMeshId()` answers "is there a model that has not been rejected",
-  // which is a different question and is true too early: `setDroppedMesh` clears
-  // `rejectedMeshId` and calls `markDirty()`, which SCHEDULES a repaint, while
-  // `rejectedMeshId` is not set until `displayModel` runs inside this function.
-  // A caption reading the former between those two moments claims the GPU is
-  // tracing a model that has neither been drawn nor been vetted by `packMesh`.
-  drawnMeshId = uniforms.mesh === null ? -1 : droppedMeshId;
   // Monotonic, so a test can tell "the frame loop stopped" from "it ran and saw
   // no model". `frame()` catches a throw from here, calls `fatal()` and does NOT
   // re-arm `requestAnimationFrame`, so those two failures look identical from
   // outside and need opposite fixes.
   canvas.dataset.draws = String(++drawCount);
   drawToCanvas(gl, uniforms, w, h);
+
+  // What the shader was actually GIVEN, recorded AFTER it was given it.
+  //
+  // `displayMeshId()` answers "is there a model that has not been rejected",
+  // which is a different question and is true too early: `setDroppedMesh` clears
+  // `rejectedMeshId` and calls `markDirty()`, which SCHEDULES a repaint, while
+  // `rejectedMeshId` is not set until `displayModel` runs inside this function.
+  // A caption reading the former between those two moments claims the GPU is
+  // tracing a model that has neither been drawn nor been vetted by `packMesh`.
+  //
+  // Two things about the placement, and both were wrong when this variable was
+  // introduced to fix exactly this class of defect one layer up. The assignment
+  // sat BEFORE `drawToCanvas`, so a draw that threw still recorded the model as
+  // drawn. And nothing rerendered the card when it changed, so the first
+  // successful frame left "has not drawn this model yet" in the DOM until some
+  // unrelated control happened to call `renderControls()`. A caption that is
+  // right only until you look at it is the same bug in a third costume.
+  //
+  // `renderControls` reads state and rebuilds DOM; it does not `markDirty` or
+  // draw, so calling it here cannot re-enter. The guard is what bounds it
+  // anyway: the second pass computes the same id and does not call again.
+  const drawn = uniforms.mesh === null ? -1 : droppedMeshId;
+  if (drawn !== drawnMeshId) {
+    drawnMeshId = drawn;
+    renderControls();
+  }
 }
 
 /**
