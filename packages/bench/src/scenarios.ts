@@ -236,9 +236,10 @@ const NO_SENSOR = null;
 /**
  * The corpus.
  *
- * Order is part of the interface: CI runs the first six and compares across
- * commits. Adding an archetype in the middle renumbers everything after it and
- * makes historical comparisons meaningless, so new ones go on the end.
+ * Order is part of the interface: CI runs all thirteen and compares across
+ * commits, and every scenario id carries its index. Adding an archetype in the
+ * middle renumbers everything after it and makes historical comparisons
+ * meaningless, so new ones go on the end.
  */
 const ARCHETYPES: Archetype[] = [
   {
@@ -403,8 +404,9 @@ export const ARCHETYPE_NAMES: string[] = ARCHETYPES.map((a) => a.name);
 export function makeScenario(rootSeed: number, index: number, preset: BenchPreset): Scenario {
   const slot = index % ARCHETYPES.length;
   const archetype = ARCHETYPES[slot];
-  // The cycle number enters the seed, so scenario 12 is archetype 0 asked of a
-  // different rig rather than the same rig twice.
+  // The cycle number enters the seed, so scenario 13 — the first past the end of
+  // the thirteen archetypes — is archetype 0 asked of a different rig rather
+  // than the same rig twice.
   //
   // A paired archetype borrows its partner's seed from the SAME cycle, so the
   // pairing survives `--scenarios 24` instead of silently pairing round one's

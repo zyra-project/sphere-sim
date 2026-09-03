@@ -1159,8 +1159,9 @@ preset, three root seeds, worst projector:
 | 20240001 | sphere | 24.3 | 0.051 | 0.046 | 0.5 |
 | 20240001 | ellipsoid | 25.5 | 0.116 | 0.007 | 0.5 |
 
-Position is the sphere's to within the seed's own scatter, and on one seed
-better. Camera rotation is better on every seed, which is what a body with no
+Position is the sphere's to within the seed's own scatter on two seeds (33.1
+against 33.2, 25.5 against 24.3) and materially better on the third (14.9
+against 26.7). Camera rotation is better on every seed, which is what a body with no
 symmetry axis should do for the apparatus looking at it. `h_center` is the tape
 measure's and does not know what body it measured. The one cost is the projector
 rotation: two to four times the sphere's on two seeds of three — inside A-12's

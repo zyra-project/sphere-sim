@@ -228,8 +228,8 @@ function main(): void {
       '    - You DID mean to move it. Re-run with --update, commit the new baseline in the\n' +
       '      same change, and say in the message which numbers moved and why.\n\n' +
       '  For the field rather than the path, diff two runs directly:\n\n' +
-      '    git stash && npm run bench -- --scenarios 12 --seed 1234 --out /tmp/before.json\n' +
-      '    git stash pop && npm run bench -- --scenarios 12 --seed 1234 --out /tmp/after.json\n' +
+      `    git stash && npm run ${COMMAND.replace('bench ', 'bench -- ')} --out /tmp/before.json\n` +
+      `    git stash pop && npm run ${COMMAND.replace('bench ', 'bench -- ')} --out /tmp/after.json\n` +
       '    node tools/assert-deterministic.ts /tmp/before.json /tmp/after.json\n\n',
   );
   process.exit(1);

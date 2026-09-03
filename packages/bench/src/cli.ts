@@ -168,7 +168,7 @@ function printHelp(): void {
       '  --out FILE          Results JSON. Default bench-results.json.',
       '  --out-dir DIR       Where the PNGs go. Default progress/data.',
       '  --quick             3 scenarios, 224x168 cameras, coarse metrics. Plumbing check only.',
-      '  --thorough          12 scenarios, 640x480 cameras, full density.',
+      '  --thorough          13 scenarios, 640x480 cameras, full density.',
       '  --no-artifacts      Skip the PNGs.',
       '  --no-baseline       Skip the documented-calibration baseline metrics.',
       '  --no-attribution    Skip the counterfactual attribution of failing gates.',

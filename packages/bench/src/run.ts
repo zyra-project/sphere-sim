@@ -365,6 +365,10 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
       // reject something needs to be able to move it, and moving it by editing
       // `DEFAULT_DECODE_OPTIONS` would move every published number with it.
       ...(options.decode ?? {}),
+      // ...except a segmenter, which a caller's `decode` could otherwise hand a
+      // mesh scenario after the guard above declined to build one. Reasserted
+      // after the spread so the invariant holds whatever the run options say.
+      ...(world.surface === null ? {} : { segmentation: null }),
     },
     // One frame kept as an artifact: the fourth Gray plane of the u axis, which
     // is coarse enough to read as a pattern in a thumbnail and fine enough to

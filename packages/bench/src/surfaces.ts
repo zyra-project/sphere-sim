@@ -45,8 +45,10 @@ export type SurfaceSpec = EllipsoidSpec;
  */
 export function ellipsoidMesh(spec: EllipsoidSpec, radiusM: number): SurfaceMesh {
   const { nLat, nLon } = spec;
-  if (!(nLat >= 2) || !(nLon >= 3)) {
-    throw new Error(`ellipsoidMesh: tessellation ${nLat}x${nLon} is too coarse to close`);
+  if (!Number.isInteger(nLat) || !Number.isInteger(nLon) || nLat < 2 || nLon < 3) {
+    // Integers, not merely numbers: a fractional band count indexes a ring that
+    // was never emitted, and an infinite one never finishes emitting.
+    throw new Error(`ellipsoidMesh: tessellation ${nLat}x${nLon} is not a closed integer grid`);
   }
   const positions: number[] = [];
   for (let i = 0; i <= nLat; i++) {

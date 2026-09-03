@@ -190,16 +190,14 @@ test('mesh is the SAME rig and the same capture as nominal, with the sphere repl
     const a = makeScenario(seed, partner, PRESETS.default);
     const b = makeScenario(seed, paired, PRESETS.default);
     assert.equal(a.seed, b.seed, 'the pair must share a seed');
-    assert.equal(a.distanceM, b.distanceM);
-    assert.equal(a.projectorHeightM, b.projectorHeightM);
-    assert.equal(a.cameras.count, b.cameras.count);
-    assert.equal(a.cameras.distanceM, b.cameras.distanceM);
-    assert.equal(a.degradation.ambient, b.degradation.ambient);
-    assert.deepEqual(a.degradation.sensor, b.degradation.sensor);
-    assert.equal(a.degradation.handheld, b.degradation.handheld);
-    assert.equal(a.freeFov, b.freeFov);
     assert.equal(a.surface, null);
     assert.deepEqual(b.surface, { kind: 'ellipsoid', scaleY: 0.8, scaleZ: 0.6, nLat: 64, nLon: 128 });
+    // The WHOLE scenario, not a hand-picked subset of it: with the identity
+    // fields and the body normalised away, nothing else — cameras, jitter,
+    // clock, pattern, floor references, projector layout, misalignment — may
+    // differ, or the pair measures two rigs and calls the difference the body.
+    const identity = { index: 0, id: '', archetype: '', question: '', surface: null };
+    assert.deepEqual({ ...a, ...identity }, { ...b, ...identity });
   }
   const cycle = ARCHETYPE_NAMES.length;
   assert.equal(
