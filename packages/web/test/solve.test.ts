@@ -33,6 +33,8 @@ function request(overrides: Partial<SolveRequest> = {}): SolveRequest {
     sensorNoise: true,
     customImage: null,
     customImageId: '',
+    mesh: null,
+    meshId: '',
     ambient: 0.04,
     seed: 20260817,
     ...overrides,

@@ -394,6 +394,18 @@ let meshSeq = 0;
 let sentImageId = '';
 /** The same, for the solve worker: separate process, separate cache. */
 let solveSentImageId = '';
+/**
+ * Which model this page believes the solve worker is holding.
+ *
+ * The same "have you seen it" flag `solveSentImageId` is, for the same reason —
+ * a mesh is megabytes of typed array and the worker builds two hierarchies over
+ * it — but with one difference that matters. The image is sent for the camera
+ * PREVIEWS and the solve ignores it; the mesh is the shape the capture
+ * photographs AND the shape the bundle is fitted against. Getting this flag
+ * wrong does not produce a wrong thumbnail, it produces a calibration measured
+ * against the wrong body.
+ */
+let solveSentMeshId = '';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const controlsEl = document.getElementById('controls') as HTMLDivElement;
@@ -2329,8 +2341,18 @@ function startSolve(): void {
           }
         : null,
     customImageId: suppliedName(),
+    // `displayMeshId()` is the gate, not `droppedMesh`: it returns '' for a
+    // model `packMesh` REFUSED, and a model the GPU would not draw is not one
+    // the solver should be handed. The page falls back to the sphere in that
+    // case and says so on the card; the worker has to fall back with it.
+    //
+    // Cloned rather than transferred. Transferring would neuter the page's own
+    // copy, and the display shader is still drawing from it every frame.
+    mesh: displayMeshId() !== '' && displayMeshId() !== solveSentMeshId ? droppedMesh : null,
+    meshId: displayMeshId(),
   };
   solveSentImageId = suppliedName();
+  solveSentMeshId = displayMeshId();
   solveWorker.postMessage(req);
   renderActions();
   renderReadout();

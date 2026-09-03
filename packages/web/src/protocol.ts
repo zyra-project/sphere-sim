@@ -488,6 +488,28 @@ export interface SolveRequest {
    * photographing a darker room.
    */
   ambient: number;
+  /**
+   * The model dropped on the page, when there is one — and `null` when the page
+   * believes this worker already holds it.
+   *
+   * Cached by `meshId` exactly as `customImage` is, and for a sharper reason
+   * than size: the two BVHs built from it are the expensive part, and a solve
+   * that rebuilt them per request would pay for a hierarchy the previous one
+   * already had. TWO, because `packages/sim` and `packages/solver` may not
+   * import each other — the boundary rule this project's lint enforces — so the
+   * shape gets photographed by one hierarchy and calibrated against a second,
+   * independently written one. That is a cost the separation buys deliberately:
+   * `packages/bench`'s agreement test compares them and found two defects doing
+   * it, so the duplication is load-bearing rather than accidental.
+   *
+   * Unlike `customImage`, the solve DOES read this. It is the shape both halves
+   * are about: the capture photographs it and the bundle traces it. Sending it
+   * to one and not the other would measure the difference between two fixtures
+   * and report it as a calibration error.
+   */
+  mesh: SurfaceMesh | null;
+  /** Identifies it. `''` when the page is showing the sphere. */
+  meshId: string;
   /** Draw for the capture. Separate from the rig's own seed. */
   seed: number;
 }

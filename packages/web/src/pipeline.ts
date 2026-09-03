@@ -62,6 +62,11 @@ import {
 import { makeBenchRng } from '../../bench/src/random.ts';
 import { scoreRecovery } from '../../bench/src/score.ts';
 import { nominalRig as solverNominalRig, solve } from '../../solver/src/index.ts';
+// Two hierarchies over one mesh, because `packages/sim` and `packages/solver`
+// may not import each other. See `SolveRequest.mesh`.
+import { buildMeshIndex, type MeshIndex } from '../../solver/src/mesh.ts';
+import { meshSurface } from '../../sim/src/mesh/surface.ts';
+import type { Surface } from '../../sim/src/surface.ts';
 // Reached past the barrel deliberately: `DEFAULT_FREE_FLAGS` is the solver's own
 // statement of which parameters PARAMETERS.md §3.1 says to free, and the page
 // must not silently re-default the seven it is not touching.
@@ -275,11 +280,41 @@ export function solverNominalFor(
 let cachedImage: EquirectImage | null = null;
 let cachedImageId = '';
 
+/**
+ * The dropped model's two hierarchies, held across solves.
+ *
+ * Built together and discarded together so they can never describe different
+ * shapes: a cache that refreshed one and kept the other would photograph one
+ * model and calibrate against another, which is exactly the failure the
+ * agreement test in `packages/bench` exists to catch, arriving through a door
+ * no test watches.
+ */
+let cachedMeshId = '';
+let cachedSurface: Surface | null = null;
+let cachedIndex: MeshIndex | null = null;
+
 export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {}): SolveResponse {
   if (req.customImage) {
     cachedImage = req.customImage;
     cachedImageId = req.customImageId;
   }
+  if (req.mesh) {
+    cachedMeshId = req.meshId;
+    cachedSurface = meshSurface(req.mesh);
+    cachedIndex = buildMeshIndex(req.mesh);
+  } else if (req.meshId === '') {
+    // The page went back to the sphere. Dropping both is what makes the sphere
+    // path here the same code it was: `surface` omitted and `surface: null`.
+    cachedMeshId = '';
+    cachedSurface = null;
+    cachedIndex = null;
+  }
+  // A stale cache is not a shape to guess at. If the page believes this worker
+  // holds a model it does not, both halves fall back together rather than one
+  // of them tracing a sphere.
+  const meshHeld = req.meshId !== '' && cachedMeshId === req.meshId;
+  const captureSurface = meshHeld ? cachedSurface : null;
+  const solveSurface = meshHeld ? cachedIndex : null;
   const report = (
     phase: SolveProgress['phase'],
     fraction: number,
@@ -354,6 +389,8 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
 
   const t0 = performance.now();
   const capture = captureAndDecode(world.truthRig, cameras, {
+    // Photograph the same shape the bundle below will be fitted against.
+    surface: captureSurface,
     plan,
     conditions: {
       ambient: req.ambient,
@@ -469,7 +506,10 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     cameras: cameraInputs,
     correspondences: capture.correspondences,
     floorReferences,
-    options: { seed: req.seed, bundle: { free: { ...DEFAULT_FREE_FLAGS } } },
+    options: {
+      seed: req.seed,
+      bundle: { free: { ...DEFAULT_FREE_FLAGS }, surface: solveSurface },
+    },
     onStep: (s) => {
       stepCount++;
       // The optimiser's cost is a robustified sum of squares in its own units.

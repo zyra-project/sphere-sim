@@ -65,6 +65,7 @@ import type { RgbImage } from '../../sim/src/equirect.ts';
 import { createImage } from '../../sim/src/equirect.ts';
 import type { PreparedProjector, PreparedRig } from '../../sim/src/optics.ts';
 import { prepareRig, worldToPixel } from '../../sim/src/optics.ts';
+import type { Surface } from '../../sim/src/surface.ts';
 import type {
   Correspondence,
   DecodeOptions,
@@ -275,6 +276,27 @@ export interface CaptureOptions {
    */
   previewPairs: readonly { camera: number; projector: number }[];
   previewFrame: number;
+  /**
+   * The shape being photographed. Omit for the sphere `rig.sphere` describes.
+   *
+   * This is the capture's half of the mesh path, and it is the half that has to
+   * come FIRST. `packages/solver` can calibrate against a mesh — `BundleOptions.
+   * surface` reaches every rung — but a solve is only worth as much as the
+   * pictures it is given, and photographing a sphere while fitting a mesh
+   * measures the difference between two fixtures. Both sides take the same
+   * shape or neither does.
+   *
+   * It is a `Surface` rather than a `SurfaceMesh` because building one carries a
+   * BVH, and `prepareRig`'s own comment is explicit that the surface is
+   * constructed once per rig on purpose: a caller photographing many frames
+   * should not rebuild the hierarchy for each. Callers holding a mesh build one
+   * with `meshSurface`.
+   *
+   * Omitting it is byte-identical to the code before this field existed —
+   * `prepareRig` falls back to `sphereSurface(rig.sphere.radiusM)`, which is what
+   * it did unconditionally — and the twelve-scenario baseline is what says so.
+   */
+  surface?: Surface | null;
 }
 
 export interface PairStats {
@@ -935,7 +957,7 @@ export function captureAndDecode(
   cameras: readonly SimulatedCamera[],
   opts: CaptureOptions,
 ): CaptureResult {
-  const prepared = prepareRig(rig);
+  const prepared = prepareRig(rig, opts.surface ?? undefined);
   const canonicals = cameras.map((c) => canonicalRayTable(c.intrinsics));
   const motionSeed = makeBenchRng((opts.seed ^ 0x5bf03635) >>> 0);
   const motionStates = cameras.map(() => makeMotionState(motionSeed));

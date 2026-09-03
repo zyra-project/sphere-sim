@@ -31,6 +31,9 @@ import {
   poseAt,
   rowTimeSec,
 } from '../src/camera.ts';
+import type { SurfaceMesh } from '../../calibration/src/index.ts';
+import { meshSurface } from '../../sim/src/mesh/surface.ts';
+import type { Surface } from '../../sim/src/surface.ts';
 import type { RoomSpill } from '../src/capture.ts';
 import { DEFAULT_ROOM_SPILL, DEFAULT_SENSOR, captureAndDecode, roomHit } from '../src/capture.ts';
 import { DEFAULT_PATTERN_PLAN } from '../src/patterns.ts';
@@ -76,6 +79,8 @@ interface CaptureArgs {
    */
   segmentation: { marginFrac: number; nominalOffsetM?: number } | null;
   segmentImage?: Partial<SilhouetteOptions> | null;
+  /** The shape photographed. Omitted is `RIG.sphere`, which every other test wants. */
+  surface?: Surface | null;
 }
 
 /**
@@ -118,6 +123,7 @@ function capture(cams: SimulatedCamera[], args: Partial<CaptureArgs> = {}) {
     },
     previewPairs: [],
     previewFrame: -1,
+    surface: args.surface ?? null,
   });
 }
 
@@ -629,4 +635,108 @@ test('image segmentation keeps the sphere and throws the room away', () => {
   };
   assert.ok(offSphere(off) > 0, 'the room contributed nothing to reject');
   assert.equal(offSphere(on), 0, 'off-sphere correspondences survived the image mask');
+});
+
+test('CaptureOptions.surface changes what the camera photographs', () => {
+  // The capture's half of the mesh path, asserted on its own because it is the
+  // half that cannot be checked from the page.
+  //
+  // `packages/solver` could calibrate against a mesh for eleven commits before
+  // anything photographed one: `runSolve` called `captureAndDecode` with no
+  // surface and `solve` with no `surface`, so a model dropped on the page
+  // reached the display shader and nothing else. Wiring both is one field each,
+  // and a field that is quietly ignored looks exactly like a field that works —
+  // which is the failure this asserts against.
+  //
+  // The mesh is an ellipsoid rather than a tessellated sphere, and that is the
+  // whole design of the test. `packages/solver/test/mesh-bundle.test.ts` records
+  // what a sphere fixture does here: it solved against a tessellated sphere,
+  // asserted recovery, and passed just as happily with the mesh DISCONNECTED —
+  // the disconnected arm scoring better, 4.83 mm against 7.41 mm. A shape a
+  // sphere can impersonate cannot tell a live wire from a dead one.
+  //
+  // What is asserted is a DIFFERENCE, not a quality. Whether the ellipsoid's
+  // correspondences are good is `mesh-bundle.test.ts`'s question; this one only
+  // has to show that `surface` reaches the renderer, and two identical
+  // correspondence sets would show it does not.
+  const cams = cameras(1);
+  const sphere = capture(cams);
+
+  const nLat = 48;
+  const nLon = 96;
+  const r = RIG.sphere.radiusM;
+  const positions: number[] = [];
+  for (let i = 0; i <= nLat; i++) {
+    const theta = (Math.PI * i) / nLat;
+    for (let j = 0; j < nLon; j++) {
+      const phi = (2 * Math.PI * j) / nLon;
+      // Squashed in z and in y, so no rotation of a sphere reproduces it.
+      positions.push(
+        r * Math.sin(theta) * Math.cos(phi),
+        r * 0.75 * Math.sin(theta) * Math.sin(phi),
+        r * 0.6 * Math.cos(theta),
+      );
+    }
+  }
+  const at = (i: number, j: number): number => i * nLon + (j % nLon);
+  const indices: number[] = [];
+  for (let i = 0; i < nLat; i++) {
+    for (let j = 0; j < nLon; j++) {
+      const a = at(i, j);
+      const b = at(i + 1, j);
+      const c = at(i + 1, j + 1);
+      const d = at(i, j + 1);
+      if (i !== 0) indices.push(a, b, d);
+      if (i !== nLat - 1) indices.push(b, c, d);
+    }
+  }
+  const mesh: SurfaceMesh = {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'capture-ellipsoid',
+    positions: Float64Array.from(positions),
+    indices: Uint32Array.from(indices),
+    normals: null,
+    uvs: null,
+    vertexCount: positions.length / 3,
+    triangleCount: indices.length / 3,
+  };
+
+  const ellipsoid = capture(cams, { surface: meshSurface(mesh) });
+
+  assert.ok(sphere.correspondences.length > 0, 'the sphere capture decoded nothing');
+  assert.ok(ellipsoid.correspondences.length > 0, 'the mesh capture decoded nothing');
+
+  // Same camera, same patterns, same seed. The only difference is the shape the
+  // light landed on, so a ray that struck the sphere at one depth strikes the
+  // ellipsoid at another and decodes to a different projector pixel. If
+  // `surface` were dropped on the floor these two would be identical.
+  // Keyed by the PROJECTOR too. A camera pixel lit by four projectors decodes to
+  // four correspondences sharing one `camU`/`camV`, so a key without the
+  // projector keeps whichever the map saw last and then compares two different
+  // projectors' pixels. Measured with that key and the wire deliberately cut —
+  // where the two captures are byte-identical and the count must be zero — it
+  // reported 3159 of 9850 pixels "moved". The assertion below still failed, but
+  // on a threshold that happened to sit above the contamination rather than on
+  // the difference it names.
+  const key = (c: { camera: number; projector: number; camU: number; camV: number }): string =>
+    `${c.camera}:${c.projector}:${c.camU}:${c.camV}`;
+  const sphereAt = new Map(sphere.correspondences.map((c) => [key(c), c]));
+  let shared = 0;
+  let moved = 0;
+  for (const c of ellipsoid.correspondences) {
+    const s = sphereAt.get(key(c));
+    if (!s) continue;
+    shared++;
+    if (Math.hypot(c.projU - s.projU, c.projV - s.projV) > 1) moved++;
+  }
+  assert.ok(shared > 50, `only ${shared} camera pixels decoded on both shapes`);
+  // With the wire cut this is exactly zero — same rig, same seed, same patterns,
+  // one surface. So the bar is only that the shape moved SOMETHING, and it is
+  // set well above zero to leave room for a tessellation that grazes the sphere.
+  assert.ok(
+    moved > shared * 0.5,
+    `${moved} of ${shared} shared (camera, projector, pixel) triples moved by more than ` +
+      'a projector pixel — the capture is photographing the same shape either way, ' +
+      'so `surface` is inert',
+  );
 });
