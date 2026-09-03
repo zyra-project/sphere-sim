@@ -147,7 +147,7 @@
 
 import type { ResidualSample } from '../../calibration/src/index.ts';
 import type { Correspondence } from './decode.ts';
-import { intersectMesh, intersectMeshJacobian, type MeshIndex } from './mesh.ts';
+import { intersectMesh, intersectMeshJacobian, type MeshIndex, type MeshNormalMode } from './mesh.ts';
 import {
   type Mat3,
   type Vec3,
@@ -516,6 +516,28 @@ export interface BundleOptions {
   meshPlateauWindow: number;
   meshPlateauTol: number;
   /**
+   * Which normal the mesh hit Jacobian differentiates against. Applied ONLY when
+   * the surface is a mesh; the sphere path never reads it.
+   *
+   * `'facet'`, the default and the only mode production selects, is the
+   * surface the ray met: exact within a triangle, pinned by the
+   * central-difference tests in `test/mesh.test.ts`. `'smooth'` is the
+   * interpolated vertex normal — the surface the tessellation stands in for —
+   * and exists to answer one question recorded in docs/ARBITRARY-SHAPES.md: a
+   * nearly spherical mesh recovers worse than the analytic sphere it
+   * approximates (32 to 137 mm against 8 to 17 on the same seeds), and the
+   * reading offered there was that every step carries the facet's derivative
+   * rather than the curve's. Measured: with `'smooth'` every near-spherical
+   * 64×128 row that converged improved, all but one of them into the analytic
+   * sphere's own range, and two rows of twelve stopped with the damping at its
+   * cap, because a Jacobian that is not
+   * the residual's derivative hands Levenberg–Marquardt a model of the cost the
+   * cost disagrees with. It trades exactness for smoothness on purpose, and it
+   * ships off; see `mesh.ts`'s `intersectMeshJacobian` for what it does and
+   * does not change.
+   */
+  meshNormal: MeshNormalMode;
+  /**
    * Hard ceiling on trial evaluations, accepted or not. Separate from
    * `maxIterations` so a long line search cannot eat the step budget, and so a
    * pathological problem still terminates.
@@ -726,6 +748,7 @@ export const DEFAULT_BUNDLE_OPTIONS: BundleOptions = {
   gradTol: 1e-9,
   meshPlateauWindow: 10,
   meshPlateauTol: 1e-6,
+  meshNormal: 'facet',
   maxEvaluations: 2000,
   rejectionPasses: 1,
   varianceComponents: true,
@@ -1442,6 +1465,7 @@ function hitAtEpoch(
   ny: number,
   radiusM: number,
   surface: MeshIndex | null,
+  meshNormal: MeshNormalMode,
   wantJacobian: boolean,
   scratch: Float64Array,
   dNormalized?: { dx: number; dy: number },
@@ -1449,7 +1473,7 @@ function hitAtEpoch(
   // The mesh path is a separate branch rather than a surface abstraction the
   // sphere also goes through, and that is deliberate. Every phase of this work
   // has opened by asserting the sphere path is byte-identical --
-  // `bench-baseline.json` is 188 digests over a corpus that would notice a
+  // `bench-baseline.json` is 203 digests over a corpus that would notice a
   // changed last bit -- and the cheapest way to keep that true is for the sphere
   // arithmetic not to move at all. A branch on a null check cannot change a
   // float; a shared code path reached through an interface can, and would be
@@ -1465,6 +1489,7 @@ function hitAtEpoch(
         scratch,
         e.dt,
         dNormalized,
+        meshNormal,
       );
       if (!mj.hit.hit) return null;
       return { point: mj.hit.point, dPoint: mj.dPoint };
@@ -1651,6 +1676,7 @@ export function evaluate(
       ny,
       state.radiusM,
       problem.surface,
+      opts.meshNormal,
       wantJacobian,
       dPointScratch,
       dNormalized,
@@ -1668,6 +1694,7 @@ export function evaluate(
             ny,
             state.radiusM,
             problem.surface,
+            opts.meshNormal,
             wantJacobian,
             dPointScratchV,
             dNormalized,

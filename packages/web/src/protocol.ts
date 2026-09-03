@@ -616,6 +616,14 @@ export interface SolveResponse {
   iterations: number;
   converged: boolean;
   /**
+   * Why the optimiser stopped, in the solver's own words — `cost`, `step`,
+   * `gradient`, `plateau`, or the reason it gave up. A refusal that says only
+   * "did NOT converge" hides the one fact that distinguishes a solve that ran
+   * out of budget from one whose damping ran to its cap, and the smooth-normal
+   * measurement in docs/ARBITRARY-SHAPES.md needed exactly that distinction.
+   */
+  stopReason: string;
+  /**
    * Worst lens position error after removing the unobservable global rotation,
    * millimetres. Ground truth — the page may show it, the solver never saw it.
    */

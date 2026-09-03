@@ -70,7 +70,7 @@ import type { Surface } from '../../sim/src/surface.ts';
 // Reached past the barrel deliberately: `DEFAULT_FREE_FLAGS` is the solver's own
 // statement of which parameters PARAMETERS.md §3.1 says to free, and the page
 // must not silently re-default the seven it is not touching.
-import { DEFAULT_FREE_FLAGS } from '../../solver/src/bundle.ts';
+import { DEFAULT_FREE_FLAGS, type BundleOptions } from '../../solver/src/bundle.ts';
 import { buildWorld } from './rigs.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
 import { cameraDistanceM, RESOLUTIONS } from './settings.ts';
@@ -293,7 +293,22 @@ let cachedMeshId = '';
 let cachedSurface: Surface | null = null;
 let cachedIndex: MeshIndex | null = null;
 
-export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {}): SolveResponse {
+/**
+ * The worker's solve, end to end: capture, decode, bootstrap, bundle, score.
+ *
+ * `experimental` is a seam for MEASUREMENTS, not a product surface: extra
+ * `BundleOptions` a scratch script can hand the bundle to ask a question on the
+ * page's own configuration — cameras, resolution, noise — without changing the
+ * worker protocol. The worker never passes it, the default is `{}`, and the
+ * solver's default `free` flags and the request's `surface` are spread after it
+ * so an experiment cannot displace either. docs/ARBITRARY-SHAPES.md's
+ * smooth-normal measurement is what it exists for.
+ */
+export function runSolve(
+  req: SolveRequest,
+  onProgress: ProgressSink = () => {},
+  experimental: Partial<BundleOptions> = {},
+): SolveResponse {
   if (req.customImage) {
     cachedImage = req.customImage;
     cachedImageId = req.customImageId;
@@ -576,7 +591,7 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     floorReferences,
     options: {
       seed: req.seed,
-      bundle: { free: { ...DEFAULT_FREE_FLAGS }, surface: solveSurface },
+      bundle: { ...experimental, free: { ...DEFAULT_FREE_FLAGS }, surface: solveSurface },
     },
     onStep: (s) => {
       stepCount++;
@@ -614,8 +629,8 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     solver.diagnostics.converged
       ? `Bundle adjustment converged in ${solver.diagnostics.iterations} iterations; ` +
         `residual ${solver.diagnostics.rmsResidualPx.toFixed(3)} px.`
-      : `Bundle adjustment did NOT converge — it stopped at its ` +
-        `${solver.diagnostics.iterations}-iteration cap with a residual of ` +
+      : `Bundle adjustment did NOT converge — the optimiser stopped after ` +
+        `${solver.diagnostics.iterations} iterations (${solver.extra.stopReason}) with a residual of ` +
         `${solver.diagnostics.rmsResidualPx.toFixed(3)} px.`,
   );
 
@@ -649,6 +664,7 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     residualRmsPx: solver.diagnostics.rmsResidualPx,
     iterations: solver.diagnostics.iterations,
     converged: solver.diagnostics.converged,
+    stopReason: solver.extra.stopReason,
     posePositionMm: recovery.aligned.maxPositionMm,
     poseRotationDeg: recovery.aligned.maxRotationDeg,
     centerHeightErrorMm: recovery.centerHeight.errorMm,

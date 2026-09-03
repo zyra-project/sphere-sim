@@ -55,8 +55,9 @@ import {
  *
  * Mirrors `SphereHit` field for field, plus `triangle`, so a caller that already
  * handles a sphere hit handles this one. The shared shape is not cosmetic: the
- * bundle reads `point` and `normal` and nothing else, and a second hit type with
- * a different spelling would be two code paths where the geometry is one.
+ * bundle reads `point`, `intersectMeshJacobian` below reads `normal` and `t`,
+ * the test capture reads `normal` for its incidence cut, and a second hit type
+ * with a different spelling would be two code paths where the geometry is one.
  */
 export interface MeshHit {
   hit: boolean;
@@ -650,6 +651,134 @@ export function boundingRadiusM(index: MeshIndex): number {
 }
 
 // ---------------------------------------------------------------------------
+// The smooth normal: an EXPERIMENT, off by default
+// ---------------------------------------------------------------------------
+
+/**
+ * Which normal `intersectMeshJacobian` differentiates against.
+ *
+ * `'facet'` is the surface the ray actually met: exact within a triangle, the
+ * mode every production caller uses, and the only one the central-difference
+ * tests can hold to. `'smooth'` is the normal of the surface the tessellation
+ * STANDS IN FOR — per-vertex normals interpolated at the hit — and exists for
+ * one measurement, recorded in docs/ARBITRARY-SHAPES.md: whether a nearly
+ * spherical mesh recovers worse than the analytic sphere because every step
+ * carries the facet's derivative rather than the curve's. It makes the Jacobian
+ * describe a surface the residual is not on, trading exactness for smoothness
+ * on purpose; `BundleOptions.meshNormal` selects it and defaults to `'facet'`.
+ *
+ * It also presumes a body WITHOUT creases. Where two panels share vertices
+ * across a fold — or a file carries normals smoothed across one — the
+ * interpolated normal at the edge is the bisector of two facet normals, so the
+ * derivative's singular set moves from "ray in the facet's plane" to "ray in
+ * the interpolated tangent plane", which a ray can reach at ordinary incidence
+ * on either panel; the only guard is the 1e-12 clamp on the denominator. The
+ * fixtures the measurement used are closed ellipsoids with no crease. Were this
+ * mode ever to ship, falling back to the facet normal where the interpolated
+ * incidence collapses relative to the facet's would be the obvious guard, and
+ * it has not been built because nothing has been measured with it.
+ */
+export type MeshNormalMode = 'facet' | 'smooth';
+
+const vertexNormalCache = new WeakMap<MeshIndex, Float64Array>();
+
+/**
+ * Per-vertex unit normals: the file's own when `SurfaceMesh.normals` carries
+ * them — the same choice `packages/sim`'s shading makes — else derived from the
+ * winding, each triangle's unnormalised cross product (so area-weighted) summed
+ * at its three corners and normalised. Cached per index. A vertex no
+ * non-degenerate triangle touches keeps a zero normal — and can never be a
+ * corner of a hit, since `intersectMesh` rejects a degenerate triangle — while
+ * the interpolation falls back to the facet only where the weighted sum of the
+ * three corner normals vanishes.
+ */
+function vertexNormalsOf(index: MeshIndex): Float64Array {
+  const cached = vertexNormalCache.get(index);
+  if (cached !== undefined) return cached;
+  const { positions, indices, vertexCount, triangleCount, normals: own } = index.mesh;
+  let normals: Float64Array;
+  if (own !== null && own.length === 3 * vertexCount) {
+    normals = own;
+  } else {
+    normals = new Float64Array(3 * vertexCount);
+    for (let tri = 0; tri < triangleCount; tri++) {
+      const ia = 3 * indices[3 * tri];
+      const ib = 3 * indices[3 * tri + 1];
+      const ic = 3 * indices[3 * tri + 2];
+      const e1x = positions[ib] - positions[ia];
+      const e1y = positions[ib + 1] - positions[ia + 1];
+      const e1z = positions[ib + 2] - positions[ia + 2];
+      const e2x = positions[ic] - positions[ia];
+      const e2y = positions[ic + 1] - positions[ia + 1];
+      const e2z = positions[ic + 2] - positions[ia + 2];
+      const nx = e1y * e2z - e1z * e2y;
+      const ny = e1z * e2x - e1x * e2z;
+      const nz = e1x * e2y - e1y * e2x;
+      for (const i of [ia, ib, ic]) {
+        normals[i] += nx;
+        normals[i + 1] += ny;
+        normals[i + 2] += nz;
+      }
+    }
+    for (let v = 0; v < vertexCount; v++) {
+      const len = Math.hypot(normals[3 * v], normals[3 * v + 1], normals[3 * v + 2]);
+      if (len > 0) {
+        normals[3 * v] /= len;
+        normals[3 * v + 1] /= len;
+        normals[3 * v + 2] /= len;
+      }
+    }
+  }
+  vertexNormalCache.set(index, normals);
+  return normals;
+}
+
+/**
+ * The interpolated normal at a hit: the barycentric weights of `hit.point` in
+ * its triangle applied to the corner normals, renormalised. Sign and scale do
+ * not reach the derivative — `dt = -(n . do + t n . dd) / (n . d)` is invariant
+ * to both — so a file's inward normals serve as well as outward ones. Falls
+ * back to the facet normal where the interpolation vanishes.
+ */
+function smoothNormalAt(index: MeshIndex, hit: MeshHit): Vec3 {
+  const { positions, indices } = index.mesh;
+  const vn = vertexNormalsOf(index);
+  const base = 3 * hit.triangle;
+  const ia = 3 * indices[base];
+  const ib = 3 * indices[base + 1];
+  const ic = 3 * indices[base + 2];
+  const ax = positions[ia];
+  const ay = positions[ia + 1];
+  const az = positions[ia + 2];
+  const v0x = positions[ib] - ax;
+  const v0y = positions[ib + 1] - ay;
+  const v0z = positions[ib + 2] - az;
+  const v1x = positions[ic] - ax;
+  const v1y = positions[ic + 1] - ay;
+  const v1z = positions[ic + 2] - az;
+  const v2x = hit.point.x - ax;
+  const v2y = hit.point.y - ay;
+  const v2z = hit.point.z - az;
+  const d00 = v0x * v0x + v0y * v0y + v0z * v0z;
+  const d01 = v0x * v1x + v0y * v1y + v0z * v1z;
+  const d11 = v1x * v1x + v1y * v1y + v1z * v1z;
+  const d20 = v2x * v0x + v2y * v0y + v2z * v0z;
+  const d21 = v2x * v1x + v2y * v1y + v2z * v1z;
+  const denom = d00 * d11 - d01 * d01;
+  if (!(Math.abs(denom) > 0)) return hit.normal;
+  // `point = a + wb (b - a) + wc (c - a)`; the corner weights follow.
+  const wb = (d11 * d20 - d01 * d21) / denom;
+  const wc = (d00 * d21 - d01 * d20) / denom;
+  const wa = 1 - wb - wc;
+  const nx = wa * vn[ia] + wb * vn[ib] + wc * vn[ic];
+  const ny = wa * vn[ia + 1] + wb * vn[ib + 1] + wc * vn[ic + 1];
+  const nz = wa * vn[ia + 2] + wb * vn[ib + 2] + wc * vn[ic + 2];
+  const len = Math.hypot(nx, ny, nz);
+  if (!(len > 0)) return hit.normal;
+  return { x: nx / len, y: ny / len, z: nz / len };
+}
+
+// ---------------------------------------------------------------------------
 // The derivative
 // ---------------------------------------------------------------------------
 
@@ -707,11 +836,32 @@ export interface MeshHitJacobian {
  *     not an error here, and it is the same statement {@link MeshHit.normal}
  *     already makes about the flat normal.
  *
+ * ## The smooth-normal mode, and what it gives up
+ *
+ * `normalMode: 'smooth'` swaps `n` — and only `n` — for the interpolated vertex
+ * normal at the hit ({@link MeshNormalMode}). Everything else is the same
+ * arithmetic: the hit is still the facet's, `t` is still the facet's, and the
+ * residual the bundle computes from `point` does not change. What changes is
+ * the tangent plane the derivative believes the hit slides along: the curve's,
+ * not the facet's. So on a tessellated sphere the smooth derivative converges
+ * to `sphere.ts`'s closed form at SECOND order where the facet's converges at
+ * first — WHEN the vertex normals are themselves second-order accurate: a
+ * file's own normals, or derived normals on a tessellation whose vertex fans
+ * are centrally symmetric, which the UV grid every fixture here uses is. On an
+ * irregular tessellation the area-weighted derived normal is only first-order
+ * accurate and so is this mode, with about a third of the facet's constant
+ * (measured on a 30%-jittered UV sphere: 2.6e-2 → 6.6e-3 → 1.7e-3 against the
+ * facet's 7.6e-2 → 1.9e-2 → 4.9e-3 across three refinements). And it no longer
+ * differentiates exactly what the residual computes, which is why the
+ * central-difference tests run the default and only the default. It is an
+ * experiment with one question, measured in docs/ARBITRARY-SHAPES.md, and not a
+ * mode a production caller selects.
+ *
  * ## On not sharing code with `sphere.ts`
  *
  * The camera machinery above is duplicated rather than extracted, and that is
  * deliberate for now: the sphere path is byte-identical across this whole phase
- * (`bench-baseline.json`, 188 digests) and the cheapest way to keep it that way
+ * (`bench-baseline.json`, 203 digests) and the cheapest way to keep it that way
  * is for it not to enter new code at all. The duplication is ~25 lines and both
  * copies are pinned by central-difference tests, so a divergence between them
  * fails a test rather than silently biasing a solve. If a third surface ever
@@ -728,6 +878,8 @@ export function intersectMeshJacobian(
   dtFrames?: number,
   /** d(x, y)/d(focalScale); fills the focal column. */
   dNormalized?: { dx: number; dy: number },
+  /** Which normal to differentiate against. See {@link MeshNormalMode}. */
+  normalMode: MeshNormalMode = 'facet',
 ): MeshHitJacobian {
   const dPoint = out ?? new Float64Array(3 * CAM_PARAM_COUNT);
   dPoint.fill(0);
@@ -743,9 +895,13 @@ export function intersectMeshJacobian(
   if (!hit.hit) return { hit, dPoint };
 
   const t = hit.t;
-  const n = hit.normal;
-  // `n . d`, which is `-cosIncidence`. Zero exactly when the ray runs in the
-  // facet's plane, where `t` is not a differentiable function of anything.
+  const n = normalMode === 'smooth' ? smoothNormalAt(index, hit) : hit.normal;
+  // `n . d`: in facet mode `-cosIncidence`, zero exactly when the ray runs in
+  // the facet's plane, where `t` is not a differentiable function of anything.
+  // In smooth mode it is the incidence against the interpolated normal, and it
+  // vanishes when the ray runs in the interpolated tangent plane — a different
+  // plane, which beside a crease can be reached at healthy facet incidence
+  // (see {@link MeshNormalMode}).
   let denom = n.x * dir.x + n.y * dir.y + n.z * dir.z;
   if (Math.abs(denom) < 1e-12) denom = denom >= 0 ? 1e-12 : -1e-12;
 

@@ -39,6 +39,7 @@ import {
   buildMeshIndex,
   intersectMesh,
   intersectMeshJacobian,
+  type MeshIndex,
   meshTraversalStats,
   resetMeshTraversalStats,
 } from '../src/mesh.ts';
@@ -51,6 +52,7 @@ import {
   zeroCameraRate,
 } from '../src/sphere.ts';
 import { phoneIntrinsics } from './synthetic.ts';
+import { DEFAULT_BUNDLE_OPTIONS } from '../src/bundle.ts';
 
 function meshOf(positions: number[], indices: number[], name = 'fixture'): SurfaceMesh {
   return {
@@ -733,4 +735,123 @@ test('the mesh derivative converges to the sphere’s closed form, first order i
   // And the absolute level is where a tessellation error should sit, not where a
   // wrong formula would.
   assert.ok(fine < 0.05, `the fine median is ${fine.toExponential(2)}, too large to be faceting`);
+});
+
+// ---------------------------------------------------------------------------
+// The smooth-normal mode: an experiment, off by default, and what it trades
+// ---------------------------------------------------------------------------
+
+const SMOOTH = (index: MeshIndex, cam: CameraModel, nx: number, ny: number) =>
+  intersectMeshJacobian(index, cam, nx, ny, undefined, undefined, undefined, undefined, 'smooth');
+
+test('the smooth-normal mode is off by default, and the default is the facet', () => {
+  // Two defaults, and they are separate literals. The central-difference tests
+  // above call `intersectMeshJacobian` with no mode, so they pin its own
+  // parameter default; the bundle reads `DEFAULT_BUNDLE_OPTIONS.meshNormal`,
+  // which nothing above exercises. This pins the second and ties it to the
+  // first: the bundle's default handed in explicitly must reproduce the
+  // function default to the bit, so a flip of either one fails here.
+  assert.equal(DEFAULT_BUNDLE_OPTIONS.meshNormal, 'facet');
+  const index = buildMeshIndex(COARSE);
+  const cam = testCamera();
+  const implicit = intersectMeshJacobian(index, cam, 0.21, -0.13);
+  const bundleDefault = intersectMeshJacobian(
+    index, cam, 0.21, -0.13, undefined, undefined, undefined, undefined, DEFAULT_BUNDLE_OPTIONS.meshNormal,
+  );
+  assert.deepEqual(Array.from(implicit.dPoint), Array.from(bundleDefault.dPoint));
+  // And the two modes differ on this fixture, so the equality above is not vacuous.
+  const smooth = SMOOTH(index, cam, 0.21, -0.13);
+  assert.notDeepEqual(Array.from(implicit.dPoint), Array.from(smooth.dPoint));
+});
+
+test('the smooth derivative converges to the sphere’s closed form at SECOND order, and beats the facet at every refinement', () => {
+  // The facet test above expects first order: the flat normal is off the true
+  // one by about half the facet's angular size. The interpolated vertex normal
+  // of THIS tessellated sphere is off by the facet size SQUARED: the vertices
+  // sit on the sphere, and on a UV grid each vertex's fan is centrally
+  // symmetric, so the area-weighted sum's tangential parts cancel and the
+  // derived normal points along the radius to that order. (On an irregular
+  // tessellation they do not cancel, the derived normal is first-order, and so
+  // is this mode — `intersectMeshJacobian`'s docblock records the measurement.)
+  // So refining four times should buy about sixteen, not four. This is
+  // the derivative-level statement of the experiment docs/ARBITRARY-SHAPES.md
+  // records: whether the curve's derivative, rather than the facet's, is what a
+  // nearly spherical mesh was missing. Same rays, same statistic, same
+  // incidence cut as the facet test, so the two numbers are comparable.
+  const cam = testCamera();
+  const medians = (nLat: number, nLon: number): { facet: number; smooth: number } => {
+    const index = buildMeshIndex(uvSphereMesh(nLat, nLon, 1));
+    const facet: number[] = [];
+    const smooth: number[] = [];
+    for (let k = 0; k < 300; k++) {
+      const nx = -0.25 + (0.5 * k) / 300;
+      const ny = -0.13 + 0.2 * Math.sin(k * 0.7);
+      const f = intersectMeshJacobian(index, cam, nx, ny);
+      const m = SMOOTH(index, cam, nx, ny);
+      const s = intersectSphereJacobian(cam, nx, ny, 1);
+      if (!f.hit.hit || !s.hit.hit) continue;
+      if (f.hit.cosIncidence < 0.2) continue;
+      // Same hit, same point: the mode changes the derivative and nothing else.
+      assert.equal(m.hit.triangle, f.hit.triangle);
+      assert.equal(m.hit.point.x, f.hit.point.x);
+      let worstF = 0;
+      let worstM = 0;
+      for (let r = 0; r < 3; r++) {
+        for (let i = 0; i < 6; i++) {
+          const sv = s.dPoint[r * CAM_PARAM_COUNT + i];
+          worstF = Math.max(worstF, Math.abs(f.dPoint[r * CAM_PARAM_COUNT + i] - sv));
+          worstM = Math.max(worstM, Math.abs(m.dPoint[r * CAM_PARAM_COUNT + i] - sv));
+        }
+      }
+      facet.push(worstF);
+      smooth.push(worstM);
+    }
+    assert.ok(facet.length > 200, `only ${facet.length} usable rays at ${nLat}x${nLon}`);
+    facet.sort((a, b) => a - b);
+    smooth.sort((a, b) => a - b);
+    return { facet: facet[Math.floor(facet.length / 2)], smooth: smooth[Math.floor(smooth.length / 2)] };
+  };
+
+  const coarse = medians(16, 32);
+  const fine = medians(64, 128);
+  const ratio = coarse.smooth / fine.smooth;
+  assert.ok(
+    ratio > 8 && ratio < 40,
+    `refining 4x moved the smooth median by ${ratio.toFixed(1)}x (${coarse.smooth.toExponential(2)} -> ` +
+      `${fine.smooth.toExponential(2)}) — second order predicts about 16`,
+  );
+  // And it is not merely converging: at both tessellations it is closer to the
+  // truth than the facet is, by more than an order of magnitude at the fine one.
+  assert.ok(coarse.smooth < coarse.facet, `coarse: smooth ${coarse.smooth} is not below facet ${coarse.facet}`);
+  assert.ok(
+    fine.smooth * 10 < fine.facet,
+    `fine: smooth ${fine.smooth.toExponential(2)} against facet ${fine.facet.toExponential(2)}`,
+  );
+});
+
+test('the smooth derivative does NOT match central differences of the facet hit — that is the trade, stated', () => {
+  // The residual is the facet hit; the smooth mode differentiates the curve the
+  // facets approximate. On the coarse fixture the interpolated normal sits
+  // about nine degrees off the facet, so the analytic column and the central
+  // difference of the actual hit point disagree at the percent level where the
+  // facet mode agrees to 1e-5. Pinned so nobody "repairs" the facet test by
+  // switching modes, and so the docs' sentence about exactness stays true.
+  const index = buildMeshIndex(COARSE);
+  const cam = testCamera();
+  const nx = 0.21;
+  const ny = -0.13;
+  const analytic = SMOOTH(index, cam, nx, ny);
+  assert.ok(analytic.hit.hit);
+  const h = 1e-6;
+  const hi = intersectMeshJacobian(index, { ...cam, position: { ...cam.position, x: cam.position.x + h } }, nx, ny);
+  const lo = intersectMeshJacobian(index, { ...cam, position: { ...cam.position, x: cam.position.x - h } }, nx, ny);
+  assert.equal(hi.hit.triangle, analytic.hit.triangle);
+  assert.equal(lo.hit.triangle, analytic.hit.triangle);
+  let worst = 0;
+  for (let r = 0; r < 3; r++) {
+    const fd = ([hi.hit.point.x - lo.hit.point.x, hi.hit.point.y - lo.hit.point.y, hi.hit.point.z - lo.hit.point.z][r]) / (2 * h);
+    const an = analytic.dPoint[r * CAM_PARAM_COUNT + 0];
+    worst = Math.max(worst, Math.abs(fd - an) / Math.max(1, Math.abs(fd)));
+  }
+  assert.ok(worst > 1e-3, `the smooth mode matched the facet's central difference to ${worst.toExponential(2)}`);
 });
