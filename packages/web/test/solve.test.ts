@@ -14,7 +14,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
-import type { RigCalibration } from '../../calibration/src/index.ts';
+import type { RigCalibration, SurfaceMesh } from '../../calibration/src/index.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
 import { BOULDER_PRESET, cameraDistanceM, IN_TO_M } from '../src/settings.ts';
 import { buildWorld } from '../src/rigs.ts';
@@ -363,4 +363,80 @@ test('segmentation ships on, and the presets agree', () => {
   // The one default this page deliberately differs from the bench on.
   assert.equal(BOULDER_PRESET.segmentSphere, 1);
   assert.equal(BOULDER_PRESET.roomSpill, 0, 'the room stays off: its constants are all ASSUME');
+});
+
+/** A UV ellipsoid, squashed in y and in z so no rotation of a sphere reproduces it. */
+function ellipsoidMesh(radiusM: number, scaleY: number, scaleZ: number): SurfaceMesh {
+  const nLat = 48;
+  const nLon = 96;
+  const positions: number[] = [];
+  for (let i = 0; i <= nLat; i++) {
+    const theta = (Math.PI * i) / nLat;
+    for (let j = 0; j < nLon; j++) {
+      const phi = (2 * Math.PI * j) / nLon;
+      positions.push(
+        radiusM * Math.sin(theta) * Math.cos(phi),
+        radiusM * scaleY * Math.sin(theta) * Math.sin(phi),
+        radiusM * scaleZ * Math.cos(theta),
+      );
+    }
+  }
+  const at = (i: number, j: number): number => i * nLon + (j % nLon);
+  const indices: number[] = [];
+  for (let i = 0; i < nLat; i++) {
+    for (let j = 0; j < nLon; j++) {
+      const a = at(i, j);
+      const b = at(i + 1, j);
+      const c = at(i + 1, j + 1);
+      const d = at(i, j + 1);
+      if (i !== 0) indices.push(a, b, d);
+      if (i !== nLat - 1) indices.push(b, c, d);
+    }
+  }
+  return {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: `ellipsoid-${scaleY}-${scaleZ}`,
+    positions: Float64Array.from(positions),
+    indices: Uint32Array.from(indices),
+    normals: null,
+    uvs: null,
+    vertexCount: positions.length / 3,
+    triangleCount: indices.length / 3,
+  };
+}
+
+test('runSolve calibrates against the dropped model, and the cache hands the next solve the same one', () => {
+  // End to end through the function the worker calls, because the two halves
+  // it joins were each tested and each worked, and the join did not. The wiring
+  // commit passed 1007 tests while `runSolve` with a mesh decoded ZERO
+  // correspondences and returned a confident 266.951 mm. Nothing in the suite
+  // had ever dropped a model and pressed the button; this does.
+  //
+  // The shape is tri-axial so a sphere cannot impersonate it — the fixture
+  // lesson `packages/solver/test/mesh-bundle.test.ts` records — and the
+  // threshold is set against what was measured here, not against §7: on the
+  // page's own settings this body recovers to 24.0 mm where the analytic
+  // sphere gets 32.0 mm, and a solve that photographed the mesh but fitted a
+  // sphere, or vice versa, lands in the hundreds.
+  const radiusM = buildWorld(BOULDER_PRESET, undefined, undefined).truthRig.sphere.radiusM;
+  const mesh = ellipsoidMesh(radiusM, 0.7, 0.5);
+
+  const first = runSolve(request({ mesh, meshId: 'mesh:solve-test' }));
+  assert.ok(first.correspondences > 1000, `only ${first.correspondences} correspondences decoded`);
+  assert.ok(
+    first.posePositionMm < 60,
+    `solving against the dropped model recovered ${first.posePositionMm.toFixed(1)} mm`,
+  );
+
+  // The page stops sending a model it believes the worker holds. That request
+  // has to produce the same calibration — if the cache dropped either
+  // hierarchy, this solve would photograph or fit a sphere instead and land
+  // hundreds of millimetres away.
+  const cached = runSolve(request({ mesh: null, meshId: 'mesh:solve-test' }));
+  assert.equal(cached.correspondences, first.correspondences, 'the cached solve decoded a different capture');
+  assert.equal(
+    cached.posePositionMm,
+    first.posePositionMm,
+    'the cached solve recovered a different rig, so the cache did not hand it the same model',
+  );
 });

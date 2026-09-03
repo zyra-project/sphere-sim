@@ -2227,7 +2227,24 @@ let seamPick = 0;
  * a slider moved while the capture runs cannot redraw the photographs as a rig
  * the camera never saw.
  */
-let solveWorld: { world: ReturnType<typeof buildWorld>; ceilingM: number } | null = null;
+let solveWorld: {
+  world: ReturnType<typeof buildWorld>;
+  ceilingM: number;
+  /**
+   * The geometry the solve was handed, frozen when it was handed over.
+   *
+   * The camera thumbnails render from this and not from `displayModel()` at
+   * draw time, for two reasons. The old code rendered them from bare
+   * `prepareRig` calls, so after a drop the "where the camera stood" pictures
+   * showed a SPHERE while the worker photographed the model — a review caught
+   * it, and it is the same defect as the model-card caption in a fourth
+   * costume: a picture claiming to be of one thing while being of another. And
+   * a reader may drop a different model while a solve is in flight; a thumbnail
+   * that followed the live view would then show a body the solve behind it
+   * never saw.
+   */
+  shots: DisplayModel;
+} | null = null;
 
 /**
  * Did this reply become the calibration in force?
@@ -2301,9 +2318,21 @@ function startSolve(): void {
   beforeSeams = (model?.seams ?? []).slice();
   beforeMeshes = (model?.meshes ?? []).slice();
   beforeRig = state.compositorRig;
+  const solveWorldNow = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
   solveWorld = {
-    world: buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage()),
+    world: solveWorldNow,
     ceilingM: state.settings.ceilingM,
+    // Gated on `displayMeshId()`, the same gate the request below uses, so the
+    // thumbnails and the worker agree on which body this solve is about: a
+    // model `packMesh` refused is a sphere to both of them.
+    shots:
+      displayMeshId() !== ''
+        ? displayModel(solveWorldNow)
+        : {
+            physical: prepareRig(solveWorldNow.truthRig),
+            content: prepareRig(solveWorldNow.compositorRig),
+            mesh: null,
+          },
   };
   solveStartedAt = performance.now();
   solveStage = 'Placing the cameras…';
@@ -2696,14 +2725,15 @@ function renderCameraShot(
   if (!gl || !solveWorld) return null;
   const w = Math.max(16, Math.round(width));
   const h = Math.max(1, Math.round((w * 3) / 4));
-  const { world, ceilingM } = solveWorld;
-  // Deliberately NOT `displayModel`: these are the solve's own shots, and the
-  // solve runs on the sphere. Phase 5 is where a model reaches it, and handing
-  // the shader one here would show the reader a picture of geometry the solver
-  // behind it never considered.
+  const { world, ceilingM, shots } = solveWorld;
+  // The solve's own shots, of the solve's own geometry. This used to say
+  // "deliberately NOT `displayModel`: the solve runs on the sphere" — true
+  // until the model reached the worker, and then a picture of a sphere
+  // captioned as where the camera stood to photograph the model. See
+  // `solveWorld.shots` for why it is a snapshot rather than a live read.
   const uniforms = buildDisplayUniforms(
-    prepareRig(world.truthRig),
-    prepareRig(world.compositorRig),
+    shots.physical,
+    shots.content,
     world.scene,
     {
       position: camera.position,
@@ -2714,6 +2744,7 @@ function renderCameraShot(
       height: h,
     },
     {
+      mesh: shots.mesh,
       slots: world.slots,
       drawFloor: true,
       floorRadiusM: 13,

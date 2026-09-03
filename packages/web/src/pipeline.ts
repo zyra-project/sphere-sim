@@ -299,9 +299,20 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
     cachedImageId = req.customImageId;
   }
   if (req.mesh) {
+    // Both hierarchies are built BEFORE either is stored. The first version
+    // assigned as it went, and a review caught what that allows: `meshSurface`
+    // succeeds, `buildMeshIndex` throws under allocation pressure, and the
+    // cache is left holding the new id and the new capture surface beside the
+    // OLD solver index. The page then believes the model is cached and stops
+    // sending it, and every later solve photographs one body and fits another —
+    // the exact invariant this cache exists to hold, broken by the cache. With
+    // both in locals a throw leaves all three fields as they were, which is a
+    // consistent pair for a model the page still knows it has to resend.
+    const surface = meshSurface(req.mesh);
+    const index = buildMeshIndex(req.mesh);
     cachedMeshId = req.meshId;
-    cachedSurface = meshSurface(req.mesh);
-    cachedIndex = buildMeshIndex(req.mesh);
+    cachedSurface = surface;
+    cachedIndex = index;
   } else if (req.meshId === '') {
     // The page went back to the sphere. Dropping both is what makes the sphere
     // path here the same code it was: `surface` omitted and `surface: null`.
@@ -468,16 +479,25 @@ export function runSolve(req: SolveRequest, onProgress: ProgressSink = () => {})
   // guard above is: a person needs the control that caused it and the way back,
   // and "0 points decoded" in a progress line that scrolls past is neither.
   if (capture.correspondences.length === 0) {
-    const refused = capture.silhouettes.filter(
-      (sil) => sil.chosen < 0 || sil.warnings.length > 0,
-    ).length;
+    // A refusal is `chosen < 0` and nothing else. A warning beside a valid
+    // `chosen` is a segmentation that went ahead with a caveat — `silhouette.ts`
+    // emits one when two interior components are of similar size and area
+    // decided — and the first version of this guard counted it as a refusal,
+    // so a camera the decode USED was reported as one it threw away. And the
+    // "every camera" sentence is earned only when every camera was: the same
+    // first version would have printed "Every camera was refused (1 of 2)".
+    const examined = capture.silhouettes.length;
+    const refused = capture.silhouettes.filter((sil) => sil.chosen < 0).length;
     throw new Error(
-      refused > 0
+      examined > 0 && refused === examined
         ? `Every camera was refused by the silhouette detector (${refused} of ` +
-          `${capture.silhouettes.length}), so nothing was decoded. Switch ` +
-          '"Segment the sphere" off and recalibrate.'
+          `${examined}), so nothing was decoded. Switch "Segment the sphere" off ` +
+          'and recalibrate.'
         : 'No points were decoded from the capture, so there is nothing to solve. ' +
-          'Check that the projectors are lighting the object and recalibrate.',
+          'Check that the projectors are lighting the object and recalibrate.' +
+          (refused > 0
+            ? ` The silhouette detector also refused ${refused} of ${examined} cameras.`
+            : ''),
     );
   }
 
