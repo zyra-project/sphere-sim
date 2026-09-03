@@ -691,3 +691,50 @@ test('a gate whose metric threw everywhere stays in the block to be judged', () 
     assert.equal(g.scenariosScored, 0);
   }
 });
+
+test('a scenario whose body is not the sphere is NOT MEASURABLE on the §7 gates, and a sphere with no metrics is still unmeasured', () => {
+  // Two absences that must not be confused. `run.ts` computes no §7 metrics for
+  // a mesh scenario because `sim/metrics` samples `rig.sphere` whatever body the
+  // cameras saw, so `metrics` is null BY DESIGN and the scenario owes the gate
+  // nothing: not measurable, counted, deciding nothing. A sphere scenario with
+  // `metrics: null` is the other thing — the computation threw — and stays
+  // unmeasured, which turns the gate NOT-MEASURED and no waiver may cover it.
+  // Before this distinction existed, the first mesh scenario would have failed
+  // the build on every §7 gate at once, unwaivably, while recovering fine.
+  const mesh = {
+    scenario: { id: 's12-mesh', surface: { kind: 'ellipsoid', scaleY: 0.8, scaleZ: 0.6, nLat: 64, nLon: 128 } },
+    recovery: null,
+    metrics: null,
+  };
+  const crashed = { scenario: { id: 's01-nominal', surface: null }, recovery: null, metrics: null };
+  const fine = scenarioWith('s02-sensor-noise', { value: 0.2, censored: false });
+  const block = buildGates([mesh, crashed, fine] as never);
+  const grid = block.gates.find((g) => g.id === 'grid_displacement');
+  assert.ok(grid, 'the grid gate is missing from the build');
+  assert.deepEqual(grid.scenariosNotMeasurable, ['s12-mesh']);
+  assert.deepEqual(grid.scenariosUnmeasured, ['s01-nominal']);
+  assert.deepEqual(grid.failedScenarios, []);
+  assert.equal(grid.scenariosScored, 1);
+  // And a fixture that predates surfaces altogether is a sphere, not a mesh.
+  const legacy = { scenario: { id: 's03-high-ambient' }, recovery: null, metrics: null };
+  const again = buildGates([legacy] as never).gates.find((g) => g.id === 'grid_displacement');
+  assert.ok(again);
+  assert.deepEqual(again.scenariosUnmeasured, ['s03-high-ambient']);
+  assert.deepEqual(again.scenariosNotMeasurable, []);
+
+  // A mesh scenario does not keep a §7 gate alive on its own. With nothing but
+  // meshes in the run, no §7 gate reaches the block — the same "never ran here,
+  // not this run's business" a metric unscored on every scenario gets — because
+  // a gate that arrives with nothing scored is judged NOT-MEASURED and fails the
+  // build. The first thirteen-scenario run did exactly that on
+  // `off_sphere_flux`, a metric no sphere scenario scores either.
+  const meshOnly = buildGates([mesh] as never);
+  assert.equal(meshOnly.gates.find((g) => g.id === 'grid_displacement'), undefined);
+  assert.equal(meshOnly.gates.find((g) => g.id === 'off_sphere_flux'), undefined);
+  assert.ok(meshOnly.gates.some((g) => g.id === 'pose_position'), 'recovery gates still built');
+  // But a sphere that owes a number keeps the gate, and the mesh is listed on it.
+  const withCrash = buildGates([mesh, crashed] as never).gates.find((g) => g.id === 'grid_displacement');
+  assert.ok(withCrash);
+  assert.deepEqual(withCrash.scenariosUnmeasured, ['s01-nominal']);
+  assert.deepEqual(withCrash.scenariosNotMeasurable, ['s12-mesh']);
+});

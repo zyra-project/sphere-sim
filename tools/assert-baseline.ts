@@ -72,7 +72,7 @@ const SCHEMA = 'sphere-sim/bench-baseline@1';
  * Recorded so a baseline can never be silently compared against the output of a
  * different scenario count or seed, which would be a green check about nothing.
  */
-const COMMAND = 'bench --scenarios 12 --seed 1234';
+const COMMAND = 'bench --scenarios 13 --seed 1234';
 
 interface Baseline {
   schema: string;

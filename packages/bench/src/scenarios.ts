@@ -29,13 +29,14 @@
  * Two consequences worth stating. Scenario 0 is always the canary — zero
  * injected misalignment, noiseless, ambient off — because a bench whose
  * end-to-end path has quietly broken should fail loudly on the first scenario
- * rather than produce twelve plausible-looking failures. A run of N scenarios
+ * rather than produce thirteen plausible-looking failures. A run of N scenarios
  * always covers the same first N archetypes, so a verdict is comparable across
  * commits even though its numbers are not. CI ran SIX for a long time and
- * therefore never judged archetypes 6-11 at all; it runs all twelve now.
+ * therefore never judged archetypes 6-11 at all; it ran twelve after that, and
+ * runs all thirteen now that `mesh` is on the end.
  *
  * Asking for more scenarios than there are archetypes cycles the list with
- * fresh seeds, which is what a long round should do: the same twelve questions
+ * fresh seeds, which is what a long round should do: the same thirteen questions
  * asked of different rigs.
  */
 
@@ -50,6 +51,7 @@ import { DEFAULT_SENSOR } from './capture.ts';
 import type { PatternPlan } from './patterns.ts';
 import { DEFAULT_PATTERN_PLAN } from './patterns.ts';
 import { deriveSeed, makeBenchRng } from './random.ts';
+import type { SurfaceSpec } from './surfaces.ts';
 
 // ---------------------------------------------------------------------------
 // Presets
@@ -117,7 +119,7 @@ export const PRESETS: Record<BenchPreset['name'], BenchPreset> = {
   },
   thorough: {
     name: 'thorough',
-    scenarioCount: 12,
+    scenarioCount: 13,
     cameraResX: 640,
     cameraResY: 480,
     metricDensityScale: 1,
@@ -197,6 +199,18 @@ export interface Scenario {
    * measurement and not an opinion.
    */
   freeFov: boolean;
+  /**
+   * The body in the room, when it is not `rig.sphere`.
+   *
+   * `null` — every archetype but `mesh` — is the sphere, and the whole
+   * twelve-scenario baseline was recorded with it. A spec here replaces the
+   * sphere on BOTH sides of the bench: `capture.ts` photographs it and the
+   * bundle fits it, through two independently built hierarchies of the one mesh,
+   * because `sim` and `solver` may not share one. PARAMETERS.md §7's geometric
+   * metrics are defined on the sphere and are not computed for such a scenario;
+   * its recovery gates are scored like any other's. See `surfaces.ts`.
+   */
+  surface: SurfaceSpec | null;
 }
 
 interface Archetype {
@@ -359,6 +373,21 @@ const ARCHETYPES: Archetype[] = [
       s.degradation.handheld = { ...DEFAULT_HANDHELD };
     },
   },
+  {
+    name: 'mesh',
+    // Same seed as `nominal`: the same rig, the same cameras and the same
+    // photons, with the sphere replaced by a body a sphere cannot impersonate.
+    // The difference between the two scores is what a non-spherical body costs
+    // the calibration, and nothing else.
+    pairWith: 'nominal',
+    question:
+      "Does the calibration hold when the body is not a sphere? The `nominal` rig and capture with the sphere replaced by a tri-axial ellipsoid, 1 : 0.8 : 0.6 at the sphere's radius, that the cameras photograph and the bundle fits. Recovery gates only: PARAMETERS.md §7's geometric metrics are sphere theorems and are reported NOT MEASURABLE here.",
+    apply(s): void {
+      s.degradation.handheld = null;
+      s.cameras.count = 3;
+      s.surface = { kind: 'ellipsoid', scaleY: 0.8, scaleZ: 0.6, nLat: 64, nLon: 128 };
+    },
+  },
 ];
 
 export const ARCHETYPE_NAMES: string[] = ARCHETYPES.map((a) => a.name);
@@ -450,6 +479,7 @@ export function makeScenario(rootSeed: number, index: number, preset: BenchPrese
     floorReferenceCount: 4,
     floorSigmaM: 0.003,
     freeFov: true,
+    surface: null,
   };
 
   archetype.apply(scenario, rng);

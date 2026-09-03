@@ -449,8 +449,9 @@ Measured on this machine, dominated by the capture render:
 
 | Run | Wall clock | Per scenario |
 | --- | --- | --- |
-| `--scenarios 6 --seed 1234` (what CI runs) | **99 s / 100 s** on two consecutive runs | 10.5–23.0 s |
-| `--scenarios 12 --seed 1234` (all archetypes) | **243 s** | 10.5–37.0 s |
+| `--scenarios 6 --seed 1234` (the old CI corpus) | **99 s / 100 s** on two consecutive runs | 10.5–23.0 s |
+| `--scenarios 12 --seed 1234` (the twelve sphere archetypes) | **243 s** | 10.5–37.0 s |
+| `--scenarios 13 --seed 1234` (what CI runs: all archetypes, `mesh` last) | **214 s** on a different machine, so not comparable to the row above; `mesh` itself took 28 s, its solve 14 s | 9.7–28 s |
 
 CI runs the bench twice, so the determinism step doubles it.
 
@@ -499,13 +500,47 @@ plan's camera sweep) and the corpus goes there deliberately.
 | 9 | `long-throw` | Does the bootstrap find the far end of §2's `d_proj` conflict? |
 | 10 | `no-floor-reference` | What happens to `h_center` with nothing measuring the floor? |
 | 11 | `fov-held` | How much of the position error is the fov/distance degeneracy? |
+| 12 | `mesh` | Does the calibration hold when the body is not a sphere? |
 
-Order is part of the interface: CI runs the first six and compares verdicts
+Order is part of the interface: CI runs all thirteen and compares verdicts
 across commits, so new archetypes go on the end. Scenario 0 is always the canary,
 whatever the seed — a bench whose path has quietly broken should fail loudly on
-the first scenario rather than produce twelve plausible-looking failures. Asking
+the first scenario rather than produce thirteen plausible-looking failures. Asking
 for more scenarios than there are archetypes cycles the list with fresh seeds:
-the same twelve questions asked of different rigs.
+the same thirteen questions asked of different rigs.
+
+### The one scenario that is not a sphere
+
+`mesh` is `nominal`'s rig, cameras and photons — it borrows `nominal`'s seed the
+way `fov-held` borrows `two-cameras`' — with the sphere replaced by a tri-axial
+ellipsoid, 1 : 0.8 : 0.6 at the sphere's radius, tessellated 64×128
+(`surfaces.ts`). The cameras photograph it (`CaptureOptions.surface`) and the
+bundle fits it (`BundleOptions.surface`), through two hierarchies built from the
+one mesh because `sim` and `solver` may not share code;
+`test/mesh-agreement.test.ts` is where those two are checked against each other.
+The difference between its score and `nominal`'s is what a non-spherical body
+costs the calibration, and nothing else.
+
+It is scored on the recovery gates and on nothing else. PARAMETERS.md §7's
+geometric metrics — grid displacement, unlit-in-mask, the seam gates — are
+defined on the sphere, and `sim/metrics` computes them on `rig.sphere` whatever
+body the cameras saw, so for this scenario they would describe an installation
+that is not in the room. `run.ts` does not compute them and `results.ts` reports
+the scenario **NOT MEASURABLE** on each of those gates: visible, counted, and
+deciding nothing — the same treatment `h_center_recovery` gives a scenario with
+no floor reference. It is not the NOT-MEASURED that a crashed solve produces,
+which fails the build and which no waiver may cover; a body that is not a sphere
+owes §7 nothing.
+
+Two traps docs/ARBITRARY-SHAPES.md warned about before this scenario existed,
+and what was done about them. The `pose_position`, `pose_rotation` and
+`grid_displacement` waivers covered every archetype (`scenarios: null`), so a
+mesh scenario failing them would have been waived under amendments that never
+discuss a mesh, silently. They now name their archetypes; a new archetype that
+fails one of them fails the build until someone writes down why it is covered.
+And the sphere segmenters, which fit a circle to the silhouette, refuse every
+camera on a mesh, so both are forced off for a scenario with a surface whatever
+the run options say.
 
 Seeds are chained rather than drawn from a clock. Round *N*'s seed is
 `splitmix(root, N)` — decorrelated from round *N−1*'s, so a builder cannot overfit
