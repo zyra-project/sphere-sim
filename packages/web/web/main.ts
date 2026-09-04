@@ -5454,10 +5454,10 @@ function solveSection(): HTMLElement | null {
           `(${r.grayBits} Gray planes). ` +
           (r.converged
             ? `Converged in ${r.iterations} steps, residual ${r.residualRmsPx.toFixed(3)} px.`
-            : `Did NOT converge — stopped at the ${r.iterations}-step cap with a residual of ` +
-              `${r.residualRmsPx.toFixed(3)} px, still moving. The result was not applied; the ` +
-              'calibration in force is the one from before. More camera positions is the usual ' +
-              'remedy, and a tripod rather than a handheld capture is the other.'),
+            : `Did NOT converge — the optimiser stopped after ${r.iterations} steps ` +
+              `(${r.stopReason}) with a residual of ${r.residualRmsPx.toFixed(3)} px. The result ` +
+              'was not applied; the calibration in force is the one from before. More camera ' +
+              'positions is the usual remedy, and a tripod rather than a handheld capture is the other.'),
       }),
     );
 

@@ -1101,6 +1101,82 @@ assert. The tessellated sphere is the fixture for it: if smooth normals take
 confirmed, and if they do not the gap is somewhere else. This stopping rule
 makes the mesh path usable; that experiment is what would make it accurate.
 
+**The smooth-normal experiment: the reading is confirmed, and the trade is
+measured.** `BundleOptions.meshNormal: 'smooth'` swaps the facet normal in the
+mesh hit Jacobian — and nothing else — for the per-vertex normal interpolated at
+the hit, derived from the winding when the mesh carries none. The residual is
+still the facet hit; only the tangent plane the derivative believes the hit
+slides along changes, from the facet's to the curve's. At the derivative level
+that is the second-order object it should be — on this tessellation, away from
+its poles: a UV grid's interior vertex fans are centrally symmetric, so the
+derived normals are second-order accurate (each duplicated pole vertex touches
+one triangle and keeps that facet's normal; the sampled rays avoid them); on an
+irregular tessellation they, and this mode, are first-order with a smaller
+constant. Against `sphere.ts`'s closed form on a
+tessellated unit sphere, median over the same 300 rays and the same incidence
+cut the facet test uses,
+
+| tessellation | facet | smooth | ratio |
+|---|---|---|---|
+| 8×16 | 1.29e-1 | 1.62e-2 | 8 |
+| 16×32 | 6.08e-2 | 4.00e-3 | 15 |
+| 32×64 | 3.30e-2 | 1.04e-3 | 32 |
+| 64×128 | 1.68e-2 | 2.49e-4 | 67 |
+| 128×256 | 8.39e-3 | 6.07e-5 | 138 |
+
+— the facet halves per refinement, the smooth quarters. At the solve level, the
+same twelve rows of the sweep above re-run through the page's own configuration
+with the option on, worst lens position error in mm, facet → smooth:
+
+| body | seed 1 | seed 2 | seed 3 |
+|---|---|---|---|
+| sphere mesh 1:1:1, 64×128 | 137.5 → **13.1** | 32.2 → 38.3 (stopped: `lambda`) | 33.4 → **13.6** |
+| sphere mesh 1:1:1, 192×384 | 12.5 → 17.7 | | |
+| oblate 1:1:0.98 | 80.1 → **15.5** | 51.6 → **27.7** | 34.6 → **13.6** |
+| oblate 1:1:0.9 | 27.7 → **12.1** | | |
+| tri 1:0.95:0.9 | 11.8 → 11.5 | | |
+| tri 1:0.7:0.5 | 14.3 → 14.2 | 13.1 → 12.3 (stopped: `lambda`) | 8.8 → 8.8 |
+
+Every near-spherical 64×128 row that converged improved, and all but one of them
+landed inside the analytic sphere's own 8.0 to 17.3 mm on these seeds — the
+exception is 1 : 1 : 0.98 on seed 2, at 27.7 from 51.6. The 192×384 sphere,
+already at 12.5, moved to 17.7: no gain where the facets were already fine. The
+tri-axials, which were already there, do not move. The reading is confirmed, and
+the optimiser says how: on seed 1 the
+smooth mode reaches a LOWER residual than the facet mode did, 0.5594 px against
+0.5612, at 13.1 mm where the facet stopped on the plateau rule at 137.5 — the
+same objective on the same data, so the facet Jacobian's jitter had stalled the
+descent short of the minimum and the curve's derivative walks through it. Seed 3
+reaches the same residual to four figures (0.5401 against 0.5402) at 13.6 mm
+against 33.4: a cost surface flat between two rigs, which is what noise-limited
+looks like.
+
+The trade is convergence, and it is not free. Two rows of twelve stopped with
+`lambda` — the damping run up to its cap with no trial step reducing the cost —
+which is what a Jacobian that is not the residual's derivative does to
+Levenberg–Marquardt near a minimum: its model of the cost disagrees with the
+cost, so it proposes steps the cost rejects. Seed 2 of the sphere stopped
+SHORT, at a residual of 0.5651 against the facet's 0.5616 and 38.3 mm against
+32.2; the tri-axial's seed 2 stopped at 12.3 mm, an answer as good as the
+facet's 13.1, but flagged, and the page refuses a flagged solve. The tri-axials
+also took two to three times the iterations to get where the facet got directly
+(59 to 86 against 27 to 36). So the option ships OFF: `'facet'` remains the
+default, is the only mode the central-difference tests hold to, and the
+thirteen-scenario baseline is byte-identical with the option present. The
+smooth mode is reachable through `runSolve`'s `experimental` seam and the
+bundle options, which is what a measurement needs and all it needs.
+
+What follows from a confirmed reading is a remedy that keeps the gain and drops
+the trade, and there are two candidates, neither built. A residual CONSISTENT
+with the smooth derivative — intersect the ray with a curved interpolant of the
+facets rather than the facets themselves, so the Jacobian differentiates
+exactly what the residual computes and the exactness tests hold again — is the
+principled one. A hybrid that takes the curve's direction until the damping
+stalls and finishes with the facet's is the cheap one, and it needs the same
+fixture: twelve rows, facet against hybrid, and the two `lambda` rows are the
+ones to watch. The page now names the optimiser's stop reason in its refusal,
+because "did NOT converge" hid the distinction this experiment turned on.
+
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the
 hypothesis that placing every projector at one distance along its nominal bearing
