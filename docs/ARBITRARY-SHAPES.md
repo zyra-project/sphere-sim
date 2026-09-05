@@ -1177,6 +1177,82 @@ fixture: twelve rows, facet against hybrid, and the two `lambda` rows are the
 ones to watch. The page now names the optimiser's stop reason in its refusal,
 because "did NOT converge" hid the distinction this experiment turned on.
 
+**The hybrid was built twice and refuted twice, for one reason, and the reason
+changes what the smooth normal is.** The cheap remedy above — take the curve's
+derivative until it stalls, finish with the facet's — was built as
+`meshNormal: 'hybrid'` and measured on the twelve rows; then rebuilt so the facet
+was only ever a RESCUE, one accepted exact step to confirm a convergence claim
+or break a stall, and measured again. Worst lens position error in mm on the
+tessellated sphere at 64×128, through the page's configuration:
+
+| seed | facet | smooth | hybrid, finish with facet | hybrid, one-step rescue |
+|---|---|---|---|---|
+| 1 | 137.5 | 13.1 | 97.6 | 98.2 |
+| 2 | 32.2 | 38.3 (stalled) | 69.6 | 69.6 |
+| 3 | 33.4 | 13.6 | 33.5 | 34.1 |
+
+The full twelve rows, facet → smooth → rescue hybrid, worst lens position error
+in mm at the page's configuration:
+
+| body | seed 1 | seed 2 | seed 3 |
+|---|---|---|---|
+| sphere mesh 1:1:1, 64×128 | 137.5 → 13.1 → 98.2 | 32.2 → 38.3 (stalled) → 69.6 | 33.4 → 13.6 → 34.1 |
+| sphere mesh 1:1:1, 192×384 | 12.5 → 17.7 → 12.5 | | |
+| oblate 1:1:0.98 | 80.1 → 15.5 → 80.1 | 51.6 → 27.7 → 52.1 | 34.6 → 13.6 → 34.7 |
+| oblate 1:1:0.9 | 27.7 → 12.1 → 19.1 | | |
+| tri 1:0.95:0.9 | 11.8 → 11.5 → 11.8 | | |
+| tri 1:0.7:0.5 | 14.3 → 14.2 → 14.3 | 13.1 → 12.3 (stalled) → 12.6 | 8.8 → 8.8 → 8.8 |
+
+On eight rows of twelve the hybrid reproduces the facet's answer to within half
+a millimetre — 80.1 against 80.1, 34.7 against 34.6, 14.3 against 14.3 — and on
+a ninth to within a millimetre (34.1 against 33.4). On the eight of those nine
+whose facet iteration count was recorded it spends one and a quarter to six
+times as many (217 against 36 on seed 3 of 1 : 1 : 0.98). It does convert the
+smooth mode's two stalls into converged solves, at 69.6 and 12.6 mm, though the
+first of those lands well behind the facet's own 32.2. And on two rows it comes
+to rest between the two modes, keeping some of what the smooth mode found:
+1 : 1 : 0.9 at 19.1 against the facet's 27.7 and the smooth mode's 12.1, and the
+sphere's first seed at 98.2 against the facet's 137.5 and the smooth mode's
+13.1. That is the facet's accuracy, bought slower.
+
+Both walk the sphere back out toward where the facet alone would have left it,
+and
+the optimiser shows why. Near the minimum the cost is flat along the direction
+a near-sphere barely determines. The facet derivative finds a step there that
+lowers the cost by a hair while moving the lenses by millimetres. On seed 1 the
+rescue hybrid ends at the LOWEST residual of the three, 0.5588 px against the
+smooth mode's 0.5594 and the facet's 0.5612, and at 98.2 mm from truth against
+the smooth mode's 13.1; on seed 3 all three end at 0.5401–0.5402 px, at 13.6 mm
+for the smooth mode and 34 for the other two. The cost does not know where the
+truth is along that direction, and the exact derivative follows the cost — so
+the smooth phase re-converges at once, the rescue rule reads that as the
+smooth model having nothing left to give, and the facet keeps the solve and
+random-walks to its own plateau. The smooth derivative never takes those
+steps: its fixed point, where its own normal equations balance, sits near the
+truth on every near-spherical row that reached it, and it is a DIFFERENT point
+from the facet cost's minimum. So the smooth normal is not a faster route to the
+same answer. It is a different estimator — an estimating equation, `J_sᵀ r = 0`
+with the curve's Jacobian and the facet's residual — and a better one on a body
+whose faceting is noise rather than shape. Any exact step near its fixed point
+leaves it, which is why no hybrid can keep what the smooth phase bought.
+
+That reframes the remedy. The smooth mode's stalls are not a Jacobian that is
+"wrong"; they are an estimating equation being solved with the wrong merit
+function. Levenberg–Marquardt accepts a step when the COST falls, and near the
+smooth fixed point the cost need not fall along the smooth step, because that
+point is not the cost's minimum — which is exactly the damping-at-its-cap stop
+two rows of twelve showed. The consistent remedy keeps the smooth Jacobian and
+changes what a step must reduce: the norm of `J_sᵀ r` itself, the estimating
+equation's own residual, with convergence declared when it vanishes. Its fixed
+points are the smooth mode's, its stopping rule is a real one, and a damping
+stall then says the equation has no root nearby — a finding, not a failure of
+the merit. It is a change inside the loop's acceptance test rather than a new
+residual model, and it needs the same twelve rows; the two that stalled are the
+ones to watch. The hybrid code was reverted rather than kept, on the
+precedent of rung 1b: a strategy measured to lose what it was built to keep
+should not stay in the loop as an option nobody should select, and this entry
+is the record a future attempt has to argue with.
+
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the
 hypothesis that placing every projector at one distance along its nominal bearing
