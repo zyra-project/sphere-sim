@@ -1336,6 +1336,95 @@ The smooth mode as shipped in #16, with its two stalls, remains the best measure
 result on a near-spherical mesh. What is NOT closed is the mesh path's accuracy;
 what is closed is trying to buy it by changing when Levenberg–Marquardt says yes.
 
+**The curved residual was bounded before it was built, and the bound refutes
+it — the stalls are a body mismatch, not an inconsistency.** The remaining
+remedy this document has carried since the smooth-normal experiment was the
+expensive one: intersect a curved interpolant of the facets, so the Jacobian
+differentiates exactly what the residual computes and the pair is an honest
+least-squares problem again. Scoping it produced a cheaper decisive experiment
+instead, and the experiment says do not build it.
+
+THE SHORTCUT, AND WHY IT IS SOUND. On a tessellated sphere the α=1 Phong or PN
+patch and the analytic sphere are the same surface to well below the noise
+floor: measured at 64×128, the patch sits 0.0025 mm from the analytic sphere on
+average and 0.15 mm at worst, against a ~1 mm recovery floor, while both sit
+0.217 mm mean and 0.520 mm worst from the flat chords the cameras photograph.
+So "fit the α=1 patch" and "fit the analytic sphere" are the same measurement on
+these rows, and the second needs no patch code at all — `pipeline.ts` already
+holds `captureSurface` and `solveSurface` as separate values, so photographing
+the chords while fitting the sphere is a one-line scratch edit. That makes the
+result an UPPER BOUND on every curved interpolant: no PN net, no Newton
+iteration and no inflated BVH can beat the surface they are all approximating.
+
+THE FOUR ROWS, worst lens position error in mm, against the two published modes:
+
+| body | facet | smooth | curved bound |
+|---|---|---|---|
+| sphere mesh 1:1:1, 64×128, seed 1 | 137.5 (plateau) | 13.1 (step) | **12.4** (cost) |
+| sphere mesh 1:1:1, 64×128, seed 2 | 32.2 (cost) | 38.3 NO (`lambda`) | **38.5 NO (`lambda`)** |
+| sphere mesh 1:1:1, 64×128, seed 3 | 33.4 (plateau) | 13.6 (plateau) | **10.7** (cost) |
+| sphere mesh 1:1:1, 192×384, seed 1 | 12.5 | 17.7 | 18.6 (cost) |
+
+THE CENTRAL CLAIM FAILS ON ROW TWO. The argument for consistency was structural:
+with an exact Jacobian of an exact residual, Levenberg–Marquardt's model of the
+cost agrees with the cost, so the damping cannot run to its cap for that reason
+and the smooth mode's two `lambda` stalls retire as a consequence rather than a
+hope. The analytic sphere is the most consistent residual-Jacobian pair in this
+repository — a closed-form hit and its closed-form derivative — and seed 2 stalls
+at `lambda` anyway, 38.5 mm against the smooth mode's 38.3. Consistency is not
+what those stalls were made of.
+
+WHAT THEY ARE MADE OF, from the control. Photographing the analytic sphere AND
+fitting it — the matched case, no mesh anywhere — converges on `cost` on all
+three seeds: 17.3, 15.9 and 8.0 mm. Seed 2 is not a hard seed. It stalls in
+exactly the two configurations where the solver's surface model is the smooth
+sphere while the photographs are of chords: the smooth Jacobian on chord
+residuals (38.3), and the sphere residual on chord photographs (38.5). The stall
+is the surface model disagreeing with the DATA, and a curved residual is another
+way to disagree with it, not a way to stop.
+
+(The control's fourth row is a duplicate of its first by construction and is not
+reported as a measurement: with no mesh the tessellation argument does nothing,
+so 192×384 seed 1 and 64×128 seed 1 are the same analytic solve, 29 494
+correspondences both.)
+
+AND WHERE IT HELPS, IT BARELY HELPS. Seeds 1 and 3 improve on the smooth mode by
+0.7 and 2.9 mm and — the one genuine gain — stop on `cost` rather than on a
+plateau or a step-size floor, which is an honest convergence where the smooth
+mode had a flagged one. At 192×384, where the chords are already fine, it is
+18.6 against the facet's 12.5: the model error dominating once there is no
+tessellation error left to fix, which is the h² behaviour the scoping predicted
+before the run. A 0.7 mm gain on two rows of four, no repair of the stall, and a
+regression at fine tessellation is not worth a second intersection stack, a
+Newton solve per ray, a BVH rebuilt with inflated bounds, and a residual that no
+longer matches the body in the pictures.
+
+THREE THINGS WORTH KEEPING from the scoping, none of which need the build.
+First: `intersectMeshJacobian` is ALREADY the derivative of a general smooth
+surface. Dotting the implicit equation with `n = S_u × S_v` annihilates both
+tangent columns, so `du` and `dv` never appear and the formula is
+`dt = -(n·do + t n·dd)/(n·d)` for ANY surface whose normal you can name. The
+smooth mode was therefore never a different formula — it is the same formula
+with `n` naming a surface the hit point is not on, which is exactly why it is
+inconsistent and exactly how cheap consistency would have been. Second: α=1 is
+the wrong operating point for a curved patch and α=½ is the right one. A chord
+undershoots a sphere by ½Rs² and the α=1 patch overshoots by the same, so α=½
+osculates: measured on this repo's 64×128 body, 8.5e-5 m of position error
+against the facet's 5.1e-4 (6×) and 5.9e-3 rad of normal error against 2.5e-2
+(4.2×), where α=1's normal is the FACET normal to three figures. Any future
+attempt that reaches for Phong tessellation should reach for α=½. Third: the
+BVH prunes on flat triangle bounds with no inflation, so a curved patch that
+bulges outside its triangle's box is silently pruned and answers with the far
+side of the body — a correctness trap no assertion in the current suite could
+see.
+
+So the mesh path's accuracy is still open, and the optimiser is now closed from
+four directions rather than three: a hybrid twice, a merit once, and a residual
+bounded without building it. The next idea has to change what is PHOTOGRAPHED,
+not how it is fitted — every remaining lever on the fitting side has been
+measured against the same twelve-row fixture and none of them beat the smooth
+mode's 13.1 mm.
+
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the
 hypothesis that placing every projector at one distance along its nominal bearing
