@@ -1253,6 +1253,89 @@ precedent of rung 1b: a strategy measured to lose what it was built to keep
 should not stay in the loop as an option nobody should select, and this entry
 is the record a future attempt has to argue with.
 
+**The estimating-equation merit was built as proposed and is REFUTED, and the
+reason retires the whole line of attack.** The entry above named the remedy that
+follows from the hybrid's failure: keep the smooth Jacobian, and change what a
+step must reduce from the cost to the norm of `J_sᵀ r` itself. That was built as
+`BundleOptions.stepAcceptance: 'cost' | 'gradient'`, exactly as specified — the
+acceptance test at the bottom of the damping loop compares the diagonally scaled
+Euclidean norm of the trial's own `J_sᵀ r` against the accepted state's, the
+trial evaluation is upgraded to carry a Jacobian and then reused as the next
+iteration's so an accepted step costs no more than before, convergence is the
+`gradTol` test the loop already ran at the accepted state, and the two
+cost-window stopping rules (`costTol` twice running, and the mesh plateau rule)
+are switched off because they read a quantity that is no longer the one falling.
+
+The same twelve rows, worst lens position error in mm, facet → smooth → gradient:
+
+| body | seed 1 | seed 2 | seed 3 |
+|---|---|---|---|
+| sphere mesh 1:1:1, 64×128 | 137.5 → 13.1 → 161.4 | 32.2 → 38.3 (stalled) → 128.4 (stalled) | 33.4 → 13.6 → 152.0 |
+| sphere mesh 1:1:1, 192×384 | 12.5 → 17.7 → 149.2 | | |
+| oblate 1:1:0.98 | 80.1 → 15.5 → 112.5 (stalled) | 51.6 → 27.7 → 100.6 (stalled) | 34.6 → 13.6 → 157.6 |
+| oblate 1:1:0.9 | 27.7 → 12.1 → 96.4 | | |
+| tri 1:0.95:0.9 | 11.8 → 11.5 → 183.6 | | |
+| tri 1:0.7:0.5 | 14.3 → 14.2 → 189.6 | 13.1 → 12.3 (stalled) → 163.7 | 8.8 → 8.8 → 225.8 |
+
+Twelve rows of twelve worse than BOTH existing modes: 96.4 to 225.8 mm against
+the facet's 8.8 to 137.5 and the smooth mode's 8.8 to 38.3. It does not repair
+the two stalls it was built for — the sphere's second seed is still unconverged
+and three times worse, and the tri-axial's second seed converges at 163.7 where
+the stalled smooth solve sat at 12.3 — and it adds two new ones on rows both
+other modes converged. There is no row on which it is the right choice, and no
+axis on which it is a trade.
+
+**It never once solved the equation it was minimising**, and that is the finding
+rather than the accuracy table. Convergence under this rule means the `gradTol`
+test firing: `J_sᵀ r` actually small at an accepted state. Across twelve page
+rows and nine solver-level fixtures, twenty-one solves, the stop reason was
+`'gradient'` exactly zero times. Nine of the twelve page rows stopped on `'step'`
+— the steps shrank below tolerance while the equation was still far from
+satisfied — two ran out of iterations and one ran the damping to its cap.
+
+Measured directly against its own objective, on a solver-level fixture where the
+normal equations can be rebuilt at the state each mode RETURNS (three bodies ×
+three seeds, `‖J_sᵀ r‖₂` diagonally scaled, cost rule → gradient rule):
+
+| body | seed 1 | seed 2 | seed 3 |
+|---|---|---|---|
+| sphere 1:1:1 | 7.76 → **7.12** | 10.06 → **9.93** | 10.88 → **10.51** |
+| oblate 1:1:0.9 | 6.08 → 6.12 | 7.59 → 22.56 | 8.60 → 9.38 |
+| tri 1:0.7:0.5 | 2.01 → 22.80 | 0.68 → 5.30 | 2.08 → 10.60 |
+
+On six of nine it ends at a LARGER `‖J_sᵀ r‖` than the cost rule reaches, by up
+to eleven times, while minimising nothing else. On the three where it does win it
+wins by a few per cent. A merit function that ends further from its own minimum
+than the objective it replaced is not being solved badly; it is the wrong merit.
+
+**Why, and the argument that fails is the one the implementation was written
+on.** The damping loop is an escape under the cost rule because the step
+`-(JᵀJ + λD)⁻¹ Jᵀr` is a descent direction for the COST: raise λ far enough and
+the step becomes a short gradient-descent step, which must reduce it. The
+comment written into the gradient branch claimed the same guarantee for the new
+merit, from `d‖Jᵀr‖²/dt = -2 (Jᵀr)ᵀ JᵀJ (Jᵀr) / (λ·diag) < 0`. That derivation
+silently approximates `∇(Jᵀr)` by `JᵀJ`, dropping the term `Σ rᵢ ∇²rᵢ` — and
+dropping it is precisely what the smooth Jacobian makes illegitimate. The
+residuals here are large and `J_s` is deliberately not their derivative, so the
+dropped term is not a correction to the guarantee, it is the reason there is no
+guarantee. The Gauss-Newton step is aimed at the cost's minimum; asked to serve a
+different merit, it stops being a descent direction at all, the damping loop
+grinds without finding one, and `stepTol` fires on a point that is not a root.
+The estimating equation is real — the smooth Jacobian's fixed point IS a better
+estimator than the facet cost's minimum, and #16 measured that — but it cannot
+be reached by re-scoring the steps of a method that computes its direction from
+the cost. Reaching it needs a step derived from the equation itself, which is a
+different optimiser and not a flag on this one.
+
+The code is reverted rather than kept, on the same precedent as the hybrid and
+rung 1b. Three attempts have now been made on the near-sphere gap from the
+optimiser's side — a hybrid twice, a merit once — and all three failed for one
+reason, stated three ways: the loop's step comes from the cost, so every strategy
+that keeps that step and changes what surrounds it inherits the cost's answer.
+The smooth mode as shipped in #16, with its two stalls, remains the best measured
+result on a near-spherical mesh. What is NOT closed is the mesh path's accuracy;
+what is closed is trying to buy it by changing when Levenberg–Marquardt says yes.
+
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the
 hypothesis that placing every projector at one distance along its nominal bearing
