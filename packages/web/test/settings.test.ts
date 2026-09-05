@@ -556,9 +556,24 @@ test('the warp export ships the calibration the software believes, never ground 
     'the warp export reaches for the truth rig, which is ground truth the solver never sees',
   );
   // And it is reachable: a handler nothing calls is a button that does nothing.
+  // It lives in the projector card's warp-mesh tab, beside the drawing of the
+  // correction it writes out — NOT in the actions row, which is sized to the
+  // narrow panel and whose height is subtracted from the scrolling controls
+  // above it. A sixth button there wrapped the row to three lines, took 41 px
+  // from `#controls`, and pushed the last slider out of its own clip; the
+  // drag check in `tools/smoke-app.ts` caught it.
   assert.ok(
-    /warp\.addEventListener\('click', exportWarpFiles\)/.test(MAIN_SOURCE),
-    'the warp button is not wired to the exporter',
+    /save\.addEventListener\('click', exportWarpFiles\)/.test(MAIN_SOURCE),
+    'the warp export is not wired to a button',
+  );
+  const actions = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function renderActions(): void {'),
+    MAIN_SOURCE.indexOf('// The inspect card: one projector, three ways'),
+  );
+  assert.ok(actions.length > 0, 'renderActions has moved; this test can no longer find it');
+  assert.ok(
+    !/exportWarpFiles/.test(actions),
+    'the warp export is back in the actions row, which its height cannot afford',
   );
 });
 

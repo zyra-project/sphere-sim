@@ -3047,7 +3047,7 @@ function touched(invalidates: boolean): void {
   if (!sliderDragging) renderControls();
   // The bar reads the projector count for its "Bump all N" label and the
   // calibration for whether "Forget it" is there, and both of those move under
-  // it. It is six buttons — cheaper than the thirty rows above it.
+  // it. It is five buttons — cheaper than the thirty rows above it.
   renderActions();
   renderReadout();
   requestModel(false);
@@ -4493,19 +4493,6 @@ function renderActions(): void {
     actionsEl.append(forget);
   }
 
-  // Placed after the calibration buttons because that is the order of the work:
-  // recalibrate, then take the result somewhere. Enabled on the sphere too —
-  // a warp file for the analytic sphere is the installation this simulator is
-  // named after, not a special case.
-  const warp = el('button', {
-    className: 'btn',
-    textContent: 'Warp files',
-    title:
-      'Write a Bourke warp-and-blend mesh per projector, for the calibration the software currently believes.',
-  });
-  warp.addEventListener('click', exportWarpFiles);
-  actionsEl.append(warp);
-
   const reset = el('button', { className: 'btn', textContent: 'Reset' });
   reset.addEventListener('click', () => {
     state.settings = { ...PERFECT_PRESET, nudge: PERFECT_PRESET.nudge.map((n) => ({ ...n })) };
@@ -4850,6 +4837,19 @@ function renderInspect(): void {
           'collapses it towards straight.',
       }),
     );
+    // The paragraph above ends by saying this correction is the thing the config
+    // file cannot carry. The file that CAN carry it is one click away, here,
+    // beside the picture of it — rather than in the actions row, which is for
+    // verbs that change the room and is already two rows tall on a narrow panel.
+    const save = el('button', {
+      className: 'linkish',
+      textContent: 'save the warp files',
+      title:
+        'One Bourke warp-and-blend mesh per lit projector, for the calibration the software ' +
+        'currently believes.',
+    });
+    save.addEventListener('click', exportWarpFiles);
+    inspectEl.append(save);
   }
 }
 
