@@ -1425,6 +1425,68 @@ not how it is fitted — every remaining lever on the fitting side has been
 measured against the same twelve-row fixture and none of them beat the smooth
 mode's 13.1 mm.
 
+**Changing what is PHOTOGRAPHED dissolves the stalls, and prices the
+tessellation for the first time.** Every measurement in this section until now
+photographed the tessellation and fitted the tessellation, which is the one
+configuration a real capture never has: a visitor's `.glb` APPROXIMATES a real
+body, it does not define it. Filling that cell — photograph the analytic sphere,
+fit a mesh inscribed in it — needs no new code either, the mirror of the scratch
+edit above, and it answers two questions the other three cells could not.
+
+THE 2×2, worst lens position error in mm, sphere rows, three seeds:
+
+| | fit the tessellation | fit the analytic sphere |
+|---|---|---|
+| photograph the tessellation | facet 137.5 / 32.2 / 33.4, smooth 13.1 / **38.3 stalls** / 13.6 | **38.5 stalls** (the curved-residual bound above) |
+| photograph the sphere | **the realistic cell, below** | 17.3 / 15.9 / 8.0, all on `cost` |
+
+THE STALLS ARE AN ARTIFACT OF THE FIXTURE. Eighteen rows in the realistic cell —
+three tessellations, three seeds, both Jacobian modes — converge. Not one
+`lambda` stop, in either mode. Those two stalls are what the hybrid was built
+for twice, what the estimating-equation merit was built for once, and what the
+curved residual was supposed to retire structurally; all three failed to remove
+them, and photographing the body the mesh approximates removes them without
+touching the optimiser. The smooth Jacobian does not stall here because it is no
+longer describing a curve that is absent from the pictures: the curve is what the
+cameras saw. Three remedies were aimed at a symptom of the test rig.
+
+WHAT A TESSELLATION COSTS, which is the deployment question — how finely must a
+visitor unwrap their model? Facet mode, mean over three seeds, against the same
+seeds' analytic floor (17.3 / 15.9 / 8.0, mean 13.7):
+
+| tessellation | facet mean | excess over the floor |
+|---|---|---|
+| 32×64 | 49.1 | 35.3 |
+| 64×128 | 29.2 | 15.5 |
+| 192×384 | 16.5 | 2.7 |
+
+Monotone, and it decays faster than the row spacing does — the excess falls 2.3×
+for the first doubling and 5.7× for the next tripling. That is the shape a
+vanishing model error should have, and it is the opposite of the artificial cell,
+where refining from 64×128 to 192×384 made the smooth mode WORSE (13.1 to 17.7)
+because there the tessellation was not an approximation of anything; it was the
+truth, and a finer truth is not a better one.
+
+WHAT IS NOT ESTABLISHED, and three seeds cannot establish it: whether the smooth
+Jacobian is better than the facet one in this cell. It wins five rows of nine and
+loses four, and its worst row is worse than the facet's worst (97.2 against
+61.5). The means go the wrong way at two tessellations and the right way at one.
+There is no effect here that three seeds separate from seed variance, and the
+honest reading is that the smooth mode's large advantage in the artificial cell
+was substantially an advantage at compensating for the artificial fixture. That
+is a claim this document should not make on nine rows either, which is why the
+next measurement is more seeds in this cell and not a new mode.
+
+ONE CAVEAT ON THE FIXTURE, stated because it bounds the numbers above. The mesh
+is INSCRIBED in the photographed sphere — every vertex lies exactly on it, every
+facet inside it — so its mean radius is systematically small and part of the
+measured cost is a scale bias rather than an irreducible one. A mesh fitted to
+minimise error against the body, rather than to interpolate points on it, would
+carry roughly half the sagitta as a signed error instead of all of it on one
+side. The table above is therefore an UPPER bound on what a given vertex budget
+costs, and a mesh-fitting question — not a solver question — is what would
+tighten it.
+
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the
 hypothesis that placing every projector at one distance along its nominal bearing
