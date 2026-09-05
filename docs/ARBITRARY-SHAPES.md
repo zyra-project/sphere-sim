@@ -1203,15 +1203,20 @@ in mm at the page's configuration:
 | tri 1:0.95:0.9 | 11.8 → 11.5 → 11.8 | | |
 | tri 1:0.7:0.5 | 14.3 → 14.2 → 14.3 | 13.1 → 12.3 (stalled) → 12.6 | 8.8 → 8.8 → 8.8 |
 
-On ten rows of twelve the hybrid reproduces the facet's answer to within half a
-millimetre — 80.1 against 80.1, 34.7 against 34.6, 14.3 against 14.3 — at one
-and a half to six times the facet's iterations (217 against 36 on the third
-1 : 1 : 0.98 seed). It does convert the smooth mode's two stalls into converged
-solves, at 69.6 and 12.6 mm, and it keeps part of the smooth gain on exactly one
-row (1 : 1 : 0.9, 19.1 against the facet's 27.7 and the smooth mode's 12.1).
-That is the facet's accuracy, bought slower.
+On eight rows of twelve the hybrid reproduces the facet's answer to within half
+a millimetre — 80.1 against 80.1, 34.7 against 34.6, 14.3 against 14.3 — and on
+a ninth to within a millimetre (34.1 against 33.4). On the eight of those nine
+whose facet iteration count was recorded it spends one and a quarter to six
+times as many (217 against 36 on seed 3 of 1 : 1 : 0.98). It does convert the
+smooth mode's two stalls into converged solves, at 69.6 and 12.6 mm, though the
+first of those lands well behind the facet's own 32.2. And on two rows it comes
+to rest between the two modes, keeping some of what the smooth mode found:
+1 : 1 : 0.9 at 19.1 against the facet's 27.7 and the smooth mode's 12.1, and the
+sphere's first seed at 98.2 against the facet's 137.5 and the smooth mode's
+13.1. That is the facet's accuracy, bought slower.
 
-Both walk the sphere back out to where the facet alone would have left it, and
+Both walk the sphere back out toward where the facet alone would have left it,
+and
 the optimiser shows why. Near the minimum the cost is flat along the direction
 a near-sphere barely determines. The facet derivative finds a step there that
 lowers the cost by a hair while moving the lenses by millimetres. On seed 1 the
