@@ -37,7 +37,12 @@
 import type { SurfaceMesh } from '../../calibration/src/index.ts';
 
 import { mat3MulVec, vAdd, vDot, vNorm, vScale, type Vec3 } from './linalg.ts';
-import { rotationWithDerivatives, type RotationWithDerivatives } from './project.ts';
+import {
+  projectorPixelToRay,
+  rotationWithDerivatives,
+  type ProjectorModel,
+  type RotationWithDerivatives,
+} from './project.ts';
 import {
   CAM_FOCAL,
   CAM_PARAM_COUNT,
@@ -951,4 +956,65 @@ export function intersectMeshJacobian(
   }
 
   return { hit, dPoint };
+}
+
+// ---------------------------------------------------------------------------
+// Geometric segmentation for a body that is not the sphere
+// ---------------------------------------------------------------------------
+
+/** What {@link meshSegmenter} needs to decide whether a projector pixel lands on the model. */
+export interface MeshSegmentation {
+  /**
+   * The solver's own hierarchy over the body in the room. The NOMINAL geometry
+   * — the mesh the operator supplied, standing where the configuration says it
+   * stands — never a mesh built from anything the solver is trying to recover.
+   */
+  index: MeshIndex;
+  /**
+   * The projector calibration to test against, indexed by the correspondence's
+   * projector index. The NOMINAL one — what the operator starts from — never
+   * the truth, exactly as `SphereSegmentation.projectors` requires.
+   */
+  projectors: readonly ProjectorModel[];
+}
+
+/**
+ * The mesh counterpart of {@link sphereSegmenter}: keep a correspondence only
+ * when the projector pixel that produced it actually strikes the body.
+ *
+ * The sphere version asks `intersectSphere(...).hit` and this asks
+ * `intersectMesh(...).hit`. That is the entire difference, and it is the point:
+ * the guard the bench applies to a mesh scenario reads that "both segmenters fit
+ * a CIRCLE to the sphere's silhouette", which is true of the IMAGE-space
+ * detector in `silhouette.ts` and was never true of this one. The geometric
+ * segmenter is a ray cast, and a ray cast against a mesh is a ray cast against a
+ * mesh. Nothing here fits a circle, projects a centre, or assumes a radius.
+ *
+ * NO MARGIN, and unlike the sphere's zero default that is not a measurement
+ * waiting to be revisited — it is that the sphere's margin has no mesh analogue.
+ * `SphereSegmentation.marginFrac` scales one number, R, and docs/EXPERIMENT-4.md
+ * measured that inflating it costs more than it buys, because a ray threaded
+ * between R and (1 + margin) R misses the ball and flies on to the wall.
+ * Inflating a mesh is not one number: it is an offset surface, which self-
+ * intersects wherever the body's concavities are tighter than the offset, and
+ * the tri-axial and concave bodies this exists for are exactly where that bites.
+ * A caller who wants the limb points back should say so with a different
+ * predicate rather than have this one guess at a dilation.
+ *
+ * The failure mode this shares with the sphere version, deliberately: a
+ * correspondence naming a projector the caller did not describe is REJECTED, not
+ * passed. Passing would make the option silently partial in the one direction
+ * that admits the points it exists to remove.
+ */
+export function meshSegmenter(seg: MeshSegmentation): (
+  projector: number,
+  u: number,
+  v: number,
+) => boolean {
+  return (projector: number, u: number, v: number): boolean => {
+    const model = seg.projectors[projector];
+    if (model === undefined) return false;
+    const dir = projectorPixelToRay(model, u, v);
+    return intersectMesh(seg.index, model.position, dir).hit;
+  };
 }
