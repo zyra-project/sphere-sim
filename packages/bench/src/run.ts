@@ -326,6 +326,22 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
   const { plan, projPxPerCamPx } = planPatternFor(world, scenario, options.preset);
   const tBuild = Date.now();
 
+  // One segmenter, named once, so the reassertion inside `decode` cannot drift
+  // from the thing it reasserts.
+  const geometricSegmentation =
+    options.segmentSphere !== true
+      ? null
+      : world.meshIndex !== null
+        ? meshSegmenter({
+            index: world.meshIndex,
+            projectors: bundleStateFromCalibration(world.solverNominal, []).projectors,
+          })
+        : sphereSegmenter({
+            radiusM: world.solverNominal.sphere.radiusM,
+            projectors: bundleStateFromCalibration(world.solverNominal, []).projectors,
+            marginFrac: options.segmentMarginFrac ?? DEFAULT_SEGMENTATION_MARGIN,
+          });
+
   const capture = captureAndDecode(world.truthRig, world.cameras, {
     plan,
     conditions: {
@@ -361,33 +377,24 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
       // parameter and has no mesh analogue — inflating a mesh is an offset
       // surface, not a scaled radius — so it is not passed on that branch; see
       // `meshSegmenter`.
-      segmentation:
-        options.segmentSphere !== true
-          ? null
-          : world.meshIndex !== null
-            ? meshSegmenter({
-                index: world.meshIndex,
-                projectors: bundleStateFromCalibration(world.solverNominal, []).projectors,
-              })
-            : sphereSegmenter({
-                radiusM: world.solverNominal.sphere.radiusM,
-                projectors: bundleStateFromCalibration(world.solverNominal, []).projectors,
-                marginFrac: options.segmentMarginFrac ?? DEFAULT_SEGMENTATION_MARGIN,
-              }),
+      segmentation: geometricSegmentation,
       // Last, so a caller can raise the decoder's own rejection thresholds. The
       // bench never does; an experiment that is asking whether a threshold could
       // reject something needs to be able to move it, and moving it by editing
       // `DEFAULT_DECODE_OPTIONS` would move every published number with it.
       ...(options.decode ?? {}),
-      // ...except a segmenter for a mesh that the branch above did not build
-      // itself. It builds one now, so the reassertion narrows from "never on a
-      // mesh" to "never one this function did not construct": a caller's
-      // `decode.segmentation` is still a predicate built against some other
-      // body, which on a mesh scenario is the failure the original guard existed
-      // to prevent.
-      ...(world.surface === null || options.segmentSphere === true
-        ? {}
-        : { segmentation: null }),
+      // ...except the segmenter, ON A MESH, which is reasserted to whatever this
+      // function built — including `null`. A caller's own `decode.segmentation`
+      // is a predicate built against some other body, and handing one to a mesh
+      // scenario is the failure the guard exists to prevent. The sphere keeps
+      // the old freedom: docs/EXPERIMENT-4.md sweeps a caller's segmenter there,
+      // so the spread above is allowed to win.
+      //
+      // This line USED to read `world.surface === null || options.segmentSphere
+      // === true ? {} : ...`, which let a caller's predicate through on a mesh
+      // in exactly the case the reassertion exists for — reopened by the
+      // condition meant to narrow it.
+      ...(world.surface === null ? {} : { segmentation: geometricSegmentation }),
     },
     // One frame kept as an artifact: the fourth Gray plane of the u axis, which
     // is coarse enough to read as a pattern in a thumbnail and fine enough to

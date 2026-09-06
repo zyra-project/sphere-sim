@@ -15,6 +15,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -76,4 +77,45 @@ test('the mesh archetype solves against the body it photographed and is judged o
   for (const id of ['grid_displacement', 'unlit_in_mask', 'off_sphere_flux']) {
     assert.equal(byId.get(id), undefined, `${id} reached the judgement with nothing to judge`);
   }
+});
+
+test('a caller cannot hand a mesh scenario a segmenter built against another body', () => {
+  // Copilot found this hole on #18 and it was real: the reassertion after the
+  // caller's `decode` spread read `world.surface === null || options.segmentSphere
+  // === true ? {} : { segmentation: null }`, so switching segmentation ON — the
+  // one case the reassertion exists for — let a caller's own predicate through
+  // to a mesh. That predicate is built against some other body, which is the
+  // failure the original guard was written to prevent, reopened by the condition
+  // meant to narrow it.
+  //
+  // A source scan, not a run, and deliberately: the only path to that object is
+  // `runScenario`, which is a full capture and solve (the test above budgets ten
+  // minutes for one), and the invariant is a property of how the object is
+  // ASSEMBLED rather than of any number that comes out. `packages/web`'s
+  // settings tests use the same idiom for the same reason.
+  const SOURCE = fs.readFileSync(
+    path.join(import.meta.dirname, '..', 'src', 'run.ts'),
+    'utf8',
+  );
+  const decode = SOURCE.slice(
+    SOURCE.indexOf('    decode: {'),
+    SOURCE.indexOf('    previewPairs:'),
+  );
+  assert.ok(decode.length > 0, 'the decode block has moved; this test can no longer find it');
+
+  const spread = decode.indexOf('...(options.decode ?? {})');
+  assert.ok(spread > 0, "the caller's decode spread is gone");
+
+  // The reassertion must come AFTER the caller's spread — that is the whole
+  // mechanism — and must not be conditioned on anything but the body.
+  const reassert = decode.indexOf('{ segmentation: geometricSegmentation }');
+  assert.ok(reassert > spread, 'the segmenter is reasserted before the spread, so a caller still wins');
+  assert.ok(
+    /\.\.\.\(world\.surface === null \? \{\} : \{ segmentation: geometricSegmentation \}\)/.test(decode),
+    'the mesh reassertion is conditioned on something other than the body',
+  );
+  assert.ok(
+    !/options\.segmentSphere === true\s*\n?\s*\?\s*\{\}/.test(decode),
+    'segmentSphere once again opens the hole it opened before',
+  );
 });
