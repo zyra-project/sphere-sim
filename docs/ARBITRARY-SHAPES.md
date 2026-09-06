@@ -1153,9 +1153,16 @@ looks like.
 
 The trade is convergence, and it is not free. Two rows of twelve stopped with
 `lambda` — the damping run up to its cap with no trial step reducing the cost —
-which is what a Jacobian that is not the residual's derivative does to
-Levenberg–Marquardt near a minimum: its model of the cost disagrees with the
-cost, so it proposes steps the cost rejects. Seed 2 of the sphere stopped
+which was read at the time as what a Jacobian that is not the residual's
+derivative does to Levenberg–Marquardt near a minimum: its model of the cost
+disagrees with the cost, so it proposes steps the cost rejects. **That reading is
+refuted below**, twice and from different directions: a perfectly consistent
+residual-Jacobian pair stalls on the same seed at the same place, and
+photographing the body the mesh approximates removes the stalls in both modes
+without touching the optimiser. The stall is the surface model disagreeing with
+the DATA, not with the residual. The measurements in this entry stand; the
+mechanism sentence does not, and the entries at the end of this phase carry the
+correction. Seed 2 of the sphere stopped
 SHORT, at a residual of 0.5651 against the facet's 0.5616 and 38.3 mm against
 32.2; the tri-axial's seed 2 stopped at 12.3 mm, an answer as good as the
 facet's 13.1, but flagged, and the page refuses a flagged solve. The tri-axials
