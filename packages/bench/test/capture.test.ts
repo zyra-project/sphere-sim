@@ -40,6 +40,8 @@ import { DEFAULT_PATTERN_PLAN } from '../src/patterns.ts';
 import { makeBenchRng } from '../src/random.ts';
 import type { SilhouetteOptions } from '../../solver/src/index.ts';
 import { bundleStateFromCalibration, sphereSegmenter } from '../../solver/src/index.ts';
+import { DEFAULT_SEGMENTATION_MARGIN } from '../../solver/src/index.ts';
+import { buildMeshIndex, meshSegmenter } from '../../solver/src/mesh.ts';
 
 const RIG = nominalRig({ projectorCount: 4 });
 const PLAN = { ...DEFAULT_PATTERN_PLAN, grayBits: 5 };
@@ -739,4 +741,113 @@ test('CaptureOptions.surface changes what the camera photographs', () => {
       'a projector pixel — the capture is photographing the same shape either way, ' +
       'so `surface` is inert',
   );
+});
+
+test('the geometric segmenter follows the body: a mesh one keeps what a sphere one throws away', () => {
+  // `packages/bench/src/run.ts` declined to build a geometric segmenter for a
+  // mesh scenario, on the reading that "both segmenters fit a CIRCLE to the
+  // sphere's silhouette". That is true of the IMAGE-space detector in
+  // `silhouette.ts` and was never true of this one: `sphereSegmenter` is a
+  // ray-vs-sphere test, and the only sphere in it is the surface it intersects.
+  //
+  // What that guard cost is measured here rather than argued. One capture of a
+  // tri-axial body, decoded three ways: with no segmenter, with the sphere
+  // segmenter the bench would have built, and with the mesh segmenter it now
+  // builds instead. The sphere one is not merely unhelpful on this body — it is
+  // WRONG in the damaging direction, keeping rays that missed the object and
+  // flew on into the room, which is the outlier class segmentation exists to
+  // remove.
+  const cams = cameras(1);
+  const nLat = 48;
+  const nLon = 96;
+  const r = RIG.sphere.radiusM;
+  const positions: number[] = [];
+  for (let i = 0; i <= nLat; i++) {
+    const theta = (Math.PI * i) / nLat;
+    for (let j = 0; j < nLon; j++) {
+      const phi = (2 * Math.PI * j) / nLon;
+      positions.push(
+        r * Math.sin(theta) * Math.cos(phi),
+        r * 0.7 * Math.sin(theta) * Math.sin(phi),
+        r * 0.5 * Math.cos(theta),
+      );
+    }
+  }
+  const at = (i: number, j: number): number => i * nLon + (j % nLon);
+  const indices: number[] = [];
+  for (let i = 0; i < nLat; i++) {
+    for (let j = 0; j < nLon; j++) {
+      const a = at(i, j);
+      const b = at(i + 1, j);
+      const c = at(i + 1, j + 1);
+      const d = at(i, j + 1);
+      if (i !== 0) indices.push(a, b, d);
+      if (i !== nLat - 1) indices.push(b, c, d);
+    }
+  }
+  const mesh: SurfaceMesh = {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'segmenter-ellipsoid',
+    positions: Float64Array.from(positions),
+    indices: Uint32Array.from(indices),
+    normals: null,
+    uvs: null,
+    vertexCount: positions.length / 3,
+    triangleCount: indices.length / 3,
+  };
+
+  const projectors = bundleStateFromCalibration(RIG, []).projectors;
+  const decodeWith = (segmentation: ((p: number, u: number, v: number) => boolean) | null) =>
+    captureAndDecode(RIG, cams, {
+      plan: PLAN,
+      conditions: {
+        ambient: 0.04,
+        reflectance: { r: 0.9, g: 0.9, b: 0.88 },
+        roomAlbedo: 0.3,
+        sensor: null,
+        handheld: null,
+        clock: { ...DEFAULT_CLOCK, rollingShutter: true },
+        minIncidenceCos: 0.2,
+        // ON, so there is room for a ray to miss the body and land somewhere
+        // that still decodes. With no spill a miss decodes to nothing and the
+        // segmenters have nothing to disagree about.
+        roomSpill: DEFAULT_ROOM_SPILL,
+        segmentImage: null,
+      },
+      seed: 4242,
+      decode: { pixelStride: 1, maxCorrespondences: 0, segmentation },
+      previewPairs: [],
+      previewFrame: -1,
+      surface: meshSurface(mesh),
+    });
+
+  const open = decodeWith(null);
+  const bySphere = decodeWith(
+    sphereSegmenter({ radiusM: r, projectors, marginFrac: DEFAULT_SEGMENTATION_MARGIN }),
+  );
+  const byMesh = decodeWith(meshSegmenter({ index: buildMeshIndex(mesh), projectors }));
+
+  assert.ok(open.correspondences.length > 0, 'the unsegmented capture decoded nothing');
+  // Both segmenters cut something: an assertion that a filter filtered.
+  assert.ok(bySphere.correspondences.length < open.correspondences.length, 'the sphere segmenter cut nothing');
+  assert.ok(byMesh.correspondences.length < open.correspondences.length, 'the mesh segmenter cut nothing');
+
+  // The point. The sphere segmenter tests against a ball this body is inscribed
+  // in, so it ADMITS rays that sailed past the real object — it keeps strictly
+  // more than the mesh one, and everything extra it keeps is a point the
+  // projector aimed at nothing.
+  assert.ok(
+    bySphere.correspondences.length > byMesh.correspondences.length,
+    `the sphere segmenter kept ${bySphere.correspondences.length} and the mesh one ${byMesh.correspondences.length}; ` +
+      'the enclosing body admitted nothing extra, so this fixture proves nothing',
+  );
+
+  // And the mesh segmenter is a SUBSET of the open decode rather than a
+  // different set: it removes points, it never invents or moves one.
+  const key = (c: { camera: number; camU: number; camV: number; projector: number }) =>
+    `${c.camera}:${c.projector}:${c.camU}:${c.camV}`;
+  const openKeys = new Set(open.correspondences.map(key));
+  for (const c of byMesh.correspondences) {
+    assert.ok(openKeys.has(key(c)), `the mesh segmenter produced a correspondence the open decode did not: ${key(c)}`);
+  }
 });

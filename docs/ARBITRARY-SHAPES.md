@@ -1153,9 +1153,16 @@ looks like.
 
 The trade is convergence, and it is not free. Two rows of twelve stopped with
 `lambda` — the damping run up to its cap with no trial step reducing the cost —
-which is what a Jacobian that is not the residual's derivative does to
-Levenberg–Marquardt near a minimum: its model of the cost disagrees with the
-cost, so it proposes steps the cost rejects. Seed 2 of the sphere stopped
+which was read at the time as what a Jacobian that is not the residual's
+derivative does to Levenberg–Marquardt near a minimum: its model of the cost
+disagrees with the cost, so it proposes steps the cost rejects. **That reading is
+refuted below**, twice and from different directions: a perfectly consistent
+residual-Jacobian pair stalls on the same seed at the same place, and
+photographing the body the mesh approximates removes the stalls in both modes
+without touching the optimiser. The stall is the surface model disagreeing with
+the DATA, not with the residual. The measurements in this entry stand; the
+mechanism sentence does not, and the entries at the end of this phase carry the
+correction. Seed 2 of the sphere stopped
 SHORT, at a residual of 0.5651 against the facet's 0.5616 and 38.3 mm against
 32.2; the tri-axial's seed 2 stopped at 12.3 mm, an answer as good as the
 facet's 13.1, but flagged, and the page refuses a flagged solve. The tri-axials
@@ -1252,6 +1259,240 @@ ones to watch. The hybrid code was reverted rather than kept, on the
 precedent of rung 1b: a strategy measured to lose what it was built to keep
 should not stay in the loop as an option nobody should select, and this entry
 is the record a future attempt has to argue with.
+
+**The estimating-equation merit was built as proposed and is REFUTED, and the
+reason retires the whole line of attack.** The entry above named the remedy that
+follows from the hybrid's failure: keep the smooth Jacobian, and change what a
+step must reduce from the cost to the norm of `J_sᵀ r` itself. That was built as
+`BundleOptions.stepAcceptance: 'cost' | 'gradient'`, exactly as specified — the
+acceptance test at the bottom of the damping loop compares the diagonally scaled
+Euclidean norm of the trial's own `J_sᵀ r` against the accepted state's, the
+trial evaluation is upgraded to carry a Jacobian and then reused as the next
+iteration's so an accepted step costs no more than before, convergence is the
+`gradTol` test the loop already ran at the accepted state, and the two
+cost-window stopping rules (`costTol` twice running, and the mesh plateau rule)
+are switched off because they read a quantity that is no longer the one falling.
+
+The same twelve rows, worst lens position error in mm, facet → smooth → gradient:
+
+| body | seed 1 | seed 2 | seed 3 |
+|---|---|---|---|
+| sphere mesh 1:1:1, 64×128 | 137.5 → 13.1 → 161.4 | 32.2 → 38.3 (stalled) → 128.4 (stalled) | 33.4 → 13.6 → 152.0 |
+| sphere mesh 1:1:1, 192×384 | 12.5 → 17.7 → 149.2 | | |
+| oblate 1:1:0.98 | 80.1 → 15.5 → 112.5 (stalled) | 51.6 → 27.7 → 100.6 (stalled) | 34.6 → 13.6 → 157.6 |
+| oblate 1:1:0.9 | 27.7 → 12.1 → 96.4 | | |
+| tri 1:0.95:0.9 | 11.8 → 11.5 → 183.6 | | |
+| tri 1:0.7:0.5 | 14.3 → 14.2 → 189.6 | 13.1 → 12.3 (stalled) → 163.7 | 8.8 → 8.8 → 225.8 |
+
+Twelve rows of twelve worse than BOTH existing modes: 96.4 to 225.8 mm against
+the facet's 8.8 to 137.5 and the smooth mode's 8.8 to 38.3. It does not repair
+the two stalls it was built for — the sphere's second seed is still unconverged
+and three times worse, and the tri-axial's second seed converges at 163.7 where
+the stalled smooth solve sat at 12.3 — and it adds two new ones on rows both
+other modes converged. There is no row on which it is the right choice, and no
+axis on which it is a trade.
+
+**It never once solved the equation it was minimising**, and that is the finding
+rather than the accuracy table. Convergence under this rule means the `gradTol`
+test firing: `J_sᵀ r` actually small at an accepted state. Across twelve page
+rows and nine solver-level fixtures, twenty-one solves, the stop reason was
+`'gradient'` exactly zero times. Nine of the twelve page rows stopped on `'step'`
+— the steps shrank below tolerance while the equation was still far from
+satisfied — two ran out of iterations and one ran the damping to its cap.
+
+Measured directly against its own objective, on a solver-level fixture where the
+normal equations can be rebuilt at the state each mode RETURNS (three bodies ×
+three seeds, `‖J_sᵀ r‖₂` diagonally scaled, cost rule → gradient rule):
+
+| body | seed 1 | seed 2 | seed 3 |
+|---|---|---|---|
+| sphere 1:1:1 | 7.76 → **7.12** | 10.06 → **9.93** | 10.88 → **10.51** |
+| oblate 1:1:0.9 | 6.08 → 6.12 | 7.59 → 22.56 | 8.60 → 9.38 |
+| tri 1:0.7:0.5 | 2.01 → 22.80 | 0.68 → 5.30 | 2.08 → 10.60 |
+
+On six of nine it ends at a LARGER `‖J_sᵀ r‖` than the cost rule reaches, by up
+to eleven times, while minimising nothing else. On the three where it does win it
+wins by a few per cent. A merit function that ends further from its own minimum
+than the objective it replaced is not being solved badly; it is the wrong merit.
+
+**Why, and the argument that fails is the one the implementation was written
+on.** The damping loop is an escape under the cost rule because the step
+`-(JᵀJ + λD)⁻¹ Jᵀr` is a descent direction for the COST: raise λ far enough and
+the step becomes a short gradient-descent step, which must reduce it. The
+comment written into the gradient branch claimed the same guarantee for the new
+merit, from `d‖Jᵀr‖²/dt = -2 (Jᵀr)ᵀ JᵀJ (Jᵀr) / (λ·diag) < 0`. That derivation
+silently approximates `∇(Jᵀr)` by `JᵀJ`, dropping the term `Σ rᵢ ∇²rᵢ` — and
+dropping it is precisely what the smooth Jacobian makes illegitimate. The
+residuals here are large and `J_s` is deliberately not their derivative, so the
+dropped term is not a correction to the guarantee, it is the reason there is no
+guarantee. The Gauss-Newton step is aimed at the cost's minimum; asked to serve a
+different merit, it stops being a descent direction at all, the damping loop
+grinds without finding one, and `stepTol` fires on a point that is not a root.
+The estimating equation is real — the smooth Jacobian's fixed point IS a better
+estimator than the facet cost's minimum, and #16 measured that — but it cannot
+be reached by re-scoring the steps of a method that computes its direction from
+the cost. Reaching it needs a step derived from the equation itself, which is a
+different optimiser and not a flag on this one.
+
+The code is reverted rather than kept, on the same precedent as the hybrid and
+rung 1b. Three attempts have now been made on the near-sphere gap from the
+optimiser's side — a hybrid twice, a merit once — and all three failed for one
+reason, stated three ways: the loop's step comes from the cost, so every strategy
+that keeps that step and changes what surrounds it inherits the cost's answer.
+The smooth mode as shipped in #16, with its two stalls, remains the best measured
+result on a near-spherical mesh. What is NOT closed is the mesh path's accuracy;
+what is closed is trying to buy it by changing when Levenberg–Marquardt says yes.
+
+**The curved residual was bounded before it was built, and the bound refutes
+it — the stalls are a body mismatch, not an inconsistency.** The remaining
+remedy this document has carried since the smooth-normal experiment was the
+expensive one: intersect a curved interpolant of the facets, so the Jacobian
+differentiates exactly what the residual computes and the pair is an honest
+least-squares problem again. Scoping it produced a cheaper decisive experiment
+instead, and the experiment says do not build it.
+
+THE SHORTCUT, AND WHY IT IS SOUND. On a tessellated sphere the α=1 Phong or PN
+patch and the analytic sphere are the same surface to well below the noise
+floor: measured at 64×128, the patch sits 0.0025 mm from the analytic sphere on
+average and 0.15 mm at worst, against a ~1 mm recovery floor, while both sit
+0.217 mm mean and 0.520 mm worst from the flat chords the cameras photograph.
+So "fit the α=1 patch" and "fit the analytic sphere" are the same measurement on
+these rows, and the second needs no patch code at all — `pipeline.ts` already
+holds `captureSurface` and `solveSurface` as separate values, so photographing
+the chords while fitting the sphere is a one-line scratch edit. That makes the
+result an UPPER BOUND on every curved interpolant: no PN net, no Newton
+iteration and no inflated BVH can beat the surface they are all approximating.
+
+THE FOUR ROWS, worst lens position error in mm, against the two published modes:
+
+| body | facet | smooth | curved bound |
+|---|---|---|---|
+| sphere mesh 1:1:1, 64×128, seed 1 | 137.5 (plateau) | 13.1 (step) | **12.4** (cost) |
+| sphere mesh 1:1:1, 64×128, seed 2 | 32.2 (cost) | 38.3 NO (`lambda`) | **38.5 NO (`lambda`)** |
+| sphere mesh 1:1:1, 64×128, seed 3 | 33.4 (plateau) | 13.6 (plateau) | **10.7** (cost) |
+| sphere mesh 1:1:1, 192×384, seed 1 | 12.5 | 17.7 | 18.6 (cost) |
+
+THE CENTRAL CLAIM FAILS ON ROW TWO. The argument for consistency was structural:
+with an exact Jacobian of an exact residual, Levenberg–Marquardt's model of the
+cost agrees with the cost, so the damping cannot run to its cap for that reason
+and the smooth mode's two `lambda` stalls retire as a consequence rather than a
+hope. The analytic sphere is the most consistent residual-Jacobian pair in this
+repository — a closed-form hit and its closed-form derivative — and seed 2 stalls
+at `lambda` anyway, 38.5 mm against the smooth mode's 38.3. Consistency is not
+what those stalls were made of.
+
+WHAT THEY ARE MADE OF, from the control. Photographing the analytic sphere AND
+fitting it — the matched case, no mesh anywhere — converges on `cost` on all
+three seeds: 17.3, 15.9 and 8.0 mm. Seed 2 is not a hard seed. It stalls in
+exactly the two configurations where the solver's surface model is the smooth
+sphere while the photographs are of chords: the smooth Jacobian on chord
+residuals (38.3), and the sphere residual on chord photographs (38.5). The stall
+is the surface model disagreeing with the DATA, and a curved residual is another
+way to disagree with it, not a way to stop.
+
+(The control's fourth row is a duplicate of its first by construction and is not
+reported as a measurement: with no mesh the tessellation argument does nothing,
+so 192×384 seed 1 and 64×128 seed 1 are the same analytic solve, 29 494
+correspondences both.)
+
+AND WHERE IT HELPS, IT BARELY HELPS. Seeds 1 and 3 improve on the smooth mode by
+0.7 and 2.9 mm and — the one genuine gain — stop on `cost` rather than on a
+plateau or a step-size floor, which is an honest convergence where the smooth
+mode had a flagged one. At 192×384, where the chords are already fine, it is
+18.6 against the facet's 12.5: the model error dominating once there is no
+tessellation error left to fix, which is the h² behaviour the scoping predicted
+before the run. A 0.7 mm gain on two rows of four, no repair of the stall, and a
+regression at fine tessellation is not worth a second intersection stack, a
+Newton solve per ray, a BVH rebuilt with inflated bounds, and a residual that no
+longer matches the body in the pictures.
+
+THREE THINGS WORTH KEEPING from the scoping, none of which need the build.
+First: `intersectMeshJacobian` is ALREADY the derivative of a general smooth
+surface. Dotting the implicit equation with `n = S_u × S_v` annihilates both
+tangent columns, so `du` and `dv` never appear and the formula is
+`dt = -(n·do + t n·dd)/(n·d)` for ANY surface whose normal you can name. The
+smooth mode was therefore never a different formula — it is the same formula
+with `n` naming a surface the hit point is not on, which is exactly why it is
+inconsistent and exactly how cheap consistency would have been. Second: α=1 is
+the wrong operating point for a curved patch and α=½ is the right one. A chord
+undershoots a sphere by ½Rs² and the α=1 patch overshoots by the same, so α=½
+osculates: measured on this repo's 64×128 body, 8.5e-5 m of position error
+against the facet's 5.1e-4 (6×) and 5.9e-3 rad of normal error against 2.5e-2
+(4.2×), where α=1's normal is the FACET normal to three figures. Any future
+attempt that reaches for Phong tessellation should reach for α=½. Third: the
+BVH prunes on flat triangle bounds with no inflation, so a curved patch that
+bulges outside its triangle's box is silently pruned and answers with the far
+side of the body — a correctness trap no assertion in the current suite could
+see.
+
+So the mesh path's accuracy is still open, and the optimiser is now closed from
+four directions rather than three: a hybrid twice, a merit once, and a residual
+bounded without building it. The next idea has to change what is PHOTOGRAPHED,
+not how it is fitted — every remaining lever on the fitting side has been
+measured against the same twelve-row fixture and none of them beat the smooth
+mode's 13.1 mm.
+
+**Changing what is PHOTOGRAPHED dissolves the stalls, and prices the
+tessellation for the first time.** Every measurement in this section until now
+photographed the tessellation and fitted the tessellation, which is the one
+configuration a real capture never has: a visitor's `.glb` APPROXIMATES a real
+body, it does not define it. Filling that cell — photograph the analytic sphere,
+fit a mesh inscribed in it — needs no new code either, the mirror of the scratch
+edit above, and it answers two questions the other three cells could not.
+
+THE 2×2, worst lens position error in mm, sphere rows, three seeds:
+
+| | fit the tessellation | fit the analytic sphere |
+|---|---|---|
+| photograph the tessellation | facet 137.5 / 32.2 / 33.4, smooth 13.1 / **38.3 stalls** / 13.6 | **38.5 stalls** (the curved-residual bound above) |
+| photograph the sphere | **the realistic cell, below** | 17.3 / 15.9 / 8.0, all on `cost` |
+
+THE STALLS ARE AN ARTIFACT OF THE FIXTURE. Eighteen rows in the realistic cell —
+three tessellations, three seeds, both Jacobian modes — converge. Not one
+`lambda` stop, in either mode. Those two stalls are what the hybrid was built
+for twice, what the estimating-equation merit was built for once, and what the
+curved residual was supposed to retire structurally; all three failed to remove
+them, and photographing the body the mesh approximates removes them without
+touching the optimiser. The smooth Jacobian does not stall here because it is no
+longer describing a curve that is absent from the pictures: the curve is what the
+cameras saw. Three remedies were aimed at a symptom of the test rig.
+
+WHAT A TESSELLATION COSTS, which is the deployment question — how finely must a
+visitor unwrap their model? Facet mode, mean over three seeds, against the same
+seeds' analytic floor (17.3 / 15.9 / 8.0, mean 13.7):
+
+| tessellation | facet mean | excess over the floor |
+|---|---|---|
+| 32×64 | 49.1 | 35.3 |
+| 64×128 | 29.2 | 15.5 |
+| 192×384 | 16.5 | 2.7 |
+
+Monotone, and it decays faster than the row spacing does — the excess falls 2.3×
+for the first doubling and 5.7× for the next tripling. That is the shape a
+vanishing model error should have, and it is the opposite of the artificial cell,
+where refining from 64×128 to 192×384 made the smooth mode WORSE (13.1 to 17.7)
+because there the tessellation was not an approximation of anything; it was the
+truth, and a finer truth is not a better one.
+
+WHAT IS NOT ESTABLISHED, and three seeds cannot establish it: whether the smooth
+Jacobian is better than the facet one in this cell. It wins five rows of nine and
+loses four, and its worst row is worse than the facet's worst (97.2 against
+61.5). The means go the wrong way at two tessellations and the right way at one.
+There is no effect here that three seeds separate from seed variance, and the
+honest reading is that the smooth mode's large advantage in the artificial cell
+was substantially an advantage at compensating for the artificial fixture. That
+is a claim this document should not make on nine rows either, which is why the
+next measurement is more seeds in this cell and not a new mode.
+
+ONE CAVEAT ON THE FIXTURE, stated because it bounds the numbers above. The mesh
+is INSCRIBED in the photographed sphere — every vertex lies exactly on it, every
+facet inside it — so its mean radius is systematically small and part of the
+measured cost is a scale bias rather than an irreducible one. A mesh fitted to
+minimise error against the body, rather than to interpolate points on it, would
+carry roughly half the sagitta as a signed error instead of all of it on one
+side. The table above is therefore an UPPER bound on what a given vertex budget
+costs, and a mesh-fitting question — not a solver question — is what would
+tighten it.
 
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the

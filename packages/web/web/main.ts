@@ -43,6 +43,7 @@ import { meshSurface } from '../../sim/src/mesh/surface.ts';
 import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
+import { buildWarpExports, formatWarpMesh } from '../../sim/src/warp.ts';
 import { wrapDeg180 } from '../../sim/src/vec.ts';
 import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
@@ -4082,6 +4083,57 @@ function pickImage(): void {
   input.click();
 }
 
+/**
+ * Hand the browser a text file, created on demand and never inserted into the
+ * DOM — the same shape as `pickImage`, in the other direction.
+ *
+ * The page had no download path before this. The anchor is revoked immediately
+ * after the click: the blob is already committed to the download by then, and
+ * holding the URL would pin the string in memory for the life of the document.
+ */
+function downloadText(name: string, text: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Write one Bourke warp-and-blend mesh per projector, for whatever body is on
+ * screen.
+ *
+ * WHICH RIG, because it is the whole meaning of the file. `displayModel`'s
+ * `content` rig is `world.compositorRig` — the calibration the software
+ * BELIEVES, which before a solve is the config as written and after one is what
+ * the solve recovered. That is the rig an operator would load, and the file is
+ * only as good as the calibration behind it. The `physical` rig is ground truth
+ * the solver never sees; exporting from it would write a perfect file in the
+ * simulator and a file that cannot exist in a real dome.
+ *
+ * One file per projector, because `formatWarpMesh` writes one mesh and the
+ * format has no envelope for several. A browser may ask once to allow multiple
+ * downloads; that is the cost of the format being what it is.
+ *
+ * `buildWarpExport` refuses a model with no UV set — there is no texel to send
+ * anywhere — so this reports rather than throws into the console, in the same
+ * place the worker's errors land.
+ */
+function exportWarpFiles(): void {
+  try {
+    const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
+    const exports = buildWarpExports(displayModel(world).content);
+    for (const exported of exports) {
+      downloadText(`${exported.projectorId}.data`, formatWarpMesh(exported));
+    }
+    lastError = '';
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+  }
+  renderReadout();
+}
+
 function renderTopButtons(): void {
   topBtnsEl.replaceChildren();
 
@@ -4785,6 +4837,19 @@ function renderInspect(): void {
           'collapses it towards straight.',
       }),
     );
+    // The paragraph above ends by saying this correction is the thing the config
+    // file cannot carry. The file that CAN carry it is one click away, here,
+    // beside the picture of it — rather than in the actions row, which is for
+    // verbs that change the room and is already two rows tall on a narrow panel.
+    const save = el('button', {
+      className: 'linkish',
+      textContent: 'save the warp files',
+      title:
+        'One Bourke warp-and-blend mesh per lit projector, for the calibration the software ' +
+        'currently believes.',
+    });
+    save.addEventListener('click', exportWarpFiles);
+    inspectEl.append(save);
   }
 }
 

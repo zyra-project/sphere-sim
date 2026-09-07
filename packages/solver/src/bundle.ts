@@ -527,14 +527,37 @@ export interface BundleOptions {
    * nearly spherical mesh recovers worse than the analytic sphere it
    * approximates (32 to 137 mm against 8 to 17 on the same seeds), and the
    * reading offered there was that every step carries the facet's derivative
-   * rather than the curve's. Measured: with `'smooth'` every near-spherical
-   * 64×128 row that converged improved, all but one of them into the analytic
-   * sphere's own range, and two rows of twelve stopped with the damping at its
-   * cap, because a Jacobian that is not
-   * the residual's derivative hands Levenberg–Marquardt a model of the cost the
-   * cost disagrees with. It trades exactness for smoothness on purpose, and it
-   * ships off; see `mesh.ts`'s `intersectMeshJacobian` for what it does and
-   * does not change.
+   * rather than the curve's. Measured on that fixture: with `'smooth'` every
+   * near-spherical 64×128 row that converged improved, all but one of them into
+   * the analytic sphere's own range, and two rows of twelve stopped with the
+   * damping at its cap.
+   *
+   * TWO LATER CORRECTIONS, because this option's original justification does not
+   * survive them intact and a reader deciding whether to select it needs both.
+   *
+   * The stalls were attributed here to the Jacobian not being the residual's
+   * derivative — a model of the cost that the cost disagrees with. That
+   * attribution is REFUTED. The analytic sphere is the most consistent
+   * residual-Jacobian pair in this repository, a closed-form hit and its
+   * closed-form derivative, and fitted to the same photographs it stalls on the
+   * same seed at the same place: 38.5 mm against this mode's 38.3. What the two
+   * configurations share is not an internal inconsistency but a surface model
+   * that disagrees with the DATA — a smooth body against photographs of chords.
+   *
+   * And the gap this mode was built to close is substantially a property of the
+   * fixture, not of meshes. Every measurement above photographs the tessellation
+   * AND fits it, which is the one configuration a real capture never has: a
+   * visitor's `.glb` approximates a body, it does not define it. Photograph the
+   * body the mesh approximates instead and eighteen rows — three tessellations,
+   * three seeds, both modes — all converge, with no `lambda` stop in either.
+   * There, this mode wins five rows of nine and loses four, and its worst row is
+   * worse than the facet's worst. Nine rows do not settle that, and nothing here
+   * claims it does.
+   *
+   * So it still ships OFF, but for a plainer reason than the one first given: on
+   * an honest fixture it is not measured to beat the default. It trades
+   * exactness for smoothness on purpose; see `mesh.ts`'s `intersectMeshJacobian`
+   * for what it does and does not change.
    */
   meshNormal: MeshNormalMode;
   /**

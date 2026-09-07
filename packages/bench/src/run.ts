@@ -53,7 +53,7 @@ import {
 import { DEFAULT_FREE_FLAGS } from '../../solver/src/bundle.ts';
 // Also past the barrel: the solver's own hierarchy of a mesh, built here so the
 // bundle fits exactly the body the cameras photographed.
-import { buildMeshIndex, type MeshIndex } from '../../solver/src/mesh.ts';
+import { buildMeshIndex, meshSegmenter, type MeshIndex } from '../../solver/src/mesh.ts';
 import type { SimulatedCamera } from './camera.ts';
 import { placeCameras } from './camera.ts';
 import type { CaptureResult } from './capture.ts';
@@ -326,6 +326,22 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
   const { plan, projPxPerCamPx } = planPatternFor(world, scenario, options.preset);
   const tBuild = Date.now();
 
+  // One segmenter, named once, so the reassertion inside `decode` cannot drift
+  // from the thing it reasserts.
+  const geometricSegmentation =
+    options.segmentSphere !== true
+      ? null
+      : world.meshIndex !== null
+        ? meshSegmenter({
+            index: world.meshIndex,
+            projectors: bundleStateFromCalibration(world.solverNominal, []).projectors,
+          })
+        : sphereSegmenter({
+            radiusM: world.solverNominal.sphere.radiusM,
+            projectors: bundleStateFromCalibration(world.solverNominal, []).projectors,
+            marginFrac: options.segmentMarginFrac ?? DEFAULT_SEGMENTATION_MARGIN,
+          });
+
   const capture = captureAndDecode(world.truthRig, world.cameras, {
     plan,
     conditions: {
@@ -337,11 +353,13 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
       clock: scenario.degradation.clock,
       minIncidenceCos: 0.2,
       roomSpill: scenario.degradation.roomSpill,
-      // Both segmenters fit a CIRCLE to the sphere's silhouette and refuse what
-      // falls outside it, which for any other body is every camera:
+      // The IMAGE-space detector fits a CIRCLE to the sphere's silhouette and
+      // refuses what falls outside it, which for any other body is every camera:
       // `packages/web/src/pipeline.ts` measured 3 of 3 cameras refused and zero
       // correspondences decoded with one left on for a mesh. Off for a mesh
-      // whatever the caller asked; the bench itself never asks.
+      // whatever the caller asked; the bench itself never asks. This guard is
+      // independent of the GEOMETRIC one below, which is a ray cast and now has
+      // a mesh implementation.
       segmentImage: options.segmentImage === true && world.surface === null ? {} : null,
     },
     // The body the cameras photograph. Null — the sphere — for every archetype
@@ -352,23 +370,31 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
       pixelStride: 1,
       maxCorrespondences: options.preset.maxCorrespondencesPerPair,
       // Built from the NOMINAL rig — what the operator starts from — and never
-      // from `world.truthRig`, which is two lines above and is ground truth.
-      segmentation: options.segmentSphere === true && world.surface === null
-        ? sphereSegmenter({
-            radiusM: world.solverNominal.sphere.radiusM,
-            projectors: bundleStateFromCalibration(world.solverNominal, []).projectors,
-            marginFrac: options.segmentMarginFrac ?? DEFAULT_SEGMENTATION_MARGIN,
-          })
-        : null,
+      // from `world.truthRig`, which is two lines above and is ground truth. The
+      // body it tests against follows the body in the room: `meshSegmenter` is
+      // the same ray cast as `sphereSegmenter` against `world.meshIndex`, the
+      // hierarchy the bundle itself fits. `segmentMarginFrac` is a sphere
+      // parameter and has no mesh analogue — inflating a mesh is an offset
+      // surface, not a scaled radius — so it is not passed on that branch; see
+      // `meshSegmenter`.
+      segmentation: geometricSegmentation,
       // Last, so a caller can raise the decoder's own rejection thresholds. The
       // bench never does; an experiment that is asking whether a threshold could
       // reject something needs to be able to move it, and moving it by editing
       // `DEFAULT_DECODE_OPTIONS` would move every published number with it.
       ...(options.decode ?? {}),
-      // ...except a segmenter, which a caller's `decode` could otherwise hand a
-      // mesh scenario after the guard above declined to build one. Reasserted
-      // after the spread so the invariant holds whatever the run options say.
-      ...(world.surface === null ? {} : { segmentation: null }),
+      // ...except the segmenter, ON A MESH, which is reasserted to whatever this
+      // function built — including `null`. A caller's own `decode.segmentation`
+      // is a predicate built against some other body, and handing one to a mesh
+      // scenario is the failure the guard exists to prevent. The sphere keeps
+      // the old freedom: docs/EXPERIMENT-4.md sweeps a caller's segmenter there,
+      // so the spread above is allowed to win.
+      //
+      // This line USED to read `world.surface === null || options.segmentSphere
+      // === true ? {} : ...`, which let a caller's predicate through on a mesh
+      // in exactly the case the reassertion exists for — reopened by the
+      // condition meant to narrow it.
+      ...(world.surface === null ? {} : { segmentation: geometricSegmentation }),
     },
     // One frame kept as an artifact: the fourth Gray plane of the u axis, which
     // is coarse enough to read as a pattern in a thumbnail and fine enough to

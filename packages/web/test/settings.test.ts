@@ -530,3 +530,66 @@ test('clearing the hand adjustments does not switch a projector back on', () => 
   assert.equal(cleared.nudge[2].on, false, 'and the projector should still be switched off');
   for (const i of [0, 1, 3]) assert.equal(cleared.nudge[i].on, true);
 });
+
+test('the warp export ships the calibration the software believes, never ground truth', () => {
+  // The one decision in this button that can be silently wrong, and it is
+  // invisible on screen either way: `displayModel` returns BOTH rigs, and they
+  // differ only in a simulator. `content` is `world.compositorRig` — the config
+  // as written before a solve, what the solve recovered after one — and it is
+  // what an operator would load. `physical` is `world.truthRig`, ground truth the
+  // solver never sees. Exporting from `physical` would write a flawless warp file
+  // here and a file that cannot exist in a real dome, and every test that only
+  // checked the file PARSED would still pass.
+  //
+  // The scan is over the source because there is no DOM here.
+  const fn = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function exportWarpFiles(): void {'),
+    MAIN_SOURCE.indexOf('function renderTopButtons(): void {'),
+  );
+  assert.ok(fn.length > 0, 'the warp exporter has moved; this test can no longer find it');
+  assert.ok(
+    /displayModel\(world\)\.content/.test(fn),
+    'the warp export does not build from the compositor rig',
+  );
+  assert.ok(
+    !/\.physical/.test(fn),
+    'the warp export reaches for the truth rig, which is ground truth the solver never sees',
+  );
+  // And it is reachable: a handler nothing calls is a button that does nothing.
+  // It lives in the projector card's warp-mesh tab, beside the drawing of the
+  // correction it writes out — NOT in the actions row, which is sized to the
+  // narrow panel and whose height is subtracted from the scrolling controls
+  // above it. A sixth button there wrapped the row to three lines, took 41 px
+  // from `#controls`, and pushed the last slider out of its own clip; the
+  // drag check in `tools/smoke-app.ts` caught it.
+  assert.ok(
+    /save\.addEventListener\('click', exportWarpFiles\)/.test(MAIN_SOURCE),
+    'the warp export is not wired to a button',
+  );
+  const actions = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function renderActions(): void {'),
+    MAIN_SOURCE.indexOf('// The inspect card: one projector, three ways'),
+  );
+  assert.ok(actions.length > 0, 'renderActions has moved; this test can no longer find it');
+  assert.ok(
+    !/exportWarpFiles/.test(actions),
+    'the warp export is back in the actions row, which its height cannot afford',
+  );
+});
+
+test('the page hands a file to the browser without leaving anything in the DOM', () => {
+  // `downloadText` is the page's only download path and the mirror of
+  // `pickImage`, which is the page's only upload path: both create an element,
+  // use it, and never insert it. An anchor left in the document would survive
+  // the next `replaceChildren` and accumulate one dead node per export.
+  const fn = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function downloadText(name: string, text: string): void {'),
+    MAIN_SOURCE.indexOf('function exportWarpFiles(): void {'),
+  );
+  assert.ok(fn.length > 0, 'the download helper has moved; this test can no longer find it');
+  assert.ok(!/append|insertBefore|body\./.test(fn), 'the download anchor is inserted into the page');
+  assert.ok(
+    /URL\.revokeObjectURL/.test(fn),
+    'the object URL is never revoked, so every export pins its blob for the life of the document',
+  );
+});
