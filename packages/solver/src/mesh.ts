@@ -679,7 +679,7 @@ export function boundingRadiusM(index: MeshIndex): number {
  * derivative's singular set moves from "ray in the facet's plane" to "ray in
  * the interpolated tangent plane", which a ray can reach at ordinary incidence
  * on either panel; the only guard is the 1e-12 clamp on the denominator. The
- * fixtures the measurement used are closed ellipsoids with no crease, and so are
+ * fixtures the measurement used are closed ellipsoids with no creases, and so are
  * all 540 solves of the two seed sweeps in `BundleOptions.meshNormal`'s docblock.
  * Falling back to the facet normal where the interpolated incidence collapses
  * relative to the facet's would be the obvious guard. It is now the thing

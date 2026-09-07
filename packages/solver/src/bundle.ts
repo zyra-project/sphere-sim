@@ -560,8 +560,8 @@ export interface BundleOptions {
    * and not the other.
    *
    * It buys ROTATION. Paired by seed across 180 pairs the worst projector's
-   * rotation error falls from 0.591° to 0.416° at 32x64, 0.375° to 0.079° at
-   * 64x128 and 0.094° to 0.060° at 192x384 — 162 wins to 18, a geometric mean
+   * rotation error falls from 0.591° to 0.416° at 32×64, 0.375° to 0.079° at
+   * 64×128 and 0.094° to 0.060° at 192×384 — 162 wins to 18, a geometric mean
    * ratio of 0.474, and against §7's 0.05° gate 33 paired rows flip to passing
    * where 3 flip the other way. It is also cheaper: 26.5 fewer iterations on 156
    * of 180 pairs. It does NOT buy POSITION: 7.1 mm better on average, which a

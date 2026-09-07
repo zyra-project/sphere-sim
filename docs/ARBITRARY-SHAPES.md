@@ -1519,9 +1519,9 @@ POSITION error. On that endpoint the answer is clean and it is DELETE: pooled ov
 permutation test at p=0.28 — no effect the design separates from seed variance.
 
 But this repository gates TWO recovery quantities, not one. `PARAMETERS.md` §7 sets
-2.0 mm on position and 0.05° on ROTATION, `experiment1/results.ts` carries both as
-tracked fields, and `pipeline.ts` reads both off the same `recovery.aligned`
-object. The registration adjudicated half of a two-gate criterion. Worse, it
+2.0 mm on position and 0.05° on ROTATION, `packages/experiments/src/experiment1/results.ts`
+carries both as tracked fields, and `packages/web/src/pipeline.ts` reads both off
+the same `recovery.aligned` object. The registration adjudicated half of a two-gate criterion. Worse, it
 adjudicated the half with no resolving power at this operating point: the analytic
 floor itself passes the 2 mm position gate 0 times in 60, and the best of all 540
 rows is 8.0 mm, four times outside it. No position result this sweep could have
@@ -1573,11 +1573,11 @@ stalls anywhere in 540 solves are on the midsurface mesh below.)
 Second, the tessellation price table was built on three seeds and is not what 60
 seeds say. Facet, paired against each seed's OWN analytic floor rather than a mean:
 
-| tessellation | published (3 seeds) | measured (60 seeds) | rotation excess |
+| tessellation | position, published (3 seeds) | position, measured (60 seeds) | rotation excess (deg) |
 |---|---|---|---|
-| 32×64 | +35.3 mm | +51.3 mm | +0.523° |
-| 64×128 | +15.5 mm | +22.7 mm | +0.306° |
-| 192×384 | +2.7 mm | +0.3 mm | +0.026° |
+| 32×64 | +35.3 mm | +51.3 mm | +0.523 |
+| 64×128 | +15.5 mm | +22.7 mm | +0.306 |
+| 192×384 | +2.7 mm | +0.3 mm | +0.026 |
 
 The floor moved too: 33.4 mm across 60 seeds, not the 13.7 mm three seeds gave. The
 shape of the claim survives — monotone, decaying faster than the row spacing — but
