@@ -671,6 +671,7 @@ export function boundingRadiusM(index: MeshIndex): number {
  * carries the facet's derivative rather than the curve's. It makes the Jacobian
  * describe a surface the residual is not on, trading exactness for smoothness
  * on purpose; `BundleOptions.meshNormal` selects it and defaults to `'facet'`.
+ * That docblock carries what 540 solves later measured it to buy and to cost.
  *
  * It also presumes a body WITHOUT creases. Where two panels share vertices
  * across a fold — or a file carries normals smoothed across one — the
@@ -678,10 +679,14 @@ export function boundingRadiusM(index: MeshIndex): number {
  * derivative's singular set moves from "ray in the facet's plane" to "ray in
  * the interpolated tangent plane", which a ray can reach at ordinary incidence
  * on either panel; the only guard is the 1e-12 clamp on the denominator. The
- * fixtures the measurement used are closed ellipsoids with no crease. Were this
- * mode ever to ship, falling back to the facet normal where the interpolated
- * incidence collapses relative to the facet's would be the obvious guard, and
- * it has not been built because nothing has been measured with it.
+ * fixtures the measurement used are closed ellipsoids with no crease, and so are
+ * all 540 solves of the two seed sweeps in `BundleOptions.meshNormal`'s docblock.
+ * Falling back to the facet normal where the interpolated incidence collapses
+ * relative to the facet's would be the obvious guard. It is now the thing
+ * standing between this mode and being selectable: the sweeps measured it to
+ * halve the worst projector's rotation error on a crease-free body, which is a
+ * reason to build the guard rather than the reason it was once absent — that
+ * nothing had been measured with the mode at all.
  */
 export type MeshNormalMode = 'facet' | 'smooth';
 

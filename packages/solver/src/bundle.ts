@@ -554,10 +554,34 @@ export interface BundleOptions {
    * worse than the facet's worst. Nine rows do not settle that, and nothing here
    * claims it does.
    *
-   * So it still ships OFF, but for a plainer reason than the one first given: on
-   * an honest fixture it is not measured to beat the default. It trades
-   * exactness for smoothness on purpose; see `mesh.ts`'s `intersectMeshJacobian`
-   * for what it does and does not change.
+   * SIXTY SEEDS SETTLE IT, and the answer is a regime rather than a verdict. 540
+   * solves in that cell — two registered sweeps, the second on seeds the first
+   * never touched — say this mode buys one of §7's two gated recovery quantities
+   * and not the other.
+   *
+   * It buys ROTATION. Paired by seed across 180 pairs the worst projector's
+   * rotation error falls from 0.591° to 0.416° at 32x64, 0.375° to 0.079° at
+   * 64x128 and 0.094° to 0.060° at 192x384 — 162 wins to 18, a geometric mean
+   * ratio of 0.474, and against §7's 0.05° gate 33 paired rows flip to passing
+   * where 3 flip the other way. It is also cheaper: 26.5 fewer iterations on 156
+   * of 180 pairs. It does NOT buy POSITION: 7.1 mm better on average, which a
+   * permutation test does not separate from seed variance (p=0.28), at an
+   * operating point where the analytic floor itself fails §7's 2 mm gate on all
+   * sixty seeds.
+   *
+   * And it costs stalls, which is why "off" is still the right default and not
+   * merely the cautious one: 16 of those 180 pairs stop with the damping at its
+   * cap in this mode and 0 do in `'facet'`.
+   *
+   * SELECTING IT NEEDS ONE MORE THING BUILT. Every fixture in all 540 solves is a
+   * closed, crease-free ellipsoid, and `mesh.ts`'s {@link MeshNormalMode} records
+   * that across a fold the interpolated normal moves the derivative's singular set
+   * somewhere a ray reaches at ordinary incidence, with a 1e-12 clamp the only
+   * guard. A visitor's `.glb` is that creased body. The rotation result is a
+   * reason to build the facet fallback described there, not a reason to skip it.
+   *
+   * It trades exactness for smoothness on purpose; see `mesh.ts`'s
+   * `intersectMeshJacobian` for what it does and does not change.
    */
   meshNormal: MeshNormalMode;
   /**

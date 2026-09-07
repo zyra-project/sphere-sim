@@ -1447,8 +1447,10 @@ THE 2×2, worst lens position error in mm, sphere rows, three seeds:
 | photograph the tessellation | facet 137.5 / 32.2 / 33.4, smooth 13.1 / **38.3 stalls** / 13.6 | **38.5 stalls** (the curved-residual bound above) |
 | photograph the sphere | **the realistic cell, below** | 17.3 / 15.9 / 8.0, all on `cost` |
 
-THE STALLS ARE AN ARTIFACT OF THE FIXTURE. Eighteen rows in the realistic cell —
-three tessellations, three seeds, both Jacobian modes — converge. Not one
+THE STALLS ARE AN ARTIFACT OF THE FIXTURE. (PARTLY SUPERSEDED — 540 solves
+below find 22 `lambda` stops where these eighteen rows found none. The direction
+of this paragraph holds; "not one" does not.) Eighteen rows in the realistic
+cell — three tessellations, three seeds, both Jacobian modes — converge. Not one
 `lambda` stop, in either mode. Those two stalls are what the hybrid was built
 for twice, what the estimating-equation merit was built for once, and what the
 curved residual was supposed to retire structurally; all three failed to remove
@@ -1458,8 +1460,10 @@ longer describing a curve that is absent from the pictures: the curve is what th
 cameras saw. Three remedies were aimed at a symptom of the test rig.
 
 WHAT A TESSELLATION COSTS, which is the deployment question — how finely must a
-visitor unwrap their model? Facet mode, mean over three seeds, against the same
-seeds' analytic floor (17.3 / 15.9 / 8.0, mean 13.7):
+visitor unwrap their model? (SUPERSEDED by the sixty-seed table below; three
+seeds put the floor at 13.7 mm where sixty put it at 33.4, and these excesses
+move accordingly.) Facet mode, mean over three seeds, against the same seeds'
+analytic floor (17.3 / 15.9 / 8.0, mean 13.7):
 
 | tessellation | facet mean | excess over the floor |
 |---|---|---|
@@ -1475,7 +1479,10 @@ because there the tessellation was not an approximation of anything; it was the
 truth, and a finer truth is not a better one.
 
 WHAT IS NOT ESTABLISHED, and three seeds cannot establish it: whether the smooth
-Jacobian is better than the facet one in this cell. It wins five rows of nine and
+Jacobian is better than the facet one in this cell. (SETTLED BELOW, on sixty
+seeds, and not on this metric: on POSITION it is still not established, and on
+ROTATION — which §7 gates too, and which nothing above measured — smooth wins
+162 paired rows of 180.) It wins five rows of nine and
 loses four, and its worst row is worse than the facet's worst (97.2 against
 61.5). The means go the wrong way at two tessellations and the right way at one.
 There is no effect here that three seeds separate from seed variance, and the
@@ -1484,8 +1491,9 @@ was substantially an advantage at compensating for the artificial fixture. That
 is a claim this document should not make on nine rows either, which is why the
 next measurement is more seeds in this cell and not a new mode.
 
-ONE CAVEAT ON THE FIXTURE, stated because it bounds the numbers above. The mesh
-is INSCRIBED in the photographed sphere — every vertex lies exactly on it, every
+ONE CAVEAT ON THE FIXTURE, stated because it bounds the numbers above. (REFUTED
+below: a midsurface mesh built to remove exactly this bias solved WORSE at 32×64
+and identically at 64×128.) The mesh is INSCRIBED in the photographed sphere — every vertex lies exactly on it, every
 facet inside it — so its mean radius is systematically small and part of the
 measured cost is a scale bias rather than an irreducible one. A mesh fitted to
 minimise error against the body, rather than to interpolate points on it, would
@@ -1493,6 +1501,114 @@ carry roughly half the sagitta as a signed error instead of all of it on one
 side. The table above is therefore an UPPER bound on what a given vertex budget
 costs, and a mesh-fitting question — not a solver question — is what would
 tighten it.
+
+**More seeds settled it, and reversed the answer: `meshNormal: 'smooth'` is
+NOT deleted, because the nine-row measurement was reading the wrong metric.**
+The entry above asked for more seeds in this cell, and framed the outcome as a
+deletion decision under the rung-1b precedent: an option nobody selects, built to
+close a gap that turned out to be the fixture's, should not survive on the absence
+of a reason to remove it. Two sweeps ran — 330 solves on seeds 1-30, then 210 on
+seeds 31-60, 540 in total, 60 paired seeds against three tessellations in the
+realistic cell. Seeds 1-3 reproduce the published facet means 49.1 / 29.2 / 16.5
+exactly, so this extends the nine rows rather than replacing them.
+
+THE DECISION RULE WAS REGISTERED BEFORE EITHER SWEEP RAN, and the first
+registration was wrong in a way worth recording. It named ONE endpoint, worst-lens
+POSITION error. On that endpoint the answer is clean and it is DELETE: pooled over
+180 pairs, smooth is 7.1 mm better on average with a sign test at p=5.7e-3 and a
+permutation test at p=0.28 — no effect the design separates from seed variance.
+
+But this repository gates TWO recovery quantities, not one. `PARAMETERS.md` §7 sets
+2.0 mm on position and 0.05° on ROTATION, `experiment1/results.ts` carries both as
+tracked fields, and `pipeline.ts` reads both off the same `recovery.aligned`
+object. The registration adjudicated half of a two-gate criterion. Worse, it
+adjudicated the half with no resolving power at this operating point: the analytic
+floor itself passes the 2 mm position gate 0 times in 60, and the best of all 540
+rows is 8.0 mm, four times outside it. No position result this sweep could have
+produced would have moved a single pass or fail.
+
+ON ROTATION THE EFFECT IS THE LARGEST IN THIS DOCUMENT. Paired by seed, 180 pairs:
+
+| tessellation | facet | smooth | smooth wins | sign test |
+|---|---|---|---|---|
+| 32×64 | 0.591° | 0.416° | 54-6 | 9.7e-11 |
+| 64×128 | 0.375° | 0.079° | 55-5 | 1.0e-11 |
+| 192×384 | 0.094° | 0.060° | 53-7 | 7.7e-10 |
+| **pooled** | | | **162-18** | **3.7e-30** |
+
+A geometric mean ratio of 0.474 — smooth more than halves the worst projector's
+rotation error — and it moves the gate: against 0.05°, facet passes 9 of 180 and
+smooth 39, with 33 paired rows flipping to passing and 3 the other way (p=2.3e-7).
+It is also CHEAPER, which a mode trading exactness for smoothness had no right to
+be: 26.5 fewer iterations on 156 of 180 pairs and 12.4 fewer seconds on 135.
+
+THE ROTATION FINDING WAS POST HOC, so it was re-registered and re-run rather than
+written down. Sweep 2's registration named rotation as primary on untouched seeds
+31-60, with a direction, predicted per-tessellation magnitudes, and a falsification
+condition, all before a solve existed. The direction replicated overwhelmingly:
+79-11, sign test 7.8e-14, every tessellation favouring smooth. The registered
+EFFECT-SIZE check FAILED at two tessellations of three — predicted -0.25° and
+-0.11° at 32×64 and 64×128, measured -0.10° and -0.48°. That failure is the
+registration's, not the effect's: it predicted absolute degrees, and seeds 31-60
+are simply a harder block, with facet's own rotation error running 0.77° at 32×64
+where seeds 1-30 gave 0.41°. A ratio prediction would have held. The honest
+statement is that the direction and the gate consequence are confirmed on fresh
+seeds and the magnitude is not predictable across seed blocks in absolute terms.
+
+AND THE MODE HAS A MEASURED PRICE, which the nine rows were too few to see and
+which one sweep alone understated. `lambda` stalls are not symmetric: across 180
+paired seeds, 16 pairs stall in smooth and 0 in facet (p=3.1e-5). Sweep 1 alone put
+this at 5-0, p=0.0625, and this document should have said "not established" rather
+than the two things it did say.
+
+SO THE RECORD CORRECTS ITSELF ON FOUR COUNTS, three of them independent of the
+decision.
+
+First, "eighteen rows converge, not one `lambda` stop" does not survive 540 solves:
+there are 22. The true claim is weaker and still worth having — photographing the
+body the mesh approximates drops the stall rate from 2 in 12 to 16 in the 360 mesh
+solves of that same fixture, and all 16 are in the smooth mode. (The only two facet
+stalls anywhere in 540 solves are on the midsurface mesh below.)
+
+Second, the tessellation price table was built on three seeds and is not what 60
+seeds say. Facet, paired against each seed's OWN analytic floor rather than a mean:
+
+| tessellation | published (3 seeds) | measured (60 seeds) | rotation excess |
+|---|---|---|---|
+| 32×64 | +35.3 mm | +51.3 mm | +0.523° |
+| 64×128 | +15.5 mm | +22.7 mm | +0.306° |
+| 192×384 | +2.7 mm | +0.3 mm | +0.026° |
+
+The floor moved too: 33.4 mm across 60 seeds, not the 13.7 mm three seeds gave. The
+shape of the claim survives — monotone, decaying faster than the row spacing — but
+at 192×384 a tessellation now costs essentially nothing in position, and the three-
+seed numbers were not a sample anyone should have quoted to a decimal.
+
+Third, the caveat that the inscribed mesh makes those an UPPER bound is REFUTED,
+and it was my own caveat. A midsurface mesh was built to test it — uniformly scaled
+to minimise RMS radial deviation, lifting the surface 0.876 mm at 32×64 and
+0.218 mm at 64×128, that second number independently reproducing the chord
+deviation measured for the curved-residual bound. Removing the scale bias made the
+solve WORSE at 32×64 (+4.23 mm paired, p=1e-4) and did nothing at 64×128 (-0.14 mm,
+p=0.53). Whatever a tessellation costs, a systematically small radius is not the
+mechanism, and a better-fitted mesh is not the cheap win the caveat implied.
+
+Fourth, and this is the decision: **the mode stays, still OFF by default, and its
+justification is now a measured one rather than an absent one.** It buys rotation
+accuracy — more than half the worst projector's error, at every tessellation, on
+sixty seeds, confirmed on thirty it had never seen — and it buys iterations and
+seconds. It does not buy position accuracy. It costs stalls. That is a mode with a
+regime, which is a thing a reader can select on purpose; it is not the rung-1b case
+of a mechanism that fires and moves nothing.
+
+WHAT WOULD STILL HAVE TO BE TRUE BEFORE IT SHIPS ON, none of which this measures.
+Every fixture in all 540 solves is a closed, crease-free ellipsoid. `mesh.ts` records
+that the interpolated normal's singular set moves to "ray in the interpolated
+tangent plane" across a fold, reachable at ordinary incidence, with only a 1e-12
+clamp between it and a divide — and that the facet fallback which would guard it has
+never been built. A visitor's `.glb` is exactly the creased body that hazard is
+about. Nothing here bears on it, and the rotation result is a reason to build that
+guard rather than a reason to skip it.
 
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the
