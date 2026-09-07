@@ -100,6 +100,83 @@ function boxMesh(h = 1): SurfaceMesh {
   return meshOf(positions, indices, 'box');
 }
 
+/**
+ * Two panels meeting at a ridge whose vertices they SHARE, the thing no other
+ * fixture in this repository is.
+ *
+ * `boxMesh` gives every face its own four vertices, so its 90-degree edges are
+ * creases in the geometry and not in the vertex normals — each corner normal is
+ * its own face's, and the interpolated normal never bisects anything. That is
+ * why the whole suite, and all 540 solves of the two seed sweeps, could run the
+ * smooth-normal mode without ever meeting the hazard its docblock describes.
+ * Here vertices 0 and 1 belong to both panels, so their derived normals are the
+ * area-weighted bisector of two facet normals `dihedralDeg` apart, and a ray can
+ * be perpendicular to that bisector while sitting at a perfectly healthy angle
+ * to the panel it actually hit.
+ *
+ * Wound so both panels face +Z-ish, toward a camera on that side.
+ */
+function foldMesh(dihedralDeg: number, halfSpan = 1): SurfaceMesh {
+  const h = (dihedralDeg * Math.PI) / 360;
+  const c = Math.cos(h);
+  const sn = Math.sin(h);
+  const positions = [
+    -halfSpan, 0, 0, halfSpan, 0, 0, // 0, 1 — the shared ridge
+    -halfSpan, -sn, -c, halfSpan, -sn, -c, // 2, 3 — panel A, folded away in -Y
+    -halfSpan, sn, -c, halfSpan, sn, -c, // 4, 5 — panel B, folded away in +Y
+  ];
+  const indices = [0, 2, 3, 0, 3, 1, 0, 1, 5, 0, 5, 4];
+  return meshOf(positions, indices, `fold-${dihedralDeg}`);
+}
+
+/**
+ * The interpolated vertex normal, formed HERE rather than imported.
+ *
+ * `smoothNormalAt` is private to `mesh.ts` and the tests below need the quantity
+ * its guard keys on. Rebuilding it is the same choice `bruteHit` makes about
+ * ray-triangle: two formulations that agree are unlikely to share a mistake, and
+ * a test that imported the thing under test could not catch it changing.
+ */
+const testVertexNormals = new WeakMap<SurfaceMesh, Float64Array>();
+function interpolatedNormal(mesh: SurfaceMesh, triangle: number, point: { x: number; y: number; z: number }) {
+  const vn = testVertexNormals.get(mesh) ?? derivedVertexNormals(mesh);
+  testVertexNormals.set(mesh, vn);
+  const [ia, ib, ic] = [0, 1, 2].map((k) => 3 * mesh.indices[3 * triangle + k]);
+  const a = [0, 1, 2].map((k) => mesh.positions[ia + k]);
+  const v0 = [0, 1, 2].map((k) => mesh.positions[ib + k] - a[k]);
+  const v1 = [0, 1, 2].map((k) => mesh.positions[ic + k] - a[k]);
+  const v2 = [point.x - a[0], point.y - a[1], point.z - a[2]];
+  const dot = (u: number[], w: number[]): number => u[0] * w[0] + u[1] * w[1] + u[2] * w[2];
+  const den = dot(v0, v0) * dot(v1, v1) - dot(v0, v1) ** 2;
+  const wb = (dot(v1, v1) * dot(v2, v0) - dot(v0, v1) * dot(v2, v1)) / den;
+  const wc = (dot(v0, v0) * dot(v2, v1) - dot(v0, v1) * dot(v2, v0)) / den;
+  const wa = 1 - wb - wc;
+  const n = [0, 1, 2].map((k) => wa * vn[ia + k] + wb * vn[ib + k] + wc * vn[ic + k]);
+  const L = Math.hypot(n[0], n[1], n[2]);
+  return { x: n[0] / L, y: n[1] / L, z: n[2] / L };
+}
+
+/** The area-weighted derived normals, built once per mesh and cached. */
+function derivedVertexNormals(mesh: SurfaceMesh): Float64Array {
+  const vn = new Float64Array(3 * mesh.vertexCount);
+  for (let t = 0; t < mesh.triangleCount; t++) {
+    const [ia, ib, ic] = [0, 1, 2].map((k) => 3 * mesh.indices[3 * t + k]);
+    const e1 = [0, 1, 2].map((k) => mesh.positions[ib + k] - mesh.positions[ia + k]);
+    const e2 = [0, 1, 2].map((k) => mesh.positions[ic + k] - mesh.positions[ia + k]);
+    const cr = [
+      e1[1] * e2[2] - e1[2] * e2[1],
+      e1[2] * e2[0] - e1[0] * e2[2],
+      e1[0] * e2[1] - e1[1] * e2[0],
+    ];
+    for (const i of [ia, ib, ic]) for (const k of [0, 1, 2]) vn[i + k] += cr[k];
+  }
+  for (let v = 0; v < mesh.vertexCount; v++) {
+    const L = Math.hypot(vn[3 * v], vn[3 * v + 1], vn[3 * v + 2]);
+    if (L > 0) for (const k of [0, 1, 2]) vn[3 * v + k] /= L;
+  }
+  return vn;
+}
+
 /** A UV sphere. Enough triangles that the hierarchy has real work to do. */
 function uvSphereMesh(nLat: number, nLon: number, r = 1): SurfaceMesh {
   const positions: number[] = [];
@@ -937,4 +1014,259 @@ test('the smooth derivative does NOT match central differences of the facet hit 
     worst = Math.max(worst, Math.abs(fd - an) / Math.max(1, Math.abs(fd)));
   }
   assert.ok(worst > 1e-3, `the smooth mode matched the facet's central difference to ${worst.toExponential(2)}`);
+});
+
+test('a shared ridge empties the interpolated incidence at healthy facet incidence, and the guard catches it', () => {
+  // The hazard `MeshNormalMode` describes, produced rather than argued. On a
+  // 90-degree fold the two panel normals are 90 degrees apart, so the ridge
+  // vertices carry their bisector — here exactly +Z — and a ray travelling
+  // perpendicular to +Z meets the interpolated tangent plane edge-on while
+  // sitting at 45 degrees to the panel it actually hit. The decode keeps that
+  // correspondence: PARAMETERS.md §4.3 drops below cos(incidence) 0.2 and this
+  // is nowhere near it.
+  const mesh = foldMesh(90);
+  const index = buildMeshIndex(mesh);
+  // Looking along -Y from outside, so the rays run nearly perpendicular to the
+  // ridge's bisector.
+  const cam = testCamera({
+    position: { x: 0, y: 3, z: 0 },
+    yawDeg: -90,
+    pitchDeg: 0,
+    rollDeg: 0,
+  });
+
+  // Search rather than assume: take the ray whose interpolated incidence has
+  // collapsed furthest while the FACET incidence is still one the decode keeps.
+  let worst = { ratio: Infinity, nx: 0, ny: 0, facetCos: 0, smoothCos: 0 };
+  for (let a = 0; a < 240; a++) {
+    for (let b = 0; b < 240; b++) {
+      const nx = ((a + 0.5) / 240 - 0.5) * 0.5;
+      const ny = ((b + 0.5) / 240 - 0.5) * 0.5;
+      const j = intersectMeshJacobian(index, cam, nx, ny);
+      if (!j.hit.hit) continue;
+      const facetCos = Math.abs(j.hit.cosIncidence);
+      if (facetCos < 0.2) continue;
+      const p = j.hit.point;
+      const d = { x: p.x - cam.position.x, y: p.y - cam.position.y, z: p.z - cam.position.z };
+      const L = Math.hypot(d.x, d.y, d.z);
+      const ns = interpolatedNormal(mesh, j.hit.triangle, p);
+      const smoothCos = Math.abs((ns.x * d.x + ns.y * d.y + ns.z * d.z) / L);
+      const ratio = smoothCos / facetCos;
+      if (ratio < worst.ratio) worst = { ratio, nx, ny, facetCos, smoothCos };
+    }
+  }
+
+  // The hazard is real. The true infimum here is ZERO — there is an exact ray
+  // perpendicular to the ridge's bisector — so how close the search gets is set
+  // by the grid, not by the geometry, and the assertion is on the phenomenon
+  // rather than on the sampled minimum. Two orders of collapse at a facet
+  // incidence the decode keeps is already the whole problem.
+  assert.ok(
+    worst.facetCos > 0.5,
+    `the worst ray sits at facet cos ${worst.facetCos} — that is grazing, not the crease case`,
+  );
+  assert.ok(
+    worst.ratio < 0.05,
+    `the interpolated incidence only fell to ${worst.ratio} of the facet's — the fixture is not folding`,
+  );
+
+  // And the guard turned that ray into the facet's derivative, exactly.
+  const facet = intersectMeshJacobian(index, cam, worst.nx, worst.ny);
+  const smooth = SMOOTH(index, cam, worst.nx, worst.ny);
+  assert.deepEqual(
+    Array.from(smooth.dPoint),
+    Array.from(facet.dPoint),
+    'the guard did not fall back on the worst crease ray',
+  );
+
+  // What it averted, in the units the bundle sees. Unguarded, the denominator is
+  // `smoothCos` instead of `facetCos`, and every translation column is
+  // proportional to 1/denominator, so the row would have been this much larger.
+  const blowup = worst.facetCos / worst.smoothCos;
+  assert.ok(
+    blowup > 20,
+    `the averted blow-up is only ${blowup.toFixed(1)}x — not worth a guard`,
+  );
+  // On a fold the facet derivative is not an approximation of anything: the
+  // surface really is two planes, so the fallback is the EXACT derivative there.
+  // A central difference confirms it, taken small enough to stay on one panel.
+  const h = 1e-7;
+  for (let i = 0; i < 3; i++) {
+    const bump = (sign: number): CameraModel => {
+      const p = { ...cam.position };
+      if (i === 0) p.x += sign * h;
+      else if (i === 1) p.y += sign * h;
+      else p.z += sign * h;
+      return { ...cam, position: p };
+    };
+    const plus = intersectMeshJacobian(index, bump(1), worst.nx, worst.ny);
+    const minus = intersectMeshJacobian(index, bump(-1), worst.nx, worst.ny);
+    if (!plus.hit.hit || !minus.hit.hit) continue;
+    if (plus.hit.triangle !== minus.hit.triangle) continue;
+    for (const [r, key] of [[0, 'x'], [1, 'y'], [2, 'z']] as const) {
+      const fd = (plus.hit.point[key] - minus.hit.point[key]) / (2 * h);
+      assert.ok(
+        Math.abs(fd - smooth.dPoint[r * CAM_PARAM_COUNT + i]) < 1e-5,
+        `guarded column ${i} row ${r}: analytic ${smooth.dPoint[r * CAM_PARAM_COUNT + i]} against central difference ${fd}`,
+      );
+    }
+  }
+});
+
+test('on the geometry a solve CONVERGES to, the guard is inert — which is not the same as inert during the solve', () => {
+  // Read what this measures, because an earlier version of it was titled "the
+  // guard does not fire on the bodies the two seed sweeps measured" and that
+  // inference is FALSE. It is recorded here because the false version was
+  // convincing.
+  //
+  // Rays sampled at the nominal geometry, on the sweeps' own bodies, never take
+  // the interpolated incidence below the floor: the numbers below bottom out
+  // around 0.72 at 32x64 and rise with refinement. It does not follow that the
+  // guard is inert in a SOLVE. The bundle evaluates this Jacobian at every
+  // iterate, where the poses are still wrong — that is what it is solving for —
+  // and those rays strike the body at angles this sampling never visits. Re-run
+  // with the guard in place, ten of ten facet rows of the published sweep come
+  // back bit-identical and ten of ten SMOOTH rows move. The guard fires in
+  // anger, and what it does to the published result is a measurement, recorded
+  // in `BundleOptions.meshNormal`, not something this test can stand in for.
+  //
+  // What it is still worth pinning: the floor sits below the whole converged
+  // ray distribution of these bodies, so nothing here fires for want of
+  // resolution alone, and a future change that drags that distribution under
+  // the floor is a different regime and should have to say so.
+  for (const nLat of [32, 64, 192]) {
+    const mesh = uvSphereMesh(nLat, nLat * 2, 0.8636);
+    const index = buildMeshIndex(mesh);
+    let min = Infinity;
+    let kept = 0;
+    for (let ci = 0; ci < 6; ci++) {
+      const t = Math.acos(1 - (2 * (ci + 0.5)) / 6);
+      const p = ci * 2.399963;
+      const dist = 2.6;
+      const pos = {
+        x: dist * Math.sin(t) * Math.cos(p),
+        y: dist * Math.sin(t) * Math.sin(p),
+        z: dist * Math.cos(t),
+      };
+      const cam = testCamera({
+        position: pos,
+        yawDeg: (Math.atan2(-pos.y, -pos.x) * 180) / Math.PI,
+        pitchDeg: (Math.asin(-pos.z / dist) * 180) / Math.PI,
+        rollDeg: 17 * ci,
+      });
+      for (let a = 0; a < 60; a++) {
+        for (let b = 0; b < 60; b++) {
+          const nx = ((a + 0.5) / 60 - 0.5) * 0.7;
+          const ny = ((b + 0.5) / 60 - 0.5) * 0.7;
+          const j = intersectMeshJacobian(index, cam, nx, ny);
+          if (!j.hit.hit) continue;
+          const facetCos = Math.abs(j.hit.cosIncidence);
+          if (facetCos < 0.2) continue;
+          kept++;
+          const pt = j.hit.point;
+          const d = { x: pt.x - cam.position.x, y: pt.y - cam.position.y, z: pt.z - cam.position.z };
+          const L = Math.hypot(d.x, d.y, d.z);
+          const ns = interpolatedNormal(mesh, j.hit.triangle, pt);
+          min = Math.min(min, Math.abs((ns.x * d.x + ns.y * d.y + ns.z * d.z) / L) / facetCos);
+        }
+      }
+    }
+    assert.ok(kept > 3000, `only ${kept} usable rays at ${nLat}x${nLat * 2}`);
+    // 0.7 is the floor. The coarsest of the three bottoms out around 0.72, so
+    // the margin is 3% and not large — at a COARSER tessellation than 32x64 the
+    // converged distribution itself crosses the floor.
+    assert.ok(
+      min > 0.7,
+      `at ${nLat}x${nLat * 2} the converged interpolated incidence fell to ${min.toFixed(4)} of the ` +
+        "facet's, so this body's ray distribution now straddles the floor",
+    );
+  }
+});
+
+test('below the floor the facet derivative is the closer one, which is why the floor is there', () => {
+  // The justification for 0.7 rather than any other number, at test scale. On a
+  // tessellated sphere `sphere.ts` supplies the exact derivative of the surface
+  // both modes approximate, so "which one is closer" is measurable. Rays are
+  // split at the floor by the ratio the guard keys on, and the two sides must
+  // fall on opposite sides of the comparison — otherwise the floor is in the
+  // wrong place.
+  const cam = testCamera();
+  // [facet error, smooth error, ratio] per usable ray.
+  const below: number[][] = [];
+  const above: number[][] = [];
+  for (const nLat of [8, 16]) {
+    const mesh = uvSphereMesh(nLat, nLat * 2, 1);
+    const index = buildMeshIndex(mesh);
+    for (let a = 0; a < 90; a++) {
+      for (let b = 0; b < 90; b++) {
+        const nx = ((a + 0.5) / 90 - 0.5) * 0.8;
+        const ny = ((b + 0.5) / 90 - 0.5) * 0.8;
+        const f = intersectMeshJacobian(index, cam, nx, ny);
+        if (!f.hit.hit || Math.abs(f.hit.cosIncidence) < 0.2) continue;
+        const truth = intersectSphereJacobian(cam, nx, ny, 1);
+        if (!truth.hit.hit) continue;
+        const p = f.hit.point;
+        const d = { x: p.x - cam.position.x, y: p.y - cam.position.y, z: p.z - cam.position.z };
+        const L = Math.hypot(d.x, d.y, d.z);
+        const ns = interpolatedNormal(mesh, f.hit.triangle, p);
+        const ratio = Math.abs((ns.x * d.x + ns.y * d.y + ns.z * d.z) / L) / Math.abs(f.hit.cosIncidence);
+        // The UNGUARDED smooth derivative, formed here from the same closed form
+        // `mesh.ts` uses, because the guard has by construction removed it from
+        // what the module will return below the floor.
+        const den = ns.x * (d.x / L) + ns.y * (d.y / L) + ns.z * (d.z / L);
+        let worstF = 0;
+        let worstS = 0;
+        for (let i = 0; i < 3; i++) {
+          const ndo = i === 0 ? ns.x : i === 1 ? ns.y : ns.z;
+          const dt = -ndo / den;
+          for (let r = 0; r < 3; r++) {
+            const dirR = r === 0 ? d.x / L : r === 1 ? d.y / L : d.z / L;
+            const unguarded = (r === i ? 1 : 0) + dirR * dt;
+            const sv = truth.dPoint[r * CAM_PARAM_COUNT + i];
+            worstS = Math.max(worstS, Math.abs(unguarded - sv));
+            worstF = Math.max(worstF, Math.abs(f.dPoint[r * CAM_PARAM_COUNT + i] - sv));
+          }
+        }
+        (ratio < 0.7 ? below : above).push([worstF, worstS, ratio]);
+      }
+    }
+  }
+  assert.ok(below.length > 20, `only ${below.length} rays below the floor — nothing to justify it with`);
+  assert.ok(above.length > 500, `only ${above.length} rays above the floor`);
+  const mean = (v: number[][], k: number): number => v.reduce((a, r) => a + r[k], 0) / v.length;
+  // The statistic is the MEAN error, not the share of rays each mode wins, and
+  // the difference between them is the whole reason the guard is worth having.
+  // At a crossover the win share is near 50/50 by definition — just below the
+  // floor smooth still wins about half the rays. What it does on the other half
+  // is the point: its losses there are large where its wins are small, so the
+  // mean goes the other way. A guard set by win share would keep a mode that
+  // loses on average.
+  assert.ok(
+    mean(below, 0) < mean(below, 1),
+    `below the floor the facet mean error ${mean(below, 0).toExponential(2)} is not under the ` +
+      `smooth mean ${mean(below, 1).toExponential(2)} — the floor is too low`,
+  );
+  assert.ok(
+    mean(above, 1) < mean(above, 0),
+    `above the floor the smooth mean error ${mean(above, 1).toExponential(2)} is not under the ` +
+      `facet mean ${mean(above, 0).toExponential(2)} — the floor is too high`,
+  );
+  // Just under the floor the two are close, as they must be at a crossover — the
+  // gap above is 1.5x. The tail is what the guard is really for, so it is
+  // measured separately: well below the floor the smooth derivative is worse by
+  // a multiple, and that is the part that would otherwise reach the bundle's
+  // normal matrix.
+  // "Material" is a factor of two in mean error, which is the bar this asserts.
+  // It currently clears it at 2.6x (4.8e+0 against 1.8e+0), and the 800k-ray
+  // sweep in `SMOOTH_INCIDENCE_FLOOR`'s table, which reaches ratios this single
+  // camera never produces, puts it at 4x by the 0.3-0.4 bin and 200x at the
+  // bottom. The headroom here is 30%, so this fails on a real regression and not
+  // on sampling noise.
+  const deep = below.filter((r) => r[2] < 0.4);
+  assert.ok(deep.length >= 5, `only ${deep.length} rays well below the floor to measure the tail on`);
+  assert.ok(
+    mean(deep, 1) > 2 * mean(deep, 0),
+    `well below the floor the smooth mean error ${mean(deep, 1).toExponential(2)} is not twice the ` +
+      `facet's ${mean(deep, 0).toExponential(2)} — too small a difference to guard on`,
+  );
 });

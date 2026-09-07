@@ -673,20 +673,24 @@ export function boundingRadiusM(index: MeshIndex): number {
  * on purpose; `BundleOptions.meshNormal` selects it and defaults to `'facet'`.
  * That docblock carries what 540 solves later measured it to buy and to cost.
  *
- * It also presumes a body WITHOUT creases. Where two panels share vertices
- * across a fold — or a file carries normals smoothed across one — the
- * interpolated normal at the edge is the bisector of two facet normals, so the
- * derivative's singular set moves from "ray in the facet's plane" to "ray in
- * the interpolated tangent plane", which a ray can reach at ordinary incidence
- * on either panel; the only guard is the 1e-12 clamp on the denominator. The
- * fixtures the measurement used are closed ellipsoids with no creases, and so are
- * all 540 solves of the two seed sweeps in `BundleOptions.meshNormal`'s docblock.
- * Falling back to the facet normal where the interpolated incidence collapses
- * relative to the facet's would be the obvious guard. It is now the thing
- * standing between this mode and being selectable: the sweeps measured it to
- * halve the worst projector's rotation error on a crease-free body, which is a
- * reason to build the guard rather than the reason it was once absent — that
- * nothing had been measured with the mode at all.
+ * It used to presume a body WITHOUT creases, and no longer does. Where two
+ * panels share vertices across a fold — or a file carries normals smoothed
+ * across one — the interpolated normal at the edge is the bisector of two facet
+ * normals, so the derivative's singular set moves from "ray in the facet's
+ * plane" to "ray in the interpolated tangent plane", which a ray can reach at
+ * ordinary incidence on either panel. For the whole life of the two seed sweeps
+ * the only thing between that and a divide was the 1e-12 clamp on the
+ * denominator, and every one of their 540 solves was a closed crease-free
+ * ellipsoid, so none of them could see it.
+ *
+ * {@link SMOOTH_INCIDENCE_FLOOR} is the guard: where the interpolated
+ * incidence falls below 0.7 of the facet's, the derivative goes back to the
+ * facet normal. On a 90-degree fold the unguarded denominator reaches 2.8e-4 of
+ * the facet's at incidences the decode is happy to keep, and the guard turns
+ * those rays into the facet's derivative, which on a fold is not an
+ * approximation but the exact one. It is measured rather than chosen, and it is
+ * NOT a crease detector — see the constant for why no threshold on that ratio
+ * could be one.
  */
 export type MeshNormalMode = 'facet' | 'smooth';
 
@@ -742,6 +746,43 @@ function vertexNormalsOf(index: MeshIndex): Float64Array {
   vertexNormalCache.set(index, normals);
   return normals;
 }
+
+/**
+ * How far the interpolated normal's incidence may fall below the facet's before
+ * {@link intersectMeshJacobian} goes back to the facet normal. The crease guard
+ * {@link MeshNormalMode} describes.
+ *
+ * MEASURED, not chosen. On a tessellated sphere both modes approximate a surface
+ * whose exact derivative `sphere.ts` supplies, so "which mode is closer to the
+ * truth" is a number rather than an argument. Binning rays by
+ * `r = |n_s . d| / |n_f . d|` — the only quantity a guard can see — over four
+ * tessellations from 8x16 to 64x128, at the decode's own `cos(incidence) >= 0.2`
+ * cut, 800k rays:
+ *
+ * | r | facet mean error | smooth mean error | smooth closer |
+ * |---|---|---|---|
+ * | < 0.02 | 2.6e+0 | 5.4e+2 | 0% |
+ * | 0.1-0.15 | 1.9e+0 | 1.8e+1 | 1% |
+ * | 0.4-0.5 | 8.3e-1 | 2.2e+0 | 20% |
+ * | 0.6-0.7 | 5.4e-1 | 6.4e-1 | 53% |
+ * | 0.7-0.8 | 3.8e-1 | 3.2e-1 | 65% |
+ * | > 0.9 | 9.5e-2 | 2.5e-2 | 95% |
+ *
+ * The mean error crosses between 0.6-0.7 and 0.7-0.8 and the win rate crosses at
+ * 53% inside 0.6-0.7, so 0.7 is where the smooth normal stops being the better
+ * approximation and starts being a worse one — by a factor of 200 at the bottom
+ * of the range. Below the floor the fallback is not a compromise, it is the more
+ * accurate derivative.
+ *
+ * WHAT THIS IS NOT is a crease detector, and an earlier attempt to make it one
+ * failed on measurement. `r` does not separate creased bodies from smooth ones:
+ * an 8x16 sphere has no crease anywhere and still reaches r = 0.0012 with 1.1%
+ * of its rays under 0.5, and a 30%-jittered sphere does the same at every
+ * refinement. There is no gap to put a threshold in. What `r` separates is
+ * derivatives that describe the surface from derivatives that do not — which is
+ * the property that matters, and which a crease is only one way to lose.
+ */
+const SMOOTH_INCIDENCE_FLOOR = 0.7;
 
 /**
  * The interpolated normal at a hit: the barycentric weights of `hit.point` in
@@ -907,13 +948,27 @@ export function intersectMeshJacobian(
   if (!hit.hit) return { hit, dPoint };
 
   const t = hit.t;
-  const n = normalMode === 'smooth' ? smoothNormalAt(index, hit) : hit.normal;
+  let n = hit.normal;
+  if (normalMode === 'smooth') {
+    const smooth = smoothNormalAt(index, hit);
+    // The crease guard. `hit.cosIncidence` is `-(n_f . d)`, so these two are the
+    // facet's incidence and the interpolated one against the same ray. Where the
+    // second collapses relative to the first, the interpolated normal names a
+    // tangent plane the hit point is not on and the facet's derivative is the
+    // closer one; see {@link SMOOTH_INCIDENCE_FLOOR} for the measurement that
+    // sets the ratio. Beside a fold this is reachable at healthy facet
+    // incidence, which is the case the guard exists for, but it is not limited
+    // to folds and does not try to be.
+    const smoothCos = Math.abs(smooth.x * dir.x + smooth.y * dir.y + smooth.z * dir.z);
+    if (smoothCos >= SMOOTH_INCIDENCE_FLOOR * Math.abs(hit.cosIncidence)) n = smooth;
+  }
   // `n . d`: in facet mode `-cosIncidence`, zero exactly when the ray runs in
   // the facet's plane, where `t` is not a differentiable function of anything.
-  // In smooth mode it is the incidence against the interpolated normal, and it
-  // vanishes when the ray runs in the interpolated tangent plane — a different
-  // plane, which beside a crease can be reached at healthy facet incidence
-  // (see {@link MeshNormalMode}).
+  // In smooth mode the guard above has already bounded this below by
+  // `SMOOTH_INCIDENCE_FLOOR * |cosIncidence|`, so the interpolated tangent plane
+  // can no longer be the thing that empties it. The clamp is therefore the same
+  // last resort in both modes — a genuinely grazing ray — and not the only thing
+  // standing between a crease and a divide, which is what it used to be.
   let denom = n.x * dir.x + n.y * dir.y + n.z * dir.z;
   if (Math.abs(denom) < 1e-12) denom = denom >= 0 ? 1e-12 : -1e-12;
 
