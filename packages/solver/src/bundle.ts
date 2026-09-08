@@ -570,7 +570,18 @@ export interface BundleOptions {
    *
    * And it costs stalls, which is why "off" is still the right default and not
    * merely the cautious one: 13 of those 180 pairs stop with the damping at its
-   * cap in this mode and 0 do in `'facet'`.
+   * cap in this mode and 0 do in `'facet'` on the same seeds. That asymmetry has
+   * a mechanism, though it is a reason to expect it rather than a proof: a
+   * damped step is always downhill on the gradient it was built from, and this
+   * mode is built from a different gradient than the one it is judged against,
+   * so unlike the facet mode it can lose the descent direction outright. It does
+   * NOT follow that the facet mode cannot stall — an exact Jacobian stalls too
+   * once the achievable decrease falls under float resolution, which the
+   * analytic sphere is on record doing. See {@link BundleReport.stopReason} and
+   * the entry in docs/ARBITRARY-SHAPES.md. The stalls are an early exit rather
+   * than a failure (12 of the 13 beat their facet pair on rotation), so they
+   * are a reason to read the stop reason rather than a reason to avoid the
+   * mode.
    *
    * THE GUARD COST PART OF THIS, and the earlier numbers are kept here because
    * the difference is the price of the fallback. Unguarded — that is, with a
@@ -2631,7 +2642,32 @@ export interface BundleReport {
   state: BundleState;
   iterations: number;
   converged: boolean;
-  /** Why the loop stopped. Reported so a stall is never mistaken for convergence. */
+  /**
+   * Why the loop stopped. Reported so a stall is never mistaken for convergence.
+   *
+   * `'lambda'` is the damping reaching its cap with no step accepted. It is
+   * REACHABLE under every configuration, including an exact Jacobian with no
+   * bound active: `packages/experiments`' analytic sphere, a closed-form hit and
+   * its closed-form derivative, stops here on one seed, recorded in
+   * docs/ARBITRARY-SHAPES.md. A descent direction is not an accepted step —
+   * acceptance needs a strict floating-point decrease at one of the finitely
+   * many λ sampled below `maxLambda`, and as λ rises the step and the decrease
+   * both fall to zero, so near a minimum the trials compare equal rather than
+   * less.
+   *
+   * What an exact Jacobian does buy is that a descent direction always EXISTS:
+   * the damped step satisfies `x·g = -gᵀ(JᵀJ + λD)⁻¹g < 0` for every λ, so the
+   * only obstacle is resolution. Two things remove even that guarantee. A bound
+   * clamps the trial, and then it is the CLAMPED state that must descend — see
+   * `levenbergMarquardt`. Or the Jacobian is not the residual's derivative,
+   * which is what {@link BundleOptions.meshNormal}'s `'smooth'` chooses on
+   * purpose: 13 of its 180 paired mesh solves stop here against the facet mode's
+   * 0 on the same seeds, and every stall examined ends on an iteration whose step
+   * direction had stopped pointing downhill on the true cost. Those 13 are an
+   * early exit rather than a failure — 12 of them land BETTER rotation than
+   * their facet pair — but they are still not convergence and are not reported
+   * as it.
+   */
   stopReason:
     | 'cost'
     | 'step'

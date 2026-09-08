@@ -232,3 +232,97 @@ test('median handles both parities and does not disturb the input', () => {
   assert.equal(median([4, 1, 3, 2]), 2.5);
   assert.equal(median([]), 0);
 });
+
+test('the damped step is a descent direction for its own gradient at every lambda, and shortens without bound', () => {
+  // A LINEAR-ALGEBRA identity about the step `levenbergMarquardt` forms, and
+  // nothing more. Read what it does not cover before citing it.
+  //
+  // Levenberg-Marquardt solves `(JtJ + lambda D) x = -g`. `JtJ` is positive
+  // SEMI-definite and `D` is strictly positive (the loop floors the diagonal),
+  // so the damped matrix is positive definite and so is its inverse. Therefore
+  // `x . g = -g^T (JtJ + lambda D)^-1 g < 0` for every lambda and every g != 0:
+  // the step always points downhill on the gradient it was built from, and its
+  // length shrinks without bound as lambda grows.
+  //
+  // WHAT THIS DOES NOT SHOW is that the solver's `lambda` stop is unreachable
+  // when the Jacobian is exact, and an earlier version of this test was named as
+  // though it did. It never runs `levenbergMarquardt`, never evaluates a
+  // nonlinear cost, and never applies `maxLambda` or the evaluation budget. A
+  // descent DIRECTION is not an accepted STEP: acceptance needs a strict
+  // floating-point decrease at one of the finitely many lambda sampled below
+  // `maxLambda`, and as lambda rises both the step and the achievable decrease
+  // fall to zero, so near a minimum the trials compare equal rather than less.
+  // docs/ARBITRARY-SHAPES.md records the analytic sphere — a closed-form hit and
+  // its closed-form derivative — stopping on `lambda` for exactly that reason.
+  //
+  // What the identity IS good for is the asymmetry between the two mesh normal
+  // modes: `'facet'` always has a descent direction available because it is
+  // judged against the gradient it was built from, and `'smooth'` need not,
+  // because it is judged against a different one. That is a reason to expect the
+  // measured 0-vs-13 split, not a proof of it.
+  const n = 5;
+  // A positive SEMI-definite JtJ with a genuine null direction, so the test
+  // covers the rank-deficient case the gauge exists to handle rather than only
+  // the comfortable one.
+  const b = [
+    [1.3, -0.4, 0.2, 0.0, 0.7],
+    [0.5, 1.1, -0.6, 0.3, -0.2],
+    [-0.3, 0.8, 0.9, -0.5, 0.4],
+  ];
+  const jtj = new Float64Array(n * n);
+  for (const row of b) {
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) jtj[i * n + j] += row[i] * row[j];
+  }
+  const gradients = [
+    [1, 0, 0, 0, 0],
+    [0.3, -1.2, 0.7, 2.1, -0.4],
+    [1e-8, 1e-8, 1e-8, 1e-8, 1e-8],
+    [-5, 4, -3, 2, -1],
+  ];
+  let checked = 0;
+  for (const lambda of [1e-12, 1e-6, 1e-3, 1, 1e3, 1e6, 1e12]) {
+    // The loop's own diagonal: the JtJ diagonal, floored away from zero.
+    const diag = new Float64Array(n);
+    let maxDiag = 0;
+    for (let i = 0; i < n; i++) maxDiag = Math.max(maxDiag, jtj[i * n + i]);
+    for (let i = 0; i < n; i++) diag[i] = Math.max(jtj[i * n + i], maxDiag * 1e-12);
+    const damped = new Float64Array(jtj);
+    for (let i = 0; i < n; i++) damped[i * n + i] += lambda * diag[i];
+    for (const g of gradients) {
+      const rhs = g.map((v) => -v);
+      const sol = solveSymmetric(damped, n, Float64Array.from(rhs));
+      let dot = 0;
+      for (let i = 0; i < n; i++) dot += sol.x[i] * g[i];
+      assert.ok(
+        dot < 0,
+        `lambda=${lambda} gradient=[${g}] gave x.g = ${dot}, so the damped step is not downhill`,
+      );
+      checked++;
+    }
+  }
+  assert.equal(checked, 28, 'the sweep did not cover what it claims to');
+
+  // And the other half of the identity: the step length falls to zero as the
+  // damping rises, so an arbitrarily short step along that direction is always
+  // available. NOT that the cap is unreachable — this comment used to say that
+  // and it is the same claim `c72acd9` retracted three hundred lines up. A norm
+  // going to zero says nothing about whether one of the finitely many sampled
+  // lambda produces a REPRESENTABLE strict decrease in a nonlinear cost, which
+  // is what acceptance needs and what the analytic sphere is on record failing.
+  const diag = new Float64Array(n);
+  let maxDiag = 0;
+  for (let i = 0; i < n; i++) maxDiag = Math.max(maxDiag, jtj[i * n + i]);
+  for (let i = 0; i < n; i++) diag[i] = Math.max(jtj[i * n + i], maxDiag * 1e-12);
+  const norm = (lambda: number): number => {
+    const damped = new Float64Array(jtj);
+    for (let i = 0; i < n; i++) damped[i * n + i] += lambda * diag[i];
+    const sol = solveSymmetric(damped, n, Float64Array.from([0.3, -1.2, 0.7, 2.1, -0.4].map((v) => -v)));
+    return Math.hypot(...Array.from(sol.x));
+  };
+  const small = norm(1);
+  const large = norm(1e9);
+  assert.ok(
+    large < small / 1e6,
+    `raising lambda by 1e9 shortened the step only from ${small} to ${large}`,
+  );
+});

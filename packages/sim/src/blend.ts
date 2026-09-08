@@ -53,6 +53,22 @@
  * §4.5 also disposes of the obvious explanation for why 0.8 is so far from
  * `1/2.2 = 0.4545`: ambient light does not account for it. That arithmetic is
  * {@link continuityEncodedValue}, and `test/blend.test.ts` asserts it.
+ *
+ * ## The fork above may be a false one, on evidence §4.5 now carries
+ *
+ * An account from an SOS developer names three knobs on SOS's own blend shader —
+ * an exponent `SOS_BLEND_P`, a gamma `SOS_BLEND_G` and a luminance
+ * `SOS_BLEND_A`. Nothing here has read that source and three names are not a
+ * formula, so nothing above changes class. But if SOS carries `P` and `G`
+ * SEPARATELY, then the either/or two paragraphs up dissolves: SOS would be doing
+ * both operations, and the open question stops being "which one is 0.8" and
+ * becomes "which of SOS's two scalars was the 0.8 in that config". Implementing
+ * §B stays right either way — it is the contract `packages/solver` was written
+ * against — and the thing to go and check is a site's own environment.
+ *
+ * The same account says alignment files carry no intensity or gain whatever, so
+ * the separation between this module and the geometry is SOS's too. It is why
+ * `sos.ts` writes geometry only and the blend has nowhere to go in that format.
  */
 
 import type { RampShape } from '../../calibration/src/index.ts';
@@ -170,7 +186,8 @@ export function crossfadeWeight(shape: RampShape, rampGamma: number, t: number):
  *
  * "For two projectors to sum to unity in the overlap, each must emit 0.5 linear,
  * encoded as `0.5^(1/γ)`." Including an additive floor `f` — ambient, or a black
- * floor, or both — each projector emits `(1-f)·V^γ + f` and continuity requires
+ * floor, or a deliberate lift inside the band, or all of them — each projector
+ * emits `(1-f)·V^γ + f` and continuity requires
  *
  *     2·[(1-f)·V^γ + f] = 1     =>     V^γ = (1 - 2f) / (2·(1 - f))
  *
@@ -180,6 +197,12 @@ export function crossfadeWeight(shape: RampShape, rampGamma: number, t: number):
  * not explain the blend gamma of 0.8**. An exponent of 0.8 implies an effective
  * display transfer near 1.25 (see {@link displayGammaImpliedByBlendGamma}), which
  * is nowhere near 2.2, and a 2% nudge cannot bridge that.
+ *
+ * That the floor is a bare parameter and not an "ambient" term is what keeps the
+ * conclusion standing now that §4.5 has a third candidate source for it: SOS's
+ * own blend shader takes a luminance, `SOS_BLEND_A`, which in a blend shader is
+ * normally exactly this lift. §4.5 tested the right algebra under the wrong name;
+ * the algebra does not care.
  *
  * `n` generalizes §4.5's pair to an n-way overlap; PARAMETERS.md §4.2 proves n
  * never exceeds 2 on this rig, so the default is 2 and anything else is a

@@ -1755,6 +1755,106 @@ year of measurement before the sixty-seed sweep asked it. The failure was not
 missing an answer. It was not noticing that half the criterion was going
 unreported while four strategies were refuted against the other half.
 
+**The `lambda` stalls have a mechanism, and it is a theorem on one side.** The
+entry above left 13 stalls in 180 paired solves against the facet mode's 0 as
+established and unexplained. The asymmetry is not luck and not a property of
+meshes: it is what an inexact Jacobian does to Levenberg–Marquardt's acceptance
+test, and the facet side of it can be proved rather than measured.
+
+WHAT IS TRUE OF THE FACET MODE, and what is NOT. The loop accepts on a bare cost
+decrease and raises the damping until it finds one. The damped step solves
+`(JᵀJ + λD) x = -g`. `JᵀJ` is positive semi-definite and `D` is the diagonal
+floored away from zero, so the damped matrix is positive DEFINITE and so is its
+inverse, giving `x·g = -gᵀ(JᵀJ + λD)⁻¹g < 0` for every λ and every non-zero `g`.
+The step always points downhill on the gradient it was built from, and its length
+falls to zero as λ rises. When `g` is the true gradient of the cost — which is
+what the facet Jacobian gives, being the exact derivative of the residual — the
+mode therefore always HAS a descent direction available, which the smooth mode
+does not. `test/linalg.test.ts` pins that identity on a rank-deficient system at
+seven sampled λ spanning `1e-12` to `1e12`.
+
+IT DOES NOT FOLLOW THAT THE CAP IS UNREACHABLE, and the first draft of this entry
+said it did. A descent DIRECTION is not an accepted STEP. Acceptance needs
+`trialEv.cost < cost` to hold as a strict floating-point comparison at one of the
+finitely many λ the loop samples below `maxLambda = 1e12`. As λ rises the step
+length falls to zero and so does the achievable decrease, so near a minimum it
+passes below what a float can represent and every remaining trial compares EQUAL,
+not less. The loop then exhausts λ and reports `lambda` with an exact Jacobian
+and no bound active. Nothing above rules that out.
+
+AND THIS DOCUMENT ALREADY CONTAINED THE COUNTEREXAMPLE, four hundred lines up.
+The curved-residual bound fits the ANALYTIC SPHERE — a closed-form hit and its
+closed-form derivative, called there "the most consistent residual-Jacobian pair
+in this repository" — and its seed 2 row stops at `lambda`, 38.5 mm. That
+paragraph is titled THE CENTRAL CLAIM FAILS ON ROW TWO and it refutes, in
+advance, the claim the first draft of this entry made. Writing the same argument
+twice in one document and having it killed by the same row twice is the finding
+worth recording here: the structural story about consistency is seductive enough
+to survive its own refutation a few hundred lines away.
+
+SO THE CLAIM IS EMPIRICAL, NOT A THEOREM. Facet's 0 in 180 is a measurement of
+this cell, and what the algebra supplies is a reason to EXPECT the asymmetry
+rather than a proof of it: one mode is guaranteed a descent direction at every λ
+and the other is not.
+
+WHY THE SMOOTH MODE HAS A SECOND WAY TO STALL, on top of the one above that it
+shares with every mode. It builds the step from `Jₛᵀr` and is judged against
+`J_fᵀr`, so what it needs is `x·g_true < 0` where `x` came from a different
+vector. That is a pairing of two vectors through a positive-definite form and has
+no sign. Instrumented at every iteration of a mesh solve, comparing the limiting
+step direction `-D⁻¹Jᵀr` against the true gradient recomputed at the same state:
+
+| mode | iterations | non-descending |
+|---|---|---|
+| facet, 5 seeds | 81 | **0** |
+| smooth, seed 33 | 9 | 2 |
+| smooth, seed 53 | 10 | 1 |
+| smooth, seed 28 | 8 | 2 |
+| smooth, seed 60 | 8 | 4 |
+
+Every stall examined ends on a non-descending iteration, four of four — which is
+evidence that this second route is what the 13 took, not that it is the only
+route to a `lambda` stop. It is NECESSARY AND NOT SUFFICIENT: seed 11 also ends
+on one and stops on `step`,
+because a step at moderate λ is not the limiting direction and can still descend
+when the misalignment is slight. The trajectory on seed 33 is the shape of the
+thing — the cosine deepens through the descent, −0.0009 to −0.0033, turns
+positive at iteration 7 and stalls at 8.
+
+TWO THINGS RULED OUT rather than assumed. `boxProjections` is 0 on every
+iteration of every run above, so this is not the active-bound stall the
+`levenbergMarquardt` docblock already describes, where the CLAMPED trial is what
+must descend and the guarantee above does not apply. And the cosines are small in
+BOTH modes — facet's run −0.001 to −0.041 — because `D` spans the parameter
+types, metres against degrees; the magnitude is the preconditioner and only the
+SIGN is the finding. An earlier reading of this measurement called the smooth
+direction "nearly orthogonal to the true gradient" and the facet control refuted
+it.
+
+AND THE STALL IS NOT A FAILURE, which is the part that changes what to do about
+it. Against their facet pairs the 13 stalled rows have BETTER rotation on 12,
+better position on 8, and fewer iterations on 11. Final cost at the stall, on the
+three seeds instrumented, against what facet reaches with two to three times the
+iterations:
+
+| seed | smooth cost | facet cost | excess | smooth rot | facet rot | iterations |
+|---|---|---|---|---|---|---|
+| 28 | 5.362936e+4 | 5.368502e+4 | **−0.104%** | 0.0245° | 0.0705° | 43 vs 65 |
+| 33 | 5.368034e+4 | 5.364873e+4 | +0.059% | 0.0772° | 0.1480° | 19 vs 61 |
+| 53 | 5.365097e+4 | 5.363361e+4 | +0.032% | 0.0540° | 0.0681° | 22 vs 47 |
+
+On seed 28 the stalled solve reaches a LOWER cost than the facet solve that
+converged. `lambda` here is not a solve that failed; it is a solve that ran out of
+descent its own gradient could find, which happens once the residual is small
+enough that the Jacobian's error dominates the direction — that is, after the
+descent is essentially done. The report is still right to refuse `converged`,
+because the loop genuinely did not meet a convergence test and a solver that
+calls its own stops convergence is worse than one that stops loudly. But the 13
+should be read as an early exit rather than a defect, and nothing here argues for
+changing the acceptance rule: a gain-ratio test would reject these steps too, and
+the one previous attempt to change what a step must reduce — the
+estimating-equation merit above — was refuted on twelve rows of twelve.
+
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the
 hypothesis that placing every projector at one distance along its nominal bearing
@@ -1885,3 +1985,119 @@ calibration, the bench scores it against ground truth the solver never saw, and
 the gates say whether it is good enough. Ship the renderer without Phase 5 and it
 is a good projection-mapping previewer with an honest boundary around what it
 claims — which is a fine thing to ship, as long as the page says so.
+
+## The other format, and the claim it deflates
+
+The paragraph above says the warp mesh is "the thing a projection-mapping product
+actually ships". That is true of the products, and it is not true of the software
+already running Science On a Sphere. SOS reads its own alignment file: nine
+screen-space control points on a 3x3 mesh whose texture coordinates are pinned to
+the canonical grid, plus a global translate, scale and rotate. `sos.ts` now reads
+one and writes one, so there are two deliverable formats and not one.
+
+**Three claims made about that format in passing did not survive being written
+down.** They are recorded here rather than quietly fixed, because two of them
+were mine and the third is the one this document had been leaning on.
+
+*"It has no texture coordinates, so it cannot resample."* Wrong. Its texture
+coordinates are fixed at the canonical grid and interpolated across the deformed
+triangles, which is a resample by any definition. Bourke's own specification says
+a warp may live "in either the x,y coordinates or in the u,v coordinates or in
+both"; for a mesh warp those are duals and SOS pins one half. The true limit is
+narrower: no INDEPENDENT texture map, so the only warps expressible are the
+images of vertex displacements.
+
+*"Nine control points is far too coarse."* Measured, and mostly wrong on this
+geometry. On the nominal rig a one-degree yaw is a 55-pixel displacement field of
+which the nine points leave **0.250 px** — under half of one per cent. A pointing
+error, seen through a projector's frustum onto a body, is very nearly affine, and
+a ROLL is affine exactly: the nine points reduce it to zero. Where the coarseness
+does bind is a lens TRANSLATION, which leaves 3.2% because the displacement
+depends on how far away the surface is, and lens distortion, which leaves 33%
+because a radial term has no shape a three-vertex basis on four cells can hold —
+but that field is itself sub-pixel here, since the body sits in the middle of the
+frame where a radial term is smallest. So the format is not what limits an SOS
+alignment on this rig. That the nine numbers are found by eye is, and that is a
+different criticism from the one being made.
+
+Those figures are the WORST case over the two ways a renderer can split a quad
+into triangles, and getting there needed a correction. The first version fitted a
+bilinear quad, which is not what a graphics pipeline draws: a triangle
+interpolates barycentrically, three weights and not four, and the two surfaces
+agree on a cell's edges while differing inside it. Copilot caught it. But the
+obvious repair — fit the triangles instead — is *worse*, because which diagonal
+SOS splits on is not recorded anywhere reachable, and committing to the wrong one
+costs more than not committing:
+
+| field | fitted bilinear | fitted to one split | fitted to both |
+| --- | --- | --- | --- |
+| yaw +1° | 0.347 | 0.669 | **0.250** |
+| lens +20 cm | 0.564 | 2.213 | **0.503** |
+| `k1` = 0.05 | 0.144 | 0.469 | **0.126** |
+| yaw + roll + shift | 1.071 | 2.827 | **0.832** |
+
+So the fit stacks both splits and the residual is reported as the worse of the
+two renderings, which makes every number above an upper bound whichever diagonal
+SOS uses. On a symmetric field the two splits agree to every digit printed; the
+asymmetric row is the one where they come apart, and only by 11%.
+
+*"Deriving one from the other is dropping columns."* Not even close, and this is
+the trap the module note now opens with. Bourke's file answers "which texel of the
+CONTENT belongs at this node"; an SOS alignment's texture is the projector's own
+already-rendered framebuffer, so it answers "where on screen does the pixel the
+software drew here have to go". Inverting the Bourke file to get the second
+question asks where content texel (0,0) lands, and for a projector that sees a
+quarter of a sphere the answer is nowhere — every corner of the grid undefined.
+Reading the Bourke node positions across as vertex positions writes the identity.
+The right source is the two-rig disagreement `warpMeshes` already draws, which is
+why `buildSosAlignment` takes two rigs where `buildWarpExport` takes one.
+
+**What the reduction genuinely costs, in the order it matters.** The blend is a
+total loss: Bourke's fifth column is an intensity per node and an alignment file
+has no column for one, because SOS blends in a separate subsystem — see
+PARAMETERS.md §4.5, which the same account also amended. The nine points cost
+what the paragraph above measures. And the file is computed from the rig the
+simulator invented, which a real dome has to solve for first, so it is the
+correction a perfect calibration would justify rather than one earned from a
+photograph. All four are printed beside the download button, in a paragraph and
+not behind a toggle, because a file with no blend column looks exactly like a
+file with a blend column and it is a projector on a sphere that finds out.
+
+**One thing came back the other way.** The one real sample of this format anybody
+here has seen puts no control point more than 0.014 from the untweaked grid — the
+site's correction is essentially a global similarity. That is what the
+measurement above independently predicts for a pointing error. It is the first
+time an external artifact has corroborated the forward model's GEOMETRY rather
+than one of its parameters, and AMENDMENTS A-23 now carries what else that file
+measures.
+
+**And the format reads in both directions, which is half its value.** A site's own
+alignment file is DIMENSIONLESS — nine positions in a ±1 frame, and an angle in
+that same frame — so on its own it says what fraction of a projector's frame a
+correction uses, which is not a quantity anybody can act on. `readSosAlignment`
+turns it into pixels and degrees against a raster, and the page will open one
+beside the picture of its own. Two things fall out of that which the writer alone
+never surfaced. The raster is the READER's assumption and the file cannot confirm
+it: nothing in those twelve lines records the projector they were written for, so
+a file from a 1920×1200 site read against a 1080 projector gives vertical numbers
+that are wrong by 11% and look entirely reasonable. And the ±1 frame's asymmetry
+reaches further than the rotation — it also decides WHICH control point is the
+largest. In the sample's own frame vertex 9 wins at 0.0152; in pixels vertex 8
+does, at 13.44, because a move along x is worth 960 px per unit against y's 540.
+Two claims made about that file in this session were wrong on exactly this axis:
+its worst point, and how many of its nine sit outside the frame — three, said
+twice, where the answer is two.
+
+**And there is a third file, which is the coarse half of the pair.** SOS's
+`local_sos_config.json` holds the model the alignment file is a residual to:
+`sosconfig.ts` reads a site's own and writes the geometry a calibration
+recovered back into it. The pairing is not a convenience, it is the whole
+structure of the deliverable — the config carries a horizontal distance and a
+height per projector and has no field for azimuth, yaw, pitch, roll, lens shift
+or focal length, so **at most two of six pose numbers survive being written
+there**. `sosconfig.test.ts` states that as a measurement rather than a
+paragraph: a rig placed exactly where a config says it is on the two numbers it
+holds, and wrong by more than a degree on three it does not, produces an **empty
+patch**. Write only the config after a recalibration and the diff says the solve
+found nothing. Write only the alignment file and the coarse model stays wrong
+underneath it. The deliverable is both.

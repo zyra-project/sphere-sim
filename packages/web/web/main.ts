@@ -44,6 +44,20 @@ import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import { buildWarpExports, formatWarpMesh } from '../../sim/src/warp.ts';
+import {
+  buildSosAlignments,
+  formatSosAlignment,
+  parseSosAlignment,
+  readSosAlignment,
+  sosIdentityVertex,
+} from '../../sim/src/sos.ts';
+import type { SosReading } from '../../sim/src/sos.ts';
+import {
+  formatSosConfig,
+  parseSosConfig,
+  updateSosConfig,
+} from '../../sim/src/sosconfig.ts';
+import type { SosConfig, SosConfigUpdate } from '../../sim/src/sosconfig.ts';
 import { wrapDeg180 } from '../../sim/src/vec.ts';
 import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
@@ -168,6 +182,71 @@ interface PageState {
    * behind it is.
    */
   seamsOpen: boolean;
+  /**
+   * Whether the warp-file format note under the save button is open.
+   *
+   * Held here rather than in a native `<details>` for the reason
+   * {@link disclosure} gives: `#inspect` is rebuilt wholesale on every render,
+   * so the element would snap shut under the reader. NOT persisted, unlike
+   * `seamsOpen` — that one hides CONTROLS a reader reaches for repeatedly and
+   * is worth a localStorage key; this is a paragraph read once.
+   */
+  warpHelpOpen: boolean;
+  /** Whether the note on what the SOS reduction drops is open. Not persisted. */
+  sosHelpOpen: boolean;
+  /**
+   * What the last SOS export actually cost, or `''` before there has been one.
+   *
+   * Measured on the rig that was on screen when the button was pressed, and kept
+   * because it is the whole reason the button is safe to offer. A static warning
+   * that the format is lossy is a thing a reader can agree with and still not
+   * act on; the number is per-rig, and it is what says whether THIS export is
+   * worth loading. Not recomputed on render: it is four projectors' worth of ray
+   * casts, which is fine on a click and not fine on every drag of a slider.
+   */
+  sosCost: string;
+  /**
+   * A site's own alignment file, read back, or `null` before one is chosen.
+   *
+   * The one thing on this page that is not computed from the simulator's own
+   * state: it is somebody else's projector, and the only reason it belongs here
+   * is that the numbers in it are dimensionless and this page knows what a
+   * raster is. Kept in state rather than re-read on each render because the
+   * File API is asynchronous and `renderInspect` is not.
+   */
+  sosRead: SosReading | null;
+  /** What the file was called, so the reader can say which file it is showing. */
+  sosReadName: string;
+  /**
+   * Which projector's raster the file was read against, 0-based.
+   *
+   * Stored rather than re-read from `state.selected` at render time, because the
+   * two come apart the moment the reader switches projectors: the numbers on
+   * screen were computed against the raster that was selected when the file was
+   * opened, and a caption naming the current one would attribute them to a
+   * projector that had nothing to do with them.
+   */
+  sosReadProjector: number;
+  /** Why the last file was refused, or `''`. Shown here, not in the readout. */
+  sosReadError: string;
+  /**
+   * A site's `local_sos_config.json`: the original TEXT and the parsed object.
+   *
+   * The text because the writer patches bytes rather than re-serializing — an
+   * operator loading a generated config into a running exhibit will diff it
+   * first, and a whole-file reformat tells them nothing.
+   *
+   * The parsed config and NOT the computed update, which is the fix for a real
+   * defect: the update was worked out when the file finished loading and never
+   * recomputed, so moving a slider or finishing a solve left the panel showing
+   * one rig's diff while the save button wrote another's. `updateSosConfig` is
+   * arithmetic over four projectors with no ray casting in it, so deriving it
+   * on every render costs nothing and cannot go stale.
+   */
+  sosConfigText: string;
+  sosConfigName: string;
+  sosConfig: SosConfig | null;
+  sosConfigError: string;
   panelOpen: boolean;
   readoutOpen: boolean;
   /**
@@ -205,6 +284,17 @@ const state: PageState = {
   // most screens, and a person who wants the reasoning is one click from it.
   explain: false,
   seamsOpen: false,
+  warpHelpOpen: false,
+  sosHelpOpen: false,
+  sosCost: '',
+  sosRead: null,
+  sosReadName: '',
+  sosReadProjector: 0,
+  sosReadError: '',
+  sosConfigText: '',
+  sosConfigName: '',
+  sosConfig: null,
+  sosConfigError: '',
   panelOpen: true,
   readoutOpen: true,
   cameraCount: 3,
@@ -4134,6 +4224,223 @@ function exportWarpFiles(): void {
   renderReadout();
 }
 
+/**
+ * Write one SOS alignment file per projector, and record what the reduction cost.
+ *
+ * ## The same two rigs the picture above the button is drawn from
+ *
+ * `exportWarpFiles` takes ONE rig, because a Bourke mesh says which texel of the
+ * content belongs at each node and that is answerable from the calibration the
+ * software believes. An SOS alignment says something else — where the pixel the
+ * software already drew has to move to — so it takes the disagreement between
+ * two rigs, which is exactly the field `warpMeshes` draws in the panel this
+ * button sits under. The file corrects that picture; `sos.ts` has the long form.
+ *
+ * ## Which means it uses ground truth, and that is the derogation worth naming
+ *
+ * `physical` is the true rig, and the simulator has it because it invented it. A
+ * real dome does not: an operator has the config and a photograph, and the whole
+ * point of `packages/solver` is to get from those to an estimate. So a file
+ * written here is the correction a PERFECT solve would justify, and it answers
+ * "could the format carry the answer if we had it" rather than "here is the
+ * answer". After a recalibration the two rigs are the truth and the recovery, so
+ * the field collapses towards straight and the file with it — which is the same
+ * behaviour, and the same caveat, as the picture. The page says so beside the
+ * button rather than leaving it to be inferred from a filename.
+ */
+function exportSosFiles(): void {
+  try {
+    const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
+    const model = displayModel(world);
+    const exports = buildSosAlignments(model.physical, model.content);
+    for (const exported of exports) {
+      downloadText(`${exported.projectorId}.alignment`, formatSosAlignment(exported.alignment));
+    }
+    // The worst projector, not the average: a mesh warp is judged by its worst
+    // seam, and averaging four projectors would hide the one that is wrong.
+    const worst = exports.reduce((a, b) => (b.residual.meshRmsPx > a.residual.meshRmsPx ? b : a));
+    const off = exports.reduce((n, e) => n + e.outOfFrame.length, 0);
+    state.sosCost =
+      `${exports.length} file${exports.length === 1 ? '' : 's'}. Worst of them, ${worst.projectorId}: ` +
+      `nine points left ${worst.residual.meshRmsPx.toFixed(2)} px of a ` +
+      `${worst.residual.fieldRmsPx.toFixed(1)} px correction` +
+      (off > 0 ? `, and ${off} vertices want content outside the frame.` : '.');
+    lastError = '';
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+  }
+  renderInspect();
+  renderReadout();
+}
+
+/**
+ * Read a site's own alignment file and say what its numbers mean.
+ *
+ * The other direction from `exportSosFiles`, and the reason it is worth having
+ * is that the file is DIMENSIONLESS: nine positions in a ±1 frame and an angle
+ * in that same frame. On its own it says what fraction of a projector's frame a
+ * correction uses, which is not a quantity anybody can act on. Against a raster
+ * it becomes pixels and degrees.
+ *
+ * **Which raster is the reader's assumption and cannot be checked.** Nothing in
+ * the file records the projector it was written for, so this uses the selected
+ * projector's, and says so on screen. A file from a 1920x1200 site read against
+ * a 1080 projector gives vertical numbers that are wrong by 11% and look
+ * entirely reasonable.
+ *
+ * No `accept` filter on the picker, unlike `pickImage`. The real filename and
+ * extension of these files at a site are not known here — the sample arrived
+ * with neither — and a filter that guesses would hide the file the reader is
+ * trying to open, which is the failure mode `pickImage`'s own comment records.
+ */
+function pickSosAlignment(projector: number, resX: number, resY: number): void {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.addEventListener('change', () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    void file
+      .text()
+      .then((text) => {
+        // `parseSosAlignment` refuses rather than guesses, and its message names
+        // the line — which is the whole value of it here, where the reader has
+        // somebody else's file and no grammar to check it against.
+        state.sosRead = readSosAlignment(parseSosAlignment(text), { resX, resY });
+        state.sosReadName = file.name;
+        state.sosReadProjector = projector;
+        state.sosReadError = '';
+      })
+      .catch((err: unknown) => {
+        state.sosRead = null;
+        state.sosReadName = file.name;
+        state.sosReadError = err instanceof Error ? err.message : String(err);
+      })
+      .finally(() => {
+        renderInspect();
+      });
+  });
+  input.click();
+}
+
+/**
+ * Open a site's `local_sos_config.json` and work out what this rig would change.
+ *
+ * Two steps, not one: this file is the exhibit's own settings, and the step
+ * between choosing it and saving it is where the reader sees what would move —
+ * and, more to the point, what would NOT, because the config has two numbers per
+ * projector and a calibration recovers six degrees of freedom plus intrinsics.
+ *
+ * The CONTENT rig, for `exportWarpFiles`'s reason: a config is what an operator
+ * loads, so it can only carry what a calibration could have known. Writing the
+ * true rig's geometry into it would produce a file that is right in the
+ * simulator and unobtainable in a real dome.
+ */
+function pickSosConfig(): void {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.addEventListener('change', () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    void file
+      .text()
+      .then((text) => {
+        // Parsed here and diffed at render time. Anything computed against the
+        // rig at THIS moment would be a snapshot of a rig the reader can change
+        // with the next slider.
+        state.sosConfig = parseSosConfig(text);
+        state.sosConfigText = text;
+        state.sosConfigName = file.name;
+        state.sosConfigError = '';
+      })
+      .catch((err: unknown) => {
+        state.sosConfig = null;
+        state.sosConfigText = '';
+        state.sosConfigName = file.name;
+        state.sosConfigError = err instanceof Error ? err.message : String(err);
+      })
+      .finally(() => {
+        renderInspect();
+      });
+  });
+  input.click();
+}
+
+/**
+ * What the rig on screen right now would change in the loaded config.
+ *
+ * Derived rather than stored — see `PageState.sosConfig`. Both the panel and the
+ * save button go through here, so what a reader reviews and what the file gets
+ * are the same computation on the same rig, by construction rather than by
+ * remembering to invalidate.
+ */
+function sosConfigDiff(): SosConfigUpdate | null {
+  if (state.sosConfig === null) return null;
+  const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
+  return updateSosConfig(state.sosConfig, displayModel(world).content);
+}
+
+/** Write the patched config, which is the original with only its numbers moved. */
+function saveSosConfig(): void {
+  const update = sosConfigDiff();
+  if (update === null || state.sosConfigText === '') return;
+  try {
+    downloadText(state.sosConfigName || 'local_sos_config.json', formatSosConfig(state.sosConfigText, update));
+    state.sosConfigError = '';
+  } catch (err) {
+    state.sosConfigError = err instanceof Error ? err.message : String(err);
+  }
+  renderInspect();
+}
+
+/**
+ * A read alignment file, drawn: the untweaked grid in grey, the file's in colour.
+ *
+ * Magnified, and the factor is printed by the caller for `meshDiagram`'s reason —
+ * at true scale the sample's largest control point moves 13 px in 1920 and the
+ * two grids are one line. A diagram whose scale is chosen to look convincing is
+ * not evidence, so the number goes beside it.
+ */
+function alignmentDiagram(reading: SosReading, tint: string, gain: number): HTMLElement {
+  const W = 320;
+  const H = Math.round((W * reading.resY) / reading.resX);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', String(H));
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'The alignment file’s control grid against the untweaked one');
+
+  const n = reading.gridSide;
+  // The ±1 frame onto the drawing: x right, y UP, which is why the vertical
+  // term is subtracted rather than added.
+  const to = (x: number, y: number): string =>
+    `${(((x + 1) / 2) * W).toFixed(1)},${(((1 - y) / 2) * H).toFixed(1)}`;
+
+  for (const moved of [false, true]) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('fill', 'none');
+    g.setAttribute('stroke', moved ? tint : MESH_RASTER_COLOR);
+    g.setAttribute('stroke-width', moved ? '1.3' : '1');
+    const at = (k: number): string => {
+      const id = sosIdentityVertex(k, n);
+      if (!moved) return to(id.x, id.y);
+      const v = reading.vertices[k];
+      return to(id.x + (v.x - id.x) * gain, id.y + (v.y - id.y) * gain);
+    };
+    for (const alongRow of [true, false]) {
+      for (let a = 0; a < n; a++) {
+        const run: string[] = [];
+        for (let b = 0; b < n; b++) run.push(at(alongRow ? a * n + b : b * n + a));
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        line.setAttribute('points', run.join(' '));
+        g.append(line);
+      }
+    }
+    svg.append(g);
+  }
+  return svg as unknown as HTMLElement;
+}
+
 function renderTopButtons(): void {
   topBtnsEl.replaceChildren();
 
@@ -4850,6 +5157,331 @@ function renderInspect(): void {
     });
     save.addEventListener('click', exportWarpFiles);
     inspectEl.append(save);
+
+    // What the five columns are. The format is documented at length in
+    // `packages/sim/src/warp.ts`, which is exactly where a reader holding the
+    // downloaded file will not look — the numbers arrive with no header, no
+    // comment line, and nothing on this page saying what they mean. A comment
+    // line in the file itself is not the answer: Bourke's format does not define
+    // one, so a strict player would choke on it.
+    inspectEl.append(
+      disclosure('what is in these files', state.warpHelpOpen, () => {
+        state.warpHelpOpen = !state.warpHelpOpen;
+        renderInspect();
+      }),
+    );
+    if (state.warpHelpOpen) {
+      inspectEl.append(
+        el('p', {
+          className: 'note',
+          textContent:
+            'Paul Bourke’s warp-mesh format, which dome and planetarium players read directly. ' +
+            'A line reading 2, then the node counts, then one line per node: x y u v i — where ' +
+            'the light goes, which texel belongs there, and how brightly. That last column is ' +
+            'why this format: it carries the blend, so warp and blend leave in one file instead ' +
+            'of two that can drift apart.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            'Two things worth knowing before you read the numbers. x spans ± the aspect ratio ' +
+            'while y spans ±1 — that asymmetry is the format’s own rule, not a mistake here, and ' +
+            'normalising both to ±1 instead is the error that squeezes every non-square ' +
+            'projector without looking wrong. And a node the light never reaches is written ' +
+            '-1 -1 -1: outside 0–1 on both texture axes AND negative in intensity, because the ' +
+            'format has two ways to say “skip this” and players do not all check the same one.',
+        }),
+      );
+      const spec = el('a', {
+        className: 'linkish',
+        textContent: 'Paul Bourke’s mesh format for image warping',
+        href: 'https://paulbourke.net/dataformats/meshwarp/',
+        target: '_blank',
+        rel: 'noopener noreferrer',
+        title: 'The format specification, off this site.',
+      });
+      inspectEl.append(spec);
+    }
+
+    // The same correction in the format SOS itself reads. Second, and visibly
+    // second, because it is the lossy one: a reader who takes the first button
+    // gets everything the simulator knows, and a reader who takes this one has
+    // to be told what they gave up BEFORE they click, which is why the
+    // derogations are a plain paragraph here and not only inside the note.
+    const sos = el('button', {
+      className: 'linkish',
+      textContent: 'save the SOS alignment files',
+      title:
+        'The same correction reduced to the nine-point mesh an SOS projector ' +
+        'alignment file carries. Lossy \u2014 read the note.',
+    });
+    sos.addEventListener('click', exportSosFiles);
+    inspectEl.append(sos);
+    inspectEl.append(
+      el('p', {
+        className: 'note tiny',
+        textContent:
+          'Lossy on purpose, four ways: no blend column at all, nine control points for the ' +
+          'whole frame, computed from the true rig this simulator has and a real dome does ' +
+          'not, and a format read off one sample file. Not a replacement for the Bourke mesh ' +
+          'above \u2014 it is the same correction made testable on the software already ' +
+          'running the sphere.',
+      }),
+    );
+    if (state.sosCost !== '') {
+      // What the last click actually cost, on the rig that was on screen. The
+      // paragraph above is true of every export; this is true of one, and it is
+      // the one the reader is about to load.
+      inspectEl.append(el('p', { className: 'note tiny', textContent: state.sosCost }));
+    }
+    inspectEl.append(
+      disclosure('what this format cannot carry', state.sosHelpOpen, () => {
+        state.sosHelpOpen = !state.sosHelpOpen;
+        renderInspect();
+      }),
+    );
+    if (state.sosHelpOpen) {
+      inspectEl.append(
+        el('p', {
+          className: 'note',
+          textContent:
+            'An SOS alignment file is a 3x3 mesh: nine screen positions, plus a global ' +
+            'translate, scale and rotate. Its texture is the projector\u2019s own rendered ' +
+            'frame, so it says where the pixel the software already drew has to move \u2014 ' +
+            'which is the picture above, not the texel-by-texel map the Bourke file carries. ' +
+            'Both are mesh warps and both resample; the difference is how much they can say.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            'The blend is the total loss. Bourke\u2019s fifth column is an intensity per node, ' +
+            'and an alignment file has no column for one: SOS blends in a separate subsystem ' +
+            'with its own edge masks and its own curve. So everything the ramp slider does is ' +
+            'simply absent from these files, and a seam that looked right here will not.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            'Nine points is less of a loss than it sounds. Four cells cannot express a lens ' +
+            'distortion \u2014 measured on the nominal rig, they leave about a third of one ' +
+            '\u2014 and they lose a few per cent of a lens-position error, because that one ' +
+            'depends on how far away the surface is. But a pointing error is very nearly ' +
+            'affine: a one-degree yaw is a 55-pixel correction of which the nine points leave ' +
+            'a quarter of a pixel, and a roll they take out exactly. On this geometry the ' +
+            'coarse mesh is not what limits an SOS alignment. Doing it by eye is.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            'Two cautions before one of these goes near a show. The file is computed from the ' +
+            'rig the simulator invented, which a real dome has to solve for first \u2014 so it ' +
+            'is the correction a perfect calibration would justify, not one earned from a ' +
+            'photograph. And the format itself is read from a single sample file plus one ' +
+            'account of how SOS draws it: the meaning is on firm ground, the conventions are ' +
+            'inference. Load one on a projector you can put back.',
+        }),
+      );
+    }
+
+    // The other direction. A site's own alignment file is dimensionless — nine
+    // positions in a ±1 frame — so on its own it says what fraction of a frame a
+    // correction uses, which is not something anyone can act on. This page knows
+    // what a raster is, so it can turn that into pixels and degrees.
+    const read = el('button', {
+      className: 'linkish',
+      textContent: state.sosRead ? 'read a different one' : 'read one back',
+      title:
+        'Open a site\u2019s own SOS alignment file and say what its numbers mean in pixels ' +
+        'and degrees on this projector\u2019s raster.',
+    });
+    read.addEventListener('click', () => {
+      pickSosAlignment(state.selected, mesh.resX, mesh.resY);
+    });
+    inspectEl.append(read);
+
+    if (state.sosReadError !== '') {
+      const bad = el('p', {
+        className: 'note tiny',
+        textContent: `${state.sosReadName}: ${state.sosReadError}`,
+      });
+      bad.style.color = 'var(--bad)';
+      inspectEl.append(bad);
+    }
+    const r = state.sosRead;
+    if (r) {
+      // Magnified for `meshDiagram`'s reason: the sample's largest control point
+      // moves 13 px in 1920, so at true scale the two grids are one line.
+      const worstFrac = Math.max(
+        ...r.vertices.map((v, k) => {
+          const id = sosIdentityVertex(k, r.gridSide);
+          return Math.hypot((v.x - id.x) / 2, (v.y - id.y) / 2);
+        }),
+      );
+      const gain = worstFrac > 1e-9 ? Math.min(400, Math.max(1, 0.09 / worstFrac)) : 1;
+      inspectEl.append(alignmentDiagram(r, tint, gain));
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `${state.sosReadName} \u2014 grey is the untweaked grid, colour is the file\u2019s nine ` +
+            `control points, exaggerated ${gain.toFixed(0)}\u00d7. These are the points BEFORE the ` +
+            'global translate, scale and rotate, which are applied around them and are not drawn ' +
+            'here: where in the order SOS applies them is the one thing about this format still ' +
+            'being guessed at, so drawing them would be drawing a guess. On this file the global ' +
+            'part is the larger correction \u2014 it is the next two lines.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `Read against P${state.sosReadProjector + 1}\u2019s ${r.resX}\u00d7${r.resY}: nothing in the ` +
+            'file says which raster it was written for, so that is this page\u2019s assumption and ' +
+            'not the file\u2019s.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `translate is ${r.translatePx.x.toFixed(1)} px across and ` +
+            `${r.translatePx.y.toFixed(1)} px up. scale is ` +
+            `${((r.scale.x - 1) * 100).toFixed(2)}% and ${((r.scale.y - 1) * 100).toFixed(2)}% \u2014 ` +
+            'and the difference between those two is the interesting part, because a sphere of ' +
+            'the wrong size, a throw of the wrong length and a lens at the wrong zoom all move ' +
+            'the axes together. Only something that is not round does this.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `rotate says ${r.rotateDeg}\u00b0, which is about ` +
+            `${r.rotateDegOnScreen.toFixed(2)}\u00b0 on the wall. The file\u2019s frame spans ±1 on ` +
+            'both axes while the projector does not, so an angle written in it is inflated by ' +
+            'the aspect ratio. That holds if SOS turns the image in the same frame its control ' +
+            'points live in, which is the one thing about this format still being guessed at.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `${r.vertices.length} control points, worst ${r.worstPx.toFixed(1)} px` +
+            (r.outOfFrameCount > 0
+              ? `. ${r.outOfFrameCount} of them sit outside the frame, which is the file asking ` +
+                'for content past the edge of the raster \u2014 no warp can deliver that, and it ' +
+                'usually means the image was scaled up to reach a body bigger than the software ' +
+                'thinks it is.'
+              : '. All inside the frame.') +
+            (r.unrecognised.length > 0
+              ? ` ${r.unrecognised.length} line(s) this page does not recognise, kept as written: ` +
+                r.unrecognised.map((u) => `${u.line}: ${u.text}`).join('; ')
+              : ''),
+        }),
+      );
+    }
+
+    // The third file, and the coarse half of the pair. The alignment file is the
+    // RESIDUAL warp; this is the model that residual corrects. Together they are
+    // a complete replacement and neither is one on its own, which is the sentence
+    // the note below exists to make unavoidable.
+    const cfg = el('button', {
+      className: 'linkish',
+      textContent: 'update a local_sos_config.json',
+      title:
+        'Open the exhibit\u2019s own config and put the geometry this calibration recovered ' +
+        'back into it \u2014 the two numbers per projector it can hold.',
+    });
+    cfg.addEventListener('click', pickSosConfig);
+    inspectEl.append(cfg);
+    inspectEl.append(
+      el('p', {
+        className: 'note tiny',
+        textContent:
+          'The config holds a horizontal distance and a height per projector, and nothing else: ' +
+          'no azimuth, no yaw, pitch or roll, no lens shift or focal length. A calibration ' +
+          'recovers six pose numbers per projector plus the lens, so at most two of six survive ' +
+          'being written here. What is left over is what the alignment file above carries \u2014 ' +
+          'the two together are a replacement, and either alone is not.',
+      }),
+    );
+    if (state.sosConfigError !== '') {
+      const bad = el('p', {
+        className: 'note tiny',
+        textContent: `${state.sosConfigName}: ${state.sosConfigError}`,
+      });
+      bad.style.color = 'var(--bad)';
+      inspectEl.append(bad);
+    }
+    const up = sosConfigDiff();
+    if (up) {
+      const d = up.discarded;
+      // Nulls dropped rather than counted as zero: `azimuthDeg` is null for a
+      // projector whose id is not one of the four SOS slots, and a zero there
+      // would read as "this one is exactly where the config expects".
+      const worst = (v: readonly (number | null)[]): string => {
+        const known = v.filter((x): x is number => x !== null).map(Math.abs);
+        return known.length === 0 ? 'n/a' : `${Math.max(...known).toFixed(2)}\u00b0`;
+      };
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `${state.sosConfigName}: ` +
+            (up.changed.length === 0
+              ? 'nothing this file can hold would change. That is not the same as the ' +
+                'calibration having found nothing \u2014 see below.'
+              : `${up.changed.length} value${up.changed.length === 1 ? '' : 's'} would change. ` +
+                up.changed
+                  .map((c) => `${c.envName} ${c.from === null ? '?' : c.from} \u2192 ${c.to.toFixed(2)}`)
+                  .join('; ')) +
+            (up.missing.length > 0
+              ? ` This file has no entry for ${up.missing.join(', ')}, so those are left alone.`
+              : ''),
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `Discarded, because no field in the file can hold it: up to ${worst(d.azimuthDeg)} ` +
+            `of azimuth off the nominal quadrant, ${worst(d.aimOffAxisDeg)} of aim off the ` +
+            `ball\u2019s centre, and ${worst(d.rollDeg)} of roll. The lens goes too \u2014 the ` +
+            'config derives the field of view from the distance and the radius rather than ' +
+            'storing it, so a recovered focal length has nowhere to go.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            'One convention worth knowing before this is loaded: the height field\u2019s own ' +
+            'description says operators enter it an inch low, by experience, because it aligns ' +
+            'better. This writes the height as measured and does not reproduce that. If the inch ' +
+            'is absorbing an error in SOS\u2019s model, a residual warp is where it belongs, and ' +
+            'that is the file above.',
+        }),
+      );
+      const save = el('button', {
+        className: 'linkish',
+        textContent:
+          up.changed.length === 0 ? 'save it anyway (unchanged)' : 'save the updated config',
+        title:
+          'The original file with only those numbers moved \u2014 every other byte, comment and ' +
+          'setting exactly as it arrived, so the diff is readable.',
+      });
+      save.addEventListener('click', saveSosConfig);
+      inspectEl.append(save);
+    }
   }
 }
 

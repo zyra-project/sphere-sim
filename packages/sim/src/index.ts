@@ -19,6 +19,8 @@ export * from './surface.ts';
 export * from './mesh/bvh.ts';
 export * from './mesh/surface.ts';
 export * from './warp.ts';
+export * from './sos.ts';
+export * from './sosconfig.ts';
 export * from './placement.ts';
 export * from './optics.ts';
 export * from './blend.ts';

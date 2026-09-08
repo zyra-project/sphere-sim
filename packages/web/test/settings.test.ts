@@ -19,6 +19,17 @@ const MAIN_SOURCE = fs.readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'main.ts'),
   'utf8',
 );
+/**
+ * The warp writer's source, read the same way and for the same reason.
+ *
+ * Read as TEXT, not imported: the assertion below is that a line the format does
+ * not define never gets emitted, which is a question about the call site rather
+ * than about what the function returns.
+ */
+const SIM_WARP_SOURCE = fs.readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'sim', 'src', 'warp.ts'),
+  'utf8',
+);
 
 import {
   BOULDER_PRESET,
@@ -541,10 +552,15 @@ test('the warp export ships the calibration the software believes, never ground 
   // here and a file that cannot exist in a real dome, and every test that only
   // checked the file PARSED would still pass.
   //
-  // The scan is over the source because there is no DOM here.
+  // The scan is over the source because there is no DOM here, and it stops at
+  // `exportSosFiles` rather than running to the end of the section. The two
+  // exports sit next to each other and have OPPOSITE requirements on this exact
+  // point: a Bourke mesh is answerable from one rig and must never be the true
+  // one, while an SOS alignment is a disagreement and is meaningless without
+  // both. A scan wide enough to cover both cannot express either rule.
   const fn = MAIN_SOURCE.slice(
     MAIN_SOURCE.indexOf('function exportWarpFiles(): void {'),
-    MAIN_SOURCE.indexOf('function renderTopButtons(): void {'),
+    MAIN_SOURCE.indexOf('function exportSosFiles(): void {'),
   );
   assert.ok(fn.length > 0, 'the warp exporter has moved; this test can no longer find it');
   assert.ok(
@@ -575,6 +591,273 @@ test('the warp export ships the calibration the software believes, never ground 
     !/exportWarpFiles/.test(actions),
     'the warp export is back in the actions row, which its height cannot afford',
   );
+});
+
+test('the warp files say what their five columns are, without putting it in the file', () => {
+  // The numbers arrive with no header and no comment line, and `warp.ts`'s
+  // module docblock — where the format IS documented — is the one place a reader
+  // holding the downloaded file will not look. So the page says it, beside the
+  // button that wrote it.
+  //
+  // NOT in the file: Bourke's format defines no comment syntax, so a `#` line
+  // would be a plain parse error in a strict player. That is the reason the
+  // explanation lives here and it is why this test also checks the writer stays
+  // clean.
+  // The index is checked BEFORE the slice. `indexOf` returns -1 when the writer
+  // is renamed, `slice(-1)` returns the file's last character, and both the
+  // length assertion and the negative regex below then pass on one character —
+  // a regression test that has quietly stopped examining anything.
+  const writerAt = SIM_WARP_SOURCE.indexOf('export function formatWarpMesh');
+  assert.ok(writerAt >= 0, 'formatWarpMesh has moved; this test can no longer find it');
+  const writer = SIM_WARP_SOURCE.slice(writerAt);
+  assert.ok(
+    !/out\.push\(['`]#/.test(writer),
+    'the warp writer emits a comment line, which the format does not define',
+  );
+
+  // Behind a toggle rather than always open: the tab already carries two
+  // diagrams and two paragraphs, and this is read once.
+  assert.ok(
+    /disclosure\('what is in these files', state\.warpHelpOpen/.test(MAIN_SOURCE),
+    'the format note is not behind the page’s own disclosure',
+  );
+  // A native <details> would snap shut on every render, which is the whole
+  // reason `disclosure` exists — so the open state has to be in PageState.
+  assert.ok(
+    /warpHelpOpen: boolean;/.test(MAIN_SOURCE) && /warpHelpOpen: false,/.test(MAIN_SOURCE),
+    'warpHelpOpen is not carried in PageState, so the note will close under the reader',
+  );
+  // The three facts a reader needs to parse a line, and the spec for the rest.
+  for (const [needle, what] of [
+    ['x y u v i', 'the column names'],
+    ['-1 -1 -1', 'the skip-this-node convention'],
+    ['± the aspect ratio', 'the asymmetric x range, which is the format’s trap'],
+    ['https://paulbourke.net/dataformats/meshwarp/', 'the specification link'],
+  ] as const) {
+    assert.ok(MAIN_SOURCE.includes(needle), `the warp format note does not mention ${what}`);
+  }
+  // Off-site links opt out of window.opener, as the masthead link already does.
+  const note = MAIN_SOURCE.slice(MAIN_SOURCE.indexOf("disclosure('what is in these files'"));
+  assert.ok(
+    /rel: 'noopener noreferrer'/.test(note.slice(0, 2500)),
+    'the specification link does not carry rel=noopener noreferrer',
+  );
+});
+
+test('the SOS export flags what it drops before the click, not behind a toggle', () => {
+  // The second export is the lossy one, and the loss is not visible in the file
+  // it writes: an alignment file with no blend column looks exactly like an
+  // alignment file, and it is a projector on a sphere that finds out. So the
+  // derogations are a plain paragraph beside the button. This test exists to
+  // stop them being tidied away into the note the way the Bourke column list
+  // legitimately was — that one explains a format, this one warns about it.
+  const beforeToggle = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf("sos.addEventListener('click', exportSosFiles)"),
+    MAIN_SOURCE.indexOf("disclosure('what this format cannot carry'"),
+  );
+  assert.ok(beforeToggle.length > 0, 'the SOS export block has moved; this test cannot find it');
+  for (const [needle, what] of [
+    ['no blend column', 'that the blend is dropped entirely'],
+    ['nine control points', 'that the whole frame gets nine points'],
+    ['true rig this simulator has', 'that it is computed from ground truth'],
+    ['one sample file', 'that the format itself is reverse-engineered'],
+  ] as const) {
+    assert.ok(beforeToggle.includes(needle), `the always-visible flag does not say ${what}`);
+  }
+
+  assert.ok(
+    /sosHelpOpen: boolean;/.test(MAIN_SOURCE) && /sosHelpOpen: false,/.test(MAIN_SOURCE),
+    'sosHelpOpen is not carried in PageState, so the note will close under the reader',
+  );
+  assert.ok(
+    /sosCost: string;/.test(MAIN_SOURCE) && /sosCost: '',/.test(MAIN_SOURCE),
+    'the measured cost of the last export is not carried in PageState',
+  );
+});
+
+test('the SOS export is built from BOTH rigs, which is what stops it being the identity', () => {
+  // The mistake this catches writes a well-formed file that does nothing. An SOS
+  // alignment says where the pixel the software already drew has to move, so it
+  // is the disagreement between what the software believes and what is true —
+  // two rigs. Handed one rig twice it correctly produces the untweaked grid,
+  // which loads without complaint and corrects nothing.
+  //
+  // `exportWarpFiles` beside it takes exactly one rig, and the right one, for
+  // the opposite reason: a Bourke mesh is answerable from the calibration alone,
+  // and writing it from `physical` would export a correction no dome could have.
+  const fn = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function exportSosFiles(): void {'),
+    MAIN_SOURCE.indexOf('function renderTopButtons(): void {'),
+  );
+  assert.ok(fn.length > 0, 'exportSosFiles has moved; this test can no longer find it');
+  assert.ok(
+    /buildSosAlignments\(model\.physical, model\.content\)/.test(fn),
+    'the SOS export is not passed the truth rig and the believed rig, in that order',
+  );
+  // A different extension from the Bourke files, which are `.data`. Both are
+  // written per projector into the same downloads folder, and a reader who
+  // exported both wants to be able to tell them apart afterwards.
+  assert.ok(/\.alignment`/.test(fn), 'the SOS files do not get their own extension');
+  // Measured on the rig that was on screen, and the worst projector rather than
+  // the mean: four projectors averaged would hide the one that is wrong.
+  assert.ok(/state\.sosCost =/.test(fn), 'the export records nothing about what it cost');
+  assert.ok(
+    /meshRmsPx > a\.residual\.meshRmsPx/.test(fn),
+    'the reported cost is not the worst projector’s',
+  );
+});
+
+test('the alignment reader names the raster it assumed, and does not assume the wrong one', () => {
+  // The file is dimensionless — nine positions in a ±1 frame — so every pixel
+  // and degree the reader prints comes from a raster the FILE does not carry.
+  // Two ways to get that wrong, and both produce plausible numbers:
+  //
+  //   1. hardcoding a raster instead of taking the projector's;
+  //   2. captioning it with `state.selected` at render time, when the reading
+  //      was computed against whatever was selected at click time — they come
+  //      apart the moment the reader switches projectors.
+  const fn = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function pickSosAlignment('),
+    MAIN_SOURCE.indexOf('function alignmentDiagram('),
+  );
+  assert.ok(fn.length > 0, 'the alignment picker has moved; this test cannot find it');
+  // Comments stripped before the hardcoded-raster check below. Both functions
+  // here DISCUSS 1920 and 1080 in prose, which is the point of the prose; the
+  // assertion is about what the code does, and reading it off commented source
+  // made it fail on its own explanation.
+  const code = fn.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  assert.ok(
+    /pickSosAlignment\(state\.selected, mesh\.resX, mesh\.resY\)/.test(MAIN_SOURCE),
+    'the reader is not handed the selected projector and its raster',
+  );
+  assert.ok(
+    !/\d{3,4}/.test(code),
+    'the alignment picker hardcodes a raster instead of taking the projector’s',
+  );
+  assert.ok(
+    /state\.sosReadProjector = projector/.test(code),
+    'the projector the file was read against is not recorded at read time',
+  );
+  assert.ok(
+    /P\$\{state\.sosReadProjector \+ 1\}/.test(MAIN_SOURCE),
+    'the caption names the currently selected projector rather than the one used',
+  );
+  // And it says on screen that the raster is an assumption, because nothing in
+  // the file can confirm it.
+  assert.ok(
+    MAIN_SOURCE.includes('file says which raster it was written for'),
+    'the reader presents the assumed raster as if the file had stated it',
+  );
+  // The drawing plots the nine control points and NOT the global transform,
+  // which is applied around them in an order this project does not know. On the
+  // one real sample the global part is the larger correction, so a caption
+  // reading "where the file puts it" would be wrong about the dominant term.
+  assert.ok(
+    MAIN_SOURCE.includes('BEFORE the ') && MAIN_SOURCE.includes('global translate, scale and rotate'),
+    'the diagram claims to show the whole warp when it draws only the control points',
+  );
+
+  // No `accept` filter: the real filename and extension of these files at a
+  // site are not known here, and a filter that guesses hides the file the
+  // reader came to open. `pickImage`'s own comment records that failure mode.
+  assert.ok(!/input\.accept/.test(code), 'the alignment picker filters by a guessed extension');
+
+  // A refused file is reported in the panel the reader is looking at. The parser
+  // names the offending line, which is the whole value of it on somebody else's
+  // file — swallowing that leaves a button that silently does nothing.
+  assert.ok(/state\.sosReadError = err/.test(code), 'a parse failure is swallowed');
+  assert.ok(
+    /sosRead: SosReading \| null;/.test(MAIN_SOURCE) && /sosReadError: string;/.test(MAIN_SOURCE),
+    'the reader’s result is not carried in PageState',
+  );
+
+  // The drawing has the same invisible-when-wrong convention as every other
+  // picture on this page: the file's frame runs y UP and an SVG runs y DOWN, so
+  // the vertical term is subtracted. Drawn the other way the grid is a grid and
+  // the correction is upside down, which reads as a bad file rather than a bad
+  // diagram. And both grids have to be there — one alone is a picture of nothing.
+  const diagram = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function alignmentDiagram('),
+    MAIN_SOURCE.indexOf('function renderTopButtons('),
+  );
+  assert.ok(diagram.length > 0, 'the alignment diagram has moved; this test cannot find it');
+  assert.ok(/\(1 - y\) \/ 2/.test(diagram), 'the diagram does not flip the vertical axis');
+  assert.ok(/for \(const moved of \[false, true\]\)/.test(diagram), 'only one grid is drawn');
+  // Exaggerated, and the factor printed beside it — `meshDiagram`'s rule, for
+  // `meshDiagram`'s reason: at true scale the sample's worst point moves 13 px
+  // in 1920 and the two grids are one line.
+  assert.ok(
+    /exaggerated \$\{gain\.toFixed\(0\)\}/.test(MAIN_SOURCE),
+    'the magnification is applied without being stated',
+  );
+});
+
+test('the config writer says what it cannot carry, and is a two-step flow', () => {
+  // A rewritten config is the one deliverable here that can look complete and be
+  // mostly empty: it holds two numbers per projector, and a calibration recovers
+  // six plus the lens. A page that offered it without that sentence would let an
+  // operator load a file that discarded every rotation the solve found.
+  const block = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf("textContent: 'update a local_sos_config.json'"),
+    MAIN_SOURCE.indexOf('// ---------------------------------------------------------------------------\n// The readout'),
+  );
+  assert.ok(block.length > 0, 'the config block has moved; this test cannot find it');
+  for (const [needle, what] of [
+    ['at most two of six', 'that four pose numbers per projector are dropped'],
+    ['no azimuth, no yaw, pitch or roll', 'which fields do not exist'],
+    ['either alone is not', 'that the config and the alignment file are a pair'],
+    ['Discarded, because no field in the file can hold it', 'the measured discard'],
+    ['an inch low', 'the height field’s documented bias'],
+  ] as const) {
+    assert.ok(block.includes(needle), `the config note does not say ${what}`);
+  }
+
+  // Two steps. Choosing the file computes and shows; a second button saves. The
+  // step between is the only place the reader sees what would move, and an
+  // auto-download would skip it — into the exhibit's own settings file.
+  assert.ok(/cfg\.addEventListener\('click', pickSosConfig\)/.test(block), 'no picker is wired');
+  assert.ok(/save\.addEventListener\('click', saveSosConfig\)/.test(block), 'no save step');
+  const picker = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function pickSosConfig('),
+    MAIN_SOURCE.indexOf('function saveSosConfig('),
+  );
+  assert.ok(picker.length > 0, 'the config picker has moved; this test cannot find it');
+  assert.ok(!/downloadText/.test(picker), 'choosing the file downloads it without a review step');
+
+  // The CONTENT rig, never the truth rig — a config is what an operator loads,
+  // so it can only carry what a calibration could have known. Same rule as
+  // `exportWarpFiles`, opposite to `exportSosFiles`, which needs both.
+  assert.ok(
+    /displayModel\(world\)\.content/.test(picker),
+    'the config is not built from the compositor rig',
+  );
+  assert.ok(!/\.physical/.test(picker), 'the config writer reaches for ground truth');
+
+  // The original text is kept beside the parsed update, because the writer
+  // patches bytes. Re-serializing would rewrite every line and make the diff an
+  // operator is about to read useless.
+  assert.ok(
+    /sosConfigText: string;/.test(MAIN_SOURCE) && /sosConfig: SosConfig \| null;/.test(MAIN_SOURCE),
+    'the original config text is not carried beside the parsed config',
+  );
+  assert.ok(
+    /formatSosConfig\(state\.sosConfigText, update\)/.test(MAIN_SOURCE),
+    'the saved config is not the original text patched',
+  );
+
+  // The diff is DERIVED, never stored. Storing it at load time meant moving a
+  // slider or finishing a solve left the panel showing one rig's diff while the
+  // save button wrote another's — a downloaded config full of geometry from a
+  // rig the reader had already changed. Both the panel and the save go through
+  // one function, so they agree by construction rather than by remembering.
+  assert.ok(!/sosConfigUpdate/.test(MAIN_SOURCE), 'the computed diff is stored and can go stale');
+  assert.ok(/function sosConfigDiff\(\)/.test(MAIN_SOURCE), 'there is no single place deriving it');
+  const save = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function saveSosConfig(): void {'),
+    MAIN_SOURCE.indexOf('function alignmentDiagram('),
+  );
+  assert.ok(save.length > 0, 'saveSosConfig has moved; this test cannot find it');
+  assert.ok(/sosConfigDiff\(\)/.test(save), 'the save path does not re-derive the diff');
 });
 
 test('the page hands a file to the browser without leaving anything in the DOM', () => {
