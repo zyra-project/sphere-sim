@@ -2615,3 +2615,28 @@ worth stating plainly in the spec: the config is the coarse model SOS can
 express, and the alignment file is everything the coarse model cannot. A
 recalibration that wrote only the config would silently discard every rotation it
 recovered.
+
+`packages/sim/src/sosconfig.ts` now writes it, and the ceiling above is stated
+there as a measurement rather than a paragraph. Its test constructs a rig sitting
+exactly where this config says the projectors are on the two numbers the config
+holds, and wrong by more than a degree on three things it does not — azimuth off
+its quadrant, aim off the ball's centre, roll. **The resulting patch is empty.**
+An operator handed only a rewritten config would read a zero-line diff and
+conclude the calibration had found nothing.
+
+Two details of the writing, both forced by the file rather than chosen:
+
+- **The output is a patch, not a re-serialization.** Against this file, a rig at
+  the SOS defaults moves nine values and **nine lines of four hundred and one**;
+  everything else, including the seventeen-digit doubles and jsoncpp's spacing,
+  is byte-identical. An operator about to load a generated config into a running
+  exhibit will diff it, and a whole-file reformat tells them nothing.
+- **The height field is deliberately biased and the writer does not reproduce
+  it.** `Pn_Height_Inches`'s own description reads "By experience: 1 inch lower
+  than real height makes better alignment." That is an empirical fudge for
+  something inside SOS. The writer emits the height as recovered and reports the
+  convention, on the reasoning that if that inch is absorbing a model error then
+  the alignment file is where such an error belongs — a residual warp is exactly
+  the right place for it and a falsified measurement is not. It is worth a row in
+  §8's checklist either way: nothing in this project models whatever the inch is
+  correcting.

@@ -2065,3 +2065,17 @@ does, at 13.44, because a move along x is worth 960 px per unit against y's 540.
 Two claims made about that file in this session were wrong on exactly this axis:
 its worst point, and how many of its nine sit outside the frame — three, said
 twice, where the answer is two.
+
+**And there is a third file, which is the coarse half of the pair.** SOS's
+`local_sos_config.json` holds the model the alignment file is a residual to:
+`sosconfig.ts` reads a site's own and writes the geometry a calibration
+recovered back into it. The pairing is not a convenience, it is the whole
+structure of the deliverable — the config carries a horizontal distance and a
+height per projector and has no field for azimuth, yaw, pitch, roll, lens shift
+or focal length, so **at most two of six pose numbers survive being written
+there**. `sosconfig.test.ts` states that as a measurement rather than a
+paragraph: a rig placed exactly where a config says it is on the two numbers it
+holds, and wrong by more than a degree on three it does not, produces an **empty
+patch**. Write only the config after a recalibration and the diff says the solve
+found nothing. Write only the alignment file and the coarse model stays wrong
+underneath it. The deliverable is both.

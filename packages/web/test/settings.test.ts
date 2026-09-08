@@ -779,6 +779,60 @@ test('the alignment reader names the raster it assumed, and does not assume the 
   );
 });
 
+test('the config writer says what it cannot carry, and is a two-step flow', () => {
+  // A rewritten config is the one deliverable here that can look complete and be
+  // mostly empty: it holds two numbers per projector, and a calibration recovers
+  // six plus the lens. A page that offered it without that sentence would let an
+  // operator load a file that discarded every rotation the solve found.
+  const block = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf("textContent: 'update a local_sos_config.json'"),
+    MAIN_SOURCE.indexOf('// ---------------------------------------------------------------------------\n// The readout'),
+  );
+  assert.ok(block.length > 0, 'the config block has moved; this test cannot find it');
+  for (const [needle, what] of [
+    ['at most two of six', 'that four pose numbers per projector are dropped'],
+    ['no azimuth, no yaw, pitch or roll', 'which fields do not exist'],
+    ['either alone is not', 'that the config and the alignment file are a pair'],
+    ['Discarded, because no field in the file can hold it', 'the measured discard'],
+    ['an inch low', 'the height field’s documented bias'],
+  ] as const) {
+    assert.ok(block.includes(needle), `the config note does not say ${what}`);
+  }
+
+  // Two steps. Choosing the file computes and shows; a second button saves. The
+  // step between is the only place the reader sees what would move, and an
+  // auto-download would skip it — into the exhibit's own settings file.
+  assert.ok(/cfg\.addEventListener\('click', pickSosConfig\)/.test(block), 'no picker is wired');
+  assert.ok(/save\.addEventListener\('click', saveSosConfig\)/.test(block), 'no save step');
+  const picker = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function pickSosConfig('),
+    MAIN_SOURCE.indexOf('function saveSosConfig('),
+  );
+  assert.ok(picker.length > 0, 'the config picker has moved; this test cannot find it');
+  assert.ok(!/downloadText/.test(picker), 'choosing the file downloads it without a review step');
+
+  // The CONTENT rig, never the truth rig — a config is what an operator loads,
+  // so it can only carry what a calibration could have known. Same rule as
+  // `exportWarpFiles`, opposite to `exportSosFiles`, which needs both.
+  assert.ok(
+    /displayModel\(world\)\.content/.test(picker),
+    'the config is not built from the compositor rig',
+  );
+  assert.ok(!/\.physical/.test(picker), 'the config writer reaches for ground truth');
+
+  // The original text is kept beside the parsed update, because the writer
+  // patches bytes. Re-serializing would rewrite every line and make the diff an
+  // operator is about to read useless.
+  assert.ok(
+    /sosConfigText: string;/.test(MAIN_SOURCE) && /sosConfigUpdate: SosConfigUpdate \| null;/.test(MAIN_SOURCE),
+    'the original config text is not carried beside the update',
+  );
+  assert.ok(
+    /formatSosConfig\(state\.sosConfigText, update\)/.test(MAIN_SOURCE),
+    'the saved config is not the original text patched',
+  );
+});
+
 test('the page hands a file to the browser without leaving anything in the DOM', () => {
   // `downloadText` is the page's only download path and the mirror of
   // `pickImage`, which is the page's only upload path: both create an element,

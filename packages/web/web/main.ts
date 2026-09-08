@@ -52,6 +52,12 @@ import {
   sosIdentityVertex,
 } from '../../sim/src/sos.ts';
 import type { SosReading } from '../../sim/src/sos.ts';
+import {
+  formatSosConfig,
+  parseSosConfig,
+  updateSosConfig,
+} from '../../sim/src/sosconfig.ts';
+import type { SosConfigUpdate } from '../../sim/src/sosconfig.ts';
 import { wrapDeg180 } from '../../sim/src/vec.ts';
 import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
@@ -223,6 +229,20 @@ interface PageState {
   sosReadProjector: number;
   /** Why the last file was refused, or `''`. Shown here, not in the readout. */
   sosReadError: string;
+  /**
+   * A site's `local_sos_config.json`, and what this rig would change in it.
+   *
+   * Held as the original TEXT beside the parsed update because the writer
+   * patches bytes rather than re-serializing — an operator loading a generated
+   * config into a running exhibit will diff it first, and a whole-file reformat
+   * tells them nothing. Chosen and saved in two steps on purpose: this file is
+   * the exhibit's own settings, and the step between them is where the reader
+   * sees what would move.
+   */
+  sosConfigText: string;
+  sosConfigName: string;
+  sosConfigUpdate: SosConfigUpdate | null;
+  sosConfigError: string;
   panelOpen: boolean;
   readoutOpen: boolean;
   /**
@@ -267,6 +287,10 @@ const state: PageState = {
   sosReadName: '',
   sosReadProjector: 0,
   sosReadError: '',
+  sosConfigText: '',
+  sosConfigName: '',
+  sosConfigUpdate: null,
+  sosConfigError: '',
   panelOpen: true,
   readoutOpen: true,
   cameraCount: 3,
@@ -4295,6 +4319,63 @@ function pickSosAlignment(projector: number, resX: number, resY: number): void {
 }
 
 /**
+ * Open a site's `local_sos_config.json` and work out what this rig would change.
+ *
+ * Two steps, not one: this file is the exhibit's own settings, and the step
+ * between choosing it and saving it is where the reader sees what would move —
+ * and, more to the point, what would NOT, because the config has two numbers per
+ * projector and a calibration recovers six degrees of freedom plus intrinsics.
+ *
+ * The CONTENT rig, for `exportWarpFiles`'s reason: a config is what an operator
+ * loads, so it can only carry what a calibration could have known. Writing the
+ * true rig's geometry into it would produce a file that is right in the
+ * simulator and unobtainable in a real dome.
+ */
+function pickSosConfig(): void {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.addEventListener('change', () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    void file
+      .text()
+      .then((text) => {
+        const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
+        state.sosConfigUpdate = updateSosConfig(
+          parseSosConfig(text),
+          displayModel(world).content,
+        );
+        state.sosConfigText = text;
+        state.sosConfigName = file.name;
+        state.sosConfigError = '';
+      })
+      .catch((err: unknown) => {
+        state.sosConfigUpdate = null;
+        state.sosConfigText = '';
+        state.sosConfigName = file.name;
+        state.sosConfigError = err instanceof Error ? err.message : String(err);
+      })
+      .finally(() => {
+        renderInspect();
+      });
+  });
+  input.click();
+}
+
+/** Write the patched config, which is the original with only its numbers moved. */
+function saveSosConfig(): void {
+  const update = state.sosConfigUpdate;
+  if (update === null || state.sosConfigText === '') return;
+  try {
+    downloadText(state.sosConfigName || 'local_sos_config.json', formatSosConfig(state.sosConfigText, update));
+    state.sosConfigError = '';
+  } catch (err) {
+    state.sosConfigError = err instanceof Error ? err.message : String(err);
+  }
+  renderInspect();
+}
+
+/**
  * A read alignment file, drawn: the untweaked grid in grey, the file's in colour.
  *
  * Magnified, and the factor is printed by the caller for `meshDiagram`'s reason —
@@ -5279,6 +5360,93 @@ function renderInspect(): void {
               : ''),
         }),
       );
+    }
+
+    // The third file, and the coarse half of the pair. The alignment file is the
+    // RESIDUAL warp; this is the model that residual corrects. Together they are
+    // a complete replacement and neither is one on its own, which is the sentence
+    // the note below exists to make unavoidable.
+    const cfg = el('button', {
+      className: 'linkish',
+      textContent: 'update a local_sos_config.json',
+      title:
+        'Open the exhibit\u2019s own config and put the geometry this calibration recovered ' +
+        'back into it \u2014 the two numbers per projector it can hold.',
+    });
+    cfg.addEventListener('click', pickSosConfig);
+    inspectEl.append(cfg);
+    inspectEl.append(
+      el('p', {
+        className: 'note tiny',
+        textContent:
+          'The config holds a horizontal distance and a height per projector, and nothing else: ' +
+          'no azimuth, no yaw, pitch or roll, no lens shift or focal length. A calibration ' +
+          'recovers six pose numbers per projector plus the lens, so at most two of six survive ' +
+          'being written here. What is left over is what the alignment file above carries \u2014 ' +
+          'the two together are a replacement, and either alone is not.',
+      }),
+    );
+    if (state.sosConfigError !== '') {
+      const bad = el('p', {
+        className: 'note tiny',
+        textContent: `${state.sosConfigName}: ${state.sosConfigError}`,
+      });
+      bad.style.color = 'var(--bad)';
+      inspectEl.append(bad);
+    }
+    const up = state.sosConfigUpdate;
+    if (up) {
+      const d = up.discarded;
+      const worst = (v: number[]): string => Math.max(...v.map(Math.abs)).toFixed(2);
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `${state.sosConfigName}: ` +
+            (up.changed.length === 0
+              ? 'nothing this file can hold would change. That is not the same as the ' +
+                'calibration having found nothing \u2014 see below.'
+              : `${up.changed.length} value${up.changed.length === 1 ? '' : 's'} would change. ` +
+                up.changed
+                  .map((c) => `${c.envName} ${c.from === null ? '?' : c.from} \u2192 ${c.to.toFixed(2)}`)
+                  .join('; ')) +
+            (up.missing.length > 0
+              ? ` This file has no entry for ${up.missing.join(', ')}, so those are left alone.`
+              : ''),
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `Discarded, because no field in the file can hold it: up to ${worst(d.azimuthDeg)}\u00b0 ` +
+            `of azimuth off the nominal quadrant, ${worst(d.aimOffAxisDeg)}\u00b0 of aim off the ` +
+            `ball\u2019s centre, and ${worst(d.rollDeg)}\u00b0 of roll. The lens goes too \u2014 the ` +
+            'config derives the field of view from the distance and the radius rather than ' +
+            'storing it, so a recovered focal length has nowhere to go.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            'One convention worth knowing before this is loaded: the height field\u2019s own ' +
+            'description says operators enter it an inch low, by experience, because it aligns ' +
+            'better. This writes the height as measured and does not reproduce that. If the inch ' +
+            'is absorbing an error in SOS\u2019s model, a residual warp is where it belongs, and ' +
+            'that is the file above.',
+        }),
+      );
+      const save = el('button', {
+        className: 'linkish',
+        textContent:
+          up.changed.length === 0 ? 'save it anyway (unchanged)' : 'save the updated config',
+        title:
+          'The original file with only those numbers moved \u2014 every other byte, comment and ' +
+          'setting exactly as it arrived, so the diff is readable.',
+      });
+      save.addEventListener('click', saveSosConfig);
+      inspectEl.append(save);
     }
   }
 }
