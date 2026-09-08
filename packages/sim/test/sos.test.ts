@@ -270,18 +270,55 @@ test('on a pose error the nine points are very nearly sufficient', () => {
   // the nine numbers are found by eye.
   //
   // Measured at 61x61 samples on the nominal rig: a 1-degree yaw is a 55-pixel
-  // field, of which the affine stage leaves 0.51 px and the nine points leave
-  // 0.096 px. The gates below sit well clear of those.
+  // field, of which the affine stage leaves 0.506 px and the nine points leave
+  // 0.250 px, worst case over both triangle splits. The gates sit clear of those.
   const { truth, compositor } = pair((t) => {
     t.projectors[0].pose.yawDeg += 1;
   });
   const out = buildSosAlignment(truth, compositor, 0, { samples: 61 });
   assert.ok(out.residual.fieldRmsPx > 50, `field ${out.residual.fieldRmsPx}`);
-  assert.ok(out.residual.meshRmsPx < 0.2, `mesh residual ${out.residual.meshRmsPx}`);
+  assert.ok(out.residual.meshRmsPx < 0.4, `mesh residual ${out.residual.meshRmsPx}`);
   assert.ok(
     out.residual.meshRmsPx < out.residual.fieldRmsPx / 100,
     'the nine points remove over 99% of a pose field',
   );
+});
+
+test('the two triangle splits both partition a cell, so the fit hedges over a basis', () => {
+  // The fit is done against BOTH diagonals a renderer might split a cell on,
+  // because which one SOS uses is not recorded anywhere reachable and picking
+  // wrong costs two to four times more than not picking. That hedge is only
+  // sound if each basis really is a partition of unity: weights summing to one,
+  // none negative, and every control point reproduced exactly at its own
+  // position. A basis that is subtly not one still fits something.
+  //
+  // Reached through the public surface: a rig placed exactly at the identity
+  // must produce the identity grid under either split, and a uniform slide must
+  // come out uniform — both of which fail immediately if a weight set is off.
+  const rig = prepareRig(nominalRig());
+  const same = buildSosAlignment(rig, rig, 0, { samples: 31 });
+  assert.ok(same.residual.meshRmsPx < 1e-9, `${same.residual.meshRmsPx}`);
+
+  const { truth, compositor } = pair((t) => {
+    t.projectors[0].intrinsics.shiftH = 0.01;
+  });
+  const slide = buildSosAlignment(truth, compositor, 0, { samples: 31 });
+  // A uniform translation is in the span of every partition of unity, so it is
+  // absorbed exactly whichever split renders it.
+  assert.ok(slide.residual.meshRmsPx < 1e-9, `${slide.residual.meshRmsPx}`);
+  assert.ok(slide.residual.meshMaxPx < 1e-9, `${slide.residual.meshMaxPx}`);
+
+  // A roll is exactly affine and therefore also exactly representable, which is
+  // the third independent check that the weights sum to one everywhere.
+  const rolled = buildSosAlignment(
+    ...rigsFor((t) => {
+      t.projectors[0].pose.rollDeg += 1;
+    }),
+    0,
+    { samples: 31 },
+  );
+  assert.ok(rolled.residual.fieldRmsPx > 5);
+  assert.ok(rolled.residual.meshRmsPx < 1e-9, `${rolled.residual.meshRmsPx}`);
 });
 
 test('parallax is the error mode the coarse mesh actually loses to', () => {
@@ -306,7 +343,7 @@ test('parallax is the error mode the coarse mesh actually loses to', () => {
   );
   const rotFrac = rot.residual.meshRmsPx / rot.residual.fieldRmsPx;
   const transFrac = trans.residual.meshRmsPx / trans.residual.fieldRmsPx;
-  // Measured: 0.17% against 3.1%, a factor of 18.
+  // Measured: 0.45% against 3.24%, a factor of 7.
   assert.ok(transFrac > 5 * rotFrac, `${transFrac} vs ${rotFrac}`);
   // Still sub-pixel in absolute terms on a 20 cm error, which is the other half
   // of the finding: the coarse mesh loses proportionally, not catastrophically.
@@ -319,8 +356,8 @@ test('lens distortion is what nine points cannot express, and more points can', 
   // a 2x2 partition has no shape like it, so the nine points recover almost
   // nothing that the global affine had not already taken.
   //
-  // Measured with k1 = 0.05: field 0.379 px rms, affine leaves 0.126, the nine
-  // points leave 0.121 — a further 4%. A 9x9 mesh leaves 0.019.
+  // Measured with k1 = 0.05: field 0.379 px rms, affine leaves 0.1263, the nine
+  // points leave 0.1263 — nothing at all. A 9x9 mesh leaves 0.022.
   const [truth, compositor] = rigsFor((t) => {
     t.projectors[0].intrinsics.k1 = 0.05;
   });
@@ -363,6 +400,50 @@ test('a projector that reaches nothing writes the identity rather than a guess',
     );
   }
   assert.deepEqual(out.vertexSupport, new Array<number>(9).fill(0));
+});
+
+test('the two rigs are paired by identity, not by their place in the array', () => {
+  // A rig with a projector switched off is SHORTER. A compositor holding
+  // [P1, P3] against a truth rig holding [P1, P2, P3] lines P3 up with P2 at
+  // index 1, and everything after that is correct arithmetic on the wrong lens:
+  // a well-formed file correcting a projector towards somewhere light never goes.
+  const truth = prepareRig(nominalRig({ projectorCount: 4 }));
+  const compositor = prepareRig(nominalRig({ projectorCount: 2 }));
+  assert.deepEqual(
+    compositor.projectors.map((p) => p.cal.id),
+    ['P1', 'P3'],
+    'the fixture for this test no longer exercises the gap it exists for',
+  );
+
+  // Index 1 of the compositor is P3; index 1 of the truth rig is P2. Paired by
+  // identity the two rigs agree exactly, so the file is the untweaked grid.
+  const out = buildSosAlignment(truth, compositor, 1, { samples: 21 });
+  assert.equal(out.projectorId, 'P3');
+  assert.ok(out.residual.fieldRmsPx < 1e-9, `field ${out.residual.fieldRmsPx}`);
+  assert.ok(out.residual.samples > 50, 'the pairing was not actually exercised');
+
+  // And a truth rig that genuinely lacks the projector is refused by name,
+  // rather than silently taking whatever sits at that index.
+  const two = prepareRig(nominalRig({ projectorCount: 2 }));
+  const three = prepareRig(nominalRig({ projectorCount: 3 }));
+  assert.throws(() => buildSosAlignment(two, three, 1, { samples: 5 }), /no projector P2/);
+});
+
+test('a number the grammar admits but arithmetic cannot use is refused by line', () => {
+  // `1e999` matches the numeric grammar and `Number` makes it Infinity. Left to
+  // pass, it becomes a NaN several functions away from the line that caused it,
+  // and this parser's whole promise is a message naming that line.
+  assert.throws(
+    () => parseSosAlignment(SAMPLE.replace('-0.7', '1e999')),
+    /line 3: rotate got "1e999", which is not a finite number/,
+  );
+  assert.throws(
+    () => parseSosAlignment(SAMPLE.replace('1 -0.992 0.998', '1 -1e400 0.998')),
+    /not a finite number/,
+  );
+  // An ordinary exponent is still fine — the grammar is not narrowed, only the
+  // values it lets through.
+  assert.equal(parseSosAlignment(SAMPLE.replace('-0.7', '-7e-1')).rotateDeg, -0.7);
 });
 
 test('every projector in the rig gets a file, in rig order', () => {

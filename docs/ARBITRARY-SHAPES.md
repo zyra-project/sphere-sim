@@ -2009,15 +2009,37 @@ images of vertex displacements.
 
 *"Nine control points is far too coarse."* Measured, and mostly wrong on this
 geometry. On the nominal rig a one-degree yaw is a 55-pixel displacement field of
-which the nine points leave **0.096 px** — under a fifth of one per cent. A
-pointing error, seen through a projector's frustum onto a body, is very nearly
-affine. Where the coarseness does bind is a lens TRANSLATION, which leaves 3.1%
-because the displacement depends on how far away the surface is, and lens
-distortion, which leaves 31.8% because a radial term has no shape in a bilinear
-basis on four cells — but that field is itself sub-pixel here, since the body
-sits in the middle of the frame where a radial term is smallest. So the format is
-not what limits an SOS alignment on this rig. That the nine numbers are found by
-eye is, and that is a different criticism from the one being made.
+which the nine points leave **0.250 px** — under half of one per cent. A pointing
+error, seen through a projector's frustum onto a body, is very nearly affine, and
+a ROLL is affine exactly: the nine points reduce it to zero. Where the coarseness
+does bind is a lens TRANSLATION, which leaves 3.2% because the displacement
+depends on how far away the surface is, and lens distortion, which leaves 33%
+because a radial term has no shape a three-vertex basis on four cells can hold —
+but that field is itself sub-pixel here, since the body sits in the middle of the
+frame where a radial term is smallest. So the format is not what limits an SOS
+alignment on this rig. That the nine numbers are found by eye is, and that is a
+different criticism from the one being made.
+
+Those figures are the WORST case over the two ways a renderer can split a quad
+into triangles, and getting there needed a correction. The first version fitted a
+bilinear quad, which is not what a graphics pipeline draws: a triangle
+interpolates barycentrically, three weights and not four, and the two surfaces
+agree on a cell's edges while differing inside it. Copilot caught it. But the
+obvious repair — fit the triangles instead — is *worse*, because which diagonal
+SOS splits on is not recorded anywhere reachable, and committing to the wrong one
+costs more than not committing:
+
+| field | fitted bilinear | fitted to one split | fitted to both |
+| --- | --- | --- | --- |
+| yaw +1° | 0.347 | 0.669 | **0.250** |
+| lens +20 cm | 0.564 | 2.213 | **0.503** |
+| `k1` = 0.05 | 0.144 | 0.469 | **0.126** |
+| yaw + roll + shift | 1.071 | 2.827 | **0.832** |
+
+So the fit stacks both splits and the residual is reported as the worse of the
+two renderings, which makes every number above an upper bound whichever diagonal
+SOS uses. On a symmetric field the two splits agree to every digit printed; the
+asymmetric row is the one where they come apart, and only by 11%.
 
 *"Deriving one from the other is dropping columns."* Not even close, and this is
 the trap the module note now opens with. Bourke's file answers "which texel of the

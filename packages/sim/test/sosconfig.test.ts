@@ -246,7 +246,7 @@ test('a calibration that found real pose error changes nothing in the config', (
 
   // Every one of these is real, recovered, and unwritable.
   up.discarded.azimuthDeg.forEach((v, i) => {
-    assert.ok(Math.abs(v - [1.2, -0.8, 0.4, -1.6][i]) < 1e-6, `azimuth ${i}: ${v}`);
+    assert.ok(v !== null && Math.abs(v - [1.2, -0.8, 0.4, -1.6][i]) < 1e-6, `azimuth ${i}: ${v}`);
   });
   assert.deepEqual(up.discarded.rollDeg, [0.7, -0.4, 1.1, 0.2]);
   assert.ok(up.discarded.worstAngleDeg > 1.5, `${up.discarded.worstAngleDeg}`);
@@ -303,7 +303,7 @@ test('a projector is named by its own slot, never by its place in the array', ()
   // And the discarded azimuth is measured against P3's own quadrant, 180, not
   // against the 90 its array position would imply.
   assert.equal(up.discarded.azimuthDeg.length, 2);
-  up.discarded.azimuthDeg.forEach((v) => assert.ok(Math.abs(v) < 1e-9, `${v}`));
+  up.discarded.azimuthDeg.forEach((v) => assert.ok(v !== null && Math.abs(v) < 1e-9, `${v}`));
 });
 
 test('a hand-placed projector has no row, and is reported rather than guessed at', () => {
@@ -313,6 +313,20 @@ test('a hand-placed projector has no row, and is reported rather than guessed at
   const up = updateSosConfig(config, prepareRig(rig));
   assert.ok(up.missing.includes('left-truss_DIST_INCHES'), up.missing.join(','));
   assert.ok(!up.changed.some((c) => c.envName.startsWith('P2')), 'P2’s row was written anyway');
+
+  // `SosConfigDiscard` promises rig order, and a projector with no config row
+  // still has a roll and an aim the config cannot hold. Returning early used to
+  // shorten three of the four arrays, so a hand-placed rig reported LESS
+  // discarded than it discarded — the one direction this report must not err in.
+  const d = up.discarded;
+  for (const arr of [d.aimOffAxisDeg, d.rollDeg, d.fovHDeg, d.azimuthDeg]) {
+    assert.equal(arr.length, rig.projectors.length, 'a discard array is short');
+  }
+  // And the one quantity that genuinely has no answer says so, rather than
+  // reporting a zero that would read as "exactly where the config expects".
+  assert.equal(d.azimuthDeg[1], null);
+  assert.ok(d.azimuthDeg.filter((v) => v !== null).length === rig.projectors.length - 1);
+  assert.ok(Number.isFinite(d.fovHDeg[1]) && d.fovHDeg[1] > 1, 'the hand-placed lens was dropped');
 });
 
 test('settings the rig has an answer for that the file lacks are reported, not invented', () => {
@@ -384,6 +398,40 @@ test('an integer keeps a decimal point, because the file declares these DOUBLE',
   assert.ok(!/"value" : 211\b(?!\.)/.test(out), 'a bare integer was written');
 });
 
+test('a nested value of the same name is not mistaken for the setting’s own', () => {
+  // `parseSosConfig` deliberately admits nested metadata this project has never
+  // seen, so a setting may legitimately contain an inner object with its own
+  // `value`. Replacing the first `"value"` inside the entry hits that one first
+  // and leaves the live number untouched — valid JSON, wrong file.
+  const nested = FIXTURE.replace(
+    '\t\t"envName" : "P4_DIST_INCHES",\n\t\t"value" : 209.0',
+    '\t\t"envName" : "P4_DIST_INCHES",\n\t\t"metadata" :\n\t\t{\n\t\t\t"value" : 1.0\n\t\t},\n\t\t"value" : 209.0',
+  );
+  assert.ok(nested !== FIXTURE, 'the nested object was not inserted');
+  const rig = nominalRig({ distanceM: 150 * IN, centerHeightM: 88 * IN, projectorHeightM: 100 * IN });
+  const out = formatSosConfig(nested, updateSosConfig(parseSosConfig(nested), prepareRig(rig)));
+
+  const g = readSosConfigGeometry(parseSosConfig(out));
+  assert.ok(Math.abs((g.distanceIn[3] ?? 0) - 150) < 1e-9, `P4 got ${String(g.distanceIn[3])}`);
+  assert.ok(out.includes('"value" : 1.0'), 'the nested metadata was patched instead');
+});
+
+test('a same-named key nested inside an earlier setting is not the setting', () => {
+  // The depth rule, from the other side. A nested property sits after a `{` just
+  // as a top-level key does, so "preceded by a brace or comma" is not enough —
+  // only the depth says which is the setting.
+  const decoy = FIXTURE.replace(
+    '\t"P4_DIST_INCHES" :\n\t{\n',
+    '\t"P4_DIST_INCHES" :\n\t{\n\t\t"extra" :\n\t\t{\n\t\t\t"P1_DIST_INCHES" : 1.0\n\t\t},\n',
+  );
+  assert.ok(decoy !== FIXTURE, 'the decoy was not inserted');
+  const rig = nominalRig({ distanceM: 150 * IN, centerHeightM: 88 * IN, projectorHeightM: 100 * IN });
+  const out = formatSosConfig(decoy, updateSosConfig(parseSosConfig(decoy), prepareRig(rig)));
+  const g = readSosConfigGeometry(parseSosConfig(out));
+  assert.ok(Math.abs((g.distanceIn[0] ?? 0) - 150) < 1e-9, `P1 got ${String(g.distanceIn[0])}`);
+  assert.ok(out.includes('"P1_DIST_INCHES" : 1.0'), 'the nested decoy was patched');
+});
+
 test('a patch that cannot be applied whole is not applied at all', () => {
   // A config that got three of its twelve numbers is worse than one that got
   // none, because it is still loadable and still wrong.
@@ -393,7 +441,7 @@ test('a patch that cannot be applied whole is not applied at all', () => {
   assert.ok(up.changed.length > 1);
   assert.throws(
     () => formatSosConfig('{"other" : {"value" : 1}}', up),
-    /is not in this text/,
+    /has no top-level numeric value in this text/,
   );
 });
 

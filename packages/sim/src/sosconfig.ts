@@ -204,8 +204,13 @@ export interface SosConfigDiscard {
   /**
    * Recovered azimuth minus the nominal quadrant the config's model assumes,
    * degrees. There is no azimuth field at all, so the whole of this is dropped.
+   *
+   * `null` for a projector whose id is not one of the four SOS slots: there is
+   * no nominal quadrant to subtract, and a zero there would read as "this one
+   * is where the config expects" when the truth is that the config has never
+   * heard of it. Every other array here stays in rig order and stays full.
    */
-  azimuthDeg: number[];
+  azimuthDeg: (number | null)[];
   /**
    * Angle between the recovered optical axis and the line from the lens to the
    * body's centre. The config's model has every projector aimed at the centre,
@@ -271,7 +276,7 @@ export function updateSosConfig(config: SosConfig, rig: PreparedRig): SosConfigU
 
   propose('SPHERE_HEIGHT_AT_EQUATOR_INCHES', rig.centerHeightM * M_TO_IN);
 
-  const azimuthDeg: number[] = [];
+  const azimuthDeg: (number | null)[] = [];
   const aimOffAxisDeg: number[] = [];
   const rollDeg: number[] = [];
   const fovHDeg: number[] = [];
@@ -283,26 +288,11 @@ export function updateSosConfig(config: SosConfig, rig: PreparedRig): SosConfigU
     // names: two projectors are P1 and P3, at array indices 0 and 1. Naming the
     // config entries by index would write P3's geometry into P2's row, on a file
     // that then loads and aims a projector at the wrong quarter of the room.
-    const slot = /^P(\d+)$/.exec(p.cal.id);
-    if (slot === null) {
-      // A hand-placed rig whose projectors are not the four SOS slots. There is
-      // no entry to write and inventing one would be worse than saying so.
-      missing.push(`${p.cal.id}_DIST_INCHES`, `${p.cal.id}_HEIGHT_INCHES`);
-      return;
-    }
-    const n = Number(slot[1]);
-    // HORIZONTAL, per the file's own words and A-17. A slant range would read
-    // high by `d - sqrt(d^2 - z^2)`, which at a 12 in lens rise on a 211 in
-    // throw is 0.36 in — small, plausible, and wrong in the same direction
-    // every time, which is the kind of error that survives a sanity check.
-    propose(`P${n}_DIST_INCHES`, Math.hypot(lens.x, lens.y) * M_TO_IN);
-    // The file wants height above the FLOOR; the world frame has the body's
-    // centre at the origin (conventions.ts §W).
-    propose(`P${n}_HEIGHT_INCHES`, (lens.z + rig.centerHeightM) * M_TO_IN);
-
-    // What no field can hold.
-    const nominal = NOMINAL_QUADRANT_DEG[n - 1] ?? (90 * (n - 1)) % 360;
-    azimuthDeg.push(wrapDeg180((Math.atan2(lens.y, lens.x) * 180) / Math.PI - nominal));
+    // Every discarded quantity is recorded FIRST and unconditionally, because
+    // `SosConfigDiscard` promises rig order and a projector that has no config
+    // row still has a roll and an aim the config cannot hold. Returning early
+    // here used to shorten three of the four arrays, so a hand-placed rig
+    // reported less discarded than it discarded.
     const centre = rig.surface.centre;
     const toCentre = { x: centre.x - lens.x, y: centre.y - lens.y, z: centre.z - lens.z };
     const len = Math.hypot(toCentre.x, toCentre.y, toCentre.z);
@@ -313,11 +303,38 @@ export function updateSosConfig(config: SosConfig, rig: PreparedRig): SosConfigU
     aimOffAxisDeg.push((Math.acos(Math.min(1, Math.max(-1, cos))) * 180) / Math.PI);
     rollDeg.push(p.cal.pose.rollDeg);
     fovHDeg.push(p.cal.intrinsics.fovHDeg);
+
+    // The projector's OWN id, never its position in the array. A rig with a
+    // projector switched off is shorter and its remaining lenses keep their slot
+    // names: two projectors are P1 and P3, at array indices 0 and 1. Naming the
+    // config entries by index would write P3's geometry into P2's row, on a file
+    // that then loads and aims a projector at the wrong quarter of the room.
+    const slot = /^P(\d+)$/.exec(p.cal.id);
+    if (slot === null) {
+      // A hand-placed rig whose projectors are not the four SOS slots. There is
+      // no entry to write and inventing one would be worse than saying so, and
+      // no nominal quadrant to measure an azimuth against either.
+      missing.push(`${p.cal.id}_DIST_INCHES`, `${p.cal.id}_HEIGHT_INCHES`);
+      azimuthDeg.push(null);
+      return;
+    }
+    const n = Number(slot[1]);
+    const nominal = NOMINAL_QUADRANT_DEG[n - 1] ?? (90 * (n - 1)) % 360;
+    azimuthDeg.push(wrapDeg180((Math.atan2(lens.y, lens.x) * 180) / Math.PI - nominal));
+
+    // HORIZONTAL, per the file's own words and A-17. A slant range would read
+    // high by `d - sqrt(d^2 - z^2)`, which at a 12 in lens rise on a 211 in
+    // throw is 0.36 in — small, plausible, and wrong in the same direction
+    // every time, which is the kind of error that survives a sanity check.
+    propose(`P${n}_DIST_INCHES`, Math.hypot(lens.x, lens.y) * M_TO_IN);
+    // The file wants height above the FLOOR; the world frame has the body's
+    // centre at the origin (conventions.ts §W).
+    propose(`P${n}_HEIGHT_INCHES`, (lens.z + rig.centerHeightM) * M_TO_IN);
   });
 
   const worstAngleDeg = Math.max(
     0,
-    ...azimuthDeg.map(Math.abs),
+    ...azimuthDeg.filter((v): v is number => v !== null).map(Math.abs),
     ...aimOffAxisDeg.map(Math.abs),
     ...rollDeg.map(Math.abs),
   );
@@ -352,11 +369,8 @@ function fixed2(v: number): string {
  * Apply an update to the original text, changing only the numbers that changed.
  *
  * A surgical edit rather than a re-serialization — see the module note. For each
- * changed setting this finds that setting's own object by brace matching from
- * its key, and replaces the number after `"value"` inside it and nowhere else.
- * Scoping to the object is what makes it safe: `"value"` appears in every entry
- * in the file, and a global search-and-replace would rewrite whichever one came
- * first.
+ * changed setting {@link findValueNumberSpan} locates that setting's OWN `value`
+ * number and nothing else replaces it.
  *
  * Throws rather than writing a partial patch. A config that got three of its
  * twelve numbers is worse than one that got none, because it is still loadable.
@@ -364,72 +378,99 @@ function fixed2(v: number): string {
 export function formatSosConfig(original: string, update: SosConfigUpdate): string {
   let text = original;
   for (const change of update.changed) {
-    const at = findKey(text, change.key);
-    if (at === null) throw new Error(`setting ${JSON.stringify(change.key)} is not in this text`);
-    const body = objectAfter(text, at);
-    if (body === null) {
-      throw new Error(`setting ${JSON.stringify(change.key)} has no object in this text`);
+    // Re-scanned from the start for every change, because each edit shifts the
+    // offsets after it. The file is a few hundred lines and the patch a dozen
+    // numbers, so the quadratic is free and the alternative is bookkeeping.
+    const span = findValueNumberSpan(text, change.key);
+    if (span === null) {
+      throw new Error(
+        `setting ${JSON.stringify(change.key)} has no top-level numeric value in this text`,
+      );
     }
-    const inner = text.slice(body.start, body.end);
-    const replaced = inner.replace(
-      /("value"\s*:\s*)[-+]?[\d.eE+]+/,
-      (_m, head: string) => `${head}${fixed2(change.to)}`,
-    );
-    if (replaced === inner) {
-      throw new Error(`setting ${JSON.stringify(change.key)} has no numeric value to replace`);
-    }
-    text = text.slice(0, body.start) + replaced + text.slice(body.end);
+    text = text.slice(0, span.start) + fixed2(change.to) + text.slice(span.end);
   }
   return text;
 }
 
 /**
- * Where a top-level key's NAME is written, or `null`.
+ * The span of the number written as setting `key`'s own `value`, or `null`.
  *
- * A plain `indexOf` is not enough. The same quoted string appears as an
- * `envName` value elsewhere in the file, and can appear inside a description as
- * an escaped `\"key\"` — so a match is accepted only where a top-level key can
- * actually sit, which is directly after the opening brace or after a comma.
+ * Depth-aware and string-aware, and both matter. Two earlier versions of this
+ * were wrong in ways that produced VALID JSON with the wrong number in it:
+ *
+ *   - A plain `indexOf` for the quoted key matched the same name appearing as an
+ *     `envName` VALUE, or escaped inside a description. Requiring a `{` or `,`
+ *     before it helped and was still not enough, because a nested object's
+ *     property sits after a `{` too — and `parseSosConfig` deliberately admits
+ *     nested metadata this project has never seen.
+ *   - Replacing the first `"value"` inside the entry hit a nested one first:
+ *     `{ "metadata": { "value": 1 }, "value": 213.5 }` patched the metadata and
+ *     left the live number alone.
+ *
+ * So this walks the text once, counting braces and brackets outside strings,
+ * and accepts a key token only at the depth it belongs to: the setting name at
+ * depth 1 of the root object, and that setting's `value` at depth 2. A token is
+ * a KEY only when the next non-space character is a colon, which is what keeps
+ * a string whose contents happen to read `"value"` from counting.
  */
-function findKey(text: string, key: string): number | null {
-  const needle = `"${key}"`;
-  for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) {
-    let i = at - 1;
-    while (i >= 0 && /\s/.test(text[i])) i--;
-    if (i >= 0 && (text[i] === '{' || text[i] === ',')) return at + needle.length;
+function findValueNumberSpan(text: string, key: string): { start: number; end: number } | null {
+  const n = text.length;
+  let depth = 0;
+  let inEntry = false;
+  let entryDepth = -1;
+  let i = 0;
+
+  while (i < n) {
+    const c = text[i];
+    if (c === '"') {
+      const str = endOfString(text, i);
+      if (str === null) return null;
+      let j = str;
+      while (j < n && /\s/.test(text[j])) j++;
+      if (text[j] !== ':') {
+        // A string VALUE, not a key. Skipped whole, which is what stops a
+        // description containing braces or quotes from moving the depth count.
+        i = str;
+        continue;
+      }
+      const name = text.slice(i + 1, str - 1);
+      let k = j + 1;
+      while (k < n && /\s/.test(text[k])) k++;
+      if (!inEntry && depth === 1 && name === key) {
+        if (text[k] !== '{') return null;
+        inEntry = true;
+        entryDepth = depth + 1;
+        i = k;
+        continue;
+      }
+      if (inEntry && depth === entryDepth && name === 'value') {
+        const m = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/.exec(text.slice(k));
+        return m === null ? null : { start: k, end: k + m[0].length };
+      }
+      i = j + 1;
+      continue;
+    }
+    if (c === '{' || c === '[') depth++;
+    else if (c === '}' || c === ']') {
+      depth--;
+      // The entry closed without a `value` of its own. `parseSosConfig` refuses
+      // such a file, so reaching here means the text and the parsed object have
+      // come apart — which is a throw upstairs, not a silent skip.
+      if (inEntry && depth < entryDepth) return null;
+    }
+    i++;
   }
   return null;
 }
 
-/**
- * The `{ ... }` that follows an index, by brace matching.
- *
- * String-aware, because a `}` inside a description would otherwise end the
- * object early — and these descriptions are long prose full of punctuation.
- */
-function objectAfter(text: string, from: number): { start: number; end: number } | null {
-  let i = from;
-  while (i < text.length && text[i] !== '{') {
-    if (!/\s|:/.test(text[i])) return null;
-    i++;
-  }
-  if (i >= text.length) return null;
-  const start = i;
-  let depth = 0;
-  let inString = false;
-  for (; i < text.length; i++) {
-    const c = text[i];
-    if (inString) {
-      if (c === '\\') i++;
-      else if (c === '"') inString = false;
+/** The index just past the closing quote of the string starting at `at`. */
+function endOfString(text: string, at: number): number | null {
+  for (let i = at + 1; i < text.length; i++) {
+    if (text[i] === '\\') {
+      i++;
       continue;
     }
-    if (c === '"') inString = true;
-    else if (c === '{') depth++;
-    else if (c === '}') {
-      depth--;
-      if (depth === 0) return { start, end: i + 1 };
-    }
+    if (text[i] === '"') return i + 1;
   }
   return null;
 }

@@ -57,7 +57,7 @@ import {
   parseSosConfig,
   updateSosConfig,
 } from '../../sim/src/sosconfig.ts';
-import type { SosConfigUpdate } from '../../sim/src/sosconfig.ts';
+import type { SosConfig, SosConfigUpdate } from '../../sim/src/sosconfig.ts';
 import { wrapDeg180 } from '../../sim/src/vec.ts';
 import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
@@ -230,18 +230,22 @@ interface PageState {
   /** Why the last file was refused, or `''`. Shown here, not in the readout. */
   sosReadError: string;
   /**
-   * A site's `local_sos_config.json`, and what this rig would change in it.
+   * A site's `local_sos_config.json`: the original TEXT and the parsed object.
    *
-   * Held as the original TEXT beside the parsed update because the writer
-   * patches bytes rather than re-serializing — an operator loading a generated
-   * config into a running exhibit will diff it first, and a whole-file reformat
-   * tells them nothing. Chosen and saved in two steps on purpose: this file is
-   * the exhibit's own settings, and the step between them is where the reader
-   * sees what would move.
+   * The text because the writer patches bytes rather than re-serializing — an
+   * operator loading a generated config into a running exhibit will diff it
+   * first, and a whole-file reformat tells them nothing.
+   *
+   * The parsed config and NOT the computed update, which is the fix for a real
+   * defect: the update was worked out when the file finished loading and never
+   * recomputed, so moving a slider or finishing a solve left the panel showing
+   * one rig's diff while the save button wrote another's. `updateSosConfig` is
+   * arithmetic over four projectors with no ray casting in it, so deriving it
+   * on every render costs nothing and cannot go stale.
    */
   sosConfigText: string;
   sosConfigName: string;
-  sosConfigUpdate: SosConfigUpdate | null;
+  sosConfig: SosConfig | null;
   sosConfigError: string;
   panelOpen: boolean;
   readoutOpen: boolean;
@@ -289,7 +293,7 @@ const state: PageState = {
   sosReadError: '',
   sosConfigText: '',
   sosConfigName: '',
-  sosConfigUpdate: null,
+  sosConfig: null,
   sosConfigError: '',
   panelOpen: true,
   readoutOpen: true,
@@ -4340,17 +4344,16 @@ function pickSosConfig(): void {
     void file
       .text()
       .then((text) => {
-        const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
-        state.sosConfigUpdate = updateSosConfig(
-          parseSosConfig(text),
-          displayModel(world).content,
-        );
+        // Parsed here and diffed at render time. Anything computed against the
+        // rig at THIS moment would be a snapshot of a rig the reader can change
+        // with the next slider.
+        state.sosConfig = parseSosConfig(text);
         state.sosConfigText = text;
         state.sosConfigName = file.name;
         state.sosConfigError = '';
       })
       .catch((err: unknown) => {
-        state.sosConfigUpdate = null;
+        state.sosConfig = null;
         state.sosConfigText = '';
         state.sosConfigName = file.name;
         state.sosConfigError = err instanceof Error ? err.message : String(err);
@@ -4362,9 +4365,23 @@ function pickSosConfig(): void {
   input.click();
 }
 
+/**
+ * What the rig on screen right now would change in the loaded config.
+ *
+ * Derived rather than stored — see `PageState.sosConfig`. Both the panel and the
+ * save button go through here, so what a reader reviews and what the file gets
+ * are the same computation on the same rig, by construction rather than by
+ * remembering to invalidate.
+ */
+function sosConfigDiff(): SosConfigUpdate | null {
+  if (state.sosConfig === null) return null;
+  const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
+  return updateSosConfig(state.sosConfig, displayModel(world).content);
+}
+
 /** Write the patched config, which is the original with only its numbers moved. */
 function saveSosConfig(): void {
-  const update = state.sosConfigUpdate;
+  const update = sosConfigDiff();
   if (update === null || state.sosConfigText === '') return;
   try {
     downloadText(state.sosConfigName || 'local_sos_config.json', formatSosConfig(state.sosConfigText, update));
@@ -5251,13 +5268,13 @@ function renderInspect(): void {
         el('p', {
           className: 'note tiny',
           textContent:
-            'Nine points is less of a loss than it sounds. Four bilinear cells cannot express ' +
-            'a lens distortion \u2014 measured on the nominal rig, they leave about a third of ' +
-            'one \u2014 and they lose a few per cent of a lens-position error, because that ' +
-            'one depends on how far away the surface is. But a pointing error is very nearly ' +
+            'Nine points is less of a loss than it sounds. Four cells cannot express a lens ' +
+            'distortion \u2014 measured on the nominal rig, they leave about a third of one ' +
+            '\u2014 and they lose a few per cent of a lens-position error, because that one ' +
+            'depends on how far away the surface is. But a pointing error is very nearly ' +
             'affine: a one-degree yaw is a 55-pixel correction of which the nine points leave ' +
-            'a tenth of a pixel. On this geometry the coarse mesh is not what limits an SOS ' +
-            'alignment. Doing it by eye is.',
+            'a quarter of a pixel, and a roll they take out exactly. On this geometry the ' +
+            'coarse mesh is not what limits an SOS alignment. Doing it by eye is.',
         }),
       );
       inspectEl.append(
@@ -5314,10 +5331,21 @@ function renderInspect(): void {
         el('p', {
           className: 'note tiny',
           textContent:
-            `${state.sosReadName} \u2014 grey is the untweaked grid, colour is where the file ` +
-            `puts it, exaggerated ${gain.toFixed(0)}\u00d7. Read against P${state.sosReadProjector + 1}\u2019s ` +
-            `${r.resX}\u00d7${r.resY}: nothing in the file says which raster it was written for, ` +
-            'so that is this page\u2019s assumption and not the file\u2019s.',
+            `${state.sosReadName} \u2014 grey is the untweaked grid, colour is the file\u2019s nine ` +
+            `control points, exaggerated ${gain.toFixed(0)}\u00d7. These are the points BEFORE the ` +
+            'global translate, scale and rotate, which are applied around them and are not drawn ' +
+            'here: where in the order SOS applies them is the one thing about this format still ' +
+            'being guessed at, so drawing them would be drawing a guess. On this file the global ' +
+            'part is the larger correction \u2014 it is the next two lines.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `Read against P${state.sosReadProjector + 1}\u2019s ${r.resX}\u00d7${r.resY}: nothing in the ` +
+            'file says which raster it was written for, so that is this page\u2019s assumption and ' +
+            'not the file\u2019s.',
         }),
       );
       inspectEl.append(
@@ -5394,10 +5422,16 @@ function renderInspect(): void {
       bad.style.color = 'var(--bad)';
       inspectEl.append(bad);
     }
-    const up = state.sosConfigUpdate;
+    const up = sosConfigDiff();
     if (up) {
       const d = up.discarded;
-      const worst = (v: number[]): string => Math.max(...v.map(Math.abs)).toFixed(2);
+      // Nulls dropped rather than counted as zero: `azimuthDeg` is null for a
+      // projector whose id is not one of the four SOS slots, and a zero there
+      // would read as "this one is exactly where the config expects".
+      const worst = (v: readonly (number | null)[]): string => {
+        const known = v.filter((x): x is number => x !== null).map(Math.abs);
+        return known.length === 0 ? 'n/a' : `${Math.max(...known).toFixed(2)}\u00b0`;
+      };
       inspectEl.append(
         el('p', {
           className: 'note tiny',
@@ -5419,9 +5453,9 @@ function renderInspect(): void {
         el('p', {
           className: 'note tiny',
           textContent:
-            `Discarded, because no field in the file can hold it: up to ${worst(d.azimuthDeg)}\u00b0 ` +
-            `of azimuth off the nominal quadrant, ${worst(d.aimOffAxisDeg)}\u00b0 of aim off the ` +
-            `ball\u2019s centre, and ${worst(d.rollDeg)}\u00b0 of roll. The lens goes too \u2014 the ` +
+            `Discarded, because no field in the file can hold it: up to ${worst(d.azimuthDeg)} ` +
+            `of azimuth off the nominal quadrant, ${worst(d.aimOffAxisDeg)} of aim off the ` +
+            `ball\u2019s centre, and ${worst(d.rollDeg)} of roll. The lens goes too \u2014 the ` +
             'config derives the field of view from the distance and the radius rather than ' +
             'storing it, so a recovered focal length has nowhere to go.',
         }),

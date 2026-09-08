@@ -603,8 +603,13 @@ test('the warp files say what their five columns are, without putting it in the 
   // would be a plain parse error in a strict player. That is the reason the
   // explanation lives here and it is why this test also checks the writer stays
   // clean.
-  const writer = SIM_WARP_SOURCE.slice(SIM_WARP_SOURCE.indexOf('export function formatWarpMesh'));
-  assert.ok(writer.length > 0, 'formatWarpMesh has moved; this test can no longer find it');
+  // The index is checked BEFORE the slice. `indexOf` returns -1 when the writer
+  // is renamed, `slice(-1)` returns the file's last character, and both the
+  // length assertion and the negative regex below then pass on one character —
+  // a regression test that has quietly stopped examining anything.
+  const writerAt = SIM_WARP_SOURCE.indexOf('export function formatWarpMesh');
+  assert.ok(writerAt >= 0, 'formatWarpMesh has moved; this test can no longer find it');
+  const writer = SIM_WARP_SOURCE.slice(writerAt);
   assert.ok(
     !/out\.push\(['`]#/.test(writer),
     'the warp writer emits a comment line, which the format does not define',
@@ -740,8 +745,16 @@ test('the alignment reader names the raster it assumed, and does not assume the 
   // And it says on screen that the raster is an assumption, because nothing in
   // the file can confirm it.
   assert.ok(
-    MAIN_SOURCE.includes('nothing in the file says which raster it was written for'),
+    MAIN_SOURCE.includes('file says which raster it was written for'),
     'the reader presents the assumed raster as if the file had stated it',
+  );
+  // The drawing plots the nine control points and NOT the global transform,
+  // which is applied around them in an order this project does not know. On the
+  // one real sample the global part is the larger correction, so a caption
+  // reading "where the file puts it" would be wrong about the dominant term.
+  assert.ok(
+    MAIN_SOURCE.includes('BEFORE the ') && MAIN_SOURCE.includes('global translate, scale and rotate'),
+    'the diagram claims to show the whole warp when it draws only the control points',
   );
 
   // No `accept` filter: the real filename and extension of these files at a
@@ -824,13 +837,27 @@ test('the config writer says what it cannot carry, and is a two-step flow', () =
   // patches bytes. Re-serializing would rewrite every line and make the diff an
   // operator is about to read useless.
   assert.ok(
-    /sosConfigText: string;/.test(MAIN_SOURCE) && /sosConfigUpdate: SosConfigUpdate \| null;/.test(MAIN_SOURCE),
-    'the original config text is not carried beside the update',
+    /sosConfigText: string;/.test(MAIN_SOURCE) && /sosConfig: SosConfig \| null;/.test(MAIN_SOURCE),
+    'the original config text is not carried beside the parsed config',
   );
   assert.ok(
     /formatSosConfig\(state\.sosConfigText, update\)/.test(MAIN_SOURCE),
     'the saved config is not the original text patched',
   );
+
+  // The diff is DERIVED, never stored. Storing it at load time meant moving a
+  // slider or finishing a solve left the panel showing one rig's diff while the
+  // save button wrote another's — a downloaded config full of geometry from a
+  // rig the reader had already changed. Both the panel and the save go through
+  // one function, so they agree by construction rather than by remembering.
+  assert.ok(!/sosConfigUpdate/.test(MAIN_SOURCE), 'the computed diff is stored and can go stale');
+  assert.ok(/function sosConfigDiff\(\)/.test(MAIN_SOURCE), 'there is no single place deriving it');
+  const save = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function saveSosConfig(): void {'),
+    MAIN_SOURCE.indexOf('function alignmentDiagram('),
+  );
+  assert.ok(save.length > 0, 'saveSosConfig has moved; this test cannot find it');
+  assert.ok(/sosConfigDiff\(\)/.test(save), 'the save path does not re-derive the diff');
 });
 
 test('the page hands a file to the browser without leaving anything in the DOM', () => {

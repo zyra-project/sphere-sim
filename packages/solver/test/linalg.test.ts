@@ -302,8 +302,13 @@ test('the damped step is a descent direction for its own gradient at every lambd
   }
   assert.equal(checked, 28, 'the sweep did not cover what it claims to');
 
-  // And the other half of why the cap is unreachable: the step length falls to
-  // zero as the damping rises, so "short enough" is always available.
+  // And the other half of the identity: the step length falls to zero as the
+  // damping rises, so an arbitrarily short step along that direction is always
+  // available. NOT that the cap is unreachable — this comment used to say that
+  // and it is the same claim `c72acd9` retracted three hundred lines up. A norm
+  // going to zero says nothing about whether one of the finitely many sampled
+  // lambda produces a REPRESENTABLE strict decrease in a nonlinear cost, which
+  // is what acceptance needs and what the analytic sphere is on record failing.
   const diag = new Float64Array(n);
   let maxDiag = 0;
   for (let i = 0; i < n; i++) maxDiag = Math.max(maxDiag, jtj[i * n + i]);

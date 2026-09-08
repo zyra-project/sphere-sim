@@ -145,7 +145,15 @@ function nums(parts: string[], want: number, line: number, what: string): number
   }
   return parts.map((p) => {
     if (!NUM.test(p)) throw new Error(`line ${line}: ${what} got a non-number ${JSON.stringify(p)}`);
-    return Number(p);
+    const v = Number(p);
+    // The grammar admits `1e999`, which `Number` makes Infinity. Refused here
+    // rather than left to become a NaN four functions away: this parser's whole
+    // promise is a message naming the line, and an infinity keeps that promise
+    // only if it is caught while the line number is still in hand.
+    if (!Number.isFinite(v)) {
+      throw new Error(`line ${line}: ${what} got ${JSON.stringify(p)}, which is not a finite number`);
+    }
+    return v;
   });
 }
 
@@ -399,9 +407,20 @@ export function buildSosAlignment(
   options: SosOptions = {},
 ): SosAlignmentExport {
   const c = compositor.projectors[index];
-  const t = truth.projectors[index];
   if (!c) throw new Error(`no projector at index ${index} in the compositor rig`);
-  if (!t) throw new Error(`no projector at index ${index} in the truth rig`);
+  // Paired by IDENTITY, not by array position. A rig with a projector switched
+  // off is shorter and the rest keep their slot names, so a compositor holding
+  // [P1, P3] against a truth rig holding [P1, P2, P3] lines P3 up with P2 at
+  // index 1 — and every step after this is arithmetic that works perfectly on
+  // the wrong lens. The file it writes is well-formed and corrects a projector
+  // towards somewhere the light never goes.
+  const t = truth.projectors.find((p) => p.cal.id === c.cal.id);
+  if (!t) {
+    throw new Error(
+      `the truth rig has no projector ${c.cal.id}; it holds ` +
+        `${truth.projectors.map((p) => p.cal.id).join(', ') || 'none'}`,
+    );
+  }
 
   const gridSide = Math.max(2, Math.floor(options.gridSide ?? 3));
   const n = gridSide * gridSide;
@@ -464,18 +483,12 @@ export function buildSosAlignment(
   const afterAffine = magnitudes(rx, ry, toPx);
 
   // --------------------------------------------------- stage 2, the nine points
-  const mRows = X.map((_, i) => basisRow(X[i], Y[i], gridSide));
-  const support = new Array<number>(n).fill(0);
-  for (const r of mRows) for (let k = 0; k < n; k++) support[k] += r[k] * r[k];
-  const peak = Math.max(...support);
-  const ridge = peak > 0 ? peak * 1e-6 : 1;
-
-  const meshX = leastSquares(mRows, rx, n, ridge) ?? new Array<number>(n).fill(0);
-  const meshY = leastSquares(mRows, ry, n, ridge) ?? new Array<number>(n).fill(0);
-
-  const mx = X.map((_, i) => rx[i] - dot(mRows[i], meshX));
-  const my = X.map((_, i) => ry[i] - dot(mRows[i], meshY));
-  const afterMesh = magnitudes(mx, my, toPx);
+  // Fitted against BOTH triangle splits at once and scored against the worse of
+  // them — see {@link basisRow}. Committing to one diagonal and guessing wrong
+  // costs two to four times as much as not committing.
+  const fit = fitMesh(X, Y, rx, ry, gridSide);
+  const afterMesh = worstResidual(X, Y, rx, ry, fit, gridSide, toPx);
+  const { meshX, meshY, support, peak } = fit;
 
   // ------------------------------------------------------------------- assemble
   const vertices: SosVertex[] = [];
@@ -686,23 +699,166 @@ function displayAspect(it: { resX: number; resY: number; pixelAspect: number }):
   return (it.resX * (it.pixelAspect || 1)) / it.resY;
 }
 
-/** The bilinear basis SOS evaluates: four non-zero weights, summing to one. */
-function basisRow(x: number, y: number, gridSide: number): number[] {
+/** The nine control points, fitted against both triangle splits at once. */
+interface MeshFit {
+  meshX: number[];
+  meshY: number[];
+  /** Per-vertex sum of squared weights, over both splits. */
+  support: number[];
+  peak: number;
+}
+
+/**
+ * Least squares over BOTH splits' rows stacked, with the right-hand side
+ * repeated — see {@link basisRow} for why this hedge beats picking a diagonal.
+ */
+function fitMesh(
+  X: number[],
+  Y: number[],
+  rx: number[],
+  ry: number[],
+  gridSide: number,
+): MeshFit {
   const n = gridSide * gridSide;
-  const row = new Array<number>(n).fill(0);
+  const rows: number[][] = [];
+  const bx: number[] = [];
+  const by: number[] = [];
+  for (const split of SPLITS) {
+    for (let i = 0; i < X.length; i++) {
+      rows.push(basisRow(X[i], Y[i], gridSide, split));
+      bx.push(rx[i]);
+      by.push(ry[i]);
+    }
+  }
+  const support = new Array<number>(n).fill(0);
+  for (const r of rows) for (let k = 0; k < n; k++) support[k] += r[k] * r[k];
+  const peak = Math.max(...support);
+  const ridge = peak > 0 ? peak * 1e-6 : 1;
+  return {
+    meshX: leastSquares(rows, bx, n, ridge) ?? new Array<number>(n).fill(0),
+    meshY: leastSquares(rows, by, n, ridge) ?? new Array<number>(n).fill(0),
+    support,
+    peak,
+  };
+}
+
+/**
+ * What the fitted points leave, under whichever split is worse.
+ *
+ * The reported residual has to be an upper bound rather than an average: the
+ * caller is deciding whether to load this file onto a projector, and a number
+ * that is right for one of two possible renderers and optimistic for the other
+ * is the wrong number to decide on.
+ */
+function worstResidual(
+  X: number[],
+  Y: number[],
+  rx: number[],
+  ry: number[],
+  fit: MeshFit,
+  gridSide: number,
+  toPx: (x: number, y: number) => number,
+): { rms: number; max: number } {
+  let out = { rms: 0, max: 0 };
+  for (const split of SPLITS) {
+    const ex: number[] = [];
+    const ey: number[] = [];
+    for (let i = 0; i < X.length; i++) {
+      const row = basisRow(X[i], Y[i], gridSide, split);
+      ex.push(rx[i] - dot(row, fit.meshX));
+      ey.push(ry[i] - dot(row, fit.meshY));
+    }
+    const m = magnitudes(ex, ey, toPx);
+    // Each taken independently, so both numbers are upper bounds on their own.
+    out = { rms: Math.max(out.rms, m.rms), max: Math.max(out.max, m.max) };
+  }
+  return out;
+}
+
+/** Where a sample falls: which cell of the grid, and where inside it. */
+function cellAt(
+  x: number,
+  y: number,
+  gridSide: number,
+): { col: number; row: number; a: number; b: number } {
   const cells = gridSide - 1;
-  // (0, 0) at the TOP-left, so `t` counts DOWN from the top edge — the ordering
+  // (0, 0) at the TOP-left, so `b` counts DOWN from the top edge — the ordering
   // the sample's own values imply. See the module note.
   const s = clamp01((x + 1) / 2) * cells;
   const t = clamp01((1 - y) / 2) * cells;
   const col = Math.min(cells - 1, Math.floor(s));
-  const r = Math.min(cells - 1, Math.floor(t));
-  const a = s - col;
-  const b = t - r;
-  row[r * gridSide + col] = (1 - a) * (1 - b);
-  row[r * gridSide + col + 1] = a * (1 - b);
-  row[(r + 1) * gridSide + col] = (1 - a) * b;
-  row[(r + 1) * gridSide + col + 1] = a * b;
+  const row = Math.min(cells - 1, Math.floor(t));
+  return { col, row, a: s - col, b: t - row };
+}
+
+/**
+ * How SOS interpolates across one cell — and the honest answer is that nobody
+ * here knows, so there are two of these and the fit hedges between them.
+ *
+ * A graphics pipeline draws a quad as two triangles, and a triangle interpolates
+ * barycentrically: three non-zero weights, not four. That is NOT the same
+ * surface as a bilinear quad — they agree on the cell's edges and differ in its
+ * interior — so a fit done on the wrong one hands SOS vertices optimised for a
+ * warp it does not render. Which of the two diagonals SOS splits on is not
+ * recorded anywhere this project can reach.
+ *
+ * **Measured, because the obvious fix is worse than the problem.** Committing to
+ * one diagonal and being wrong costs far more than not committing at all. Worst
+ * case over the two possible splits, rms pixels on the nominal rig at 61x61
+ * samples:
+ *
+ * | field | fitted bilinear | fitted to one split | fitted to both |
+ * | --- | --- | --- | --- |
+ * | yaw +1 deg | 0.347 | 0.669 | **0.250** |
+ * | lens +20 cm | 0.564 | 2.213 | **0.503** |
+ * | k1 = 0.05 | 0.144 | 0.469 | **0.126** |
+ * | yaw + roll + shift | 1.071 | 2.827 | **0.832** |
+ *
+ * So the fit stacks BOTH splits and the residual is reported as the worse of the
+ * two renderings, which makes the reported number an upper bound whichever
+ * diagonal SOS actually uses. On a symmetric field the two splits give the same
+ * residual to every digit; the asymmetric row is where they come apart, by 11%.
+ */
+const SPLITS = ['main', 'anti'] as const;
+
+/**
+ * Barycentric weights for one cell under one diagonal: three non-zero, summing
+ * to one, and exact at every vertex.
+ *
+ * `main` splits from the cell's top-left to its bottom-right, `anti` the other
+ * way. `test/sos.test.ts` pins that both partition the cell — weights sum to
+ * one, none negative, each vertex reproduced exactly — because a basis that is
+ * subtly not a partition of unity fits something, just not this.
+ */
+function basisRow(
+  x: number,
+  y: number,
+  gridSide: number,
+  split: (typeof SPLITS)[number],
+): number[] {
+  const n = gridSide * gridSide;
+  const row = new Array<number>(n).fill(0);
+  const { col, row: r, a, b } = cellAt(x, y, gridSide);
+  const at = (dr: number, dc: number): number => (r + dr) * gridSide + col + dc;
+  if (split === 'main') {
+    if (a >= b) {
+      row[at(0, 0)] = 1 - a;
+      row[at(0, 1)] = a - b;
+      row[at(1, 1)] = b;
+    } else {
+      row[at(0, 0)] = 1 - b;
+      row[at(1, 0)] = b - a;
+      row[at(1, 1)] = a;
+    }
+  } else if (a + b <= 1) {
+    row[at(0, 0)] = 1 - a - b;
+    row[at(0, 1)] = a;
+    row[at(1, 0)] = b;
+  } else {
+    row[at(0, 1)] = 1 - b;
+    row[at(1, 0)] = 1 - a;
+    row[at(1, 1)] = a + b - 1;
+  }
   return row;
 }
 
@@ -852,16 +1008,9 @@ function fitMeshOnly(
   field: { rms: number; max: number },
 ): SosAlignmentExport {
   const n = gridSide * gridSide;
-  const rows = X.map((_, i) => basisRow(X[i], Y[i], gridSide));
-  const support = new Array<number>(n).fill(0);
-  for (const r of rows) for (let k = 0; k < n; k++) support[k] += r[k] * r[k];
-  const peak = Math.max(...support);
-  const ridge = peak > 0 ? peak * 1e-6 : 1;
-  const mx = leastSquares(rows, dx, n, ridge) ?? new Array<number>(n).fill(0);
-  const my = leastSquares(rows, dy, n, ridge) ?? new Array<number>(n).fill(0);
-  const ex = X.map((_, i) => dx[i] - dot(rows[i], mx));
-  const ey = X.map((_, i) => dy[i] - dot(rows[i], my));
-  const afterMesh = magnitudes(ex, ey, toPx);
+  const fit = fitMesh(X, Y, dx, dy, gridSide);
+  const { meshX: mx, meshY: my, support, peak } = fit;
+  const afterMesh = worstResidual(X, Y, dx, dy, fit, gridSide, toPx);
 
   const vertices: SosVertex[] = [];
   const outOfFrame: number[] = [];
