@@ -19,6 +19,17 @@ const MAIN_SOURCE = fs.readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'main.ts'),
   'utf8',
 );
+/**
+ * The warp writer's source, read the same way and for the same reason.
+ *
+ * Read as TEXT, not imported: the assertion below is that a line the format does
+ * not define never gets emitted, which is a question about the call site rather
+ * than about what the function returns.
+ */
+const SIM_WARP_SOURCE = fs.readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'sim', 'src', 'warp.ts'),
+  'utf8',
+);
 
 import {
   BOULDER_PRESET,
@@ -574,6 +585,52 @@ test('the warp export ships the calibration the software believes, never ground 
   assert.ok(
     !/exportWarpFiles/.test(actions),
     'the warp export is back in the actions row, which its height cannot afford',
+  );
+});
+
+test('the warp files say what their five columns are, without putting it in the file', () => {
+  // The numbers arrive with no header and no comment line, and `warp.ts`'s
+  // module docblock — where the format IS documented — is the one place a reader
+  // holding the downloaded file will not look. So the page says it, beside the
+  // button that wrote it.
+  //
+  // NOT in the file: Bourke's format defines no comment syntax, so a `#` line
+  // would be a plain parse error in a strict player. That is the reason the
+  // explanation lives here and it is why this test also checks the writer stays
+  // clean.
+  const writer = SIM_WARP_SOURCE.slice(SIM_WARP_SOURCE.indexOf('export function formatWarpMesh'));
+  assert.ok(writer.length > 0, 'formatWarpMesh has moved; this test can no longer find it');
+  assert.ok(
+    !/out\.push\(['`]#/.test(writer),
+    'the warp writer emits a comment line, which the format does not define',
+  );
+
+  // Behind a toggle rather than always open: the tab already carries two
+  // diagrams and two paragraphs, and this is read once.
+  assert.ok(
+    /disclosure\('what is in these files', state\.warpHelpOpen/.test(MAIN_SOURCE),
+    'the format note is not behind the page’s own disclosure',
+  );
+  // A native <details> would snap shut on every render, which is the whole
+  // reason `disclosure` exists — so the open state has to be in PageState.
+  assert.ok(
+    /warpHelpOpen: boolean;/.test(MAIN_SOURCE) && /warpHelpOpen: false,/.test(MAIN_SOURCE),
+    'warpHelpOpen is not carried in PageState, so the note will close under the reader',
+  );
+  // The three facts a reader needs to parse a line, and the spec for the rest.
+  for (const [needle, what] of [
+    ['x y u v i', 'the column names'],
+    ['-1 -1 -1', 'the skip-this-node convention'],
+    ['± the aspect ratio', 'the asymmetric x range, which is the format’s trap'],
+    ['https://paulbourke.net/dataformats/meshwarp/', 'the specification link'],
+  ] as const) {
+    assert.ok(MAIN_SOURCE.includes(needle), `the warp format note does not mention ${what}`);
+  }
+  // Off-site links opt out of window.opener, as the masthead link already does.
+  const note = MAIN_SOURCE.slice(MAIN_SOURCE.indexOf("disclosure('what is in these files'"));
+  assert.ok(
+    /rel: 'noopener noreferrer'/.test(note.slice(0, 2500)),
+    'the specification link does not carry rel=noopener noreferrer',
   );
 });
 

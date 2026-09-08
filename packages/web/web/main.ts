@@ -168,6 +168,16 @@ interface PageState {
    * behind it is.
    */
   seamsOpen: boolean;
+  /**
+   * Whether the warp-file format note under the save button is open.
+   *
+   * Held here rather than in a native `<details>` for the reason
+   * {@link disclosure} gives: `#inspect` is rebuilt wholesale on every render,
+   * so the element would snap shut under the reader. NOT persisted, unlike
+   * `seamsOpen` — that one hides CONTROLS a reader reaches for repeatedly and
+   * is worth a localStorage key; this is a paragraph read once.
+   */
+  warpHelpOpen: boolean;
   panelOpen: boolean;
   readoutOpen: boolean;
   /**
@@ -205,6 +215,7 @@ const state: PageState = {
   // most screens, and a person who wants the reasoning is one click from it.
   explain: false,
   seamsOpen: false,
+  warpHelpOpen: false,
   panelOpen: true,
   readoutOpen: true,
   cameraCount: 3,
@@ -4850,6 +4861,53 @@ function renderInspect(): void {
     });
     save.addEventListener('click', exportWarpFiles);
     inspectEl.append(save);
+
+    // What the five columns are. The format is documented at length in
+    // `packages/sim/src/warp.ts`, which is exactly where a reader holding the
+    // downloaded file will not look — the numbers arrive with no header, no
+    // comment line, and nothing on this page saying what they mean. A comment
+    // line in the file itself is not the answer: Bourke's format does not define
+    // one, so a strict player would choke on it.
+    inspectEl.append(
+      disclosure('what is in these files', state.warpHelpOpen, () => {
+        state.warpHelpOpen = !state.warpHelpOpen;
+        renderInspect();
+      }),
+    );
+    if (state.warpHelpOpen) {
+      inspectEl.append(
+        el('p', {
+          className: 'note',
+          textContent:
+            'Paul Bourke’s warp-mesh format, which dome and planetarium players read directly. ' +
+            'A line reading 2, then the node counts, then one line per node: x y u v i — where ' +
+            'the light goes, which texel belongs there, and how brightly. That last column is ' +
+            'why this format: it carries the blend, so warp and blend leave in one file instead ' +
+            'of two that can drift apart.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            'Two things worth knowing before you read the numbers. x spans ± the aspect ratio ' +
+            'while y spans ±1 — that asymmetry is the format’s own rule, not a mistake here, and ' +
+            'normalising both to ±1 instead is the error that squeezes every non-square ' +
+            'projector without looking wrong. And a node the light never reaches is written ' +
+            '-1 -1 -1: outside 0–1 on both texture axes AND negative in intensity, because the ' +
+            'format has two ways to say “skip this” and players do not all check the same one.',
+        }),
+      );
+      const spec = el('a', {
+        className: 'linkish',
+        textContent: 'Paul Bourke’s mesh format for image warping',
+        href: 'https://paulbourke.net/dataformats/meshwarp/',
+        target: '_blank',
+        rel: 'noopener noreferrer',
+        title: 'The format specification, off this site.',
+      });
+      inspectEl.append(spec);
+    }
   }
 }
 
