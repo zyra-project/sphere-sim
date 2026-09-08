@@ -44,6 +44,7 @@ import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import { buildWarpExports, formatWarpMesh } from '../../sim/src/warp.ts';
+import { buildSosAlignments, formatSosAlignment } from '../../sim/src/sos.ts';
 import { wrapDeg180 } from '../../sim/src/vec.ts';
 import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
@@ -178,6 +179,19 @@ interface PageState {
    * is worth a localStorage key; this is a paragraph read once.
    */
   warpHelpOpen: boolean;
+  /** Whether the note on what the SOS reduction drops is open. Not persisted. */
+  sosHelpOpen: boolean;
+  /**
+   * What the last SOS export actually cost, or `''` before there has been one.
+   *
+   * Measured on the rig that was on screen when the button was pressed, and kept
+   * because it is the whole reason the button is safe to offer. A static warning
+   * that the format is lossy is a thing a reader can agree with and still not
+   * act on; the number is per-rig, and it is what says whether THIS export is
+   * worth loading. Not recomputed on render: it is four projectors' worth of ray
+   * casts, which is fine on a click and not fine on every drag of a slider.
+   */
+  sosCost: string;
   panelOpen: boolean;
   readoutOpen: boolean;
   /**
@@ -216,6 +230,8 @@ const state: PageState = {
   explain: false,
   seamsOpen: false,
   warpHelpOpen: false,
+  sosHelpOpen: false,
+  sosCost: '',
   panelOpen: true,
   readoutOpen: true,
   cameraCount: 3,
@@ -4145,6 +4161,55 @@ function exportWarpFiles(): void {
   renderReadout();
 }
 
+/**
+ * Write one SOS alignment file per projector, and record what the reduction cost.
+ *
+ * ## The same two rigs the picture above the button is drawn from
+ *
+ * `exportWarpFiles` takes ONE rig, because a Bourke mesh says which texel of the
+ * content belongs at each node and that is answerable from the calibration the
+ * software believes. An SOS alignment says something else — where the pixel the
+ * software already drew has to move to — so it takes the disagreement between
+ * two rigs, which is exactly the field `warpMeshes` draws in the panel this
+ * button sits under. The file corrects that picture; `sos.ts` has the long form.
+ *
+ * ## Which means it uses ground truth, and that is the derogation worth naming
+ *
+ * `physical` is the true rig, and the simulator has it because it invented it. A
+ * real dome does not: an operator has the config and a photograph, and the whole
+ * point of `packages/solver` is to get from those to an estimate. So a file
+ * written here is the correction a PERFECT solve would justify, and it answers
+ * "could the format carry the answer if we had it" rather than "here is the
+ * answer". After a recalibration the two rigs are the truth and the recovery, so
+ * the field collapses towards straight and the file with it — which is the same
+ * behaviour, and the same caveat, as the picture. The page says so beside the
+ * button rather than leaving it to be inferred from a filename.
+ */
+function exportSosFiles(): void {
+  try {
+    const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
+    const model = displayModel(world);
+    const exports = buildSosAlignments(model.physical, model.content);
+    for (const exported of exports) {
+      downloadText(`${exported.projectorId}.alignment`, formatSosAlignment(exported.alignment));
+    }
+    // The worst projector, not the average: a mesh warp is judged by its worst
+    // seam, and averaging four projectors would hide the one that is wrong.
+    const worst = exports.reduce((a, b) => (b.residual.meshRmsPx > a.residual.meshRmsPx ? b : a));
+    const off = exports.reduce((n, e) => n + e.outOfFrame.length, 0);
+    state.sosCost =
+      `${exports.length} file${exports.length === 1 ? '' : 's'}. Worst of them, ${worst.projectorId}: ` +
+      `nine points left ${worst.residual.meshRmsPx.toFixed(2)} px of a ` +
+      `${worst.residual.fieldRmsPx.toFixed(1)} px correction` +
+      (off > 0 ? `, and ${off} vertices want content outside the frame.` : '.');
+    lastError = '';
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+  }
+  renderInspect();
+  renderReadout();
+}
+
 function renderTopButtons(): void {
   topBtnsEl.replaceChildren();
 
@@ -4907,6 +4972,92 @@ function renderInspect(): void {
         title: 'The format specification, off this site.',
       });
       inspectEl.append(spec);
+    }
+
+    // The same correction in the format SOS itself reads. Second, and visibly
+    // second, because it is the lossy one: a reader who takes the first button
+    // gets everything the simulator knows, and a reader who takes this one has
+    // to be told what they gave up BEFORE they click, which is why the
+    // derogations are a plain paragraph here and not only inside the note.
+    const sos = el('button', {
+      className: 'linkish',
+      textContent: 'save the SOS alignment files',
+      title:
+        'The same correction reduced to the nine-point mesh an SOS projector ' +
+        'alignment file carries. Lossy \u2014 read the note.',
+    });
+    sos.addEventListener('click', exportSosFiles);
+    inspectEl.append(sos);
+    inspectEl.append(
+      el('p', {
+        className: 'note tiny',
+        textContent:
+          'Lossy on purpose, four ways: no blend column at all, nine control points for the ' +
+          'whole frame, computed from the true rig this simulator has and a real dome does ' +
+          'not, and a format read off one sample file. Not a replacement for the Bourke mesh ' +
+          'above \u2014 it is the same correction made testable on the software already ' +
+          'running the sphere.',
+      }),
+    );
+    if (state.sosCost !== '') {
+      // What the last click actually cost, on the rig that was on screen. The
+      // paragraph above is true of every export; this is true of one, and it is
+      // the one the reader is about to load.
+      inspectEl.append(el('p', { className: 'note tiny', textContent: state.sosCost }));
+    }
+    inspectEl.append(
+      disclosure('what this format cannot carry', state.sosHelpOpen, () => {
+        state.sosHelpOpen = !state.sosHelpOpen;
+        renderInspect();
+      }),
+    );
+    if (state.sosHelpOpen) {
+      inspectEl.append(
+        el('p', {
+          className: 'note',
+          textContent:
+            'An SOS alignment file is a 3x3 mesh: nine screen positions, plus a global ' +
+            'translate, scale and rotate. Its texture is the projector\u2019s own rendered ' +
+            'frame, so it says where the pixel the software already drew has to move \u2014 ' +
+            'which is the picture above, not the texel-by-texel map the Bourke file carries. ' +
+            'Both are mesh warps and both resample; the difference is how much they can say.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            'The blend is the total loss. Bourke\u2019s fifth column is an intensity per node, ' +
+            'and an alignment file has no column for one: SOS blends in a separate subsystem ' +
+            'with its own edge masks and its own curve. So everything the ramp slider does is ' +
+            'simply absent from these files, and a seam that looked right here will not.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            'Nine points is less of a loss than it sounds. Four bilinear cells cannot express ' +
+            'a lens distortion \u2014 measured on the nominal rig, they leave about a third of ' +
+            'one \u2014 and they lose a few per cent of a lens-position error, because that ' +
+            'one depends on how far away the surface is. But a pointing error is very nearly ' +
+            'affine: a one-degree yaw is a 55-pixel correction of which the nine points leave ' +
+            'a tenth of a pixel. On this geometry the coarse mesh is not what limits an SOS ' +
+            'alignment. Doing it by eye is.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            'Two cautions before one of these goes near a show. The file is computed from the ' +
+            'rig the simulator invented, which a real dome has to solve for first \u2014 so it ' +
+            'is the correction a perfect calibration would justify, not one earned from a ' +
+            'photograph. And the format itself is read from a single sample file plus one ' +
+            'account of how SOS draws it: the meaning is on firm ground, the conventions are ' +
+            'inference. Load one on a projector you can put back.',
+        }),
+      );
     }
   }
 }

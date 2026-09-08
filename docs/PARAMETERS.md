@@ -259,7 +259,7 @@ region nobody projects onto.
 
 | Symbol | Parameter | Nominal | Class | Note |
 | --- | --- | --- | --- | --- |
-| `w(θ)` | Blend weight function | cosine ramp | `ASSUME` | Shape unpublished. |
+| `w(θ)` | Blend weight function | cosine ramp | `ASSUME` | Shape unpublished. SOS's own is a shader curve with three named knobs and no published formula — see below. |
 | `γ_blend` | Blend ramp exponent | **0.8** | `DOC` | From the SOS config, comment reads: default gamma setting for projectors to facilitate edge blending. **One global scalar for four projectors and three channels.** |
 | `w_width` | Blend region angular width | ~20° | `ASSUME` | Derived from seam geometry; verify against a real sphere. |
 | `mask_lo, mask_hi` | Polar mask onset / full | 60°, 70° | `DOC` | Units inferred as latitude. Verify. |
@@ -279,6 +279,45 @@ is possible), or 0.8 is an empirical shaping constant tuned until the band
 disappeared rather than a derived inverse gamma. Either way the conclusion holds —
 it is one global number standing in for something that varies per projector and
 per channel, and it cannot correct a chromatic seam.
+
+**What SOS actually does, and what that changes here.** An account from an SOS
+developer, relayed second-hand, names the mechanism this section has been
+modelling blind: blending is a subsystem separate from alignment, with two paths
+— hard edge masks composited `GL_SRC_ALPHA` / `GL_ONE_MINUS_SRC_ALPHA`
+(`EdgeBlend.cc:217`), and a shader-based curve taking an exponent `SOS_BLEND_P`,
+a gamma `SOS_BLEND_G` and a luminance `SOS_BLEND_A` (`BlendBelt.cc:42`), toggled
+by `alignment blend` (`Alignment.tcl:9`).
+
+This is evidence about STRUCTURE, not a citation. Nobody here has read that
+source; three environment-variable names are not a published formula. So `w(θ)`
+stays `ASSUME` and no class in the table above moves. Three things follow anyway.
+
+1. **A third scalar, with nothing to answer it.** This repository carries two
+   exponents — `rampGamma` = 0.8 on the weight (conventions.ts §B), and
+   `displayGamma` = 2.2 on the encode — which plausibly answer to `SOS_BLEND_P`
+   and `SOS_BLEND_G`. Nothing answers to `SOS_BLEND_A`.
+2. **That missing term is the one this section already modelled, under the wrong
+   name.** The paragraph above disposes of ambient light by carrying an additive
+   floor `f` through the continuity condition. A luminance term in a blend shader
+   is normally a black-level lift inside the overlap band — the same functional
+   form, from a different source. So the arithmetic was right and the attribution
+   was wrong. The conclusion is untouched: `continuityEncodedValue(gamma, floor,
+   n)` in `packages/sim/src/blend.ts` takes the floor as a bare parameter and
+   does not care where it came from, and 0.05 of it still only moves 0.730 to
+   0.716.
+3. **The either/or in `blend.ts` may be a false one.** That module's docblock
+   frames a fork — §4.5 reads 0.8 as an exponent on a SIGNAL, §B applies it to a
+   WEIGHT, and "one number in the config may be doing the other job". If SOS
+   carries a `P` and a `G` separately then it plausibly does both operations, and
+   the open question is not which one 0.8 is but which of SOS's two scalars the
+   config's 0.8 was. That is a sharper question and a site can answer it by
+   reading its own environment.
+
+The same account confirms one thing this document had no evidence for either way:
+**alignment files carry no intensity or gain at all.** Geometry and photometry
+are separated in SOS exactly as they are here. It is also why
+`packages/sim/src/sos.ts` writes geometry only, and why the blend
+`buildWarpExport` computes has nowhere to go in that format.
 
 ---
 

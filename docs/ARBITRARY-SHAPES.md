@@ -1985,3 +1985,66 @@ calibration, the bench scores it against ground truth the solver never saw, and
 the gates say whether it is good enough. Ship the renderer without Phase 5 and it
 is a good projection-mapping previewer with an honest boundary around what it
 claims — which is a fine thing to ship, as long as the page says so.
+
+## The other format, and the claim it deflates
+
+The paragraph above says the warp mesh is "the thing a projection-mapping product
+actually ships". That is true of the products, and it is not true of the software
+already running Science On a Sphere. SOS reads its own alignment file: nine
+screen-space control points on a 3x3 mesh whose texture coordinates are pinned to
+the canonical grid, plus a global translate, scale and rotate. `sos.ts` now reads
+one and writes one, so there are two deliverable formats and not one.
+
+**Three claims made about that format in passing did not survive being written
+down.** They are recorded here rather than quietly fixed, because two of them
+were mine and the third is the one this document had been leaning on.
+
+*"It has no texture coordinates, so it cannot resample."* Wrong. Its texture
+coordinates are fixed at the canonical grid and interpolated across the deformed
+triangles, which is a resample by any definition. Bourke's own specification says
+a warp may live "in either the x,y coordinates or in the u,v coordinates or in
+both"; for a mesh warp those are duals and SOS pins one half. The true limit is
+narrower: no INDEPENDENT texture map, so the only warps expressible are the
+images of vertex displacements.
+
+*"Nine control points is far too coarse."* Measured, and mostly wrong on this
+geometry. On the nominal rig a one-degree yaw is a 55-pixel displacement field of
+which the nine points leave **0.096 px** — under a fifth of one per cent. A
+pointing error, seen through a projector's frustum onto a body, is very nearly
+affine. Where the coarseness does bind is a lens TRANSLATION, which leaves 3.1%
+because the displacement depends on how far away the surface is, and lens
+distortion, which leaves 31.8% because a radial term has no shape in a bilinear
+basis on four cells — but that field is itself sub-pixel here, since the body
+sits in the middle of the frame where a radial term is smallest. So the format is
+not what limits an SOS alignment on this rig. That the nine numbers are found by
+eye is, and that is a different criticism from the one being made.
+
+*"Deriving one from the other is dropping columns."* Not even close, and this is
+the trap the module note now opens with. Bourke's file answers "which texel of the
+CONTENT belongs at this node"; an SOS alignment's texture is the projector's own
+already-rendered framebuffer, so it answers "where on screen does the pixel the
+software drew here have to go". Inverting the Bourke file to get the second
+question asks where content texel (0,0) lands, and for a projector that sees a
+quarter of a sphere the answer is nowhere — every corner of the grid undefined.
+Reading the Bourke node positions across as vertex positions writes the identity.
+The right source is the two-rig disagreement `warpMeshes` already draws, which is
+why `buildSosAlignment` takes two rigs where `buildWarpExport` takes one.
+
+**What the reduction genuinely costs, in the order it matters.** The blend is a
+total loss: Bourke's fifth column is an intensity per node and an alignment file
+has no column for one, because SOS blends in a separate subsystem — see
+PARAMETERS.md §4.5, which the same account also amended. The nine points cost
+what the paragraph above measures. And the file is computed from the rig the
+simulator invented, which a real dome has to solve for first, so it is the
+correction a perfect calibration would justify rather than one earned from a
+photograph. All four are printed beside the download button, in a paragraph and
+not behind a toggle, because a file with no blend column looks exactly like a
+file with a blend column and it is a projector on a sphere that finds out.
+
+**One thing came back the other way.** The one real sample of this format anybody
+here has seen puts no control point more than 0.014 from the untweaked grid — the
+site's correction is essentially a global similarity. That is what the
+measurement above independently predicts for a pointing error. It is the first
+time an external artifact has corroborated the forward model's GEOMETRY rather
+than one of its parameters, and AMENDMENTS A-23 now carries what else that file
+measures.

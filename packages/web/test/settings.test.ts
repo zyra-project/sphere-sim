@@ -552,10 +552,15 @@ test('the warp export ships the calibration the software believes, never ground 
   // here and a file that cannot exist in a real dome, and every test that only
   // checked the file PARSED would still pass.
   //
-  // The scan is over the source because there is no DOM here.
+  // The scan is over the source because there is no DOM here, and it stops at
+  // `exportSosFiles` rather than running to the end of the section. The two
+  // exports sit next to each other and have OPPOSITE requirements on this exact
+  // point: a Bourke mesh is answerable from one rig and must never be the true
+  // one, while an SOS alignment is a disagreement and is meaningless without
+  // both. A scan wide enough to cover both cannot express either rule.
   const fn = MAIN_SOURCE.slice(
     MAIN_SOURCE.indexOf('function exportWarpFiles(): void {'),
-    MAIN_SOURCE.indexOf('function renderTopButtons(): void {'),
+    MAIN_SOURCE.indexOf('function exportSosFiles(): void {'),
   );
   assert.ok(fn.length > 0, 'the warp exporter has moved; this test can no longer find it');
   assert.ok(
@@ -631,6 +636,69 @@ test('the warp files say what their five columns are, without putting it in the 
   assert.ok(
     /rel: 'noopener noreferrer'/.test(note.slice(0, 2500)),
     'the specification link does not carry rel=noopener noreferrer',
+  );
+});
+
+test('the SOS export flags what it drops before the click, not behind a toggle', () => {
+  // The second export is the lossy one, and the loss is not visible in the file
+  // it writes: an alignment file with no blend column looks exactly like an
+  // alignment file, and it is a projector on a sphere that finds out. So the
+  // derogations are a plain paragraph beside the button. This test exists to
+  // stop them being tidied away into the note the way the Bourke column list
+  // legitimately was — that one explains a format, this one warns about it.
+  const beforeToggle = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf("sos.addEventListener('click', exportSosFiles)"),
+    MAIN_SOURCE.indexOf("disclosure('what this format cannot carry'"),
+  );
+  assert.ok(beforeToggle.length > 0, 'the SOS export block has moved; this test cannot find it');
+  for (const [needle, what] of [
+    ['no blend column', 'that the blend is dropped entirely'],
+    ['nine control points', 'that the whole frame gets nine points'],
+    ['true rig this simulator has', 'that it is computed from ground truth'],
+    ['one sample file', 'that the format itself is reverse-engineered'],
+  ] as const) {
+    assert.ok(beforeToggle.includes(needle), `the always-visible flag does not say ${what}`);
+  }
+
+  assert.ok(
+    /sosHelpOpen: boolean;/.test(MAIN_SOURCE) && /sosHelpOpen: false,/.test(MAIN_SOURCE),
+    'sosHelpOpen is not carried in PageState, so the note will close under the reader',
+  );
+  assert.ok(
+    /sosCost: string;/.test(MAIN_SOURCE) && /sosCost: '',/.test(MAIN_SOURCE),
+    'the measured cost of the last export is not carried in PageState',
+  );
+});
+
+test('the SOS export is built from BOTH rigs, which is what stops it being the identity', () => {
+  // The mistake this catches writes a well-formed file that does nothing. An SOS
+  // alignment says where the pixel the software already drew has to move, so it
+  // is the disagreement between what the software believes and what is true —
+  // two rigs. Handed one rig twice it correctly produces the untweaked grid,
+  // which loads without complaint and corrects nothing.
+  //
+  // `exportWarpFiles` beside it takes exactly one rig, and the right one, for
+  // the opposite reason: a Bourke mesh is answerable from the calibration alone,
+  // and writing it from `physical` would export a correction no dome could have.
+  const fn = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function exportSosFiles(): void {'),
+    MAIN_SOURCE.indexOf('function renderTopButtons(): void {'),
+  );
+  assert.ok(fn.length > 0, 'exportSosFiles has moved; this test can no longer find it');
+  assert.ok(
+    /buildSosAlignments\(model\.physical, model\.content\)/.test(fn),
+    'the SOS export is not passed the truth rig and the believed rig, in that order',
+  );
+  // A different extension from the Bourke files, which are `.data`. Both are
+  // written per projector into the same downloads folder, and a reader who
+  // exported both wants to be able to tell them apart afterwards.
+  assert.ok(/\.alignment`/.test(fn), 'the SOS files do not get their own extension');
+  // Measured on the rig that was on screen, and the worst projector rather than
+  // the mean: four projectors averaged would hide the one that is wrong.
+  assert.ok(/state\.sosCost =/.test(fn), 'the export records nothing about what it cost');
+  assert.ok(
+    /meshRmsPx > a\.residual\.meshRmsPx/.test(fn),
+    'the reported cost is not the worst projector’s',
   );
 });
 
