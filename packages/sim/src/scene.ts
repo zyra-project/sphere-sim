@@ -106,7 +106,25 @@ export interface NominalRigParams {
 /**
  * PARAMETERS.md §4.5 nominals. `rampGamma` 0.8 is the one DOC-class value in
  * here, straight from the SOS config; the shape and width are ASSUME.
- * `bottomOnly` and the 60/70 pair come from `set bottommask 60,70` (§4.4).
+ *
+ * **`bottomOnly` defaults to FALSE, against §4.4's heading.** §4.4 is titled "The
+ * bottom mask" and argues "the asymmetry in the config is explained by the
+ * hardware" — the ceiling mount occludes the north cap, so only the south needs
+ * software. AMENDMENTS A-39 refutes the premise from the site's own
+ * `local_sos_config.json`, which sets
+ *
+ *     "topmask"    : "60,70"
+ *     "bottommask" : "60,70"
+ *
+ * There is no asymmetry to explain. SOS masks both poles, symmetrically, at the
+ * same pair of latitudes. The hardware argument may still be true about the
+ * mount; it is simply not what the config does, and a simulator that models one
+ * mask where SOS applies two renders 6.4% of the sphere that the real system
+ * fades or blanks — of which 2.7% it blanks outright.
+ *
+ * The flag survives because a site CAN configure only a bottom mask: nothing in
+ * SOS requires the pair. What changes is which way round the default sits, and
+ * it now sits where the one config anybody here has read puts it.
  */
 export function nominalBlend(overrides: Partial<BlendCalibration> = {}): BlendCalibration {
   const shape: RampShape = overrides.rampShape ?? 'cosine';
@@ -116,7 +134,7 @@ export function nominalBlend(overrides: Partial<BlendCalibration> = {}): BlendCa
     rampGamma: overrides.rampGamma ?? 0.8,
     maskLoDeg: overrides.maskLoDeg ?? 60,
     maskHiDeg: overrides.maskHiDeg ?? 70,
-    bottomOnly: overrides.bottomOnly ?? true,
+    bottomOnly: overrides.bottomOnly ?? false,
     // Present only when asked for. docs/AMENDMENTS.md A-37 is not applied, so a
     // rig nobody opted in for must serialize exactly as it did before the field
     // existed — bench-results.json is what critics read and it should not gain a

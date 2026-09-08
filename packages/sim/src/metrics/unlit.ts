@@ -28,17 +28,24 @@
  * "measured", so both are computed and both appear in the report. The
  * configured reading is the one scored.
  *
- * ## The domain is symmetric even though the mask is not
+ * ## The domain is symmetric, and now so is the mask
  *
- * `bottomOnly` is true because the sphere hangs from a ceiling mount that
- * physically occludes the north polar cap (§1, §4.4) — the north needs no
- * software mask because hardware already covers it. But the north cap is still
- * geometrically unlit down to latitude 76.3, and if the gate's domain followed
- * `bottomOnly` it would take in that whole permanently-dark region and report a
- * catastrophic failure for a rig that is behaving exactly as §4.3 says it must.
- * So the domain is `|lat| <= onset` on ABSOLUTE latitude, applied at both poles,
- * which is the natural reading of "inside `mask_lo`" and the only one under
- * which the gate means anything.
+ * This section used to explain why the domain is symmetric *even though the mask
+ * is not*: `bottomOnly` was true, on §4.4's reading that a ceiling mount occludes
+ * the north cap so only the south needs software. AMENDMENTS A-39 refuted that
+ * from the site's own config, which sets `topmask` beside `bottommask` at the
+ * same latitudes, and the default now masks both.
+ *
+ * The domain was right anyway, and for a reason that never depended on the mask:
+ * the north cap is geometrically unlit down to latitude 76.3, so a domain that
+ * followed `bottomOnly` would take in that whole permanently-dark region and
+ * report a catastrophic failure for a rig behaving exactly as §4.3 says it must.
+ * `maskOnsetLatitude` therefore forces `bottomOnly` off when it bisects, and did
+ * so before the default moved — which is why **this gate's numbers did not
+ * change when A-39 was applied.** The mask acts only above `mask_lo` and the
+ * domain ends there, so the two never overlap. That is worth stating: a reader
+ * comparing results across that change should expect every other masked metric
+ * to move and this one not to.
  *
  * ## Two independent checks, because sampling can miss a hole
  *

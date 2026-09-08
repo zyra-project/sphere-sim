@@ -843,7 +843,9 @@ export function nominalRig(options: Partial<NominalRigOptions> = {}): RigCalibra
       rampGamma: PARAMETER_TABLE.gamma_blend.nominal,
       maskLoDeg: PARAMETER_TABLE.mask_lo.nominal,
       maskHiDeg: PARAMETER_TABLE.mask_hi.nominal,
-      bottomOnly: true,
+      // Both poles — AMENDMENTS A-39. See `sim`'s `nominalBlend` for the
+      // evidence; this builder has to agree with it or A-17 happens again.
+      bottomOnly: false,
     },
     framebuffer: { width: resX * 2, height: resY * 2 },
     projectors,

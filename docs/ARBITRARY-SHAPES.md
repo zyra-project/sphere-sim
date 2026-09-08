@@ -816,10 +816,12 @@ than a search for a magic number.
 proposed generalizing it to a painted mask in surface UV. That was wrong, and it
 is worth saying why rather than quietly dropping it.
 
-The mask attenuates a sphere's exposed south cap, keyed on **absolute latitude**.
-The north cap needs no software mask because a ceiling mount physically occludes
-it — that asymmetry is the whole content of `bottomOnly`, and `coverage.ts` states
-it. A dropped model has neither a pole nor a cap, and its `latDeg` is a UV
+The masks attenuate a sphere's two caps, keyed on **absolute latitude**. (This
+paragraph used to say the north needed no software mask because a ceiling mount
+occludes it, and called that asymmetry "the whole content of `bottomOnly`".
+AMENDMENTS A-39 refuted it from the site's own config, which sets `topmask`
+beside `bottommask`; the argument below never depended on the asymmetry and is
+unaffected.) A dropped model has neither a pole nor a cap, and its `latDeg` is a UV
 coordinate wearing a latitude's name, so a mask applied there would darken a band
 of texture rows chosen by whoever did the unwrap. That is a picture of a
 parameter, not of anything physical.

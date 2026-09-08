@@ -499,7 +499,10 @@ export const CONTROL_GROUPS: readonly ControlGroup[] = [
         section: '§4.4',
         klass: 'DOC',
         kind: 'toggle',
-        nominal: 1,
+        // Off: the site's config sets `topmask` beside `bottommask`, so both
+        // caps are masked. AMENDMENTS A-39. On is still a configuration a site
+        // can choose, which is why the toggle is here at all.
+        nominal: 0,
         min: 0,
         max: 1,
         step: 1,

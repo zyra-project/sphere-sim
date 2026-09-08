@@ -2522,7 +2522,7 @@ degrees of freedom are measured per projector, and the measured throw spread —
 seed. Anything that reports how well a solve recovers pose at Boulder is at
 present scoring against a rig whose per-projector geometry is synthetic.
 
-### §4.4 is refuted: there is a top mask, and it is symmetric
+### §4.4 is refuted: there is a top mask, and it is symmetric — **APPLIED**
 
 §4.4 states, under the heading **"Why bottom only"**, that "the sphere hangs from
 a ceiling mount, which physically occludes the north polar cap … The asymmetry in
@@ -2536,11 +2536,27 @@ The config has both:
 ```
 
 **There is no asymmetry to explain.** The hardware argument may still be true
-about the mount, but it is not what the config does, and the simulator models one
-mask where SOS applies two. `polarMask` is called for the south cap only, so
-every metric that samples the north polar region is scoring content SOS blanks.
+about the mount, but it is not what the config does, and the simulator modelled
+one mask where SOS applies two. `polarMask` was called for the south cap only, so
+every metric that samples the north polar region was scoring content SOS blanks.
 §1's `occl_top` (6° polar cap, `ASSUME`) is a separate and much smaller number
 than a mask running to 70°, so it does not cover this.
+
+**This part of the entry is APPLIED; the rest of A-39 is not.** `nominalBlend`,
+`blendFrom` and the solver's builder now default `bottomOnly` to false, and
+PARAMETERS.md §4.4 is retitled and rewritten. The flag survives, because a site
+can configure one mask and nothing in SOS requires the pair — what moved is the
+default. The area concerned is **6.4% of the sphere** between 60°N and the
+mount's own 6° cap, of which **2.7%** SOS blanks outright.
+
+One metric deliberately did NOT move, and it is worth recording why rather than
+leaving a reader to wonder whether it was missed. §7's unlit-within-the-mask gate
+takes its domain from `maskOnsetLatitude`, which has always forced `bottomOnly`
+off when it bisects — the domain is `|lat| <= mask_lo` at both poles, because a
+domain following the old asymmetry would have swallowed the permanently-dark
+north cap and failed a rig behaving exactly as §4.3 requires. The mask acts only
+ABOVE `mask_lo` and the domain ends there, so the two never overlap. Every other
+masked metric moves; this one cannot.
 
 ### The projector raster is the wrong shape, not just the wrong size
 

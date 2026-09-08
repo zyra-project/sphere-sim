@@ -483,11 +483,11 @@ export function sphereSurface(radiusM: number): Surface {
  *    crossfade needs. The `'sector'` reading is worse — it assigns longitude
  *    wedges from lens azimuth, which presumes a ring of lenses around a
  *    rotationally symmetric object.
- *  - **The polar mask.** `set bottommask 60,70` attenuates the sphere's EXPOSED
- *    SOUTH cap; the north needs no software mask because a ceiling mount already
- *    occludes it physically, which is what `bottomOnly` records. On a mesh the
- *    latitude it keys on is a UV coordinate wearing a latitude's name, so the
- *    mask would attenuate by texture row.
+ *  - **The polar masks.** `topmask` and `bottommask`, both 60,70, attenuate BOTH
+ *    of the sphere's caps — see AMENDMENTS A-39, which corrected the older
+ *    reading that only the south was masked. On a mesh the latitude they key on
+ *    is a UV coordinate wearing a latitude's name, so the masks would attenuate
+ *    by texture row.
  *
  * ## What this predicate gates TODAY
  *
@@ -511,9 +511,11 @@ export function sphereSurface(radiusM: number): Surface {
  * find: the quantity has no referent off a sphere.
  *
  * **What a mask stands in for is an OCCLUDER**, and that is the honest
- * generalization. §1 and §4.4 describe a real ceiling mount that physically
- * blocks the north cap, and this model represents it as a PARAMETER —
- * `bottomOnly` — rather than as geometry. So the general feature is a scene
+ * generalization. §1 describes a real ceiling mount that physically blocks the
+ * north cap — 6 degrees of it, as `occl_top` — and this model represents it as a
+ * PARAMETER rather than as geometry. (It is NOT what `bottomOnly` records: A-39
+ * showed the config masks both caps at 60 degrees, so the mount and the mask are
+ * two different things at two different scales.) So the general feature is a scene
  * object that blocks rays, which does not exist today: `Surface.shadowed`
  * answers only whether a surface occludes ITSELF, and `web/src/glsl.ts` says of
  * the room's furniture that "none of it occludes the light, and the trace below

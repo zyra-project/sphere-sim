@@ -359,7 +359,7 @@ test('§4.4: the bottommask onset of 60 matches the seam-direction usable limit'
 // §M — the polar mask
 // ---------------------------------------------------------------------------
 
-test('§M: the mask is a cosine feather on ABSOLUTE latitude, south only', () => {
+test('§M: the mask is a cosine feather on ABSOLUTE latitude, at both poles or one', () => {
   const blend = {
     rampShape: 'cosine' as const,
     widthDeg: 20,
@@ -384,13 +384,22 @@ test('§M: the mask is a cosine feather on ABSOLUTE latitude, south only', () =>
     prev = m;
   }
 
-  // bottomOnly: the north cap is occluded by the ceiling mount (§1, §4.4), so
-  // there is no software mask there.
+  // `bottomOnly` still means what it says — a site CAN configure one mask, and
+  // this is that configuration, kept because nothing in SOS requires the pair.
   assert.equal(polarMask(65, blend), 1);
   assert.equal(polarMask(89, blend), 1);
-  // ...and with bottomOnly off, the mask is symmetric in ABSOLUTE latitude.
+
+  // But it is no longer the DEFAULT, and this is the shape the default has:
+  // symmetric in absolute latitude, because the site's own config sets
+  // `topmask 60,70` beside `bottommask 60,70` (AMENDMENTS A-39). Asserted at
+  // full strength rather than as a symmetry check, so the north side is pinned
+  // to the same three landmarks the south side is.
   const both = { ...blend, bottomOnly: false };
   assert.ok(Math.abs(polarMask(65, both) - polarMask(-65, both)) < 1e-15);
+  assert.equal(polarMask(59.9, both), 1, 'unattenuated below the onset, north too');
+  assert.equal(polarMask(70, both), 0, 'fully masked at maskHi, north too');
+  assert.equal(polarMask(89, both), 0, 'and all the way to the pole');
+  assert.ok(Math.abs(polarMask(65, both) - 0.5) < 1e-12, 'cosine feather, north too');
 });
 
 test('A-02: the colatitude reading roughly triples the masked region', () => {
