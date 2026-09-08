@@ -1707,6 +1707,54 @@ STILL NOT SHIPPED ON. The guard removes the reason it could not be, and does not
 supply a reason it should be: it remains a mode with a measured regime — rotation
 yes, position no, stalls as the price — that nothing selects by default.
 
+**Every refutation above was judged on POSITION, and re-reading them on rotation
+changes none of them.** The wrong-metric finding was about one sweep. The habit
+was not: the hybrid, the estimating-equation merit and the curved-residual bound
+were each argued from a position column with a rotation column beside it that
+nobody read. The audit needs no new solves — every one of those probes recorded
+`rot_deg` all along — so it is a re-read of runs already in the record.
+
+The artificial cell, 64×128 sphere unless noted, position in mm and rotation in
+degrees:
+
+| row | facet | smooth | hybrid | est.-equation | curved bound |
+|---|---|---|---|---|---|
+| seed 1 | 137.5 / 0.239 | 13.1 / **0.046** | 97.6 / 0.166 | 161.4 / 1.265 | 12.4 / 0.078 |
+| seed 2 | 32.2 / **0.078** | 38.3 / 0.109 | 69.6 / 0.150 | 128.4 / 0.216 | 38.5 / 0.107 |
+| seed 3 | 33.4 / 0.079 | 13.6 / **0.022** | 33.5 / 0.079 | 152.0 / 0.244 | 10.7 / 0.058 |
+| 192×384 seed 1 | 12.5 / **0.037** | 17.7 / 0.040 | 12.5 / 0.037 | 149.2 / 0.773 | 18.6 / 0.040 |
+
+(The facet and hybrid 192×384 rows are identical at 12.5 / 0.037 and that is not
+a transcription slip: the hybrid finishes with the facet derivative, and at a
+tessellation fine enough that its smooth phase buys nothing the two land on the
+same answer.)
+
+ALL THREE REFUTATIONS HOLD. The estimating-equation merit is worse on rotation
+by two to twenty-seven times, which is the same verdict its position column gave
+and by a wider margin. The hybrid is worse on rotation on every row it was worse
+on in position. The curved bound is the interesting one and it is the one that
+flips: on POSITION it beat the smooth mode on seeds 1 and 3 (12.4 against 13.1,
+10.7 against 13.6), and on ROTATION it loses both (0.078 against 0.046, 0.058
+against 0.022) and ties the fine row. The metric changes which of the two looks
+better; it does not change the conclusion, which was that a second intersection
+stack is not worth a 0.7 mm gain on two rows of four. That conclusion is now
+supported by the metric it was not tested on.
+
+WHAT THE COLUMN WOULD HAVE SHOWN, stated carefully because the temptation is to
+say the answer was sitting there and it was not. Pairing all twelve rows of the
+first smooth sweep against their facet counterparts, smooth wins rotation 8-4
+against 9-3 on position, and its mean rotation is 0.051° against the facet's
+0.091°. Five rows are two to five times better: the two near-spherical sphere
+rows at 5.2x and 3.6x, and all three 1:1:0.98 oblate rows at 3.5x, 2.3x and 2.3x.
+
+But 8-4 is a sign test at p=0.39. Twelve rows could not have ESTABLISHED the
+rotation effect, and this document should not claim they could. What reading the
+column would have bought is the question — why is the near-spherical advantage
+three to five times larger on one gated quantity than the other? — roughly a
+year of measurement before the sixty-seed sweep asked it. The failure was not
+missing an answer. It was not noticing that half the criterion was going
+unreported while four strategies were refuted against the other half.
+
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the
 hypothesis that placing every projector at one distance along its nominal bearing
