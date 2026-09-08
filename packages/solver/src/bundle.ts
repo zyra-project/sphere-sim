@@ -570,7 +570,14 @@ export interface BundleOptions {
    *
    * And it costs stalls, which is why "off" is still the right default and not
    * merely the cautious one: 13 of those 180 pairs stop with the damping at its
-   * cap in this mode and 0 do in `'facet'`.
+   * cap in this mode and 0 do in `'facet'`. That asymmetry has a mechanism and
+   * half of it is a theorem — the facet mode CANNOT reach the cap, because a
+   * damped step is always downhill on the gradient it was built from and this
+   * mode is built from a different one. See {@link BundleReport.stopReason} and
+   * the entry in docs/ARBITRARY-SHAPES.md. The stalls are an early exit rather
+   * than a failure (12 of the 13 beat their facet pair on rotation), so they
+   * are a reason to read the stop reason rather than a reason to avoid the
+   * mode.
    *
    * THE GUARD COST PART OF THIS, and the earlier numbers are kept here because
    * the difference is the price of the fallback. Unguarded — that is, with a
@@ -2631,7 +2638,24 @@ export interface BundleReport {
   state: BundleState;
   iterations: number;
   converged: boolean;
-  /** Why the loop stopped. Reported so a stall is never mistaken for convergence. */
+  /**
+   * Why the loop stopped. Reported so a stall is never mistaken for convergence.
+   *
+   * `'lambda'` is the damping reaching its cap with no step accepted. It is
+   * UNREACHABLE when the Jacobian is the residual's exact derivative and no box
+   * is active: the damped step satisfies `x·g = -gᵀ(JᵀJ + λD)⁻¹g < 0` for every
+   * λ, and its length falls to zero as λ rises, so some short enough step always
+   * lowers the cost. Two things can break that. A bound clamps the trial, and
+   * then it is the CLAMPED state that must descend — see `levenbergMarquardt`.
+   * Or the Jacobian is not the residual's derivative, which is what
+   * {@link BundleOptions.meshNormal}'s `'smooth'` chooses on purpose: 13 of its
+   * 180 paired mesh solves stop here against the facet mode's 0, measured in
+   * docs/ARBITRARY-SHAPES.md, and every stall examined there ends on an
+   * iteration whose step direction had stopped pointing downhill on the true
+   * cost. Those 13 are an early exit rather than a failure — 12 of them land
+   * BETTER rotation than their facet pair — but they are still not convergence
+   * and are not reported as it.
+   */
   stopReason:
     | 'cost'
     | 'step'

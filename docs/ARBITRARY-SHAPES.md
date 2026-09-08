@@ -1755,6 +1755,80 @@ year of measurement before the sixty-seed sweep asked it. The failure was not
 missing an answer. It was not noticing that half the criterion was going
 unreported while four strategies were refuted against the other half.
 
+**The `lambda` stalls have a mechanism, and it is a theorem on one side.** The
+entry above left 13 stalls in 180 paired solves against the facet mode's 0 as
+established and unexplained. The asymmetry is not luck and not a property of
+meshes: it is what an inexact Jacobian does to Levenberg–Marquardt's acceptance
+test, and the facet side of it can be proved rather than measured.
+
+WHY THE FACET MODE CANNOT STALL. The loop accepts on a bare cost decrease and
+raises the damping until it finds one. The damped step solves
+`(JᵀJ + λD) x = -g`. `JᵀJ` is positive semi-definite and `D` is the diagonal
+floored away from zero, so the damped matrix is positive DEFINITE and so is its
+inverse, giving `x·g = -gᵀ(JᵀJ + λD)⁻¹g < 0` for every λ and every non-zero `g`.
+The step always points downhill on the gradient it was built from, and its length
+falls to zero as λ rises. When `g` is the true gradient of the cost — which is
+what the facet Jacobian gives, being the exact derivative of the residual the
+cost is built from — some short enough step therefore lowers the cost, the inner
+loop accepts, and the damping cannot reach its cap. Facet's 0 in 180 is that
+algebra. `test/linalg.test.ts` pins it on a rank-deficient system across seven
+decades of λ.
+
+WHY THE SMOOTH MODE CAN. It builds the step from `Jₛᵀr` and is judged against
+`J_fᵀr`, so what it needs is `x·g_true < 0` where `x` came from a different
+vector. That is a pairing of two vectors through a positive-definite form and has
+no sign. Instrumented at every iteration of a mesh solve, comparing the limiting
+step direction `-D⁻¹Jᵀr` against the true gradient recomputed at the same state:
+
+| mode | iterations | non-descending |
+|---|---|---|
+| facet, 5 seeds | 81 | **0** |
+| smooth, seed 33 | 9 | 2 |
+| smooth, seed 53 | 10 | 1 |
+| smooth, seed 28 | 8 | 2 |
+| smooth, seed 60 | 8 | 4 |
+
+Every stall examined ends on a non-descending iteration, four of four. It is
+NECESSARY AND NOT SUFFICIENT: seed 11 also ends on one and stops on `step`,
+because a step at moderate λ is not the limiting direction and can still descend
+when the misalignment is slight. The trajectory on seed 33 is the shape of the
+thing — the cosine deepens through the descent, −0.0009 to −0.0033, turns
+positive at iteration 7 and stalls at 8.
+
+TWO THINGS RULED OUT rather than assumed. `boxProjections` is 0 on every
+iteration of every run above, so this is not the active-bound stall the
+`levenbergMarquardt` docblock already describes, where the CLAMPED trial is what
+must descend and the guarantee above does not apply. And the cosines are small in
+BOTH modes — facet's run −0.001 to −0.041 — because `D` spans the parameter
+types, metres against degrees; the magnitude is the preconditioner and only the
+SIGN is the finding. An earlier reading of this measurement called the smooth
+direction "nearly orthogonal to the true gradient" and the facet control refuted
+it.
+
+AND THE STALL IS NOT A FAILURE, which is the part that changes what to do about
+it. Against their facet pairs the 13 stalled rows have BETTER rotation on 12,
+better position on 8, and fewer iterations on 11. Final cost at the stall, on the
+three seeds instrumented, against what facet reaches with two to three times the
+iterations:
+
+| seed | smooth cost | facet cost | excess | smooth rot | facet rot | iterations |
+|---|---|---|---|---|---|---|
+| 28 | 5.362936e+4 | 5.368502e+4 | **−0.104%** | 0.0245° | 0.0705° | 43 vs 65 |
+| 33 | 5.368034e+4 | 5.364873e+4 | +0.059% | 0.0772° | 0.1480° | 19 vs 61 |
+| 53 | 5.365097e+4 | 5.363361e+4 | +0.032% | 0.0540° | 0.0681° | 22 vs 47 |
+
+On seed 28 the stalled solve reaches a LOWER cost than the facet solve that
+converged. `lambda` here is not a solve that failed; it is a solve that ran out of
+descent its own gradient could find, which happens once the residual is small
+enough that the Jacobian's error dominates the direction — that is, after the
+descent is essentially done. The report is still right to refuse `converged`,
+because the loop genuinely did not meet a convergence test and a solver that
+calls its own stops convergence is worse than one that stops loudly. But the 13
+should be read as an early exit rather than a defect, and nothing here argues for
+changing the acceptance rule: a gain-ratio test would reject these steps too, and
+the one previous attempt to change what a step must reduce — the
+estimating-equation merit above — was refuted on twelve rows of twelve.
+
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the
 hypothesis that placing every projector at one distance along its nominal bearing
