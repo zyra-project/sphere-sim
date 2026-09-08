@@ -559,26 +559,34 @@ export interface BundleOptions {
    * never touched — say this mode buys one of §7's two gated recovery quantities
    * and not the other.
    *
-   * It buys ROTATION. Paired by seed across 180 pairs the worst projector's
-   * rotation error falls from 0.591° to 0.416° at 32×64, 0.375° to 0.079° at
-   * 64×128 and 0.094° to 0.060° at 192×384 — 162 wins to 18, a geometric mean
-   * ratio of 0.474, and against §7's 0.05° gate 33 paired rows flip to passing
-   * where 3 flip the other way. It is also cheaper: 26.5 fewer iterations on 156
-   * of 180 pairs. It does NOT buy POSITION: 7.1 mm better on average, which a
-   * permutation test does not separate from seed variance (p=0.28), at an
-   * operating point where the analytic floor itself fails §7's 2 mm gate on all
-   * sixty seeds.
+   * It buys ROTATION. Paired by seed across 180 pairs, with the crease guard
+   * `mesh.ts`'s `SMOOTH_INCIDENCE_FLOOR` (0.7) now applies, the worst
+   * projector's rotation error falls from 0.591° to 0.217° at 32×64, 0.375° to
+   * 0.208° at 64×128 and 0.094° to 0.070° at 192×384 — 152 wins to 28, sign test
+   * 8e-22, a geometric mean ratio of 0.604. It does NOT buy POSITION: a
+   * permutation test does not separate it from seed variance, at an operating
+   * point where the analytic floor itself fails §7's 2 mm gate on all sixty
+   * seeds.
    *
    * And it costs stalls, which is why "off" is still the right default and not
-   * merely the cautious one: 16 of those 180 pairs stop with the damping at its
+   * merely the cautious one: 13 of those 180 pairs stop with the damping at its
    * cap in this mode and 0 do in `'facet'`.
    *
-   * SELECTING IT NEEDS ONE MORE THING BUILT. Every fixture in all 540 solves is a
-   * closed, crease-free ellipsoid, and `mesh.ts`'s {@link MeshNormalMode} records
-   * that across a fold the interpolated normal moves the derivative's singular set
-   * somewhere a ray reaches at ordinary incidence, with a 1e-12 clamp the only
-   * guard. A visitor's `.glb` is that creased body. The rotation result is a
-   * reason to build the facet fallback described there, not a reason to skip it.
+   * THE GUARD COST PART OF THIS, and the earlier numbers are kept here because
+   * the difference is the price of the fallback. Unguarded — that is, with a
+   * derivative now known to be wrong by a factor of 200 on rays where the
+   * interpolated incidence has collapsed — the same 180 pairs read 162 wins to
+   * 18 at a ratio of 0.474, and 39 rows passed §7's 0.05° gate against the
+   * guarded 29 (facet passes 9). So the guard costs about ten gate rows and a
+   * fifth of the effect size. Paired against the unguarded mode directly it is
+   * not separable either way — rotation mean 0.185° to 0.165°, position 51.1 mm
+   * to 45.0 mm, neither significant — because it trades small regressions on
+   * most rows for large repairs on a few, which is what a guard is.
+   *
+   * That price is not paid to improve these bodies. Every one of the 540 solves
+   * is a closed, crease-free ellipsoid, which is the one shape the hazard cannot
+   * appear on; the guard is what makes the mode safe on the creased `.glb` a
+   * visitor actually uploads, and the ten gate rows are what that costs here.
    *
    * It trades exactness for smoothness on purpose; see `mesh.ts`'s
    * `intersectMeshJacobian` for what it does and does not change.

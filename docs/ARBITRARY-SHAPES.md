@@ -1482,7 +1482,7 @@ WHAT IS NOT ESTABLISHED, and three seeds cannot establish it: whether the smooth
 Jacobian is better than the facet one in this cell. (SETTLED BELOW, on sixty
 seeds, and not on this metric: on POSITION it is still not established, and on
 ROTATION — which §7 gates too, and which nothing above measured — smooth wins
-162 paired rows of 180.) It wins five rows of nine and
+152 paired rows of 180 with the crease guard in place, 162 without it.) It wins five rows of nine and
 loses four, and its worst row is worse than the facet's worst (97.2 against
 61.5). The means go the wrong way at two tessellations and the right way at one.
 There is no effect here that three seeds separate from seed variance, and the
@@ -1541,6 +1541,13 @@ rotation error — and it moves the gate: against 0.05°, facet passes 9 of 180 
 smooth 39, with 33 paired rows flipping to passing and 3 the other way (p=2.3e-7).
 It is also CHEAPER, which a mode trading exactness for smoothness had no right to
 be: 26.5 fewer iterations on 156 of 180 pairs and 12.4 fewer seconds on 135.
+
+(SUPERSEDED by the crease-guard entry below, and this table is the UNGUARDED
+mode. The guard reruns these 180 pairs at 0.217° / 0.208° / 0.070°, 152 wins to
+28, a ratio of 0.604 and 29 gate rows rather than 39. The halving does not
+survive it; a 40% reduction does. The numbers here stand as what the mode did
+before a derivative now known to be wrong by 200x on collapsed rays was removed
+from it.)
 
 THE ROTATION FINDING WAS POST HOC, so it was re-registered and re-run rather than
 written down. Sweep 2's registration named rotation as primary on untouched seeds
@@ -1609,6 +1616,144 @@ clamp between it and a divide — and that the facet fallback which would guard 
 never been built. A visitor's `.glb` is exactly the creased body that hazard is
 about. Nothing here bears on it, and the rotation result is a reason to build that
 guard rather than a reason to skip it.
+
+**The crease guard is built, and re-measuring behind it cost a fifth of the
+effect that motivated it.** The entry above closed by naming the fallback
+`mesh.ts` had described and never built as the one thing between this mode and
+being selectable. It exists now, and three things came out of building it that
+the entry above could not have predicted.
+
+IT IS NOT A CREASE DETECTOR, because no threshold on the quantity a guard can
+see could be one. The obvious design — fall back where the interpolated
+incidence `|n_s·d|` collapses relative to the facet's `|n_f·d|` — was measured
+before it was written, on the hypothesis that creased bodies would separate from
+smooth ones. They do not. An 8×16 UV sphere has no crease anywhere and still
+drives that ratio to 0.0012, with 1.1% of its rays below 0.5 at incidences the
+decode keeps; a 30%-jittered sphere does the same at every refinement, because
+an irregular vertex fan gives a first-order normal wherever it is not centrally
+symmetric. There is no gap between the two populations to put a threshold in.
+
+WHAT THE RATIO DOES SEPARATE is which derivative is closer to the truth, and
+that is a number rather than an argument: on a tessellated sphere `sphere.ts`
+supplies the exact derivative of the surface both modes approximate. Binning
+800 000 rays at the decode's own `cos(incidence) ≥ 0.2` cut:
+
+| ratio | facet mean error | smooth mean error | smooth closer |
+|---|---|---|---|
+| < 0.02 | 2.6e+0 | 5.4e+2 | 0% |
+| 0.1–0.15 | 1.9e+0 | 1.8e+1 | 1% |
+| 0.4–0.5 | 8.3e-1 | 2.2e+0 | 20% |
+| 0.6–0.7 | 5.4e-1 | 6.4e-1 | 53% |
+| 0.7–0.8 | 3.8e-1 | 3.2e-1 | 65% |
+| > 0.9 | 9.5e-2 | 2.5e-2 | 95% |
+
+The mean error crosses between 0.6–0.7 and 0.7–0.8, so the floor is 0.7: the
+point where the interpolated normal stops being the better approximation and
+starts being a worse one, by a factor of 200 at the bottom. Below it the
+fallback is not a compromise, it is the more accurate derivative. A crease is
+one way to lose that property and the guard keys on the loss, not the cause.
+
+THE HAZARD IS REAL AND NOTHING IN THIS REPOSITORY COULD SEE IT. `boxMesh` gives
+every face its own four vertices, so the box's 90° edges are creases in the
+geometry and not in the vertex normals — no corner normal bisects anything. That
+is why the whole solver suite, and all 540 solves of the two seed sweeps, ran
+this mode without once meeting the thing its own docblock warned about. On a new
+fixture whose ridge vertices are genuinely SHARED, the interpolated incidence
+falls to 0.006 of the facet's at facet incidence 0.7 — a correspondence the
+decode is happy to keep — and the unguarded translation columns would have been
+170× larger. The guarded derivative is the facet's, which on a fold is not an
+approximation of anything but the exact derivative, and a central difference
+confirms it.
+
+AND A TEST THAT PASSED WAS WRONG, which is why one is now titled after its own
+correction. It asserted the guard never fires on the bodies the sweeps measured,
+sampled rays at the nominal geometry, found the minimum ratio above the floor at
+every tessellation, and passed. The inference does not hold: the bundle
+evaluates this Jacobian at every ITERATE, where the poses are still wrong —
+that is what it is solving for — and those rays strike the body at angles the
+sampling never visits. Re-running the published sweep with the guard in place,
+ten of ten facet rows come back BIT-IDENTICAL and ten of ten smooth rows move.
+
+SO THE CLAIM WAS RE-MEASURED RATHER THAN ASSUMED, at half cost, because facet is
+provably untouched: 180 fresh smooth solves against the 180 facet rows already
+recorded.
+
+| | unguarded | guarded |
+|---|---|---|
+| 32×64 | 0.416° | 0.217° |
+| 64×128 | 0.079° | 0.208° |
+| 192×384 | 0.060° | 0.070° |
+| paired wins over facet | 162–18 | 152–28 |
+| geometric mean ratio | 0.474 | 0.604 |
+| rows passing §7's 0.05° gate | 39 / 180 | 29 / 180 |
+
+The claim SURVIVES and must be restated. Against facet's 0.591 / 0.375 / 0.094,
+the guarded mode still wins 152 paired rows of 180 at a sign test of 8e-22 — but
+it no longer more than halves the error. It reduces it by 40%, not 53%, and ten
+of the thirty-three gate rows it used to flip go back. Every sentence claiming
+the halving is wrong now, and the ones above have been corrected.
+
+WHAT THE PRICE BUYS, stated plainly because it is not an improvement to these
+bodies. Compared directly against the unguarded mode on the same seeds the guard
+is not separable either way — rotation 0.185° to 0.165°, position 51.1 mm to
+45.0 mm, neither significant, stalls 16 to 13, iterations 41.7 to 45.3. It trades
+small regressions on most rows for large repairs on a few, which is what a guard
+is. The ten gate rows are what correctness on a creased body costs on a
+crease-free one, and every fixture in all 720 solves of this section is
+crease-free. That is the trade, and it is the right way round: a visitor's `.glb`
+is the creased body, and the mode was previously unsafe on exactly it.
+
+STILL NOT SHIPPED ON. The guard removes the reason it could not be, and does not
+supply a reason it should be: it remains a mode with a measured regime — rotation
+yes, position no, stalls as the price — that nothing selects by default.
+
+**Every refutation above was judged on POSITION, and re-reading them on rotation
+changes none of them.** The wrong-metric finding was about one sweep. The habit
+was not: the hybrid, the estimating-equation merit and the curved-residual bound
+were each argued from a position column with a rotation column beside it that
+nobody read. The audit needs no new solves — every one of those probes recorded
+`rot_deg` all along — so it is a re-read of runs already in the record.
+
+The artificial cell, 64×128 sphere unless noted, position in mm and rotation in
+degrees:
+
+| row | facet | smooth | hybrid | est.-equation | curved bound |
+|---|---|---|---|---|---|
+| seed 1 | 137.5 / 0.239 | 13.1 / **0.046** | 97.6 / 0.166 | 161.4 / 1.265 | 12.4 / 0.078 |
+| seed 2 | 32.2 / **0.078** | 38.3 / 0.109 | 69.6 / 0.150 | 128.4 / 0.216 | 38.5 / 0.107 |
+| seed 3 | 33.4 / 0.079 | 13.6 / **0.022** | 33.5 / 0.079 | 152.0 / 0.244 | 10.7 / 0.058 |
+| 192×384 seed 1 | 12.5 / **0.037** | 17.7 / 0.040 | 12.5 / 0.037 | 149.2 / 0.773 | 18.6 / 0.040 |
+
+(The facet and hybrid 192×384 rows are identical at 12.5 / 0.037 and that is not
+a transcription slip: the hybrid finishes with the facet derivative, and at a
+tessellation fine enough that its smooth phase buys nothing the two land on the
+same answer.)
+
+ALL THREE REFUTATIONS HOLD. The estimating-equation merit is worse on rotation
+by two to twenty-seven times, which is the same verdict its position column gave
+and by a wider margin. The hybrid is worse on rotation on every row it was worse
+on in position. The curved bound is the interesting one and it is the one that
+flips: on POSITION it beat the smooth mode on seeds 1 and 3 (12.4 against 13.1,
+10.7 against 13.6), and on ROTATION it loses both (0.078 against 0.046, 0.058
+against 0.022) and ties the fine row. The metric changes which of the two looks
+better; it does not change the conclusion, which was that a second intersection
+stack is not worth a 0.7 mm gain on two rows of four. That conclusion is now
+supported by the metric it was not tested on.
+
+WHAT THE COLUMN WOULD HAVE SHOWN, stated carefully because the temptation is to
+say the answer was sitting there and it was not. Pairing all twelve rows of the
+first smooth sweep against their facet counterparts, smooth wins rotation 8-4
+against 9-3 on position, and its mean rotation is 0.051° against the facet's
+0.091°. Five rows are two to five times better: the two near-spherical sphere
+rows at 5.2x and 3.6x, and all three 1:1:0.98 oblate rows at 3.5x, 2.3x and 2.3x.
+
+But 8-4 is a sign test at p=0.39. Twelve rows could not have ESTABLISHED the
+rotation effect, and this document should not claim they could. What reading the
+column would have bought is the question — why is the near-spherical advantage
+three to five times larger on one gated quantity than the other? — roughly a
+year of measurement before the sixty-seed sweep asked it. The failure was not
+missing an answer. It was not noticing that half the criterion was going
+unreported while four strategies were refuted against the other half.
 
 **Rung 1's single radius is CLOSED, measured rather than argued.** The item read
 "a rung 1 that does not collapse the search onto a single radius", on the
