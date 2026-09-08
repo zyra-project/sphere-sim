@@ -1761,20 +1761,44 @@ established and unexplained. The asymmetry is not luck and not a property of
 meshes: it is what an inexact Jacobian does to Levenberg–Marquardt's acceptance
 test, and the facet side of it can be proved rather than measured.
 
-WHY THE FACET MODE CANNOT STALL. The loop accepts on a bare cost decrease and
-raises the damping until it finds one. The damped step solves
+WHAT IS TRUE OF THE FACET MODE, and what is NOT. The loop accepts on a bare cost
+decrease and raises the damping until it finds one. The damped step solves
 `(JᵀJ + λD) x = -g`. `JᵀJ` is positive semi-definite and `D` is the diagonal
 floored away from zero, so the damped matrix is positive DEFINITE and so is its
 inverse, giving `x·g = -gᵀ(JᵀJ + λD)⁻¹g < 0` for every λ and every non-zero `g`.
 The step always points downhill on the gradient it was built from, and its length
 falls to zero as λ rises. When `g` is the true gradient of the cost — which is
-what the facet Jacobian gives, being the exact derivative of the residual the
-cost is built from — some short enough step therefore lowers the cost, the inner
-loop accepts, and the damping cannot reach its cap. Facet's 0 in 180 is that
-algebra. `test/linalg.test.ts` pins it on a rank-deficient system across seven
-decades of λ.
+what the facet Jacobian gives, being the exact derivative of the residual — the
+mode therefore always HAS a descent direction available, which the smooth mode
+does not. `test/linalg.test.ts` pins that identity on a rank-deficient system at
+seven sampled λ spanning `1e-12` to `1e12`.
 
-WHY THE SMOOTH MODE CAN. It builds the step from `Jₛᵀr` and is judged against
+IT DOES NOT FOLLOW THAT THE CAP IS UNREACHABLE, and the first draft of this entry
+said it did. A descent DIRECTION is not an accepted STEP. Acceptance needs
+`trialEv.cost < cost` to hold as a strict floating-point comparison at one of the
+finitely many λ the loop samples below `maxLambda = 1e12`. As λ rises the step
+length falls to zero and so does the achievable decrease, so near a minimum it
+passes below what a float can represent and every remaining trial compares EQUAL,
+not less. The loop then exhausts λ and reports `lambda` with an exact Jacobian
+and no bound active. Nothing above rules that out.
+
+AND THIS DOCUMENT ALREADY CONTAINED THE COUNTEREXAMPLE, four hundred lines up.
+The curved-residual bound fits the ANALYTIC SPHERE — a closed-form hit and its
+closed-form derivative, called there "the most consistent residual-Jacobian pair
+in this repository" — and its seed 2 row stops at `lambda`, 38.5 mm. That
+paragraph is titled THE CENTRAL CLAIM FAILS ON ROW TWO and it refutes, in
+advance, the claim the first draft of this entry made. Writing the same argument
+twice in one document and having it killed by the same row twice is the finding
+worth recording here: the structural story about consistency is seductive enough
+to survive its own refutation a few hundred lines away.
+
+SO THE CLAIM IS EMPIRICAL, NOT A THEOREM. Facet's 0 in 180 is a measurement of
+this cell, and what the algebra supplies is a reason to EXPECT the asymmetry
+rather than a proof of it: one mode is guaranteed a descent direction at every λ
+and the other is not.
+
+WHY THE SMOOTH MODE HAS A SECOND WAY TO STALL, on top of the one above that it
+shares with every mode. It builds the step from `Jₛᵀr` and is judged against
 `J_fᵀr`, so what it needs is `x·g_true < 0` where `x` came from a different
 vector. That is a pairing of two vectors through a positive-definite form and has
 no sign. Instrumented at every iteration of a mesh solve, comparing the limiting
@@ -1788,8 +1812,10 @@ step direction `-D⁻¹Jᵀr` against the true gradient recomputed at the same s
 | smooth, seed 28 | 8 | 2 |
 | smooth, seed 60 | 8 | 4 |
 
-Every stall examined ends on a non-descending iteration, four of four. It is
-NECESSARY AND NOT SUFFICIENT: seed 11 also ends on one and stops on `step`,
+Every stall examined ends on a non-descending iteration, four of four — which is
+evidence that this second route is what the 13 took, not that it is the only
+route to a `lambda` stop. It is NECESSARY AND NOT SUFFICIENT: seed 11 also ends
+on one and stops on `step`,
 because a step at moderate λ is not the limiting direction and can still descend
 when the misalignment is slight. The trajectory on seed 33 is the shape of the
 thing — the cosine deepens through the descent, −0.0009 to −0.0033, turns

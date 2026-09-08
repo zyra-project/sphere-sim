@@ -233,27 +233,33 @@ test('median handles both parities and does not disturb the input', () => {
   assert.equal(median([]), 0);
 });
 
-test('the damped step is a descent direction for its own gradient at every lambda, which is why `lambda` is unreachable with an exact Jacobian', () => {
-  // The algebra behind a measurement in docs/ARBITRARY-SHAPES.md: across 180
-  // paired mesh solves the smooth-normal mode stopped with the damping at its
-  // cap 13 times and the facet mode 0 times, and the asymmetry is not luck.
+test('the damped step is a descent direction for its own gradient at every lambda, and shortens without bound', () => {
+  // A LINEAR-ALGEBRA identity about the step `levenbergMarquardt` forms, and
+  // nothing more. Read what it does not cover before citing it.
   //
   // Levenberg-Marquardt solves `(JtJ + lambda D) x = -g`. `JtJ` is positive
   // SEMI-definite and `D` is strictly positive (the loop floors the diagonal),
   // so the damped matrix is positive definite and so is its inverse. Therefore
   // `x . g = -g^T (JtJ + lambda D)^-1 g < 0` for every lambda and every g != 0:
   // the step always points downhill on the gradient it was built from, and its
-  // length shrinks without bound as lambda grows. When `g` is the TRUE gradient
-  // of the cost — which is what the facet Jacobian gives, being the exact
-  // derivative of the residual — some short enough step therefore lowers the
-  // cost, the inner loop accepts, and the damping cannot run to its cap.
+  // length shrinks without bound as lambda grows.
   //
-  // The smooth mode builds `x` from one vector and is judged against another,
-  // so what it needs is `x . g_true < 0` where `x` came from `g_smooth`. That is
-  // a pairing of two different vectors through the same positive-definite form
-  // and has no sign at all. Measured on a stalling seed: 0 of 81 facet
-  // iterations had a non-descending direction and every stall examined ended on
-  // one. This test pins the first half, which is the half that is a theorem.
+  // WHAT THIS DOES NOT SHOW is that the solver's `lambda` stop is unreachable
+  // when the Jacobian is exact, and an earlier version of this test was named as
+  // though it did. It never runs `levenbergMarquardt`, never evaluates a
+  // nonlinear cost, and never applies `maxLambda` or the evaluation budget. A
+  // descent DIRECTION is not an accepted STEP: acceptance needs a strict
+  // floating-point decrease at one of the finitely many lambda sampled below
+  // `maxLambda`, and as lambda rises both the step and the achievable decrease
+  // fall to zero, so near a minimum the trials compare equal rather than less.
+  // docs/ARBITRARY-SHAPES.md records the analytic sphere — a closed-form hit and
+  // its closed-form derivative — stopping on `lambda` for exactly that reason.
+  //
+  // What the identity IS good for is the asymmetry between the two mesh normal
+  // modes: `'facet'` always has a descent direction available because it is
+  // judged against the gradient it was built from, and `'smooth'` need not,
+  // because it is judged against a different one. That is a reason to expect the
+  // measured 0-vs-13 split, not a proof of it.
   const n = 5;
   // A positive SEMI-definite JtJ with a genuine null direction, so the test
   // covers the rank-deficient case the gauge exists to handle rather than only
