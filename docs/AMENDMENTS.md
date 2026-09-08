@@ -2458,3 +2458,160 @@ it separately. It is a real experiment and it is not a UI gap.
 
 Until §3.1 says an SOS projector is a fisheye, the honest control count here is
 zero.
+
+---
+
+## A-39 — Boulder's actual `local_sos_config.json`: A-36 read the defaults, §4.4's central claim is refuted, and the projector raster is the wrong shape
+
+**Status:** OPEN, and it supersedes A-36's evidence without contradicting its
+method. Raised from the site's own `local_sos_config.json`, supplied complete by
+the project owner. §8 item 5 asks the ground-truth visit to "read the site's
+actual config … which may differ from the documented defaults." This is that
+item, arriving in full rather than second-hand.
+
+Nothing here is applied. PARAMETERS.md remains authoritative.
+
+**The file's shape matters for reading it.** Every key carries both a
+`description` ending in "Default Value: *x*" and a live `value`. A reader taking
+the number out of the description gets SOS's factory default; a reader taking
+`value` gets the site's. That distinction is the whole of this entry.
+
+### A-36's three constants are this file's three defaults
+
+A-36 records three constants as Boulder's, citing an independently-built
+simulator that in turn cited `sos_stream_control.config`. All three are, exactly,
+the defaults documented in `local_sos_config.json`, and the site's live values
+differ from all three:
+
+| Quantity | A-36's "Boulder" | This file's DEFAULT | This file's VALUE |
+| --- | --- | --- | --- |
+| Sphere equator height | 84 in | **84.0** | **88.0 in** |
+| Projector height | 92 in | **92.0** | **100.1–101.25 in** |
+| Sphere centre to lens, horizontal | 211 in | **211.0** | **209.0–213.5 in** |
+
+Three for three is not a coincidence, and the likeliest reading — an inference,
+not a fact — is that the intermediate source reported defaults as measurements.
+Two of the three are decisive on their own: an equator at 88 in and lenses at
+100 in are nowhere near 84 and 92. The third is the weak one, and interestingly
+so: **211 in is almost exactly the mean of the four live distances**, 210.96 in.
+So the distance was never wrong on average; it was wrong in having one value.
+
+**What A-36 got right and this confirms.** The distance is stated as horizontal —
+"Horizontal distance, in inches, of projector *n* from the sphere center" — so
+A-17's horizontal-vs-3D ambiguity between the two `nominalRig` builders is live
+exactly as A-36 says, and now against a lens rise of 12.5 in rather than 8.
+
+### The live geometry, which nothing in this repository currently carries
+
+| | P1 | P2 | P3 | P4 | mean | spread |
+| --- | --- | --- | --- | --- | --- | --- |
+| Horizontal distance, in | 213.5 | 212.25 | 209.1 | 209.0 | 210.96 | **4.5** |
+| Lens height, in | 100.5 | 101.25 | 100.25 | 100.1 | 100.53 | 1.15 |
+| Lens rise above the 88 in equator, in | 12.5 | 13.25 | 12.25 | 12.1 | 12.53 | 1.15 |
+
+In metres the distances are 5.4229, 5.3911, 5.3111, 5.3086 — **every one of them
+inside §2's unresolved 5.18–6.14 m band and clustered at its low end**, nearer the
+alignment manual's 17 ft than the floor plan's 18–20 ft. §2's conflict does not
+have to be resolved to use these; they replace it for this site.
+
+**The spread is the finding, not the mean.** `nominalRig` takes ONE `distanceM`
+and ONE `projectorHeightM` for all four projectors, and `BOULDER_PRESET` draws
+per-projector departures from `errorSeed: 771003`. Here two of the six pose
+degrees of freedom are measured per projector, and the measured throw spread —
+4.5 in, 11.4 cm — is a real asymmetry the simulator is currently inventing from a
+seed. Anything that reports how well a solve recovers pose at Boulder is at
+present scoring against a rig whose per-projector geometry is synthetic.
+
+### §4.4 is refuted: there is a top mask, and it is symmetric
+
+§4.4 states, under the heading **"Why bottom only"**, that "the sphere hangs from
+a ceiling mount, which physically occludes the north polar cap … The asymmetry in
+the config is explained by the hardware."
+
+The config has both:
+
+```
+"bottommask" : "60,70"
+"topmask"    : "60,70"
+```
+
+**There is no asymmetry to explain.** The hardware argument may still be true
+about the mount, but it is not what the config does, and the simulator models one
+mask where SOS applies two. `polarMask` is called for the south cap only, so
+every metric that samples the north polar region is scoring content SOS blanks.
+§1's `occl_top` (6° polar cap, `ASSUME`) is a separate and much smaller number
+than a mask running to 70°, so it does not cover this.
+
+### The projector raster is the wrong shape, not just the wrong size
+
+| | Config default | Config VALUE | Repository |
+| --- | --- | --- | --- |
+| `SOS_PROJECTOR_WIDTH` | 1920 | **2160** | 3840 (`RESOLUTIONS[3]`) |
+| `SOS_PROJECTOR_HEIGHT` | 1200 | **4096** | 2160 |
+
+Boulder's projectors are **portrait**: 2160 wide by 4096 tall, 8.85 MP, implying a
+4320×8192 X screen under §3.4's 2×2 split. The repository's nearest entry is
+3840×2160 landscape — a similar pixel count, transposed. This is not cosmetic.
+`intrinsicsFromThrow` inscribes the silhouette in the MINOR raster dimension, and
+the minor dimension changes axis between the two: `horizontalIsMinor` is false at
+3840×2160 and true at 2160×4096. And the portrait shape is the right one on its
+face — each projector covers 90° of longitude by 180° of latitude, a 1:2
+rectangle, against the raster's 1:1.896.
+
+A-35 identifies the projector as a BenQ LK935, whose native panel is 3840×2160.
+2160×4096 is neither that nor a rotation of it, so either the projector is not an
+LK935, or it is being driven off-native, or the two numbers mean something other
+than a panel. **A-35 and this file cannot both be read at face value**, and that
+conflict is worth more than either number alone.
+
+### Everything that does match, which is most of it
+
+- `sphere_radius_inches` = **34.0**, so §1's 68 in diameter is confirmed by the
+  site's own file. A-23's `DOC`-vs-`DOC` conflict against the alignment manual's
+  "6 foot" is settled for Boulder in PARAMETERS.md's favour. Note what this does
+  and does not do to A-23's scale arithmetic: it fixes `R_assumed` = 34 in for
+  certain, because that is the number SOS builds its frustum from; it says
+  nothing about the physical sphere, which nobody has put a tape on.
+- `gamma` = **0.8**, with the comment §4.5 quotes, verbatim, in a group named
+  "Blending". Confirms `γ_blend`.
+- `bottommask` = **60,70**. Confirms `mask_lo, mask_hi`.
+- `SOS_NUM_PROJECTORS` = **4**. Confirms `N_proj`.
+- `projectorInfo(viewport)` = `0,0,0.5,0.5` / `0.5,0,0.5,0.5` / `0,0.5,0.5,0.5` /
+  `0.5,0.5,0.5,0.5`, origin bottom-left. Confirms `SOS_QUADRANT_VIEWPORTS`
+  element for element, and §3.4's 2×2 split.
+- `SOS_DISPLAY_DEGREES_WIDTH/HEIGHT` = **360 / 180**. Confirms full coverage.
+
+### Numbers worth extracting that this repository has no row for
+
+1. **`projectorRotation` = 45.0.** This is `θ_rot` — §1 carries it as `CFG`,
+   nominal 0°, and `nominalRig` defaults `rotationOffsetDeg` to 0 with no control
+   on the page. Boulder is at 45°. §1 describes it as sites rotating the sphere
+   *mechanically*; the config describes it as where the prime meridian appears
+   when a dataset loads, which is a software offset. Same parameter in the model,
+   different physical story, and the sign convention against `rotationOffsetDeg`
+   is unverified.
+2. **The auto-alignment camera is real hardware and is already modelled.**
+   `SOS_CAMERA_LIBRARY` = POINTGREY, `SOS_MAX_CAMERA_WIDTH/HEIGHT` = 1280×960 — a
+   Point Grey BlackFly. `CAPTURE_RASTERS`'s top entry is exactly 1280×960, noted
+   "slow, and barely better than 640". That note is no longer a remark about a
+   hypothetical camera: it is a remark about the one SOS ships with, which makes
+   it a claim about the existing automated procedure rather than about this
+   project's capture design.
+3. **`SOS_MAX_TEXTURE_SIZE` = 16000**, against a default of 4096. Not a physical
+   parameter, but it bounds the content resolution the site can actually display
+   and therefore what a warp file's texel density is worth.
+
+### The consequence for the deliverable
+
+The config carries, per projector, exactly **two** numbers: a horizontal distance
+and a height. It has no field for azimuth, none for yaw, pitch or roll, none for
+lens shift or focal length. A calibration recovers six pose degrees of freedom
+per projector plus intrinsics, so **a rewritten `local_sos_config.json` can carry
+at most two of six**, and the azimuth error §2 puts at ±1–2° has nowhere to go in
+it at all.
+
+That is the division of labour the two file formats already imply, and it is
+worth stating plainly in the spec: the config is the coarse model SOS can
+express, and the alignment file is everything the coarse model cannot. A
+recalibration that wrote only the config would silently discard every rotation it
+recovered.
