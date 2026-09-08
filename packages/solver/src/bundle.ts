@@ -560,7 +560,7 @@ export interface BundleOptions {
    * and not the other.
    *
    * It buys ROTATION. Paired by seed across 180 pairs, with the crease guard
-   * `mesh.ts`'s {@link SMOOTH_INCIDENCE_FLOOR} now applies, the worst
+   * `mesh.ts`'s `SMOOTH_INCIDENCE_FLOOR` (0.7) now applies, the worst
    * projector's rotation error falls from 0.591° to 0.217° at 32×64, 0.375° to
    * 0.208° at 64×128 and 0.094° to 0.070° at 192×384 — 152 wins to 28, sign test
    * 8e-22, a geometric mean ratio of 0.604. It does NOT buy POSITION: a
