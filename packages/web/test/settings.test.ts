@@ -702,6 +702,83 @@ test('the SOS export is built from BOTH rigs, which is what stops it being the i
   );
 });
 
+test('the alignment reader names the raster it assumed, and does not assume the wrong one', () => {
+  // The file is dimensionless — nine positions in a ±1 frame — so every pixel
+  // and degree the reader prints comes from a raster the FILE does not carry.
+  // Two ways to get that wrong, and both produce plausible numbers:
+  //
+  //   1. hardcoding a raster instead of taking the projector's;
+  //   2. captioning it with `state.selected` at render time, when the reading
+  //      was computed against whatever was selected at click time — they come
+  //      apart the moment the reader switches projectors.
+  const fn = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function pickSosAlignment('),
+    MAIN_SOURCE.indexOf('function alignmentDiagram('),
+  );
+  assert.ok(fn.length > 0, 'the alignment picker has moved; this test cannot find it');
+  // Comments stripped before the hardcoded-raster check below. Both functions
+  // here DISCUSS 1920 and 1080 in prose, which is the point of the prose; the
+  // assertion is about what the code does, and reading it off commented source
+  // made it fail on its own explanation.
+  const code = fn.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  assert.ok(
+    /pickSosAlignment\(state\.selected, mesh\.resX, mesh\.resY\)/.test(MAIN_SOURCE),
+    'the reader is not handed the selected projector and its raster',
+  );
+  assert.ok(
+    !/\d{3,4}/.test(code),
+    'the alignment picker hardcodes a raster instead of taking the projector’s',
+  );
+  assert.ok(
+    /state\.sosReadProjector = projector/.test(code),
+    'the projector the file was read against is not recorded at read time',
+  );
+  assert.ok(
+    /P\$\{state\.sosReadProjector \+ 1\}/.test(MAIN_SOURCE),
+    'the caption names the currently selected projector rather than the one used',
+  );
+  // And it says on screen that the raster is an assumption, because nothing in
+  // the file can confirm it.
+  assert.ok(
+    MAIN_SOURCE.includes('nothing in the file says which raster it was written for'),
+    'the reader presents the assumed raster as if the file had stated it',
+  );
+
+  // No `accept` filter: the real filename and extension of these files at a
+  // site are not known here, and a filter that guesses hides the file the
+  // reader came to open. `pickImage`'s own comment records that failure mode.
+  assert.ok(!/input\.accept/.test(code), 'the alignment picker filters by a guessed extension');
+
+  // A refused file is reported in the panel the reader is looking at. The parser
+  // names the offending line, which is the whole value of it on somebody else's
+  // file — swallowing that leaves a button that silently does nothing.
+  assert.ok(/state\.sosReadError = err/.test(code), 'a parse failure is swallowed');
+  assert.ok(
+    /sosRead: SosReading \| null;/.test(MAIN_SOURCE) && /sosReadError: string;/.test(MAIN_SOURCE),
+    'the reader’s result is not carried in PageState',
+  );
+
+  // The drawing has the same invisible-when-wrong convention as every other
+  // picture on this page: the file's frame runs y UP and an SVG runs y DOWN, so
+  // the vertical term is subtracted. Drawn the other way the grid is a grid and
+  // the correction is upside down, which reads as a bad file rather than a bad
+  // diagram. And both grids have to be there — one alone is a picture of nothing.
+  const diagram = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function alignmentDiagram('),
+    MAIN_SOURCE.indexOf('function renderTopButtons('),
+  );
+  assert.ok(diagram.length > 0, 'the alignment diagram has moved; this test cannot find it');
+  assert.ok(/\(1 - y\) \/ 2/.test(diagram), 'the diagram does not flip the vertical axis');
+  assert.ok(/for \(const moved of \[false, true\]\)/.test(diagram), 'only one grid is drawn');
+  // Exaggerated, and the factor printed beside it — `meshDiagram`'s rule, for
+  // `meshDiagram`'s reason: at true scale the sample's worst point moves 13 px
+  // in 1920 and the two grids are one line.
+  assert.ok(
+    /exaggerated \$\{gain\.toFixed\(0\)\}/.test(MAIN_SOURCE),
+    'the magnification is applied without being stated',
+  );
+});
+
 test('the page hands a file to the browser without leaving anything in the DOM', () => {
   // `downloadText` is the page's only download path and the mirror of
   // `pickImage`, which is the page's only upload path: both create an element,

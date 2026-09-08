@@ -1302,7 +1302,10 @@ sentence and have to redo this.
 ### The conflict, measured: a site's own projector alignment file
 
 A site sent over one projector's SOS alignment file. It is now parsed by
-`packages/sim/src/sos.ts` and carried verbatim in `packages/sim/test/sos.test.ts`:
+`packages/sim/src/sos.ts`, carried verbatim in `packages/sim/test/sos.test.ts`,
+and readable on the page itself — `readSosAlignment` turns its dimensionless
+numbers into pixels and degrees against a named raster, which is the only form in
+which any of them can be acted on:
 
     translate 0.026 -0.003
     scale 1.06606 1.06393
@@ -1376,7 +1379,7 @@ register has ever had. A-18 already nominates the projector make and model as th
 highest-value item on §8's checklist; the zoom setting belongs beside it, because
 cause 3 above cannot be excluded without it.
 
-### Two smaller readings from the same file
+### Three smaller readings from the same file
 
 - **`rotate -0.7` is not −0.7 degrees on the wall.** The file's frame spans ±1 on
   both axes, so on a 16:9 projector it compresses x against y by 16/9 and an
@@ -1394,6 +1397,20 @@ cause 3 above cannot be excluded without it.
   file and this repository's model of it say the same thing about the same rig,
   which is the first time any external artifact has corroborated the forward
   model's geometry rather than its parameters.
+- **Two of the nine control points sit outside the frame**, and they corroborate
+  the scale reading above. Vertex 7 is at y = −1.010 and vertex 9 at x = 1.006:
+  the file is asking for content past the edge of the projector's own raster,
+  which no warp can deliver. That is exactly the state an operator ends in after
+  scaling the image up to reach a body larger than the software's frustum was
+  built for — the content runs out before the silhouette does. It is consistent
+  with all three causes above rather than deciding between them, but it is the
+  signature of a scale-up against a hard frame edge and not of an arbitrary
+  tweak. **Which point moved "most" depends on the frame it is measured in**, and
+  this is the same aspect asymmetry as the rotation: in the file's own
+  dimensionless frame vertex 9 is largest at 0.0152, while in pixels on a
+  1920×1080 raster vertex 8 wins at 13.44 px, because a move along x is worth
+  960 px per unit and a move along y only 540. Ranking control points off the
+  file without a raster in hand ranks them wrongly.
 
 
 ---

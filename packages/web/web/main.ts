@@ -44,7 +44,14 @@ import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import { buildWarpExports, formatWarpMesh } from '../../sim/src/warp.ts';
-import { buildSosAlignments, formatSosAlignment } from '../../sim/src/sos.ts';
+import {
+  buildSosAlignments,
+  formatSosAlignment,
+  parseSosAlignment,
+  readSosAlignment,
+  sosIdentityVertex,
+} from '../../sim/src/sos.ts';
+import type { SosReading } from '../../sim/src/sos.ts';
 import { wrapDeg180 } from '../../sim/src/vec.ts';
 import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
@@ -192,6 +199,30 @@ interface PageState {
    * casts, which is fine on a click and not fine on every drag of a slider.
    */
   sosCost: string;
+  /**
+   * A site's own alignment file, read back, or `null` before one is chosen.
+   *
+   * The one thing on this page that is not computed from the simulator's own
+   * state: it is somebody else's projector, and the only reason it belongs here
+   * is that the numbers in it are dimensionless and this page knows what a
+   * raster is. Kept in state rather than re-read on each render because the
+   * File API is asynchronous and `renderInspect` is not.
+   */
+  sosRead: SosReading | null;
+  /** What the file was called, so the reader can say which file it is showing. */
+  sosReadName: string;
+  /**
+   * Which projector's raster the file was read against, 0-based.
+   *
+   * Stored rather than re-read from `state.selected` at render time, because the
+   * two come apart the moment the reader switches projectors: the numbers on
+   * screen were computed against the raster that was selected when the file was
+   * opened, and a caption naming the current one would attribute them to a
+   * projector that had nothing to do with them.
+   */
+  sosReadProjector: number;
+  /** Why the last file was refused, or `''`. Shown here, not in the readout. */
+  sosReadError: string;
   panelOpen: boolean;
   readoutOpen: boolean;
   /**
@@ -232,6 +263,10 @@ const state: PageState = {
   warpHelpOpen: false,
   sosHelpOpen: false,
   sosCost: '',
+  sosRead: null,
+  sosReadName: '',
+  sosReadProjector: 0,
+  sosReadError: '',
   panelOpen: true,
   readoutOpen: true,
   cameraCount: 3,
@@ -4210,6 +4245,104 @@ function exportSosFiles(): void {
   renderReadout();
 }
 
+/**
+ * Read a site's own alignment file and say what its numbers mean.
+ *
+ * The other direction from `exportSosFiles`, and the reason it is worth having
+ * is that the file is DIMENSIONLESS: nine positions in a ±1 frame and an angle
+ * in that same frame. On its own it says what fraction of a projector's frame a
+ * correction uses, which is not a quantity anybody can act on. Against a raster
+ * it becomes pixels and degrees.
+ *
+ * **Which raster is the reader's assumption and cannot be checked.** Nothing in
+ * the file records the projector it was written for, so this uses the selected
+ * projector's, and says so on screen. A file from a 1920x1200 site read against
+ * a 1080 projector gives vertical numbers that are wrong by 11% and look
+ * entirely reasonable.
+ *
+ * No `accept` filter on the picker, unlike `pickImage`. The real filename and
+ * extension of these files at a site are not known here — the sample arrived
+ * with neither — and a filter that guesses would hide the file the reader is
+ * trying to open, which is the failure mode `pickImage`'s own comment records.
+ */
+function pickSosAlignment(projector: number, resX: number, resY: number): void {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.addEventListener('change', () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    void file
+      .text()
+      .then((text) => {
+        // `parseSosAlignment` refuses rather than guesses, and its message names
+        // the line — which is the whole value of it here, where the reader has
+        // somebody else's file and no grammar to check it against.
+        state.sosRead = readSosAlignment(parseSosAlignment(text), { resX, resY });
+        state.sosReadName = file.name;
+        state.sosReadProjector = projector;
+        state.sosReadError = '';
+      })
+      .catch((err: unknown) => {
+        state.sosRead = null;
+        state.sosReadName = file.name;
+        state.sosReadError = err instanceof Error ? err.message : String(err);
+      })
+      .finally(() => {
+        renderInspect();
+      });
+  });
+  input.click();
+}
+
+/**
+ * A read alignment file, drawn: the untweaked grid in grey, the file's in colour.
+ *
+ * Magnified, and the factor is printed by the caller for `meshDiagram`'s reason —
+ * at true scale the sample's largest control point moves 13 px in 1920 and the
+ * two grids are one line. A diagram whose scale is chosen to look convincing is
+ * not evidence, so the number goes beside it.
+ */
+function alignmentDiagram(reading: SosReading, tint: string, gain: number): HTMLElement {
+  const W = 320;
+  const H = Math.round((W * reading.resY) / reading.resX);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', String(H));
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'The alignment file’s control grid against the untweaked one');
+
+  const n = reading.gridSide;
+  // The ±1 frame onto the drawing: x right, y UP, which is why the vertical
+  // term is subtracted rather than added.
+  const to = (x: number, y: number): string =>
+    `${(((x + 1) / 2) * W).toFixed(1)},${(((1 - y) / 2) * H).toFixed(1)}`;
+
+  for (const moved of [false, true]) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('fill', 'none');
+    g.setAttribute('stroke', moved ? tint : MESH_RASTER_COLOR);
+    g.setAttribute('stroke-width', moved ? '1.3' : '1');
+    const at = (k: number): string => {
+      const id = sosIdentityVertex(k, n);
+      if (!moved) return to(id.x, id.y);
+      const v = reading.vertices[k];
+      return to(id.x + (v.x - id.x) * gain, id.y + (v.y - id.y) * gain);
+    };
+    for (const alongRow of [true, false]) {
+      for (let a = 0; a < n; a++) {
+        const run: string[] = [];
+        for (let b = 0; b < n; b++) run.push(at(alongRow ? a * n + b : b * n + a));
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        line.setAttribute('points', run.join(' '));
+        g.append(line);
+      }
+    }
+    svg.append(g);
+  }
+  return svg as unknown as HTMLElement;
+}
+
 function renderTopButtons(): void {
   topBtnsEl.replaceChildren();
 
@@ -5056,6 +5189,94 @@ function renderInspect(): void {
             'photograph. And the format itself is read from a single sample file plus one ' +
             'account of how SOS draws it: the meaning is on firm ground, the conventions are ' +
             'inference. Load one on a projector you can put back.',
+        }),
+      );
+    }
+
+    // The other direction. A site's own alignment file is dimensionless — nine
+    // positions in a ±1 frame — so on its own it says what fraction of a frame a
+    // correction uses, which is not something anyone can act on. This page knows
+    // what a raster is, so it can turn that into pixels and degrees.
+    const read = el('button', {
+      className: 'linkish',
+      textContent: state.sosRead ? 'read a different one' : 'read one back',
+      title:
+        'Open a site\u2019s own SOS alignment file and say what its numbers mean in pixels ' +
+        'and degrees on this projector\u2019s raster.',
+    });
+    read.addEventListener('click', () => {
+      pickSosAlignment(state.selected, mesh.resX, mesh.resY);
+    });
+    inspectEl.append(read);
+
+    if (state.sosReadError !== '') {
+      const bad = el('p', {
+        className: 'note tiny',
+        textContent: `${state.sosReadName}: ${state.sosReadError}`,
+      });
+      bad.style.color = 'var(--bad)';
+      inspectEl.append(bad);
+    }
+    const r = state.sosRead;
+    if (r) {
+      // Magnified for `meshDiagram`'s reason: the sample's largest control point
+      // moves 13 px in 1920, so at true scale the two grids are one line.
+      const worstFrac = Math.max(
+        ...r.vertices.map((v, k) => {
+          const id = sosIdentityVertex(k, r.gridSide);
+          return Math.hypot((v.x - id.x) / 2, (v.y - id.y) / 2);
+        }),
+      );
+      const gain = worstFrac > 1e-9 ? Math.min(400, Math.max(1, 0.09 / worstFrac)) : 1;
+      inspectEl.append(alignmentDiagram(r, tint, gain));
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `${state.sosReadName} \u2014 grey is the untweaked grid, colour is where the file ` +
+            `puts it, exaggerated ${gain.toFixed(0)}\u00d7. Read against P${state.sosReadProjector + 1}\u2019s ` +
+            `${r.resX}\u00d7${r.resY}: nothing in the file says which raster it was written for, ` +
+            'so that is this page\u2019s assumption and not the file\u2019s.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `translate is ${r.translatePx.x.toFixed(1)} px across and ` +
+            `${r.translatePx.y.toFixed(1)} px up. scale is ` +
+            `${((r.scale.x - 1) * 100).toFixed(2)}% and ${((r.scale.y - 1) * 100).toFixed(2)}% \u2014 ` +
+            'and the difference between those two is the interesting part, because a sphere of ' +
+            'the wrong size, a throw of the wrong length and a lens at the wrong zoom all move ' +
+            'the axes together. Only something that is not round does this.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `rotate says ${r.rotateDeg}\u00b0, which is about ` +
+            `${r.rotateDegOnScreen.toFixed(2)}\u00b0 on the wall. The file\u2019s frame spans ±1 on ` +
+            'both axes while the projector does not, so an angle written in it is inflated by ' +
+            'the aspect ratio. That holds if SOS turns the image in the same frame its control ' +
+            'points live in, which is the one thing about this format still being guessed at.',
+        }),
+      );
+      inspectEl.append(
+        el('p', {
+          className: 'note tiny',
+          textContent:
+            `${r.vertices.length} control points, worst ${r.worstPx.toFixed(1)} px` +
+            (r.outOfFrameCount > 0
+              ? `. ${r.outOfFrameCount} of them sit outside the frame, which is the file asking ` +
+                'for content past the edge of the raster \u2014 no warp can deliver that, and it ' +
+                'usually means the image was scaled up to reach a body bigger than the software ' +
+                'thinks it is.'
+              : '. All inside the frame.') +
+            (r.unrecognised.length > 0
+              ? ` ${r.unrecognised.length} line(s) this page does not recognise, kept as written: ` +
+                r.unrecognised.map((u) => `${u.line}: ${u.text}`).join('; ')
+              : ''),
         }),
       );
     }

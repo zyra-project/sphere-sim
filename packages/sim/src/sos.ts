@@ -487,8 +487,9 @@ export function buildSosAlignment(
     vertices.push({ index: k + 1, x, y });
     // Not clamped. A vertex outside the frame is the file asking for content the
     // frame does not hold — the projector cannot address it, so the correction is
-    // beyond what any warp can deliver. The sample file has three such vertices,
-    // so this is a real state and not an error here; it is reported instead.
+    // beyond what any warp can deliver. Two of the sample file's nine points are
+    // in that state, so it is a real configuration and not an error here; it is
+    // reported instead.
     if (Math.abs(x) > 1 || Math.abs(y) > 1) outOfFrame.push(k + 1);
   }
 
@@ -504,7 +505,7 @@ export function buildSosAlignment(
       unrecognised: [],
     },
     equivalentAffine: decomposeAffine(affX, affY),
-    screenAffine: decomposeAffine(affX, affY, (it.resY * (it.pixelAspect || 1)) / it.resX),
+    screenAffine: decomposeAffine(affX, affY, 1 / displayAspect(it)),
     residual: {
       samples,
       attempted,
@@ -517,6 +518,116 @@ export function buildSosAlignment(
     },
     vertexSupport: peak > 0 ? support.map((s) => s / peak) : support,
     outOfFrame,
+  };
+}
+
+/** One control point, read against a raster. */
+export interface SosVertexReading {
+  index: number;
+  /** Where the file puts it, in the ±1 frame. */
+  x: number;
+  y: number;
+  /** How far the file moved it from the untweaked grid, in raster pixels. */
+  dxPx: number;
+  dyPx: number;
+  magnitudePx: number;
+  /** True when it asks for content the frame does not hold. */
+  outOfFrame: boolean;
+}
+
+/** A parsed alignment file, read back into quantities with units. */
+export interface SosReading {
+  /** The raster it was read against. Wrong raster, wrong pixels. */
+  resX: number;
+  resY: number;
+  /** Control points per side, carried through so a caller can draw the grid. */
+  gridSide: number;
+  /** `translate`, in raster pixels. */
+  translatePx: { x: number; y: number };
+  /**
+   * `scale`, unchanged. A diagonal scale is the one part of the affine that
+   * reads the same in the file's frame and on the wall, because conjugating a
+   * diagonal matrix by a diagonal matrix returns it.
+   */
+  scale: { x: number; y: number };
+  /** `rotate` as the file writes it, in the ±1 frame. */
+  rotateDeg: number;
+  /**
+   * `rotate` read as an angle on the wall.
+   *
+   * CONDITIONAL, and the condition is not knowable from one sample: it assumes
+   * SOS applies `rotate` in the same normalized frame its vertices live in. If
+   * it does, then because that frame spans ±1 on both axes while the display
+   * does not, `tan` of the angle is divided by the display aspect — so on a
+   * 16:9 projector a file saying 1.777 is doing one degree.
+   */
+  rotateDegOnScreen: number;
+  vertices: SosVertexReading[];
+  /** The largest control-point move, in raster pixels. */
+  worstPx: number;
+  /** How many control points ask for content outside the frame. */
+  outOfFrameCount: number;
+  /** Lines the parser did not recognise, carried through verbatim. */
+  unrecognised: { line: number; text: string }[];
+}
+
+/**
+ * Read a parsed alignment file back into quantities that have units.
+ *
+ * The file is dimensionless — a ±1 frame and an angle in it — so on its own it
+ * says how much of the frame a correction uses and not how much of a projector.
+ * Everything here is that same content against a raster: the translation and the
+ * control points in pixels, the rotation in degrees on the wall.
+ *
+ * **The raster has to be the one the file was written for.** A file from a site
+ * running 1920x1200 read against a 1920x1080 projector produces vertical numbers
+ * that are wrong by 11% and look entirely plausible. Nothing in the file says
+ * which raster it came from, so nothing here can check it; the caller has to
+ * know, and a caller showing these numbers should say which raster it used.
+ */
+export function readSosAlignment(
+  alignment: SosAlignment,
+  raster: { resX: number; resY: number; pixelAspect?: number },
+): SosReading {
+  const it = { resX: raster.resX, resY: raster.resY, pixelAspect: raster.pixelAspect ?? 1 };
+  const aspect = displayAspect(it);
+  const rad = (alignment.rotateDeg * Math.PI) / 180;
+  const sorted = [...alignment.vertices].sort((a, b) => a.index - b.index);
+
+  let worstPx = 0;
+  let outOfFrameCount = 0;
+  const vertices = sorted.map((v, k) => {
+    const id = sosIdentityVertex(k, alignment.gridSide);
+    const dxPx = ((v.x - id.x) / 2) * it.resX;
+    const dyPx = ((v.y - id.y) / 2) * it.resY;
+    const magnitudePx = Math.hypot(dxPx, dyPx);
+    const outOfFrame = Math.abs(v.x) > 1 || Math.abs(v.y) > 1;
+    if (magnitudePx > worstPx) worstPx = magnitudePx;
+    if (outOfFrame) outOfFrameCount++;
+    return { index: v.index, x: v.x, y: v.y, dxPx, dyPx, magnitudePx, outOfFrame };
+  });
+
+  return {
+    resX: it.resX,
+    resY: it.resY,
+    gridSide: alignment.gridSide,
+    translatePx: {
+      x: (alignment.translate.x / 2) * it.resX,
+      y: (alignment.translate.y / 2) * it.resY,
+    },
+    scale: { ...alignment.scale },
+    rotateDeg: alignment.rotateDeg,
+    // `atan2` on the two components rather than `atan` of the tangent: the
+    // tangent has period 180 degrees, so a file saying 170 would come back as
+    // -5.7 — the right line through the origin and the wrong direction along it.
+    // Real files carry angles near zero, where the two agree, which is why this
+    // is the kind of thing that survives every test somebody thinks to write.
+    rotateDegOnScreen:
+      (Math.atan2(Math.sin(rad), aspect * Math.cos(rad)) * 180) / Math.PI,
+    vertices,
+    worstPx,
+    outOfFrameCount,
+    unrecognised: alignment.unrecognised.map((u) => ({ ...u })),
   };
 }
 
@@ -559,6 +670,20 @@ function decomposeAffine(affX: number[], affY: number[], ratio = 1): SosAffine {
     rotateDeg,
     shear,
   };
+}
+
+/**
+ * Displayed width over displayed height — `warp.ts`'s aspect, and the same
+ * arithmetic, because it is the same rectangle.
+ *
+ * `pixelAspect` belongs in it for `warp.ts`'s reason: the number is about the
+ * DISPLAYED rectangle, and a non-square pixel makes that a different shape from
+ * the raster's own ratio. Writing `resY * pixelAspect / resX` for the reciprocal
+ * is the mistake this exists to prevent — it is right at `pixelAspect = 1`, which
+ * is every rig in this repository, and wrong by the square of it everywhere else.
+ */
+function displayAspect(it: { resX: number; resY: number; pixelAspect: number }): number {
+  return (it.resX * (it.pixelAspect || 1)) / it.resY;
 }
 
 /** The bilinear basis SOS evaluates: four non-zero weights, summing to one. */

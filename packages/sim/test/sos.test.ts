@@ -35,6 +35,7 @@ import {
   buildSosAlignments,
   formatSosAlignment,
   parseSosAlignment,
+  readSosAlignment,
   sosIdentityVertex,
   vertexDisplacements,
 } from '../src/sos.ts';
@@ -194,8 +195,8 @@ test('a focal-length ratio comes out as that ratio, on both axes', () => {
   // Scaling the frame up pushes every vertex but the centre past the edge of the
   // frame, and they are reported rather than clamped: a projector asked to put
   // content outside its own raster cannot, and the file saying so is the point.
-  // This is the state the sample file is also in — three of its nine points are
-  // outside ±1 — so it is a real configuration and not an error here.
+  // The sample file is in the same state on two of its nine points, so it is a
+  // real configuration and not an error here.
   assert.deepEqual(out.outOfFrame, [1, 2, 3, 4, 6, 7, 8, 9]);
 });
 
@@ -371,6 +372,135 @@ test('every projector in the rig gets a file, in rig order', () => {
   const all = buildSosAlignments(truth, compositor);
   assert.equal(all.length, compositor.projectors.length);
   all.forEach((out, i) => assert.equal(out.projectorId, compositor.projectors[i].cal.id));
+});
+
+// ---------------------------------------------------------------------------
+// Reading a file back into quantities that have units
+// ---------------------------------------------------------------------------
+
+test('the sample’s rotate is not the angle it looks like', () => {
+  // The finding the roll test above pins from the other direction. The file's
+  // frame spans ±1 on both axes, so on a 16:9 projector it compresses x against
+  // y and an angle in it is not an angle on the wall. Reading -0.7 as -0.7
+  // degrees overstates this site's projector roll by a factor of 16/9 — enough
+  // to put it near §2's mount tolerance instead of well inside it.
+  const r = readSosAlignment(parseSosAlignment(SAMPLE), { resX: 1920, resY: 1080 });
+  assert.equal(r.rotateDeg, -0.7);
+  const want = (Math.atan(Math.tan((-0.7 * Math.PI) / 180) / (1920 / 1080)) * 180) / Math.PI;
+  assert.ok(Math.abs(r.rotateDegOnScreen - want) < 1e-12);
+  assert.ok(Math.abs(r.rotateDegOnScreen + 0.3938) < 5e-4, `${r.rotateDegOnScreen}`);
+
+  // A square raster is where the two agree, which is the reason they differ.
+  const square = readSosAlignment(parseSosAlignment(SAMPLE), { resX: 1080, resY: 1080 });
+  assert.ok(Math.abs(square.rotateDegOnScreen - square.rotateDeg) < 1e-12);
+
+  // Past a quarter turn the tangent stops identifying the angle: it has period
+  // 180 degrees, so reading one back through `atan` gives the right line through
+  // the origin and the wrong direction along it. Real files carry angles near
+  // zero, where nothing distinguishes the two, so this is pinned deliberately.
+  const half = readSosAlignment(parseSosAlignment(SAMPLE.replace('-0.7', '170')), {
+    resX: 1920,
+    resY: 1080,
+  });
+  assert.ok(Math.abs(half.rotateDegOnScreen - 174.3) < 0.1, `${half.rotateDegOnScreen}`);
+  const flipped = readSosAlignment(parseSosAlignment(SAMPLE.replace('-0.7', '180')), {
+    resX: 1920,
+    resY: 1080,
+  });
+  assert.ok(Math.abs(Math.abs(flipped.rotateDegOnScreen) - 180) < 1e-9, `${flipped.rotateDegOnScreen}`);
+});
+
+test('the scale survives the change of frame and the rotation does not', () => {
+  // Conjugating a diagonal matrix by a diagonal matrix returns it, so `scale` is
+  // the one part of the affine a reader can take at face value. Pinned because
+  // "convert everything to the screen frame" is the obvious tidy-up and it would
+  // silently corrupt the two numbers that were already right.
+  const r = readSosAlignment(parseSosAlignment(SAMPLE), { resX: 1920, resY: 1080 });
+  assert.deepEqual(r.scale, { x: 1.06606, y: 1.06393 });
+  assert.notEqual(r.rotateDegOnScreen, r.rotateDeg);
+});
+
+test('a non-square pixel goes into the aspect, not its reciprocal', () => {
+  // `pixelAspect` is 1 on every rig in this repository, which is exactly why
+  // this test exists: at 1 the correct ratio and its inverse are the same
+  // number, so nothing else here can tell them apart. The displayed rectangle is
+  // `resX * pixelAspect` wide (`warp.ts`), so a 2.0 pixel aspect makes a
+  // 1920x1080 raster 32:9 and halves the on-screen angle again.
+  const wide = readSosAlignment(parseSosAlignment(SAMPLE), {
+    resX: 1920,
+    resY: 1080,
+    pixelAspect: 2,
+  });
+  const want = (Math.atan(Math.tan((-0.7 * Math.PI) / 180) / ((1920 * 2) / 1080)) * 180) / Math.PI;
+  assert.ok(Math.abs(wide.rotateDegOnScreen - want) < 1e-12, `${wide.rotateDegOnScreen}`);
+  // The reciprocal mistake would be wrong by the SQUARE of the pixel aspect,
+  // which at 2 is a factor of four — visible here and invisible at 1.
+  const wrong = (Math.atan(Math.tan((-0.7 * Math.PI) / 180) / (1920 / (1080 * 2))) * 180) / Math.PI;
+  assert.ok(Math.abs(wide.rotateDegOnScreen - wrong) > 0.2, 'the aspect is inverted');
+});
+
+test('the control points come back in pixels, against a named raster', () => {
+  const r = readSosAlignment(parseSosAlignment(SAMPLE), { resX: 1920, resY: 1080 });
+  assert.equal(r.resX, 1920);
+  assert.equal(r.resY, 1080);
+  // translate 0.026 of a ±1 frame is 0.026 * 1920 / 2 pixels.
+  assert.ok(Math.abs(r.translatePx.x - 24.96) < 1e-9, `${r.translatePx.x}`);
+  assert.ok(Math.abs(r.translatePx.y + 1.62) < 1e-9, `${r.translatePx.y}`);
+
+  // Vertex 8's 0.014 of the frame is 13.44 px on a 1920 raster.
+  const v8 = r.vertices[7];
+  assert.ok(Math.abs(v8.dxPx - 13.44) < 1e-9, `${v8.dxPx}`);
+  assert.ok(Math.abs(v8.dyPx) < 1e-9);
+
+  // WHICH point moved most depends on the frame it is measured in, and this is
+  // the aspect asymmetry again — the same one that inflates the rotation. In the
+  // file's own dimensionless frame vertex 9 is the largest at 0.0152; in pixels
+  // vertex 8 wins at 13.44, because a move along x is worth 960 px per unit and
+  // a move along y only 540. Reading a control point's size off the file without
+  // a raster in hand ranks them wrongly.
+  const worstInFileFrame = [...vertexDisplacements(parseSosAlignment(SAMPLE))].sort(
+    (a, b) => Math.hypot(b.dx, b.dy) - Math.hypot(a.dx, a.dy),
+  )[0];
+  assert.equal(worstInFileFrame.index, 9);
+  assert.ok(Math.abs(r.worstPx - v8.magnitudePx) < 1e-12, 'vertex 8 is the worst in pixels');
+
+  // Two of the nine sit outside the frame — the site is asking for content past
+  // the edge of its own raster, which no warp can deliver.
+  assert.equal(r.outOfFrameCount, 2);
+  assert.deepEqual(
+    r.vertices.filter((v) => v.outOfFrame).map((v) => v.index),
+    [7, 9],
+  );
+});
+
+test('the raster is the reader’s assumption, and changing it changes every pixel', () => {
+  // Nothing in the file says which raster it was written for, so nothing here
+  // can check it — the caller has to know. A file read against the wrong height
+  // gives vertical numbers that are wrong and entirely plausible.
+  const a = readSosAlignment(parseSosAlignment(SAMPLE), { resX: 1920, resY: 1080 });
+  const b = readSosAlignment(parseSosAlignment(SAMPLE), { resX: 1920, resY: 1200 });
+  assert.ok(Math.abs(b.translatePx.y / a.translatePx.y - 1200 / 1080) < 1e-12);
+  assert.equal(b.translatePx.x, a.translatePx.x);
+});
+
+test('what a written file says about itself round-trips through the reader', () => {
+  // The two halves meet: build an alignment from a known field, write it, read
+  // it back, and the control points have to describe the same displacement.
+  const { truth, compositor } = pair((t) => {
+    t.projectors[0].intrinsics.shiftH = 0.01;
+  });
+  const out = buildSosAlignment(truth, compositor, 0);
+  const back = readSosAlignment(parseSosAlignment(formatSosAlignment(out.alignment)), {
+    resX: 1920,
+    resY: 1080,
+  });
+  // 0.01 of a ±1 frame on a 1920 raster is 9.6 px, uniformly, which is the same
+  // 9.6 px the field measured before any of it was written down.
+  for (const v of back.vertices) {
+    assert.ok(Math.abs(v.dxPx - 9.6) < 1e-3, `vertex ${v.index} ${v.dxPx}`);
+    assert.ok(Math.abs(v.dyPx) < 1e-3);
+  }
+  assert.ok(Math.abs(out.residual.fieldRmsPx - 9.6) < 1e-6);
 });
 
 /** {@link pair}, as a tuple, for the call sites that spread it. */

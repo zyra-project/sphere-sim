@@ -2048,3 +2048,20 @@ measurement above independently predicts for a pointing error. It is the first
 time an external artifact has corroborated the forward model's GEOMETRY rather
 than one of its parameters, and AMENDMENTS A-23 now carries what else that file
 measures.
+
+**And the format reads in both directions, which is half its value.** A site's own
+alignment file is DIMENSIONLESS — nine positions in a ±1 frame, and an angle in
+that same frame — so on its own it says what fraction of a projector's frame a
+correction uses, which is not a quantity anybody can act on. `readSosAlignment`
+turns it into pixels and degrees against a raster, and the page will open one
+beside the picture of its own. Two things fall out of that which the writer alone
+never surfaced. The raster is the READER's assumption and the file cannot confirm
+it: nothing in those twelve lines records the projector they were written for, so
+a file from a 1920×1200 site read against a 1080 projector gives vertical numbers
+that are wrong by 11% and look entirely reasonable. And the ±1 frame's asymmetry
+reaches further than the rotation — it also decides WHICH control point is the
+largest. In the sample's own frame vertex 9 wins at 0.0152; in pixels vertex 8
+does, at 13.44, because a move along x is worth 960 px per unit against y's 540.
+Two claims made about that file in this session were wrong on exactly this axis:
+its worst point, and how many of its nine sit outside the frame — three, said
+twice, where the answer is two.
