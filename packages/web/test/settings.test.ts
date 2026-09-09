@@ -584,6 +584,27 @@ test('the warp export ships the calibration the software believes, never ground 
     !/\.physical/.test(fn),
     'the warp export reaches for the truth rig, which is ground truth the solver never sees',
   );
+  // The archive builds the SAME warp files and can be wrong the same way. It
+  // sits after `exportSosFiles` deliberately, so the scan above stays a scan of
+  // one function -- putting it between the two exports is what first broke this
+  // test, and moving it was the right answer rather than widening the slice.
+  const bundle = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function buildBundle():'),
+    MAIN_SOURCE.indexOf('function downloadBundle(): void {'),
+  );
+  assert.ok(bundle.length > 0, 'the bundle builder has moved; this test can no longer find it');
+  assert.ok(
+    /buildWarpExports\(model\.content\)/.test(bundle),
+    'the archive does not build its warp meshes from the compositor rig',
+  );
+  // The alignment files are the one export that needs BOTH, and for the
+  // opposite reason: an SOS alignment is the disagreement between the two rigs
+  // and is meaningless from either alone.
+  assert.ok(
+    /buildSosAlignments\(model\.physical, model\.content\)/.test(bundle),
+    'the archive does not build its alignment files from the two-rig disagreement',
+  );
+
   // And it is reachable: a handler nothing calls is a button that does nothing.
   // It lives in the projector card's warp-mesh tab, beside the drawing of the
   // correction it writes out — NOT in the actions row, which is sized to the

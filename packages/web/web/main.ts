@@ -4314,6 +4314,31 @@ function exportWarpFiles(): void {
  * behaviour, and the same caveat, as the picture. The page says so beside the
  * button rather than leaving it to be inferred from a filename.
  */
+function exportSosFiles(): void {
+  try {
+    const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
+    const model = displayModel(world);
+    const exports = buildSosAlignments(model.physical, model.content);
+    for (const exported of exports) {
+      downloadText(`${exported.projectorId}.alignment`, formatSosAlignment(exported.alignment));
+    }
+    // The worst projector, not the average: a mesh warp is judged by its worst
+    // seam, and averaging four projectors would hide the one that is wrong.
+    const worst = exports.reduce((a, b) => (b.residual.meshRmsPx > a.residual.meshRmsPx ? b : a));
+    const off = exports.reduce((n, e) => n + e.outOfFrame.length, 0);
+    state.sosCost =
+      `${exports.length} file${exports.length === 1 ? '' : 's'}. Worst of them, ${worst.projectorId}: ` +
+      `nine points left ${worst.residual.meshRmsPx.toFixed(2)} px of a ` +
+      `${worst.residual.fieldRmsPx.toFixed(1)} px correction` +
+      (off > 0 ? `, and ${off} vertices want content outside the frame.` : '.');
+    lastError = '';
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+  }
+  renderInspect();
+  renderReadout();
+}
+
 /**
  * Everything an operator takes to the wall, assembled once.
  *
@@ -4396,31 +4421,6 @@ function downloadBundle(): void {
   } catch (err) {
     lastError = err instanceof Error ? err.message : String(err);
   }
-  renderReadout();
-}
-
-function exportSosFiles(): void {
-  try {
-    const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
-    const model = displayModel(world);
-    const exports = buildSosAlignments(model.physical, model.content);
-    for (const exported of exports) {
-      downloadText(`${exported.projectorId}.alignment`, formatSosAlignment(exported.alignment));
-    }
-    // The worst projector, not the average: a mesh warp is judged by its worst
-    // seam, and averaging four projectors would hide the one that is wrong.
-    const worst = exports.reduce((a, b) => (b.residual.meshRmsPx > a.residual.meshRmsPx ? b : a));
-    const off = exports.reduce((n, e) => n + e.outOfFrame.length, 0);
-    state.sosCost =
-      `${exports.length} file${exports.length === 1 ? '' : 's'}. Worst of them, ${worst.projectorId}: ` +
-      `nine points left ${worst.residual.meshRmsPx.toFixed(2)} px of a ` +
-      `${worst.residual.fieldRmsPx.toFixed(1)} px correction` +
-      (off > 0 ? `, and ${off} vertices want content outside the frame.` : '.');
-    lastError = '';
-  } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
-  }
-  renderInspect();
   renderReadout();
 }
 
