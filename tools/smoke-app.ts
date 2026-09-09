@@ -2049,19 +2049,34 @@ async function main(): Promise<void> {
         // from the worker's own reply and names the count it actually traced.
         let rigLine = '';
         let litAfter = '';
-        // A minute and a half for work that is milliseconds, because the wait is
-        // not on the work. `requestSurface` and `requestModel` share ONE worker
-        // and `meshBusy` admits one surface pass at a time, so this request
-        // queues behind whatever settled model pass is already running -- and a
-        // settled pass is the expensive one: full-density metrics plus the parity
-        // render. The five geodesic fields it is nominally waiting for are over
-        // an eight-triangle octahedron and cost nothing.
+        // MEASURED FROM THIS RUN, not written down as a constant, and that is
+        // the third time this budget has been wrong.
         //
-        // Sized against the runner rather than this machine. In the CI run that
-        // failed this at 30 s, the mesh poll above took 24 176 ms where it takes
-        // about 9 000 ms here -- 2.7x -- and the same ratio applied to a budget
-        // written locally is how a check passes for a year and then does not.
-        const placeDeadline = Date.now() + 90_000;
+        // The wait is not on the work. `requestSurface` and `requestModel` share
+        // ONE worker and `meshBusy` admits one surface pass at a time, so this
+        // request queues behind whatever settled model pass is already running --
+        // and a settled pass is the expensive one: full-density metrics plus the
+        // parity render. The five geodesic fields it is nominally waiting for are
+        // over an eight-triangle octahedron and cost nothing. So the budget is a
+        // multiple of how long a settled pass takes HERE, which `meshMs` above
+        // just measured on this machine, in this run, under this load.
+        //
+        // THE HISTORY IS WHY IT IS NOT A NUMBER. It was 30 s, and failed on a
+        // runner where the mesh poll took 24 176 ms against about 9 000 ms
+        // locally. It was then raised to 90 s -- another constant, written after
+        // observing one slow runner -- and failed again on runs 490 and 491,
+        // where the poll took 33 186 ms and 32 277 ms. Run 492 PASSED on the
+        // identical commit to 491 at the same runner speed, which is what says
+        // the number was marginal rather than simply too small: two settled
+        // passes queueing at 33 s each already spend 66 s of a 90 s budget, so
+        // whether it holds is decided by how many passes happen to be in flight.
+        // A constant cannot track that. A multiple of the measured pass can.
+        //
+        // Five, because the failures are consistent with two settled passes
+        // queueing and the floor keeps a fast machine honest rather than letting
+        // this balloon into a check that would wait out a real hang.
+        const placeBudgetMs = Math.max(90_000, 5 * meshMs);
+        const placeDeadline = Date.now() + placeBudgetMs;
         while (Date.now() < placeDeadline) {
           await sleep(300);
           rigLine = await cdp.evaluate<string>(
@@ -2076,7 +2091,8 @@ async function main(): Promise<void> {
         if (!/\b5 projectors\b/.test(rigLine)) {
           failures.push(
             `the worker never reported a five-projector rig (last said ${JSON.stringify(rigLine)}) ` +
-              '— the any-count path is not reaching it',
+              `— the any-count path is not reaching it, or ${(placeBudgetMs / 1000).toFixed(0)} s ` +
+              `is not enough on a runner whose settled pass takes ${meshMs} ms`,
           );
         } else if (!Number.isFinite(after) || after <= 0) {
           failures.push(
