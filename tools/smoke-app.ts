@@ -2184,18 +2184,33 @@ async function main(): Promise<void> {
       failures.push(`the download block: ${listed}`);
     } else {
       const seen = JSON.parse(listed) as { text: string; cfg: string };
-      const missing = ['README.txt', 'warp/', '.alignment'].filter((n) => !seen.text.includes(n));
+      const missing = ['README.txt', '.alignment'].filter((n) => !seen.text.includes(n));
+      // The warp meshes must be ACCOUNTED FOR, not merely present. This fixture
+      // carries no UV set, so `buildWarpExport` refuses it and there are no
+      // meshes to name -- which is correct, and the block has to say so rather
+      // than leave a reader to notice the absence. Requiring the files outright
+      // would fail on a legitimate archive; requiring nothing would pass on the
+      // bug this replaced, where one refusal silently took the others with it.
+      const warpAccounted =
+        seen.text.includes('warp/') || /Not included — the warp meshes/.test(seen.text);
       if (missing.length > 0) {
         failures.push(
           `the download block does not name ${missing.join(', ')} without opening anything — ` +
             `it said ${JSON.stringify(seen.text.slice(0, 160))}`,
+        );
+      } else if (!warpAccounted) {
+        failures.push(
+          'the download block neither lists the warp meshes nor says why they are missing: ' +
+            JSON.stringify(seen.text.slice(0, 200)),
         );
       } else if (!/none was loaded/.test(seen.cfg)) {
         failures.push(
           `the block does not explain the missing config: ${JSON.stringify(seen.cfg.slice(0, 140))}`,
         );
       } else {
-        process.stdout.write('  files: the readout lists the archive and says why no config is in it\n');
+        process.stdout.write(
+          '  files: the readout lists the archive and accounts for every part of it\n',
+        );
       }
     }
 
