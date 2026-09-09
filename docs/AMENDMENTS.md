@@ -2474,7 +2474,8 @@ actual config … which may differ from the documented defaults." This is that
 item, arriving in full rather than second-hand — and the raster section below is
 what happens when it is read too confidently.
 
-Nothing here is applied. PARAMETERS.md remains authoritative.
+Everything here is unapplied EXCEPT §4.4, whose refutation landed with the
+status above; PARAMETERS.md remains authoritative for the rest.
 
 **The file's shape matters for reading it.** Every key carries both a
 `description` ending in "Default Value: *x*" and a live `value`. A reader taking

@@ -190,7 +190,39 @@ export function bundleEntries(input: BundleInput): ZipEntry[] {
     entries.push({ name: `alignment/${id}.alignment`, text });
   }
   if (input.config !== null) {
-    entries.push({ name: input.configName, text: input.config });
+    entries.push({ name: configEntryName(input.configName, entries), text: input.config });
   }
   return entries;
+}
+
+/**
+ * Where the loaded config goes, given what is already in the archive.
+ *
+ * IT KEEPS THE NAME IT ARRIVED UNDER whenever that name is free, because the
+ * whole point of writing it back is that the operator can diff it against the
+ * file on their server without renaming anything first.
+ *
+ * The exception is a collision, and the one that matters is real rather than
+ * theoretical: the picker accepts a config by CONTENT, so a site is free to
+ * call theirs `README.txt`, and this archive already contains a `README.txt` of
+ * its own. ZIP permits duplicate names and extractors disagree about what to do
+ * with them — some take the first, some the last, some write both and some
+ * prompt — so the operator's instructions could be silently overwritten by
+ * JSON, or the config lost. Neither is a failure anybody would see happen.
+ *
+ * Compared case-INSENSITIVELY, because the extractor is the thing that has to
+ * cope and Windows and macOS will treat `readme.txt` as the same file.
+ *
+ * On a collision the file keeps its name and moves into `config/`, which cannot
+ * clash with anything this function writes. A directory is a smaller change to
+ * ask of a reader than a mangled filename, and the README says it happened.
+ */
+export function configEntryName(name: string, existing: readonly ZipEntry[]): string {
+  // A basename. `file.name` from a picker is already one, but a name carrying a
+  // path separator would either nest unexpectedly or, with `..` in it, be a
+  // traversal for an extractor that resolves entry paths.
+  const base = name.split(/[\\/]/).pop()?.trim() ?? '';
+  const safe = base === '' || base === '.' || base === '..' ? 'local_sos_config.json' : base;
+  const taken = new Set(existing.map((e) => e.name.toLowerCase()));
+  return taken.has(safe.toLowerCase()) ? `config/${safe}` : safe;
 }

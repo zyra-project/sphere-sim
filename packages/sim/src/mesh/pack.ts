@@ -91,7 +91,11 @@ export const FIELD_CHANNELS = 4;
  * not a happy accident but the reason the layout is corner-major: corner `c`'s
  * texel `k` sits at `c * stride + k`, and at stride 1 that is `0, 1, 2` — the
  * three consecutive texels the old writer wrote and the old shader fetched.
- * `pack.test.ts` pins that against digests captured before the change.
+ * `packages/sim/test/mesh-pack.test.ts` pins that by transcribing the
+ * PRE-WIDENING index arithmetic and checking every triangle, corner and channel
+ * against it. Digests were taken before the change too and matched, but a digest
+ * only says something moved; the transcribed formula says where, and it survives
+ * a change of fixture.
  */
 export function fieldStrideFor(count: number): number {
   return Math.max(1, Math.ceil(count / FIELD_CHANNELS));
@@ -109,17 +113,28 @@ export function fieldTexelsFor(stride: number): number {
  * a four-projector rig still writes one texel per corner and the identical
  * bytes it always did.
  *
- * Raising it from four is a data-layout change and not a constant: the writer
- * below, `readPackedField`, `bvhFieldAt` and `contentWeight` in both shaders,
- * and the harness's `reference.ts` transliteration all had to move together,
- * with `mesh-parity.test.ts` holding them to each other.
+ * Raising it from four was a data-layout change and not a constant: the writer
+ * below, `readPackedField`, and `bvhFieldAt` and `contentWeight` in the PAGE
+ * shader all had to move together.
+ *
+ * THE HARNESS DID NOT MOVE WITH THEM, which was the prediction and is not what
+ * happened. It is the four-projector sphere A/B rig with its own `MAX_PROJ` of
+ * 4, so it only ever sees stride 1 and its `reference.ts` transliteration is
+ * correct unchanged. What it needed was a guard: handed stride 2 it would read
+ * the second texel of a corner as the next corner -- a silently wrong blend
+ * rather than a failure -- so its `packBvh` call site refuses a stride it cannot
+ * read, and `mesh-parity.test.ts` holds it there.
  *
  * The refusal below stays, one size up. It is load-bearing for MEMORY SAFETY
  * rather than tidiness: `contentWeight` indexes its field by projector under an
  * `i >= uProjCount` guard, so a rig larger than the layout reaching the shader
  * would read past the end of a vector — undefined behaviour in GLSL, not a
  * wrong number. The cap and the shader's `MAX_PROJ` must therefore move
- * together, and `pack.test.ts` asserts they are equal so they cannot drift.
+ * together. `packages/web/test/glsl.test.ts` asserts
+ * `FIELD_PROJECTORS === MAX_PROJECTORS` directly — the web side is the only one
+ * that can import both, since a packer cannot import a shader — and
+ * `mesh-pack.test.ts` states the same limit from this side, where a rig one over
+ * the cap must be refused rather than folded into a channel.
  */
 export const FIELD_PROJECTORS = 8;
 
@@ -197,12 +212,14 @@ export function packBvh(
 ): PackedBvh {
   if (fields != null && fields.length > FIELD_PROJECTORS) {
     throw new Error(
-      `${fields.length} footprint fields will not fit ${FIELD_PROJECTORS} texel channels. ` +
-        `One texel carries one corner's whole answer, so ${FIELD_PROJECTORS} is what the ` +
-        'LAYOUT holds — the page shader itself lights more than that, and widening this means ' +
-        'two texels per corner through `bvhFieldAt`, `contentWeight` and the harness ' +
-        'transliteration. Until then a fifth field has nowhere to go, and `contentWeight` ' +
-        'would index a vec4 out of bounds if one were dropped in anyway.',
+      `${fields.length} footprint fields will not fit a layout that carries ` +
+        `${FIELD_PROJECTORS}. A texel holds four distances and a corner takes as many texels ` +
+        `as it needs — one up to four projectors, two up to ${FIELD_PROJECTORS} — so the page ` +
+        'shader lights exactly the number this holds and neither is ahead of the other. A ' +
+        'ninth has nowhere to go: it means a third texel per corner through `bvhFieldAt`, ' +
+        '`contentWeight` and the harness transliteration, and until that happens ' +
+        '`contentWeight` would index past the end of its second vector if one were dropped ' +
+        'in anyway.',
     );
   }
   const nodeTexels = bvh.nodeCount * NODE_TEXELS;

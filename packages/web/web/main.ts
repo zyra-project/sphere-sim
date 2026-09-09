@@ -1016,6 +1016,11 @@ function slider(o: SliderOptions): HTMLElement {
       // The panel held still for the whole drag, so this is where every other
       // row that reads the value it changed gets to catch up.
       renderControls();
+      // The readout too, and specifically its file block: `bundleForPanel` will
+      // not rebuild an archive under a live drag, so without this the residual
+      // line would keep the value it had when the pointer went down until some
+      // unrelated repaint came along.
+      renderReadout();
       if (o.onSettle) o.onSettle();
     };
     window.addEventListener('pointermove', move);
@@ -4349,9 +4354,62 @@ function exportSosFiles(): void {
  * set; that refusal reaches the panel rather than the console, in the same
  * place the individual buttons put theirs.
  */
+/**
+ * The last archive built, and the inputs it was built from.
+ *
+ * `buildBundle` is the most expensive thing in the readout by a wide margin: a
+ * warp mesh is a 41x41 grid of rays per projector, so a four-projector rig is
+ * about seven thousand surface intersections, and the SOS alignments trace
+ * again. `renderReadout` runs on EVERY `touched()`, which includes every pointer
+ * move of a slider drag -- so the always-visible file block put all of that on
+ * the main thread per repaint, and a drag or a running solve would stutter.
+ *
+ * The file BESIDE this one already solved the same problem and the fix is its
+ * shape: `touched` skips `renderControls` while a slider is held because "the
+ * row paints itself and the rest of the panel catches up when the pointer comes
+ * up". The block does the same, from one memo:
+ *
+ *   - Same inputs, same answer, no work. Most repaints are this.
+ *   - Different inputs mid-drag: keep showing the last one. The names in the
+ *     list do not move with a slider anyway; only the residual line does, and
+ *     that is a settled number rather than a live one.
+ *   - Different inputs, pointer up: rebuild, once.
+ *
+ * The slider's own `pointerup` calls `renderReadout` for exactly this reason --
+ * before, nothing refreshed the readout on settle and the stale line would have
+ * outlived the drag.
+ */
+let bundleMemo: { key: string; value: ReturnType<typeof buildBundle> | null; refusal: string } | null =
+  null;
+
+/** The archive for the readout: memoised, and never rebuilt under a live drag. */
+function bundleForPanel(): { value: ReturnType<typeof buildBundle> | null; refusal: string } {
+  const key = JSON.stringify([
+    state.settings,
+    state.compositorRig,
+    displayMeshId(),
+    sosConfigSeq,
+    suppliedName(),
+    customPlacements,
+  ]);
+  if (bundleMemo !== null && bundleMemo.key === key) return bundleMemo;
+  if (bundleMemo !== null && sliderDragging) return bundleMemo;
+  let value: ReturnType<typeof buildBundle> | null = null;
+  let refusal = '';
+  try {
+    value = buildBundle();
+  } catch (err) {
+    refusal = err instanceof Error ? err.message : String(err);
+  }
+  bundleMemo = { key, value, refusal };
+  return bundleMemo;
+}
+
 function buildBundle(): {
   entries: ZipEntry[];
   config: boolean;
+  /** What the panel says about the config: absent, refused, or nothing to change. */
+  configNote: string;
   cost: string;
   refused: string[];
 } {
@@ -4409,17 +4467,48 @@ function buildBundle(): {
   // Both halves, the same pair `saveSosConfig` requires: a diff to apply and the
   // original text to apply it to. `formatSosConfig` PATCHES that text, which is
   // literally why the archive cannot carry a config nobody loaded.
-  const update = sosConfigDiff();
-  const config =
-    update === null || state.sosConfigText === ''
-      ? null
-      : formatSosConfig(state.sosConfigText, update);
+  //
+  // AND THIS ONE THROUGH `attempt` TOO, which it was not. `formatSosConfig`
+  // refuses a setting whose `value` is not a top-level number -- it patches
+  // spans in the original text and will not guess where one is -- and
+  // `sosConfigDiff` reads the parsed file as well. Left outside, either
+  // exception did to the whole archive exactly what the warp refusal used to:
+  // took down the alignment files, the README and the download button, over a
+  // part that is optional to begin with.
+  //
+  // The two absences are DIFFERENT and the panel must not conflate them. Nobody
+  // loaded a config is the ordinary case and reads as guidance; a config was
+  // loaded and refused is a fault in a file the reader is holding, and they need
+  // the reason.
+  const loaded = state.sosConfigText !== '';
+  let config: string | null = null;
+  // What the panel should SAY about the config, decided here where the three
+  // cases are distinguishable rather than in the readout from a boolean that
+  // cannot tell them apart.
+  let configNote = CONFIG_ABSENT;
+  if (loaded) {
+    const before = refused.length;
+    config = attempt('the patched config', () => {
+      const update = sosConfigDiff();
+      if (update === null) return null;
+      return formatSosConfig(state.sosConfigText, update);
+    });
+    configNote =
+      config !== null
+        ? `${FILE_NOTES.config.title} — ${FILE_NOTES.config.page}`
+        : refused.length > before
+          ? 'The config you loaded could not be patched — the reason is below, and every ' +
+            'other file in the archive is unaffected by it.'
+          : 'The config you loaded already says what this page would write, so there is ' +
+            'nothing to patch and it is not in the archive.';
+  }
 
   const n = Math.max(warp.length, alignment.length);
   const rig = `${n} projector${n === 1 ? '' : 's'}, ` +
     `${state.compositorRig === null ? 'as the install describes them' : 'as last recalibrated'}.`;
 
   return {
+    configNote,
     entries: bundleEntries({
       warp,
       alignment,
@@ -4519,6 +4608,12 @@ function pickSosAlignment(projector: number, resX: number, resY: number): void {
  * true rig's geometry into it would produce a file that is right in the
  * simulator and unobtainable in a real dome.
  */
+/**
+ * Bumped on every config load, successful or not. See `bundleForPanel`'s memo:
+ * it identifies the loaded file, where the text's own length cannot.
+ */
+let sosConfigSeq = 0;
+
 function pickSosConfig(): void {
   const input = document.createElement('input');
   input.type = 'file';
@@ -4543,7 +4638,19 @@ function pickSosConfig(): void {
         state.sosConfigError = err instanceof Error ? err.message : String(err);
       })
       .finally(() => {
+        // A LOAD CHANGES TWO PANELS NOW. `renderInspect` redraws the projector
+        // card this button lives on; the file block in the READOUT also reports
+        // whether a config is in the archive, and nothing else was going to
+        // repaint it -- so the always-visible block went on saying none was
+        // loaded while the download quietly included one.
+        //
+        // `sosConfigSeq` is what makes that repaint see the new file:
+        // `bundleForPanel` memoises on its inputs, and two different configs of
+        // the same length under the same name are indistinguishable by any cheap
+        // read of the text. A counter is exact and costs nothing.
+        sosConfigSeq++;
         renderInspect();
+        renderReadout();
       });
   });
   input.click();
@@ -6600,18 +6707,9 @@ function renderReadout(): void {
   {
     const box = el('div');
     box.append(el('p', { className: 'eyebrow-sm', textContent: 'Files for the projectors' }));
-    let ready: {
-      entries: ZipEntry[];
-      config: boolean;
-      cost: string;
-      refused: string[];
-    } | null = null;
-    let refusal = '';
-    try {
-      ready = buildBundle();
-    } catch (err) {
-      refusal = err instanceof Error ? err.message : String(err);
-    }
+    const built = bundleForPanel();
+    const ready = built.value;
+    const refusal = built.refusal;
 
     if (ready === null) {
       const p = el('p', { className: 'note', textContent: refusal });
@@ -6629,12 +6727,7 @@ function renderReadout(): void {
       // one thing a reader cannot recover after the download, and the reason it
       // is missing is not obvious -- `formatSosConfig` patches the file it is
       // given, so there is nothing to patch without one.
-      const cfg = el('p', {
-        className: 'note tiny',
-        textContent: ready.config
-          ? `${FILE_NOTES.config.title} — ${FILE_NOTES.config.page}`
-          : CONFIG_ABSENT,
-      });
+      const cfg = el('p', { className: 'note tiny', textContent: ready.configNote });
       if (!ready.config) cfg.style.color = 'var(--warn)';
       cfg.dataset.smoke = 'bundle-config';
       box.append(cfg);

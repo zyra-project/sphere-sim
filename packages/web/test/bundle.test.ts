@@ -17,7 +17,13 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-import { bundleEntries, bundleReadme, CONFIG_ABSENT, FILE_NOTES } from '../src/bundle.ts';
+import {
+  bundleEntries,
+  bundleReadme,
+  configEntryName,
+  CONFIG_ABSENT,
+  FILE_NOTES,
+} from '../src/bundle.ts';
 import type { BundleInput } from '../src/bundle.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -141,4 +147,106 @@ test('a rig with nothing lit still produces a readable archive', () => {
   assert.equal(empty.length, 1);
   assert.equal(empty[0].name, 'README.txt');
   assert.ok(empty[0].text.includes('Files for the projectors'));
+});
+
+test('a config named like the generated README does not overwrite it', () => {
+  // The picker takes a config by CONTENT, so nothing stops a site calling
+  // theirs README.txt -- and this archive writes one of its own. ZIP allows
+  // duplicate names and extractors disagree about which wins, so the operator's
+  // instructions could be replaced by JSON with nobody seeing it happen.
+  const clash = bundleEntries(INPUT({ configName: 'README.txt' }));
+  const names = clash.map((e) => e.name);
+  assert.equal(
+    new Set(names.map((n) => n.toLowerCase())).size,
+    names.length,
+    `the archive has two entries with one name: ${names.join(', ')}`,
+  );
+  // And the config is still IN it, under a name that keeps the filename whole.
+  assert.ok(names.includes('config/README.txt'), names.join(', '));
+  // The README this collided with is the generated one, not the config.
+  const readme = clash.find((e) => e.name === 'README.txt');
+  assert.ok(readme !== undefined && readme.text.includes('warp/'), 'the README was overwritten');
+});
+
+test('the collision check is case-insensitive, because extractors are', () => {
+  // Windows and macOS treat readme.txt and README.txt as one file, so a
+  // same-name comparison would let this pair through to the one place it breaks.
+  const names = bundleEntries(INPUT({ configName: 'readme.TXT' })).map((e) => e.name);
+  assert.equal(new Set(names.map((n) => n.toLowerCase())).size, names.length, names.join(', '));
+});
+
+test('a config name keeps its own name whenever nothing is in the way', () => {
+  // The exception must stay an exception: writing the config back is only
+  // useful if the operator can diff it against their server's copy without
+  // renaming it first, so the ordinary case moves nothing.
+  const names = bundleEntries(INPUT({ configName: 'boulder_sos_config.json' })).map((e) => e.name);
+  assert.ok(names.includes('boulder_sos_config.json'), names.join(', '));
+  assert.ok(!names.includes('config/boulder_sos_config.json'), names.join(', '));
+});
+
+test('a config name carrying a path is reduced to its basename', () => {
+  // `file.name` from a picker is already a basename, so this is defence rather
+  // than a fix for something observed -- but an entry path with `..` in it is a
+  // traversal for any extractor that resolves them, and the cost of not being
+  // the archive that ships one is a `split`.
+  assert.equal(configEntryName('/etc/passwd', []), 'passwd');
+  assert.equal(configEntryName('../../local_sos_config.json', []), 'local_sos_config.json');
+  assert.equal(configEntryName('C:\\Users\\sos\\local_sos_config.json', []), 'local_sos_config.json');
+  // A name that is nothing but a traversal has no basename to keep.
+  assert.equal(configEntryName('..', []), 'local_sos_config.json');
+  assert.equal(configEntryName('   ', []), 'local_sos_config.json');
+});
+
+test('every part of the archive is built through the same refusal path', () => {
+  // `buildBundle` isolates each part so one refusal cannot take the others with
+  // it -- a model with no UV set has no warp meshes and perfectly good alignment
+  // files. The config was left OUT of that isolation: `formatSosConfig` refuses
+  // a setting whose value is not a top-level number, and that exception threw
+  // out of the whole function, doing to the archive exactly what the warp
+  // refusal used to.
+  const body = MAIN.slice(MAIN.indexOf('function buildBundle('));
+  const end = body.indexOf('\n}\n');
+  assert.ok(end > 0, 'buildBundle has no closing brace');
+  const fn = body.slice(0, end);
+  for (const call of ['buildWarpExports', 'buildSosAlignments', 'formatSosConfig']) {
+    assert.ok(fn.includes(call), `buildBundle no longer calls ${call}`);
+  }
+  // Each of the three sits inside an `attempt(...)`, which is what records a
+  // refusal instead of propagating it. Checked by counting: three parts, three
+  // attempts, so a fourth part added without one fails here.
+  const attempts = fn.match(/\battempt\(/g) ?? [];
+  assert.equal(
+    attempts.length,
+    3,
+    `buildBundle has ${attempts.length} attempt() calls for three parts — a part that is ` +
+      'not wrapped can still take the whole archive down',
+  );
+});
+
+test('the readout does not rebuild the archive under a live slider drag', () => {
+  // Every warp mesh is a 41x41 grid of rays per projector and `renderReadout`
+  // runs on every `touched()`, which includes every pointer move of a drag. The
+  // always-visible block therefore had to go through a memo; calling
+  // `buildBundle` straight from the readout puts thousands of intersections back
+  // on the main thread per repaint.
+  assert.ok(MAIN.includes('function bundleForPanel('), 'the panel memo is gone');
+  assert.ok(MAIN.includes('sliderDragging'), 'the memo no longer knows about drags');
+  // The readout reaches the archive through the memo and not around it. Two
+  // call sites are legitimate: the memo itself, and the download click, which
+  // must build the real bytes rather than serve a cached manifest.
+  // Not followed by `:`, which excludes the declaration's own return type.
+  const calls = (MAIN.match(/\bbuildBundle\(\)(?!:)/g) ?? []).length;
+  assert.equal(calls, 2, `buildBundle() is called ${calls} times; expected the memo and the download`);
+});
+
+test('loading a config repaints the panel that reports whether one is in the archive', () => {
+  // `pickSosConfig` used to call `renderInspect` alone, which redraws the
+  // projector card the button lives on. The file block lives in the READOUT, so
+  // it went on saying no config was loaded while the download quietly included
+  // one.
+  const at = MAIN.indexOf('function pickSosConfig(');
+  assert.ok(at > 0, 'pickSosConfig is gone');
+  const fn = MAIN.slice(at, MAIN.indexOf('\n}\n', at));
+  assert.ok(fn.includes('renderReadout()'), 'a config load no longer repaints the readout');
+  assert.ok(fn.includes('sosConfigSeq++'), 'the memo cannot see that a new config was loaded');
 });
