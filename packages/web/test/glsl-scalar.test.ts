@@ -137,6 +137,29 @@ function translateStatement(line: string, known: Set<string>): string {
 }
 
 /**
+ * Operators the character filter below would wave through, and must not.
+ *
+ * The filter admits `=`, `&` and `|` as characters because `==`, `&&` and `||`
+ * are built from them, and admits `<` and `>` because the comparisons are. That
+ * leaves the single forms reachable, and the first of them is the one that
+ * matters: JavaScript would quietly EVALUATE `if (a = onset)` as an assignment
+ * and carry on, where GLSL would not compile it at all. The rest are operators
+ * whose GLSL meaning this translator has not established — `>>` is arithmetic
+ * on a GLSL `int` and logical on a `uint`, and every value here arrives as one
+ * untyped JavaScript number — so refusing beats guessing which way they round.
+ *
+ * A shipped shader cannot contain a bare `=` in a condition, because the driver
+ * would reject it. The hole was in the guarantee rather than in today's result,
+ * and the guarantee is what the rest of this file rests on.
+ */
+const BANNED_OPERATORS: [RegExp, string][] = [
+  [/(^|[^=!<>])=(?!=)/, 'an assignment'],
+  [/(^|[^&])&(?!&)/, 'a bitwise &'],
+  [/(^|[^|])\|(?!\|)/, 'a bitwise |'],
+  [/<<|>>/, 'a shift'],
+];
+
+/**
  * Translate one expression, refusing every identifier it cannot account for.
  *
  * The identifier check is what makes the whitelist real: a uniform renamed in
@@ -144,6 +167,11 @@ function translateStatement(line: string, known: Set<string>): string {
  * and comparing `NaN` against a number, which some assertions would pass.
  */
 function translateExpression(expr: string, known: Set<string>): string {
+  for (const [re, what] of BANNED_OPERATORS) {
+    if (re.test(expr)) {
+      throw new Error(`this translator does not accept ${what} in ${JSON.stringify(expr)}`);
+    }
+  }
   for (const token of expr.match(/[A-Za-z_]\w*/g) ?? []) {
     if (!known.has(token) && !(token in BUILTINS)) {
       throw new Error(`unknown identifier ${JSON.stringify(token)} in ${JSON.stringify(expr)}`);
@@ -308,6 +336,48 @@ test('the translator refuses what it does not understand, rather than guessing',
   assert.throws(
     () => compileGlslScalar(WEB_GLSL, 'noSuchFunction', ['x'], MASK_UNIFORMS),
     /no scalar function/,
+  );
+});
+
+test('the translator refuses the operators its character filter would admit', () => {
+  // Found by review, and it was a real hole rather than a style point. The
+  // filter admits `=`, `&` and `|` as CHARACTERS so that `==`, `&&` and `||`
+  // work, which left the single forms reachable. A bare `=` is the one that
+  // bites: `if (a = onset)` is not GLSL a driver would compile, but it is
+  // perfectly good JavaScript, so the translator would have assigned, taken the
+  // branch on the assigned value, and reported an answer for a shader that
+  // cannot exist -- in a file whose stated safety property is that it refuses
+  // what it does not understand.
+  const cases: [string, string, RegExp][] = [
+    ['an assignment for a comparison', 'if (a <= onset) return 1.0;', /an assignment/],
+    ['a bitwise & for a logical one', 'uMaskBottomOnly == 1 && latDeg >= 0.0', /a bitwise &/],
+    ['a shift', 'float t = (a - onset) / (full - onset);', /a shift/],
+  ];
+  const swaps: string[] = [
+    'if (a = onset) return 1.0;',
+    'uMaskBottomOnly == 1 & latDeg >= 0.0',
+    'float t = (a - onset) / (full >> onset);',
+  ];
+
+  for (let i = 0; i < cases.length; i++) {
+    const [what, from, message] = cases[i];
+    assert.ok(WEB_GLSL.includes(from), `the target for ${what} has moved: ${from}`);
+    assert.throws(
+      () => compileGlslScalar(WEB_GLSL.replace(from, swaps[i]), 'polarMask', ['latDeg'], MASK_UNIFORMS),
+      message,
+      what,
+    );
+  }
+
+  // And the ban is narrow: the real operators still translate. If this fails,
+  // the guard has eaten `==`, `&&`, `<=` or `>=` and every test above is
+  // passing for the wrong reason.
+  assert.equal(
+    compileGlslScalar(WEB_GLSL, 'polarMask', ['latDeg'], MASK_UNIFORMS)(
+      uniformsFor(BLEND(), 'latitude'),
+      65,
+    ),
+    polarMask(65, BLEND(), 'latitude'),
   );
 });
 
