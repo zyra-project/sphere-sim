@@ -249,7 +249,12 @@ test('§2: the nominal rig places lenses at the documented azimuths and distance
   assert.equal(rig.blend.rampGamma, 0.8);
   assert.equal(rig.blend.maskLoDeg, 60);
   assert.equal(rig.blend.maskHiDeg, 70);
-  assert.equal(rig.blend.bottomOnly, true);
+  // BOTH poles. §4.4 is titled "the bottom mask" and argues the config's
+  // asymmetry is explained by the ceiling mount; AMENDMENTS A-39 refutes the
+  // premise from the site's own file, which sets `topmask 60,70` beside
+  // `bottommask 60,70`. There is no asymmetry. The flag survives because a site
+  // can configure one mask; the DEFAULT is what moved.
+  assert.equal(rig.blend.bottomOnly, false);
 });
 
 test('injectMisalignment is deterministic and reports exactly what it did', () => {

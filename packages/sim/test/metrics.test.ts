@@ -652,6 +652,40 @@ test('misaim shows up as excess off-sphere flux only once the silhouette leaves 
 // Unlit within the mask boundary — §7's hard gate, docs/AMENDMENTS.md A-02
 // ---------------------------------------------------------------------------
 
+test('§7: the unlit gate is the one masked metric A-39 could not move', () => {
+  // AMENDMENTS A-39 changed `bottomOnly` from true to false, so SOS's second
+  // mask is modelled and every masked metric moves. This one cannot, and the
+  // reason is structural rather than lucky: `maskOnsetLatitude` has always
+  // forced `bottomOnly` off when it bisects — a domain following the old
+  // asymmetry would have swallowed the permanently-dark north cap and failed a
+  // rig behaving exactly as §4.3 requires — so the domain is |lat| <= mask_lo at
+  // both poles. The mask acts only ABOVE mask_lo. The two never overlap.
+  //
+  // Pinned because it is stated as fact in three docblocks and in A-39, and a
+  // future change to either the domain or the mask could quietly falsify it.
+  const rig = nominalRig({ distanceM: D_MANUAL });
+  const masked = { ...rig, blend: { ...rig.blend, bottomOnly: false } };
+  const southOnly = { ...rig, blend: { ...rig.blend, bottomOnly: true } };
+  const opts = { densityScale: 0.5, convergence: false } as const;
+  const a = computeGeometricMetrics(masked, scene(), opts).unlit;
+  const b = computeGeometricMetrics(southOnly, scene(), opts).unlit;
+
+  const shape = (u: typeof a) => ({
+    onset: u.primary.onsetLatDeg,
+    domain: u.primary.domainAreaFraction,
+    samples: u.primary.samplesInDomain,
+    unlit: u.primary.unlitFractionOfDomain,
+    marginN: u.primary.boundaryMarginNorthDeg,
+    marginS: u.primary.boundaryMarginSouthDeg,
+    pass: u.metric.pass,
+    secondary: u.secondary.unlitFractionOfDomain,
+  });
+  assert.deepEqual(shape(a), shape(b), 'the unlit gate moved when the top mask was added');
+  // Not vacuous: the domain is real and the margins are the ones §4.3 predicts.
+  assert.ok(a.primary.samplesInDomain > 1000, `${a.primary.samplesInDomain} samples`);
+  assert.ok(a.primary.boundaryMarginNorthDeg > 15);
+});
+
 test('§7: the unlit gate is zero inside the mask boundary under BOTH readings of bottommask', () => {
   const rig = nominalRig({ distanceM: D_MANUAL });
   const m = computeGeometricMetrics(rig, scene(), { densityScale: 0.5, convergence: false });

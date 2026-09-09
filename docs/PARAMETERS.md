@@ -233,27 +233,42 @@ as the point where resolution smear exceeds 5× and the image becomes streaks:
 | Along a projector meridian | ≈ 69° |
 | In a seam direction | ≈ 59° |
 
-### 4.4 The bottom mask, explained
+### 4.4 The polar masks, explained
 
-The SOS config specifies:
+The SOS config specifies **both**:
 
 ```
-set bottommask 60,70
+"topmask"    : "60,70"
+"bottommask" : "60,70"
 ```
 
 Read as an onset and a full-mask latitude (`ASSUME` — verify), **60° matches the
 seam-direction usable limit of ≈59° computed above almost exactly**, with a 10°
 feather to full mask. That is a strong indication the mask exists to hide the
 degenerate grazing-incidence region, not to suppress overlap brightness — §4.2
-shows there is no 4× pile-up to suppress.
+shows there is no 4× pile-up to suppress. That reading is *strengthened* by the
+pair being symmetric: a grazing-incidence limit is a property of the geometry and
+applies identically at both poles, whereas a mount occludes only one.
 
-**Why bottom only.** The sphere hangs from a ceiling mount, which physically
-occludes the north polar cap. The bottom pole is exposed and visible from below,
-so it needs a software mask. The asymmetry in the config is explained by the
-hardware.
+**This section used to say "why bottom only", and it was wrong.** It argued that
+the ceiling mount physically occludes the north cap, so only the south needs a
+software mask, and that "the asymmetry in the config is explained by the
+hardware". AMENDMENTS A-39 refutes the premise from the site's own
+`local_sos_config.json`: there is no asymmetry to explain. Both masks are set, at
+the same two latitudes. The mount argument may still be true about the mount —
+§1's `occl_top` records a 6° cap — but 6° is not 30°, and the mount is not what
+the config does.
 
-The simulator must model the mask, or seam metrics will report failures in a
-region nobody projects onto.
+Applied: `nominalBlend` masks **both** poles by default. The `bottomOnly` flag
+survives because a site *can* configure one mask and nothing in SOS requires the
+pair; what changed is which way round the default sits.
+
+The simulator must model the masks, or seam metrics will report failures in a
+region nobody projects onto — and, in the other direction, will score content in
+a region the real system blanks. Modelling only the south did the second: it
+rendered at full strength the **6.4% of the sphere** between 60°N and the
+mount's own 6° cap that SOS fades or blanks, of which **2.7%** SOS blanks
+outright.
 
 ### 4.5 Blend ramp
 
@@ -262,7 +277,7 @@ region nobody projects onto.
 | `w(θ)` | Blend weight function | cosine ramp | `ASSUME` | Shape unpublished. SOS's own is a shader curve with three named knobs and no published formula — see below. |
 | `γ_blend` | Blend ramp exponent | **0.8** | `DOC` | From the SOS config, comment reads: default gamma setting for projectors to facilitate edge blending. **One global scalar for four projectors and three channels.** |
 | `w_width` | Blend region angular width | ~20° | `ASSUME` | Derived from seam geometry; verify against a real sphere. |
-| `mask_lo, mask_hi` | Polar mask onset / full | 60°, 70° | `DOC` | Units inferred as latitude. Verify. |
+| `mask_lo, mask_hi` | Polar mask onset / full | 60°, 70° | `DOC` | Units inferred as latitude. Verify. Applied at BOTH poles — §4.4. |
 
 **On the value 0.8, and a correction to my earlier reading.** For two projectors
 to sum to unity in the overlap, each must emit 0.5 linear, encoded as

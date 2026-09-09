@@ -123,7 +123,9 @@ export function blendFrom(s: Settings): Partial<BlendCalibration> {
     rampGamma: s.rampGamma,
     maskLoDeg: s.maskLoDeg,
     maskHiDeg: s.maskHiDeg,
-    bottomOnly: true,
+    // Both poles. The site's own config sets `topmask` beside `bottommask`, at
+    // the same latitudes — AMENDMENTS A-39, and `nominalBlend`'s note.
+    bottomOnly: false,
     region: 'sector',
   };
 }

@@ -250,9 +250,11 @@ normalized to sum to one wherever at least one projector contributes.
 
 \`maskLoDeg\` is the latitude at which attenuation begins and \`maskHiDeg\` the
 latitude at which it is total, both measured as ABSOLUTE latitude. Between them
-the attenuation follows a cosine feather. With \`bottomOnly\` true the mask
-applies only at negative latitudes, matching \`set bottommask 60,70\`.
-PARAMETERS.md §4.4 flags the latitude interpretation as inferred, not published.
+the attenuation follows a cosine feather, at BOTH poles: the SOS config sets
+\`topmask\` and \`bottommask\` to the same pair. With \`bottomOnly\` true the mask
+applies only at negative latitudes, which is a configuration a site can choose
+and is not the default. PARAMETERS.md §4.4 flags the latitude interpretation as
+inferred, not published, and AMENDMENTS A-39 is where the pair is evidenced.
 
 ## §P — Photometry
 
