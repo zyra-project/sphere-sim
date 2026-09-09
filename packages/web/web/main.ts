@@ -1155,6 +1155,26 @@ function placementsFromInstall(): ProjectorPlacement[] {
  * pointing at it. The same argument that made the surface a separate worker
  * request makes free placement a separate rig.
  */
+/**
+ * A hand placement changed: tell everything that draws from one.
+ *
+ * `markDirty` is the half this branch had to add, and leaving it out is what the
+ * smoke caught. `draw()` runs only when something has marked the canvas dirty,
+ * and until placements reached the renderer they affected nothing it drew -- so
+ * every one of these handlers correctly asked for a surface pass and a panel
+ * repaint and nothing else. Now the picture is built from them, and without this
+ * it kept whatever rig it already had: five lenses still drawn after the card
+ * had been stripped to one, with the card and the worker both saying one.
+ *
+ * One function rather than three calls at six sites, so that a seventh handler
+ * cannot half-remember the list.
+ */
+function placementsChanged(): void {
+  requestSurface();
+  markDirty();
+  renderControls();
+}
+
 function placementBlock(): HTMLElement[] {
   const out: HTMLElement[] = [];
   if (droppedMesh === null) return out;
@@ -1174,8 +1194,7 @@ function placementBlock(): HTMLElement[] {
     const start = el('button', { className: 'chip', textContent: 'Place by hand' });
     start.addEventListener('click', () => {
       customPlacements = placementsFromInstall();
-      requestSurface();
-      renderControls();
+      placementsChanged();
     });
     const row = el('div', { className: 'chips' });
     row.append(start);
@@ -1200,16 +1219,14 @@ function placementBlock(): HTMLElement[] {
       const drop = el('button', { className: 'chip', textContent: 'remove', title: 'Take this projector out of the rig' });
       drop.addEventListener('click', () => {
         places.splice(i, 1);
-        requestSurface();
-        renderControls();
+        placementsChanged();
       });
       head.append(drop);
     }
     card.append(head);
 
     const set = (): void => {
-      requestSurface();
-      renderControls();
+      placementsChanged();
     };
     const xyz = el('div');
     xyz.style.display = 'flex';
@@ -1292,8 +1309,7 @@ function placementBlock(): HTMLElement[] {
     const position = { x: r * Math.cos(az), y: r * Math.sin(az), z: last.position.z };
     const aim = aimAtPoint(position, modelAimPoint());
     places.push({ position, yawDeg: aim.yawDeg, pitchDeg: aim.pitchDeg, rollDeg: 0 });
-    requestSurface();
-    renderControls();
+    placementsChanged();
   });
   const aimAll = el('button', {
     className: 'chip',
@@ -1306,8 +1322,7 @@ function placementBlock(): HTMLElement[] {
       place.yawDeg = aim.yawDeg;
       place.pitchDeg = aim.pitchDeg;
     }
-    requestSurface();
-    renderControls();
+    placementsChanged();
   });
   const back = el('button', {
     className: 'chip',
@@ -1316,8 +1331,7 @@ function placementBlock(): HTMLElement[] {
   });
   back.addEventListener('click', () => {
     customPlacements = null;
-    requestSurface();
-    renderControls();
+    placementsChanged();
   });
   actions.append(add, aimAll, back);
   out.push(actions);

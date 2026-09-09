@@ -879,3 +879,38 @@ test('the config patch is written from the install rig, never from placements', 
       'rig of hand-placed lenses',
   );
 });
+
+test('every placement handler marks the canvas dirty, not just the worker', () => {
+  // The live view draws from the placements now, and `draw()` runs only when
+  // something has marked the canvas dirty. Until this branch these handlers
+  // correctly asked for a surface pass and a panel repaint and nothing else --
+  // the picture did not depend on them. Leaving it that way meant the canvas
+  // kept the rig it already had: the smoke saw five lenses still drawn after the
+  // card had been stripped to one, while the card AND the worker both said one.
+  //
+  // So the placement card reaches the renderer through one function. This asserts
+  // no handler in it goes around that function, which is the shape the mistake
+  // took and the shape a seventh handler would take.
+  const main = fs.readFileSync(path.join(HERE, '..', 'web', 'main.ts'), 'utf8');
+  const at = main.indexOf('function placementBlock(): HTMLElement[] {');
+  assert.ok(at > 0, 'placementBlock is gone');
+  const block = main.slice(at, main.indexOf('\n/**', at + 10));
+  assert.ok(block.length > 0, 'could not slice placementBlock');
+  assert.ok(
+    block.includes('placementsChanged()'),
+    'the placement card no longer routes its changes through placementsChanged',
+  );
+  assert.equal(
+    (block.match(/requestSurface\(\)/g) ?? []).length,
+    0,
+    'a placement handler calls requestSurface directly, so it updates the worker and the ' +
+      'panel while leaving the canvas drawing the rig it had',
+  );
+  // And the helper does all three. Two of them were already there; the third is
+  // the one this branch had to add.
+  const helper = main.slice(main.indexOf('function placementsChanged(): void {'));
+  const body = helper.slice(0, helper.indexOf('\n}'));
+  for (const call of ['requestSurface()', 'markDirty()', 'renderControls()']) {
+    assert.ok(body.includes(call), `placementsChanged does not call ${call}`);
+  }
+});
