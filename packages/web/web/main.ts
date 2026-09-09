@@ -44,6 +44,9 @@ import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import { buildWarpExports, formatWarpMesh } from '../../sim/src/warp.ts';
+import { buildZip } from '../src/zip.ts';
+import type { ZipEntry } from '../src/zip.ts';
+import { bundleEntries, CONFIG_ABSENT, FILE_NOTES } from '../src/bundle.ts';
 import {
   buildSosAlignments,
   formatSosAlignment,
@@ -195,6 +198,15 @@ interface PageState {
   /** Whether the note on what the SOS reduction drops is open. Not persisted. */
   sosHelpOpen: boolean;
   /**
+   * Whether the file list under the Download button is showing.
+   *
+   * The button does not download on the first press. What is in the archive and
+   * what each file cannot say have to be readable BEFORE the click — the SOS
+   * alignment export has said so since it landed, and a bundle that hides three
+   * formats behind one button would be the place that argument stops holding.
+   */
+  downloadOpen: boolean;
+  /**
    * What the last SOS export actually cost, or `''` before there has been one.
    *
    * Measured on the rig that was on screen when the button was pressed, and kept
@@ -286,6 +298,7 @@ const state: PageState = {
   seamsOpen: false,
   warpHelpOpen: false,
   sosHelpOpen: false,
+  downloadOpen: false,
   sosCost: '',
   sosRead: null,
   sosReadName: '',
@@ -4301,6 +4314,91 @@ function exportWarpFiles(): void {
  * behaviour, and the same caveat, as the picture. The page says so beside the
  * button rather than leaving it to be inferred from a filename.
  */
+/**
+ * Everything an operator takes to the wall, assembled once.
+ *
+ * Built from the same calls the individual buttons make -- `buildWarpExports`,
+ * `buildSosAlignments`, `sosConfigDiff` -- rather than from a second path, so a
+ * file cannot differ depending on which button produced it.
+ *
+ * Throws what those calls throw. `buildWarpExport` refuses a model with no UV
+ * set; that refusal reaches the panel rather than the console, in the same
+ * place the individual buttons put theirs.
+ */
+function buildBundle(): { entries: ZipEntry[]; config: boolean; cost: string } {
+  const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
+  const model = displayModel(world);
+
+  const warp = buildWarpExports(model.content).map(
+    (e) => [e.projectorId, formatWarpMesh(e)] as const,
+  );
+  const sos = buildSosAlignments(model.physical, model.content);
+  const alignment = sos.map(
+    (e) => [e.projectorId, formatSosAlignment(e.alignment)] as const,
+  );
+
+  // The worst projector, not the average -- a mesh warp is judged by its worst
+  // seam. Same reduction `exportSosFiles` makes, and for the same reason.
+  const worst = sos.reduce((a, b) => (b.residual.meshRmsPx > a.residual.meshRmsPx ? b : a));
+  const off = sos.reduce((n, e) => n + e.outOfFrame.length, 0);
+  const cost =
+    `Worst of them, ${worst.projectorId}: nine points left ` +
+    `${worst.residual.meshRmsPx.toFixed(2)} px of a ` +
+    `${worst.residual.fieldRmsPx.toFixed(1)} px correction` +
+    (off > 0 ? `, and ${off} vertices want content outside the frame.` : '.');
+
+  // Only when one was loaded. `updateSosConfig` patches the file it is given,
+  // which is what preserves every setting it does not understand, so there is
+  // nothing to patch without one -- and writing one from defaults would be
+  // handing somebody an invented configuration as if it were their site's.
+  // Both halves, the same pair `saveSosConfig` requires: a diff to apply and the
+  // original text to apply it to. `formatSosConfig` PATCHES that text, which is
+  // literally why the archive cannot carry a config nobody loaded.
+  const update = sosConfigDiff();
+  const config =
+    update === null || state.sosConfigText === ''
+      ? null
+      : formatSosConfig(state.sosConfigText, update);
+
+  const rig = `${warp.length} projector${warp.length === 1 ? '' : 's'}, ` +
+    `${state.compositorRig === null ? 'as the install describes them' : 'as last recalibrated'}.`;
+
+  return {
+    entries: bundleEntries({
+      warp,
+      alignment,
+      config,
+      // The name it arrived under, so what comes out of the archive matches
+      // what went in and a diff needs no renaming first.
+      configName: state.sosConfigName || 'local_sos_config.json',
+      alignmentCost: cost,
+      rigSummary: rig,
+    }),
+    config: config !== null,
+    cost,
+  };
+}
+
+/** Hand the archive over. One click, one file, one browser prompt. */
+function downloadBundle(): void {
+  try {
+    const { entries } = buildBundle();
+    const blob = new Blob([buildZip(entries).slice().buffer as ArrayBuffer], {
+      type: 'application/zip',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'sphere-sim-files.zip';
+    a.click();
+    URL.revokeObjectURL(url);
+    lastError = '';
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+  }
+  renderReadout();
+}
+
 function exportSosFiles(): void {
   try {
     const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
@@ -4852,6 +4950,24 @@ function renderActions(): void {
     forget.addEventListener('click', forgetCalibration);
     actionsEl.append(forget);
   }
+
+  // Beside Recalibrate because that is the verb that PRODUCES what this hands
+  // over, and because these are rig-level outputs: the warp meshes, the
+  // alignment files and the config all describe the whole install. They were
+  // reached from the per-projector card, which only draws while a lens is the
+  // subject — hard to find was the symptom, living on the wrong object was the
+  // cause. See `packages/web/src/bundle.ts`.
+  const files = el('button', {
+    className: state.downloadOpen ? 'btn on' : 'btn',
+    textContent: 'Download files',
+    title: 'The warp meshes, the SOS alignment files and the updated config, as one archive.',
+  });
+  files.addEventListener('click', () => {
+    state.downloadOpen = !state.downloadOpen;
+    renderControls();
+    renderReadout();
+  });
+  actionsEl.append(files);
 
   const reset = el('button', { className: 'btn', textContent: 'Reset' });
   reset.addEventListener('click', () => {
@@ -6450,6 +6566,64 @@ function renderReadout(): void {
     // is unit-tested; that it reaches the reader is only true if the DOM says so.
     p.dataset.smoke = 'rig-short';
     box.append(p);
+    readoutEl.append(box);
+  }
+
+  // What the Download button will hand over, listed before it is pressed. The
+  // SOS alignment export has said since it landed that a reader "has to be told
+  // what they gave up BEFORE they click"; a single button covering three
+  // formats is where that stops being true unless the list is here.
+  if (state.downloadOpen) {
+    const box = el('div');
+    box.append(el('p', { className: 'eyebrow-sm', textContent: 'Files for the projectors' }));
+    let ready: { entries: ZipEntry[]; config: boolean; cost: string } | null = null;
+    let refusal = '';
+    try {
+      ready = buildBundle();
+    } catch (err) {
+      refusal = err instanceof Error ? err.message : String(err);
+    }
+
+    if (ready === null) {
+      const p = el('p', { className: 'note', textContent: refusal });
+      p.style.color = 'var(--bad)';
+      box.append(p);
+    } else {
+      const names = ready.entries.map((e) => e.name);
+      box.append(
+        el('p', {
+          className: 'note tiny',
+          textContent: `${names.length} files, one archive: ${names.join(', ')}`,
+        }),
+      );
+      for (const [key, note] of [
+        ['warp', FILE_NOTES.warp],
+        ['alignment', FILE_NOTES.alignment],
+      ] as const) {
+        box.append(el('p', { className: 'note tiny', textContent: `${note.title} — ${note.page}` }));
+        if (key === 'alignment') {
+          box.append(el('p', { className: 'note tiny', textContent: ready.cost }));
+        }
+      }
+      const cfg = el('p', {
+        className: 'note tiny',
+        textContent: ready.config
+          ? `${FILE_NOTES.config.title} — ${FILE_NOTES.config.page}`
+          : CONFIG_ABSENT,
+      });
+      if (!ready.config) cfg.style.color = 'var(--warn)';
+      cfg.dataset.smoke = 'bundle-config';
+      box.append(cfg);
+
+      const go = el('button', {
+        className: 'btn primary',
+        textContent: 'Download sphere-sim-files.zip',
+      });
+      go.dataset.smoke = 'bundle-download';
+      go.addEventListener('click', downloadBundle);
+      box.append(go);
+    }
+    box.dataset.smoke = 'bundle-panel';
     readoutEl.append(box);
   }
 

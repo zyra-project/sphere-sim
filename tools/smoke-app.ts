@@ -2162,6 +2162,58 @@ async function main(): Promise<void> {
       }
     }
 
+    // The operator's files, from the button an operator would actually find.
+    //
+    // These three exports are rig-level and used to be reached only from the
+    // per-projector card, which draws while a lens is the subject -- so the
+    // route a reader takes to them is worth an end-to-end check rather than a
+    // unit test of the assembler alone. The panel must LIST what is in the
+    // archive before the download button exists, because a single button over
+    // three formats is where "told what you gave up before you click" would
+    // otherwise stop being true.
+    const bundle = await cdp.evaluate<string>(`(() => {
+      const open = [...document.querySelectorAll('#actions .btn')]
+        .find((x) => /Download files/.test(x.textContent ?? ''));
+      if (!open) return 'no Download files button in the actions row: ' +
+        [...document.querySelectorAll('#actions .btn')].map((x) => (x.textContent ?? '').trim()).join('/');
+      open.click();
+      return 'ok';
+    })()`);
+    if (!bundle.startsWith('ok')) {
+      failures.push(bundle);
+    } else {
+      await sleep(400);
+      const listed = await cdp.evaluate<string>(`(() => {
+        const panel = document.querySelector('[data-smoke="bundle-panel"]');
+        if (!panel) return 'the panel did not open';
+        const go = panel.querySelector('[data-smoke="bundle-download"]');
+        if (!go) return 'the panel has no download button: ' + panel.textContent.slice(0, 120);
+        const cfg = panel.querySelector('[data-smoke="bundle-config"]');
+        return JSON.stringify({ text: panel.textContent, cfg: cfg ? cfg.textContent : '' });
+      })()`);
+      if (!listed.startsWith('{')) {
+        failures.push(`the download panel: ${listed}`);
+      } else {
+        const seen = JSON.parse(listed) as { text: string; cfg: string };
+        const names = ['README.txt', 'warp/', '.alignment'];
+        const missing = names.filter((n) => !seen.text.includes(n));
+        if (missing.length > 0) {
+          failures.push(
+            `the download panel does not name ${missing.join(', ')} before the click — ` +
+              `it said ${JSON.stringify(seen.text.slice(0, 160))}`,
+          );
+        } else if (!/none was loaded/.test(seen.cfg)) {
+          // No config has been dropped in this run, so the panel has to say so
+          // rather than leave a reader to notice the file is not there.
+          failures.push(
+            `the panel does not explain the missing config: ${JSON.stringify(seen.cfg.slice(0, 140))}`,
+          );
+        } else {
+          process.stdout.write('  files: the panel lists the archive and says why no config is in it\n');
+        }
+      }
+    }
+
     for (const e of cdp.pageErrors) failures.push(`uncaught in the page: ${e.split('\n')[0]}`);
     for (const e of cdp.consoleErrors) failures.push(`console error: ${e.split('\n')[0]}`);
 
