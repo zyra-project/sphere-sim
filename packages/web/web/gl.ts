@@ -531,6 +531,12 @@ export function setUniforms(h: DisplayGl, u: DisplayUniforms): void {
   gl.uniform1i(loc('uMeshMode'), u.mesh === null ? 0 : 1);
   gl.uniform1i(loc('uBvhNodeCount'), u.mesh?.nodeCount ?? 0);
   gl.uniform1i(loc('uCMeshHasField'), u.mesh?.contentField == null ? 0 : 1);
+  // Texels per corner. Defaulting this to 0 rather than 1 would make
+  // `bvhFieldAt` compute `tri * FIELD_CORNERS * 0` and hand every triangle the
+  // FIRST triangle's field -- a wrong blend over the whole model, and a picture
+  // rather than a crash. `glsl.test.ts` catches an unbound uniform for exactly
+  // this reason; the 1 here is what a sphere or a fieldless mesh reads.
+  gl.uniform1i(loc('uCFieldStride'), u.mesh?.contentFieldStride ?? 1);
   gl.uniform1f(loc('uMeshShadowBias'), u.mesh?.shadowBias ?? 0);
   gl.uniform1f(loc('uCMeshBlendWidthM'), u.mesh?.contentBlendWidthM ?? 0);
 

@@ -167,14 +167,28 @@ test('the mesh blend belongs to the compositor, and the mesh geometry to neither
   // And the field is actually READ from the compositor's sampler. Declaring
   // uCBvhField while bvhFieldAt still fetched a physical one would pass every
   // assertion above.
-  const field = glslFunctionNames().includes('bvhFieldAt')
-    ? FRAGMENT_SHADER.slice(
-        FRAGMENT_SHADER.indexOf('vec4 bvhFieldAt('),
-        FRAGMENT_SHADER.indexOf('vec4 surfaceIntersect('),
-      )
-    : '';
-  assert.ok(field.includes('uCBvhField'), 'bvhFieldAt must fetch the compositor field');
+  // Located by NAME rather than by return type. This read `vec4 bvhFieldAt(`
+  // until the field became two vectors and the signature turned `void`, at
+  // which point `indexOf` returned -1 and the slice quietly became the whole
+  // shader from the top — an assertion that still passed, for the wrong reason.
+  const fieldAt = FRAGMENT_SHADER.indexOf(' bvhFieldAt(');
+  const fieldEnd = FRAGMENT_SHADER.indexOf(' surfaceIntersect(');
+  assert.ok(fieldAt >= 0, 'bvhFieldAt has gone');
+  assert.ok(fieldEnd > fieldAt, 'surfaceIntersect no longer follows bvhFieldAt');
+  const field = FRAGMENT_SHADER.slice(fieldAt, fieldEnd);
   assert.ok(field.includes('uCMeshHasField'), 'bvhFieldAt must test the compositor flag');
+
+  // EVERY fetch, not merely one somewhere in the function. This asserted
+  // `field.includes('uCBvhField')`, which a mutation test walked straight
+  // through: swapping the first of the three corner fetches to a physical
+  // sampler left the other two naming `uCBvhField` and the assertion held. The
+  // function now reads two texels per corner on a wide rig, so there are more
+  // places for one to be wrong and fewer for it to be noticed.
+  const fetches = [...field.matchAll(/packedTexel\(\s*(\w+)/g)].map((m) => m[1]);
+  assert.ok(fetches.length >= 3, `bvhFieldAt makes only ${fetches.length} fetches`);
+  for (const sampler of fetches) {
+    assert.equal(sampler, 'uCBvhField', `bvhFieldAt fetches ${sampler}, not the compositor field`);
+  }
 });
 
 test('every uniform the shader declares is set by the binder, and vice versa', () => {
@@ -238,7 +252,9 @@ test('the content trace evaluates blend, mask and content in the CONTENT rig', (
   // draw.
   assert.ok(trace.source.includes('rayFrom(uCRot[i], uCIntr[i], uCRaster[i].zw'));
   assert.ok(trace.source.includes('surfaceIntersect(uCLens[i], dir, uCRadius'));
-  assert.ok(trace.source.includes('contentWeight(xp, backNormal, backField, backTri, i, count)'));
+  assert.ok(
+    trace.source.includes('contentWeight(xp, backNormal, backFieldLo, backFieldHi, backTri, i, count)'),
+  );
   // `backTri` is the face the CONTENT ray struck, and it is a content-rig
   // quantity like every other argument here: it comes from the `back` hit above,
   // not from the physical `hit`. Passing the PHYSICAL `tri` would make the
@@ -247,7 +263,7 @@ test('the content trace evaluates blend, mask and content in the CONTENT rig', (
   // arriving through the shadow ray instead of through the optics.
   assert.ok(trace.source.includes('int backTri = int(back.y);'));
   assert.equal(
-    trace.source.includes('contentWeight(xp, backNormal, backField, tri,'),
+    trace.source.includes('contentWeight(xp, backNormal, backFieldLo, backFieldHi, tri,'),
     false,
     'the content occlusion must skip the CONTENT rig\'s face, not the physical one',
   );
