@@ -77,10 +77,32 @@ export const FIELD_TEXELS = 3;
 /**
  * Projectors one field texel can carry.
  *
- * Four, matching the `MAX_PROJ` both shaders declare and the four viewports
- * PARAMETERS.md 3.4's framebuffer holds. A rig with more projectors than this
- * has more than the shaders can light, so the packer refuses rather than
- * dropping the fifth field into a channel that does not exist.
+ * Four, because a texel has four channels and this writes one corner's whole
+ * answer into one of them each. That is a property of the LAYOUT, and it no
+ * longer matches what the page's shader can light.
+ *
+ * ## The asymmetry, stated rather than discovered
+ *
+ * `web/src/glsl.ts` declares `MAX_PROJ = 8`; this is still 4. The two are
+ * different limits and only one of them moved:
+ *
+ *   - The uniform cap is how many lenses the fragment shader has room for. It
+ *     cost 18 `vec4` slots per projector and went to eight because 144 of the
+ *     224 GLES3 floor fits and 216 does not.
+ *   - This cap is how many distances fit beside a triangle. Raising it means
+ *     two texels per corner instead of one, a `vec4` field becoming eight
+ *     values through `bvhFieldAt` and `contentWeight`, and the harness's
+ *     `reference.ts` transliteration moving with them. That is a data-layout
+ *     change across the parity chain, not a constant.
+ *
+ * **The refusal below is therefore load-bearing, and not only for tidiness.**
+ * `contentWeight` reads `field[i]` under a `i >= uProjCount` guard, so a rig
+ * larger than four reaching a `vec4` field would index a vector out of bounds —
+ * undefined behaviour in GLSL, not a wrong number. Until the layout widens, this
+ * refusal is what makes that unreachable.
+ *
+ * A sphere needs no field at all (`blendModelApplies`), so the eight-projector
+ * uniform cap is fully usable there; it is the mesh path this bounds.
  */
 export const FIELD_PROJECTORS = 4;
 
@@ -152,9 +174,12 @@ export function packBvh(
 ): PackedBvh {
   if (fields != null && fields.length > FIELD_PROJECTORS) {
     throw new Error(
-      `${fields.length} footprint fields will not fit ${FIELD_PROJECTORS} texel channels; ` +
-        `the shaders light MAX_PROJ = ${FIELD_PROJECTORS} projectors and a fifth field has ` +
-        `nowhere to go`,
+      `${fields.length} footprint fields will not fit ${FIELD_PROJECTORS} texel channels. ` +
+        `One texel carries one corner's whole answer, so ${FIELD_PROJECTORS} is what the ` +
+        'LAYOUT holds — the page shader itself lights more than that, and widening this means ' +
+        'two texels per corner through `bvhFieldAt`, `contentWeight` and the harness ' +
+        'transliteration. Until then a fifth field has nowhere to go, and `contentWeight` ' +
+        'would index a vec4 out of bounds if one were dropped in anyway.',
     );
   }
   const nodeTexels = bvh.nodeCount * NODE_TEXELS;

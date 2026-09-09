@@ -50,9 +50,36 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const GL_SOURCE = fs.readFileSync(path.join(HERE, '..', 'web', 'gl.ts'), 'utf8');
 const MAIN_SOURCE = fs.readFileSync(path.join(HERE, '..', 'web', 'main.ts'), 'utf8');
 
-test('PARAMETERS.md §2 caps a rig at four projectors and the shader is sized for exactly that', () => {
-  assert.equal(MAX_PROJECTORS, 4);
+test('the shader cap and the install cap are different numbers, and the shader carries its own', () => {
+  // These were the same number and the old version of this test asserted they
+  // were, which read as one fact and was two. PARAMETERS.md §2 caps an INSTALL
+  // at four, and that is still enforced where it belongs: the install controls
+  // refuse a fifth projector and every §7 gate is a number about that machine.
+  // What the shader declares is a different limit — how many lenses it has
+  // uniform room for — and it bounds a HAND-PLACED rig, which §2 says nothing
+  // about.
+  assert.equal(MAX_PROJECTORS, 8);
   assert.ok(FRAGMENT_SHADER.includes(`const int MAX_PROJ = ${MAX_PROJECTORS};`));
+
+  // And the size is affordable, which is why it is 8 and not 12. Counted from
+  // the shader source rather than trusted: every `[MAX_PROJ]` array costs its
+  // type's vec4 slots, and GLES3 guarantees only 224 fragment uniform vectors.
+  const cost: Record<string, number> = { float: 1, vec2: 1, vec3: 1, vec4: 1, mat3: 3, mat4: 4 };
+  const re = /uniform\s+(float|vec2|vec3|vec4|mat3|mat4)\s+\w+\[MAX_PROJ\]/g;
+  let m: RegExpExecArray | null;
+  let perProjector = 0;
+  let arrays = 0;
+  while ((m = re.exec(FRAGMENT_SHADER)) !== null) {
+    perProjector += cost[m[1]];
+    arrays++;
+  }
+  assert.ok(arrays >= 10, `only ${arrays} MAX_PROJ arrays found — the regex has gone stale`);
+  assert.equal(perProjector, 18, 'the per-projector uniform cost moved');
+  assert.ok(
+    perProjector * MAX_PROJECTORS <= 224 - 60,
+    `${perProjector * MAX_PROJECTORS} slots leaves too little of the 224 GLES3 floor for the ` +
+      'scalar uniforms beside them',
+  );
 });
 
 test('the shader carries two complete rigs, field for field', () => {
@@ -444,11 +471,18 @@ test('a rig with more lenses than the shader lights says so, rather than drawing
   const world = buildWorld(BOULDER_PRESET);
   const camera = buildViewer(BOULDER_PRESET, 64, 48);
 
+  // Sized off MAX_PROJECTORS rather than written as literals, so raising the
+  // cap moves what this test asserts instead of failing it into a rewrite. The
+  // 4 and 5 stay as themselves: four is what an SOS install holds and five is
+  // the first size that used to be refused, and both must now draw in full.
+  const cap = MAX_PROJECTORS;
   for (const [held, drawn, dropped] of [
     [1, 1, 0],
     [4, 4, 0],
-    [5, 4, 1],
-    [8, 4, 4],
+    [5, 5, 0],
+    [cap, cap, 0],
+    [cap + 1, cap, 1],
+    [cap + 4, cap, 4],
   ] as const) {
     const cal = placedRig({
       projectors: Array.from({ length: held }, (_, i) => {

@@ -76,8 +76,28 @@
 /** Iterations of Newton's method in `invertDistortion`. See the module note. */
 export const NEWTON_ITERATIONS = 8;
 
-/** PARAMETERS.md §2 caps an SOS install at four projectors. */
-export const MAX_PROJECTORS = 4;
+/**
+ * Projectors this shader can light.
+ *
+ * PARAMETERS.md §2 caps an SOS INSTALL at four, and that cap is still right
+ * where it lives — the install controls refuse a fifth, and every §7 gate on the
+ * page is a number about that machine. This is a different limit: how many
+ * lenses the fragment shader has uniform room for, which bounds a hand-placed
+ * rig rather than an install.
+ *
+ * Eight, and the number is measured rather than picked. Fourteen `[MAX_PROJ]`
+ * arrays across the two rigs come to 18 `vec4` slots per projector, against a
+ * GLES3 floor of 224 fragment uniform vectors:
+ *
+ *     4 -> 72     8 -> 144     12 -> 216
+ *
+ * Twelve leaves nothing for the ~40 scalar uniforms beside it, so it is not
+ * available on minimum-spec hardware; eight is, with room to spare.
+ *
+ * A rig larger than this is drawn short, and `droppedProjectors` in
+ * `uniforms.ts` is what stops that being silent.
+ */
+export const MAX_PROJECTORS = 8;
 
 /**
  * Full-screen triangle from `gl_VertexID`. No vertex buffer, so nothing is

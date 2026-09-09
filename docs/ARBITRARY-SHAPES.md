@@ -961,24 +961,68 @@ the obvious next step and `Math.min` is a silent way to lose four of eight
 lenses; `packBvh` already refuses the matching overflow on the footprint field,
 and this is the uniform side of it.
 
-**What widening `MAX_PROJ` would cost, measured rather than guessed.** The page
-shader declares fourteen `[MAX_PROJ]` arrays across the two rigs it carries —
-`uLens`, `uRot`, `uIntr`, `uRaster`, `uRefDistance`, their `uC*` counterparts,
-and the four transfer arrays — which come to **18 `vec4` slots per projector**
-(the two `mat3` rotations are three each and everything else is one):
+**The page shader's cap is now 8, and the number was measured rather than
+picked.** Fourteen `[MAX_PROJ]` arrays across the two rigs it carries — `uLens`,
+`uRot`, `uIntr`, `uRaster`, `uRefDistance`, their `uC*` counterparts, and the
+four transfer arrays — come to **18 `vec4` slots per projector** (the two `mat3`
+rotations are three each and everything else is one), against a GLES3 floor of
+224 fragment uniform vectors:
 
-| `MAX_PROJ` | slots | against a GLES3 floor of 224 |
+| `MAX_PROJ` | slots | |
 | --- | --- | --- |
-| 4 | 72 | today |
-| 8 | 144 | fits, with room for the ~40 scalar uniforms beside it |
+| 4 | 72 | what it was |
+| 8 | 144 | what it is, with room for the ~40 scalar uniforms beside it |
 | 12 | 216 | at the floor before those, so not on minimum-spec hardware |
 
-So **eight is affordable and twelve is not**, on the uniform block alone. The
-other half is the footprint field, which `pack.ts` writes one projector per RGBA
-channel at `FIELD_TEXELS = 3` per triangle: past four projectors that needs more
-texels per triangle, and `FIELD_PROJECTORS` exists to refuse rather than to
-silently reuse a channel. Whichever number is chosen, both caps have to move
-together — and `packBvh`'s refusal is what stops them drifting apart.
+`web/test/glsl.test.ts` counts those arrays out of the shader source and fails if
+the total crowds the floor, so the budget is checked rather than remembered. The
+install cap is untouched and is a different limit: PARAMETERS.md §2 caps an
+INSTALL at four, the install controls still refuse a fifth, and every §7 gate is
+still a number about that machine. What moved is how many lenses the fragment
+shader has room for, which bounds a hand-placed rig.
+
+**A rig of 2, 3 or 4 sends the shader the same bytes it did before**, checked by
+digesting the packed arrays with the cap at 4 and at 8 and diffing:
+
+    2: 52f5c3560444c01f   3: 4b9f976b3b892742   4: 69d9da171626de5f
+
+identical either way, and `smoke:app`'s measured numbers hold across the change:
+53.1% of sampled pixels lit and worst grid-line error 0.01, on every run before
+and after.
+
+One figure moved and then moved back, which is worth recording because the
+obvious reading of it was wrong. The lens-marker pixel counts read 366/71/223/32
+at cap 4, 360/70/222/33 on the first run at cap 8, and 366/71/223/32 again on the
+second run at cap 8. The first reading suggested larger uniform arrays giving the
+shader compiler different code to generate. Two runs at the SAME cap disagreeing
+rules that out: it is run-to-run variation in the software rasteriser CI renders
+with, not a property of the change. The counts come from an antialiased overlay
+edge sampled against a colour threshold, which is exactly where a few pixels of
+renderer noise land — and it is why the numbers the smoke check ASSERTS on are
+the stable ones.
+
+**Widening exposed a gap that had nothing to do with uniforms.**
+`PROJECTOR_TINTS` held exactly four colours and every use site falls back to
+`?? '#888'`, so projectors five through eight would all have drawn the SAME grey
+— the marker overlay exists to tell lenses apart, and half the rig would have
+been unreadable while looking like it worked. The palette is now eight spread
+hues, the first four byte-identical, and `settings.test.ts` ties its length to
+`MAX_PROJECTORS` so the two cannot drift again.
+
+**The footprint field did NOT move with it, and that is a stop rather than an
+oversight.** `pack.ts` writes one projector per RGBA channel at `FIELD_TEXELS = 3`
+per triangle, so `FIELD_PROJECTORS` is still 4. Raising it means two texels per
+corner, a `vec4` field becoming eight values through `bvhFieldAt` and
+`contentWeight`, and the harness's `reference.ts` transliteration moving with
+them — a data-layout change across the parity chain, not a constant.
+
+Until it moves, `packBvh`'s refusal is load-bearing for MEMORY SAFETY and not
+only for tidiness: `contentWeight` reads `field[i]` under an `i >= uProjCount`
+guard, so a rig past four reaching a `vec4` field would index a vector out of
+bounds, which GLSL leaves undefined. A sphere needs no field at all
+(`blendModelApplies`), so the eight-projector cap is fully usable there; it is
+the mesh path the field bounds, and `pack.ts` now states the asymmetry where the
+next reader will meet it.
 
 *Estimate: ~1 week. Landed, with which rig the big view is drawing now stated on
 the card rather than left to be inferred.*
