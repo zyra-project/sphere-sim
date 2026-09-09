@@ -198,12 +198,11 @@ interface PageState {
   /** Whether the note on what the SOS reduction drops is open. Not persisted. */
   sosHelpOpen: boolean;
   /**
-   * Whether the file list under the Download button is showing.
+   * Whether the per-format notes under the download button are showing.
    *
-   * The button does not download on the first press. What is in the archive and
-   * what each file cannot say have to be readable BEFORE the click — the SOS
-   * alignment export has said so since it landed, and a bundle that hides three
-   * formats behind one button would be the place that argument stops holding.
+   * The block itself is always there — see `renderReadout`. Only the notes fold
+   * away, and the two things a reader must see before clicking (what is in the
+   * archive, and whether a config is in it) stay outside the fold.
    */
   downloadOpen: boolean;
   /**
@@ -4951,24 +4950,6 @@ function renderActions(): void {
     actionsEl.append(forget);
   }
 
-  // Beside Recalibrate because that is the verb that PRODUCES what this hands
-  // over, and because these are rig-level outputs: the warp meshes, the
-  // alignment files and the config all describe the whole install. They were
-  // reached from the per-projector card, which only draws while a lens is the
-  // subject — hard to find was the symptom, living on the wrong object was the
-  // cause. See `packages/web/src/bundle.ts`.
-  const files = el('button', {
-    className: state.downloadOpen ? 'btn on' : 'btn',
-    textContent: 'Download files',
-    title: 'The warp meshes, the SOS alignment files and the updated config, as one archive.',
-  });
-  files.addEventListener('click', () => {
-    state.downloadOpen = !state.downloadOpen;
-    renderControls();
-    renderReadout();
-  });
-  actionsEl.append(files);
-
   const reset = el('button', { className: 'btn', textContent: 'Reset' });
   reset.addEventListener('click', () => {
     state.settings = { ...PERFECT_PRESET, nudge: PERFECT_PRESET.nudge.map((n) => ({ ...n })) };
@@ -6569,11 +6550,20 @@ function renderReadout(): void {
     readoutEl.append(box);
   }
 
-  // What the Download button will hand over, listed before it is pressed. The
-  // SOS alignment export has said since it landed that a reader "has to be told
-  // what they gave up BEFORE they click"; a single button covering three
-  // formats is where that stops being true unless the list is here.
-  if (state.downloadOpen) {
+  // The operator's files, in the readout rather than behind a button in the
+  // actions row.
+  //
+  // That row was the obvious home and is spoken for: it is sized to the narrow
+  // panel and its height comes out of the scrolling controls above, so a SIXTH
+  // button once wrapped it to three lines, took 41 px from `#controls` and
+  // pushed the last slider out of its own clip -- recorded in
+  // `settings.test.ts` beside the warp export, and caught by the drag check in
+  // `tools/smoke-app.ts`. It is five buttons before `forget` and six after.
+  //
+  // The readout is the better home anyway: these are rig-level OUTPUTS and this
+  // is the panel rig-level results already live in, and a block here is visible
+  // without pressing anything -- which was the complaint that started this.
+  {
     const box = el('div');
     box.append(el('p', { className: 'eyebrow-sm', textContent: 'Files for the projectors' }));
     let ready: { entries: ZipEntry[]; config: boolean; cost: string } | null = null;
@@ -6596,15 +6586,10 @@ function renderReadout(): void {
           textContent: `${names.length} files, one archive: ${names.join(', ')}`,
         }),
       );
-      for (const [key, note] of [
-        ['warp', FILE_NOTES.warp],
-        ['alignment', FILE_NOTES.alignment],
-      ] as const) {
-        box.append(el('p', { className: 'note tiny', textContent: `${note.title} — ${note.page}` }));
-        if (key === 'alignment') {
-          box.append(el('p', { className: 'note tiny', textContent: ready.cost }));
-        }
-      }
+      // Outside the fold on purpose. Whether a config is in the archive is the
+      // one thing a reader cannot recover after the download, and the reason it
+      // is missing is not obvious -- `formatSosConfig` patches the file it is
+      // given, so there is nothing to patch without one.
       const cfg = el('p', {
         className: 'note tiny',
         textContent: ready.config
@@ -6622,6 +6607,23 @@ function renderReadout(): void {
       go.dataset.smoke = 'bundle-download';
       go.addEventListener('click', downloadBundle);
       box.append(go);
+
+      // What each format cannot carry, folded away because it is three
+      // paragraphs and the same words travel inside the archive's README.
+      box.append(
+        disclosure('what each file can and cannot carry', state.downloadOpen, () => {
+          state.downloadOpen = !state.downloadOpen;
+          renderReadout();
+        }),
+      );
+      if (state.downloadOpen) {
+        for (const note of [FILE_NOTES.warp, FILE_NOTES.alignment] as const) {
+          box.append(
+            el('p', { className: 'note tiny', textContent: `${note.title} — ${note.page}` }),
+          );
+        }
+        box.append(el('p', { className: 'note tiny', textContent: ready.cost }));
+      }
     }
     box.dataset.smoke = 'bundle-panel';
     readoutEl.append(box);
