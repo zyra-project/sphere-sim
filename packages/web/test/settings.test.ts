@@ -576,9 +576,20 @@ test('the warp export ships the calibration the software believes, never ground 
     MAIN_SOURCE.indexOf('function exportSosFiles(): void {'),
   );
   assert.ok(fn.length > 0, 'the warp exporter has moved; this test can no longer find it');
+  // `displayModel` takes the rig it should draw as a second argument now, so
+  // this matches around it rather than pinning the old one-argument call. The
+  // property is unchanged and so is the reason: `.content`, never `.physical`.
   assert.ok(
-    /displayModel\(world\)\.content/.test(fn),
+    /displayModel\(world, '[a-z]+'\)\.content/.test(fn),
     'the warp export does not build from the compositor rig',
+  );
+  // And it takes the INSTALL rig. A warp mesh for a hand-placed rig is a
+  // plausible thing to want and is not what this button means: it writes the
+  // files an operator carries to the SOS wall, and the archive ships them
+  // beside an alignment and a config that describe that same machine.
+  assert.ok(
+    /displayModel\(world, 'install'\)/.test(fn),
+    'the warp export draws a rig other than the install',
   );
   assert.ok(
     !/\.physical/.test(fn),
@@ -862,8 +873,19 @@ test('the config writer says what it cannot carry, and is a two-step flow', () =
   // so it can only carry what a calibration could have known. Same rule as
   // `exportWarpFiles`, opposite to `exportSosFiles`, which needs both.
   assert.ok(
-    /displayModel\(world\)\.content/.test(picker),
+    /displayModel\(world, '[a-z]+'\)\.content/.test(picker),
     'the config is not built from the compositor rig',
+  );
+  // AND FROM THE INSTALL RIG. `local_sos_config.json` carries per-projector
+  // distance and height for lenses on the nominal ring; patching those from a
+  // rig of hand-placed lenses writes geometry no projector at the site is at,
+  // into the reader's own configuration file. This is the same harm the note
+  // above exists to prevent -- a file that looks complete and says something
+  // nobody measured -- reached through the renderer rather than through the
+  // format.
+  assert.ok(
+    /displayModel\(world, 'install'\)/.test(picker),
+    'the config patch is built from a rig other than the install',
   );
   assert.ok(!/\.physical/.test(picker), 'the config writer reaches for ground truth');
 

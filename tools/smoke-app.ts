@@ -2148,6 +2148,28 @@ async function main(): Promise<void> {
           process.stdout.write('  model: the card says the big view is the five placed projectors\n');
         }
 
+        // THE CARD SAYING SO IS NOT THE CANVAS DOING SO, and the assertion above
+        // is exactly as circular as that sounds: it checks text this same change
+        // wrote. The renderer routing could be reverted whole and it would stay
+        // green. So read the PICTURE, before and after the edit below.
+        const litFrac = async (): Promise<number> =>
+          cdp.evaluate<number>(`(() => {
+            const c = document.querySelector('canvas');
+            if (!c) return -1;
+            const g = c.getContext('webgl2') || c.getContext('webgl');
+            if (!g) return -1;
+            const W = c.width, H = c.height;
+            const px = new Uint8Array(W * H * 4);
+            g.readPixels(0, 0, W, H, g.RGBA, g.UNSIGNED_BYTE, px);
+            let lit = 0, seen = 0;
+            for (let i = 0; i < px.length; i += 16) {
+              seen++;
+              if (px[i] + px[i + 1] + px[i + 2] > 60) lit++;
+            }
+            return seen === 0 ? -1 : lit / seen;
+          })()`);
+        const litFive = await litFrac();
+
         // And the placements have to CHANGE the answer, or the step above would
         // pass with them ignored: the fixture is fully lit by the nominal rig,
         // so five projectors reporting 100% is the same number four would give.
@@ -2189,6 +2211,37 @@ async function main(): Promise<void> {
             );
           } else {
             process.stdout.write(`  model: stripped to one projector, ${one.toFixed(1)}% lit\n`);
+          }
+
+          // AND THE CANVAS HAS TO HAVE MOVED WITH IT. The worker's figure above
+          // proves the placements reached the WORKER; this proves they reached
+          // the RENDERER, which is the entire subject of the change and the one
+          // thing no other check in this file observes.
+          //
+          // Five lenses down to one is a large edit to the light in the room, so
+          // the drawn picture cannot be identical across it unless the big view
+          // is drawing something else -- which is precisely the defect this
+          // step exists to catch, and precisely what the page did before.
+          let litAfterStrip = -1;
+          const canvasDeadline = Date.now() + Math.max(30_000, 2 * meshMs);
+          while (Date.now() < canvasDeadline) {
+            await sleep(300);
+            litAfterStrip = await litFrac();
+            if (litAfterStrip >= 0 && Math.abs(litAfterStrip - litFive) > 0.005) break;
+          }
+          if (litFive < 0 || litAfterStrip < 0) {
+            failures.push('could not read the canvas to see whether the drawn rig changed');
+          } else if (Math.abs(litAfterStrip - litFive) <= 0.005) {
+            failures.push(
+              `the big view did not change when the rig went from five projectors to one ` +
+                `(${(litFive * 100).toFixed(1)}% lit either way) — the placements reach the ` +
+                'worker but the renderer is still drawing the install rig',
+            );
+          } else {
+            process.stdout.write(
+              `  model: the canvas followed the rig, ${(litFive * 100).toFixed(1)}% lit at five ` +
+                `to ${(litAfterStrip * 100).toFixed(1)}% at one\n`,
+            );
           }
         }
       }

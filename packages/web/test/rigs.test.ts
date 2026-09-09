@@ -835,3 +835,47 @@ test('the worker and the renderer build a placed rig with the same function', ()
     );
   }
 });
+
+test('exactly one caller draws the placed rig, and the rest say install', () => {
+  // `displayModel` used to read `customPlacements` out of module scope. Six call
+  // sites shared that answer and one of them wanted it: the live view. The other
+  // five either have to AGREE WITH THE WORKER — `checkParity` compares its
+  // output against a `ModelRequest` that has no placements field, and
+  // `startSolve`'s thumbnails caption a `SolveRequest` that has none either — or
+  // they write a file describing the SOS machine, where a rig of lenses on a
+  // wall is not the subject.
+  //
+  // The parameter is required, so a new caller cannot inherit a default. This
+  // asserts the harder half: that the ones which exist chose correctly, and that
+  // the placed answer stays confined to one of them.
+  const main = fs.readFileSync(path.join(HERE, '..', 'web', 'main.ts'), 'utf8');
+  const calls = [...main.matchAll(/displayModel\(\s*[A-Za-z]+\s*,\s*'(placed|install)'\s*\)/g)];
+  assert.ok(calls.length >= 6, `only ${calls.length} displayModel call sites found`);
+  const placed = calls.filter((m) => m[1] === 'placed');
+  assert.equal(
+    placed.length,
+    1,
+    `${placed.length} call sites draw the placed rig; exactly one should — the live view`,
+  );
+  // And no call site got the rig by omission. The compiler already refuses that,
+  // but the regex above would silently skip a call it could not parse, so count
+  // the bare ones too rather than trusting a match that found nothing.
+  const bare = [...main.matchAll(/displayModel\(\s*[A-Za-z]+\s*\)/g)];
+  assert.equal(bare.length, 0, `${bare.length} displayModel calls pass no rig`);
+});
+
+test('the config patch is written from the install rig, never from placements', () => {
+  // The one that would have done real harm. `local_sos_config.json` carries
+  // per-projector distance and height for lenses on the nominal ring; patching
+  // those from a hand-placed rig writes geometry no projector at the site is at,
+  // into the reader's own configuration file.
+  const main = fs.readFileSync(path.join(HERE, '..', 'web', 'main.ts'), 'utf8');
+  const at = main.indexOf('function sosConfigDiff(');
+  assert.ok(at > 0, 'sosConfigDiff is gone');
+  const fn = main.slice(at, main.indexOf('\n}\n', at));
+  assert.ok(
+    /displayModel\([A-Za-z]+, 'install'\)/.test(fn),
+    'sosConfigDiff no longer takes the install rig — it would patch a site config from a ' +
+      'rig of hand-placed lenses',
+  );
+});
