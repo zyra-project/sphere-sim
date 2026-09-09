@@ -194,6 +194,7 @@ export function packMesh(content: PreparedRig): DisplayMesh | null {
     shadowBias: surface.shadowBiasM,
     contentField: packed.field,
     contentFieldWidth: packed.fieldWidth,
+    contentFieldStride: packed.fieldStride,
     contentBlendWidthM: blendWidthM(rig.blend.widthDeg, surface.extentRadiusM),
   };
 }
@@ -334,6 +335,15 @@ export interface DisplayMesh {
    */
   contentField: Float32Array | null;
   contentFieldWidth: number;
+  /**
+   * Texels each corner's field entry occupies, straight off `PackedBvh`.
+   *
+   * Passed through rather than recomputed from the projector count: the shader
+   * and the packer agreeing about a layout is what `readPackedField` sits beside
+   * the writer to guarantee, and a third derivation would be a third place for
+   * them to diverge.
+   */
+  contentFieldStride: number;
   /**
    * `blendWidthM(content.blend.widthDeg, extentRadiusM)`: the ramp as an arc
    * rather than an angle, and the compositor's arc for the same reason.

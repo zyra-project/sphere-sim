@@ -199,6 +199,10 @@ uniform float uMeshShadowBias;
 // refuse to start, which is how uLimb went.
 uniform sampler2D uCBvhField;         // per-corner footprint distance, one channel per projector
 uniform int   uCMeshHasField;
+// Texels each corner's field entry occupies: 1 for a rig of four or fewer, 2 up
+// to eight. From \`PackedBvh.fieldStride\` rather than derived here, so the
+// shader cannot disagree with the packer about a layout. See \`fieldStrideFor\`.
+uniform int   uCFieldStride;
 uniform float uCMeshBlendWidthM;
 
 uniform vec3  uEncodeGamma;
@@ -334,7 +338,7 @@ const CHUNK_MESH = `
 #define PACK_WIDTH 1024
 #define NODE_TEXELS 2
 #define TRI_TEXELS 6
-#define FIELD_TEXELS 3
+#define FIELD_CORNERS 3
 // Stands in for the Infinity the simulator passes as tMax. GLSL has no such
 // literal, and any bound past the scene serves: tMax only shrinks as the
 // traversal finds closer hits.
@@ -486,13 +490,31 @@ vec2 bvhCoordAt(int tri, float u, float v) {
 // once. The field is per-VERTEX and interpolated across the face a hit landed on;
 // \`pack.ts\` writes the three corners beside the triangle, so this is that
 // interpolation with no vertex indirection.
-vec4 bvhFieldAt(int tri, float u, float v) {
-  if (uCMeshHasField == 0) return vec4(0.0);
-  int base = tri * FIELD_TEXELS;
-  vec4 f0 = packedTexel(uCBvhField, base);
-  vec4 f1 = packedTexel(uCBvhField, base + 1);
-  vec4 f2 = packedTexel(uCBvhField, base + 2);
-  return (1.0 - u - v) * f0 + u * f1 + v * f2;
+void bvhFieldAt(int tri, float u, float v, out vec4 lo, out vec4 hi) {
+  lo = vec4(0.0);
+  hi = vec4(0.0);
+  if (uCMeshHasField == 0) return;
+  int s = uCFieldStride;
+  int base = tri * FIELD_CORNERS * s;
+  float w0 = 1.0 - u - v;
+  // Corner-major: corner c's texel k is at c * s + k. At s == 1 that is
+  // base, base + 1, base + 2 -- the three consecutive fetches this did before
+  // the layout widened, which is why a four-projector rig is unaffected.
+  lo = w0 * packedTexel(uCBvhField, base)
+     + u * packedTexel(uCBvhField, base + s)
+     + v * packedTexel(uCBvhField, base + 2 * s);
+  // Projectors five through eight, and only for a rig that has them: a narrow
+  // rig pays no extra fetch, which is the point of carrying the stride.
+  if (s > 1) {
+    hi = w0 * packedTexel(uCBvhField, base + 1)
+       + u * packedTexel(uCBvhField, base + s + 1)
+       + v * packedTexel(uCBvhField, base + 2 * s + 1);
+  }
+}
+
+/** One projector's distance out of the pair, by rig index. */
+float fieldOf(vec4 lo, vec4 hi, int i) {
+  return i < 4 ? lo[i] : hi[i - 4];
 }
 
 // The surface's own intersection, whichever surface this is. (t, triangle, u, v)
@@ -713,7 +735,8 @@ void sectorHalfWidths(int i, out float plusHalf, out float minusHalf) {
 // Returns the normalized weight of projector 'want' and, through 'count', how
 // many content projectors light that point — which is the overlap multiplicity
 // the overlay draws.
-float contentWeight(vec3 x, vec3 normal, vec4 field, int fromTri, int want, out int count) {
+float contentWeight(
+    vec3 x, vec3 normal, vec4 fieldLo, vec4 fieldHi, int fromTri, int want, out int count) {
   float width = uWidthDeg > 0.0 ? uWidthDeg : 1e-9;
   float widthM = uCMeshBlendWidthM > 0.0 ? uCMeshBlendWidthM : 1e-9;
   bool mesh = uMeshMode == 1;
@@ -742,7 +765,10 @@ float contentWeight(vec3 x, vec3 normal, vec4 field, int fromTri, int want, out 
       // not place it inside -- no field packed, or a footprint smaller than one
       // face -- and the answer is a hard seam rather than a silent zero, because
       // a black patch is indistinguishable from being unlit.
-      float d = field[i];
+      // \`fieldOf\` rather than \`field[i]\`: past four the distance lives in the
+      // second vector, and indexing a vec4 at 4..7 is undefined in GLSL rather
+      // than merely wrong. This is what the packer's refusal used to protect.
+      float d = fieldOf(fieldLo, fieldHi, i);
       float w = d > 0.0 ? rampWeight(uRampShape, d / widthM, uRampGamma) : 1.0;
       sum += w;
       if (i == want) mine = w;
@@ -885,9 +911,12 @@ vec3 shadeTwoRig(
       // two exceptions render.ts and warp.ts make.
       vec2 ll = backMesh ? bvhCoordAt(backTri, back.z, back.w) : worldToLatLon(xp);
       vec3 backNormal = backMesh ? bvhNormalAt(backTri, back.z, back.w) : xp / uCRadius;
-      vec4 backField = backMesh ? bvhFieldAt(backTri, back.z, back.w) : vec4(0.0);
+      vec4 backFieldLo = vec4(0.0);
+      vec4 backFieldHi = vec4(0.0);
+      if (backMesh) bvhFieldAt(backTri, back.z, back.w, backFieldLo, backFieldHi);
       int count;
-      float weight = contentWeight(xp, backNormal, backField, backTri, i, count);
+      float weight =
+        contentWeight(xp, backNormal, backFieldLo, backFieldHi, backTri, i, count);
       if (!backMesh) weight *= polarMask(ll.x);
       overlapCount = max(overlapCount, count);
       if (weight > strongestWeight) {

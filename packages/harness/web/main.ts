@@ -350,6 +350,20 @@ function surfaceForWorld(): { surface: Surface | null; packed: MeshUniforms | nu
     // second build would tie the two together only for as long as the build
     // stays deterministic.
     const packed = packBvh(surface.bvh, mesh, rig.footprints);
+    // This harness is the four-projector sphere A/B rig -- its own `MAX_PROJ` is
+    // 4 and `glsl.test.ts` asserts it -- so the field it is handed is always one
+    // texel per corner. `pack.ts` can now write two, for the page shader's wider
+    // rig, and this shader and `reference.ts` would both read the second texel
+    // as if it were the next corner: a silently wrong blend rather than a
+    // failure. Refused here instead, where the assumption is made.
+    if (packed.fieldStride !== 1) {
+      throw new Error(
+        `the harness packs a field at stride ${packed.fieldStride}, and its shader reads ` +
+          'stride 1. It lights four projectors by design (PARAMETERS.md §2); a rig wide ' +
+          'enough to need two texels per corner belongs to the page shader, whose ' +
+          'bvhFieldAt takes the stride as a uniform.',
+      );
+    }
     packCache = {
       key: packKey,
       packed: {

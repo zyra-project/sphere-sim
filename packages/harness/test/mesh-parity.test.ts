@@ -29,7 +29,7 @@ import { test } from 'node:test';
 
 import type { SurfaceMesh, Vec3 } from '../../calibration/src/index.ts';
 import { buildBvh, intersectBvh } from '../../sim/src/mesh/bvh.ts';
-import { packBvh, readPackedField } from '../../sim/src/mesh/pack.ts';
+import { packBvh, readPackedField, FIELD_PROJECTORS } from '../../sim/src/mesh/pack.ts';
 import { meshSurface } from '../../sim/src/mesh/surface.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import { nominalRig } from '../../sim/src/scene.ts';
@@ -412,11 +412,21 @@ test('a mesh with no fields packs no field texture, and a fifth field is refused
   assert.equal(packBvh(bvh, mesh, []).field, null);
   assert.equal(packBvh(bvh, mesh, null).field, null);
 
-  // One texel is four channels because the shaders light four projectors. A
-  // fifth field has nowhere to go, and dropping it silently would dim one
-  // projector's share of the blend rather than fail.
-  const five = new Array(5).fill({ distance: new Float64Array(mesh.vertexCount), litVertices: 0 });
-  assert.throws(() => packBvh(bvh, mesh, five), /MAX_PROJ|nowhere to go/);
+  // One texel is four channels, so up to four projectors take one texel per
+  // corner and five through eight take two. The refusal moved with the layout:
+  // it is a NINTH field that now has nowhere to go, and dropping it silently
+  // would dim one projector's share of the blend rather than fail.
+  const field = () => ({ distance: new Float64Array(mesh.vertexCount), litVertices: 0 });
+  assert.equal(packBvh(bvh, mesh, new Array(4).fill(field())).fieldStride, 1);
+  assert.equal(packBvh(bvh, mesh, new Array(5).fill(field())).fieldStride, 2);
+  assert.equal(packBvh(bvh, mesh, new Array(8).fill(field())).fieldStride, 2);
+  assert.throws(() => packBvh(bvh, mesh, new Array(9).fill(field())), /nowhere to go/);
+
+  // And the stride is not free-floating: it is what the harness refuses on. The
+  // harness shader and `reference.ts` both read stride 1 and would take the
+  // second texel of a wide corner for the next corner, so the width the PAGE
+  // shader gained must not reach them silently.
+  assert.equal(FIELD_PROJECTORS, 8, 'the field cap moved without this test noticing');
 });
 
 // ---------------------------------------------------------------------------
