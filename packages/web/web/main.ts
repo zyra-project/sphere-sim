@@ -4349,27 +4349,58 @@ function exportSosFiles(): void {
  * set; that refusal reaches the panel rather than the console, in the same
  * place the individual buttons put theirs.
  */
-function buildBundle(): { entries: ZipEntry[]; config: boolean; cost: string } {
+function buildBundle(): {
+  entries: ZipEntry[];
+  config: boolean;
+  cost: string;
+  refused: string[];
+} {
   const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
   const model = displayModel(world);
 
-  const warp = buildWarpExports(model.content).map(
-    (e) => [e.projectorId, formatWarpMesh(e)] as const,
+  // EACH PART STANDS OR FALLS ON ITS OWN.
+  //
+  // `buildWarpExport` refuses a model with no UV set -- there is no texel to
+  // send anywhere -- and the first version of this let that one refusal throw
+  // out of the whole function, which took the alignment files and the config
+  // down with it. Neither needs a UV set. Dropping an unwrapped model made
+  // every file unreachable, including the ones that had been built.
+  //
+  // `tools/smoke-app.ts` found it: its fixture carries no UVs, so the block
+  // rendered a refusal where the download button belonged.
+  const refused: string[] = [];
+  const attempt = <T,>(what: string, f: () => T): T | null => {
+    try {
+      return f();
+    } catch (err) {
+      refused.push(`${what}: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  };
+
+  const warp = (
+    attempt('the warp meshes', () =>
+      buildWarpExports(model.content).map((e) => [e.projectorId, formatWarpMesh(e)] as const),
+    ) ?? []
   );
-  const sos = buildSosAlignments(model.physical, model.content);
-  const alignment = sos.map(
-    (e) => [e.projectorId, formatSosAlignment(e.alignment)] as const,
+  const sos = attempt('the SOS alignment files', () =>
+    buildSosAlignments(model.physical, model.content),
   );
+  const alignment =
+    sos?.map((e) => [e.projectorId, formatSosAlignment(e.alignment)] as const) ?? [];
 
   // The worst projector, not the average -- a mesh warp is judged by its worst
   // seam. Same reduction `exportSosFiles` makes, and for the same reason.
-  const worst = sos.reduce((a, b) => (b.residual.meshRmsPx > a.residual.meshRmsPx ? b : a));
-  const off = sos.reduce((n, e) => n + e.outOfFrame.length, 0);
-  const cost =
-    `Worst of them, ${worst.projectorId}: nine points left ` +
-    `${worst.residual.meshRmsPx.toFixed(2)} px of a ` +
-    `${worst.residual.fieldRmsPx.toFixed(1)} px correction` +
-    (off > 0 ? `, and ${off} vertices want content outside the frame.` : '.');
+  let cost = '';
+  if (sos !== null && sos.length > 0) {
+    const worst = sos.reduce((a, b) => (b.residual.meshRmsPx > a.residual.meshRmsPx ? b : a));
+    const off = sos.reduce((n, e) => n + e.outOfFrame.length, 0);
+    cost =
+      `Worst of them, ${worst.projectorId}: nine points left ` +
+      `${worst.residual.meshRmsPx.toFixed(2)} px of a ` +
+      `${worst.residual.fieldRmsPx.toFixed(1)} px correction` +
+      (off > 0 ? `, and ${off} vertices want content outside the frame.` : '.');
+  }
 
   // Only when one was loaded. `updateSosConfig` patches the file it is given,
   // which is what preserves every setting it does not understand, so there is
@@ -4384,7 +4415,8 @@ function buildBundle(): { entries: ZipEntry[]; config: boolean; cost: string } {
       ? null
       : formatSosConfig(state.sosConfigText, update);
 
-  const rig = `${warp.length} projector${warp.length === 1 ? '' : 's'}, ` +
+  const n = Math.max(warp.length, alignment.length);
+  const rig = `${n} projector${n === 1 ? '' : 's'}, ` +
     `${state.compositorRig === null ? 'as the install describes them' : 'as last recalibrated'}.`;
 
   return {
@@ -4397,9 +4429,11 @@ function buildBundle(): { entries: ZipEntry[]; config: boolean; cost: string } {
       configName: state.sosConfigName || 'local_sos_config.json',
       alignmentCost: cost,
       rigSummary: rig,
+      refused,
     }),
     config: config !== null,
     cost,
+    refused,
   };
 }
 
@@ -6566,7 +6600,12 @@ function renderReadout(): void {
   {
     const box = el('div');
     box.append(el('p', { className: 'eyebrow-sm', textContent: 'Files for the projectors' }));
-    let ready: { entries: ZipEntry[]; config: boolean; cost: string } | null = null;
+    let ready: {
+      entries: ZipEntry[];
+      config: boolean;
+      cost: string;
+      refused: string[];
+    } | null = null;
     let refusal = '';
     try {
       ready = buildBundle();
@@ -6599,6 +6638,17 @@ function renderReadout(): void {
       if (!ready.config) cfg.style.color = 'var(--warn)';
       cfg.dataset.smoke = 'bundle-config';
       box.append(cfg);
+
+      // A part that could not be built, named. It does not take the others with
+      // it: a model with no UV set has no warp meshes and perfectly good
+      // alignment files, and the first version of this let the one refusal
+      // swallow the lot.
+      for (const r of ready.refused) {
+        const p = el('p', { className: 'note tiny', textContent: `Not included — ${r}` });
+        p.style.color = 'var(--warn)';
+        p.dataset.smoke = 'bundle-refused';
+        box.append(p);
+      }
 
       const go = el('button', {
         className: 'btn primary',

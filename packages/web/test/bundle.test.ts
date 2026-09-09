@@ -111,6 +111,29 @@ test('the README wraps for a terminal', () => {
   }
 });
 
+test('a part that cannot be built does not take the others with it', () => {
+  // Found by `tools/smoke-app.ts`, whose fixture carries no UV set:
+  // `buildWarpExport` refuses a model with no unwrap, and the first version of
+  // the builder let that one refusal throw out of the whole function. The
+  // alignment files and the config need no UVs and had already been built, so
+  // dropping an unwrapped model made every file unreachable and the panel
+  // rendered an error where the download button belonged.
+  const refused = ['the warp meshes: smoke.glb carries no UV set, so there is no texel to send'];
+  const partial = INPUT({ warp: [], refused });
+
+  const names = bundleEntries(partial).map((e) => e.name);
+  assert.ok(names.includes('alignment/P1.alignment'), 'the alignment files went with the meshes');
+  assert.ok(names.includes('local_sos_config.json'), 'the config went with the meshes');
+  assert.ok(!names.some((n) => n.startsWith('warp/')), 'a warp mesh appeared from nowhere');
+
+  // And the absence is EXPLAINED. A file missing with no reason is the failure
+  // this module exists against, and the reader holding the archive tomorrow
+  // cannot ask the page what happened.
+  const readme = bundleReadme(partial).replace(/\s+/g, ' ');
+  assert.ok(readme.includes('Not in this archive'), 'the README does not name what is missing');
+  assert.ok(readme.includes('carries no UV set'), 'the README does not carry the reason');
+});
+
 test('a rig with nothing lit still produces a readable archive', () => {
   // Reachable: every projector switched off. An archive explaining that is a
   // better answer than an empty file or a thrown error at the click.

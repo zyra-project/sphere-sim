@@ -94,6 +94,15 @@ export interface BundleInput {
   alignmentCost: string;
   /** Free text identifying the rig, for the README's first line. */
   rigSummary: string;
+  /**
+   * Parts that could not be built, each already a sentence saying why.
+   *
+   * A file missing from the archive with no explanation is the failure this
+   * whole module is against. `buildWarpExport` refuses a model with no UV set,
+   * which is correct and says nothing to somebody holding the archive a day
+   * later wondering where the meshes went.
+   */
+  refused?: readonly string[];
 }
 
 /** The README that travels with the files. */
@@ -135,6 +144,13 @@ export function bundleReadme(input: BundleInput): string {
     input.config === null ? CONFIG_ABSENT : FILE_NOTES.config.readme,
     input.config === null ? [] : [input.configName],
   );
+
+  const refused = input.refused ?? [];
+  if (refused.length > 0) {
+    lines.push('Not in this archive', '-'.repeat('Not in this archive'.length));
+    for (const r of refused) lines.push(...wrap(`- ${r}`));
+    lines.push('');
+  }
 
   return `${lines.join('\n').trimEnd()}\n`;
 }
