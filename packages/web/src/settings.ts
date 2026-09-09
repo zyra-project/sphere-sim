@@ -773,11 +773,40 @@ export const NUDGE_CONTROLS: readonly NudgeSpec[] = [
   },
 ];
 
-/** Tints for P1…P4, in rig order. Used for tabs, dots and every per-projector plot. */
-export const PROJECTOR_TINTS: readonly string[] = ['#5cc8c8', '#c486f7', '#f59f4a', '#6dc96d'];
+/**
+ * Tints in rig order, one per projector the shader can light. Used for tabs,
+ * dots, lens markers and every per-projector plot.
+ *
+ * **The first four are unchanged and must stay so.** They are what a 2-, 3- or
+ * 4-projector rig has always drawn, they reach the shader through
+ * `PROJECTOR_TINTS_LINEAR`, and reordering them would move pixels in every
+ * existing picture for no reason. The second four were appended when `MAX_PROJ`
+ * went to eight.
+ *
+ * Every use site carries a `?? '#888'` fallback, so a short palette does not
+ * throw — it silently gives several projectors the same grey, which is the one
+ * failure this list must not have. The marker overlay exists to tell lenses
+ * apart; four distinct colours and four identical greys would leave half the rig
+ * unreadable while looking like it worked. `settings.test.ts` ties the length to
+ * `MAX_PROJECTORS` so the two cannot drift.
+ *
+ * Hues are spread around the circle at similar lightness — teal, violet, orange,
+ * green, then red, yellow, blue, pink — so no two sit adjacent, and mid
+ * saturation keeps them legible on both the light and the dark ground.
+ */
+export const PROJECTOR_TINTS: readonly string[] = [
+  '#5cc8c8',
+  '#c486f7',
+  '#f59f4a',
+  '#6dc96d',
+  '#ef6d6d',
+  '#cfd15e',
+  '#6d8cf5',
+  '#f078c4',
+];
 
 /**
- * The same four colours as linear-light triples, for the shader.
+ * The same colours as linear-light triples, for the shader.
  *
  * The lens markers and the by-projector overlay are drawn before the display
  * encode, so a tint handed to the shader as its 8-bit value would come back out

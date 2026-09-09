@@ -51,6 +51,7 @@ import {
   withNudge,
   withSetting,
 } from '../src/settings.ts';
+import { MAX_PROJECTORS } from '../src/glsl.ts';
 import type { Settings } from '../src/settings.ts';
 
 test('every control names a group that exists', () => {
@@ -395,8 +396,20 @@ test('the standing distance stays outside the ball when the ball changes size', 
 });
 
 test('every projector has a tint, and they are distinct', () => {
-  assert.ok(PROJECTOR_TINTS.length >= 4);
+  // Tied to the cap, not to a literal: every projector the shader can light
+  // needs its own colour, and each use site's `?? '#888'` fallback means a short
+  // palette gives several of them the SAME grey rather than failing. The marker
+  // overlay exists to tell lenses apart, so that failure looks like it worked.
+  assert.ok(
+    PROJECTOR_TINTS.length >= MAX_PROJECTORS,
+    `${PROJECTOR_TINTS.length} tints for ${MAX_PROJECTORS} projectors — the rest fall back to ` +
+      'one shared grey and become indistinguishable in the overlay',
+  );
   assert.equal(new Set(PROJECTOR_TINTS).size, PROJECTOR_TINTS.length);
+
+  // The first four are what every existing 2-, 3- and 4-projector picture was
+  // drawn with. Appending is free; reordering would move pixels for no reason.
+  assert.deepEqual(PROJECTOR_TINTS.slice(0, 4), ['#5cc8c8', '#c486f7', '#f59f4a', '#6dc96d']);
 });
 
 test('every base field says what it is for', () => {
