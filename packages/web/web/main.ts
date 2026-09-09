@@ -88,6 +88,7 @@ import {
   buildViewer,
   buildAsBuilt,
   buildWorld,
+  placedRigOn,
   CONTENT_DECODE_GAMMA,
   framingRangeM,
   nudgesAreClear,
@@ -97,6 +98,7 @@ import {
 import type { WebWorld } from '../src/rigs.ts';
 import type { Reading, RigFact } from '../src/readout.ts';
 import { buildDisplayUniforms, packMesh, pickMarkerNear, slotOfRigIndex } from '../src/uniforms.ts';
+import { MAX_PROJECTORS } from '../src/glsl.ts';
 import type { DisplayMesh, DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
 import type { ParityVerdict } from '../src/parity.ts';
 import {
@@ -1251,7 +1253,22 @@ function placementBlock(): HTMLElement[] {
 
   const actions = el('div', { className: 'chips' });
   const add = el('button', { className: 'chip', textContent: 'add a projector' });
+  // Capped where the SHADER's room runs out, and refused here rather than three
+  // layers down. A ninth placement reaches `packMesh`, whose `packBvh` refuses a
+  // footprint field it cannot lay out -- correctly, since `contentWeight` would
+  // otherwise index past the end of a vector -- and that refusal lands in
+  // `meshError`, so the model would vanish behind a message about texel channels
+  // in answer to pressing "add a projector". A disabled chip that says why is the
+  // same limit at the place the reader meets it.
+  if (places.length >= MAX_PROJECTORS) {
+    add.disabled = true;
+    add.title =
+      `${MAX_PROJECTORS} is the shader's room: fourteen [MAX_PROJ] arrays across the two rigs ` +
+      'it carries, at 18 vec4 slots per projector against a GLES3 floor of 224 fragment ' +
+      'uniform vectors. A ninth would not fit the footprint field either.';
+  }
   add.addEventListener('click', () => {
+    if (places.length >= MAX_PROJECTORS) return;
     // A new lens goes where the last one is, moved along, aimed at the object.
     // Dropping it at the origin would put it inside whatever is being lit.
     const last = places[places.length - 1];
@@ -1312,32 +1329,37 @@ function placementBlock(): HTMLElement[] {
   }
 
   // Which picture these numbers belong to, said rather than left to be worked
-  // out. `customPlacements` reaches the SURFACE request and nothing else -- the
-  // docblock above gives the reason and it is still the right one -- so the big
-  // view is the INSTALL rig whatever is listed here. Everything on this card is
-  // measured from the placements; the canvas beside it is not, and until this
-  // note the only way to find that out was to read `requestSurface`.
+  // out. This note used to WARN that the two disagreed: `customPlacements`
+  // reached the surface request and nothing else, so the card measured a placed
+  // rig while the canvas beside it drew the install. That is fixed -- see
+  // `displayModel`, which now builds both drawn rigs from these placements
+  // through the same `placedRigOn` the worker scores them with -- so the note
+  // reports agreement instead of warning about drift, and is no longer amber.
   //
-  // This is the drift `modelBlock` refuses for the shape ("every number it
-  // prints comes from the model rather than the picture precisely so that the
-  // two can never drift apart unnoticed"), reaching the rig by a different road
-  // than the one first looked down: not a rig truncated to `MAX_PROJ`, but a rig
-  // the renderer is never handed.
+  // WHAT IS STILL TRUE is the reason the old routing existed: a rig off the ring
+  // must not answer a §7 gate about the sphere. It still cannot. The gates are
+  // computed in the worker from a `ModelRequest`, which has no placements field
+  // at all, so the scoring path cannot be handed one. Drawing and scoring are
+  // different questions and only the second one was ever the constraint.
+  //
+  // AND ONE THING THE READER CANNOT SEE OTHERWISE: a placed rig carries no mount
+  // error. `injectMisalignment` and the nudge sliders are properties of the
+  // nominal ring's SLOTS -- the panel offers one nudge per install projector and
+  // a placement has no slot -- so both drawn rigs are the placements as typed and
+  // the two agree exactly. On the install that disagreement is the whole point of
+  // the page, so a view that silently became perfect would read as a rig that had
+  // been fixed.
   const install = Math.round(state.settings.projectorCount);
-  const differs = places.length !== install || customPlacements !== null;
-  if (differs) {
-    const note = el('p', {
-      className: 'note tiny',
-      textContent:
-        `These ${places.length} are measured in the preview on this card. The large view is ` +
-        `still the install rig — ${install} on the nominal ring — because a hand-placed rig ` +
-        'reaches the surface request and not the renderer, so that a rig off the ring can never ' +
-        'answer a §7 gate about the sphere. The two pictures are of different rigs.',
-    });
-    note.style.color = 'var(--warn)';
-    note.dataset.smoke = 'placement-view-note';
-    out.push(note);
-  }
+  const note = el('p', {
+    className: 'note tiny',
+    textContent:
+      `The large view is these ${places.length}, not the ${install} on the install ring — ` +
+      'the same rig this card measures, built by the same code. No mount error is applied ' +
+      'to a hand-placed rig, so what you see is the placements exactly as typed; the §7 ' +
+      'gates stay on the install, which is the only rig they are about.',
+  });
+  note.dataset.smoke = 'placement-view-note';
+  out.push(note);
 
   return out;
 }
@@ -3001,7 +3023,10 @@ function displayModel(world: WebWorld): DisplayModel {
     };
   }
 
-  const rigKey = JSON.stringify([world.truthRig, world.compositorRig]);
+  // `customPlacements` is in the key because the rig below is built FROM it.
+  // Everything else `placedRigOn` reads is already covered: the surface by
+  // `meshId`, and the height, rotation, raster and blend by `world.truthRig`.
+  const rigKey = JSON.stringify([world.truthRig, world.compositorRig, customPlacements]);
   const hit = displayModelCache;
   if (hit !== null && hit.meshId === droppedMeshId && hit.rigKey === rigKey) {
     return { physical: hit.physical, content: hit.content, mesh: hit.mesh };
@@ -3010,8 +3035,32 @@ function displayModel(world: WebWorld): DisplayModel {
   // The surface outlives the calibration: a slider moves the rig, not the model.
   const surface =
     hit !== null && hit.meshId === droppedMeshId ? hit.surface : meshSurface(droppedMesh);
-  const physical = prepareRig(world.truthRig, surface);
-  const content = prepareRig(world.compositorRig, surface);
+
+  // THE RIG THAT DRAWS, SPLIT FROM THE RIG THAT SCORES.
+  //
+  // Until this line `customPlacements` reached the surface request and nothing
+  // else, so the large view was the INSTALL rig whatever the placement card
+  // listed — the card measured one rig and the canvas beside it drew another.
+  // The reason that routing existed is still right and is unchanged: a rig off
+  // the ring must not answer a §7 gate about the sphere. What was wrong was
+  // reading "must not SCORE" as "must not DRAW".
+  //
+  // The gate half needs no guard here because it is structural. The §7 metrics
+  // are computed in the worker from a `ModelRequest`, which carries `settings`
+  // and `compositorRig` and HAS NO PLACEMENTS FIELD — so the scoring path
+  // cannot be handed one, by construction rather than by remembering not to.
+  // `web/test/rigs.test.ts` asserts that, because "the type has no field for it"
+  // stops being true the moment somebody adds one for a good reason.
+  //
+  // BOTH rigs move together or neither does. Drawing a placed `physical` against
+  // an install `content` would light the model with one rig and texture it from
+  // another — a picture of nothing, and one that would look plausible.
+  const placed =
+    customPlacements && customPlacements.length > 0
+      ? placedRigOn(world, surface, customPlacements)
+      : null;
+  const physical = prepareRig(placed ?? world.truthRig, surface);
+  const content = prepareRig(placed ?? world.compositorRig, surface);
   let mesh: DisplayMesh | null;
   try {
     // The CONTENT rig, which is whose blend the shader needs; see `packMesh`.

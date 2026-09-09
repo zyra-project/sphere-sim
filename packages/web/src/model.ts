@@ -40,10 +40,9 @@ import { renderTwoRigRoomView } from '../../sim/src/misregistration.ts';
 import { defaultScene, renderProjectorView, renderRoomView } from '../../sim/src/render.ts';
 import { meshSurface } from '../../sim/src/mesh/surface.ts';
 import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
-import { placedRig } from '../../sim/src/placement.ts';
 import { isIlluminatedAt } from '../../sim/src/coverage.ts';
 import type { ViewerCamera } from '../../sim/src/render.ts';
-import { buildWorld } from './rigs.ts';
+import { buildWorld, placedRigOn } from './rigs.ts';
 import { framebufferSentence, projectorFacts, readingsFrom, rigFacts } from './readout.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
 import type {
@@ -832,30 +831,16 @@ export function computeSurface(req: SurfaceRequest): SurfaceResponse {
   // The placed rig keeps the scene the settings describe — sphere radius, height,
   // rotation, blend — and replaces only where the light comes from. Anything
   // else would make moving a projector silently change the room too.
+  //
+  // `placedRigOn` rather than the construction inline, which is where it lived
+  // until the page started DRAWING placed rigs as well as scoring them. The
+  // arguments are the interesting part and its docblock keeps them; what matters
+  // here is that the worker and the renderer now call the same builder, so the
+  // three numbers on the card and the picture beside it cannot describe
+  // different rigs.
   const rigCal =
     req.placements && req.placements.length > 0
-      ? placedRig({
-          projectors: req.placements.map((place) => ({
-            // Aimed at the MODEL. A placement from the panel carries explicit
-            // angles, so this only decides the throw `placedRig` frames from --
-            // and without it that throw is measured to the world origin, so a
-            // model placed away from the origin is framed for a distance no
-            // projector is at.
-            aimAt: surface.bounds.centre,
-            ...place,
-          })),
-          // The MODEL's extent, not the sphere's. `placedRig` sizes each
-          // projector's field to frame a body of this radius, and handing it the
-          // configured ball meant a 30 m facade and a 30 cm prop were both
-          // framed as though they were a 130-inch sphere -- while the panel says
-          // each projector is framed from its own throw.
-          radiusM: surface.extentRadiusM,
-          centerHeightM: world.truthRig.sphere.centerHeightM,
-          rotationOffsetDeg: world.truthRig.sphere.rotationOffsetDeg,
-          resX: world.truthRig.projectors[0]?.intrinsics.resX,
-          resY: world.truthRig.projectors[0]?.intrinsics.resY,
-          blend: world.truthRig.blend,
-        })
+      ? placedRigOn(world, surface, req.placements)
       : world.truthRig;
   const rigKey = JSON.stringify(rigCal);
   const truth =

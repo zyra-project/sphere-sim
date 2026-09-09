@@ -3,6 +3,9 @@
 
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { createImage, sampleEquirect } from '../../sim/src/equirect.ts';
 import { aimAtSphereCenter } from '../../sim/src/geometry.ts';
@@ -11,6 +14,9 @@ import { DEFAULT_MISALIGNMENT } from '../../sim/src/scene.ts';
 import { contentAt } from '../../sim/src/render.ts';
 import { renderTwoRigRoomView } from '../../sim/src/misregistration.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
+import { meshSurface } from '../../sim/src/mesh/surface.ts';
+import type { ProjectorPlacement } from '../../sim/src/placement.ts';
+import type { SurfaceMesh } from '../../calibration/src/index.ts';
 import {
   BOULDER_PRESET,
   CONTENTS,
@@ -31,10 +37,13 @@ import {
   buildViewer,
   buildWorld,
   framingRangeM,
+  placedRigOn,
   scaledMagnitudes,
   worstAimOffender,
   worstPlacementOffender,
 } from '../src/rigs.ts';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 test('a rig with no mount error is its own drawing', () => {
   const world = buildWorld(PERFECT_PRESET);
@@ -671,5 +680,158 @@ test('the framing distance survives a degenerate field of view', () => {
   for (const [span, fov] of [[0, 71], [15, 0], [0, 0], [-4, -4]] as const) {
     const r = framingRangeM(0.864, span, fov, 0.7);
     assert.ok(Number.isFinite(r) && r > 0.864, `span ${span}, fov ${fov} gave ${r}`);
+  }
+});
+
+/**
+ * A closed body with an unwrap, small enough to build in a test.
+ *
+ * `Float64Array` for positions and `Float32Array` for uvs, which is what
+ * `SurfaceMesh` declares — handing it the other way round typechecks against a
+ * structural cast and then reads garbage.
+ */
+function testBody(seg: number, rings: number, scale = 1): SurfaceMesh {
+  const p: number[] = [];
+  const uv: number[] = [];
+  for (let r = 0; r <= rings; r++) {
+    const v = r / rings;
+    const theta = v * Math.PI;
+    for (let s = 0; s <= seg; s++) {
+      const u = s / seg;
+      const phi = u * 2 * Math.PI;
+      p.push(
+        scale * Math.sin(theta) * Math.cos(phi),
+        scale * Math.sin(theta) * Math.sin(phi),
+        scale * Math.cos(theta),
+      );
+      uv.push(u, v);
+    }
+  }
+  const idx: number[] = [];
+  for (let r = 0; r < rings; r++) {
+    for (let s = 0; s < seg; s++) {
+      const a = r * (seg + 1) + s;
+      const b = a + seg + 1;
+      idx.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  }
+  return {
+    schema: 'sphere-sim/surface-mesh@1',
+    name: 'placed-rig-body',
+    positions: new Float64Array(p),
+    normals: null,
+    uvs: new Float32Array(uv),
+    indices: new Uint32Array(idx),
+    vertexCount: p.length / 3,
+    triangleCount: idx.length / 3,
+  } satisfies SurfaceMesh;
+}
+
+const PLACES: ProjectorPlacement[] = [
+  { position: { x: 5, y: 0, z: 2.2 }, yawDeg: 180, pitchDeg: 0, rollDeg: 0 },
+  { position: { x: 0, y: 5, z: 2.2 }, yawDeg: -90, pitchDeg: 0, rollDeg: 0 },
+  { position: { x: -5, y: 0, z: 2.2 }, yawDeg: 0, pitchDeg: 0, rollDeg: 0 },
+  { position: { x: 0, y: -5, z: 2.2 }, yawDeg: 90, pitchDeg: 0, rollDeg: 0 },
+  { position: { x: 3.5, y: 3.5, z: 3.0 }, yawDeg: -135, pitchDeg: -10, rollDeg: 0 },
+];
+
+test('a placed rig is the placements, one projector each, where they were put', () => {
+  const world = buildWorld(BOULDER_PRESET);
+  const surface = meshSurface(testBody(16, 8));
+  const rig = placedRigOn(world, surface, PLACES);
+
+  assert.equal(rig.projectors.length, PLACES.length);
+  // Five, against an install capped at four. This is the whole point of the
+  // change: the count the reader typed, not the count §2 allows.
+  assert.ok(PLACES.length > Math.round(BOULDER_PRESET.projectorCount));
+  PLACES.forEach((place, i) => {
+    const pos = rig.projectors[i].pose.position;
+    assert.equal(pos.x, place.position.x, `projector ${i} x`);
+    assert.equal(pos.y, place.position.y, `projector ${i} y`);
+    assert.equal(pos.z, place.position.z, `projector ${i} z`);
+  });
+});
+
+test('a placed rig keeps the room the settings describe and replaces only the light', () => {
+  const world = buildWorld(BOULDER_PRESET);
+  const surface = meshSurface(testBody(16, 8));
+  const rig = placedRigOn(world, surface, PLACES);
+
+  // Moving a projector must not silently re-room the scene. Each of these comes
+  // off `world.truthRig` rather than out of `placedRig`'s own defaults, and
+  // `placedRig`'s defaults are DIFFERENT numbers — 0.8636 m and 2.1844 m — so a
+  // dropped argument fails here rather than looking plausible.
+  assert.equal(rig.sphere.centerHeightM, world.truthRig.sphere.centerHeightM);
+  assert.equal(rig.sphere.rotationOffsetDeg, world.truthRig.sphere.rotationOffsetDeg);
+  assert.equal(rig.projectors[0].intrinsics.resX, world.truthRig.projectors[0].intrinsics.resX);
+  assert.equal(rig.projectors[0].intrinsics.resY, world.truthRig.projectors[0].intrinsics.resY);
+  assert.deepEqual(rig.blend, world.truthRig.blend);
+});
+
+test('a placed rig is framed from the MODEL, so a bigger body gets a wider field', () => {
+  const world = buildWorld(BOULDER_PRESET);
+  // Same placements, same throw, two bodies an order of magnitude apart. If the
+  // framing came from the configured ball instead of the model's own extent,
+  // these would be identical — which is the bug `placedRigOn`'s docblock
+  // records, where a 30 m facade and a 30 cm prop were framed the same way.
+  const small = placedRigOn(world, meshSurface(testBody(16, 8, 0.5)), PLACES);
+  const large = placedRigOn(world, meshSurface(testBody(16, 8, 5)), PLACES);
+  const fovOf = (r: typeof small): number => r.projectors[0].intrinsics.fovHDeg;
+  assert.ok(
+    fovOf(large) > fovOf(small),
+    `a body ten times the size wants a wider field, got ${fovOf(large)} vs ${fovOf(small)}`,
+  );
+});
+
+test('the scoring path cannot be handed a placed rig, structurally', () => {
+  // THE SAFETY PROPERTY OF THIS WHOLE CHANGE, and it is a property of the types
+  // rather than of anybody's discipline. §7's gates are numbers about the SOS
+  // sphere; a rig off the ring must never answer one. The page now DRAWS a
+  // placed rig, so "we simply do not pass it" is no longer visible at the call
+  // site and something has to hold the line.
+  //
+  // What holds it: the gates are computed in the worker from a `ModelRequest`,
+  // and that interface has no placements field. The surface path — whose three
+  // numbers are counts over the model's own area and stay true whatever is
+  // pointing at it — is the one that carries them.
+  const protocol = fs.readFileSync(
+    path.join(HERE, '..', 'src', 'protocol.ts'),
+    'utf8',
+  );
+  const cut = (name: string): string => {
+    const at = protocol.indexOf(`export interface ${name} {`);
+    assert.ok(at >= 0, `${name} is not declared in protocol.ts`);
+    const end = protocol.indexOf('\n}', at);
+    assert.ok(end > at, `${name} has no closing brace`);
+    return protocol.slice(at, end);
+  };
+  assert.ok(
+    !/placements/.test(cut('ModelRequest')),
+    'ModelRequest gained a placements field — the §7 gates can now be scored on a rig ' +
+      'that is not the install, which is the one thing this separation exists to prevent',
+  );
+  // And the other half, so this test fails if the whole feature is deleted
+  // rather than passing vacuously on a protocol with no placements anywhere.
+  assert.ok(
+    /placements/.test(cut('SurfaceRequest')),
+    'SurfaceRequest lost its placements field',
+  );
+});
+
+test('the worker and the renderer build a placed rig with the same function', () => {
+  // Two consumers, one builder. If either re-inlines the construction they
+  // agree until somebody edits one, and the failure is a card whose numbers
+  // describe a rig that is not the rig in the picture beside it.
+  const read = (...parts: string[]): string =>
+    fs.readFileSync(path.join(HERE, '..', ...parts), 'utf8');
+  for (const [what, src] of [
+    ['the worker', read('src', 'model.ts')],
+    ['the page', read('web', 'main.ts')],
+  ] as const) {
+    assert.ok(src.includes('placedRigOn('), `${what} no longer calls placedRigOn`);
+    assert.ok(
+      !/\bplacedRig\(\{/.test(src),
+      `${what} builds a placed rig inline again instead of through placedRigOn`,
+    );
   }
 });

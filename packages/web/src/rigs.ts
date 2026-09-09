@@ -38,6 +38,9 @@ import type { MisalignmentMagnitudes, Perturbation } from '../../sim/src/scene.t
 import { DEFAULT_MISALIGNMENT, injectMisalignment, nominalRig } from '../../sim/src/scene.ts';
 import { DEG2RAD } from '../../sim/src/vec.ts';
 import { aimAtSphereCenter } from '../../sim/src/geometry.ts';
+import { placedRig } from '../../sim/src/placement.ts';
+import type { ProjectorPlacement } from '../../sim/src/placement.ts';
+import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
 import type { ProjectorNudge, Settings } from './settings.ts';
 import {
   CONTENTS,
@@ -383,6 +386,54 @@ export function buildGraticule(s: Settings): Graticule | null {
     emphasizeAxes: true,
     color: { r: 1, g: 1, b: 1 },
   };
+}
+
+/**
+ * The rig a hand-placed list describes, aimed at a specific model.
+ *
+ * ONE BUILDER FOR TWO CONSUMERS, and that is the whole reason this is a function
+ * rather than a block inside either of them. `computeSurface` scores a placed
+ * rig in the worker and `displayModel` draws one on the page; if the two built
+ * it separately they would agree until somebody changed one, and the failure
+ * would be a card whose three numbers describe a rig that is not the rig in the
+ * picture beside it. That is exactly the drift `modelBlock` refuses for the
+ * SHAPE — "every number it prints comes from the model rather than the picture
+ * precisely so that the two can never drift apart unnoticed" — and a rig is no
+ * safer to duplicate than a mesh.
+ *
+ * Every argument beyond the placements themselves is a deliberate choice about
+ * whose frame of reference wins, and each one was a bug first:
+ *
+ *   - **Aimed at the MODEL**, not the world origin. A placement from the panel
+ *     carries explicit angles, so `aimAt` only decides the throw `placedRig`
+ *     frames from — and measured to the origin, a model sitting away from it is
+ *     framed for a distance no projector is actually at.
+ *   - **Sized to the MODEL's extent**, not the configured ball. `placedRig`
+ *     frames each projector to cover a body of this radius; handing it the
+ *     sphere setting framed a 30 m facade and a 30 cm prop identically, while
+ *     the panel claimed each projector was framed from its own throw.
+ *   - **The scene stays the settings'.** Sphere height, rotation, raster and
+ *     blend all come from the world the controls describe, so moving a
+ *     projector changes where the light comes from and nothing else. A placed
+ *     rig that also quietly re-rooms the scene is not a rig comparison.
+ */
+export function placedRigOn(
+  world: WebWorld,
+  surface: MeshSurface,
+  placements: readonly ProjectorPlacement[],
+): RigCalibration {
+  return placedRig({
+    projectors: placements.map((place) => ({
+      aimAt: surface.bounds.centre,
+      ...place,
+    })),
+    radiusM: surface.extentRadiusM,
+    centerHeightM: world.truthRig.sphere.centerHeightM,
+    rotationOffsetDeg: world.truthRig.sphere.rotationOffsetDeg,
+    resX: world.truthRig.projectors[0]?.intrinsics.resX,
+    resY: world.truthRig.projectors[0]?.intrinsics.resY,
+    blend: world.truthRig.blend,
+  });
 }
 
 export function buildWorld(
