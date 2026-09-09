@@ -2049,19 +2049,34 @@ async function main(): Promise<void> {
         // from the worker's own reply and names the count it actually traced.
         let rigLine = '';
         let litAfter = '';
-        // A minute and a half for work that is milliseconds, because the wait is
-        // not on the work. `requestSurface` and `requestModel` share ONE worker
-        // and `meshBusy` admits one surface pass at a time, so this request
-        // queues behind whatever settled model pass is already running -- and a
-        // settled pass is the expensive one: full-density metrics plus the parity
-        // render. The five geodesic fields it is nominally waiting for are over
-        // an eight-triangle octahedron and cost nothing.
+        // MEASURED FROM THIS RUN, not written down as a constant, and that is
+        // the third time this budget has been wrong.
         //
-        // Sized against the runner rather than this machine. In the CI run that
-        // failed this at 30 s, the mesh poll above took 24 176 ms where it takes
-        // about 9 000 ms here -- 2.7x -- and the same ratio applied to a budget
-        // written locally is how a check passes for a year and then does not.
-        const placeDeadline = Date.now() + 90_000;
+        // The wait is not on the work. `requestSurface` and `requestModel` share
+        // ONE worker and `meshBusy` admits one surface pass at a time, so this
+        // request queues behind whatever settled model pass is already running --
+        // and a settled pass is the expensive one: full-density metrics plus the
+        // parity render. The five geodesic fields it is nominally waiting for are
+        // over an eight-triangle octahedron and cost nothing. So the budget is a
+        // multiple of how long a settled pass takes HERE, which `meshMs` above
+        // just measured on this machine, in this run, under this load.
+        //
+        // THE HISTORY IS WHY IT IS NOT A NUMBER. It was 30 s, and failed on a
+        // runner where the mesh poll took 24 176 ms against about 9 000 ms
+        // locally. It was then raised to 90 s -- another constant, written after
+        // observing one slow runner -- and failed again on runs 490 and 491,
+        // where the poll took 33 186 ms and 32 277 ms. Run 492 PASSED on the
+        // identical commit to 491 at the same runner speed, which is what says
+        // the number was marginal rather than simply too small: two settled
+        // passes queueing at 33 s each already spend 66 s of a 90 s budget, so
+        // whether it holds is decided by how many passes happen to be in flight.
+        // A constant cannot track that. A multiple of the measured pass can.
+        //
+        // Five, because the failures are consistent with two settled passes
+        // queueing and the floor keeps a fast machine honest rather than letting
+        // this balloon into a check that would wait out a real hang.
+        const placeBudgetMs = Math.max(90_000, 5 * meshMs);
+        const placeDeadline = Date.now() + placeBudgetMs;
         while (Date.now() < placeDeadline) {
           await sleep(300);
           rigLine = await cdp.evaluate<string>(
@@ -2076,7 +2091,8 @@ async function main(): Promise<void> {
         if (!/\b5 projectors\b/.test(rigLine)) {
           failures.push(
             `the worker never reported a five-projector rig (last said ${JSON.stringify(rigLine)}) ` +
-              '— the any-count path is not reaching it',
+              `— the any-count path is not reaching it, or ${(placeBudgetMs / 1000).toFixed(0)} s ` +
+              `is not enough on a runner whose settled pass takes ${meshMs} ms`,
           );
         } else if (!Number.isFinite(after) || after <= 0) {
           failures.push(
@@ -2159,6 +2175,58 @@ async function main(): Promise<void> {
             process.stdout.write(`  model: stripped to one projector, ${one.toFixed(1)}% lit\n`);
           }
         }
+      }
+    }
+
+    // The operator's files, where an operator would actually find them.
+    //
+    // No click first: the block is always in the readout. It began as a button
+    // in the actions row, which is where the user asked for it and where it
+    // could not go -- that row is sized to the narrow panel and its height comes
+    // out of the scrolling controls, so a sixth button once wrapped it to three
+    // lines and pushed the last slider out of its clip. What must be visible
+    // WITHOUT opening anything is the archive's contents and whether a config is
+    // in it; the per-format notes fold away because the same words travel inside
+    // the archive.
+    const listed = await cdp.evaluate<string>(`(() => {
+      const panel = document.querySelector('[data-smoke="bundle-panel"]');
+      if (!panel) return 'the file block is not in the readout';
+      const go = panel.querySelector('[data-smoke="bundle-download"]');
+      if (!go) return 'the block has no download button: ' + panel.textContent.slice(0, 120);
+      const cfg = panel.querySelector('[data-smoke="bundle-config"]');
+      return JSON.stringify({ text: panel.textContent, cfg: cfg ? cfg.textContent : '' });
+    })()`);
+    if (!listed.startsWith('{')) {
+      failures.push(`the download block: ${listed}`);
+    } else {
+      const seen = JSON.parse(listed) as { text: string; cfg: string };
+      const missing = ['README.txt', '.alignment'].filter((n) => !seen.text.includes(n));
+      // The warp meshes must be ACCOUNTED FOR, not merely present. This fixture
+      // carries no UV set, so `buildWarpExport` refuses it and there are no
+      // meshes to name -- which is correct, and the block has to say so rather
+      // than leave a reader to notice the absence. Requiring the files outright
+      // would fail on a legitimate archive; requiring nothing would pass on the
+      // bug this replaced, where one refusal silently took the others with it.
+      const warpAccounted =
+        seen.text.includes('warp/') || /Not included — the warp meshes/.test(seen.text);
+      if (missing.length > 0) {
+        failures.push(
+          `the download block does not name ${missing.join(', ')} without opening anything — ` +
+            `it said ${JSON.stringify(seen.text.slice(0, 160))}`,
+        );
+      } else if (!warpAccounted) {
+        failures.push(
+          'the download block neither lists the warp meshes nor says why they are missing: ' +
+            JSON.stringify(seen.text.slice(0, 200)),
+        );
+      } else if (!/none was loaded/.test(seen.cfg)) {
+        failures.push(
+          `the block does not explain the missing config: ${JSON.stringify(seen.cfg.slice(0, 140))}`,
+        );
+      } else {
+        process.stdout.write(
+          '  files: the readout lists the archive and accounts for every part of it\n',
+        );
       }
     }
 

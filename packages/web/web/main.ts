@@ -44,6 +44,9 @@ import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
 import { buildWarpExports, formatWarpMesh } from '../../sim/src/warp.ts';
+import { buildZip } from '../src/zip.ts';
+import type { ZipEntry } from '../src/zip.ts';
+import { bundleEntries, CONFIG_ABSENT, FILE_NOTES } from '../src/bundle.ts';
 import {
   buildSosAlignments,
   formatSosAlignment,
@@ -195,6 +198,14 @@ interface PageState {
   /** Whether the note on what the SOS reduction drops is open. Not persisted. */
   sosHelpOpen: boolean;
   /**
+   * Whether the per-format notes under the download button are showing.
+   *
+   * The block itself is always there — see `renderReadout`. Only the notes fold
+   * away, and the two things a reader must see before clicking (what is in the
+   * archive, and whether a config is in it) stay outside the fold.
+   */
+  downloadOpen: boolean;
+  /**
    * What the last SOS export actually cost, or `''` before there has been one.
    *
    * Measured on the rig that was on screen when the button was pressed, and kept
@@ -286,6 +297,7 @@ const state: PageState = {
   seamsOpen: false,
   warpHelpOpen: false,
   sosHelpOpen: false,
+  downloadOpen: false,
   sosCost: '',
   sosRead: null,
   sosReadName: '',
@@ -1004,6 +1016,11 @@ function slider(o: SliderOptions): HTMLElement {
       // The panel held still for the whole drag, so this is where every other
       // row that reads the value it changed gets to catch up.
       renderControls();
+      // The readout too, and specifically its file block: `bundleForPanel` will
+      // not rebuild an archive under a live drag, so without this the residual
+      // line would keep the value it had when the pointer went down until some
+      // unrelated repaint came along.
+      renderReadout();
       if (o.onSettle) o.onSettle();
     };
     window.addEventListener('pointermove', move);
@@ -4327,6 +4344,209 @@ function exportSosFiles(): void {
 }
 
 /**
+ * Everything an operator takes to the wall, assembled once.
+ *
+ * Built from the same calls the individual buttons make -- `buildWarpExports`,
+ * `buildSosAlignments`, `sosConfigDiff` -- rather than from a second path, so a
+ * file cannot differ depending on which button produced it.
+ *
+ * Throws what those calls throw. `buildWarpExport` refuses a model with no UV
+ * set; that refusal reaches the panel rather than the console, in the same
+ * place the individual buttons put theirs.
+ */
+/**
+ * The last archive built, and the inputs it was built from.
+ *
+ * `buildBundle` is the most expensive thing in the readout by a wide margin: a
+ * warp mesh is a 41x41 grid of rays per projector, so a four-projector rig is
+ * about seven thousand surface intersections, and the SOS alignments trace
+ * again. `renderReadout` runs on EVERY `touched()`, which includes every pointer
+ * move of a slider drag -- so the always-visible file block put all of that on
+ * the main thread per repaint, and a drag or a running solve would stutter.
+ *
+ * The file BESIDE this one already solved the same problem and the fix is its
+ * shape: `touched` skips `renderControls` while a slider is held because "the
+ * row paints itself and the rest of the panel catches up when the pointer comes
+ * up". The block does the same, from one memo:
+ *
+ *   - Same inputs, same answer, no work. Most repaints are this.
+ *   - Different inputs mid-drag: keep showing the last one. The names in the
+ *     list do not move with a slider anyway; only the residual line does, and
+ *     that is a settled number rather than a live one.
+ *   - Different inputs, pointer up: rebuild, once.
+ *
+ * The slider's own `pointerup` calls `renderReadout` for exactly this reason --
+ * before, nothing refreshed the readout on settle and the stale line would have
+ * outlived the drag.
+ */
+let bundleMemo: { key: string; value: ReturnType<typeof buildBundle> | null; refusal: string } | null =
+  null;
+
+/** The archive for the readout: memoised, and never rebuilt under a live drag. */
+function bundleForPanel(): { value: ReturnType<typeof buildBundle> | null; refusal: string } {
+  const key = JSON.stringify([
+    state.settings,
+    state.compositorRig,
+    displayMeshId(),
+    sosConfigSeq,
+    suppliedName(),
+    customPlacements,
+  ]);
+  if (bundleMemo !== null && bundleMemo.key === key) return bundleMemo;
+  if (bundleMemo !== null && sliderDragging) return bundleMemo;
+  let value: ReturnType<typeof buildBundle> | null = null;
+  let refusal = '';
+  try {
+    value = buildBundle();
+  } catch (err) {
+    refusal = err instanceof Error ? err.message : String(err);
+  }
+  bundleMemo = { key, value, refusal };
+  return bundleMemo;
+}
+
+function buildBundle(): {
+  entries: ZipEntry[];
+  config: boolean;
+  /** What the panel says about the config: absent, refused, or nothing to change. */
+  configNote: string;
+  cost: string;
+  refused: string[];
+} {
+  const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
+  const model = displayModel(world);
+
+  // EACH PART STANDS OR FALLS ON ITS OWN.
+  //
+  // `buildWarpExport` refuses a model with no UV set -- there is no texel to
+  // send anywhere -- and the first version of this let that one refusal throw
+  // out of the whole function, which took the alignment files and the config
+  // down with it. Neither needs a UV set. Dropping an unwrapped model made
+  // every file unreachable, including the ones that had been built.
+  //
+  // `tools/smoke-app.ts` found it: its fixture carries no UVs, so the block
+  // rendered a refusal where the download button belonged.
+  const refused: string[] = [];
+  const attempt = <T,>(what: string, f: () => T): T | null => {
+    try {
+      return f();
+    } catch (err) {
+      refused.push(`${what}: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  };
+
+  const warp = (
+    attempt('the warp meshes', () =>
+      buildWarpExports(model.content).map((e) => [e.projectorId, formatWarpMesh(e)] as const),
+    ) ?? []
+  );
+  const sos = attempt('the SOS alignment files', () =>
+    buildSosAlignments(model.physical, model.content),
+  );
+  const alignment =
+    sos?.map((e) => [e.projectorId, formatSosAlignment(e.alignment)] as const) ?? [];
+
+  // The worst projector, not the average -- a mesh warp is judged by its worst
+  // seam. Same reduction `exportSosFiles` makes, and for the same reason.
+  let cost = '';
+  if (sos !== null && sos.length > 0) {
+    const worst = sos.reduce((a, b) => (b.residual.meshRmsPx > a.residual.meshRmsPx ? b : a));
+    const off = sos.reduce((n, e) => n + e.outOfFrame.length, 0);
+    cost =
+      `Worst of them, ${worst.projectorId}: nine points left ` +
+      `${worst.residual.meshRmsPx.toFixed(2)} px of a ` +
+      `${worst.residual.fieldRmsPx.toFixed(1)} px correction` +
+      (off > 0 ? `, and ${off} vertices want content outside the frame.` : '.');
+  }
+
+  // Only when one was loaded. `updateSosConfig` patches the file it is given,
+  // which is what preserves every setting it does not understand, so there is
+  // nothing to patch without one -- and writing one from defaults would be
+  // handing somebody an invented configuration as if it were their site's.
+  // Both halves, the same pair `saveSosConfig` requires: a diff to apply and the
+  // original text to apply it to. `formatSosConfig` PATCHES that text, which is
+  // literally why the archive cannot carry a config nobody loaded.
+  //
+  // AND THIS ONE THROUGH `attempt` TOO, which it was not. `formatSosConfig`
+  // refuses a setting whose `value` is not a top-level number -- it patches
+  // spans in the original text and will not guess where one is -- and
+  // `sosConfigDiff` reads the parsed file as well. Left outside, either
+  // exception did to the whole archive exactly what the warp refusal used to:
+  // took down the alignment files, the README and the download button, over a
+  // part that is optional to begin with.
+  //
+  // The two absences are DIFFERENT and the panel must not conflate them. Nobody
+  // loaded a config is the ordinary case and reads as guidance; a config was
+  // loaded and refused is a fault in a file the reader is holding, and they need
+  // the reason.
+  const loaded = state.sosConfigText !== '';
+  let config: string | null = null;
+  // What the panel should SAY about the config, decided here where the three
+  // cases are distinguishable rather than in the readout from a boolean that
+  // cannot tell them apart.
+  let configNote = CONFIG_ABSENT;
+  if (loaded) {
+    const before = refused.length;
+    config = attempt('the patched config', () => {
+      const update = sosConfigDiff();
+      if (update === null) return null;
+      return formatSosConfig(state.sosConfigText, update);
+    });
+    configNote =
+      config !== null
+        ? `${FILE_NOTES.config.title} — ${FILE_NOTES.config.page}`
+        : refused.length > before
+          ? 'The config you loaded could not be patched — the reason is below, and every ' +
+            'other file in the archive is unaffected by it.'
+          : 'The config you loaded already says what this page would write, so there is ' +
+            'nothing to patch and it is not in the archive.';
+  }
+
+  const n = Math.max(warp.length, alignment.length);
+  const rig = `${n} projector${n === 1 ? '' : 's'}, ` +
+    `${state.compositorRig === null ? 'as the install describes them' : 'as last recalibrated'}.`;
+
+  return {
+    configNote,
+    entries: bundleEntries({
+      warp,
+      alignment,
+      config,
+      // The name it arrived under, so what comes out of the archive matches
+      // what went in and a diff needs no renaming first.
+      configName: state.sosConfigName || 'local_sos_config.json',
+      alignmentCost: cost,
+      rigSummary: rig,
+      refused,
+    }),
+    config: config !== null,
+    cost,
+    refused,
+  };
+}
+
+/** Hand the archive over. One click, one file, one browser prompt. */
+function downloadBundle(): void {
+  try {
+    const { entries } = buildBundle();
+    const blob = new Blob([buildZip(entries).slice().buffer as ArrayBuffer], {
+      type: 'application/zip',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'sphere-sim-files.zip';
+    a.click();
+    URL.revokeObjectURL(url);
+    lastError = '';
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+  }
+  renderReadout();
+}
+
+/**
  * Read a site's own alignment file and say what its numbers mean.
  *
  * The other direction from `exportSosFiles`, and the reason it is worth having
@@ -4388,6 +4608,12 @@ function pickSosAlignment(projector: number, resX: number, resY: number): void {
  * true rig's geometry into it would produce a file that is right in the
  * simulator and unobtainable in a real dome.
  */
+/**
+ * Bumped on every config load, successful or not. See `bundleForPanel`'s memo:
+ * it identifies the loaded file, where the text's own length cannot.
+ */
+let sosConfigSeq = 0;
+
 function pickSosConfig(): void {
   const input = document.createElement('input');
   input.type = 'file';
@@ -4412,7 +4638,19 @@ function pickSosConfig(): void {
         state.sosConfigError = err instanceof Error ? err.message : String(err);
       })
       .finally(() => {
+        // A LOAD CHANGES TWO PANELS NOW. `renderInspect` redraws the projector
+        // card this button lives on; the file block in the READOUT also reports
+        // whether a config is in the archive, and nothing else was going to
+        // repaint it -- so the always-visible block went on saying none was
+        // loaded while the download quietly included one.
+        //
+        // `sosConfigSeq` is what makes that repaint see the new file:
+        // `bundleForPanel` memoises on its inputs, and two different configs of
+        // the same length under the same name are indistinguishable by any cheap
+        // read of the text. A counter is exact and costs nothing.
+        sosConfigSeq++;
         renderInspect();
+        renderReadout();
       });
   });
   input.click();
@@ -6450,6 +6688,87 @@ function renderReadout(): void {
     // is unit-tested; that it reaches the reader is only true if the DOM says so.
     p.dataset.smoke = 'rig-short';
     box.append(p);
+    readoutEl.append(box);
+  }
+
+  // The operator's files, in the readout rather than behind a button in the
+  // actions row.
+  //
+  // That row was the obvious home and is spoken for: it is sized to the narrow
+  // panel and its height comes out of the scrolling controls above, so a SIXTH
+  // button once wrapped it to three lines, took 41 px from `#controls` and
+  // pushed the last slider out of its own clip -- recorded in
+  // `settings.test.ts` beside the warp export, and caught by the drag check in
+  // `tools/smoke-app.ts`. It is five buttons before `forget` and six after.
+  //
+  // The readout is the better home anyway: these are rig-level OUTPUTS and this
+  // is the panel rig-level results already live in, and a block here is visible
+  // without pressing anything -- which was the complaint that started this.
+  {
+    const box = el('div');
+    box.append(el('p', { className: 'eyebrow-sm', textContent: 'Files for the projectors' }));
+    const built = bundleForPanel();
+    const ready = built.value;
+    const refusal = built.refusal;
+
+    if (ready === null) {
+      const p = el('p', { className: 'note', textContent: refusal });
+      p.style.color = 'var(--bad)';
+      box.append(p);
+    } else {
+      const names = ready.entries.map((e) => e.name);
+      box.append(
+        el('p', {
+          className: 'note tiny',
+          textContent: `${names.length} files, one archive: ${names.join(', ')}`,
+        }),
+      );
+      // Outside the fold on purpose. Whether a config is in the archive is the
+      // one thing a reader cannot recover after the download, and the reason it
+      // is missing is not obvious -- `formatSosConfig` patches the file it is
+      // given, so there is nothing to patch without one.
+      const cfg = el('p', { className: 'note tiny', textContent: ready.configNote });
+      if (!ready.config) cfg.style.color = 'var(--warn)';
+      cfg.dataset.smoke = 'bundle-config';
+      box.append(cfg);
+
+      // A part that could not be built, named. It does not take the others with
+      // it: a model with no UV set has no warp meshes and perfectly good
+      // alignment files, and the first version of this let the one refusal
+      // swallow the lot.
+      for (const r of ready.refused) {
+        const p = el('p', { className: 'note tiny', textContent: `Not included — ${r}` });
+        p.style.color = 'var(--warn)';
+        p.dataset.smoke = 'bundle-refused';
+        box.append(p);
+      }
+
+      const go = el('button', {
+        className: 'btn primary',
+        textContent: 'Download sphere-sim-files.zip',
+      });
+      go.dataset.smoke = 'bundle-download';
+      go.addEventListener('click', downloadBundle);
+      box.append(go);
+
+      // What each format cannot carry, folded away because it is three
+      // paragraphs and the same words travel inside the archive's README.
+      box.append(
+        disclosure('what each file can and cannot carry', state.downloadOpen, () => {
+          state.downloadOpen = !state.downloadOpen;
+          renderReadout();
+        }),
+      );
+      if (state.downloadOpen) {
+        for (const note of [FILE_NOTES.warp, FILE_NOTES.alignment] as const) {
+          box.append(
+            el('p', { className: 'note tiny', textContent: `${note.title} — ${note.page}` }),
+          );
+        }
+        box.append(el('p', { className: 'note tiny', textContent: ready.cost }));
+      }
+    }
+    box.dataset.smoke = 'bundle-panel';
     readoutEl.append(box);
   }
 

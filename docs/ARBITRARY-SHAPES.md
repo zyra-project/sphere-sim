@@ -771,7 +771,11 @@ Bourke's format was chosen over MPCDI because its fifth field is an intensity
 multiplier, so **warp and blend leave in one file**. A geometry-only format would
 need the blend shipped beside it in something else, and the two would drift.
 MPCDI is the right second target and costs a ZIP writer and a PFM writer to say
-what this says in twelve lines.
+what this says in twelve lines. **The ZIP writer now exists** —
+`packages/web/src/zip.ts`, written store-only and clockless so that the same
+files always produce the same archive — but it exists to carry the operator's
+files out of the page in one download rather than to begin MPCDI, and a PFM
+writer is still the other half of that cost.
 
 Two conventions flip between this repository and the format, and neither
 announces itself when wrong — each produces a picture that is plainly a picture,
@@ -1009,20 +1013,63 @@ been unreadable while looking like it worked. The palette is now eight spread
 hues, the first four byte-identical, and `settings.test.ts` ties its length to
 `MAX_PROJECTORS` so the two cannot drift again.
 
-**The footprint field did NOT move with it, and that is a stop rather than an
-oversight.** `pack.ts` writes one projector per RGBA channel at `FIELD_TEXELS = 3`
-per triangle, so `FIELD_PROJECTORS` is still 4. Raising it means two texels per
-corner, a `vec4` field becoming eight values through `bvhFieldAt` and
-`contentWeight`, and the harness's `reference.ts` transliteration moving with
-them — a data-layout change across the parity chain, not a constant.
+**The footprint field has since moved too, and the prediction this section made
+about it was three-quarters right.** The paragraph here used to say the field
+was "a stop rather than an oversight" at `FIELD_PROJECTORS = 4`, and that
+raising it would mean two texels per corner, a `vec4` becoming eight values
+through `bvhFieldAt` and `contentWeight`, and the harness's `reference.ts`
+transliteration moving with them. The first three were right. The fourth was
+not, and the way it was wrong is the useful part.
 
-Until it moves, `packBvh`'s refusal is load-bearing for MEMORY SAFETY and not
-only for tidiness: `contentWeight` reads `field[i]` under an `i >= uProjCount`
-guard, so a rig past four reaching a `vec4` field would index a vector out of
-bounds, which GLSL leaves undefined. A sphere needs no field at all
-(`blendModelApplies`), so the eight-projector cap is fully usable there; it is
-the mesh path the field bounds, and `pack.ts` now states the asymmetry where the
-next reader will meet it.
+`fieldStrideFor` is `ceil(n / 4)` — one texel per corner up to four projectors,
+two up to eight — and the stride rides on `PackedBvh` to the shader as
+`uCFieldStride` rather than being recomputed at each end, because a writer and a
+reader disagreeing about a layout is what `readPackedField` sits beside the
+writer to prevent. **Stride 1 is the old layout byte for byte**, which is the
+point of making it corner-major: corner `c`'s texel `k` sits at `c * stride + k`,
+and at stride 1 that is 0, 1, 2 — the three consecutive texels the old writer
+wrote. Checked by digesting the packed field at 1, 2, 3 and 4 projectors before
+the change and again after (`d715bda44a469c16`, `d9fd9a8ebadc0743`,
+`75b1630288aafeda`, `6774c2feb40ef1a0`, identical either way), then pinned by
+`mesh-pack.test.ts`, which transcribes the pre-widening index arithmetic and
+checks every triangle, corner and channel against it. A digest says something
+moved; the formula says where.
+
+**The harness needed a guard, not a rewrite**, which is where the prediction
+missed. It is the four-projector sphere A/B rig with its own `MAX_PROJ` of 4, so
+it only ever sees stride 1 and `reference.ts` is correct unchanged — but handed
+stride 2 it would read the second texel of a corner as the next corner: a
+silently wrong blend rather than a failure. Its `packBvh` call site refuses a
+stride it cannot read, at the place where the assumption is actually made.
+
+The refusal itself moves up one size and stays, because it was never tidiness.
+`contentWeight` read `field[i]` under an `i >= uProjCount` guard, so a rig past
+the field's width would index a `vec4` out of bounds, which GLSL leaves
+undefined rather than merely getting wrong. It now reads `fieldOf(lo, hi, i)`,
+and `web/test/glsl.test.ts` asserts `FIELD_PROJECTORS === MAX_PROJECTORS`
+directly — the web side is the only one that can import both — so the two cannot
+drift apart again. A ninth projector still has nowhere to go.
+
+**What this does not yet do is put a fifth projector in the big view**, and the
+distance is worth stating here rather than leaving to be assembled from three
+sections. `packMesh` packs the CONTENT rig, and two things bound that before the
+field ever does: the install control caps `projectorCount` at 4, and
+`customPlacements` reaches the surface request and not the renderer, as the
+correction above records. So on the page today `packBvh` is never handed a fifth
+field at all. The widened field is a prerequisite that had to land before the
+routing could, not the step that makes hand placement visible.
+
+Both caps that are STRUCTURAL are now 8 — the fragment shader's uniform room and
+the field's texel layout — and each was a change that could not be made by
+editing a constant. What remains is the routing, and that is a design decision
+rather than a limit: a rig off the ring must not answer a §7 gate about the
+sphere, so drawing a placed rig means splitting the rig that DRAWS from the rig
+that SCORES, and giving the page a way to say which one a number came from. That
+is the next step in this phase and it is not a widening.
+
+A sphere needs no field at all (`blendModelApplies`), so the eight-projector cap
+was always fully usable there; it is the mesh path the field bounds, and
+`pack.ts` states the asymmetry where the next reader will meet it.
 
 *Estimate: ~1 week. Landed, with which rig the big view is drawing now stated on
 the card rather than left to be inferred.*

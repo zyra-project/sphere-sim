@@ -2461,15 +2461,21 @@ zero.
 
 ---
 
-## A-39 — Boulder's actual `local_sos_config.json`: A-36 read the defaults, §4.4's central claim is refuted, and the projector raster is the wrong shape
+## A-39 — Boulder's actual `local_sos_config.json`: A-36 read the defaults, §4.4's central claim is refuted, and the projector raster is 3840×2160 after all
 
-**Status:** OPEN, and it supersedes A-36's evidence without contradicting its
+**Status:** PARTLY RESOLVED. §4.4's refutation is **APPLIED**. The projector
+raster is **RESOLVED** — against this entry's own first reading, by the site's
+X11 configuration and by the SOS operator's account of what those settings drive.
+A-36's three constants remain **OPEN**, as do the four measured per-projector
+throws and heights. It supersedes A-36's evidence without contradicting its
 method. Raised from the site's own `local_sos_config.json`, supplied complete by
 the project owner. §8 item 5 asks the ground-truth visit to "read the site's
 actual config … which may differ from the documented defaults." This is that
-item, arriving in full rather than second-hand.
+item, arriving in full rather than second-hand — and the raster section below is
+what happens when it is read too confidently.
 
-Nothing here is applied. PARAMETERS.md remains authoritative.
+Everything here is unapplied EXCEPT §4.4, whose refutation landed with the
+status above; PARAMETERS.md remains authoritative for the rest.
 
 **The file's shape matters for reading it.** Every key carries both a
 `description` ending in "Default Value: *x*" and a live `value`. A reader taking
@@ -2558,27 +2564,98 @@ north cap and failed a rig behaving exactly as §4.3 requires. The mask acts onl
 ABOVE `mask_lo` and the domain ends there, so the two never overlap. Every other
 masked metric moves; this one cannot.
 
-### The projector raster is the wrong shape, not just the wrong size
+### The projector raster is 3840×2160, and the two config fields that said otherwise are not a raster declaration
 
-| | Config default | Config VALUE | Repository |
-| --- | --- | --- | --- |
-| `SOS_PROJECTOR_WIDTH` | 1920 | **2160** | 3840 (`RESOLUTIONS[3]`) |
-| `SOS_PROJECTOR_HEIGHT` | 1200 | **4096** | 2160 |
+**RESOLVED, against this entry's first reading.** The SOS operator in Boulder
+supplied the site's X11 configuration and the answer to what those two settings
+actually drive, relayed by the project owner on 2026-09-09. Both halves refute
+what this section originally argued.
 
-Boulder's projectors are **portrait**: 2160 wide by 4096 tall, 8.85 MP, implying a
-4320×8192 X screen under §3.4's 2×2 split. The repository's nearest entry is
-3840×2160 landscape — a similar pixel count, transposed. This is not cosmetic.
-`intrinsicsFromThrow` inscribes the silhouette in the MINOR raster dimension, and
-the minor dimension changes axis between the two: `horizontalIsMinor` is false at
-3840×2160 and true at 2160×4096. And the portrait shape is the right one on its
-face — each projector covers 90° of longitude by 180° of latitude, a 1:2
-rectangle, against the raster's 1:1.896.
+| | Config default | Config VALUE | Repository | X11 on Thing2 |
+| --- | --- | --- | --- | --- |
+| `SOS_PROJECTOR_WIDTH` | 1920 | 2160 | 3840 (`RESOLUTIONS[3]`) | **3840** |
+| `SOS_PROJECTOR_HEIGHT` | 1200 | 4096 | 2160 | **2160** |
 
-A-35 identifies the projector as a BenQ LK935, whose native panel is 3840×2160.
-2160×4096 is neither that nor a rotation of it, so either the projector is not an
-LK935, or it is being driven off-native, or the two numbers mean something other
-than a panel. **A-35 and this file cannot both be read at face value**, and that
-conflict is worth more than either number alone.
+**X11 is the authority, and it says 3840×2160 four times.** The `Device` section
+on Thing2 — the SOS server — carries:
+
+    Option "ConnectedMonitor" "DP-0,DP-2,DP-4,DP-6"
+    Option "metamodes" "DP-6: 3840x2160_30 +0+0, DP-4: 3840x2160_30 +3840+0,
+                        DP-2: 3840x2160_30 +3840+2160, DP-0: 3840x2160_30 +0+2160"
+
+Four outputs at 3840×2160, placed at (0,0), (3840,0), (3840,2160) and (0,2160):
+a **7680×4320 X screen split 2×2**. That is §3.4 point 1's prediction — "four
+native-4K projectors require a 7680×4320 X screen" — which was derived from the
+quadrant viewport list alone, now confirmed by an artifact that knows nothing
+about it.
+
+**And the two settings are not about resolution at all.** SOS does not use them
+to configure X11 or to select a display resolution: `sos_stream_control` selects
+the X server through `SOS_DISPLAY` and launches `sosturn3` fullscreen, and X11
+determines the fullscreen output geometry. They are read by `ResolutionUtil` for
+SOS's *logical* per-projector scaling, whose practical consumer in the current
+code is **Text PIP and font texture scaling** — width multiplied by the number of
+projectors and adjusted for overlap, with height read but **not used** by the
+active Text PIP scaler.
+
+So this entry read a font-scaling knob as a hardware declaration and derived a
+panel from it. There is no portrait projector.
+
+**The A-35 conflict dissolves rather than resolving in anyone's favour.** A-35
+identifies a BenQ LK935, native 3840×2160; X11 drives 3840×2160. The two never
+disagreed. The disagreement was manufactured here by treating these two fields as
+a panel spec, and the paragraph claiming "A-35 and this file cannot both be read
+at face value" was wrong about the file rather than about A-35. The site's own
+`CustomEDID "DFP:/etc/X11/benq-4k-edid.bin"` corroborates the vendor
+independently, in a filename.
+
+**What this entry got right, and what stays.** The arithmetic was correct:
+`horizontalIsMinor` is `spec.resX * pixelAspect < spec.resY`, false at 3840×2160
+and true at 2160×4096, so a portrait raster genuinely *would* have moved the axis
+`intrinsicsFromThrow` inscribes the silhouette in. The consequence was real; only
+the premise was not. The coverage observation also stands on its own — each
+projector covers 90° of longitude by 180° of latitude, a 1:2 rectangle, into a
+1:1.896 chip — it simply is not evidence about panel orientation.
+
+**Nothing in the repository changes.** `RESOLUTIONS[3]` is already
+`3840 × 2160 · 16:9 · LK935`, and it is now confirmed by the site rather than
+inferred from a product page.
+
+### The two values are set rather than defaulted, and they look wrong for the job they actually do
+
+Flagged as **inference for the site, not a finding about this project**, and
+nothing here depends on it.
+
+The operator confirms these are not shipped defaults: SOS installs a default
+`local_sos_config.json` and each site edits it, and Thing2's file has been
+edited — "maybe incorrectly, but set." Read against their real purpose, the pair
+looks like two mistakes rather than a considered choice:
+
+- **2160 is the LK935's height**, not any width. A transposition would produce
+  exactly this.
+- **4096 is a default this same file uses elsewhere** — it is `SOS_MAX_TEXTURE_SIZE`'s
+  own default, per the entry below, where Boulder has overridden it to 16000.
+
+Since width is multiplied by the projector count to scale Text PIP fonts, a width
+of 2160 where 3840 is intended would render PIP text at **56%** (2160 ÷ 3840) of
+its intended size. That is checkable by looking at overlay text on the sphere,
+which is why it is written down: it is a prediction the site can falsify in a
+minute, not a claim being made on their behalf.
+
+### Two facts the X11 config supplies that this repository has no row for
+
+1. **The mode is `3840x2160_30` — 30 Hz, not 60**, on all four outputs. Four 4K
+   streams off one board is the obvious reason. Nothing in PARAMETERS.md records
+   a refresh rate and nothing in this project currently depends on one; it is
+   recorded because a temporal claim made later would need it and would not think
+   to ask.
+2. **One GPU, an NVIDIA RTX A2000**, carrying all four DisplayPort outputs in a
+   single `Device` section at `BusID "PCI:162:0:0"`. §3.4 says "Two T1000s spanned
+   into one X screen," which is **not what Boulder runs**. The architectural
+   conclusion §3.4 draws from it is untouched and if anything strengthened — one
+   board driving one framebuffer is more obviously one swap than two spanned
+   boards are — but the sentence naming the hardware should be corrected or
+   attributed to whichever site it describes.
 
 ### Everything that does match, which is most of it
 

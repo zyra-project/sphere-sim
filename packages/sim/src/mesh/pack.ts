@@ -69,42 +69,74 @@ import type { SurfaceMesh } from '../../../calibration/src/index.ts';
 import type { Bvh } from './bvh.ts';
 import type { FootprintField } from '../footprint.ts';
 
-/** Texels per node, per triangle, and per triangle of footprint field. */
+/** Texels per node and per triangle. */
 export const NODE_TEXELS = 2;
 export const TRI_TEXELS = 6;
-export const FIELD_TEXELS = 3;
+
+/** Corners a triangle has, and therefore field entries it carries. */
+export const FIELD_CORNERS = 3;
+
+/** Projectors one TEXEL carries, which is how many channels a texel has. */
+export const FIELD_CHANNELS = 4;
 
 /**
- * Projectors one field texel can carry.
+ * Texels each corner needs to hold `count` projectors, and the whole triangle.
  *
- * Four, because a texel has four channels and this writes one corner's whole
- * answer into one of them each. That is a property of the LAYOUT, and it no
- * longer matches what the page's shader can light.
+ * One texel per corner up to four projectors, two up to eight. The stride is
+ * carried on the packed struct and handed to the shader rather than derived
+ * from a constant at both ends, because the writer and the reader disagreeing
+ * about a stride is exactly the failure `readPackedField` exists to prevent.
  *
- * ## The asymmetry, stated rather than discovered
- *
- * `web/src/glsl.ts` declares `MAX_PROJ = 8`; this is still 4. The two are
- * different limits and only one of them moved:
- *
- *   - The uniform cap is how many lenses the fragment shader has room for. It
- *     cost 18 `vec4` slots per projector and went to eight because 144 of the
- *     224 GLES3 floor fits and 216 does not.
- *   - This cap is how many distances fit beside a triangle. Raising it means
- *     two texels per corner instead of one, a `vec4` field becoming eight
- *     values through `bvhFieldAt` and `contentWeight`, and the harness's
- *     `reference.ts` transliteration moving with them. That is a data-layout
- *     change across the parity chain, not a constant.
- *
- * **The refusal below is therefore load-bearing, and not only for tidiness.**
- * `contentWeight` reads `field[i]` under a `i >= uProjCount` guard, so a rig
- * larger than four reaching a `vec4` field would index a vector out of bounds —
- * undefined behaviour in GLSL, not a wrong number. Until the layout widens, this
- * refusal is what makes that unreachable.
- *
- * A sphere needs no field at all (`blendModelApplies`), so the eight-projector
- * uniform cap is fully usable there; it is the mesh path this bounds.
+ * **A stride of one reproduces the pre-widening layout byte for byte**, which is
+ * not a happy accident but the reason the layout is corner-major: corner `c`'s
+ * texel `k` sits at `c * stride + k`, and at stride 1 that is `0, 1, 2` — the
+ * three consecutive texels the old writer wrote and the old shader fetched.
+ * `packages/sim/test/mesh-pack.test.ts` pins that by transcribing the
+ * PRE-WIDENING index arithmetic and checking every triangle, corner and channel
+ * against it. Digests were taken before the change too and matched, but a digest
+ * only says something moved; the transcribed formula says where, and it survives
+ * a change of fixture.
  */
-export const FIELD_PROJECTORS = 4;
+export function fieldStrideFor(count: number): number {
+  return Math.max(1, Math.ceil(count / FIELD_CHANNELS));
+}
+export function fieldTexelsFor(stride: number): number {
+  return FIELD_CORNERS * stride;
+}
+
+/**
+ * Projectors the field layout can carry.
+ *
+ * Eight, matching `MAX_PROJ` in the page shader. A texel holds four distances,
+ * so a corner past four projectors needs a second texel — see `fieldStrideFor`,
+ * and note that the stride is a property of the RIG rather than of the format:
+ * a four-projector rig still writes one texel per corner and the identical
+ * bytes it always did.
+ *
+ * Raising it from four was a data-layout change and not a constant: the writer
+ * below, `readPackedField`, and `bvhFieldAt` and `contentWeight` in the PAGE
+ * shader all had to move together.
+ *
+ * THE HARNESS DID NOT MOVE WITH THEM, which was the prediction and is not what
+ * happened. It is the four-projector sphere A/B rig with its own `MAX_PROJ` of
+ * 4, so it only ever sees stride 1 and its `reference.ts` transliteration is
+ * correct unchanged. What it needed was a guard: handed stride 2 it would read
+ * the second texel of a corner as the next corner -- a silently wrong blend
+ * rather than a failure -- so its `packBvh` call site refuses a stride it cannot
+ * read, and `mesh-parity.test.ts` holds it there.
+ *
+ * The refusal below stays, one size up. It is load-bearing for MEMORY SAFETY
+ * rather than tidiness: `contentWeight` indexes its field by projector under an
+ * `i >= uProjCount` guard, so a rig larger than the layout reaching the shader
+ * would read past the end of a vector — undefined behaviour in GLSL, not a
+ * wrong number. The cap and the shader's `MAX_PROJ` must therefore move
+ * together. `packages/web/test/glsl.test.ts` asserts
+ * `FIELD_PROJECTORS === MAX_PROJECTORS` directly — the web side is the only one
+ * that can import both, since a packer cannot import a shader — and
+ * `mesh-pack.test.ts` states the same limit from this side, where a rig one over
+ * the cap must be refused rather than folded into a channel.
+ */
+export const FIELD_PROJECTORS = 8;
 
 /**
  * The texture coordinate written for a mesh that carries no unwrap.
@@ -158,6 +190,12 @@ export interface PackedBvh {
   field: Float32Array | null;
   fieldWidth: number;
   fieldHeight: number;
+  /**
+   * Texels each corner's field entry occupies: 1 up to four projectors, 2 up to
+   * eight. Carried rather than recomputed so the reader cannot disagree with
+   * the writer about it, and handed to the shader as `uCFieldStride`.
+   */
+  fieldStride: number;
 }
 
 /**
@@ -174,12 +212,14 @@ export function packBvh(
 ): PackedBvh {
   if (fields != null && fields.length > FIELD_PROJECTORS) {
     throw new Error(
-      `${fields.length} footprint fields will not fit ${FIELD_PROJECTORS} texel channels. ` +
-        `One texel carries one corner's whole answer, so ${FIELD_PROJECTORS} is what the ` +
-        'LAYOUT holds — the page shader itself lights more than that, and widening this means ' +
-        'two texels per corner through `bvhFieldAt`, `contentWeight` and the harness ' +
-        'transliteration. Until then a fifth field has nowhere to go, and `contentWeight` ' +
-        'would index a vec4 out of bounds if one were dropped in anyway.',
+      `${fields.length} footprint fields will not fit a layout that carries ` +
+        `${FIELD_PROJECTORS}. A texel holds four distances and a corner takes as many texels ` +
+        `as it needs — one up to four projectors, two up to ${FIELD_PROJECTORS} — so the page ` +
+        'shader lights exactly the number this holds and neither is ahead of the other. A ' +
+        'ninth has nowhere to go: it means a third texel per corner through `bvhFieldAt`, ' +
+        '`contentWeight` and the harness transliteration, and until that happens ' +
+        '`contentWeight` would index past the end of its second vector if one were dropped ' +
+        'in anyway.',
     );
   }
   const nodeTexels = bvh.nodeCount * NODE_TEXELS;
@@ -250,22 +290,32 @@ export function packBvh(
   // triangle keeps the blend one fetch rather than a vertex indirection.
   let field: Float32Array | null = null;
   let fieldHeight = 1;
+  // One texel per corner up to four projectors, two up to eight. Corner-major,
+  // so at stride 1 the three corners land on three consecutive texels and the
+  // buffer is byte-identical to the one this wrote before the widening.
+  const fieldStride = fields == null ? 1 : fieldStrideFor(fields.length);
   if (fields != null && fields.length > 0) {
-    const fieldTexels = triCount * FIELD_TEXELS;
+    const perTriangle = fieldTexelsFor(fieldStride);
+    const fieldTexels = triCount * perTriangle;
     fieldHeight = Math.max(1, Math.ceil(fieldTexels / PACK_WIDTH));
     const out = new Float32Array(4 * PACK_WIDTH * fieldHeight);
     for (let t = 0; t < triCount; t++) {
       const tri = bvh.order[t];
-      const base = 4 * FIELD_TEXELS * t;
-      for (let c = 0; c < 3; c++) {
+      const base = 4 * perTriangle * t;
+      for (let c = 0; c < FIELD_CORNERS; c++) {
         const v = idx[3 * tri + c];
-        const at = base + 4 * c;
+        const at = base + 4 * fieldStride * c;
         for (let j = 0; j < fields.length; j++) {
           // A projector with no field leaves its channel at zero, which the
           // shader reads as "this face is not inside the footprint" -- the same
           // reading `coverageAndWeights` gives a distance that is not positive,
           // and it takes the same hard-seam fallback from it.
           const d = fields[j]?.distance;
+          // Projector j sits j floats along from the corner's base, at either
+          // stride, because a corner's texels are CONTIGUOUS: j is channel
+          // `j % 4` of texel `j / 4`, and `4 * (j / 4) + (j % 4)` is j. The
+          // arithmetic was written out longhand here until a mutation test
+          // showed the two forms were the same expression.
           out[at + j] = d === undefined ? 0 : d[v];
         }
       }
@@ -286,6 +336,7 @@ export function packBvh(
     field,
     fieldWidth: PACK_WIDTH,
     fieldHeight,
+    fieldStride,
   };
 }
 
@@ -352,8 +403,15 @@ export interface PackedCorner {
 export function readPackedField(packed: PackedBvh, t: number, c: number): number[] | null {
   const f = packed.field;
   if (f === null) return null;
-  const at = 4 * FIELD_TEXELS * t + 4 * c;
-  return [f[at], f[at + 1], f[at + 2], f[at + 3]];
+  const stride = packed.fieldStride;
+  const at = 4 * fieldTexelsFor(stride) * t + 4 * stride * c;
+  // `4 * stride` values: one texel's four channels at stride 1, two texels'
+  // eight at stride 2. Reading a fixed four would silently drop projectors
+  // five through eight on a wide rig, which is the shape of bug this function
+  // sits beside the writer to prevent.
+  const out: number[] = [];
+  for (let k = 0; k < 4 * stride; k++) out.push(f[at + k]);
+  return out;
 }
 
 /** Read corner `c` of packed triangle `t`. */
