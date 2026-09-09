@@ -2873,6 +2873,13 @@ function draw(): void {
   // entire time the live view was still drawing a sphere. Read off `uniforms`
   // rather than off `droppedMesh` for that reason.
   canvas.dataset.meshTriangles = String(uniforms.mesh?.triangleCount ?? 0);
+  // HOW MANY LENSES THE SHADER WAS HANDED, from the uniforms it was handed them
+  // in. Not the placement card's count and not the worker's -- both of those can
+  // be right while the picture is drawn from another rig, which is the exact
+  // defect this branch exists to fix and the one a card-reading assertion cannot
+  // see. Same contract as the hooks around it: written by the function that
+  // draws, so it cannot describe a state the picture is not in.
+  canvas.dataset.drawnProjectors = String(uniforms.projCount);
   // Monotonic, so a test can tell "the frame loop stopped" from "it ran and saw
   // no model". `frame()` catches a throw from here, calls `fatal()` and does NOT
   // re-arm `requestAnimationFrame`, so those two failures look identical from

@@ -2152,23 +2152,36 @@ async function main(): Promise<void> {
         // is exactly as circular as that sounds: it checks text this same change
         // wrote. The renderer routing could be reverted whole and it would stay
         // green. So read the PICTURE, before and after the edit below.
-        const litFrac = async (): Promise<number> =>
-          cdp.evaluate<number>(`(() => {
-            const c = document.querySelector('canvas');
-            if (!c) return -1;
-            const g = c.getContext('webgl2') || c.getContext('webgl');
-            if (!g) return -1;
-            const W = c.width, H = c.height;
-            const px = new Uint8Array(W * H * 4);
-            g.readPixels(0, 0, W, H, g.RGBA, g.UNSIGNED_BYTE, px);
-            let lit = 0, seen = 0;
-            for (let i = 0; i < px.length; i += 16) {
-              seen++;
-              if (px[i] + px[i + 1] + px[i + 2] > 60) lit++;
-            }
-            return seen === 0 ? -1 : lit / seen;
-          })()`);
-        const litFive = await litFrac();
+        // `canvas.dataset.drawnProjectors` is written by `frame()` out of the
+        // uniforms it hands the shader, so it says what the PICTURE was drawn
+        // from rather than what any panel believes.
+        //
+        // The first version of this counted lit pixels instead and was a bad
+        // measurement twice over: it read `querySelector('canvas')`, which is
+        // whichever canvas comes first rather than the big view, and a lit
+        // FRACTION at a dim threshold barely moves when the floor and the
+        // ambient fill most of the frame. It reported 57.2% either side of an
+        // edit that removes four of five lenses, which says more about the
+        // threshold than about the rig.
+        const drawnCount = async (): Promise<number> =>
+          cdp.evaluate<number>(
+            "Number(document.getElementById('view')?.dataset.drawnProjectors ?? -1)",
+          );
+        let drawnFive = -1;
+        const drawnDeadline = Date.now() + Math.max(30_000, 2 * meshMs);
+        while (Date.now() < drawnDeadline) {
+          await sleep(300);
+          drawnFive = await drawnCount();
+          if (drawnFive === 5) break;
+        }
+        if (drawnFive !== 5) {
+          failures.push(
+            `the big view was drawn from ${drawnFive} projectors while the card lists five — ` +
+              'the placements reach the worker but not the renderer',
+          );
+        } else {
+          process.stdout.write('  model: the shader was handed all five placed lenses\n');
+        }
 
         // And the placements have to CHANGE the answer, or the step above would
         // pass with them ignored: the fixture is fully lit by the nominal rig,
@@ -2213,35 +2226,24 @@ async function main(): Promise<void> {
             process.stdout.write(`  model: stripped to one projector, ${one.toFixed(1)}% lit\n`);
           }
 
-          // AND THE CANVAS HAS TO HAVE MOVED WITH IT. The worker's figure above
-          // proves the placements reached the WORKER; this proves they reached
-          // the RENDERER, which is the entire subject of the change and the one
-          // thing no other check in this file observes.
-          //
-          // Five lenses down to one is a large edit to the light in the room, so
-          // the drawn picture cannot be identical across it unless the big view
-          // is drawing something else -- which is precisely the defect this
-          // step exists to catch, and precisely what the page did before.
-          let litAfterStrip = -1;
-          const canvasDeadline = Date.now() + Math.max(30_000, 2 * meshMs);
-          while (Date.now() < canvasDeadline) {
+          // AND IT HAS TO FOLLOW THE EDIT. Five reaching the shader proves the
+          // routing exists; this proves it is live rather than a count captured
+          // once, and it is the half that fails if the placements stop reaching
+          // the renderer after the first pass.
+          let drawnOne = -1;
+          const oneDrawnDeadline = Date.now() + Math.max(30_000, 2 * meshMs);
+          while (Date.now() < oneDrawnDeadline) {
             await sleep(300);
-            litAfterStrip = await litFrac();
-            if (litAfterStrip >= 0 && Math.abs(litAfterStrip - litFive) > 0.005) break;
+            drawnOne = await drawnCount();
+            if (drawnOne === 1) break;
           }
-          if (litFive < 0 || litAfterStrip < 0) {
-            failures.push('could not read the canvas to see whether the drawn rig changed');
-          } else if (Math.abs(litAfterStrip - litFive) <= 0.005) {
+          if (drawnOne !== 1) {
             failures.push(
-              `the big view did not change when the rig went from five projectors to one ` +
-                `(${(litFive * 100).toFixed(1)}% lit either way) — the placements reach the ` +
-                'worker but the renderer is still drawing the install rig',
+              `the big view was drawn from ${drawnOne} projectors after the rig was stripped to ` +
+                'one — the renderer is not following the placement card',
             );
           } else {
-            process.stdout.write(
-              `  model: the canvas followed the rig, ${(litFive * 100).toFixed(1)}% lit at five ` +
-                `to ${(litAfterStrip * 100).toFixed(1)}% at one\n`,
-            );
+            process.stdout.write('  model: and followed the rig down to one\n');
           }
         }
       }
