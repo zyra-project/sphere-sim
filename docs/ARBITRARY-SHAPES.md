@@ -926,7 +926,62 @@ projector and requires the number to fall. It reports 50.0% — exactly half an
 octahedron's faces — which proves the placements are being *used* rather than
 merely delivered.
 
-*Estimate: ~1 week. Landed.*
+**What this section did not say, and the picture did not either — corrected
+once, because the first correction was wrong.** Everything above is about the
+WORKER. The claim first written here was that the live view drew a five-projector
+rig with four, because both shaders declare `MAX_PROJ = 4` and `projCount` was
+`Math.min(MAX_PROJECTORS, projectors.length)`. A smoke check was written for
+that, and **it failed**, which is what a check is for.
+
+The truth is one step further along, and this section already contained it two
+paragraphs up without following it through: `customPlacements` reaches the
+surface request and **nothing else**, so the renderer is never handed a placed
+rig at all. The large view is the INSTALL rig — two to four on the nominal ring,
+and the install panel refuses a fifth in so many words — whatever the placement
+card lists. A hand-placed rig is therefore not *truncated* in the picture; it is
+*absent* from it, while the card beside it reports a coverage figure measured
+from every one of its lenses.
+
+That is the drift `modelBlock` refuses for the SHAPE — "every number it prints
+comes from the model rather than the picture precisely so that the two can never
+drift apart unnoticed" — reaching the rig by a road nobody had looked down. The
+end-to-end check quoted above could not see it either: it reads the worker's
+number, which was right, and the routing that put it there is deliberate and
+documented, so nothing read as wrong.
+
+The design decision stands: a rig off the ring must not answer a §7 gate about
+the sphere. What changed is that the placement card now SAYS which rig the big
+view is showing, and `tools/smoke-app.ts` requires it to, at the same
+five-projector step that previously passed while saying nothing.
+
+**The guard the wrong diagnosis left behind is worth keeping.**
+`buildDisplayUniforms` returns `droppedProjectors` beside `projCount`, zero for
+every rig the page can currently build. Routing a placed rig to the renderer is
+the obvious next step and `Math.min` is a silent way to lose four of eight
+lenses; `packBvh` already refuses the matching overflow on the footprint field,
+and this is the uniform side of it.
+
+**What widening `MAX_PROJ` would cost, measured rather than guessed.** The page
+shader declares fourteen `[MAX_PROJ]` arrays across the two rigs it carries —
+`uLens`, `uRot`, `uIntr`, `uRaster`, `uRefDistance`, their `uC*` counterparts,
+and the four transfer arrays — which come to **18 `vec4` slots per projector**
+(the two `mat3` rotations are three each and everything else is one):
+
+| `MAX_PROJ` | slots | against a GLES3 floor of 224 |
+| --- | --- | --- |
+| 4 | 72 | today |
+| 8 | 144 | fits, with room for the ~40 scalar uniforms beside it |
+| 12 | 216 | at the floor before those, so not on minimum-spec hardware |
+
+So **eight is affordable and twelve is not**, on the uniform block alone. The
+other half is the footprint field, which `pack.ts` writes one projector per RGBA
+channel at `FIELD_TEXELS = 3` per triangle: past four projectors that needs more
+texels per triangle, and `FIELD_PROJECTORS` exists to refuse rather than to
+silently reuse a channel. Whichever number is chosen, both caps have to move
+together — and `packBvh`'s refusal is what stops them drifting apart.
+
+*Estimate: ~1 week. Landed, with which rig the big view is drawing now stated on
+the card rather than left to be inferred.*
 
 ### Phase 5 — the solve
 

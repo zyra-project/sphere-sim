@@ -462,6 +462,16 @@ let meshReport: MeshLoadReport | null = null;
 let meshFacts: SurfaceFacts | null = null;
 let meshFrame: FrameImage | null = null;
 let meshError = '';
+
+/**
+ * What the last frame drew, and what it could not, from its own uniforms.
+ *
+ * Both halves are read out of `buildDisplayUniforms` rather than one being read
+ * and the other assumed from `MAX_PROJECTORS`, so the notice below can only ever
+ * describe the picture actually on screen. See `droppedProjectors`.
+ */
+let drawnProjectors = 0;
+let drawnShortBy = 0;
 let meshBusy = false;
 /** A surface pass asked for while the worker was busy. See `requestSurface`. */
 let queuedSurface = false;
@@ -1281,6 +1291,34 @@ function placementBlock(): HTMLElement[] {
         "longitude wedge from each lens's azimuth, which presumes a ring — it is off here, and " +
         "the crossfade is the geodesic distance to each projector's own footprint edge instead.",
     });
+    out.push(note);
+  }
+
+  // Which picture these numbers belong to, said rather than left to be worked
+  // out. `customPlacements` reaches the SURFACE request and nothing else -- the
+  // docblock above gives the reason and it is still the right one -- so the big
+  // view is the INSTALL rig whatever is listed here. Everything on this card is
+  // measured from the placements; the canvas beside it is not, and until this
+  // note the only way to find that out was to read `requestSurface`.
+  //
+  // This is the drift `modelBlock` refuses for the shape ("every number it
+  // prints comes from the model rather than the picture precisely so that the
+  // two can never drift apart unnoticed"), reaching the rig by a different road
+  // than the one first looked down: not a rig truncated to `MAX_PROJ`, but a rig
+  // the renderer is never handed.
+  const install = Math.round(state.settings.projectorCount);
+  const differs = places.length !== install || customPlacements !== null;
+  if (differs) {
+    const note = el('p', {
+      className: 'note tiny',
+      textContent:
+        `These ${places.length} are measured in the preview on this card. The large view is ` +
+        `still the install rig — ${install} on the nominal ring — because a hand-placed rig ` +
+        'reaches the surface request and not the renderer, so that a rig off the ring can never ' +
+        'answer a §7 gate about the sphere. The two pictures are of different rigs.',
+    });
+    note.style.color = 'var(--warn)';
+    note.dataset.smoke = 'placement-view-note';
     out.push(note);
   }
 
@@ -2738,6 +2776,21 @@ function draw(): void {
       aimGuides: state.aimGuides,
     },
   );
+
+  // What the picture is short by, taken from the struct it was drawn from. The
+  // page prints its numbers from the model and its picture from these uniforms,
+  // and `modelBlock` says in as many words that the two must never drift apart
+  // unnoticed. A rig with more lenses than `MAX_PROJECTORS` is drawn short, so
+  // this is where the drift would be installed if nothing carried it out.
+  if (uniforms.droppedProjectors !== drawnShortBy || uniforms.projCount !== drawnProjectors) {
+    drawnShortBy = uniforms.droppedProjectors;
+    drawnProjectors = uniforms.projCount;
+    // Repainted here and now, the way `displayModel` calls `renderControls` when
+    // it sets `meshError` from this same call stack: the readout is rendered on
+    // its own schedule, so a count that moved and did not ask would show the
+    // notice a frame late, or never if nothing else touched the panel after.
+    renderReadout();
+  }
   lastUniforms = uniforms;
   lastSlots = world.slots;
   // Test hooks, set by the function that draws so they cannot describe a state
@@ -6363,6 +6416,39 @@ function renderReadout(): void {
         'unaffected. The page asks for the context back and redraws itself when it gets one.',
     });
     p.style.color = 'var(--bad)';
+    box.append(p);
+    readoutEl.append(box);
+  }
+
+  // A rig with more lenses than the shader can light. The numbers below come
+  // from the worker, which has all of them; the picture above has `projCount`.
+  // Said here rather than left to be noticed, because a coverage figure computed
+  // from six projectors over a four-projector render is the same drift
+  // `modelBlock` refuses for the shape, installed for the rig instead.
+  if (drawnShortBy > 0) {
+    const drawn = drawnProjectors;
+    const held = drawn + drawnShortBy;
+    const box = el('div');
+    box.append(
+      el('p', {
+        className: 'eyebrow-sm',
+        textContent: `The picture is short ${drawnShortBy === 1 ? 'a projector' : 'projectors'}`,
+      }),
+    );
+    const p = el('p', {
+      className: 'note',
+      textContent:
+        `This rig holds ${held} projectors and the shader lights ${drawn}, so the view above is ` +
+        `drawn from the first ${drawn} and ${drawnShortBy} ` +
+        `${drawnShortBy === 1 ? 'is' : 'are'} missing from it. Every number below still counts ` +
+        `all ${held}: they come from the worker, which has no such limit. PARAMETERS.md §2 caps ` +
+        'an SOS install at four projectors and the shader is sized for exactly that — a wider ' +
+        'rig is a real thing to want and needs the uniform arrays widened to match.',
+    });
+    p.style.color = 'var(--warn)';
+    // `tools/smoke-app.ts` waits on this. The count leaving `buildDisplayUniforms`
+    // is unit-tested; that it reaches the reader is only true if the DOM says so.
+    p.dataset.smoke = 'rig-short';
     box.append(p);
     readoutEl.append(box);
   }

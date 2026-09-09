@@ -37,6 +37,7 @@ import {
   BVH_STACK_DEPTH,
 } from '../src/uniforms.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
+import { placedRig } from '../../sim/src/placement.ts';
 import { meshSurface } from '../../sim/src/mesh/surface.ts';
 import { blendWidthM } from '../../sim/src/footprint.ts';
 import type { SurfaceMesh } from '../../calibration/src/index.ts';
@@ -426,6 +427,46 @@ test('the uniforms take the blend from the compositor, not from the lenses', () 
   );
   assert.equal(u.widthDeg, 7.5);
   assert.equal(u.rampGamma, 1.4);
+});
+
+test('a rig with more lenses than the shader lights says so, rather than drawing short quietly', () => {
+  // A GUARD, and the docblock on `droppedProjectors` is careful about which.
+  // `projCount` is `Math.min(MAX_PROJECTORS, ...)`, so an oversized rig would be
+  // drawn short and `Math.min` would do it in silence. No rig the PAGE builds
+  // can overflow today — the install controls refuse a fifth projector and a
+  // hand-placed rig never reaches the renderer — so this pins the arithmetic
+  // against the change that would make it reachable, which is routing a placed
+  // rig to the view.
+  //
+  // Truncating stays the behaviour if it ever happens: four correct projectors
+  // beat a blank canvas. What this pins is that the count LEAVES the function,
+  // so the truncation cannot be silent when it becomes possible.
+  const world = buildWorld(BOULDER_PRESET);
+  const camera = buildViewer(BOULDER_PRESET, 64, 48);
+
+  for (const [held, drawn, dropped] of [
+    [1, 1, 0],
+    [4, 4, 0],
+    [5, 4, 1],
+    [8, 4, 4],
+  ] as const) {
+    const cal = placedRig({
+      projectors: Array.from({ length: held }, (_, i) => {
+        const a = (i / held) * 2 * Math.PI;
+        return { position: { x: 3 * Math.cos(a), y: 3 * Math.sin(a), z: 1.2 } };
+      }),
+    });
+    const prepared = prepareRig(cal);
+    assert.equal(prepared.projectors.length, held, `the rig itself lost a projector at ${held}`);
+
+    const u = buildDisplayUniforms(prepared, prepared, world.scene, camera);
+    assert.equal(u.projCount, drawn, `${held} projectors drew ${u.projCount}`);
+    assert.equal(u.droppedProjectors, dropped, `${held} projectors dropped ${u.droppedProjectors}`);
+
+    // The two halves have to add back up to the rig, or the notice built from
+    // them names a number of projectors the reader does not have.
+    assert.equal(u.projCount + u.droppedProjectors, held);
+  }
 });
 
 test('the markers are off unless asked for, so the parity check never sees one', () => {

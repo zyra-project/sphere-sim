@@ -2086,6 +2086,36 @@ async function main(): Promise<void> {
           process.stdout.write(`  model: five hand-placed projectors light ${after.toFixed(1)}%\n`);
         }
 
+        // And the card has to say WHICH PICTURE these numbers belong to.
+        //
+        // The first version of this check asserted the view was "drawing 4 of
+        // the 5 placed", on the assumption that `MAX_PROJ = 4` truncated a
+        // hand-placed rig. It failed, and it was right to: `customPlacements`
+        // reaches the SURFACE request and never the renderer, so the large view
+        // is the INSTALL rig and the placements are not short — they are absent.
+        // The coverage figure above is measured from five projectors the canvas
+        // was never handed, which is the same drift by a different road.
+        let placeNote = '';
+        const noteDeadline = Date.now() + 30_000;
+        while (Date.now() < noteDeadline) {
+          placeNote = await cdp.evaluate<string>(
+            "document.querySelector('[data-smoke=\"placement-view-note\"]')?.textContent?.trim() ?? ''",
+          );
+          if (placeNote !== '') break;
+          await sleep(300);
+        }
+        if (placeNote === '') {
+          failures.push(
+            'the placement card never said which rig the large view is showing — five projectors ' +
+              'are listed and scored while the canvas draws the install rig, with no ' +
+              '[data-smoke="placement-view-note"] to say so',
+          );
+        } else if (!/\b5 are measured\b/.test(placeNote) || !/install rig/.test(placeNote)) {
+          failures.push(`the placement note does not name both rigs: ${JSON.stringify(placeNote)}`);
+        } else {
+          process.stdout.write('  model: the card says the big view is still the install rig\n');
+        }
+
         // And the placements have to CHANGE the answer, or the step above would
         // pass with them ignored: the fixture is fully lit by the nominal rig,
         // so five projectors reporting 100% is the same number four would give.

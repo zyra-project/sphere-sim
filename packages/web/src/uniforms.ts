@@ -343,6 +343,30 @@ export interface DisplayMesh {
 
 export interface DisplayUniforms {
   projCount: number;
+  /**
+   * Projectors the rig holds that the shader cannot light. **Zero today.**
+   *
+   * `projCount` is capped at `MAX_PROJECTORS`, so a rig with more lenses than
+   * that would be DRAWN short, and `packRig`'s `Math.min` would do it in
+   * silence. This carries the count out so it cannot be.
+   *
+   * It is a GUARD rather than a fix for anything the page currently does, and
+   * that distinction is worth keeping honest. No rig the page builds can
+   * overflow: the install controls refuse a fifth projector outright, and a
+   * hand-placed rig reaches the SURFACE request and never the renderer (see
+   * `placementBlock`), so the view is only ever handed the install rig. The
+   * first attempt at this took the truncation for a live bug, wrote a smoke
+   * check for it, and the check failed — the placements are not short in the
+   * picture, they are absent from it. That is recorded in
+   * `docs/ARBITRARY-SHAPES.md` Phase 4 rather than quietly corrected.
+   *
+   * What it buys is the safety of the change that WOULD overflow: routing a
+   * placed rig to the renderer is the obvious next step, and a `Math.min` is a
+   * silent way to lose four of eight lenses. `packBvh` already refuses the
+   * matching overflow on the footprint field, because a fifth field has no
+   * texel channel to live in; this is the uniform side of the same guard.
+   */
+  droppedProjectors: number;
   physical: PackedRig;
   content: PackedRig;
   /**
@@ -524,6 +548,7 @@ export function buildDisplayUniforms(
   }
   return {
     projCount: Math.min(MAX_PROJECTORS, physical.projectors.length),
+    droppedProjectors: Math.max(0, physical.projectors.length - MAX_PROJECTORS),
     physical: packRig(physical),
     content: packRig(content),
     mesh,
