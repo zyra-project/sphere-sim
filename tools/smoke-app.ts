@@ -48,6 +48,7 @@ import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { BUNDLE, createServer } from '../packages/web/serve.ts';
+import { killGroup, sweep } from './reap-browsers.ts';
 
 /** The phone the last pass emulates: an iPhone 14/15 in portrait, in CSS pixels. */
 const PHONE_W = 390;
@@ -330,11 +331,29 @@ async function main(): Promise<void> {
   const browser = findBrowser(opts.browser);
   const server = await ensureServed(opts);
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'sphere-smoke-'));
+  // What an earlier run abandoned is not idle. Swiftshader keeps an orphaned
+  // Chromium near half a core, and this run is about to compete with it for the
+  // same machine — which is not a hypothesis, it is what was found when a smoke
+  // sat at its browser-start budget getting nothing done. Reported rather than
+  // done quietly: a leak that is silently swept up is a leak nobody fixes.
+  for (const line of sweep({ keep: [profile] }).lines) {
+    process.stdout.write(`smoke-app: ${line}\n`);
+  }
   const failures: string[] = [];
 
   // `--enable-unsafe-swiftshader` is what makes WebGL2 available without a GPU.
   // Without it a headless Chromium answers `getContext('webgl2')` with null and
   // this tool would report a shader failure that is really an environment one.
+  //
+  // DETACHED, so the browser leads a process group of its own and the whole tree
+  // has one name to be killed by. Chromium's renderers, its GPU process and its
+  // zygote are separate processes and they are where the CPU goes; a `kill` on
+  // this handle alone reaches the browser and leaves the rest to be reparented.
+  //
+  // The cost of detaching is that Ctrl-C in a terminal no longer reaches the
+  // browser through the terminal's own process group — which was, until now, the
+  // one interruption that did clean up after itself. The SIGINT handler below is
+  // what replaces it, which is why it is not optional.
   const child = spawn(
     browser,
     [
@@ -349,7 +368,7 @@ async function main(): Promise<void> {
       `--user-data-dir=${profile}`,
       'about:blank',
     ],
-    { stdio: ['ignore', 'pipe', 'pipe'] },
+    { stdio: ['ignore', 'pipe', 'pipe'], detached: true },
   );
 
   let stderr = '';
@@ -364,6 +383,45 @@ async function main(): Promise<void> {
   child.on('exit', (code) => {
     exited = code ?? -1;
   });
+
+  // TEARDOWN THAT SURVIVES A SIGNAL.
+  //
+  // The `finally` at the end of this function runs when `main` returns or
+  // throws. It does not run when this process is signalled, and until these
+  // handlers existed nothing did — so a Ctrl-C, a cancelled CI job or a
+  // reclaimed container left the browser running at half a core with nobody's
+  // name on it. `tools/reap-browsers.ts` records what that cost, and holds the
+  // half of the problem no handler can solve: SIGKILL cannot be caught, so the
+  // sweep above is what cleans up after one.
+  let ended = false;
+  const endBrowser = (): void => {
+    if (ended) return;
+    ended = true;
+    killGroup(child.pid);
+  };
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+    process.once(sig, () => {
+      endBrowser();
+      // Synchronous and best effort. A signal handler that awaits may never be
+      // resumed, and what is left behind here is a directory rather than a
+      // process: the next run's sweep removes it.
+      if (!opts.keep) {
+        try {
+          fs.rmSync(profile, { recursive: true, force: true });
+        } catch {
+          // Chromium is still unwinding out of it. Not worth a second attempt
+          // with a signal pending.
+        }
+      }
+      // Re-raised so the exit status is the signal's rather than a bare zero,
+      // which is what a CI runner and an interactive shell both read. `once`
+      // has already removed this listener, so this reaches the default action.
+      process.kill(process.pid, sig);
+    });
+  }
+  // The paths that are neither a normal return nor a signal: a throw from
+  // outside the `try` below, and any `process.exit` this file grows later.
+  process.on('exit', endBrowser);
 
   try {
     // Chromium writes the port it chose into the profile directory.
@@ -2265,12 +2323,34 @@ async function main(): Promise<void> {
       const go = panel.querySelector('[data-smoke="bundle-download"]');
       if (!go) return 'the block has no download button: ' + panel.textContent.slice(0, 120);
       const cfg = panel.querySelector('[data-smoke="bundle-config"]');
-      return JSON.stringify({ text: panel.textContent, cfg: cfg ? cfg.textContent : '' });
+      if (!cfg) return 'the block says nothing about the config at all';
+      // The control the note asks for, in the block that asks for it.
+      const pick = panel.querySelector('[data-smoke="bundle-config-pick"]');
+      if (!pick) return 'the block asks for a config and offers no way to load one';
+      return JSON.stringify({
+        text: panel.textContent,
+        cfg: cfg.textContent,
+        state: cfg.dataset.configState || '',
+        // Read off the rendered element, not off the source: the question is
+        // what the reader sees, and a style set anywhere would show up here.
+        colour: getComputedStyle(cfg).color,
+        pick: pick.textContent,
+      });
     })()`);
     if (!listed.startsWith('{')) {
       failures.push(`the download block: ${listed}`);
     } else {
-      const seen = JSON.parse(listed) as { text: string; cfg: string };
+      const seen = JSON.parse(listed) as {
+        text: string;
+        cfg: string;
+        state: string;
+        colour: string;
+        pick: string;
+      };
+      // `--warn` and `--bad` from index.html, as a browser reports them. Named
+      // here rather than compared against the plain colour because the claim is
+      // "this is not painted as a fault", and the plain colour is free to change.
+      const FAULT_COLOURS = ['rgb(255, 204, 102)', 'rgb(255, 107, 107)'];
       const missing = ['README.txt', '.alignment'].filter((n) => !seen.text.includes(n));
       // The warp meshes must be ACCOUNTED FOR, not merely present. This fixture
       // carries no UV set, so `buildWarpExport` refuses it and there are no
@@ -2294,9 +2374,27 @@ async function main(): Promise<void> {
         failures.push(
           `the block does not explain the missing config: ${JSON.stringify(seen.cfg.slice(0, 140))}`,
         );
+      } else if (seen.state !== 'absent') {
+        // Nothing here loads a config, so this is the cold-load state and the
+        // two checks below are about the state a first-time reader actually
+        // meets. If this ever reports something else the checks are measuring a
+        // page nobody sees.
+        failures.push(`a page that has loaded no config reports its state as ${seen.state}`);
+      } else if (FAULT_COLOURS.includes(seen.colour)) {
+        // NOT A FAULT, so not painted as one. "You have not given me a file yet"
+        // is the ordinary first-run state and it opened the page in amber, which
+        // is how a reader learns that the amber line means nothing.
+        failures.push(
+          `the ordinary "no config loaded" note is painted ${seen.colour}, a fault colour`,
+        );
+      } else if (!/local_sos_config\.json/.test(seen.pick)) {
+        failures.push(`the config picker does not name the file it wants: ${JSON.stringify(seen.pick)}`);
       } else {
         process.stdout.write(
           '  files: the readout lists the archive and accounts for every part of it\n',
+        );
+        process.stdout.write(
+          `  files: and offers the config it asks for — ${JSON.stringify(seen.pick.trim())}\n`,
         );
       }
     }
@@ -2306,7 +2404,7 @@ async function main(): Promise<void> {
 
     cdp.close();
   } finally {
-    child.kill('SIGKILL');
+    endBrowser();
     // Chromium's keep-alive sockets would hold the listener open and the process
     // with it, so drop them rather than waiting on a close that cannot finish.
     if (server) {

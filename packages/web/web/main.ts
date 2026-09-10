@@ -4561,10 +4561,24 @@ function bundleForPanel(): { value: ReturnType<typeof buildBundle> | null; refus
   return bundleMemo;
 }
 
+/**
+ * Which of the config's five states the archive is in, so the panel can say it
+ * in the right voice.
+ *
+ * A boolean could not, and the readout painted three states amber from one
+ * (`!config`): nobody has loaded a config, which is the ORDINARY first-run
+ * state; a loaded config that already says what this page would write, which is
+ * a result; and a loaded config this page could not patch, which is the only one
+ * of the three that is a fault. Colouring all three made the page open on a
+ * warning about nothing — and a reader who learns that the amber line means
+ * nothing has learned to skip the case where it means something.
+ */
+type ConfigState = 'included' | 'absent' | 'failed' | 'refused' | 'unchanged';
+
 function buildBundle(): {
   entries: ZipEntry[];
-  config: boolean;
-  /** What the panel says about the config: absent, refused, or nothing to change. */
+  configState: ConfigState;
+  /** What the panel says about the config, in the voice `configState` picks. */
   configNote: string;
   cost: string;
   refused: string[];
@@ -4636,16 +4650,32 @@ function buildBundle(): {
   // took down the alignment files, the README and the download button, over a
   // part that is optional to begin with.
   //
-  // The two absences are DIFFERENT and the panel must not conflate them. Nobody
-  // loaded a config is the ordinary case and reads as guidance; a config was
-  // loaded and refused is a fault in a file the reader is holding, and they need
-  // the reason.
+  // THE ABSENCES ARE DIFFERENT and the panel must not conflate them. Nobody
+  // loaded a config is the ordinary case and reads as guidance; a file that was
+  // chosen and would not parse, and a config loaded and then refused, are faults
+  // in a file the reader is holding, and they need the reason. `ConfigState`
+  // above is the full set and why each one is or is not coloured.
   const loaded = state.sosConfigText !== '';
   let config: string | null = null;
-  // What the panel should SAY about the config, decided here where the three
-  // cases are distinguishable rather than in the readout from a boolean that
-  // cannot tell them apart.
+  // What the panel should SAY about the config, and in what voice, decided here
+  // where the cases are distinguishable rather than in the readout from a
+  // boolean that cannot tell them apart.
   let configNote = CONFIG_ABSENT;
+  let configState: ConfigState = 'absent';
+  // A file was CHOSEN and could not be read. `pickSosConfig` clears the text on
+  // a parse failure, so nothing is loaded -- and "none was loaded" is the one
+  // sentence guaranteed to read as "your click did nothing" to the one reader
+  // who knows it did something. The reason lived only on the per-projector card,
+  // which is not drawn until a lens is selected, so a reader who picked a
+  // malformed file from the block below would have been told nothing at all.
+  // `saveSosConfig` writes the same field but only with a config already loaded,
+  // so the pair `!loaded && error` names a failed LOAD exactly.
+  if (!loaded && state.sosConfigError !== '') {
+    configState = 'failed';
+    configNote =
+      `${state.sosConfigName || 'That file'} could not be read as an SOS config, so none is in ` +
+      `the archive: ${state.sosConfigError}`;
+  }
   if (loaded) {
     const before = refused.length;
     config = attempt('the patched config', () => {
@@ -4653,10 +4683,11 @@ function buildBundle(): {
       if (update === null) return null;
       return formatSosConfig(state.sosConfigText, update);
     });
+    configState = config !== null ? 'included' : refused.length > before ? 'refused' : 'unchanged';
     configNote =
       config !== null
         ? `${FILE_NOTES.config.title} — ${FILE_NOTES.config.page}`
-        : refused.length > before
+        : configState === 'refused'
           ? 'The config you loaded could not be patched — the reason is below, and every ' +
             'other file in the archive is unaffected by it.'
           : 'The config you loaded already says what this page would write, so there is ' +
@@ -4680,7 +4711,7 @@ function buildBundle(): {
       rigSummary: rig,
       refused,
     }),
-    config: config !== null,
+    configState,
     cost,
     refused,
   };
@@ -6895,10 +6926,49 @@ function renderReadout(): void {
       // one thing a reader cannot recover after the download, and the reason it
       // is missing is not obvious -- `formatSosConfig` patches the file it is
       // given, so there is nothing to patch without one.
+      //
+      // COLOUR IS FOR A FAULT. This line was painted from `!config`, which is
+      // true of three states and a fault in one of them -- see `ConfigState`.
+      // The ordinary first-run page therefore opened on an amber paragraph
+      // saying nothing was wrong, which is how a reader learns to ignore amber.
       const cfg = el('p', { className: 'note tiny', textContent: ready.configNote });
-      if (!ready.config) cfg.style.color = 'var(--warn)';
+      if (ready.configState === 'refused') cfg.style.color = 'var(--warn)';
+      if (ready.configState === 'failed') cfg.style.color = 'var(--bad)';
       cfg.dataset.smoke = 'bundle-config';
+      cfg.dataset.configState = ready.configState;
       box.append(cfg);
+
+      // THE INPUT, BESIDE ITS OWN OUTPUT.
+      //
+      // The sentence above ends "load your site config on the page", and the
+      // only control that could do that was a `linkish` line on the
+      // per-projector card, which is not drawn until a lens is selected. So the
+      // page opened on an instruction, in a colour that read as a fault, with no
+      // way to carry it out and nothing to say where to look -- which is the
+      // exact mistake this block was built to fix, made again: the outputs were
+      // moved here and the input was left behind.
+      //
+      // Directly under the note rather than paired with the download button at
+      // the foot, because it is the note that asks for it. The card's button
+      // stays where it is: it sits beside the per-projector diff of what would
+      // change, which is context this block does not have. It was never wrong
+      // there. It was wrong as the only one.
+      const pick = el('button', {
+        className: 'btn',
+        textContent:
+          // "A different one" wherever a file is already in hand, which includes
+          // the refusal: a reader whose config could not be patched wants to try
+          // another, not to be told to load the one they just loaded.
+          ready.configState === 'absent' || ready.configState === 'failed'
+            ? 'Load your local_sos_config.json'
+            : 'Load a different local_sos_config.json',
+        title:
+          'Open the exhibit\u2019s own config so the archive can carry it back with the geometry ' +
+          'this calibration recovered \u2014 the two numbers per projector it can hold.',
+      });
+      pick.dataset.smoke = 'bundle-config-pick';
+      pick.addEventListener('click', pickSosConfig);
+      box.append(pick);
 
       // A part that could not be built, named. It does not take the others with
       // it: a model with no UV set has no warp meshes and perfectly good
