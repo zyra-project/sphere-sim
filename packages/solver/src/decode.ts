@@ -206,8 +206,9 @@ export interface DecodeOptions {
    * correspondences and does not know what a sphere is: it has no imports at
    * all, and the one thing it would have to import to answer this question is
    * the ray-sphere intersection that `sphere.ts` owns. `sphereSegmenter` there
-   * builds the test this option expects, and is the only implementation of it
-   * in the repository.
+   * builds the test this option expects; `mesh.ts`'s `meshSegmenter` is the
+   * other implementation, the same cast against a `MeshIndex`, and the two are
+   * the whole set. `packages/bench` selects between them by body.
    *
    * It runs INSIDE the decode loop rather than over the returned array, and
    * that ordering is the point. `decimate` thins the accepted set to

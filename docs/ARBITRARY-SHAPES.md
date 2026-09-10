@@ -1115,6 +1115,66 @@ running the thing rather than asserting about it:
   truth, dressed as a result. An empty decode now throws, naming the control
   that caused it.
 
+**The protection that "wants a segmenter" was tried, and the premise it rests on
+did not survive contact.** The bullet above ends "a mesh therefore gets no
+protection from room spill", and `meshSegmenter` — the same ray cast as
+`sphereSegmenter` against a `MeshIndex`, which `packages/bench` has used on its
+mesh scenario since 4b31ff1 — was wired into `pipeline.ts` to close it. It is NOT
+shipped, and the reason is a measurement rather than a doubt.
+
+FIRST, IT IS NOT THE THING THAT WAS FILED. The bullet asks for a segmenter taking
+the model's own silhouette, which would be an IMAGE-space test keeping the
+property this page's segmentation control sells in its own help text — "no rig,
+no pose, no radius, so unlike a geometric test it cannot lean on the calibration
+being solved for". `meshSegmenter` is precisely that geometric test. It is a
+different trade, not the filed one, and the filed one is still unbuilt.
+
+SECOND, IT COSTS AND DOES NOT BUY. On the page's configuration — two cameras at
+320×240, sensor noise on, the tri-axial 1 : 0.7 : 0.5 body at the rig's own
+radius — five seeds paired with the room ON:
+
+| seed | segmenter off | segmenter on | Δ |
+|---|---|---|---|
+| 20260817 | 29.45 mm | 35.58 mm | +6.13 |
+| 11 | 30.04 | 32.19 | +2.15 |
+| 12 | 32.65 | 29.91 | −2.74 |
+| 13 | 30.06 | 36.02 | +5.96 |
+| 14 | 33.83 | 34.63 | +0.80 |
+
+It rejects about 4% of the correspondences (17 900 to 17 200) and moves the pose
+the wrong way on four of five, mean +2.5 mm. FIVE SEEDS IS ENOUGH TO DECLINE A
+CHANGE AND NOT ENOUGH TO CLOSE THE QUESTION — this document has already
+criticised one of its own 5-0 results as "not established", and a 4-1 is weaker
+than that. What is recorded is that no benefit was demonstrated, not that none
+exists.
+
+THIRD, AND THIS IS THE FINDING WORTH KEEPING: the premise is that a room-lit mesh
+capture is in trouble, and at this configuration it is not. The same seed, same
+cameras, segmentation off, room off then on:
+
+| body | room off | room on |
+|---|---|---|
+| analytic sphere | 38.82 mm | **62 747 mm** |
+| tri-axial mesh | 34.75 mm | 29.45 mm |
+
+The room destroys a sphere solve and leaves a mesh solve alone, a difference of
+some three orders of magnitude, and the correspondence COUNTS barely move in
+either case (19 389 → 19 392 for the sphere). So the room's damage is not bulk
+wall points that a segmenter would remove — it is contamination of the
+correspondences already there, and what it needs to do damage is somewhere for
+the error to go. The sphere has one: its azimuth is the soft direction the gauge
+holds, and `gaugeUnobserved` measures exactly that null space. A tri-axial body
+has none, which is the same property that makes it the fixture every mesh test
+uses. A segmenter cannot help with a mechanism that is not adding points.
+
+WHAT WOULD SETTLE IT, none of which this measures: a body with a symmetry axis
+(every spheroid) under a room, where the soft direction exists and the wall could
+push it; a room configuration whose spill actually reaches the decode in bulk;
+and thirty seeds rather than five. Until then the page decodes a model without
+segmentation of any kind — which it now SAYS, in the readout, because the switch
+being on and nothing being examined were previously indistinguishable from
+outside.
+
 **Retracted: the near-sphere numbers this section used to carry.** An earlier
 version of this paragraph reported 259.3 mm at 1 : 0.95 : 0.9, 24.0 mm at
 1 : 0.7 : 0.5, and 83.9 mm with `dataTolerance` raised to 1e-3, and drew a

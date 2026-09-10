@@ -916,6 +916,31 @@ test('the config writer says what it cannot carry, and is a two-step flow', () =
   assert.ok(/sosConfigDiff\(\)/.test(save), 'the save path does not re-derive the diff');
 });
 
+test('the page says when segmentation was asked for and did not run', () => {
+  // A model loaded with the switch ON gets no segmentation at all -- the circle
+  // fit is the sphere's silhouette and no model's, and `pipeline.ts` turns it
+  // off for exactly that reason. That was correct and SILENT: from outside, a
+  // capture the detector never examined and one it examined and passed look the
+  // same, which is the failure mode the refusal counter already exists to stop.
+  const block = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('SEGMENTATION ASKED FOR AND NOT PERFORMED'),
+    MAIN_SOURCE.indexOf("if (r.silhouetteRefusals > 0) {"),
+  );
+  assert.ok(block.length > 0, 'the note has moved; this test cannot find it');
+  assert.ok(
+    /state\.settings\.segmentSphere === 1 && r\.silhouetteCameras === 0/.test(block),
+    'the note is not keyed on the switch being on with no view examined',
+  );
+  assert.ok(
+    /segmentation-skipped/.test(block),
+    'the note carries no smoke hook, so nothing can assert it reached the reader',
+  );
+  // COLOUR IS FOR A FAULT, the rule the file block learned. A model photographed
+  // without the circle fit is the ordinary state of every mesh solve this page
+  // has run, so this one is a plain note however the refusal beneath it reads.
+  assert.ok(!/note warn|--warn|--bad/.test(block), 'the ordinary case is painted as a fault');
+});
+
 test('the file block offers the config it asks for, and shouts only at a fault', () => {
   // The complaint: the readout opens on "No local_sos_config.json is included:
   // none was loaded ... Load your site config on the page", in amber, and the

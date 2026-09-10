@@ -6667,6 +6667,35 @@ function solveSection(): HTMLElement | null {
       );
     }
 
+    // SEGMENTATION ASKED FOR AND NOT PERFORMED, which until now the page did not
+    // say. The control finds the body by fitting a CIRCLE to the photograph --
+    // the sphere's silhouette and no model's -- so `pipeline.ts` turns it off
+    // whenever a model is loaded, having measured what leaving it on does: 3 of
+    // 3 cameras refused and ZERO correspondences decoded, on a body squashed by
+    // five per cent as surely as on a strong deformation.
+    //
+    // That is the right behaviour and it was silent. A reader with a model
+    // loaded saw the switch ON, no refusal note, and a solve that had no
+    // segmentation of any kind -- indistinguishable from a capture the detector
+    // had examined and passed. `silhouetteCameras` is the honest signal: zero
+    // views examined with the switch on can only be this.
+    //
+    // Not coloured. A model photographed without the circle fit is the ordinary
+    // state of every mesh solve this page has ever run, not a fault.
+    if (state.settings.segmentSphere === 1 && r.silhouetteCameras === 0) {
+      const p = el('p', {
+        className: 'note',
+        textContent:
+          'Segmentation is on and did not run: it finds the ball by fitting a circle to the ' +
+          'photograph, which is the sphere\u2019s silhouette and no model\u2019s, so it is off ' +
+          'whenever a model is loaded. This capture was decoded without it. A geometric test ' +
+          'against the model exists in the solver and is not wired in here \u2014 measured on ' +
+          'five seeds it rejected 4% of the correspondences and did not improve the answer.',
+      });
+      p.dataset.smoke = 'segmentation-skipped';
+      box.append(p);
+    }
+
     // A camera the segmentation refused contributed NOTHING, and refusing is the
     // right thing for it to have done — it found no framed sphere and declined to
     // guess rather than handing the solver a wall. But a silent refusal and a

@@ -448,13 +448,13 @@ export function runSolve(
           ? { wallRadiusM: req.settings.wallRadiusM, ceilingM: req.settings.ceilingM }
           : null,
       // Sphere only, and not because a mesh segmenter would be hard — because
-      // this one answers a question a mesh does not ask. `sphereSegmenter` fits
-      // a CIRCLE to the photograph and rejects everything outside it, which is
-      // sound for the one body whose silhouette is a circle from every angle
-      // and catastrophic for anything else. Measured with it left on: a
-      // tri-axial ellipsoid refused 3 of 3 cameras and decoded ZERO
-      // correspondences, and so did a body squashed by only five per cent —
-      // this is not a strong-deformation limit, it is every mesh.
+      // this one answers a question a mesh does not ask. It fits a CIRCLE to the
+      // photograph and rejects everything outside it, which is sound for the one
+      // body whose silhouette is a circle from every angle and catastrophic for
+      // anything else. Measured with it left on: a tri-axial ellipsoid refused
+      // 3 of 3 cameras and decoded ZERO correspondences, and so did a body
+      // squashed by only five per cent — this is not a strong-deformation limit,
+      // it is every mesh.
       //
       // Turning it off is not a downgrade for this path, it is the honest
       // configuration: the payoff quoted below is a measurement about a sphere
@@ -464,14 +464,23 @@ export function runSolve(
       // 14.3 / 13.1 / 8.8 mm across three noise seeds on this page's
       // configuration, where the analytic sphere gets 17.3 / 15.9 / 8.0.
       //
-      // What this does NOT do is give a mesh the protection a sphere gets. A
-      // room-lit capture of a model will carry wall spill into the decode with
-      // nothing to mask it. That wants a segmenter that takes the model's own
-      // silhouette, which is a real piece of work and is filed rather than
-      // faked here.
+      // A mesh is not left unprotected any more: `geometricSegmentation` above
+      // gives that path a ray cast instead. It is a WEAKER guarantee than this
+      // one rather than an equal substitute — it leans on the nominal rig where
+      // this reads pixels — and the image-space model-silhouette detector that
+      // would keep both properties is still unbuilt.
       segmentImage: req.settings.segmentSphere === 1 && captureSurface === null ? {} : null,
     },
     seed: req.seed,
+    // NO GEOMETRIC SEGMENTATION, ON EITHER PATH, AND THAT IS MEASURED RATHER
+    // THAN INHERITED. `decode.segmentation` takes a ray cast against the nominal
+    // body -- `sphereSegmenter` for a sphere, and since 4b31ff1 `meshSegmenter`
+    // for a mesh, which `packages/bench` passes on its mesh scenario. Wiring the
+    // mesh one in here was tried and is not shipped: on five seeds paired with
+    // the room ON it rejected about 4% of the correspondences and moved the pose
+    // the wrong way on four of the five (mean +2.5 mm). See the entry in
+    // docs/ARBITRARY-SHAPES.md, including why five seeds is enough to decline a
+    // change and not enough to close the question.
     decode: { pixelStride: 1, maxCorrespondences: 4000 },
     // No frames kept from the capture itself: a single structured-light frame is
     // a crescent of one projector's light on one side of the ball and tells a
