@@ -916,6 +916,57 @@ test('the config writer says what it cannot carry, and is a two-step flow', () =
   assert.ok(/sosConfigDiff\(\)/.test(save), 'the save path does not re-derive the diff');
 });
 
+test('the file block offers the config it asks for, and shouts only at a fault', () => {
+  // The complaint: the readout opens on "No local_sos_config.json is included:
+  // none was loaded ... Load your site config on the page", in amber, and the
+  // only control that could load one was a `linkish` line on the per-projector
+  // card, which is not drawn until a lens is selected. An instruction, in the
+  // colour of a fault, with no way to carry it out -- and it is the same mistake
+  // this block was built to fix: the outputs were moved to the readout and the
+  // input was left on the card.
+  const block = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf("textContent: 'Files for the projectors'"),
+    MAIN_SOURCE.indexOf("disclosure('what each file can and cannot carry'"),
+  );
+  assert.ok(block.length > 0, 'the file block has moved; this test cannot find it');
+  assert.ok(
+    /pick\.addEventListener\('click', pickSosConfig\)/.test(block),
+    'the file block asks for a config and offers no way to load one',
+  );
+
+  // COLOUR IS FOR A FAULT, and the complete set of states that get one is named
+  // here rather than checked one at a time: `!ready.config` was true of three
+  // states and a fault in one of them, so the page opened on a warning about
+  // nothing. A reader who learns the amber line means nothing has learned to
+  // skip the case where it means something.
+  const painted = [...block.matchAll(/configState === '(\w+)'\) cfg\.style\.color/g)].map(
+    (m) => m[1],
+  );
+  assert.deepEqual(
+    painted.sort(),
+    ['failed', 'refused'],
+    'the config note is painted for states that are not faults, or not for ones that are',
+  );
+  assert.equal(
+    (block.match(/cfg\.style\.color/g) ?? []).length,
+    painted.length,
+    'the note is coloured somewhere this test cannot see',
+  );
+
+  // And a file that was chosen and could not be parsed is not "none was loaded".
+  // `pickSosConfig` clears the text on a parse failure, so the archive sees no
+  // config and used to report the ordinary absence -- the one sentence certain
+  // to read as "your click did nothing" to the reader who knows it did not.
+  const build = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function buildBundle():'),
+    MAIN_SOURCE.indexOf('function downloadBundle(): void {'),
+  );
+  assert.ok(
+    /!loaded && state\.sosConfigError !== ''/.test(build),
+    'a config that failed to parse is reported as one that was never chosen',
+  );
+});
+
 test('the page hands a file to the browser without leaving anything in the DOM', () => {
   // `downloadText` is the page's only download path and the mirror of
   // `pickImage`, which is the page's only upload path: both create an element,

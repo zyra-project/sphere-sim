@@ -2323,12 +2323,34 @@ async function main(): Promise<void> {
       const go = panel.querySelector('[data-smoke="bundle-download"]');
       if (!go) return 'the block has no download button: ' + panel.textContent.slice(0, 120);
       const cfg = panel.querySelector('[data-smoke="bundle-config"]');
-      return JSON.stringify({ text: panel.textContent, cfg: cfg ? cfg.textContent : '' });
+      if (!cfg) return 'the block says nothing about the config at all';
+      // The control the note asks for, in the block that asks for it.
+      const pick = panel.querySelector('[data-smoke="bundle-config-pick"]');
+      if (!pick) return 'the block asks for a config and offers no way to load one';
+      return JSON.stringify({
+        text: panel.textContent,
+        cfg: cfg.textContent,
+        state: cfg.dataset.configState || '',
+        // Read off the rendered element, not off the source: the question is
+        // what the reader sees, and a style set anywhere would show up here.
+        colour: getComputedStyle(cfg).color,
+        pick: pick.textContent,
+      });
     })()`);
     if (!listed.startsWith('{')) {
       failures.push(`the download block: ${listed}`);
     } else {
-      const seen = JSON.parse(listed) as { text: string; cfg: string };
+      const seen = JSON.parse(listed) as {
+        text: string;
+        cfg: string;
+        state: string;
+        colour: string;
+        pick: string;
+      };
+      // `--warn` and `--bad` from index.html, as a browser reports them. Named
+      // here rather than compared against the plain colour because the claim is
+      // "this is not painted as a fault", and the plain colour is free to change.
+      const FAULT_COLOURS = ['rgb(255, 204, 102)', 'rgb(255, 107, 107)'];
       const missing = ['README.txt', '.alignment'].filter((n) => !seen.text.includes(n));
       // The warp meshes must be ACCOUNTED FOR, not merely present. This fixture
       // carries no UV set, so `buildWarpExport` refuses it and there are no
@@ -2352,9 +2374,27 @@ async function main(): Promise<void> {
         failures.push(
           `the block does not explain the missing config: ${JSON.stringify(seen.cfg.slice(0, 140))}`,
         );
+      } else if (seen.state !== 'absent') {
+        // Nothing here loads a config, so this is the cold-load state and the
+        // two checks below are about the state a first-time reader actually
+        // meets. If this ever reports something else the checks are measuring a
+        // page nobody sees.
+        failures.push(`a page that has loaded no config reports its state as ${seen.state}`);
+      } else if (FAULT_COLOURS.includes(seen.colour)) {
+        // NOT A FAULT, so not painted as one. "You have not given me a file yet"
+        // is the ordinary first-run state and it opened the page in amber, which
+        // is how a reader learns that the amber line means nothing.
+        failures.push(
+          `the ordinary "no config loaded" note is painted ${seen.colour}, a fault colour`,
+        );
+      } else if (!/local_sos_config\.json/.test(seen.pick)) {
+        failures.push(`the config picker does not name the file it wants: ${JSON.stringify(seen.pick)}`);
       } else {
         process.stdout.write(
           '  files: the readout lists the archive and accounts for every part of it\n',
+        );
+        process.stdout.write(
+          `  files: and offers the config it asks for — ${JSON.stringify(seen.pick.trim())}\n`,
         );
       }
     }
