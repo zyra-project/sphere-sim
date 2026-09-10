@@ -61,10 +61,14 @@ import {
 } from '../../bench/src/patterns.ts';
 import { makeBenchRng } from '../../bench/src/random.ts';
 import { scoreRecovery } from '../../bench/src/score.ts';
-import { nominalRig as solverNominalRig, solve } from '../../solver/src/index.ts';
+import {
+  bundleStateFromCalibration,
+  nominalRig as solverNominalRig,
+  solve,
+} from '../../solver/src/index.ts';
 // Two hierarchies over one mesh, because `packages/sim` and `packages/solver`
 // may not import each other. See `SolveRequest.mesh`.
-import { buildMeshIndex, type MeshIndex } from '../../solver/src/mesh.ts';
+import { buildMeshIndex, meshSegmenter, type MeshIndex } from '../../solver/src/mesh.ts';
 import { meshSurface } from '../../sim/src/mesh/surface.ts';
 import type { Surface } from '../../sim/src/surface.ts';
 // Reached past the barrel deliberately: `DEFAULT_FREE_FLAGS` is the solver's own
@@ -413,6 +417,44 @@ export function runSolve(
       `= ${frames} frames at ${req.cameraResX}×${req.cameraResY}.`,
   );
 
+  // Hoisted above the capture because the mesh segmenter below needs it, and it
+  // is the same pure construction the solve reads further down. NOMINAL, never
+  // `world.truthRig`: a segmenter built from the truth would hand the decode the
+  // answer and call the result a measurement.
+  const solverNominal = solverNominalFor(req.settings, world.slots);
+
+  // GEOMETRIC SEGMENTATION FOR A MESH, under the reader's own segmentation
+  // switch, because for a model this is what that switch can mean.
+  //
+  // The image-space test below reads pixels only -- no rig, no pose, no radius --
+  // and fits a CIRCLE, so it refuses every mesh and is off on that path. That
+  // left the switch INERT for a model: on, and nothing happened. This is a
+  // different kind of test and the difference is worth stating rather than
+  // glossing -- a ray cast against the model standing where the NOMINAL
+  // configuration says it stands, so unlike the image-space test it does lean on
+  // the rig the solve is refining. `packages/bench` has made the same trade on
+  // its mesh scenario since `meshSegmenter` existed.
+  //
+  // SHIPPED ON A MEASUREMENT THAT REVERSED AN EARLIER ONE. Five seeds on a
+  // TRI-AXIAL body showed no benefit and this was declined; a tri-axial body has
+  // no unobserved direction, so a room does it no damage and there was nothing
+  // to recover. On a SPHEROID -- azimuth free, held only by the gauge's soft
+  // prior -- 30 paired seeds at the page's own three-camera configuration:
+  //
+  //   room on:   34.645 mm -> 31.587 mm, 24-6, sign test p = 0.0014
+  //   room off:  31.519 mm -> 31.721 mm, 15-15, p = 1
+  //
+  // The room costs 3.13 mm and this gives back 3.06 of it, landing on the
+  // no-room figure; with no room it is neutral to the split of a coin. It costs
+  // 1.8% of the correspondences either way. See docs/ARBITRARY-SHAPES.md.
+  const geometricSegmentation =
+    req.settings.segmentSphere === 1 && solveSurface !== null
+      ? meshSegmenter({
+          index: solveSurface,
+          projectors: bundleStateFromCalibration(solverNominal, []).projectors,
+        })
+      : null;
+
   const t0 = performance.now();
   const capture = captureAndDecode(world.truthRig, cameras, {
     // Photograph the same shape the bundle below will be fitted against.
@@ -472,16 +514,18 @@ export function runSolve(
       segmentImage: req.settings.segmentSphere === 1 && captureSurface === null ? {} : null,
     },
     seed: req.seed,
-    // NO GEOMETRIC SEGMENTATION, ON EITHER PATH, AND THAT IS MEASURED RATHER
-    // THAN INHERITED. `decode.segmentation` takes a ray cast against the nominal
-    // body -- `sphereSegmenter` for a sphere, and since 4b31ff1 `meshSegmenter`
-    // for a mesh, which `packages/bench` passes on its mesh scenario. Wiring the
-    // mesh one in here was tried and is not shipped: on five seeds paired with
-    // the room ON it rejected about 4% of the correspondences and moved the pose
-    // the wrong way on four of the five (mean +2.5 mm). See the entry in
-    // docs/ARBITRARY-SHAPES.md, including why five seeds is enough to decline a
-    // change and not enough to close the question.
-    decode: { pixelStride: 1, maxCorrespondences: 4000 },
+    decode: {
+      pixelStride: 1,
+      maxCorrespondences: 4000,
+      // Inside the decode loop rather than over the result: `decimate` thins the
+      // accepted set by a fixed stride, so a room correspondence filtered
+      // afterwards has already displaced a good one from the retained set.
+      //
+      // The SPHERE path still passes nothing. `sphereSegmenter` exists and is
+      // not wired here: that path has the image-space test, which is the
+      // stronger guarantee, and nothing has measured the pair together.
+      segmentation: geometricSegmentation,
+    },
     // No frames kept from the capture itself: a single structured-light frame is
     // a crescent of one projector's light on one side of the ball and tells a
     // reader nothing about where anybody stood. The page draws the CAMERAS
@@ -551,11 +595,13 @@ export function runSolve(
     { shotCameras },
   );
 
-  // The nominal the operator hands the solver: built by the SOLVER's own
-  // construction from the documented constants, with the four quadrant slots cut
-  // down to the ones this install uses. §2's "quadrants go dark" removes
-  // projectors from a standard layout, it does not respace the ones that remain.
-  const solverNominal = solverNominalFor(req.settings, world.slots);
+  // `solverNominal` — the nominal the operator hands the solver, built by the
+  // SOLVER's own construction from the documented constants with the four
+  // quadrant slots cut down to the ones this install uses (§2's "quadrants go
+  // dark" removes projectors from a standard layout, it does not respace the
+  // ones that remain) — is built above the capture, because the mesh segmenter
+  // needs the same rig. ONE construction, so the body the decode tests against
+  // and the body the bundle starts from cannot drift apart.
   // The operator's guess at where each tripod stood: right side of the sphere,
   // wrong distance and aim. `initialize.ts` is explicit that the pose is an
   // initialisation and needs to be right about which side it was on.

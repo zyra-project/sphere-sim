@@ -916,14 +916,39 @@ test('the config writer says what it cannot carry, and is a two-step flow', () =
   assert.ok(/sosConfigDiff\(\)/.test(save), 'the save path does not re-derive the diff');
 });
 
-test('the page says when segmentation was asked for and did not run', () => {
-  // A model loaded with the switch ON gets no segmentation at all -- the circle
-  // fit is the sphere's silhouette and no model's, and `pipeline.ts` turns it
-  // off for exactly that reason. That was correct and SILENT: from outside, a
-  // capture the detector never examined and one it examined and passed look the
-  // same, which is the failure mode the refusal counter already exists to stop.
+test('a model is segmented by a ray cast, and the page says which test ran', () => {
+  // The switch's help text is about the IMAGE-space detector -- "no rig, no pose,
+  // no radius, so unlike a geometric test it cannot lean on the calibration being
+  // solved for". On a model that test refuses every camera, so `pipeline.ts`
+  // turns it off and casts a ray at the model instead. The reader is told,
+  // because the switch no longer means what its own help text says.
+  const pipeline = fs.readFileSync(
+    path.join(import.meta.dirname, '../src/pipeline.ts'),
+    'utf8',
+  );
+  assert.ok(
+    /segmentation: geometricSegmentation/.test(pipeline),
+    'the decode is handed no geometric segmentation, so the mesh path has none',
+  );
+  assert.ok(
+    /req\.settings\.segmentSphere === 1 && solveSurface !== null/.test(pipeline),
+    'the mesh segmenter is not under the reader’s own switch, or not gated on a mesh',
+  );
+  // NOMINAL, never the truth rig. A segmenter built from ground truth hands the
+  // decode the answer and calls the result a measurement.
+  assert.ok(
+    /meshSegmenter\(\{\s*index: solveSurface,\s*projectors: bundleStateFromCalibration\(\s*solverNominal,/.test(
+      pipeline,
+    ),
+    'the mesh segmenter is not built from the nominal rig',
+  );
+  assert.ok(
+    !/meshSegmenter[\s\S]{0,200}truthRig/.test(pipeline),
+    'the mesh segmenter reaches for ground truth',
+  );
+
   const block = MAIN_SOURCE.slice(
-    MAIN_SOURCE.indexOf('SEGMENTATION ASKED FOR AND NOT PERFORMED'),
+    MAIN_SOURCE.indexOf('WHICH SEGMENTATION RAN'),
     MAIN_SOURCE.indexOf("if (r.silhouetteRefusals > 0) {"),
   );
   assert.ok(block.length > 0, 'the note has moved; this test cannot find it');
@@ -932,12 +957,11 @@ test('the page says when segmentation was asked for and did not run', () => {
     'the note is not keyed on the switch being on with no view examined',
   );
   assert.ok(
-    /segmentation-skipped/.test(block),
+    /segmentation-geometric/.test(block),
     'the note carries no smoke hook, so nothing can assert it reached the reader',
   );
-  // COLOUR IS FOR A FAULT, the rule the file block learned. A model photographed
-  // without the circle fit is the ordinary state of every mesh solve this page
-  // has run, so this one is a plain note however the refusal beneath it reads.
+  // COLOUR IS FOR A FAULT, the rule the file block learned. A model segmented by
+  // ray cast is the ordinary state of every mesh solve, not a fault.
   assert.ok(!/note warn|--warn|--bad/.test(block), 'the ordinary case is painted as a fault');
 });
 

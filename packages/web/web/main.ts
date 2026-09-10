@@ -6667,32 +6667,33 @@ function solveSection(): HTMLElement | null {
       );
     }
 
-    // SEGMENTATION ASKED FOR AND NOT PERFORMED, which until now the page did not
-    // say. The control finds the body by fitting a CIRCLE to the photograph --
-    // the sphere's silhouette and no model's -- so `pipeline.ts` turns it off
-    // whenever a model is loaded, having measured what leaving it on does: 3 of
-    // 3 cameras refused and ZERO correspondences decoded, on a body squashed by
-    // five per cent as surely as on a strong deformation.
+    // WHICH SEGMENTATION RAN, because on a model it is not the one the control
+    // describes. The switch's help text is about the image-space test: it finds
+    // the body by fitting a CIRCLE, which is the sphere's silhouette and no
+    // model's, so `pipeline.ts` turns it off whenever a model is loaded --
+    // measured, with it left on: 3 of 3 cameras refused and ZERO correspondences
+    // decoded, on a body squashed five per cent as surely as on a strong one.
     //
-    // That is the right behaviour and it was silent. A reader with a model
-    // loaded saw the switch ON, no refusal note, and a solve that had no
-    // segmentation of any kind -- indistinguishable from a capture the detector
-    // had examined and passed. `silhouetteCameras` is the honest signal: zero
-    // views examined with the switch on can only be this.
+    // A model gets a ray cast against the model instead. That is a WEAKER
+    // guarantee and the reader is told so rather than left to assume the switch
+    // means what its help text says: the geometric test leans on the nominal rig
+    // the solve is refining, where the image-space one reads pixels only.
     //
-    // Not coloured. A model photographed without the circle fit is the ordinary
-    // state of every mesh solve this page has ever run, not a fault.
+    // `silhouetteCameras` is the honest signal: zero views examined with the
+    // switch on can only be a model. Not coloured — this is the ordinary state
+    // of every mesh solve, not a fault.
     if (state.settings.segmentSphere === 1 && r.silhouetteCameras === 0) {
       const p = el('p', {
         className: 'note',
         textContent:
-          'Segmentation is on and did not run: it finds the ball by fitting a circle to the ' +
-          'photograph, which is the sphere\u2019s silhouette and no model\u2019s, so it is off ' +
-          'whenever a model is loaded. This capture was decoded without it. A geometric test ' +
-          'against the model exists in the solver and is not wired in here \u2014 measured on ' +
-          'five seeds it rejected 4% of the correspondences and did not improve the answer.',
+          'Segmentation on a model is a different test: the circle fit finds the ball by its ' +
+          'silhouette, which no model has, so this capture was segmented by casting a ray at ' +
+          'the model where the configuration says it stands. That recovers what a lit room ' +
+          'costs a body whose orientation is weakly determined \u2014 3.06 mm of 3.13 on a ' +
+          'spheroid over 30 seeds \u2014 and unlike the circle fit it leans on the rig the ' +
+          'solve is refining.',
       });
-      p.dataset.smoke = 'segmentation-skipped';
+      p.dataset.smoke = 'segmentation-geometric';
       box.append(p);
     }
 
