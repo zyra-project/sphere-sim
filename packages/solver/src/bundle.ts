@@ -814,6 +814,11 @@ export const DEFAULT_BUNDLE_OPTIONS: BundleOptions = {
   gradTol: 1e-9,
   meshPlateauWindow: 10,
   meshPlateauTol: 1e-6,
+  // OFF, and measured rather than cautious: 540 solves put smooth ahead on
+  // rotation and behind on nothing that matters more, at the price of 13 stalls
+  // in 180 pairs against facet's 0. The crease guard removed the reason it could
+  // not ship on and supplied no reason it should. Full numbers on the field
+  // itself; do not flip this without reading them.
   meshNormal: 'facet',
   maxEvaluations: 2000,
   rejectionPasses: 1,
