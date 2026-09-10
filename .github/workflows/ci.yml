@@ -31,6 +31,31 @@ jobs:
       - name: Experiment pages match their results files
         run: npm run check:docs
 
+      # The two lists themselves, compared. Everything below is a check on the
+      # code; this is the check on the checks, and it runs early because a
+      # mismatch means the rest of this file is not the run a contributor can
+      # reproduce.
+      - name: The workflow and `npm run ci` run the same checks
+        run: npm run check:ci-parity
+
+      # These two ran in `npm run ci` and in NO workflow step, which is the
+      # drift in its most dangerous direction: a check that exists, passes on a
+      # contributor's machine, and guards nothing. A source file with no SPDX
+      # header or a CITATION.cff that has fallen behind package.json merged
+      # clean for as long as both have existed.
+      - name: Licence headers (every source file, and NOTICE agrees)
+        run: npm run check:license
+
+      - name: CITATION.cff agrees with package.json
+        run: npm run check:citation
+
+      # Covers all THREE tsconfig projects. It used to be the Node one alone --
+      # `packages/*/src`, `packages/*/test`, `tools/` -- so `packages/web/web/`
+      # and `packages/web/worker/` were typechecked only as a side effect of
+      # emitting the browser bundles two steps below. That still caught them in
+      # CI, but it put the failure ten minutes and a full test run later than it
+      # needed to be, and it meant a contributor running `npm run typecheck`
+      # alone got a clean bill for files it had never opened.
       - name: Typecheck
         run: npm run typecheck
 
@@ -82,10 +107,12 @@ jobs:
       - name: Headless bench (deterministic, seeded)
         run: npm run bench -- --scenarios 13 --seed 1234 --out bench-results.json --allow-failure
 
+      # `npm run check:determinism` rather than the two lines inline, so that
+      # `npm run ci` can run the same thing rather than a copy of it. This step
+      # was invisible to any comparison of the workflow against that script,
+      # because it was the one part of the run that was not an `npm run`.
       - name: Determinism check (same seed, byte-identical output)
-        run: |
-          npm run bench -- --scenarios 13 --seed 1234 --out bench-results-2.json --allow-failure
-          node tools/assert-deterministic.ts bench-results.json bench-results-2.json
+        run: npm run check:determinism
 
       # The step above asks whether ONE tree agrees with itself. This asks
       # whether the tree still produces the numbers the repository recorded, and

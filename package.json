@@ -9,7 +9,7 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "lint:boundary": "node tools/boundary-lint.ts",
     "test": "node --test --experimental-test-isolation=none \"packages/**/test/**/*.test.ts\"",
     "bench": "node packages/bench/src/cli.ts",
@@ -30,12 +30,14 @@
     "pack:skill": "node tools/pack-skill.ts skills/usage-report dist",
     "progress:reference": "node packages/bench/src/reference.ts",
     "progress:reference:check": "node packages/bench/src/reference.ts --check",
-    "ci": "npm run lint:boundary && npm run check:docs && npm run check:citation && npm run check:license && npm run typecheck && npm test && npm run progress:reference:check && npm run build:app && npm run smoke:app",
+    "ci": "npm run lint:boundary && npm run check:ci-parity && npm run check:docs && npm run check:citation && npm run check:license && npm run typecheck && npm test && npm run progress:reference:check && npm run build:web && npm run build:app && npm run smoke:app && npm run bench -- --scenarios 13 --seed 1234 --out bench-results.json --allow-failure && npm run check:determinism && npm run check:bench && npm run gate -- bench-results.json",
     "check:docs": "node tools/experiment-tables.ts",
     "check:citation": "node tools/check-citation.ts",
     "check:license": "node tools/license-header.ts",
     "check:bench": "node tools/assert-baseline.ts bench-results.json",
-    "bench:rebaseline": "node tools/assert-baseline.ts bench-results.json --update"
+    "bench:rebaseline": "node tools/assert-baseline.ts bench-results.json --update",
+    "check:determinism": "npm run bench -- --scenarios 13 --seed 1234 --out bench-results-2.json --allow-failure && node tools/assert-deterministic.ts bench-results.json bench-results-2.json",
+    "check:ci-parity": "node tools/check-ci-parity.ts"
   },
   "devDependencies": {
     "typescript": "5.9.3",
