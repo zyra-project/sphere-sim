@@ -88,6 +88,7 @@ import {
   buildViewer,
   buildAsBuilt,
   buildWorld,
+  placedRigOn,
   CONTENT_DECODE_GAMMA,
   framingRangeM,
   nudgesAreClear,
@@ -97,6 +98,7 @@ import {
 import type { WebWorld } from '../src/rigs.ts';
 import type { Reading, RigFact } from '../src/readout.ts';
 import { buildDisplayUniforms, packMesh, pickMarkerNear, slotOfRigIndex } from '../src/uniforms.ts';
+import { MAX_PROJECTORS } from '../src/glsl.ts';
 import type { DisplayMesh, DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
 import type { ParityVerdict } from '../src/parity.ts';
 import {
@@ -1153,6 +1155,26 @@ function placementsFromInstall(): ProjectorPlacement[] {
  * pointing at it. The same argument that made the surface a separate worker
  * request makes free placement a separate rig.
  */
+/**
+ * A hand placement changed: tell everything that draws from one.
+ *
+ * `markDirty` is the half this branch had to add, and leaving it out is what the
+ * smoke caught. `draw()` runs only when something has marked the canvas dirty,
+ * and until placements reached the renderer they affected nothing it drew -- so
+ * every one of these handlers correctly asked for a surface pass and a panel
+ * repaint and nothing else. Now the picture is built from them, and without this
+ * it kept whatever rig it already had: five lenses still drawn after the card
+ * had been stripped to one, with the card and the worker both saying one.
+ *
+ * One function rather than three calls at six sites, so that a seventh handler
+ * cannot half-remember the list.
+ */
+function placementsChanged(): void {
+  requestSurface();
+  markDirty();
+  renderControls();
+}
+
 function placementBlock(): HTMLElement[] {
   const out: HTMLElement[] = [];
   if (droppedMesh === null) return out;
@@ -1172,8 +1194,7 @@ function placementBlock(): HTMLElement[] {
     const start = el('button', { className: 'chip', textContent: 'Place by hand' });
     start.addEventListener('click', () => {
       customPlacements = placementsFromInstall();
-      requestSurface();
-      renderControls();
+      placementsChanged();
     });
     const row = el('div', { className: 'chips' });
     row.append(start);
@@ -1198,16 +1219,14 @@ function placementBlock(): HTMLElement[] {
       const drop = el('button', { className: 'chip', textContent: 'remove', title: 'Take this projector out of the rig' });
       drop.addEventListener('click', () => {
         places.splice(i, 1);
-        requestSurface();
-        renderControls();
+        placementsChanged();
       });
       head.append(drop);
     }
     card.append(head);
 
     const set = (): void => {
-      requestSurface();
-      renderControls();
+      placementsChanged();
     };
     const xyz = el('div');
     xyz.style.display = 'flex';
@@ -1251,7 +1270,37 @@ function placementBlock(): HTMLElement[] {
 
   const actions = el('div', { className: 'chips' });
   const add = el('button', { className: 'chip', textContent: 'add a projector' });
+  // Capped where the SHADER's room runs out, and refused here rather than three
+  // layers down. A ninth placement reaches `packMesh`, whose `packBvh` refuses a
+  // footprint field it cannot lay out -- correctly, since `contentWeight` would
+  // otherwise index past the end of a vector -- and that refusal lands in
+  // `meshError`, so the model would vanish behind a message about texel channels
+  // in answer to pressing "add a projector". A disabled chip that says why is the
+  // same limit at the place the reader meets it.
+  //
+  // AND THE REASON IS VISIBLE TEXT, not a `title`. A disabled control is removed
+  // from the keyboard focus order, so its tooltip is unreachable by anyone not
+  // holding a mouse -- the limit would simply stop working with no explanation
+  // available at all. The note below is in the document for every reader, and
+  // `aria-describedby` ties it to the button for anyone who lands on it.
+  const capped = places.length >= MAX_PROJECTORS;
+  let capNote: HTMLElement | null = null;
+  if (capped) {
+    add.disabled = true;
+    add.setAttribute('aria-disabled', 'true');
+    add.setAttribute('aria-describedby', 'placement-cap');
+    capNote = el('p', {
+      className: 'note tiny',
+      textContent:
+        `${MAX_PROJECTORS} is as many as the shader has room for: fourteen [MAX_PROJ] arrays ` +
+        'across the two rigs it carries, at 18 vec4 slots per projector against a GLES3 floor ' +
+        'of 224 fragment uniform vectors. A ninth would not fit the footprint field either.',
+    });
+    capNote.id = 'placement-cap';
+    capNote.dataset.smoke = 'placement-cap';
+  }
   add.addEventListener('click', () => {
+    if (places.length >= MAX_PROJECTORS) return;
     // A new lens goes where the last one is, moved along, aimed at the object.
     // Dropping it at the origin would put it inside whatever is being lit.
     const last = places[places.length - 1];
@@ -1260,8 +1309,7 @@ function placementBlock(): HTMLElement[] {
     const position = { x: r * Math.cos(az), y: r * Math.sin(az), z: last.position.z };
     const aim = aimAtPoint(position, modelAimPoint());
     places.push({ position, yawDeg: aim.yawDeg, pitchDeg: aim.pitchDeg, rollDeg: 0 });
-    requestSurface();
-    renderControls();
+    placementsChanged();
   });
   const aimAll = el('button', {
     className: 'chip',
@@ -1274,8 +1322,7 @@ function placementBlock(): HTMLElement[] {
       place.yawDeg = aim.yawDeg;
       place.pitchDeg = aim.pitchDeg;
     }
-    requestSurface();
-    renderControls();
+    placementsChanged();
   });
   const back = el('button', {
     className: 'chip',
@@ -1284,11 +1331,11 @@ function placementBlock(): HTMLElement[] {
   });
   back.addEventListener('click', () => {
     customPlacements = null;
-    requestSurface();
-    renderControls();
+    placementsChanged();
   });
   actions.append(add, aimAll, back);
   out.push(actions);
+  if (capNote !== null) out.push(capNote);
 
   out.push(
     el('p', {
@@ -1312,32 +1359,37 @@ function placementBlock(): HTMLElement[] {
   }
 
   // Which picture these numbers belong to, said rather than left to be worked
-  // out. `customPlacements` reaches the SURFACE request and nothing else -- the
-  // docblock above gives the reason and it is still the right one -- so the big
-  // view is the INSTALL rig whatever is listed here. Everything on this card is
-  // measured from the placements; the canvas beside it is not, and until this
-  // note the only way to find that out was to read `requestSurface`.
+  // out. This note used to WARN that the two disagreed: `customPlacements`
+  // reached the surface request and nothing else, so the card measured a placed
+  // rig while the canvas beside it drew the install. That is fixed -- see
+  // `displayModel`, which now builds both drawn rigs from these placements
+  // through the same `placedRigOn` the worker scores them with -- so the note
+  // reports agreement instead of warning about drift, and is no longer amber.
   //
-  // This is the drift `modelBlock` refuses for the shape ("every number it
-  // prints comes from the model rather than the picture precisely so that the
-  // two can never drift apart unnoticed"), reaching the rig by a different road
-  // than the one first looked down: not a rig truncated to `MAX_PROJ`, but a rig
-  // the renderer is never handed.
+  // WHAT IS STILL TRUE is the reason the old routing existed: a rig off the ring
+  // must not answer a §7 gate about the sphere. It still cannot. The gates are
+  // computed in the worker from a `ModelRequest`, which has no placements field
+  // at all, so the scoring path cannot be handed one. Drawing and scoring are
+  // different questions and only the second one was ever the constraint.
+  //
+  // AND ONE THING THE READER CANNOT SEE OTHERWISE: a placed rig carries no mount
+  // error. `injectMisalignment` and the nudge sliders are properties of the
+  // nominal ring's SLOTS -- the panel offers one nudge per install projector and
+  // a placement has no slot -- so both drawn rigs are the placements as typed and
+  // the two agree exactly. On the install that disagreement is the whole point of
+  // the page, so a view that silently became perfect would read as a rig that had
+  // been fixed.
   const install = Math.round(state.settings.projectorCount);
-  const differs = places.length !== install || customPlacements !== null;
-  if (differs) {
-    const note = el('p', {
-      className: 'note tiny',
-      textContent:
-        `These ${places.length} are measured in the preview on this card. The large view is ` +
-        `still the install rig — ${install} on the nominal ring — because a hand-placed rig ` +
-        'reaches the surface request and not the renderer, so that a rig off the ring can never ' +
-        'answer a §7 gate about the sphere. The two pictures are of different rigs.',
-    });
-    note.style.color = 'var(--warn)';
-    note.dataset.smoke = 'placement-view-note';
-    out.push(note);
-  }
+  const note = el('p', {
+    className: 'note tiny',
+    textContent:
+      `The large view is these ${places.length}, not the ${install} on the install ring — ` +
+      'the same rig this card measures, built by the same code. No mount error is applied ' +
+      'to a hand-placed rig, so what you see is the placements exactly as typed; the §7 ' +
+      'gates stay on the install, which is the only rig they are about.',
+  });
+  note.dataset.smoke = 'placement-view-note';
+  out.push(note);
 
   return out;
 }
@@ -2473,10 +2525,14 @@ function startSolve(): void {
     // model `packMesh` refused is a sphere to both of them.
     shots:
       displayMeshId() !== ''
-        ? displayModel(solveWorldNow)
+        ? // INSTALL. `SolveRequest` carries no placements, so the solve runs on
+          // the install rig; thumbnails of a placed one would caption a picture
+          // of where the camera stood with a rig the solve never saw.
+          displayModel(solveWorldNow, 'install')
         : {
             physical: prepareRig(solveWorldNow.truthRig),
             content: prepareRig(solveWorldNow.compositorRig),
+            slots: solveWorldNow.slots,
             mesh: null,
           },
   };
@@ -2763,7 +2819,9 @@ function draw(): void {
   // The dropped model, if there is one. Until this the live view drew a sphere
   // whatever the reader had loaded -- the CPU picture on the model card was the
   // only place the shape appeared, and the view beside it was lying about it.
-  const model = displayModel(world);
+  // THE ONE CALLER THAT WANTS THE PLACED RIG. Everything else on this page
+  // either has to agree with the worker or writes a file about the SOS machine.
+  const model = displayModel(world, 'placed');
   const uniforms = buildDisplayUniforms(
     model.physical,
     model.content,
@@ -2773,7 +2831,9 @@ function draw(): void {
       mesh: model.mesh,
       overlay: state.overlay,
       highlight: state.highlight,
-      slots: world.slots,
+      // `model.slots`, not `world.slots`: the drawn rig decides the mapping, and
+      // for a placed rig it is the placement order rather than the panel slots.
+      slots: model.slots,
       drawFloor: true,
       floorRadiusM: 13,
       displayGamma: 2.2,
@@ -2809,7 +2869,8 @@ function draw(): void {
     renderReadout();
   }
   lastUniforms = uniforms;
-  lastSlots = world.slots;
+  // What the PICTURE is indexed by, so `pickMarker` and the tints agree with it.
+  lastSlots = model.slots;
   // Test hooks, set by the function that draws so they cannot describe a state
   // the picture is not in. `tools/smoke-app.ts` clicks a marker it found by
   // colour and reads these back.
@@ -2826,6 +2887,13 @@ function draw(): void {
   // entire time the live view was still drawing a sphere. Read off `uniforms`
   // rather than off `droppedMesh` for that reason.
   canvas.dataset.meshTriangles = String(uniforms.mesh?.triangleCount ?? 0);
+  // HOW MANY LENSES THE SHADER WAS HANDED, from the uniforms it was handed them
+  // in. Not the placement card's count and not the worker's -- both of those can
+  // be right while the picture is drawn from another rig, which is the exact
+  // defect this branch exists to fix and the one a card-reading assertion cannot
+  // see. Same contract as the hooks around it: written by the function that
+  // draws, so it cannot describe a state the picture is not in.
+  canvas.dataset.drawnProjectors = String(uniforms.projCount);
   // Monotonic, so a test can tell "the frame loop stopped" from "it ran and saw
   // no model". `frame()` catches a throw from here, calls `fatal()` and does NOT
   // re-arm `requestAnimationFrame`, so those two failures look identical from
@@ -2906,7 +2974,7 @@ function renderCameraShot(
     },
     {
       mesh: shots.mesh,
-      slots: world.slots,
+      slots: shots.slots,
       drawFloor: true,
       floorRadiusM: 13,
       displayGamma: 2.2,
@@ -2980,38 +3048,110 @@ let displayModelCache: {
   physical: PreparedRig;
   content: PreparedRig;
   mesh: DisplayMesh | null;
+  slots: number[];
 } | null = null;
+
+/**
+ * WHICH RIG A CALLER WANTS DRAWN, and there is no default on purpose.
+ *
+ * `displayModel` used to read `customPlacements` out of module scope, which
+ * meant one function answered a question SIX call sites ask and only one of them
+ * wanted the placed answer. A hidden global read is the defect; the wrong
+ * picture at five call sites was the symptom.
+ *
+ * Required rather than optional so that a seventh caller cannot inherit a
+ * default it never considered: adding one is a typecheck error until somebody
+ * writes down which rig it means.
+ *
+ *   - `'placed'` — the hand-placed rig when there is one, else the install.
+ *     Only the live view. This is the whole point of routing placements to the
+ *     renderer.
+ *   - `'install'` — the install rig, whatever the placement card lists.
+ *     Everything that has to AGREE WITH THE WORKER, because neither
+ *     `ModelRequest` nor `SolveRequest` carries placements, and everything that
+ *     writes a file describing the SOS machine.
+ */
+type DrawnRig = 'placed' | 'install';
 
 interface DisplayModel {
   physical: PreparedRig;
   content: PreparedRig;
   mesh: DisplayMesh | null;
+  /**
+   * `slots[rigIndex]` for the rig actually drawn.
+   *
+   * `world.slots` is the INSTALL's mapping — which panel slot each rig index
+   * came from, so P3 keeps its colour and its frame when P2 goes dark. A placed
+   * rig has no panel slots: the placements are the identity, in order. Reading
+   * `world.slots` beside a drawn placed rig gave the fifth lens a slot that does
+   * not exist, and gave the others the wrong tint the moment an install
+   * projector was switched off at the wall.
+   */
+  slots: number[];
 }
 
-function displayModel(world: WebWorld): DisplayModel {
+function displayModel(world: WebWorld, which: DrawnRig): DisplayModel {
+  // The placements, or nothing, decided ONCE at the top from the caller's
+  // request rather than read out of module scope further down.
+  const places = which === 'placed' ? customPlacements : null;
+
   // The sphere path, untouched and uncached. Every phase of this work has opened
   // by asserting the sphere renders byte-identically to what it did before, and
   // the cheapest way to keep that true is for the sphere not to enter the new
-  // code at all.
+  // code at all. A placement only exists alongside a dropped model, so this path
+  // cannot be reached with one.
   if (droppedMesh === null) {
     return {
       physical: prepareRig(world.truthRig),
       content: prepareRig(world.compositorRig),
       mesh: null,
+      slots: world.slots,
     };
   }
 
-  const rigKey = JSON.stringify([world.truthRig, world.compositorRig]);
+  // `places` is in the key because the rig below is built FROM it -- and it is
+  // `places` rather than `customPlacements`, so that the install-rig callers
+  // share one cache entry with each other instead of invalidating it every time
+  // a placement moves under them.
+  //
+  // Everything else `placedRigOn` reads is already covered: the surface by
+  // `meshId`, and the height, rotation, raster and blend by `world.truthRig`.
+  const rigKey = JSON.stringify([world.truthRig, world.compositorRig, places]);
   const hit = displayModelCache;
   if (hit !== null && hit.meshId === droppedMeshId && hit.rigKey === rigKey) {
-    return { physical: hit.physical, content: hit.content, mesh: hit.mesh };
+    return { physical: hit.physical, content: hit.content, mesh: hit.mesh, slots: hit.slots };
   }
 
   // The surface outlives the calibration: a slider moves the rig, not the model.
   const surface =
     hit !== null && hit.meshId === droppedMeshId ? hit.surface : meshSurface(droppedMesh);
-  const physical = prepareRig(world.truthRig, surface);
-  const content = prepareRig(world.compositorRig, surface);
+
+  // THE RIG THAT DRAWS, SPLIT FROM THE RIG THAT SCORES.
+  //
+  // Until this line `customPlacements` reached the surface request and nothing
+  // else, so the large view was the INSTALL rig whatever the placement card
+  // listed — the card measured one rig and the canvas beside it drew another.
+  // The reason that routing existed is still right and is unchanged: a rig off
+  // the ring must not answer a §7 gate about the sphere. What was wrong was
+  // reading "must not SCORE" as "must not DRAW".
+  //
+  // The gate half needs no guard here because it is structural. The §7 metrics
+  // are computed in the worker from a `ModelRequest`, which carries `settings`
+  // and `compositorRig` and HAS NO PLACEMENTS FIELD — so the scoring path
+  // cannot be handed one, by construction rather than by remembering not to.
+  // `web/test/rigs.test.ts` asserts that, because "the type has no field for it"
+  // stops being true the moment somebody adds one for a good reason.
+  //
+  // BOTH rigs move together or neither does. Drawing a placed `physical` against
+  // an install `content` would light the model with one rig and texture it from
+  // another — a picture of nothing, and one that would look plausible.
+  const placed = places && places.length > 0 ? placedRigOn(world, surface, places) : null;
+  const physical = prepareRig(placed ?? world.truthRig, surface);
+  const content = prepareRig(placed ?? world.compositorRig, surface);
+  // Identity for a placed rig: the placements ARE the slots, in the order the
+  // card lists them, so P5 is the fifth placement rather than a panel slot that
+  // was never created.
+  const slots = placed === null ? world.slots : placed.projectors.map((_, i) => i);
   let mesh: DisplayMesh | null;
   try {
     // The CONTENT rig, which is whose blend the shader needs; see `packMesh`.
@@ -3034,10 +3174,13 @@ function displayModel(world: WebWorld): DisplayModel {
       physical: prepareRig(world.truthRig),
       content: prepareRig(world.compositorRig),
       mesh: null,
+      // The INSTALL's slots: this fell back to the sphere, so the placed rig is
+      // not what is on screen and its ordering would not describe the picture.
+      slots: world.slots,
     };
   }
-  displayModelCache = { meshId: droppedMeshId, surface, rigKey, physical, content, mesh };
-  return { physical, content, mesh };
+  displayModelCache = { meshId: droppedMeshId, surface, rigKey, physical, content, mesh, slots };
+  return { physical, content, mesh, slots };
 }
 
 /**
@@ -3083,7 +3226,13 @@ function checkParity(
     // model wrong. `ensureContent` is a no-op when it is current.
     ensureContent(world.image);
     const camera = buildViewer(state.settings, cpu.width, cpu.height, viewShiftFrac());
-    const model = displayModel(world);
+    // INSTALL, and this one is the reason the parameter exists. The CPU half of
+    // this comparison comes from the worker, whose `ModelRequest` has no
+    // placements field at all -- so drawing the placed rig here would compare
+    // two different rigs and report the difference as a renderer disagreement.
+    // The number on the page is the repository's central A/B guard; making it
+    // measure the wrong thing is worse than not measuring.
+    const model = displayModel(world, 'install');
     const uniforms = buildDisplayUniforms(
       model.physical,
       model.content,
@@ -3134,7 +3283,7 @@ function checkParity(
         drawFloor: false,
         displayGamma: 0,
         samplesPerPixel: paritySamples(),
-        slots: world.slots,
+        slots: model.slots,
       },
     );
     // The frame the worker was given, not the one on screen. With a video
@@ -4283,7 +4432,13 @@ function downloadText(name: string, text: string): void {
 function exportWarpFiles(): void {
   try {
     const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
-    const exports = buildWarpExports(displayModel(world).content);
+    // INSTALL, deliberately and not by omission. A warp mesh for a hand-placed
+    // rig is a plausible thing to want and is NOT what this button has ever
+    // meant; it writes the files an operator takes to the SOS wall. Changing
+    // which rig it describes is a feature with its own control and its own
+    // explanation, not a side effect of the live view learning to draw
+    // placements.
+    const exports = buildWarpExports(displayModel(world, 'install').content);
     for (const exported of exports) {
       downloadText(`${exported.projectorId}.data`, formatWarpMesh(exported));
     }
@@ -4321,7 +4476,8 @@ function exportWarpFiles(): void {
 function exportSosFiles(): void {
   try {
     const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
-    const model = displayModel(world);
+    // INSTALL: `.alignment` is SOS's own per-projector format for the install.
+    const model = displayModel(world, 'install');
     const exports = buildSosAlignments(model.physical, model.content);
     for (const exported of exports) {
       downloadText(`${exported.projectorId}.alignment`, formatSosAlignment(exported.alignment));
@@ -4414,7 +4570,11 @@ function buildBundle(): {
   refused: string[];
 } {
   const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
-  const model = displayModel(world);
+  // INSTALL, and the archive is why it matters that all three parts agree: the
+  // warp meshes, the alignment files and the patched config travel together in
+  // one download, so a rig chosen per-part would ship an archive whose files
+  // describe two different machines.
+  const model = displayModel(world, 'install');
 
   // EACH PART STANDS OR FALLS ON ITS OWN.
   //
@@ -4667,7 +4827,15 @@ function pickSosConfig(): void {
 function sosConfigDiff(): SosConfigUpdate | null {
   if (state.sosConfig === null) return null;
   const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
-  return updateSosConfig(state.sosConfig, displayModel(world).content);
+  // INSTALL, and this is the one that would have done real harm.
+  // `local_sos_config.json` describes the SOS install: per-projector distance
+  // and height for lenses on the nominal ring. Patching those from a rig of
+  // hand-placed lenses on a wall writes geometry no projector at the site is at,
+  // into the reader's own configuration file. That is the same harm `buildBundle`
+  // refuses when it declines to write a config from defaults -- handing somebody
+  // an invented configuration as if it were their site's -- reached by a road
+  // nobody had looked down.
+  return updateSosConfig(state.sosConfig, displayModel(world, 'install').content);
 }
 
 /** Write the patched config, which is the original with only its numbers moved. */
