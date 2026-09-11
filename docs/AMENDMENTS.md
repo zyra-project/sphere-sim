@@ -557,6 +557,24 @@ document assigns to a parameter for which it assigns none. (The position column
 is the other half of the story and is A-13's: with shift no longer available to
 absorb the error, it moves into the field-of-view/distance valley instead.)
 
+**A range in §2's spirit would be too loose to reach the gate, and that is
+measured.** docs/EXPERIMENT-6.md prices this entry's own remedy over 33 seeds.
+A prior centred on the TRUE shift at sigma 0.058 — the width this entry's own
+arithmetic derives, the shift worth one degree of pointing against §2's 1–2°
+mount tolerance — removes **4.3%** of the rotation error. At sigma 0.001 the
+same prior removes **75.3%**, for 0.032% more residual. So the benefit is in the
+WIDTH and not in the centring: a shift that is merely known to be small does not
+help, and the reading has to be precise. Where between 0.058 and 0.001 the knee
+sits is not measured — two points do not locate it — but a range stated "in the
+same spirit as §2's ±1–2°" would land at the useless end of it. The proposal
+below stands; its SPIRIT clause does not, and §8 item 2's "read it off the
+menu" carries more of the weight than this entry originally gave it.
+
+That experiment also confirms the mechanism on a second body: the `mesh`
+archetype's rotation error, which docs/ARBITRARY-SHAPES.md had recorded as "not
+yet attributed", is this degeneracy, and with shift known the ellipsoid recovers
+rotation BETTER than the sphere rather than worse.
+
 **Proposed amendment.** Give `shift_h`, `shift_v` a plausible range in §3.1, in
 the same spirit as §2's `±1–2°` mount tolerance — the natural statement is that
 a rig built to §2 (lens at the equator, aimed at the centre, no ceiling mount)

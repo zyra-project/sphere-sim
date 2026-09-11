@@ -2131,11 +2131,33 @@ Position is the sphere's to within the seed's own scatter on two seeds (33.1
 against 33.2, 25.5 against 24.3) and materially better on the third (14.9
 against 26.7). Camera rotation is better on every seed, which is what a body with no
 symmetry axis should do for the apparatus looking at it. `h_center` is the tape
-measure's and does not know what body it measured. The one cost is the projector
+measure's and does not know what body it measured. The one apparent cost is the projector
 rotation: two to four times the sphere's on two seeds of three — inside A-12's
 shift/pointing degeneracy (0.01 of shift is 0.172°) and far inside its waiver's
-6.3° ceiling, and not yet attributed. The scenario is what makes that a number
-CI carries rather than a sentence here.
+6.3° ceiling. The scenario is what makes that a number CI carries rather than a
+sentence here.
+
+**That cost has since been attributed, and both halves of the sentence above
+were wrong.** docs/EXPERIMENT-6.md ran the four arms that separate a degenerate
+parameter from a solver defect, over 33 seeds:
+
+- It is A-12's degeneracy. Handing the solver the TRUE lens shift removes 75.3%
+  of the mesh's rotation error — 0.0684° to 0.0169° median — for 0.032% more
+  residual. A calibration whose pointing is four times better fits the same
+  photographs, which is what a degeneracy is.
+- **The body is not worse at rotation. It is better.** With shift known the
+  ellipsoid lands at 0.49x the sphere's error. It was not paying for being a
+  mesh; it was losing more of an advantage it already had — the same advantage
+  its camera rotation shows, and for the same reason, a body with no symmetry
+  axis giving the apparatus more to bite on.
+- "Two to four times" is this passage's three seeds, which are a bad draw. Over
+  33 the ratio is 1.48x. The sweep reproduces the three exactly, which is what
+  makes the wider figure the trustworthy one rather than merely the newer one.
+
+The reflex test would have said the opposite: pinning shift at §3.1's nominal of
+zero makes rotation WORSE on both bodies, because the nominal is wrong by
+construction while the truth is drawn from N(0, 0.01·scale). That is A-16's
+error, and A-18 had already named it.
 
 It is scored on the recovery gates and on nothing else. §7's geometric metrics
 are computed by `sim/metrics` on `rig.sphere` whatever body the cameras saw, so

@@ -123,6 +123,16 @@ function poseTable(rows: Row[], firstColumn = 'arm', withGrid = false): string {
 // Experiment 5
 // ---------------------------------------------------------------------------
 
+interface Experiment6 {
+  summary: {
+    scope: string;
+    arm: string;
+    meshMedianRotDeg: number;
+    sphereMedianRotDeg: number;
+    meshMedianResidualPx: number;
+  }[];
+}
+
 interface Experiment5 {
   cells: Record<string, Cell>;
   generatedFrom: { arms: { key: string; label: string }[] };
@@ -333,7 +343,40 @@ interface Block {
   prefix?: string;
 }
 
+
+/**
+ * Experiment 6's arms, over the full seed set.
+ *
+ * Both bodies and the residual in one table, because the finding is a
+ * COMPARISON and not a number: rotation error leaving while the residual stays
+ * put is what separates a degeneracy from a solver defect, and a table that
+ * reported only the rotation would let either reading stand.
+ */
+function experiment6Arms(result: Experiment6): string {
+  const rows = result.summary.filter((s) => s.scope === 'all');
+  const free = rows.find((s) => s.arm === 'free');
+  const out = [
+    '| arm | sphere rot | **mesh rot** | mesh/sphere | mesh rot removed | mesh residual |',
+    '| --- | --- | --- | --- | --- | --- |',
+  ];
+  for (const r of rows) {
+    const removed =
+      free === undefined ? 0 : (1 - r.meshMedianRotDeg / free.meshMedianRotDeg) * 100;
+    out.push(
+      `| \`${r.arm}\` | ${r.sphereMedianRotDeg.toFixed(4)}° | **${r.meshMedianRotDeg.toFixed(4)}°** | ` +
+        `${(r.meshMedianRotDeg / r.sphereMedianRotDeg).toFixed(2)}x | ` +
+        `${removed >= 0 ? '' : ''}${removed.toFixed(1)}% | ${r.meshMedianResidualPx.toFixed(5)} px |`,
+    );
+  }
+  return out.join('\n');
+}
+
 const BLOCKS: Record<string, Block> = {
+  'experiment-6-arms': {
+    doc: 'docs/EXPERIMENT-6.md',
+    data: 'experiments/experiment-6.json',
+    render: experiment6Arms as (r: never) => string,
+  },
   'experiment-5-arms': {
     doc: 'docs/EXPERIMENT-5.md',
     data: 'experiments/experiment-5.json',
