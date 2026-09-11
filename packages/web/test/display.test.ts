@@ -115,12 +115,16 @@ test('the pose cells fall back to drift, and say that is what they are', () => {
   const drift = { positionMm: 41.83, aimDeg: 0.9127 };
   const cold = poseCells(drift, null);
   assert.deepEqual(cold.map((c) => c.label), ['Lens position', 'Lens aim']);
+  // The ids are what `tools/smoke-app.ts` finds these cells by, so they are
+  // pinned here: a hook that moves with the label stops checking silently.
+  assert.deepEqual(cold.map((c) => c.id), ['lens-position', 'lens-aim']);
   assert.equal(cold[0].value, '41.8 mm');
   assert.equal(cold[1].value, '0.913°');
   assert.match(cold[0].title, /moved from where the software believes it is/);
   assert.match(cold[0].title, /recalibrating is what closes it/);
 
   const solved = poseCells(drift, { posePositionMm: 2.418, poseRotationDeg: 0.0409 });
+  assert.deepEqual(solved.map((c) => c.id), ['lens-position', 'lens-aim'], 'the id must not depend on whether a solve landed');
   assert.equal(solved[0].value, '2.42 mm', 'a usable solve must replace the drift figure');
   assert.equal(solved[1].value, '0.041°');
   assert.match(solved[0].title, /after removing the unobservable global rotation/);
