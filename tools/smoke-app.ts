@@ -2194,14 +2194,31 @@ async function main(): Promise<void> {
               lastSeen = now;
             }
           }
+          // What the PAGE says about the solve it just refused.
+          //
+          // A cell reading drift is not by itself a defect: a solve that did not
+          // settle is not a calibration, and refusing it is the page working.
+          // The bug this check exists for is narrower — a solve that DID settle,
+          // displayed as drift anyway — so the two have to be told apart, and
+          // the page already distinguishes them in prose it writes for the
+          // operator. Reading that is both the diagnosis and the fair verdict.
+          const why = await cdp.evaluate<string>(`(() => {
+            const t = document.querySelector('#readout')?.textContent ?? '';
+            return (/Did NOT converge[^.]*\\.|Converged in [^.]*\\.|Segmentation could use only[^.]*\\./.exec(t) ?? [''])[0];
+          })()`);
           if (cell === null) {
             failures.push('no lens-position cell ever rendered while a model was loaded');
+          } else if (/Did NOT converge/.test(why)) {
+            // The optimiser ran out of steps. Refusing is correct, and asserting
+            // otherwise would make this check fail for the page doing its job.
+            process.stdout.write(`  model: the mesh solve did not settle, and was refused — ${why}\n`);
           } else if (!/after removing the unobservable global rotation/.test(cell.title)) {
             // The exact shape of the shipped bug: a converged mesh calibration
             // shown as the drift it was supposed to close.
             failures.push(
               'a mesh calibration is displayed as DRIFT rather than as the recovered pose — ' +
-                `the lens-position cell reads "${cell.value}" and still says "${cell.title}"`,
+                `the lens-position cell reads "${cell.value}" and still says "${cell.title}"` +
+                (why === '' ? ' (the readout gives no reason)' : ` (the page says: ${why})`),
             );
           } else {
             process.stdout.write(`  model: calibrated, worst lens ${cell.value}\n`);
