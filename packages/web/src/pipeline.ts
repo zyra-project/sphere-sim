@@ -714,6 +714,14 @@ export function runSolve(
     silhouetteRefusals: capture.silhouettes.filter((s) => s.chosen < 0 || s.warnings.length > 0)
       .length,
     silhouetteCameras: capture.silhouettes.length,
+    // What the solve HAD, not what one detector examined. See the field.
+    cameraPositions: cameras.length,
+    segmentation:
+      geometricSegmentation !== null
+        ? 'geometric'
+        : req.settings.segmentSphere === 1 && captureSurface === null
+          ? 'image'
+          : 'none',
     frames: capture.framesRendered,
     grayBits,
     residualRmsPx: solver.diagnostics.rmsResidualPx,

@@ -198,17 +198,15 @@ export interface DecodeOptions {
   frameEpochs: 'off' | 'perCapture' | 'sequential';
 
   /**
-   * Reject a decoded correspondence that cannot be on the sphere. `null` — the
-   * default — keeps every pixel that decoded, which is what every published
-   * number was produced with.
+   * Reject a correspondence whose projector pixel does not strike the BODY.
    *
-   * A PREDICATE rather than a geometry, on purpose. This file turns images into
-   * correspondences and does not know what a sphere is: it has no imports at
-   * all, and the one thing it would have to import to answer this question is
-   * the ray-sphere intersection that `sphere.ts` owns. `sphereSegmenter` there
-   * builds the test this option expects; `mesh.ts`'s `meshSegmenter` is the
-   * other implementation, the same cast against a `MeshIndex`, and the two are
-   * the whole set. `packages/bench` selects between them by body.
+   * The body, not the sphere: `sphere.ts`'s `sphereSegmenter` builds this test
+   * from a ray-sphere intersection and `mesh.ts`'s `meshSegmenter` builds the
+   * same cast against a `MeshIndex`. Those are the whole set, and both shipped
+   * callers select between them by the body they photographed —
+   * `packages/bench` on its scenarios, `packages/web` on whether a model is
+   * loaded. Wording that named the sphere alone outlived the mesh
+   * implementation by two commits and described neither caller.
    *
    * It runs INSIDE the decode loop rather than over the returned array, and
    * that ordering is the point. `decimate` thins the accepted set to

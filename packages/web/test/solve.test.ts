@@ -349,8 +349,15 @@ test('the page reports how many camera views segmentation refused', { timeout: 6
   assert.equal(off.silhouetteRefusals, 0, 'nothing can refuse when the detector is not running');
   assert.equal(off.silhouetteCameras, 0);
 
+  assert.equal(off.segmentation, 'none', 'segmentation off must report that it ran nothing');
+  assert.equal(off.cameraPositions, 2, 'the positions are counted whether or not a detector ran');
+
   const on = runSolve(request({ id: 2, settings: { ...BOULDER_PRESET, segmentSphere: 1 } }));
   assert.equal(on.silhouetteCameras, 2, 'every camera view is examined and counted');
+  // A SPHERE gets the image detector, never the geometric one: that path keeps
+  // the stronger "reads pixels only" guarantee and nothing has measured the pair
+  // together.
+  assert.equal(on.segmentation, 'image', 'the sphere path must use the image detector');
   assert.ok(
     on.silhouetteRefusals >= 0 && on.silhouetteRefusals <= on.silhouetteCameras,
     `refusals ${on.silhouetteRefusals} outside 0..${on.silhouetteCameras}`,
@@ -427,6 +434,24 @@ test('runSolve calibrates against the dropped model, and the cache hands the nex
 
   const first = runSolve(request({ mesh, meshId: 'mesh:solve-test' }));
   assert.ok(first.correspondences > 1000, `only ${first.correspondences} correspondences decoded`);
+
+  // WHAT THE PAGE NEEDS TO DISPLAY IT. `silhouetteCameras` counts what the
+  // IMAGE-space detector examined, and that detector never runs on a model, so
+  // it is zero here and always was. `solveInstalled` read that field, so every
+  // successful mesh calibration was treated as not installed and the model
+  // readout showed the nominal rig's DRIFT where the recovered pose belonged.
+  // Nothing caught it because every test reads the response and none reads the
+  // page. `cameraPositions` is what the rule wants and is independent of which
+  // segmenter ran.
+  assert.equal(first.silhouetteCameras, 0, 'the circle fit cannot have examined a model');
+  assert.equal(first.cameraPositions, 2, 'the solve must report the positions it photographed from');
+  assert.ok(
+    first.cameraPositions - first.silhouetteRefusals >= 2,
+    'a converged mesh solve must satisfy the installability rule',
+  );
+  // And which segmenter ran, so the readout describes the capture rather than
+  // guessing from a switch the reader can move afterwards.
+  assert.equal(first.segmentation, 'geometric', 'a model was not segmented by ray cast');
   assert.ok(
     first.posePositionMm < 60,
     `solving against the dropped model recovered ${first.posePositionMm.toFixed(1)} mm`,
