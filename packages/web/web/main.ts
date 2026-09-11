@@ -2453,7 +2453,17 @@ let solveWorld: {
  * that was never installed is the same class of lie as installing it.
  */
 function solveInstalled(r: SolveResponse): boolean {
-  return r.converged && r.silhouetteCameras - r.silhouetteRefusals >= MIN_CAMERA_POSITIONS;
+  // `cameraPositions`, NOT `silhouetteCameras`, and the difference was a bug
+  // that hid in plain sight. The second counts what the IMAGE-space detector
+  // examined, and that detector never runs on a model — it fits a circle, which
+  // no model has. So every successful mesh calibration reported zero cameras
+  // examined, failed this rule, and the model readout showed the nominal rig's
+  // DRIFT where the recovered pose belonged. Every test reads the response and
+  // none reads the page, so nothing caught it.
+  //
+  // Refusals still subtract: a camera the detector refused contributed nothing,
+  // whatever the denominator is. On a mesh there are none to subtract.
+  return r.converged && r.cameraPositions - r.silhouetteRefusals >= MIN_CAMERA_POSITIONS;
 }
 
 /**
@@ -6665,6 +6675,42 @@ function solveSection(): HTMLElement | null {
             'improvements left.',
         }),
       );
+    }
+
+    // WHICH SEGMENTATION RAN, because on a model it is not the one the control
+    // describes. The switch's help text is about the image-space test: it finds
+    // the body by fitting a CIRCLE, which is the sphere's silhouette and no
+    // model's, so `pipeline.ts` turns it off whenever a model is loaded --
+    // measured, with it left on: 3 of 3 cameras refused and ZERO correspondences
+    // decoded, on a body squashed five per cent as surely as on a strong one.
+    //
+    // A model gets a ray cast against the model instead. That is a WEAKER
+    // guarantee and the reader is told so rather than left to assume the switch
+    // means what its help text says: the geometric test leans on the nominal rig
+    // the solve is refining, where the image-space one reads pixels only.
+    //
+    // Keyed on what the CAPTURE did, never on the live switch. `setSetting`
+    // clears the calibration only for `projectorCount`, so moving the
+    // segmentation switch leaves a solve standing: read from `state.settings`,
+    // this note would describe a sphere solved with segmentation off as a model
+    // segmented geometrically, the moment somebody flipped the switch
+    // afterwards. `r.segmentation` is what that capture actually ran.
+    //
+    // Not coloured — this is the ordinary state of every mesh solve, not a
+    // fault.
+    if (r.segmentation === 'geometric') {
+      const p = el('p', {
+        className: 'note',
+        textContent:
+          'Segmentation on a model is a different test: the circle fit finds the ball by its ' +
+          'silhouette, which no model has, so this capture was segmented by casting a ray at ' +
+          'the model where the configuration says it stands. That recovers what a lit room ' +
+          'costs a body whose orientation is weakly determined \u2014 3.06 mm of 3.13 on a ' +
+          'spheroid over 30 seeds \u2014 and unlike the circle fit it leans on the rig the ' +
+          'solve is refining.',
+      });
+      p.dataset.smoke = 'segmentation-geometric';
+      box.append(p);
     }
 
     // A camera the segmentation refused contributed NOTHING, and refusing is the

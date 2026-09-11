@@ -606,8 +606,33 @@ export interface SolveResponse {
    * camera look identical from outside. Zero when segmentation is off.
    */
   silhouetteRefusals: number;
-  /** Cameras the detector examined, so the refusals have a denominator. */
+  /** Cameras the IMAGE detector examined, so the refusals have a denominator. */
   silhouetteCameras: number;
+  /**
+   * Camera positions this capture actually photographed from.
+   *
+   * Separate from `silhouetteCameras`, and the separation is a bug fix. That
+   * field counts what the IMAGE-space detector examined, and the image detector
+   * does not run on a model -- it fits a circle, which no model has. So a mesh
+   * solve reports zero cameras examined, and `solveInstalled` reading that field
+   * treated every successful mesh calibration as not installed: the readout
+   * showed the nominal rig's drift where the recovered pose belonged. Nothing
+   * caught it because every test reads the response and no test reads the page.
+   *
+   * This is the number the installability rule wants — how many positions the
+   * solve had — and it is independent of which segmenter ran.
+   */
+  cameraPositions: number;
+  /**
+   * Which segmentation actually ran on this capture, for a readout that has to
+   * describe it without guessing from the live switch.
+   *
+   * The switch can be moved after a solve without invalidating it, so a note
+   * keyed on `state.settings` describes a capture that may never have existed —
+   * a sphere solved with segmentation off, then the switch turned on, read as a
+   * model segmented geometrically. This says what the capture did.
+   */
+  segmentation: 'image' | 'geometric' | 'none';
   /** Frames the capture needed — Gray planes plus phase shifts, per camera. */
   frames: number;
   grayBits: number;

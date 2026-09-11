@@ -61,10 +61,14 @@ import {
 } from '../../bench/src/patterns.ts';
 import { makeBenchRng } from '../../bench/src/random.ts';
 import { scoreRecovery } from '../../bench/src/score.ts';
-import { nominalRig as solverNominalRig, solve } from '../../solver/src/index.ts';
+import {
+  bundleStateFromCalibration,
+  nominalRig as solverNominalRig,
+  solve,
+} from '../../solver/src/index.ts';
 // Two hierarchies over one mesh, because `packages/sim` and `packages/solver`
 // may not import each other. See `SolveRequest.mesh`.
-import { buildMeshIndex, type MeshIndex } from '../../solver/src/mesh.ts';
+import { buildMeshIndex, meshSegmenter, type MeshIndex } from '../../solver/src/mesh.ts';
 import { meshSurface } from '../../sim/src/mesh/surface.ts';
 import type { Surface } from '../../sim/src/surface.ts';
 // Reached past the barrel deliberately: `DEFAULT_FREE_FLAGS` is the solver's own
@@ -413,6 +417,44 @@ export function runSolve(
       `= ${frames} frames at ${req.cameraResX}×${req.cameraResY}.`,
   );
 
+  // Hoisted above the capture because the mesh segmenter below needs it, and it
+  // is the same pure construction the solve reads further down. NOMINAL, never
+  // `world.truthRig`: a segmenter built from the truth would hand the decode the
+  // answer and call the result a measurement.
+  const solverNominal = solverNominalFor(req.settings, world.slots);
+
+  // GEOMETRIC SEGMENTATION FOR A MESH, under the reader's own segmentation
+  // switch, because for a model this is what that switch can mean.
+  //
+  // The image-space test below reads pixels only -- no rig, no pose, no radius --
+  // and fits a CIRCLE, so it refuses every mesh and is off on that path. That
+  // left the switch INERT for a model: on, and nothing happened. This is a
+  // different kind of test and the difference is worth stating rather than
+  // glossing -- a ray cast against the model standing where the NOMINAL
+  // configuration says it stands, so unlike the image-space test it does lean on
+  // the rig the solve is refining. `packages/bench` has made the same trade on
+  // its mesh scenario since `meshSegmenter` existed.
+  //
+  // SHIPPED ON A MEASUREMENT THAT REVERSED AN EARLIER ONE. Five seeds on a
+  // TRI-AXIAL body showed no benefit and this was declined; a tri-axial body has
+  // no unobserved direction, so a room does it no damage and there was nothing
+  // to recover. On a SPHEROID -- azimuth free, held only by the gauge's soft
+  // prior -- 30 paired seeds at the page's own three-camera configuration:
+  //
+  //   room on:   34.645 mm -> 31.587 mm, 24-6, sign test p = 0.0014
+  //   room off:  31.519 mm -> 31.721 mm, 15-15, p = 1
+  //
+  // The room costs 3.13 mm and this gives back 3.06 of it, landing on the
+  // no-room figure; with no room it is neutral to the split of a coin. It costs
+  // 1.8% of the correspondences either way. See docs/ARBITRARY-SHAPES.md.
+  const geometricSegmentation =
+    req.settings.segmentSphere === 1 && solveSurface !== null
+      ? meshSegmenter({
+          index: solveSurface,
+          projectors: bundleStateFromCalibration(solverNominal, []).projectors,
+        })
+      : null;
+
   const t0 = performance.now();
   const capture = captureAndDecode(world.truthRig, cameras, {
     // Photograph the same shape the bundle below will be fitted against.
@@ -448,13 +490,13 @@ export function runSolve(
           ? { wallRadiusM: req.settings.wallRadiusM, ceilingM: req.settings.ceilingM }
           : null,
       // Sphere only, and not because a mesh segmenter would be hard — because
-      // this one answers a question a mesh does not ask. `sphereSegmenter` fits
-      // a CIRCLE to the photograph and rejects everything outside it, which is
-      // sound for the one body whose silhouette is a circle from every angle
-      // and catastrophic for anything else. Measured with it left on: a
-      // tri-axial ellipsoid refused 3 of 3 cameras and decoded ZERO
-      // correspondences, and so did a body squashed by only five per cent —
-      // this is not a strong-deformation limit, it is every mesh.
+      // this one answers a question a mesh does not ask. It fits a CIRCLE to the
+      // photograph and rejects everything outside it, which is sound for the one
+      // body whose silhouette is a circle from every angle and catastrophic for
+      // anything else. Measured with it left on: a tri-axial ellipsoid refused
+      // 3 of 3 cameras and decoded ZERO correspondences, and so did a body
+      // squashed by only five per cent — this is not a strong-deformation limit,
+      // it is every mesh.
       //
       // Turning it off is not a downgrade for this path, it is the honest
       // configuration: the payoff quoted below is a measurement about a sphere
@@ -464,15 +506,26 @@ export function runSolve(
       // 14.3 / 13.1 / 8.8 mm across three noise seeds on this page's
       // configuration, where the analytic sphere gets 17.3 / 15.9 / 8.0.
       //
-      // What this does NOT do is give a mesh the protection a sphere gets. A
-      // room-lit capture of a model will carry wall spill into the decode with
-      // nothing to mask it. That wants a segmenter that takes the model's own
-      // silhouette, which is a real piece of work and is filed rather than
-      // faked here.
+      // A mesh is not left unprotected any more: `geometricSegmentation` above
+      // gives that path a ray cast instead. It is a WEAKER guarantee than this
+      // one rather than an equal substitute — it leans on the nominal rig where
+      // this reads pixels — and the image-space model-silhouette detector that
+      // would keep both properties is still unbuilt.
       segmentImage: req.settings.segmentSphere === 1 && captureSurface === null ? {} : null,
     },
     seed: req.seed,
-    decode: { pixelStride: 1, maxCorrespondences: 4000 },
+    decode: {
+      pixelStride: 1,
+      maxCorrespondences: 4000,
+      // Inside the decode loop rather than over the result: `decimate` thins the
+      // accepted set by a fixed stride, so a room correspondence filtered
+      // afterwards has already displaced a good one from the retained set.
+      //
+      // The SPHERE path still passes nothing. `sphereSegmenter` exists and is
+      // not wired here: that path has the image-space test, which is the
+      // stronger guarantee, and nothing has measured the pair together.
+      segmentation: geometricSegmentation,
+    },
     // No frames kept from the capture itself: a single structured-light frame is
     // a crescent of one projector's light on one side of the ball and tells a
     // reader nothing about where anybody stood. The page draws the CAMERAS
@@ -542,11 +595,13 @@ export function runSolve(
     { shotCameras },
   );
 
-  // The nominal the operator hands the solver: built by the SOLVER's own
-  // construction from the documented constants, with the four quadrant slots cut
-  // down to the ones this install uses. §2's "quadrants go dark" removes
-  // projectors from a standard layout, it does not respace the ones that remain.
-  const solverNominal = solverNominalFor(req.settings, world.slots);
+  // `solverNominal` — the nominal the operator hands the solver, built by the
+  // SOLVER's own construction from the documented constants with the four
+  // quadrant slots cut down to the ones this install uses (§2's "quadrants go
+  // dark" removes projectors from a standard layout, it does not respace the
+  // ones that remain) — is built above the capture, because the mesh segmenter
+  // needs the same rig. ONE construction, so the body the decode tests against
+  // and the body the bundle starts from cannot drift apart.
   // The operator's guess at where each tripod stood: right side of the sphere,
   // wrong distance and aim. `initialize.ts` is explicit that the pose is an
   // initialisation and needs to be right about which side it was on.
@@ -659,6 +714,14 @@ export function runSolve(
     silhouetteRefusals: capture.silhouettes.filter((s) => s.chosen < 0 || s.warnings.length > 0)
       .length,
     silhouetteCameras: capture.silhouettes.length,
+    // What the solve HAD, not what one detector examined. See the field.
+    cameraPositions: cameras.length,
+    segmentation:
+      geometricSegmentation !== null
+        ? 'geometric'
+        : req.settings.segmentSphere === 1 && captureSurface === null
+          ? 'image'
+          : 'none',
     frames: capture.framesRendered,
     grayBits,
     residualRmsPx: solver.diagnostics.rmsResidualPx,

@@ -916,6 +916,90 @@ test('the config writer says what it cannot carry, and is a two-step flow', () =
   assert.ok(/sosConfigDiff\(\)/.test(save), 'the save path does not re-derive the diff');
 });
 
+test('a mesh calibration counts as installed, which it did not', () => {
+  // `solveInstalled` gates whether the model readout shows the RECOVERED pose or
+  // the nominal rig's drift. It read `silhouetteCameras`, which counts what the
+  // image-space detector examined -- and that detector never runs on a model, so
+  // it is zero for every mesh solve. Every successful mesh calibration was
+  // therefore reported as not installed, and the page showed drift where the
+  // answer belonged. Invisible to the suite: every test reads the response and
+  // none reads the page.
+  const fn = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function solveInstalled(r: SolveResponse): boolean {'),
+    MAIN_SOURCE.indexOf('export const MIN_CAMERA_POSITIONS'),
+  );
+  assert.ok(fn.length > 0, 'solveInstalled has moved; this test cannot find it');
+  assert.ok(
+    /r\.cameraPositions - r\.silhouetteRefusals >= MIN_CAMERA_POSITIONS/.test(fn),
+    'installability is judged on cameras one detector examined, so a mesh solve never counts',
+  );
+  assert.ok(
+    !/r\.silhouetteCameras/.test(fn),
+    'solveInstalled still reads the image detector’s denominator',
+  );
+  // Refusals still subtract: a refused camera contributed nothing whatever the
+  // denominator is.
+  assert.ok(/silhouetteRefusals/.test(fn), 'a refused camera no longer costs the solve anything');
+});
+
+test('a model is segmented by a ray cast, and the page says which test ran', () => {
+  // The switch's help text is about the IMAGE-space detector -- "no rig, no pose,
+  // no radius, so unlike a geometric test it cannot lean on the calibration being
+  // solved for". On a model that test refuses every camera, so `pipeline.ts`
+  // turns it off and casts a ray at the model instead. The reader is told,
+  // because the switch no longer means what its own help text says.
+  const pipeline = fs.readFileSync(
+    path.join(import.meta.dirname, '../src/pipeline.ts'),
+    'utf8',
+  );
+  assert.ok(
+    /segmentation: geometricSegmentation/.test(pipeline),
+    'the decode is handed no geometric segmentation, so the mesh path has none',
+  );
+  assert.ok(
+    /req\.settings\.segmentSphere === 1 && solveSurface !== null/.test(pipeline),
+    'the mesh segmenter is not under the reader’s own switch, or not gated on a mesh',
+  );
+  // NOMINAL, never the truth rig. A segmenter built from ground truth hands the
+  // decode the answer and calls the result a measurement.
+  assert.ok(
+    /meshSegmenter\(\{\s*index: solveSurface,\s*projectors: bundleStateFromCalibration\(\s*solverNominal,/.test(
+      pipeline,
+    ),
+    'the mesh segmenter is not built from the nominal rig',
+  );
+  assert.ok(
+    !/meshSegmenter[\s\S]{0,200}truthRig/.test(pipeline),
+    'the mesh segmenter reaches for ground truth',
+  );
+
+  const block = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('WHICH SEGMENTATION RAN'),
+    MAIN_SOURCE.indexOf("if (r.silhouetteRefusals > 0) {"),
+  );
+  assert.ok(block.length > 0, 'the note has moved; this test cannot find it');
+  // KEYED ON THE CAPTURE, NOT THE LIVE SWITCH. `setSetting` clears the
+  // calibration only for `projectorCount`, so moving the segmentation switch
+  // leaves a solve standing — and a note read from `state.settings` would
+  // describe a sphere solved with segmentation off as a model segmented by ray
+  // cast, the moment somebody flipped the switch afterwards.
+  assert.ok(
+    /r\.segmentation === 'geometric'/.test(block),
+    'the note is not keyed on what the capture actually ran',
+  );
+  assert.ok(
+    !/state\.settings\.segmentSphere/.test(block),
+    'the note reads the live switch, which the reader can move after a solve',
+  );
+  assert.ok(
+    /segmentation-geometric/.test(block),
+    'the note carries no smoke hook, so nothing can assert it reached the reader',
+  );
+  // COLOUR IS FOR A FAULT, the rule the file block learned. A model segmented by
+  // ray cast is the ordinary state of every mesh solve, not a fault.
+  assert.ok(!/note warn|--warn|--bad/.test(block), 'the ordinary case is painted as a fault');
+});
+
 test('the file block offers the config it asks for, and shouts only at a fault', () => {
   // The complaint: the readout opens on "No local_sos_config.json is included:
   // none was loaded ... Load your site config on the page", in amber, and the
