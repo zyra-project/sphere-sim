@@ -2139,10 +2139,12 @@ sentence here.
 
 **That cost has since been attributed, and both halves of the sentence above
 were wrong.** docs/EXPERIMENT-6.md ran the four arms that separate a degenerate
-parameter from a solver defect, over 33 seeds:
+parameter from a solver defect, over 33 seeds — the medians taken across the
+seeds where BOTH bodies converged, since the page refuses a solve that stopped
+at its cap and averaging one in would publish a refused calibration:
 
-- It is A-12's degeneracy. Handing the solver the TRUE lens shift removes 75.3%
-  of the mesh's rotation error — 0.0684° to 0.0169° median — for 0.032% more
+- It is A-12's degeneracy. Handing the solver the TRUE lens shift removes 75.0%
+  of the mesh's rotation error — 0.0674° to 0.0169° median — for 0.005% more
   residual. A calibration whose pointing is four times better fits the same
   photographs, which is what a degeneracy is.
 - **The body is not worse at rotation. It is better.** With shift known the
@@ -2151,8 +2153,8 @@ parameter from a solver defect, over 33 seeds:
   its camera rotation shows, and for the same reason, a body with no symmetry
   axis giving the apparatus more to bite on.
 - "Two to four times" is this passage's three seeds, which are a bad draw. Over
-  33 the ratio is 1.48x. The sweep reproduces the three exactly, which is what
-  makes the wider figure the trustworthy one rather than merely the newer one.
+  the full set the ratio is 1.47x. The sweep reproduces the three exactly, which
+  is what makes the wider figure the trustworthy one rather than merely newer.
 
 The reflex test would have said the opposite: pinning shift at §3.1's nominal of
 zero makes rotation WORSE on both bodies, because the nominal is wrong by
