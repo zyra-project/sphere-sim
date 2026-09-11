@@ -18,7 +18,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { Body } from './design.ts';
-import { ARMS, BODIES, DOCUMENTED_SEEDS, SEED_COUNT } from './design.ts';
+import { ARMS, BODIES, DOCUMENTED_SEEDS, EXPERIMENT_ROOT_SEED, SEED_COUNT } from './design.ts';
 import type { PointRun } from './run.ts';
 import { median, runPoint, seedFor, worst } from './run.ts';
 
@@ -85,7 +85,75 @@ function main(): void {
       }
     }
   }
-  report(load());
+  const runs = load();
+  assemble(runs);
+  report(runs);
+}
+
+const RESULT = path.join(OUT, 'experiment-6.json');
+const SCHEMA = 'sphere-sim/experiment-6@1';
+
+/**
+ * The assembled result, which is the tracked artefact.
+ *
+ * The JSONL beside it is a resumable POINT LOG and is ignored by git, the same
+ * split experiment 5 makes between `.experiment-5-partial/` and
+ * `experiment-5.json`: a checkpoint is a place to resume from, not a
+ * measurement anybody should cite.
+ */
+function assemble(runs: PointRun[]): void {
+  const complete = ARMS.length * BODIES.length * (DOCUMENTED_SEEDS.length + SEED_COUNT);
+  const summary: Record<string, unknown>[] = [];
+  for (const scope of ['documented', 'all'] as const) {
+    const rows = scope === 'documented' ? runs.filter((r) => r.documented) : runs;
+    for (const arm of ARMS) {
+      const mesh = rows.filter((r) => r.arm === arm.key && r.body === 'mesh');
+      const sphere = rows.filter((r) => r.arm === arm.key && r.body === 'nominal');
+      if (mesh.length === 0 || sphere.length === 0) continue;
+      summary.push({
+        scope,
+        arm: arm.key,
+        question: arm.question,
+        n: mesh.length,
+        meshMedianRotDeg: median(mesh.map((r) => r.poseRotationDeg)),
+        sphereMedianRotDeg: median(sphere.map((r) => r.poseRotationDeg)),
+        meshWorstRotDeg: worst(mesh.map((r) => r.poseRotationDeg)),
+        sphereWorstRotDeg: worst(sphere.map((r) => r.poseRotationDeg)),
+        meshMedianPosMm: median(mesh.map((r) => r.posePositionMm)),
+        sphereMedianPosMm: median(sphere.map((r) => r.posePositionMm)),
+        meshMedianResidualPx: median(mesh.map((r) => r.residualRmsPx)),
+        sphereMedianResidualPx: median(sphere.map((r) => r.residualRmsPx)),
+        meshNotConverged: mesh.filter((r) => !r.converged).length,
+        sphereNotConverged: sphere.filter((r) => !r.converged).length,
+      });
+    }
+  }
+  fs.writeFileSync(
+    RESULT,
+    `${JSON.stringify(
+      {
+        schema: SCHEMA,
+        // Says so in the file rather than only in whatever prose cites it.
+        provisional: runs.length < complete,
+        provisionalNote:
+          runs.length < complete
+            ? `${runs.length} of ${complete} points. An arm short of its seeds is not a result.`
+            : '',
+        generatedFrom: {
+          rootSeed: EXPERIMENT_ROOT_SEED,
+          seedCount: SEED_COUNT,
+          documentedSeeds: DOCUMENTED_SEEDS,
+          arms: ARMS,
+          bodies: BODIES,
+        },
+        summary,
+        runs,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  process.stdout.write(`\nwritten: ${path.relative(ROOT, RESULT)}\n`);
 }
 
 function report(runs: PointRun[]): void {
