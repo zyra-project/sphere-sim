@@ -2105,7 +2105,34 @@ async function main(): Promise<void> {
           if (b) b.click();
           return !!b;
         })()`);
-        await sleep(1200);
+        // Waited for, not slept through. The rig breaking and the model worker
+        // reporting it are two events, and a guessed interval that is long
+        // enough on an idle machine is not long enough on a busy one — this
+        // file already says so about the sphere solve above.
+        //
+        // Waiting for the DRIFT reading specifically also makes the check
+        // stronger than it would be starting from an unknown state: the cell is
+        // then known to have gone drift -> solved, which is the exact transition
+        // the bug broke. It showed drift forever.
+        let broke = false;
+        const breakUntil = Date.now() + 60_000;
+        while (Date.now() < breakUntil) {
+          await sleep(500);
+          broke = await cdp.evaluate<boolean>(`(() => {
+            const d = document.querySelector('[data-smoke="lens-position"]');
+            if (!d) return false;
+            const v = Number.parseFloat(d.querySelector('.v')?.textContent ?? '');
+            return /moved from where the software believes it is/.test(d.getAttribute('title') ?? '')
+              && Number.isFinite(v) && v > 1;
+          })()`);
+          if (broke) break;
+        }
+        if (!broke) {
+          failures.push(
+            '"Another install" did not put a drift reading in the lens cell, so the mesh solve ' +
+              'has nothing to recover and the check below would pass on an unbroken rig',
+          );
+        }
         const meshStarted = await cdp.evaluate<boolean>(`(() => {
           const b = [...document.querySelectorAll('button')]
             .find((x) => /Recalibrate/.test(x.textContent ?? ''));
