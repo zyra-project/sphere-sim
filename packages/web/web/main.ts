@@ -2468,6 +2468,22 @@ function startSolve(): void {
     return;
   }
   solveRunning = true;
+  // The flag is about moves since the solve STARTED, and nothing cleared it.
+  //
+  // `staleComparison` set it and no line anywhere set it back, so it was a
+  // one-way latch: the first lens movement of a session — a nudge, "Another
+  // install", a preset — made `freshSolve` return null for the rest of that
+  // session, and every later calibration, however clean, was displayed as the
+  // drift it had just closed. That is the same lie `solveInstalled` was telling
+  // about mesh solves, reached by a different route, and it outlived that fix
+  // because the tests read the response and the browser check only ever read
+  // the grid error.
+  //
+  // Clearing it HERE is what the flag's own doc comment already describes: "a
+  // bump while the solve is in flight leaves this true, which is right — the
+  // reply describes a rig the operator has already moved." That sentence is
+  // only true if something clears it when a solve begins. Nothing did.
+  rigMovedSinceSolve = false;
   solveTrace = [];
   solveStep = null;
   solveShots = [];

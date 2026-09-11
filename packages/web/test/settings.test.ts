@@ -247,6 +247,47 @@ test('one predicate decides whether a solve became the calibration', () => {
   );
 });
 
+test('the rig-moved latch is cleared when a solve starts, or it never opens again', () => {
+  // It was a ONE-WAY LATCH. `staleComparison` set `rigMovedSinceSolve = true`
+  // and no line in the file set it back, so the first lens movement of a
+  // session — a nudge, "Another install", a preset — made `freshSolve` return
+  // null for the rest of that session. Every later calibration, however clean,
+  // was then displayed as the drift it had just closed.
+  //
+  // That is the same lie `solveInstalled` told about mesh solves, by a
+  // different route, and it outlived that fix: the browser check that drives a
+  // real solve only ever read the grid error, never these cells. It was found
+  // by the mesh-solve check in `tools/smoke-app.ts` on its first run, against a
+  // solve the page itself reported as "Converged in 21 steps".
+  //
+  // Asserted as a COUNT and a position, not as presence. `= true` appearing
+  // somewhere and `= false` appearing somewhere satisfies any weaker test while
+  // the two sit in the wrong order or in unrelated functions.
+  // The declaration is not an assignment. `let rigMovedSinceSolve = false;`
+  // matches the same shape and would make this pass while the latch was intact.
+  const sets = [...MAIN_SOURCE.matchAll(/(?<!let )rigMovedSinceSolve = (true|false);/g)].map(
+    (m) => m[1],
+  );
+  assert.deepEqual(
+    sets,
+    ['false', 'true'],
+    'the rig-moved flag is set and cleared in unexpected places — a latch that only ever ' +
+      'closes is how a solved rig gets shown as drift forever',
+  );
+
+  // And the clear is inside `startSolve`, after the refusal check: a solve the
+  // page declines to attempt must not pass off a stale result as fresh.
+  const start = MAIN_SOURCE.indexOf('function startSolve(): void {');
+  const clear = MAIN_SOURCE.indexOf('rigMovedSinceSolve = false;', start);
+  const running = MAIN_SOURCE.indexOf('solveRunning = true;', start);
+  assert.ok(start >= 0 && clear >= 0 && running >= 0, 'startSolve has moved');
+  assert.ok(clear > running, 'the flag is cleared before the capture is committed to');
+  assert.ok(
+    clear < MAIN_SOURCE.indexOf('solveWorker.postMessage(req);', start),
+    'the flag is cleared after the request went out, so a bump mid-solve would be lost',
+  );
+});
+
 test('a refused solve puts the pre-solve rig back on the sphere', () => {
   // WHETHER a solve counts is `solveInstalled`, tested on values in
   // `display.test.ts` — a bundle adjustment that stopped at its iteration cap is
