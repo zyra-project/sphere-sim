@@ -2144,11 +2144,21 @@ async function main(): Promise<void> {
           failures.push('Recalibrate is missing or refused while a model is loaded');
         } else {
           process.stdout.write('  model: solving on the mesh…\n');
-          const until = Date.now() + Math.max(opts.timeoutMs, 240_000);
+          // Longer than the sphere's ceiling, deliberately. A mesh solve ray
+          // casts a hierarchy per correspondence instead of intersecting a
+          // sphere analytically, and this container needs 15 s to draw eight
+          // triangles — a limit tuned on the sphere would report the slow path
+          // as the broken one.
+          const until = Date.now() + Math.max(opts.timeoutMs, 900_000);
           let cell: { value: string; title: string } | null = null;
           let geometric = false;
+          let lastSeen = '';
+          let solveStageNow = '';
           while (Date.now() < until) {
             await sleep(1000);
+            solveStageNow = await cdp.evaluate<string>(
+              "(/Fitting[^.]*|Photographing[^.]*|Decoding[^.]*/.exec(document.querySelector('#readout')?.textContent ?? '') ?? [''])[0]",
+            );
             const seen = await cdp.evaluate<{
               value: string;
               title: string;
@@ -2173,6 +2183,16 @@ async function main(): Promise<void> {
               break;
             }
             if (seen !== null) cell = { value: seen.value, title: seen.title };
+            // Report the TRANSITIONS, not just the verdict. A failure here has
+            // three candidate causes that look identical from the outside — the
+            // solve never landed, it landed and something discarded it, or the
+            // cell is simply not being updated — and "it still says drift" tells
+            // them apart in none of them. A line per change does.
+            const now = seen === null ? 'no cell' : `${seen.value} / ${solveStageNow}`;
+            if (now !== lastSeen) {
+              process.stdout.write(`    mesh solve: ${now}\n`);
+              lastSeen = now;
+            }
           }
           if (cell === null) {
             failures.push('no lens-position cell ever rendered while a model was loaded');
