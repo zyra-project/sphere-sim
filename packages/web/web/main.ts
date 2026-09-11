@@ -48,6 +48,14 @@ import { buildZip } from '../src/zip.ts';
 import type { ZipEntry } from '../src/zip.ts';
 import { bundleEntries, CONFIG_ABSENT, FILE_NOTES } from '../src/bundle.ts';
 import {
+  fmtMm,
+  freshSolve,
+  poseCells,
+  solveInstalled,
+  solveRefusalReason,
+  solveViewNote,
+} from '../src/display.ts';
+import {
   buildSosAlignments,
   formatSosAlignment,
   parseSosAlignment,
@@ -2363,15 +2371,20 @@ solveWorker.onmessage = (event: MessageEvent<SolveMessage>): void => {
   // capture can arrive here with one usable view. That is only knowable after
   // the photographs, which is why it is checked here and the count is checked
   // before them.
-  const usableViews = msg.silhouetteCameras - msg.silhouetteRefusals;
-  const tooFewViews = msg.silhouetteCameras > 0 && usableViews < MIN_CAMERA_POSITIONS;
-  if (tooFewViews) {
-    lastError =
-      `Segmentation could use only ${usableViews} of ${msg.silhouetteCameras} camera views, and a ` +
-      `calibration needs at least ${MIN_CAMERA_POSITIONS}. The result was not applied. A refused ` +
-      'view found no framed sphere in its photograph — reframe it, or add a position.';
-  }
-  if (!msg.converged || tooFewViews) {
+  //
+  // ONE PREDICATE DECIDES, and this is the second time that has had to be said.
+  // The handler decided whether to install and the drift cells decided
+  // separately whether to show the solver's residual, so they could disagree --
+  // and a residual shown for a rig that was never installed is the same class of
+  // lie as installing it. `solveInstalled` is that predicate, and it lives in
+  // `../src/display.ts` where a test can reach it.
+  //
+  // The SENTENCE is derived from the same refusal rather than composed beside
+  // it, for the same reason: it says "The result was not applied", so it must be
+  // unable to appear about a result that was. See `solveViewNote`.
+  const viewNote = solveViewNote(msg);
+  if (viewNote !== null) lastError = viewNote;
+  if (!solveInstalled(msg)) {
     state.compositorRig = beforeRig ?? null;
     markDirty();
     requestModel(true);
@@ -2444,71 +2457,10 @@ let solveWorld: {
   shots: DisplayModel;
 } | null = null;
 
-/**
- * Did this reply become the calibration in force?
- *
- * One predicate, because two call sites need the same answer and they used to
- * disagree: the handler decided whether to install, and the drift cells decided
- * separately whether to show the solver's residual. A residual shown for a rig
- * that was never installed is the same class of lie as installing it.
- */
-function solveInstalled(r: SolveResponse): boolean {
-  // `cameraPositions`, NOT `silhouetteCameras`, and the difference was a bug
-  // that hid in plain sight. The second counts what the IMAGE-space detector
-  // examined, and that detector never runs on a model — it fits a circle, which
-  // no model has. So every successful mesh calibration reported zero cameras
-  // examined, failed this rule, and the model readout showed the nominal rig's
-  // DRIFT where the recovered pose belonged. Every test reads the response and
-  // none reads the page, so nothing caught it.
-  //
-  // Refusals still subtract: a camera the detector refused contributed nothing,
-  // whatever the denominator is. On a mesh there are none to subtract.
-  return r.converged && r.cameraPositions - r.silhouetteRefusals >= MIN_CAMERA_POSITIONS;
-}
-
-/**
- * The fewest camera positions a calibration is allowed to be attempted from.
- *
- * Not a judgement call: experiment 1 swept the count over five seeds and the
- * gap between one position and two is three orders of magnitude — median worst
- * lens error 17,490 mm at one against 41.8 mm at two, with a worst draw of
- * 1,978,378 mm. The knee is at three, so two is poor and one is not a
- * measurement at all.
- *
- * What makes one position DANGEROUS rather than merely bad is that nothing in
- * the answer says so. It converges — in 48 steps, to a residual of 0.518 px,
- * better than the three-camera solve beside it — and every diagnostic the
- * solver produces reads clean: `lastDeficiency` 0 (computed after LM damping,
- * so it cannot see this), `gaugeFreeAxes` the expected [false, false, true],
- * `cameraResidualScale` 1.03. The photographs really are explained. There is
- * simply more than one rig that explains them, because from a single viewpoint
- * a near projector zoomed in is indistinguishable from a far one zoomed out.
- *
- * So this is refused rather than warned about. A warning beside a number that
- * looks better than the good one is not a warning anybody acts on.
- */
-export const MIN_CAMERA_POSITIONS = 2;
-
-/**
- * Why this solve cannot be attempted, or `null`.
- *
- * Checked BEFORE the capture, because the answer is knowable before spending
- * ten seconds photographing a sphere to produce a rig that will be thrown away.
- */
-function solveRefusalReason(cameraCount: number): string | null {
-  if (cameraCount >= MIN_CAMERA_POSITIONS) return null;
-  return (
-    `A calibration needs at least ${MIN_CAMERA_POSITIONS} camera positions, and this capture has ` +
-    `${cameraCount}. From one spot a projector close in and zoomed tight is indistinguishable ` +
-    'from one far out and zoomed wide, so the solve converges to a clean residual and the answer ' +
-    'is still metres out — experiment 1 measured a median worst-lens error of 17.5 m at one ' +
-    'position against 41.8 mm at two. Move the camera and add a position.'
-  );
-}
-
 function startSolve(): void {
   if (solveRunning) return;
-  // Refused outright, not attempted and then judged. See MIN_CAMERA_POSITIONS.
+  // Refused outright, not attempted and then judged. See MIN_CAMERA_POSITIONS
+  // in `../src/display.ts`, where the measurement behind the number is.
   const refusal = solveRefusalReason(state.cameraCount);
   if (refusal !== null) {
     lastError = refusal;
@@ -5989,12 +5941,6 @@ function renderInspect(): void {
 // The readout
 // ---------------------------------------------------------------------------
 
-function fmtMm(v: number): string {
-  if (!Number.isFinite(v)) return '—';
-  const a = Math.abs(v);
-  return v.toFixed(a >= 100 ? 0 : a >= 10 ? 1 : 2);
-}
-
 function badgeFor(status: Reading['status'] | 'PENDING'): HTMLElement {
   const map: Record<string, { text: string; fg: string; bg: string; bd: string }> = {
     // The page's own palette, not two lighter greens and reds that appear nowhere
@@ -6659,11 +6605,11 @@ function solveSection(): HTMLElement | null {
     );
 
     // Below experiment 1's knee, but not refused. The refusal is at ONE position
-    // (see MIN_CAMERA_POSITIONS, where the measurement is): the gap between one
-    // and two is three orders of magnitude, and between two and three it is a
-    // factor of 1.7. Two positions is a determinate network that recovers to
-    // tens of millimetres — poor against a 2 mm gate, and worth saying, and not
-    // the same thing as a rig that cannot be determined at all.
+    // (see MIN_CAMERA_POSITIONS in `../src/display.ts`, where the measurement
+    // is): the gap between one and two is three orders of magnitude, and between
+    // two and three it is a factor of 1.7. Two positions is a determinate network
+    // that recovers to tens of millimetres — poor against a 2 mm gate, and worth
+    // saying, and not the same thing as a rig that cannot be determined at all.
     if (state.cameraCount === 2) {
       box.append(
         el('p', {
@@ -7188,30 +7134,17 @@ function renderReadout(): void {
     // ...and not from a solve that was refused: its residual describes a rig
     // that was never installed, so the cells would report the accuracy of a
     // calibration nobody is looking at.
-    const fresh =
-      rigMovedSinceSolve || solveResult === null || !solveInstalled(solveResult)
-        ? null
-        : solveResult;
-    g.append(
-      cell(
-        'Lens position',
-        fresh
-          ? `${fmtMm(fresh.posePositionMm)} mm`
-          : `${fmtMm(model.driftPositionMm)} mm`,
-        fresh
-          ? 'Worst lens position error after removing the unobservable global rotation. Ground truth; the solver never saw it.'
-          : 'How far the worst lens has moved from where the software believes it is. Ground truth — recalibrating is what closes it.',
-      ),
-    );
-    g.append(
-      cell(
-        'Lens aim',
-        fresh ? `${fresh.poseRotationDeg.toFixed(3)}°` : `${model.driftAimDeg.toFixed(3)}°`,
-        fresh
-          ? 'Worst rotation error, roll included, after removing the unobservable global rotation.'
-          : 'Worst rotation difference between the two rigs, roll included — the same basis the solver reports after a recalibration, so the two halves of the before-and-after are the same quantity.',
-      ),
-    );
+    // `freshSolve` and `poseCells` live in `../src/display.ts`, where a test can
+    // reach them. They were here, and the bug they encode -- a recovered
+    // calibration displayed as drift -- survived 1145 tests because every one of
+    // them reads the `SolveResponse` and none reads the page.
+    const fresh = freshSolve(solveResult, rigMovedSinceSolve);
+    for (const c of poseCells(
+      { positionMm: model.driftPositionMm, aimDeg: model.driftAimDeg },
+      fresh,
+    )) {
+      g.append(cell(c.label, c.value, c.title));
+    }
     g.append(cell('Unlit above mask', unlit ? unlit.value : '—', unlit?.means ?? ''));
     g.append(cell('Excess spill', spill ? spill.value : '—', spill?.means ?? ''));
     readoutEl.append(g);

@@ -178,10 +178,9 @@ test('a one-position capture is refused before it is attempted', () => {
   // Before the capture, because the answer is knowable from the camera count
   // and photographing a sphere for ten seconds to throw the result away is not
   // a courtesy.
-  assert.ok(
-    /export const MIN_CAMERA_POSITIONS = 2;/.test(MAIN_SOURCE),
-    'the minimum is not stated as a named constant',
-  );
+  // The constant and the refusal SENTENCE live in `../src/display.ts` and are
+  // tested there, on their values rather than on their syntax. What stays this
+  // file's business is the wiring: that the page asks before it photographs.
   const start = MAIN_SOURCE.slice(
     MAIN_SOURCE.indexOf('function startSolve(): void {'),
     MAIN_SOURCE.indexOf('function startSolve(): void {') + 700,
@@ -208,49 +207,92 @@ test('one predicate decides whether a solve became the calibration', () => {
   // The handler decided whether to install and the drift cells decided
   // separately whether to show the solver's residual, so they could disagree —
   // and a residual shown for a rig that was never installed is the same class of
-  // lie as installing it. Both now ask `solveInstalled`.
-  assert.ok(/function solveInstalled\(r: SolveResponse\): boolean \{/.test(MAIN_SOURCE));
-  const fn = MAIN_SOURCE.slice(
-    MAIN_SOURCE.indexOf('function solveInstalled(r: SolveResponse): boolean {'),
-    MAIN_SOURCE.indexOf('export const MIN_CAMERA_POSITIONS'),
-  );
-  assert.ok(/r\.converged/.test(fn), 'the predicate ignores convergence');
-  assert.ok(/MIN_CAMERA_POSITIONS/.test(fn), 'the predicate ignores how many views were usable');
+  // lie as installing it.
+  //
+  // THIS HAS NOW HAD TO BE ENFORCED TWICE. Moving the predicate into
+  // `../src/display.ts` left the handler with its own inline copy of the rule
+  // and no compiler complaint, because the two conditions agreed on every
+  // reachable input — which is exactly how they drifted the first time. What the
+  // predicate DOES is tested in `display.test.ts`, on values; this asserts that
+  // both callers go through it and neither re-derives it.
   assert.ok(
-    /!solveInstalled\(solveResult\)/.test(MAIN_SOURCE),
-    'the drift cells do not consult the predicate',
+    /if \(!solveInstalled\(msg\)\) \{/.test(MAIN_SOURCE),
+    'the install handler decides for itself whether a solve counts',
+  );
+  assert.ok(
+    /const fresh = freshSolve\(solveResult, rigMovedSinceSolve\);/.test(MAIN_SOURCE),
+    'the drift cells decide for themselves whether a solve counts',
+  );
+  // And the SENTENCE comes from the same place. It says "The result was not
+  // applied", so composing it beside the decision rather than from it is how it
+  // gets shown about a result that was — which is what the handler did, reading
+  // `silhouetteCameras` for the message and `cameraPositions` for the install.
+  assert.ok(
+    /const viewNote = solveViewNote\(msg\);/.test(MAIN_SOURCE),
+    'the handler composes its own refusal sentence again',
+  );
+  assert.ok(
+    !/Segmentation could use only/.test(MAIN_SOURCE),
+    'the page still spells out the view-refusal sentence of its own',
+  );
+  // And none of them defines its own. A local `function solveInstalled` here
+  // would typecheck, shadow the import, and restore the divergence silently.
+  assert.ok(
+    !/function solveInstalled\(/.test(MAIN_SOURCE),
+    'the page defines its own copy of the predicate again',
+  );
+  assert.ok(
+    !/function freshSolve\(|function poseCells\(|function solveViewNote\(/.test(MAIN_SOURCE),
+    'the page defines its own copy of a display decision again',
   );
 });
 
-test('a solve that never settled is not installed as the calibration', () => {
-  // The reply handler wrote `state.compositorRig = msg.recoveredRig` with no
-  // reference to `msg.converged`, so a bundle adjustment that stopped at its
-  // iteration cap was painted onto the sphere and became the rig every readout
-  // describes. Measured on this page: one handheld camera stops at the 400-step
-  // cap with a 2.31 px residual and a rig 3.06 m from the lenses.
+test('a refused solve puts the pre-solve rig back on the sphere', () => {
+  // WHETHER a solve counts is `solveInstalled`, tested on values in
+  // `display.test.ts` — a bundle adjustment that stopped at its iteration cap is
+  // not a calibration, and it used to be painted onto the sphere anyway.
   //
-  // Refusing also has to put the PRE-SOLVE rig back, because `partialRig` draws
-  // the sphere from intermediates while the solve runs — leaving the last
-  // intermediate up would be worse than either outcome.
+  // What is only true HERE is what refusing COSTS. The page draws the sphere
+  // from the optimiser's intermediates while the solve runs (`partialRig`
+  // above), so a handler that merely declines to install leaves the last
+  // intermediate up: a rig nobody chose, from a step the optimiser was still
+  // moving away from. That is worse than either outcome, and no test of the
+  // response can see it, because the response is identical either way.
+  //
+  // Measured on this page: one handheld camera stops at the 400-step cap with a
+  // 2.31 px residual and a rig 3.06 m from the lenses.
   const handler = MAIN_SOURCE.slice(
     MAIN_SOURCE.indexOf('  solveResult = msg;'),
     MAIN_SOURCE.indexOf('let solveSeq = 0;'),
   );
   assert.ok(handler.length > 0, 'the solve reply handler has moved');
-  assert.ok(
-    /!msg\.converged/.test(handler),
-    'the recovered rig is installed without checking that the solve converged',
-  );
-  // The install must sit behind the check, not beside it.
-  assert.ok(
-    handler.indexOf('!msg.converged') <
-      handler.indexOf('state.compositorRig = msg.recoveredRig'),
-    'the rig is installed before the convergence check can refuse it',
-  );
-  assert.ok(
-    /state\.compositorRig = beforeRig \?\? null/.test(handler),
+
+  // Four points in one order, asserted as a CHAIN rather than as four separate
+  // facts, because each of them is satisfiable on its own by a handler that does
+  // the wrong thing: a restore below the `return` is present and dead, and a
+  // `return` above the restore reaches neither.
+  //
+  // Each index is checked for presence first. `indexOf` answers -1 for a string
+  // that is gone, so an ordering test alone can be satisfied by deleting the
+  // thing it orders.
+  const at = (needle: string, what: string): number => {
+    const i = handler.indexOf(needle);
+    assert.ok(i >= 0, what);
+    return i;
+  };
+  const refusal = at('if (!solveInstalled(msg)) {', 'the handler no longer asks the predicate');
+  const restore = at(
+    'state.compositorRig = beforeRig ?? null',
     'a refused solve leaves the last partial rig on screen',
   );
+  const bail = at('return;', 'a refused solve falls through into the install');
+  const install = at(
+    'state.compositorRig = msg.recoveredRig',
+    'the handler no longer installs a solve the predicate accepts',
+  );
+  assert.ok(refusal < restore, 'the rig is restored whatever the predicate said');
+  assert.ok(restore < bail, 'the restore sits below the return that skips it');
+  assert.ok(bail < install, 'a refused solve carries on into the install');
 });
 
 test('the parity verdict is retired by the same events that retire its reply', () => {
@@ -914,32 +956,6 @@ test('the config writer says what it cannot carry, and is a two-step flow', () =
   );
   assert.ok(save.length > 0, 'saveSosConfig has moved; this test cannot find it');
   assert.ok(/sosConfigDiff\(\)/.test(save), 'the save path does not re-derive the diff');
-});
-
-test('a mesh calibration counts as installed, which it did not', () => {
-  // `solveInstalled` gates whether the model readout shows the RECOVERED pose or
-  // the nominal rig's drift. It read `silhouetteCameras`, which counts what the
-  // image-space detector examined -- and that detector never runs on a model, so
-  // it is zero for every mesh solve. Every successful mesh calibration was
-  // therefore reported as not installed, and the page showed drift where the
-  // answer belonged. Invisible to the suite: every test reads the response and
-  // none reads the page.
-  const fn = MAIN_SOURCE.slice(
-    MAIN_SOURCE.indexOf('function solveInstalled(r: SolveResponse): boolean {'),
-    MAIN_SOURCE.indexOf('export const MIN_CAMERA_POSITIONS'),
-  );
-  assert.ok(fn.length > 0, 'solveInstalled has moved; this test cannot find it');
-  assert.ok(
-    /r\.cameraPositions - r\.silhouetteRefusals >= MIN_CAMERA_POSITIONS/.test(fn),
-    'installability is judged on cameras one detector examined, so a mesh solve never counts',
-  );
-  assert.ok(
-    !/r\.silhouetteCameras/.test(fn),
-    'solveInstalled still reads the image detector’s denominator',
-  );
-  // Refusals still subtract: a refused camera contributed nothing whatever the
-  // denominator is.
-  assert.ok(/silhouetteRefusals/.test(fn), 'a refused camera no longer costs the solve anything');
 });
 
 test('a model is segmented by a ray cast, and the page says which test ran', () => {
