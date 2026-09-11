@@ -2150,6 +2150,13 @@ async function main(): Promise<void> {
           // triangles — a limit tuned on the sphere would report the slow path
           // as the broken one.
           const until = Date.now() + Math.max(opts.timeoutMs, 900_000);
+          /** The page's own verdict on the solve, or '' while it is still working. */
+          const readoutVerdict = async (): Promise<string> =>
+            cdp.evaluate<string>(`(() => {
+              const t = document.querySelector('#readout')?.textContent ?? '';
+              return (/Did NOT converge[^.]*\\.|Converged in [^.]*\\.|Segmentation could use only[^.]*\\./.exec(t) ?? [''])[0];
+            })()`);
+
           let cell: { value: string; title: string } | null = null;
           let geometric = false;
           let lastSeen = '';
@@ -2182,6 +2189,15 @@ async function main(): Promise<void> {
               geometric = seen.geometric;
               break;
             }
+            // A REFUSAL IS ALSO TERMINAL. Waiting only for success meant every
+            // legitimate non-converged solve — the outcome accepted as correct
+            // below — sat here for the full deadline with the page's verdict
+            // already on screen, adding fifteen minutes to the run and risking
+            // the outer timeout. The page has said all it is going to say.
+            if (/Did NOT converge/.test(await readoutVerdict())) {
+              if (seen !== null) cell = { value: seen.value, title: seen.title };
+              break;
+            }
             if (seen !== null) cell = { value: seen.value, title: seen.title };
             // Report the TRANSITIONS, not just the verdict. A failure here has
             // three candidate causes that look identical from the outside — the
@@ -2202,10 +2218,7 @@ async function main(): Promise<void> {
           // displayed as drift anyway — so the two have to be told apart, and
           // the page already distinguishes them in prose it writes for the
           // operator. Reading that is both the diagnosis and the fair verdict.
-          const why = await cdp.evaluate<string>(`(() => {
-            const t = document.querySelector('#readout')?.textContent ?? '';
-            return (/Did NOT converge[^.]*\\.|Converged in [^.]*\\.|Segmentation could use only[^.]*\\./.exec(t) ?? [''])[0];
-          })()`);
+          const why = await readoutVerdict();
           if (cell === null) {
             failures.push('no lens-position cell ever rendered while a model was loaded');
           } else if (/Did NOT converge/.test(why)) {

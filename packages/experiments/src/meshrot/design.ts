@@ -56,9 +56,15 @@ export const SEED_COUNT = 30;
 export const DOCUMENTED_SEEDS = [1234, 77, 20240001] as const;
 
 /**
- * Effectively a hold. `ParameterPrior` rejects a zero width — "a zero-width
- * prior is a hold, not a prior" — and 1e-3 is two orders below the 0.01 draw
- * the truth comes from, so the parameter cannot travel within a seed's spread.
+ * The tight arm's width: one order of magnitude below the truth's own spread.
+ *
+ * `ParameterPrior` rejects a zero width — "a zero-width prior is a hold, not a
+ * prior" — so the tightest available statement is a narrow one. 1e-3 against
+ * the N(0, 0.01) the truth is drawn from is a factor of ten, ONE order, and it
+ * is a soft penalty rather than a hold: the residual is (value - mean) / sigma
+ * added to the objective, so the data can still move the parameter if it has
+ * enough to say. Calling it "effectively held" is shorthand for how little it
+ * travels in practice, not a claim that it cannot.
  */
 export const TIGHT_SIGMA = 1e-3;
 

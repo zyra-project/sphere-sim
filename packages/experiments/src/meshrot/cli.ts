@@ -36,7 +36,21 @@ function parseArgs(argv: string[]): { arm: string | null; seeds: number; fresh: 
     else if (argv[i] === '--fresh') fresh = true;
     else throw new Error(`experiment6: unknown argument '${argv[i]}'`);
   }
-  if (!Number.isFinite(seeds) || seeds < 1) throw new Error('experiment6: --seeds must be >= 1');
+  // Integer, and no more than the design. A fraction is silently truncated by
+  // `Array.from({ length })`, and a value ABOVE the design used to produce a
+  // file that called itself complete — `provisional` compared the run count to
+  // a constant derived from SEED_COUNT, so more points than designed cleared
+  // the bar — while `generatedFrom.seedCount` still published 30. A result that
+  // misdescribes its own provenance is worse than a short one that admits it.
+  if (!Number.isInteger(seeds) || seeds < 1) {
+    throw new Error('experiment6: --seeds must be a whole number >= 1');
+  }
+  if (seeds > SEED_COUNT) {
+    throw new Error(
+      `experiment6: --seeds is for SHORT runs; ${seeds} exceeds the design's ${SEED_COUNT}. ` +
+        'Raise SEED_COUNT in design.ts instead, so the provenance moves with it.',
+    );
+  }
   return { arm, seeds, fresh };
 }
 
@@ -86,8 +100,7 @@ function main(): void {
     }
   }
   const runs = load();
-  assemble(runs);
-  report(runs);
+  report(assemble(runs));
 }
 
 const RESULT = path.join(OUT, 'experiment-6.json');
@@ -101,20 +114,68 @@ const SCHEMA = 'sphere-sim/experiment-6@1';
  * `experiment-5.json`: a checkpoint is a place to resume from, not a
  * measurement anybody should cite.
  */
-function assemble(runs: PointRun[]): void {
+/**
+ * One arm's figures at one scope, computed once and rendered wherever needed.
+ *
+ * Named as a type rather than left inline because two callers read it — the
+ * results file and the terminal report — and the whole point of the shape is
+ * that they cannot disagree.
+ */
+interface Summary {
+  scope: 'documented' | 'all';
+  arm: string;
+  question: string;
+  n: number;
+  seedsDropped: number;
+  meshMedianRotDeg: number;
+  sphereMedianRotDeg: number;
+  meshWorstRotDeg: number;
+  sphereWorstRotDeg: number;
+  meshMedianPosMm: number;
+  sphereMedianPosMm: number;
+  meshMedianResidualPx: number;
+  sphereMedianResidualPx: number;
+  meshNotConverged: number;
+  sphereNotConverged: number;
+}
+
+function assemble(runs: PointRun[]): Summary[] {
   const complete = ARMS.length * BODIES.length * (DOCUMENTED_SEEDS.length + SEED_COUNT);
-  const summary: Record<string, unknown>[] = [];
+  const summary: Summary[] = [];
   for (const scope of ['documented', 'all'] as const) {
     const rows = scope === 'documented' ? runs.filter((r) => r.documented) : runs;
     for (const arm of ARMS) {
-      const mesh = rows.filter((r) => r.arm === arm.key && r.body === 'mesh');
-      const sphere = rows.filter((r) => r.arm === arm.key && r.body === 'nominal');
+      const allMesh = rows.filter((r) => r.arm === arm.key && r.body === 'mesh');
+      const allSphere = rows.filter((r) => r.arm === arm.key && r.body === 'nominal');
+      if (allMesh.length === 0 || allSphere.length === 0) continue;
+
+      // A SEED COUNTS ONLY IF BOTH ITS BODIES SETTLED, and the rule is not
+      // fastidiousness. The page refuses a solve that stopped at its iteration
+      // cap — `solveInstalled` in packages/web/src/display.ts — so a
+      // non-converged endpoint is a calibration nobody would be allowed to
+      // install, and averaging it in publishes a refused solve as the arm's
+      // result. That is not hypothetical here: seed 286650231 failed to
+      // converge in `nominal-tight`/`mesh` and its value WAS the published
+      // median for that arm, 0.1518 against the converged-only 0.1583. An
+      // earlier draft of this file said medians made that safe. A median is
+      // robust to an outlier's MAGNITUDE, not to its presence in the middle.
+      //
+      // Both bodies, because the headline is a RATIO. Dropping a failed mesh
+      // while keeping its sphere would compare the two over different seed
+      // sets, which is the paired-comparison rule this whole design rests on —
+      // `bench/test/scenarios.test.ts` enforces the same pairing upstream.
+      const failed = new Set<number>();
+      for (const r of [...allMesh, ...allSphere]) if (!r.converged) failed.add(r.seed);
+      const mesh = allMesh.filter((r) => !failed.has(r.seed));
+      const sphere = allSphere.filter((r) => !failed.has(r.seed));
       if (mesh.length === 0 || sphere.length === 0) continue;
       summary.push({
         scope,
         arm: arm.key,
         question: arm.question,
         n: mesh.length,
+        /** Seeds dropped because one body or the other never settled. */
+        seedsDropped: failed.size,
         meshMedianRotDeg: median(mesh.map((r) => r.poseRotationDeg)),
         sphereMedianRotDeg: median(sphere.map((r) => r.poseRotationDeg)),
         meshWorstRotDeg: worst(mesh.map((r) => r.poseRotationDeg)),
@@ -123,6 +184,8 @@ function assemble(runs: PointRun[]): void {
         sphereMedianPosMm: median(sphere.map((r) => r.posePositionMm)),
         meshMedianResidualPx: median(mesh.map((r) => r.residualRmsPx)),
         sphereMedianResidualPx: median(sphere.map((r) => r.residualRmsPx)),
+        // Zero by construction now; kept so the file states the policy held
+        // rather than leaving a reader to infer it from the counts.
         meshNotConverged: mesh.filter((r) => !r.converged).length,
         sphereNotConverged: sphere.filter((r) => !r.converged).length,
       });
@@ -141,7 +204,11 @@ function assemble(runs: PointRun[]): void {
             : '',
         generatedFrom: {
           rootSeed: EXPERIMENT_ROOT_SEED,
+          // The DESIGN's count, and beside it what this file actually holds.
+          // They agree on a full run and differ on a short one, and a reader
+          // should not have to count `runs` to find out which they have.
           seedCount: SEED_COUNT,
+          seedsPresent: new Set(runs.map((r) => r.seed)).size,
           documentedSeeds: DOCUMENTED_SEEDS,
           arms: ARMS,
           bodies: BODIES,
@@ -154,51 +221,59 @@ function assemble(runs: PointRun[]): void {
     )}\n`,
   );
   process.stdout.write(`\nwritten: ${path.relative(ROOT, RESULT)}\n`);
+  return summary;
 }
 
-function report(runs: PointRun[]): void {
-  const out: string[] = [];
-  out.push('');
-  out.push('EXPERIMENT 6 — what the ellipsoid\'s extra rotation is made of');
-  out.push('');
+function report(summary: Summary[]): void {
+  // RENDERS what `assemble` computed; it does not recompute it.
+  //
+  // These were two independent passes over the runs, and they disagreed the
+  // moment a policy was added to one: `assemble` learned to drop seeds where a
+  // body never settled, and this went on printing medians that still included
+  // them — a refused solve on screen beside the corrected figure in the file
+  // the document cites. That is the same divergence `solveInstalled` and the
+  // drift cells had, in a third place, and the fix is the same one: a single
+  // producer, and everything else a reader of it.
+  const out: string[] = [''];
+  out.push("EXPERIMENT 6 — what the ellipsoid's extra rotation is made of", '');
   for (const scope of ['documented', 'all'] as const) {
-    const rows = scope === 'documented' ? runs.filter((r) => r.documented) : runs;
+    const rows = summary.filter((r) => r.scope === scope);
     if (rows.length === 0) continue;
-    const seeds = new Set(rows.map((r) => r.seed)).size;
-    out.push(`## ${scope === 'documented' ? "the document's own three seeds" : `all ${seeds} seeds`}`);
-    out.push('');
-    out.push('arm             body      median rot   worst rot   median pos   median resid    n');
-    for (const arm of ARMS) {
-      for (const body of BODIES) {
-        const rs = rows.filter((r) => r.arm === arm.key && r.body === body);
-        if (rs.length === 0) continue;
+    const n = rows[0].n;
+    out.push(
+      `## ${scope === 'documented' ? "the document's own three seeds" : `all seeds`}`,
+      '',
+      'arm             body      median rot    worst rot   median pos   median resid     n  dropped',
+    );
+    for (const r of rows) {
+      for (const [body, rot, wrst, pos, res] of [
+        ['nominal', r.sphereMedianRotDeg, r.sphereWorstRotDeg, r.sphereMedianPosMm, r.sphereMedianResidualPx],
+        ['mesh', r.meshMedianRotDeg, r.meshWorstRotDeg, r.meshMedianPosMm, r.meshMedianResidualPx],
+      ] as const) {
         out.push(
-          `${arm.key.padEnd(15)} ${body.padEnd(9)} ` +
-            `${median(rs.map((r) => r.poseRotationDeg)).toFixed(4).padStart(10)} ` +
-            `${worst(rs.map((r) => r.poseRotationDeg)).toFixed(4).padStart(11)} ` +
-            `${median(rs.map((r) => r.posePositionMm)).toFixed(1).padStart(12)} ` +
-            `${median(rs.map((r) => r.residualRmsPx)).toFixed(4).padStart(14)} ` +
-            `${String(rs.length).padStart(4)}`,
+          `${r.arm.padEnd(15)} ${body.padEnd(9)} ${rot.toFixed(4).padStart(10)} ` +
+            `${wrst.toFixed(4).padStart(12)} ${pos.toFixed(1).padStart(12)} ` +
+            `${res.toFixed(4).padStart(14)} ${String(r.n).padStart(5)} ` +
+            `${String(r.seedsDropped).padStart(8)}`,
         );
       }
     }
-    out.push('');
-    // THE ANSWER, stated as the ratio the question was asked in.
-    out.push('arm             mesh/sphere median rot     mesh rot vs its own free arm');
-    const freeMesh = median(
-      rows.filter((r) => r.arm === 'free' && r.body === 'mesh').map((r) => r.poseRotationDeg),
-    );
-    for (const arm of ARMS) {
-      const m = median(
-        rows.filter((r) => r.arm === arm.key && r.body === 'mesh').map((r) => r.poseRotationDeg),
-      );
-      const s = median(
-        rows.filter((r) => r.arm === arm.key && r.body === 'nominal').map((r) => r.poseRotationDeg),
-      );
-      if (!Number.isFinite(m) || !Number.isFinite(s)) continue;
+    out.push('', 'arm             mesh/sphere median rot     mesh rot vs its own free arm');
+    const free = rows.find((r) => r.arm === 'free');
+    for (const r of rows) {
+      const removed = free === undefined ? NaN : (1 - r.meshMedianRotDeg / free.meshMedianRotDeg) * 100;
       out.push(
-        `${arm.key.padEnd(15)} ${(m / s).toFixed(2).padStart(20)}x ` +
-          `${((1 - m / freeMesh) * 100).toFixed(1).padStart(28)}% removed`,
+        `${r.arm.padEnd(15)} ${(r.meshMedianRotDeg / r.sphereMedianRotDeg).toFixed(2).padStart(20)}x ` +
+          `${removed.toFixed(1).padStart(28)}% removed`,
+      );
+    }
+    // Said once per scope rather than left for a reader to notice `n` < seeds.
+    const dropped = rows.reduce((a, r) => a + r.seedsDropped, 0);
+    if (dropped > 0) {
+      out.push(
+        '',
+        `${dropped} arm-seed(s) excluded: a body did not converge, and the page would refuse`,
+        'that calibration, so averaging it in would publish a refused solve as a result.',
       );
     }
     out.push('');

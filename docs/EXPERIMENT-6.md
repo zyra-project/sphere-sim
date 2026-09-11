@@ -35,21 +35,33 @@ A-16's. Both are run, because the difference between them is itself a result.
 <!-- generated: experiment-6-arms -->
 | arm | sphere rot | **mesh rot** | mesh/sphere | mesh rot removed | mesh residual |
 | --- | --- | --- | --- | --- | --- |
-| `free` | 0.0463° | **0.0684°** | 1.48x | 0.0% | 0.27729 px |
-| `nominal-tight` | 0.1017° | **0.1518°** | 1.49x | -121.8% | 0.27816 px |
-| `truth-tight` | 0.0344° | **0.0169°** | 0.49x | 75.3% | 0.27738 px |
-| `truth-loose` | 0.0463° | **0.0655°** | 1.41x | 4.3% | 0.27729 px |
+| `free` | 0.0460° | **0.0674°** | 1.47x | 0.0% | 0.27736 px |
+| `nominal-tight` | 0.0987° | **0.1583°** | 1.60x | -134.7% | 0.27806 px |
+| `truth-tight` | 0.0344° | **0.0169°** | 0.49x | 75.0% | 0.27738 px |
+| `truth-loose` | 0.0463° | **0.0655°** | 1.41x | 2.8% | 0.27729 px |
 <!-- /generated -->
 
-Median over 33 seeds — the document's own three (1234, 77, 20240001) plus thirty
-derived from root seed 20260911. Thirty because five seeds produced a confident
-decision earlier in this project that thirty reversed.
+Median over the seeds where BOTH bodies converged — the document's own three
+(1234, 77, 20240001) plus thirty derived from root seed 20260911. Thirty because
+five seeds produced a confident decision earlier in this project that thirty
+reversed.
+
+Two arm-seeds are excluded on that rule, and the rule is not fastidiousness. The
+page refuses a solve that stopped at its iteration cap, so a non-converged
+endpoint is a calibration nobody would be allowed to install. An earlier draft of
+this page averaged them in and said medians made that safe; they do not. Seed
+286650231 failed to converge in `nominal-tight`/`mesh` and its value WAS that
+arm's published median — 0.1518 where the converged-only figure is 0.1583. A
+median is robust to an outlier's magnitude, not to its sitting in the middle.
+Both bodies drop together because the headline is a RATIO, and comparing two
+bodies over different seed sets is the thing the paired design exists to
+prevent.
 
 ## What it says
 
 **1. It is the degeneracy, and the evidence is A-18's own test.** Telling the
-solver the true lens shift removes **75.3%** of the mesh's rotation error —
-median 0.0684° to 0.0169° — for **0.032%** more residual. The photographs are
+solver the true lens shift removes **75.0%** of the mesh's rotation error —
+median 0.0674° to 0.0169° — for **0.005%** more residual. The photographs are
 fit just as well by a calibration whose pointing is four times better, which is
 the definition of a degeneracy and not a solver defect. A-12 is confirmed as the
 mechanism, on the body the question was asked about.
@@ -64,21 +76,21 @@ common to both bodies stops dominating. The ellipsoid was not paying for being a
 mesh; it was losing more of an advantage it actually had.
 
 **3. "Two to four times worse" is a small-sample artifact.** The three
-documented seeds give a mesh/sphere ratio of **3.08x**. Thirty-three seeds give
-**1.48x**. The documented three are a bad draw, and the sweep reproduces them
+documented seeds give a mesh/sphere ratio of **3.08x**. The full set gives
+**1.47x**. The documented three are a bad draw, and the sweep reproduces them
 exactly — 0.0376 / 0.0353 / 0.0511 against 0.1711 / 0.0416 / 0.1157 — which is
 what makes the wider number trustworthy rather than merely different.
 
 **4. A-16's test would have given the opposite answer, and not by a little.**
 Pinning shift at §3.1's nominal zero makes rotation **worse on both bodies**:
-mesh 0.0684° to 0.1518°, sphere 0.0463° to 0.1017°. Anyone running the reflex
+mesh 0.0674° to 0.1583°, sphere 0.0460° to 0.0987°. Anyone running the reflex
 test would have concluded that shift is not the mechanism — precisely A-16's
 error, reproduced here on data A-18 never saw. The control earns its place.
 
 **5. A-12's remedy, as its own arithmetic sizes it, buys almost nothing.** The
 `truth-loose` arm centres the prior on TRUTH at sigma 0.058 — A-12's own width,
 the shift worth one degree of pointing against §2's 1-2° mount tolerance — and
-removes **4.3%**. Even centred on the true value, a prior that wide does
+removes **2.8%**. Even centred on the true value, a prior that wide does
 essentially nothing. The benefit is in the WIDTH, not the centring: reading the
 shift off the projector's menu helps only if it is read precisely.
 
@@ -86,21 +98,24 @@ That last point is new and it is a message for the spec. A-12 proposes "a
 plausible range in §3.1, in the same spirit as §2's ±1-2° mount tolerance". This
 says such a range would be too loose to reach the §7 rotation gate. What the
 gate needs is a shift known to nearer 0.001 than to 0.058, and where between
-those the knee sits is **not measured here** — two points do not locate it.
+those the knee sits is **not measured here** — two points do not locate a knee.
 
 ## What is not claimed
 
-- **Where the knee is.** Two sigmas were run, three orders apart. The sweep that
-  finds the usable precision is a sigma ladder and has not been run.
+- **Where the knee is.** Two sigmas were run, 0.001 and 0.058 — a factor of 58,
+  about 1.8 orders of magnitude, not the three an earlier draft of this page
+  claimed. Two points cannot locate a knee between them; the sweep that would
+  is a sigma ladder and has not been run.
 - **That this closes A-12.** It confirms A-12's mechanism and prices A-12's
   remedy; it does not decide what §3.1 should say, which is the author's.
 - **Anything about the other bodies.** One ellipsoid, at one tessellation.
-- **That the sphere is unaffected.** It is not: truth-tight removes 25.7% of the
-  sphere's rotation error too, for -0.055% residual. The degeneracy is common to
+- **That the sphere is unaffected.** It is not: truth-tight removes 25.1% of the
+  sphere's rotation error too, for -0.085% residual. The degeneracy is common to
   both bodies. What differs is how much each was losing to it.
 
 Non-convergence was one seed in `free` (sphere) and one in `nominal-tight`
-(mesh), out of 264 solves; medians are reported for that reason.
+(mesh), out of 264 solves. Both seeds are excluded from both bodies of their
+arm, per the rule above.
 
 ## Reproducing
 
