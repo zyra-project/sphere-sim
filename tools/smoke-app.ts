@@ -1029,7 +1029,15 @@ async function main(): Promise<void> {
           if (c) c.click();
           return c ? 'ok' : 'no chip; had ' + all.map((b) => (b.textContent||'').trim()).join('/');
         })()`);
-        if (hit !== 'ok') failures.push(`the seam picker lost its ${label} chip: ${hit}`);
+        if (hit !== 'ok') {
+          // RETURNS, rather than waiting ninety seconds for a redraw that was
+          // never asked for and then reporting that the view did not redraw
+          // "after clicking" a chip nothing clicked. That is the same false
+          // cause this change set exists to remove, and it would cost the full
+          // budget at every stop. The caller reads NaN and says its own thing.
+          failures.push(`the seam picker lost its ${label} chip: ${hit}`);
+          return { az: Number.NaN, range: Number.NaN };
+        }
         // Wait for the value to MOVE, not merely to hold still.
         //
         // `dataset.az` is written by `draw()`, so it is a frame behind the click,
@@ -1044,10 +1052,35 @@ async function main(): Promise<void> {
           cdp.evaluate<string>(
             "document.getElementById('view').dataset.az + '|' + document.getElementById('view').dataset.range",
           );
+        // GIVING UP HAS TO BE LOUD, and this is the half that was missing.
+        //
+        // The loop below used to run 25 times at 400 ms and then return `before`
+        // — the PRE-CLICK reading — with nothing said. The caller compared that
+        // stale value against where the chip should have gone and reported "the
+        // camera move is accumulating", which is not what happened and sent the
+        // next reader looking for drift that was never there. On CI it read as a
+        // random red build: seen once on one commit of a three-commit branch
+        // whose diff could not reach this code.
+        //
+        // The budget was also far too small for the machine. In the run that
+        // failed, this same page reported a single redraw taking 32.5 s — the
+        // container has no GPU and the rasteriser is supersampling a full window
+        // — against a ceiling of ten. A limit tuned on a developer's laptop
+        // reports a slow machine as a broken page.
+        const WAIT_MS = 90_000;
+        const STEP_MS = 400;
+        const t0 = Date.now();
         let last = before;
-        for (let i = 0; i < 25 && last === before; i++) {
-          await sleep(400);
+        while (last === before && Date.now() - t0 < WAIT_MS) {
+          await sleep(STEP_MS);
           last = await read();
+        }
+        if (last === before) {
+          failures.push(
+            `the view never redrew after clicking ${label}: still ${before.replace('|', '° at ')} m ` +
+              `after ${((Date.now() - t0) / 1000).toFixed(0)} s. The reading below is the one from ` +
+              'before the click, so anything computed from it describes the previous seam.',
+          );
         }
         const [az, range] = last.split('|');
         return { az: Number.parseFloat(az), range: Number.parseFloat(range) };
@@ -1087,10 +1120,20 @@ async function main(): Promise<void> {
         Math.abs(again.az - stops[0].az) > 0.5 ||
         Math.abs(again.range - stops[0].range) > 0.02
       ) {
+        // Says WHAT, not WHY. This used to end "the camera move is
+        // accumulating", which named a cause the check cannot see and which was
+        // wrong every time it fired: the reading was the previous seam's,
+        // returned by a wait that had given up. That wait now reports itself, so
+        // a failure here means the view really did redraw somewhere unexpected —
+        // and whether that is accumulation, a mis-navigation, or something else
+        // is for whoever reads it to establish rather than for this line to
+        // assert. The previous stop is quoted because landing exactly on it is
+        // the signature worth recognising.
         failures.push(
           `going back to ${names[0]} landed somewhere else: ${again.az.toFixed(1)}°, ` +
             `${again.range.toFixed(2)} m against ${stops[0].az.toFixed(1)}°, ` +
-            `${stops[0].range.toFixed(2)} m — the camera move is accumulating`,
+            `${stops[0].range.toFixed(2)} m (the previous stop was ` +
+            `${stops[stops.length - 1].az.toFixed(1)}°)`,
         );
       } else {
         process.stdout.write(
@@ -1418,7 +1461,91 @@ async function main(): Promise<void> {
         }
         return Number.parseFloat(last);
       };
+      // THIS BLOCK HAS TO ESTABLISH ITS OWN PRECONDITION.
+      //
+      // Both checks below ask whether a calibration SURVIVES something, and both
+      // used to open by reading the headline and calling it `solved`. It was not
+      // solved. The solve at the top of `--solve` recalibrates, and then the
+      // projector-tab check a few hundred lines above switches a projector off
+      // and on — which calls `clearCalibration()` on purpose, because the
+      // recovered rig is a flat list indexed alongside the lit set and changing
+      // the membership slides the two out of step. Correct behaviour, and it
+      // leaves nothing here to survive anything.
+      //
+      // So the block read 116 mm — the broken rig's magnitude — as its baseline,
+      // and both checks then measured the fate of a calibration that was not
+      // there. They failed for that reason on `main` for as long as anyone has
+      // run them, which is not long: `ci` runs `smoke:app` without `--solve`.
+      //
+      // Recalibrating here rather than moving the block: the comment above is
+      // right that this has to be last, because everything above reads the
+      // before-and-after snapshots a rig movement voids.
+      // `broken` is only a BROKEN baseline if no calibration is in force, and
+      // that is asserted rather than assumed. `settled()` without its `from`
+      // guard waits for five identical readings, which a value that has not
+      // started moving yet satisfies perfectly — so a model pass still in
+      // flight would hand back the old calibrated figure and every ratio below
+      // would be measured against the wrong reference. The improvement line
+      // settles it directly: it exists only while the compositor is a recovered
+      // rig, so its absence IS "uncalibrated" and needs no timing argument.
+      const calibrationLine = (): Promise<boolean> =>
+        cdp.evaluate<boolean>(
+          "document.querySelector('[data-smoke=\"improvement\"]') !== null",
+        );
+      const broken = await settled();
+      if (await calibrationLine()) {
+        failures.push(
+          `a calibration was still in force at ${broken} mm when this block began, so that ` +
+            'figure is not the uncalibrated baseline the checks below compare against',
+        );
+      }
+      const recalibrated = await cdp.evaluate<boolean>(`(() => {
+        const b = [...document.querySelectorAll('button')]
+          .find((x) => /Recalibrate/.test(x.textContent ?? ''));
+        if (!b || b.disabled) return false;
+        b.click();
+        return true;
+      })()`);
+      if (!recalibrated) {
+        failures.push('Recalibrate is missing or refused before the calibration-survival checks');
+      }
+      // Only waited for when a click actually went out. Polling five minutes for
+      // a line that cannot appear turns a one-line prerequisite failure into the
+      // full solve timeout, and says nothing more than the push above already did.
+      let haveCalibration = false;
+      const calUntil = Date.now() + Math.max(opts.timeoutMs, 300_000);
+      while (recalibrated && Date.now() < calUntil) {
+        await sleep(1000);
+        haveCalibration = await calibrationLine();
+        if (haveCalibration) break;
+      }
+      if (!haveCalibration) {
+        // SKIPPED, not run and misreported. Both checks below phrase their
+        // failures as "the calibration was discarded", and with none installed
+        // they would say that about nothing at all — a false cause, which is the
+        // fault this whole change set is about. The prerequisite failure above
+        // is the only true thing available here.
+        failures.push(
+          'no calibration was in force before the survival checks, so they were skipped: ' +
+            'what they would have measured is whether nothing survives being disturbed',
+        );
+      }
+      if (haveCalibration) {
       const solved = await settled();
+      // RELATIVE, because an absolute bound here is a guess. The first draft of
+      // this said `solved < 5` and rejected a perfectly good 5.95 mm: a
+      // calibration run from a pristine page reaches 0.25 mm, but this one runs
+      // after every interaction above it and lands an order worse while still
+      // being unambiguously a calibration — the rig it replaced reads 116 mm.
+      // What separates the two is the FACTOR, not a millimetre count, so that is
+      // what is asserted.
+      if (haveCalibration && !(solved < broken / 4)) {
+        failures.push(
+          `the pre-check recalibration left the headline at ${solved} mm against ${broken} mm ` +
+            'before it — not enough of a change to call a calibration, and the two checks below ' +
+            'would be comparing two uncalibrated readings, which agree',
+        );
+      }
 
       // Walking round the ball is the first. A viewpoint chip moves the eye and
       // nothing else, and it was discarding the calibration — so going to look at
@@ -1432,15 +1559,49 @@ async function main(): Promise<void> {
         if (chip) chip.click();
         return !!chip;
       })()`);
-      const afterView = await settled();
-      if (Math.abs(afterView - solved) > 1) {
+      // `from` supplied, which it was not. The helper's own comment says why it
+      // exists: "a quiet second before the worker's answer arrives reads as
+      // settled, and the check reports the pre-change number as the outcome."
+      // Omitting it here meant the reading could be `solved` itself, and the
+      // threshold would then approve a number the viewpoint change had not yet
+      // touched — passing for want of a measurement.
+      const afterView = await settled(solved);
+      // THE MEASUREMENT IS VIEW-DEPENDENT, and this check used to deny it.
+      //
+      // It required the headline to hold within 1 mm across a viewpoint change,
+      // on the theory that moving the eye cannot touch what is installed. The
+      // second half is true — `touched(false)` on the chip's handler, and its
+      // comment says so outright — but the first does not follow: measured here
+      // with a calibration demonstrably in force, walking to a seam moved the
+      // grid figure from 5.95 mm to 4.7 mm. Both are calibrated magnitudes
+      // against the 116 mm the broken rig reads, so nothing was discarded; the
+      // metric simply reports what the current view samples.
+      //
+      // So the question is asked the way it was meant: is the CALIBRATION still
+      // there. The improvement line is the model's own answer, and the figure
+      // must stay in the calibrated regime rather than stay the same number.
+      const stillCalibratedAfterView = await cdp.evaluate<boolean>(
+        "document.querySelector('[data-smoke=\"improvement\"]') !== null",
+      );
+      // TWO FINDINGS, NOT ONE. The improvement line's absence means the rig was
+      // discarded; a figure that drifted out of the calibrated range with the
+      // line still present means something else entirely, and calling both
+      // "discarded" would assert a cause in exactly the case the line disproves.
+      if (!stillCalibratedAfterView) {
         failures.push(
-          `moving the eye changed the measurement: ${solved} mm before the viewpoint chip, ` +
-            `${afterView} mm after — a view control has discarded the calibration`,
+          `moving the eye discarded the calibration: the improvement line is gone, and the ` +
+            `figure went ${solved} → ${afterView} mm against ${broken} mm uncalibrated`,
+        );
+      } else if (!(afterView < broken / 4)) {
+        failures.push(
+          `moving the eye left the calibration installed — the improvement line is still ` +
+            `there — but the figure went ${solved} → ${afterView} mm, which is not far enough ` +
+            `below the ${broken} mm uncalibrated reading to call it calibrated any more`,
         );
       } else {
         process.stdout.write(
-          `  walking to a seam left the calibration alone (${solved} → ${afterView} mm)\n`,
+          `  walking to a seam left the calibration in force (${solved} → ${afterView} mm, ` +
+            `uncalibrated is ${broken} mm)\n`,
         );
       }
 
@@ -1516,6 +1677,7 @@ async function main(): Promise<void> {
           `  bumping again kept the recovered rig (${afterView} → ${nowMm} mm)\n`,
         );
       }
+      } // end: only when a calibration was there to survive anything
     }
 
     // A slider has to survive being dragged. LAST, because it leaves the sphere
@@ -1529,16 +1691,55 @@ async function main(): Promise<void> {
     // the way least likely to be noticed by anything checking state rather than
     // input. Real Input events, because pointer capture only behaves like the
     // browser's when the browser is delivering them.
-    const dragged = await (async (): Promise<string[] | null> => {
-      const box = await cdp.evaluate<{ x: number; y: number; w: number } | null>(`(() => {
+    const dragged = await (async (): Promise<{ before: string; seen: string[] } | null> => {
+      // MEASURED AFTER THE TAB CLICK HAS SETTLED, in two steps rather than one.
+      //
+      // Clicking the Install tab re-renders the panel, and the rail's box was
+      // being read in the same evaluate as the click — from a layout that the
+      // click was still changing. The dispatched coordinates then described
+      // where the rail had been. It survived for as long as nothing else moved
+      // the page, and stopped surviving the moment a calibration was left in
+      // force above: every value came back identical and the check reported
+      // "the drag stops tracking the pointer", which is what a press that
+      // MISSED THE RAIL looks like from here.
+      //
+      // A press that lands outside the control is not the failure this check is
+      // for, and it must not be reported as one.
+      await cdp.evaluate(`(() => {
         const tab = [...document.querySelectorAll('#controls button')]
           .find((b) => (b.textContent ?? '').trim() === 'Install');
         if (tab) tab.click();
+      })()`);
+      await sleep(600);
+      // SCROLLED INTO VIEW FIRST. CDP dispatches at VIEWPORT coordinates, and a
+      // rail that exists but sits below the fold has a bounding rect the mouse
+      // cannot reach — the press lands on whatever is actually at those pixels,
+      // which is why this began missing the moment the panel above it grew.
+      // `getBoundingClientRect` answers happily either way, so nothing said so.
+      const box = await cdp.evaluate<{
+        x: number; y: number; w: number; inView: boolean;
+      } | null>(`(() => {
         const rail = document.querySelector('#controls .sl .rail');
         if (!rail) return null;
+        rail.scrollIntoView({ block: 'center' });
         const r = rail.getBoundingClientRect();
-        return { x: r.left, y: r.top + r.height / 2, w: r.width };
+        const y = r.top + r.height / 2;
+        return {
+          x: r.left, y, w: r.width,
+          inView: r.left >= 0 && y >= 0 && r.left + r.width <= innerWidth && y <= innerHeight,
+        };
       })()`);
+      if (box !== null && !box.inView) {
+        // RETURNS. Dispatching at coordinates known to be outside the viewport
+        // does not test the slider — it presses and drags across whatever is
+        // actually at those pixels, which can change the page and then produce a
+        // second, invented slider failure on top of this one.
+        failures.push(
+          `the Install tab's first slider is off-screen at (${box.x.toFixed(0)}, ` +
+            `${box.y.toFixed(0)}) even after scrolling to it, so it cannot be dragged`,
+        );
+        return null;
+      }
       if (!box) return null;
       const read = (): Promise<string> =>
         cdp.evaluate<string>(
@@ -1546,6 +1747,15 @@ async function main(): Promise<void> {
         );
       const x0 = box.x + box.w * 0.15;
       const x1 = box.x + box.w * 0.75;
+      // READ BEFORE THE PRESS, because without it the two failures below cannot
+      // be told apart. Sampling starts after `mousePressed`, so a gesture whose
+      // pointerdown moved the value once and whose listener then died reads as
+      // six identical numbers — exactly like a press that never arrived. The
+      // previous draft called that "the press did not reach the rail", which is
+      // the same species of unfounded cause it was written to replace. What
+      // separates them is whether the one value they all share is the value the
+      // slider held BEFORE anything was pressed.
+      const beforePress = await read();
       await cdp.send('Input.dispatchMouseEvent', {
         type: 'mousePressed', x: x0, y: box.y, button: 'left', buttons: 1, clickCount: 1,
         pointerType: 'mouse',
@@ -1565,20 +1775,38 @@ async function main(): Promise<void> {
       });
       await sleep(400);
       seen.push(await read());
-      return seen;
+      return { before: beforePress, seen };
     })();
     if (!dragged) {
       failures.push('found no slider to drag on the Install tab');
     } else {
-      const distinct = new Set(dragged).size;
-      if (distinct < 4) {
+      const { before: beforePress, seen: values } = dragged;
+      const distinct = new Set(values).size;
+      if (distinct === 1 && values[0] === beforePress) {
+        // Never moved from where it started, so the press did not reach the
+        // control at all. Not a statement about whether a drag tracks a pointer,
+        // and reported as the different thing it is.
+        failures.push(
+          `the slider never moved from ${beforePress} across the whole gesture — the press did ` +
+            'not reach the rail, so this says nothing about whether a drag tracks the pointer',
+        );
+      } else if (distinct === 1) {
+        // Moved once and then stopped: the press landed, and the listener died
+        // before the first sampled move. That IS the failure this check exists
+        // for, and it is only distinguishable from the case above by the
+        // pre-press reading.
+        failures.push(
+          `the slider moved ${beforePress} → ${values[0]} on the press and then never again ` +
+            'across six moves — the drag stops tracking the pointer after pointerdown',
+        );
+      } else if (distinct < 4) {
         failures.push(
           `dragging a slider produced ${distinct} distinct values across 6 steps ` +
-            `(${dragged.join(', ')}) — the drag stops tracking the pointer`,
+            `(${values.join(', ')}) — the drag stops tracking the pointer`,
         );
       } else {
         process.stdout.write(
-          `  slider drag tracked ${distinct} values (${dragged[0]} → ${dragged[dragged.length - 1]})\n`,
+          `  slider drag tracked ${distinct} values (${values[0]} → ${values[values.length - 1]})\n`,
         );
       }
     }
