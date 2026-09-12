@@ -452,9 +452,11 @@ function experiment7Arms(result: Experiment7): string {
 /**
  * The recovered fraction, or an em dash.
  *
- * Null means the facet arm sat on its control and the denominator vanished, not
- * that nothing was recovered — so it must not render as `0%`, which is a
- * different claim and a wrong one.
+ * Null means there was no meaningful positive excess to recover a fraction OF —
+ * either the facet arm sat on its control, or it was already BETTER than the
+ * control, which the finest grid's rotation row actually is. It does not mean
+ * nothing was recovered, so it must not render as `0%`: that is a different
+ * claim and a wrong one.
  */
 const pct = (v: number | null): string => (v === null ? '— (no excess)' : `${v.toFixed(0)}%`);
 
@@ -632,11 +634,23 @@ export function unregisteredBlocks(): { doc: string; id: string }[] {
     const file = path.join(ROOT, doc);
     if (!fs.existsSync(file)) continue;
     const text = fs.readFileSync(file, 'utf8');
+    const seen = new Set<string>();
     for (const m of text.matchAll(marker)) {
       const id = m[1];
       // Registered, but against some OTHER document — which is the case that
       // produced this check and the one a bare `id in BLOCKS` would miss.
-      if (BLOCKS[id]?.doc !== doc) out.push({ doc, id });
+      if (BLOCKS[id]?.doc !== doc) {
+        out.push({ doc, id });
+        continue;
+      }
+      // A SECOND occurrence of a properly registered id, which the first version
+      // of this check waved through. `syncDocs` finds a block with `indexOf`, so
+      // it regenerates the first occurrence and never looks at the rest: a
+      // duplicate marker keeps the generated label over a table nothing writes
+      // or compares. The same hole as an unregistered marker, one step further
+      // in. Caught in review.
+      if (seen.has(id)) out.push({ doc, id });
+      seen.add(id);
     }
   }
   return out;

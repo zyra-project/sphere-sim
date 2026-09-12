@@ -97,7 +97,17 @@ export interface PointRun {
    * column is what says whether the thing being measured is the same thing.
    */
   iterations: number;
-  /** Triangles in the body, 0 for the analytic sphere. The mechanism's x-axis. */
+  /**
+   * Triangles in the body, 0 for the analytic sphere. The mechanism's x-axis.
+   *
+   * Counted off the MESH, never `2 * nLat * nLon`. That formula assumes every
+   * cell of the grid emits two triangles, and `ellipsoidMesh` emits one in the
+   * first band and one in the last: both of a pole cell's corners are the same
+   * pole vertex, so one triangle of the pair is degenerate and is left out
+   * rather than emitted with zero area. At 64x128 the difference is 16,128
+   * against 16,384 — 256 triangles that do not exist, published as a fact in
+   * every generated table. Caught in review.
+   */
   facets: number;
   /**
    * The gauge-aligned pose error broken out per projector and per axis.
@@ -179,7 +189,7 @@ export function runPoint(arm: Arm, seed: number, documented: boolean): PointRun 
     gaugeConstraints: result.solver?.extra.gaugeConstraints ?? -1,
     shiftKnown: arm.shiftKnown === true,
     iterations: result.solver?.diagnostics.iterations ?? -1,
-    facets: arm.grid === null ? 0 : arm.grid.nLat * arm.grid.nLon * 2,
+    facets: arm.grid === null ? 0 : facetCount(arm.grid),
     perProjector: (result.recovery?.aligned.perProjector ?? []).map((p) => ({
       id: p.id,
       positionMm: p.positionMm,
@@ -193,6 +203,24 @@ export function runPoint(arm: Arm, seed: number, documented: boolean): PointRun 
     })),
     seconds: (Date.now() - t0) / 1000,
   };
+}
+
+/**
+ * Triangles `ellipsoidMesh` actually emits for a grid.
+ *
+ * Built and counted rather than derived, so this figure moves with the mesh
+ * builder instead of restating an assumption about it. Memoised because the
+ * same few grids are asked for on every point of the sweep, and building a
+ * 192x384 mesh three hundred times to count its triangles would be absurd.
+ */
+const facetCache = new Map<string, number>();
+export function facetCount(grid: { nLat: number; nLon: number }): number {
+  const k = `${grid.nLat}x${grid.nLon}`;
+  const hit = facetCache.get(k);
+  if (hit !== undefined) return hit;
+  const n = ellipsoidMesh({ kind: 'ellipsoid', scaleY: 1, scaleZ: 1, ...grid }, 1).triangleCount;
+  facetCache.set(k, n);
+  return n;
 }
 
 /**

@@ -74,3 +74,25 @@ test('a marker in a document no block targets at all is caught', () => {
     fs.rmSync(file, { force: true });
   }
 });
+
+test('a second copy of a properly registered marker is caught', () => {
+  // `syncDocs` locates a block with `indexOf`, so it regenerates the FIRST
+  // occurrence and never looks at the rest. A duplicate marker therefore keeps
+  // the generated label over a table nothing writes and nothing compares — the
+  // same hole as an unregistered marker, one step further in, and the first
+  // version of this check waved it through because the id does resolve to this
+  // document. Caught in review.
+  const file = path.join(DOCS, 'ARBITRARY-SHAPES.md');
+  const original = fs.readFileSync(file, 'utf8');
+  const marker = '<!-- generated: experiment-7-mechanism-arbitrary-shapes -->';
+  assert.ok(original.includes(marker), 'the fixture marker should be in the document');
+  try {
+    fs.writeFileSync(file, `${original}\n\n${marker}\n| hand | written |\n<!-- /generated -->\n`);
+    const found = unregisteredBlocks().filter((b) => b.doc === 'docs/ARBITRARY-SHAPES.md');
+    assert.equal(found.length, 1, 'the duplicate should be the one finding');
+    assert.equal(found[0].id, 'experiment-7-mechanism-arbitrary-shapes');
+  } finally {
+    fs.writeFileSync(file, original);
+  }
+  assert.deepEqual(unregisteredBlocks(), [], 'and the document is left as it was found');
+});

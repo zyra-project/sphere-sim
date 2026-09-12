@@ -28,12 +28,28 @@
  * assumed, in each of the three places a sphere could have leaked back in.
  * `buildWorld` builds one `ellipsoidMesh` and derives both `surface` (what
  * `captureAndDecode` photographs) and `meshIndex` (what the bundle fits) from
- * that one object. The decoder's segmenter, where the scenario has one, is
- * `meshSegmenter` against that same `meshIndex` and never `sphereSegmenter` —
- * `run.ts` reasserts it on the mesh branch precisely so a caller's sphere
- * predicate cannot reach a mesh. And every branch in `run.ts` that could choose
- * between the two bodies keys on `surface === null`, never on the archetype's
- * name, so building these arms from `nominal` does not take a sphere path.
+ * that one object. And every branch in `run.ts` that could choose between the
+ * two bodies keys on `surface === null`, never on the archetype's name, so
+ * building these arms from `nominal` does not take a sphere path.
+ *
+ * NO DECODER SEGMENTER RUNS HERE, and an earlier draft of this paragraph left a
+ * reader to assume one did — it said what the segmenter WOULD be "where the
+ * scenario has one" and never said this scenario has none. `runScenario` builds
+ * `geometricSegmentation` only when `segmentSphere` is set, this experiment does
+ * not set it, and `decode.segmentation` is null on every arm. Caught in review.
+ *
+ * It stays off, and that is the bench's convention rather than an oversight:
+ * `packages/bench/src/cli.ts` does not set it either, so the shipped corpus —
+ * the `mesh` scenario CI judges included — runs without one, and experiment 6
+ * does not set it. Switching it on here would make this the one mesh
+ * measurement in the repository taken under a different capture from the corpus
+ * and the experiment it extends. What the comparison needs is that BOTH arms of
+ * a pair see the same decode, and they do, because it is the same decode.
+ *
+ * (Were one ever switched on, `run.ts` would build `meshSegmenter` against this
+ * same `meshIndex` and never `sphereSegmenter`; it reasserts that on the mesh
+ * branch so a caller's sphere predicate cannot reach a mesh. That is a property
+ * of the code, not a description of these runs.)
  *
  * That makes the prediction sharp in both directions. If the facet normal is
  * what costs something, the cost falls as facets flatten toward the surface, and

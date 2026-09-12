@@ -161,6 +161,7 @@ export function summarize(runs: readonly PointRun[]): Summary[] {
     // photons, which is the one thing the shared-archetype construction in
     // run.ts exists to rule out.
     const failed = new Set(rows.filter((r) => !r.converged).map((r) => r.seed));
+    const partial = partialSeeds(rows);
     const usable = usableSeed(rows, scope);
 
     const controlStats = new Map<string, { pos: number; rot: number; resid: number }>();
@@ -199,7 +200,20 @@ export function summarize(runs: readonly PointRun[]): Summary[] {
         // unfinished seed is not an exclusion anybody decided — reporting it as
         // one would have a half-run sweep announce a drop it never made. The
         // comment above `partial` already said so; this line did not.
-        seedsDropped: scope === 'all-including-refused' ? 0 : all.filter((r) => failed.has(r.seed)).length,
+        // Seeds a POLICY could actually have excluded: failed AND complete.
+        //
+        // A seed can be both failed and incomplete, and then it was excluded for
+        // being INCOMPLETE while being reported as a policy drop — a half-run
+        // sweep announcing a decision it never reached. Distinct seeds rather
+        // than rows, too: one row per arm per seed makes those equal in a
+        // well-formed log, and a log with a duplicated point is exactly when a
+        // count that says "seeds" must not quietly mean "rows". Caught in review.
+        seedsDropped:
+          scope === 'all-including-refused'
+            ? 0
+            : new Set(
+                all.filter((r) => failed.has(r.seed) && !partial.has(r.seed)).map((r) => r.seed),
+              ).size,
         medianPosMm: pos,
         worstPosMm: worst(kept.map((r) => r.posePositionMm)),
         medianRotDeg: rot,
@@ -243,10 +257,16 @@ export interface MechanismRow {
    * being printed; it becomes a number that looks like a finding.
    *
    * So it is reported only when the excess clears `EXCESS_FLOOR` of the
-   * control, and otherwise null, which the renderers say out loud. A value
-   * above 100 is not guarded and is not an error: it means the smooth arm
-   * landed BELOW the control, which is a real thing to have found and one this
-   * experiment did not expect.
+   * control, and otherwise null. Null therefore covers TWO cases and not one:
+   * the facet arm sitting on its control, and the facet arm being BETTER than
+   * its control — which the finest grid's rotation row actually is, at 0.0436°
+   * against a 0.0515° floor. "No excess to recover" is the honest phrasing for
+   * both; "already at its control" describes only the first, and an earlier
+   * version of the renderers said exactly that. Caught in review.
+   *
+   * A value above 100 is not guarded and is not an error: it means the smooth
+   * arm landed BELOW the control, which is a real thing to have found and one
+   * this experiment did not expect.
    */
   posRecoveredPercent: number | null;
   facetMedianRotDeg: number;
@@ -331,6 +351,39 @@ export const EXCESS_FLOOR = 0.1;
  * every one of those rows converged (the page refuses a solve that did not, so
  * averaging one in publishes a calibration nobody could install).
  */
+/**
+ * Seeds with no row yet for some arm of the DESIGN.
+ *
+ * `ARMS.length`, not the arms the log happens to contain. Inferring the count
+ * from the rows made a single-arm checkpoint — which `--arm 64x128` produces,
+ * and which is a supported run — look COMPLETE on every seed, so a partial log
+ * would publish medians and ratios as if the whole design had run. The check
+ * was reading its own input to decide what to check it against. Caught in
+ * review.
+ *
+ * The consequence is intended and it reaches BOTH tables: a log short of an arm
+ * yields no summary rows, and the mechanism rows read their control and scope
+ * off a summary row, so they go too. An earlier draft of this comment claimed
+ * they were unaffected; they are not, and the test that says so was written
+ * after the claim failed.
+ *
+ * That is the right behaviour rather than a limitation to work around. The case
+ * that matters is an INTERRUPTED sweep, and the runner is seed-major: it
+ * finishes a seed across every arm before starting the next, so an interrupted
+ * log is whole seeds plus one partial. The partial one is excluded and every
+ * complete seed still produces both tables. A log that is short of an arm on
+ * EVERY seed is `--arm` plumbing, and no comparison should be drawn from it.
+ *
+ * Shared with `seedsDropped`, because the two once disagreed about what
+ * "incomplete" meant and a seed excluded for being incomplete was then reported
+ * as a policy drop.
+ */
+export function partialSeeds(rows: readonly PointRun[]): Set<number> {
+  const present = new Map<number, number>();
+  for (const r of rows) present.set(r.seed, (present.get(r.seed) ?? 0) + 1);
+  return new Set([...present].filter(([, c]) => c < ARMS.length).map(([s]) => s));
+}
+
 export function usableSeed(
   rows: readonly PointRun[],
   scope: Summary['scope'],
@@ -341,8 +394,7 @@ export function usableSeed(
     present.set(r.seed, (present.get(r.seed) ?? 0) + 1);
     if (!r.converged) failed.add(r.seed);
   }
-  const armCount = new Set(rows.map((r) => r.arm)).size;
-  const partial = new Set([...present].filter(([, c]) => c < armCount).map(([s]) => s));
+  const partial = partialSeeds(rows);
   return (r: PointRun): boolean =>
     !partial.has(r.seed) && (scope === 'all-including-refused' || !failed.has(r.seed));
 }
@@ -361,10 +413,12 @@ export function usableSeed(
  * A mechanism pair is a comparison between two arms and a floor. Requiring the
  * other seven arms to have converged excludes seeds for the behaviour of arms
  * the comparison never looks at, which is loss with nothing bought. Restricting
- * the requirement to the three arms actually read keeps eleven, eleven and nine
- * — enough for the sign test to say something — and is no weaker a policy for
- * the rows it does report, because each of those rows is still a solve the page
- * would install.
+ * the requirement to the three arms actually read kept eleven, twelve and ten on
+ * that run — enough for the sign test to say something — and is no weaker a
+ * policy for the rows it does report, because each of those rows is still a
+ * solve the page would install. (Those numbers describe the twelve-seed pass
+ * and are quoted to show the SIZE of the loss, not as a current figure; the
+ * design runs thirty seeds now and the counts move with it.)
  *
  * The cost is that this table and the arms table are over different seed sets.
  * That is stated rather than smoothed over: every median a mechanism row
@@ -554,7 +608,10 @@ export function mechanismRows(
 /** One phrasing for the recovered fraction, including for the case with none. */
 function takesBack(percent: number | null): string {
   if (percent === null) {
-    return 'the facet arm is already at its control, so there is no excess to take back';
+    // Covers the facet arm sitting on its control AND the facet arm beating it.
+    // Saying "already at its control" for the second is a claim about the data
+    // that the data does not make.
+    return 'no positive excess over the control, so there is no fraction of one to take back';
   }
   if (percent > 100) return `smooth takes back ${percent.toFixed(0)}% — it lands BELOW the control`;
   return `smooth takes back ${percent.toFixed(0)}% of the facet arm's excess`;

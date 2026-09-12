@@ -26,7 +26,13 @@ import assert from 'node:assert/strict';
 import { ARMS } from '../src/tessellation/design.ts';
 import type { PointRun } from '../src/tessellation/run.ts';
 import { radiusDeficitMm } from '../src/tessellation/run.ts';
-import { MECHANISM, mechanismRows, signTestP, summarize } from '../src/tessellation/summarize.ts';
+import {
+  MECHANISM,
+  mechanismRows,
+  partialSeeds,
+  signTestP,
+  summarize,
+} from '../src/tessellation/summarize.ts';
 
 const RADIUS_M = 0.8636;
 
@@ -505,4 +511,100 @@ test('a crashed solve scores no axis at all, rather than scoring zero on every a
   for (const a of m.axes.filter((x) => x.axis !== 'yaw')) {
     assert.equal(a.smoothWins, 0, `${a.axis} did not move, so nothing may win on it`);
   }
+});
+
+test('a single-arm checkpoint is incomplete, not complete', () => {
+  // `--arm 64x128` is a supported run and produces a log with one arm. Deciding
+  // completeness from the arms the LOG contains makes every seed in it look
+  // finished, so a partial checkpoint publishes medians and cross-arm ratios as
+  // if the whole design had run. The count has to come from the design.
+  const oneArm = [1, 2, 3].map((sd) => point('64x128', sd));
+  assert.deepEqual(
+    [...partialSeeds(oneArm)].sort((a, b) => a - b),
+    [1, 2, 3],
+    'every seed is short of nine arms',
+  );
+  const rows = summarize(oneArm).filter((r) => r.scope === 'all');
+  assert.equal(rows.length, 0, 'a one-arm log supports no arms table at all');
+});
+
+test('an interrupted sweep keeps every whole seed and loses only the partial one', () => {
+  // This is the case the completeness rule exists for, and the runner is
+  // seed-major so it is the shape an interruption actually takes: whole seeds,
+  // then one seed part-way through its arms.
+  const runs = [...fullSweep([1, 2, 3]), ...ARMS.slice(0, 4).map((a) => point(a.key, 4))];
+  assert.deepEqual([...partialSeeds(runs)], [4], 'only the half-finished seed is partial');
+  const rows = summarize(runs).filter((r) => r.scope === 'all');
+  assert.equal(rows.length, ARMS.length, 'every arm still has a row');
+  for (const r of rows) assert.equal(r.n, 3, `${r.arm}: the three whole seeds`);
+  // And here the two tables DIVERGE, by design rather than by accident. The
+  // half-finished seed happens to carry all three arms the coarse pair reads
+  // (analytic, 64x128, 64x128-smooth are the first three of ARMS), so that pair
+  // legitimately counts it — a pair pays for its own three arms and not for the
+  // other seven. The fine pair, whose arms seed 4 never reached, does not.
+  const mech = mechanismRows(rows, runs);
+  assert.equal(
+    mech.find((x) => x.facetArm === '64x128')?.pairs,
+    4,
+    'the coarse pair has all three of its arms on seed 4, so it keeps it',
+  );
+  assert.equal(
+    mech.find((x) => x.facetArm === '192x384')?.pairs,
+    3,
+    'the fine pair never got its arms on seed 4',
+  );
+});
+
+test('a log short of an arm on every seed produces no tables at all', () => {
+  // Not a limitation to route around: `--arm` plumbing is not a result, and
+  // both tables go, because the mechanism rows read their control off a summary
+  // row. A previous version of the policy comment claimed otherwise.
+  const three = ['analytic', '64x128', '64x128-smooth'];
+  const runs = [1, 2, 3].flatMap((sd) => three.map((a) => point(a, sd)));
+  const rows = summarize(runs).filter((r) => r.scope === 'all-including-refused');
+  assert.equal(rows.length, 0, 'no arms table');
+  assert.equal(mechanismRows(rows, runs).length, 0, 'and no mechanism rows either');
+});
+
+test('a seed that is both failed and unfinished is not reported as a policy drop', () => {
+  // It was excluded for being INCOMPLETE. Counting it as a drop has a half-run
+  // sweep announcing a decision it never reached.
+  const runs = [
+    ...fullSweep([1, 2]),
+    // Seed 3 has two arms, one of which also failed.
+    point('analytic', 3),
+    point('64x128', 3, { converged: false, stopReason: 'lambda' }),
+  ];
+  for (const r of summarize(runs).filter((x) => x.scope === 'all')) {
+    assert.equal(
+      r.seedsDropped,
+      0,
+      `${r.arm}: seed 3 was unfinished, so its failure was never eligible for exclusion`,
+    );
+    assert.equal(r.n, 2, `${r.arm}: only the two complete seeds count`);
+  }
+});
+
+test('a seed that failed on a COMPLETE set is reported as a policy drop', () => {
+  // The other side of the same rule, so the fix above cannot be satisfied by
+  // never reporting a drop at all.
+  const runs = fullSweep([1, 2, 3], (arm, seed) =>
+    arm === '64x128' && seed === 2 ? { converged: false, stopReason: 'lambda' } : {},
+  );
+  for (const r of summarize(runs).filter((x) => x.scope === 'all')) {
+    assert.equal(r.seedsDropped, 1, `${r.arm}: seed 2 failed on a complete set`);
+  }
+});
+
+test('seedsDropped counts seeds, not rows', () => {
+  // A duplicated point in the log is exactly when a count that says "seeds" must
+  // not quietly mean "rows".
+  const runs = fullSweep([1, 2, 3], (arm, seed) =>
+    arm === '64x128' && seed === 2 ? { converged: false, stopReason: 'lambda' } : {},
+  );
+  const dup = [...runs, ...runs.filter((r) => r.arm === '64x128' && r.seed === 2)];
+  const coarse = summarize(dup)
+    .filter((x) => x.scope === 'all')
+    .find((r) => r.arm === '64x128');
+  assert.equal(coarse?.seedsDropped, 1, 'one seed dropped, however many rows carry it');
 });
