@@ -25,6 +25,7 @@
     "app": "node packages/web/serve.ts",
     "build:site": "npm run build:web && npm run build:app && node tools/build-site.ts",
     "smoke:app": "node tools/smoke-app.ts",
+    "smoke:solve": "node tools/smoke-app.ts --solve",
     "progress": "node packages/bench/src/progress.ts",
     "usage": "node packages/usage/src/cli.ts",
     "pack:skill": "node tools/pack-skill.ts skills/usage-report dist",
@@ -38,7 +39,8 @@
     "bench:rebaseline": "node tools/assert-baseline.ts bench-results.json --update",
     "check:determinism": "npm run bench -- --scenarios 13 --seed 1234 --out bench-results-2.json --allow-failure && node tools/assert-deterministic.ts bench-results.json bench-results-2.json",
     "check:ci-parity": "node tools/check-ci-parity.ts",
-    "experiment6": "node packages/experiments/src/meshrot/cli.ts"
+    "experiment6": "node packages/experiments/src/meshrot/cli.ts",
+    "ci:solve": "npm run build:web && npm run build:app && npm run smoke:solve"
   },
   "devDependencies": {
     "typescript": "5.9.3",

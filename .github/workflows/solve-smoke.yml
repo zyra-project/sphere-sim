@@ -1,0 +1,57 @@
+name: Solve smoke
+
+# THE CHECKS CI NEVER RAN.
+#
+# `smoke:app` takes no flags in `ci.yml`, and three of its checks sit behind
+# `if (opts.solve)`. So the most expensive check in the repository was the one
+# nothing exercised, and two of those three were broken on `main` for as long as
+# anyone had run them — found by hand, not by a build. The failure mode of a
+# check that does not run is silence, which is the same argument `check:ci-parity`
+# is built on.
+#
+# WHY NOT IN `ci.yml`: the run drives a real browser through two full bundle
+# adjustments and takes 25-45 minutes on a runner with no GPU. Taxing every push
+# and every pull request with that would buy a check nobody waits for and a
+# habit of merging past it. Nightly catches rot within a day of it landing,
+# which is the timescale that matters for checks whose job is to notice that
+# something else broke.
+#
+# `workflow_dispatch` because the first question after a page change is "does the
+# live calibration still work", and the answer should not require waiting for
+# tomorrow.
+
+on:
+  schedule:
+    # 06:00 UTC daily, off the peak of the shared runner pool.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  solve-smoke:
+    runs-on: ubuntu-latest
+    # Well clear of the observed 25-45 minutes: a container with no GPU has been
+    # seen spending 32 s on a single redraw, and the point of this job is to tell
+    # a slow machine from a broken page rather than to cut one off as the other.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+          cache: npm
+      - run: npm ci
+
+      # The bundles first: the smoke serves the app it is about to drive. Mirrored
+      # by `npm run ci:solve`, and `check:ci-parity` compares the two — a step
+      # added here without a script to match it would be exactly the silence this
+      # job exists to end.
+      - name: Build the browser bundles
+        run: |
+          npm run build:web
+          npm run build:app
+
+      # Presses Recalibrate, which `npm run smoke:app` never does: a calibration
+      # on the sphere, then one on a dropped model, then whether a view control
+      # or a projector bump throws the recovered rig away.
+      - name: Smoke the live calibration (sphere and model)
+        run: npm run smoke:solve

@@ -80,27 +80,106 @@ export function compare(yaml: string, ciScript: string): Parity {
   };
 }
 
+/**
+ * Every workflow that runs checks, and the script a contributor runs instead.
+ *
+ * A LIST, because the moment there was a second workflow this tool went blind
+ * to it. `solve-smoke.yml` exists precisely because three checks behind
+ * `--solve` had never run in CI and two of them were broken on `main`; adding
+ * it without adding it here would have left the new job unmirrored — a workflow
+ * step with no script to reproduce it, which is the first of the two drifts
+ * this file was written about.
+ *
+ * A workflow not named here is not checked, so a third one must be added to
+ * this list. That is a real sharp edge and it is the reason this comment is
+ * longer than the array.
+ */
+/**
+ * Is this filename one GitHub Actions will actually run?
+ *
+ * BOTH extensions, because Actions loads `.yml` and `.yaml` alike. The
+ * accompanying test's directory walk filtered on `.yml` only, so a
+ * `.github/workflows/foo.yaml` would have run npm steps while sitting in
+ * neither `MIRRORED` nor `UNMIRRORED` and failing nothing — the blind spot that
+ * test exists to close, reopened one character wide. Caught in review on the
+ * pull request that added the walk.
+ *
+ * Here rather than inline in the test so the rule is one thing with one test on
+ * it, and so any future walk gets it right by construction rather than by
+ * whoever writes it remembering.
+ */
+export function isWorkflowFile(name: string): boolean {
+  return name.endsWith('.yml') || name.endsWith('.yaml');
+}
+
+export const MIRRORED: readonly { workflow: string; script: string }[] = [
+  { workflow: '.github/workflows/ci.yml', script: 'ci' },
+  { workflow: '.github/workflows/solve-smoke.yml', script: 'ci:solve' },
+];
+
+/**
+ * Workflows that run npm steps and are deliberately NOT mirrored, with the
+ * reason each is out of scope.
+ *
+ * Exempt ON PURPOSE AND IN WRITING, rather than by not being thought about. The
+ * accompanying test walks the workflow directory and requires every file to be
+ * in one list or the other, so a new workflow is a failing test on the day it
+ * lands instead of a job nobody compares against anything.
+ *
+ * Both entries below are deploys rather than checks, and both are a real if
+ * narrower version of the drift this file is about: `build:site` and
+ * `pack:skill` are in no `ci` script, so they can only go red on `main`, after
+ * a pull request was green. Mirroring them would mean a script per deploy and
+ * is a larger decision than this list; recording the gap is the part that
+ * should not wait for it.
+ */
+export const UNMIRRORED: readonly { workflow: string; because: string }[] = [
+  {
+    workflow: 'pages.yml',
+    because:
+      'a deploy, not a check. Its `lint:boundary` is already in `ci`; its `build:site` is not, ' +
+      'so a site build that breaks is a red main rather than a red pull request.',
+  },
+  {
+    workflow: 'release.yml',
+    because:
+      'a publish. `pack:skill` runs nowhere else, so a packaging break surfaces on main at ' +
+      'release time.',
+  },
+];
+
 export function check(repo: string): string[] {
-  const yaml = fs.readFileSync(path.join(repo, '.github/workflows/ci.yml'), 'utf8');
   const pkg = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')) as {
     scripts: Record<string, string>;
   };
-  const ci = pkg.scripts.ci ?? '';
-  if (ci === '') return ['package.json has no `ci` script for the workflow to be compared against'];
-
-  const { onlyInWorkflow, onlyInScript } = compare(yaml, ci);
   const problems: string[] = [];
-  for (const s of onlyInWorkflow) {
-    problems.push(
-      `the workflow runs \`${s}\` and \`npm run ci\` does not — a contributor's green sweep ` +
-        'can still go red in CI',
-    );
-  }
-  for (const s of onlyInScript) {
-    problems.push(
-      `\`npm run ci\` runs \`${s}\` and the workflow does not — the check passes locally and ` +
-        'guards nothing on a pull request',
-    );
+  for (const { workflow, script } of MIRRORED) {
+    const file = path.join(repo, workflow);
+    if (!fs.existsSync(file)) {
+      problems.push(`${workflow} is named as a mirrored workflow and does not exist`);
+      continue;
+    }
+    const yaml = fs.readFileSync(file, 'utf8');
+    const body = pkg.scripts[script] ?? '';
+    if (body === '') {
+      problems.push(
+        `package.json has no \`${script}\` script for ${workflow} to be compared against`,
+      );
+      continue;
+    }
+    const { onlyInWorkflow, onlyInScript } = compare(yaml, body);
+    for (const s of onlyInWorkflow) {
+      problems.push(
+        `${workflow} runs \`${s}\` and \`npm run ${script}\` does not — a contributor's green ` +
+          'sweep can still go red in CI',
+      );
+    }
+    for (const s of onlyInScript) {
+      problems.push(
+        `\`npm run ${script}\` runs \`${s}\` and ${workflow} does not — the check passes ` +
+          'locally and guards nothing',
+      );
+    }
   }
   return problems;
 }
@@ -112,13 +191,16 @@ if (import.meta.filename === process.argv[1]) {
     for (const p of problems) process.stderr.write(`check:ci-parity: ${p}\n`);
     process.exitCode = 1;
   } else {
-    const n = scriptSteps(
-      (JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')) as {
-        scripts: Record<string, string>;
-      }).scripts.ci,
-    ).length;
-    process.stdout.write(
-      `check:ci-parity: \`npm run ci\` and the workflow run the same ${n} checks\n`,
-    );
+    // Every pair, named. The single-line summary used to say "the workflow",
+    // which would now be true of one of them and silent about the other.
+    const pkg = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    for (const { workflow, script } of MIRRORED) {
+      const n = scriptSteps(pkg.scripts[script] ?? '').length;
+      process.stdout.write(
+        `check:ci-parity: \`npm run ${script}\` and ${workflow} run the same ${n} checks\n`,
+      );
+    }
   }
 }
