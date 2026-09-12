@@ -358,6 +358,21 @@ export interface RunOptions {
    * constant. Never a shipped configuration: the solver cannot know truth.
    */
   shiftFromTruth?: boolean;
+  /**
+   * Which normal the bundle differentiates a mesh hit against.
+   *
+   * `'facet'` everywhere in the bench, which is the shipped default and the
+   * subject of docs/ARBITRARY-SHAPES.md's open question: a flat facet normal is
+   * the derivative of the FACET, not of the surface the facets approximate, so
+   * every step carries an error that changes at each facet edge. `'smooth'`
+   * interpolates and is measured but ships off.
+   *
+   * Exposed here so an experiment can put the two side by side on one body at
+   * one tessellation, which is the comparison that separates "the error tracks
+   * how many facets there are" from "the error tracks the normal jumping at
+   * their edges". Undefined in the bench itself.
+   */
+  meshNormal?: 'facet' | 'smooth';
 }
 
 export function runScenario(scenario: Scenario, options: RunOptions): ScenarioResult {
@@ -514,6 +529,8 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
         priors: options.priors ?? {},
         bundle: {
           free: { ...DEFAULT_FREE_FLAGS, projectorFov: scenario.freeFov },
+          // Omitted unless an experiment asks; see `RunOptions.meshNormal`.
+          ...(options.meshNormal === undefined ? {} : { meshNormal: options.meshNormal }),
           // The body the bundle fits: the solver's own hierarchy of the mesh the
           // cameras photographed, or null for the sphere.
           surface: world.meshIndex,
