@@ -119,13 +119,22 @@
 export const EXPERIMENT_ROOT_SEED = 20260912;
 
 /**
- * Twelve. Smaller than experiment 6's thirty because the effect being separated
- * here is a factor rather than a few percent, and each point costs about a
- * minute against experiment 6's twenty seconds. The number that matters is the
- * PAIRING: every arm sees the same twelve rigs, so the comparison is within a
- * seed and seed variance cancels out of it.
+ * Thirty, raised from twelve after the first pass.
+ *
+ * Twelve was chosen on the argument that the effect was a factor rather than a
+ * few percent and the pairing would carry it. The pairing did carry the
+ * DIRECTION — rotation favoured the smooth normal in all three pairs — but of
+ * six sign tests exactly one cleared 0.05, and none would have under a
+ * correction for six. A pattern that consistent and that weak is the shape of a
+ * result that more seeds either establish or dissolve, and this project has
+ * been on both sides of that: five seeds once produced a confident decision
+ * that thirty reversed.
+ *
+ * Thirty is experiment 6's count and the number that reversal established as
+ * the house minimum. At thirty paired seeds a sign test needs 21 to clear 0.05,
+ * against the 10-of-12 and 11-of-13 splits the first pass saw.
  */
-export const SEED_COUNT = 12;
+export const SEED_COUNT = 30;
 
 /**
  * Bench seed 1 as well, and flagged, so the sweep can be re-derived from one

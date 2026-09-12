@@ -275,6 +275,27 @@ export interface MechanismRow {
   posSignP: number;
   rotSignP: number;
   /**
+   * WHICH AXIS CARRIES THE DIFFERENCE, paired by seed.
+   *
+   * For each axis, the worst projector's |error| on that axis, per arm, and the
+   * seeds where smooth is the smaller of the two. The max over projectors and
+   * not a chosen projector: picking "the worst projector" would pick a DIFFERENT
+   * projector in each arm on some seeds, and then the pair would be comparing
+   * two different lenses and calling it a win.
+   *
+   * These do NOT decompose `rotationDeg`, which is the angle between two
+   * rotation matrices; three Euler differences do not sum to it. They say which
+   * axis carries the larger error, which is the question the record left open,
+   * and nothing more than that may be read off them.
+   */
+  axes: {
+    axis: 'yaw' | 'pitch' | 'roll';
+    facetMedianDeg: number;
+    smoothMedianDeg: number;
+    smoothWins: number;
+    signP: number;
+  }[];
+  /**
    * The smooth arm's residual over the facet arm's.
    *
    * The number that decides what any recovery above MEANS. Two modes reaching
@@ -417,6 +438,20 @@ export function signTestP(wins: number, n: number): number {
   return Math.min(1, 2 * tail * Math.pow(0.5, n));
 }
 
+/**
+ * The largest |error| on one axis across a point's projectors.
+ *
+ * Absolute, because an axis error has a sign and a rig of four projectors
+ * pointing four ways will carry both; averaging them would cancel a real error
+ * into nothing. Max rather than mean to match the headline metric, which is the
+ * worst projector.
+ */
+function worstAxis(r: PointRun, key: 'yawDeg' | 'pitchDeg' | 'rollDeg'): number {
+  let worst = 0;
+  for (const p of r.perProjector) worst = Math.max(worst, Math.abs(p[key]));
+  return worst;
+}
+
 /** The recovered fraction, or null when the excess is too small to divide by. */
 function recovered(facet: number, smooth: number, control: number): number | null {
   const excess = facet - control;
@@ -480,6 +515,20 @@ export function mechanismRows(
         rotWins,
         paired.filter((p) => p.smooth.poseRotationDeg !== p.facet.poseRotationDeg).length,
       ),
+      axes: (['yaw', 'pitch', 'roll'] as const).map((axis) => {
+        const key = `${axis}Deg` as 'yawDeg' | 'pitchDeg' | 'rollDeg';
+        const f = paired.map((p) => worstAxis(p.facet, key));
+        const g = paired.map((p) => worstAxis(p.smooth, key));
+        const wins = f.filter((v, i) => g[i] < v).length;
+        const ties = f.filter((v, i) => g[i] === v).length;
+        return {
+          axis,
+          facetMedianDeg: median(f),
+          smoothMedianDeg: median(g),
+          smoothWins: wins,
+          signP: signTestP(wins, paired.length - ties),
+        };
+      }),
       smoothResidualOverFacet:
         median(paired.map((p) => p.smooth.residualRmsPx)) /
         median(paired.map((p) => p.facet.residualRmsPx)),
@@ -544,6 +593,12 @@ export function report(summary: Summary[], runs: readonly PointRun[]): void {
         `  paired    ${m.pairs} seeds: smooth wins position ${m.posSmoothWins}, ` +
           `rotation ${m.rotSmoothWins}  (sign test p ${m.posSignP.toExponential(1)} / ` +
           `${m.rotSignP.toExponential(1)})`,
+        ...m.axes.map(
+          (a) =>
+            `  ${a.axis.padEnd(9)} facet ${a.facetMedianDeg.toFixed(4)}°, smooth ` +
+            `${a.smoothMedianDeg.toFixed(4)}° — smooth wins ${a.smoothWins}/${m.pairs} ` +
+            `(p ${a.signP.toExponential(1)})`,
+        ),
         `  residual  smooth is ${m.smoothResidualOverFacet.toFixed(4)}x the facet arm's — ` +
           `${Math.abs(m.smoothResidualOverFacet - 1) < 0.002 ? 'the same fit, so any move above is along a degenerate direction' : 'a different fit'}`,
       );

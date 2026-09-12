@@ -30,6 +30,26 @@ import { MECHANISM, mechanismRows, signTestP, summarize } from '../src/tessellat
 
 const RADIUS_M = 0.8636;
 
+/**
+ * Four projectors' worth of per-axis error, all equal unless a test says
+ * otherwise. Values are deliberately uniform so a test that cares about an axis
+ * sets exactly that axis and nothing else can explain its result.
+ */
+function projectors(over: Partial<PointRun['perProjector'][number]> = {}): PointRun['perProjector'] {
+  return [0, 1, 2, 3].map((i) => ({
+    id: `p${i}`,
+    positionMm: 10,
+    rotationDeg: 0.05,
+    dxMm: 5,
+    dyMm: 5,
+    dzMm: 5,
+    yawDeg: 0.03,
+    pitchDeg: 0.02,
+    rollDeg: 0.01,
+    ...over,
+  }));
+}
+
 /** One point, converged and unremarkable, unless a field is overridden. */
 function point(arm: string, seed: number, over: Partial<PointRun> = {}): PointRun {
   const grid = ARMS.find((a) => a.key === arm)?.grid ?? null;
@@ -46,6 +66,7 @@ function point(arm: string, seed: number, over: Partial<PointRun> = {}): PointRu
     shiftKnown: ARMS.find((a) => a.key === arm)?.shiftKnown === true,
     iterations: 30,
     facets: grid === null ? 0 : grid.nLat * grid.nLon * 2,
+    perProjector: projectors(),
     seconds: 40,
     ...over,
   };
@@ -375,4 +396,72 @@ test('the gauge count is summarised per arm, over the counted rows only', () => 
   const unexcluded = rows.find((r) => r.scope === 'all-including-refused' && r.arm === '64x128');
   assert.deepEqual(headline?.gaugeConstraints, [1], 'the dropped row cannot contribute its 7');
   assert.deepEqual(unexcluded?.gaugeConstraints, [1, 7], 'and does where nothing is dropped');
+});
+
+test('the axis attribution finds the axis that actually moved', () => {
+  // Yaw is made better in the smooth arm on every seed and the other two axes
+  // are held identical, so a correct attribution names yaw and only yaw.
+  const runs = fullSweep([1, 2, 3], (arm) => {
+    if (arm === '64x128') return { perProjector: projectors({ yawDeg: 0.09 }) };
+    if (arm === '64x128-smooth') return { perProjector: projectors({ yawDeg: 0.01 }) };
+    return {};
+  });
+  const m = mechanismRows(
+    summarize(runs).filter((r) => r.scope === 'all'),
+    runs,
+  ).find((x) => x.facetArm === '64x128');
+  assert.ok(m !== undefined);
+  const yaw = m.axes.find((a) => a.axis === 'yaw');
+  const pitch = m.axes.find((a) => a.axis === 'pitch');
+  const roll = m.axes.find((a) => a.axis === 'roll');
+  assert.equal(yaw?.smoothWins, 3, 'yaw moved on every seed');
+  assert.equal(yaw?.facetMedianDeg, 0.09);
+  assert.equal(yaw?.smoothMedianDeg, 0.01);
+  assert.equal(pitch?.smoothWins, 0, 'pitch did not move');
+  assert.equal(roll?.smoothWins, 0, 'roll did not move');
+  // A tie is not a loss: with every seed tied, the sign test has no pairs and
+  // must be vacuous rather than reading as evidence the axis got worse.
+  assert.equal(pitch?.signP, 1);
+});
+
+test('an axis error is taken in absolute value, so a rig erring one way still registers', () => {
+  // Four projectors point four ways, so a real yaw error carries both signs —
+  // but a fixture that MIXES signs cannot test this, because a max seeded at
+  // zero finds the positive one either way. The first draft of this test made
+  // exactly that mistake and passed with `Math.abs` removed.
+  //
+  // So every projector errs NEGATIVE here. Without the absolute value the max
+  // stays at its zero seed and the arm reports no yaw error at all.
+  const runs = fullSweep([1, 2, 3], (arm) => {
+    const allNegative = (v: number): PointRun['perProjector'] =>
+      projectors().map((p) => ({ ...p, yawDeg: -v }));
+    if (arm === '64x128') return { perProjector: allNegative(0.08) };
+    if (arm === '64x128-smooth') return { perProjector: allNegative(0.02) };
+    return {};
+  });
+  const m = mechanismRows(
+    summarize(runs).filter((r) => r.scope === 'all'),
+    runs,
+  ).find((x) => x.facetArm === '64x128');
+  const yaw = m?.axes.find((a) => a.axis === 'yaw');
+  assert.equal(yaw?.facetMedianDeg, 0.08, 'a rig erring -0.08 everywhere carries 0.08 of error');
+  assert.equal(yaw?.smoothMedianDeg, 0.02);
+  assert.equal(yaw?.smoothWins, 3);
+});
+
+test('the axis figures never purport to decompose the total rotation', () => {
+  // Guards the docblock's caution with a number: three Euler differences do not
+  // sum to the angle between two rotation matrices, and a future summary that
+  // started adding them would be wrong in a way nothing else here would catch.
+  const runs = fullSweep([1]);
+  const m = mechanismRows(summarize(runs).filter((r) => r.scope === 'all'), runs).find(
+    (x) => x.facetArm === '64x128',
+  );
+  assert.ok(m !== undefined);
+  const summed = m.axes.reduce((a, x) => a + x.facetMedianDeg, 0);
+  assert.notEqual(
+    Number(summed.toFixed(4)),
+    Number(m.facetMedianRotDeg.toFixed(4)),
+    'the fixture is built so the sum and the total differ; nothing may equate them',
+  );
 });

@@ -99,6 +99,36 @@ export interface PointRun {
   iterations: number;
   /** Triangles in the body, 0 for the analytic sphere. The mechanism's x-axis. */
   facets: number;
+  /**
+   * The gauge-aligned pose error broken out per projector and per axis.
+   *
+   * WHICH DIRECTION CARRIES THE ERROR, which `docs/ARBITRARY-SHAPES.md` left
+   * open in the same breath as the reading this experiment tests — "which
+   * directions carry the error has not been measured; this is the reading, not
+   * the proof" — and which experiment 7's first pass could not answer because it
+   * recorded only the worst projector's total.
+   *
+   * Nothing new is computed for it. `poseErrors` in the bench has always
+   * returned these components and `scoreRecovery` gauge-aligns before it does,
+   * so this is the result object being written down rather than a measurement
+   * being invented.
+   *
+   * A caution the summary depends on: `rotationDeg` is the angle between two
+   * rotation MATRICES and the three Euler differences beside it do not sum to
+   * it. They say which axis carries the larger error; they are not an orthogonal
+   * decomposition of it, and nothing here may add them up.
+   */
+  perProjector: {
+    id: string;
+    positionMm: number;
+    rotationDeg: number;
+    dxMm: number;
+    dyMm: number;
+    dzMm: number;
+    yawDeg: number;
+    pitchDeg: number;
+    rollDeg: number;
+  }[];
   seconds: number;
 }
 
@@ -150,6 +180,17 @@ export function runPoint(arm: Arm, seed: number, documented: boolean): PointRun 
     shiftKnown: arm.shiftKnown === true,
     iterations: result.solver?.diagnostics.iterations ?? -1,
     facets: arm.grid === null ? 0 : arm.grid.nLat * arm.grid.nLon * 2,
+    perProjector: (result.recovery?.aligned.perProjector ?? []).map((p) => ({
+      id: p.id,
+      positionMm: p.positionMm,
+      rotationDeg: p.rotationDeg,
+      dxMm: p.dxMm,
+      dyMm: p.dyMm,
+      dzMm: p.dzMm,
+      yawDeg: p.yawDeg,
+      pitchDeg: p.pitchDeg,
+      rollDeg: p.rollDeg,
+    })),
     seconds: (Date.now() - t0) / 1000,
   };
 }
