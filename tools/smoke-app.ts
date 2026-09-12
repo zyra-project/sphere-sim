@@ -1029,7 +1029,15 @@ async function main(): Promise<void> {
           if (c) c.click();
           return c ? 'ok' : 'no chip; had ' + all.map((b) => (b.textContent||'').trim()).join('/');
         })()`);
-        if (hit !== 'ok') failures.push(`the seam picker lost its ${label} chip: ${hit}`);
+        if (hit !== 'ok') {
+          // RETURNS, rather than waiting ninety seconds for a redraw that was
+          // never asked for and then reporting that the view did not redraw
+          // "after clicking" a chip nothing clicked. That is the same false
+          // cause this change set exists to remove, and it would cost the full
+          // budget at every stop. The caller reads NaN and says its own thing.
+          failures.push(`the seam picker lost its ${label} chip: ${hit}`);
+          return { az: Number.NaN, range: Number.NaN };
+        }
         // Wait for the value to MOVE, not merely to hold still.
         //
         // `dataset.az` is written by `draw()`, so it is a frame behind the click,
@@ -1472,7 +1480,25 @@ async function main(): Promise<void> {
       // Recalibrating here rather than moving the block: the comment above is
       // right that this has to be last, because everything above reads the
       // before-and-after snapshots a rig movement voids.
+      // `broken` is only a BROKEN baseline if no calibration is in force, and
+      // that is asserted rather than assumed. `settled()` without its `from`
+      // guard waits for five identical readings, which a value that has not
+      // started moving yet satisfies perfectly — so a model pass still in
+      // flight would hand back the old calibrated figure and every ratio below
+      // would be measured against the wrong reference. The improvement line
+      // settles it directly: it exists only while the compositor is a recovered
+      // rig, so its absence IS "uncalibrated" and needs no timing argument.
+      const calibrationLine = (): Promise<boolean> =>
+        cdp.evaluate<boolean>(
+          "document.querySelector('[data-smoke=\"improvement\"]') !== null",
+        );
       const broken = await settled();
+      if (await calibrationLine()) {
+        failures.push(
+          `a calibration was still in force at ${broken} mm when this block began, so that ` +
+            'figure is not the uncalibrated baseline the checks below compare against',
+        );
+      }
       const recalibrated = await cdp.evaluate<boolean>(`(() => {
         const b = [...document.querySelectorAll('button')]
           .find((x) => /Recalibrate/.test(x.textContent ?? ''));
@@ -1483,25 +1509,28 @@ async function main(): Promise<void> {
       if (!recalibrated) {
         failures.push('Recalibrate is missing or refused before the calibration-survival checks');
       }
-      // The improvement line is the model's own answer to "is there a
-      // calibration": the worker only emits it while the compositor is a
-      // recovered rig rather than the config as written. Keying off the button
-      // would pass either way — nothing re-renders the action bar.
+      // Only waited for when a click actually went out. Polling five minutes for
+      // a line that cannot appear turns a one-line prerequisite failure into the
+      // full solve timeout, and says nothing more than the push above already did.
       let haveCalibration = false;
       const calUntil = Date.now() + Math.max(opts.timeoutMs, 300_000);
-      while (Date.now() < calUntil) {
+      while (recalibrated && Date.now() < calUntil) {
         await sleep(1000);
-        haveCalibration = await cdp.evaluate<boolean>(
-          "document.querySelector('[data-smoke=\"improvement\"]') !== null",
-        );
+        haveCalibration = await calibrationLine();
         if (haveCalibration) break;
       }
       if (!haveCalibration) {
+        // SKIPPED, not run and misreported. Both checks below phrase their
+        // failures as "the calibration was discarded", and with none installed
+        // they would say that about nothing at all — a false cause, which is the
+        // fault this whole change set is about. The prerequisite failure above
+        // is the only true thing available here.
         failures.push(
-          'no calibration was in force before the survival checks, so what they measure is ' +
-            'whether nothing survives being disturbed',
+          'no calibration was in force before the survival checks, so they were skipped: ' +
+            'what they would have measured is whether nothing survives being disturbed',
         );
       }
+      if (haveCalibration) {
       const solved = await settled();
       // RELATIVE, because an absolute bound here is a guess. The first draft of
       // this said `solved < 5` and rejected a perfectly good 5.95 mm: a
@@ -1530,7 +1559,13 @@ async function main(): Promise<void> {
         if (chip) chip.click();
         return !!chip;
       })()`);
-      const afterView = await settled();
+      // `from` supplied, which it was not. The helper's own comment says why it
+      // exists: "a quiet second before the worker's answer arrives reads as
+      // settled, and the check reports the pre-change number as the outcome."
+      // Omitting it here meant the reading could be `solved` itself, and the
+      // threshold would then approve a number the viewpoint change had not yet
+      // touched — passing for want of a measurement.
+      const afterView = await settled(solved);
       // THE MEASUREMENT IS VIEW-DEPENDENT, and this check used to deny it.
       //
       // It required the headline to hold within 1 mm across a viewpoint change,
@@ -1548,11 +1583,20 @@ async function main(): Promise<void> {
       const stillCalibratedAfterView = await cdp.evaluate<boolean>(
         "document.querySelector('[data-smoke=\"improvement\"]') !== null",
       );
-      if (!stillCalibratedAfterView || !(afterView < broken / 4)) {
+      // TWO FINDINGS, NOT ONE. The improvement line's absence means the rig was
+      // discarded; a figure that drifted out of the calibrated range with the
+      // line still present means something else entirely, and calling both
+      // "discarded" would assert a cause in exactly the case the line disproves.
+      if (!stillCalibratedAfterView) {
         failures.push(
-          `moving the eye discarded the calibration: ${solved} mm before the viewpoint chip, ` +
-            `${afterView} mm after, against ${broken} mm uncalibrated` +
-            (stillCalibratedAfterView ? '' : ' (and the improvement line is gone)'),
+          `moving the eye discarded the calibration: the improvement line is gone, and the ` +
+            `figure went ${solved} → ${afterView} mm against ${broken} mm uncalibrated`,
+        );
+      } else if (!(afterView < broken / 4)) {
+        failures.push(
+          `moving the eye left the calibration installed — the improvement line is still ` +
+            `there — but the figure went ${solved} → ${afterView} mm, which is not far enough ` +
+            `below the ${broken} mm uncalibrated reading to call it calibrated any more`,
         );
       } else {
         process.stdout.write(
@@ -1633,6 +1677,7 @@ async function main(): Promise<void> {
           `  bumping again kept the recovered rig (${afterView} → ${nowMm} mm)\n`,
         );
       }
+      } // end: only when a calibration was there to survive anything
     }
 
     // A slider has to survive being dragged. LAST, because it leaves the sphere
@@ -1646,7 +1691,7 @@ async function main(): Promise<void> {
     // the way least likely to be noticed by anything checking state rather than
     // input. Real Input events, because pointer capture only behaves like the
     // browser's when the browser is delivering them.
-    const dragged = await (async (): Promise<string[] | null> => {
+    const dragged = await (async (): Promise<{ before: string; seen: string[] } | null> => {
       // MEASURED AFTER THE TAB CLICK HAS SETTLED, in two steps rather than one.
       //
       // Clicking the Install tab re-renders the panel, and the rail's box was
@@ -1685,10 +1730,15 @@ async function main(): Promise<void> {
         };
       })()`);
       if (box !== null && !box.inView) {
+        // RETURNS. Dispatching at coordinates known to be outside the viewport
+        // does not test the slider — it presses and drags across whatever is
+        // actually at those pixels, which can change the page and then produce a
+        // second, invented slider failure on top of this one.
         failures.push(
           `the Install tab's first slider is off-screen at (${box.x.toFixed(0)}, ` +
             `${box.y.toFixed(0)}) even after scrolling to it, so it cannot be dragged`,
         );
+        return null;
       }
       if (!box) return null;
       const read = (): Promise<string> =>
@@ -1697,6 +1747,15 @@ async function main(): Promise<void> {
         );
       const x0 = box.x + box.w * 0.15;
       const x1 = box.x + box.w * 0.75;
+      // READ BEFORE THE PRESS, because without it the two failures below cannot
+      // be told apart. Sampling starts after `mousePressed`, so a gesture whose
+      // pointerdown moved the value once and whose listener then died reads as
+      // six identical numbers — exactly like a press that never arrived. The
+      // previous draft called that "the press did not reach the rail", which is
+      // the same species of unfounded cause it was written to replace. What
+      // separates them is whether the one value they all share is the value the
+      // slider held BEFORE anything was pressed.
+      const beforePress = await read();
       await cdp.send('Input.dispatchMouseEvent', {
         type: 'mousePressed', x: x0, y: box.y, button: 'left', buttons: 1, clickCount: 1,
         pointerType: 'mouse',
@@ -1716,30 +1775,38 @@ async function main(): Promise<void> {
       });
       await sleep(400);
       seen.push(await read());
-      return seen;
+      return { before: beforePress, seen };
     })();
     if (!dragged) {
       failures.push('found no slider to drag on the Install tab');
     } else {
-      const distinct = new Set(dragged).size;
-      if (distinct === 1) {
-        // Nothing moved AT ALL, including the first step. A drag that dies
-        // mid-gesture — the failure this check exists for — still moves the
-        // value once before the listener is orphaned, so one distinct reading
-        // says the press never reached the control rather than that tracking
-        // broke. Reported as the different thing it is.
+      const { before: beforePress, seen: values } = dragged;
+      const distinct = new Set(values).size;
+      if (distinct === 1 && values[0] === beforePress) {
+        // Never moved from where it started, so the press did not reach the
+        // control at all. Not a statement about whether a drag tracks a pointer,
+        // and reported as the different thing it is.
         failures.push(
-          `the slider never moved from ${dragged[0]} across the whole gesture — the press did ` +
+          `the slider never moved from ${beforePress} across the whole gesture — the press did ` +
             'not reach the rail, so this says nothing about whether a drag tracks the pointer',
+        );
+      } else if (distinct === 1) {
+        // Moved once and then stopped: the press landed, and the listener died
+        // before the first sampled move. That IS the failure this check exists
+        // for, and it is only distinguishable from the case above by the
+        // pre-press reading.
+        failures.push(
+          `the slider moved ${beforePress} → ${values[0]} on the press and then never again ` +
+            'across six moves — the drag stops tracking the pointer after pointerdown',
         );
       } else if (distinct < 4) {
         failures.push(
           `dragging a slider produced ${distinct} distinct values across 6 steps ` +
-            `(${dragged.join(', ')}) — the drag stops tracking the pointer`,
+            `(${values.join(', ')}) — the drag stops tracking the pointer`,
         );
       } else {
         process.stdout.write(
-          `  slider drag tracked ${distinct} values (${dragged[0]} → ${dragged[dragged.length - 1]})\n`,
+          `  slider drag tracked ${distinct} values (${values[0]} → ${values[values.length - 1]})\n`,
         );
       }
     }
