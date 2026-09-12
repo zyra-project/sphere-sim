@@ -158,6 +158,14 @@ export function fmtMm(v: number): string {
 }
 
 export interface PoseCell {
+  /**
+   * Stable identity, independent of the label.
+   *
+   * The label is prose and may be reworded; this is what `tools/smoke-app.ts`
+   * finds the cell by, so it must not move when the wording does. A smoke hook
+   * that drifts with a label is a check that silently stops checking.
+   */
+  id: 'lens-position' | 'lens-aim';
   label: string;
   value: string;
   /** The tooltip, which has to say WHICH quantity this is — see below. */
@@ -182,6 +190,7 @@ export function poseCells(
 ): PoseCell[] {
   return [
     {
+      id: 'lens-position',
       label: 'Lens position',
       value: fresh ? `${fmtMm(fresh.posePositionMm)} mm` : `${fmtMm(drift.positionMm)} mm`,
       title: fresh
@@ -189,6 +198,7 @@ export function poseCells(
         : 'How far the worst lens has moved from where the software believes it is. Ground truth — recalibrating is what closes it.',
     },
     {
+      id: 'lens-aim',
       label: 'Lens aim',
       value: fresh ? `${fresh.poseRotationDeg.toFixed(3)}°` : `${drift.aimDeg.toFixed(3)}°`,
       title: fresh

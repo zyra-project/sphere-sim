@@ -38,7 +38,7 @@ import { defaultScene, viewerAt } from '../../sim/src/render.ts';
 import type { Scene } from '../../sim/src/render.ts';
 import type { MetricSet } from '../../sim/src/metrics/index.ts';
 import { computeGeometricMetrics } from '../../sim/src/metrics/index.ts';
-import type { DecodeOptions, SolverResult } from '../../solver/src/index.ts';
+import type { DecodeOptions, SolvePriorOptions, SolverResult } from '../../solver/src/index.ts';
 import {
   DEFAULT_SEGMENTATION_MARGIN,
   bundleStateFromCalibration,
@@ -318,6 +318,46 @@ export interface RunOptions {
    * points just outside it, and which of those dominates is a measurement.
    */
   segmentMarginFrac?: number;
+  /**
+   * Priors on the two near-degenerate lens parameters.
+   *
+   * Undefined everywhere in the bench, so every published number was produced
+   * with `DEFAULT_PRIOR_OPTIONS` — both sigmas zero, both parameters free — and
+   * a run that constrained one is visible in the experiment's own
+   * `generatedFrom` rather than hidden in a default.
+   *
+   * It exists for the experiment that asks whether a reported error is the
+   * SOLVER's or the DEGENERACY's. A-18 established the shape of that question
+   * for `fov_h`: hold the parameter at truth as a DIAGNOSTIC, and if most of the
+   * error leaves for almost none of the residual, two calibrations far apart fit
+   * the same photographs and the parameter is degenerate rather than the solver
+   * wrong. `shiftSigma` asks it of lens shift, which is the one that decides the
+   * rotation gate (A-12).
+   *
+   * A diagnostic, not a proposal: choosing either sigma for the shipped solver
+   * would invent the number that decides whether a §7 gate passes, which
+   * A-12 and A-18 both say is the spec's decision and not the solver's.
+   */
+  priors?: Partial<SolvePriorOptions>;
+  /**
+   * Hand the solver a nominal whose lens shift is the TRUE shift.
+   *
+   * Off everywhere in the bench. It exists because `priors` alone cannot ask
+   * A-18's question of lens shift: `solve` centres the shift prior on the
+   * NOMINAL it is given, deliberately — "a prior centred on an estimate derived
+   * from the same data is the fit talking to itself" — and §3.1's nominal shift
+   * is zero while `injectMisalignment` draws the truth from N(0, 0.01·scale).
+   * So a tight `shiftSigma` on its own holds the parameter at a value known to
+   * be wrong, which is the exact error A-18 convicted A-16 of: it measures
+   * whether the wrong value hurts, not whether the parameter is degenerate.
+   *
+   * With this set, a tight sigma is the diagnostic A-18 actually ran — the
+   * parameter held at TRUTH — and a loose one is the realistic version of it,
+   * since the remedy A-12 proposes is an operator reading the shift off the
+   * projector's own menu, which yields a measurement with a width rather than a
+   * constant. Never a shipped configuration: the solver cannot know truth.
+   */
+  shiftFromTruth?: boolean;
 }
 
 export function runScenario(scenario: Scenario, options: RunOptions): ScenarioResult {
@@ -442,15 +482,36 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
     }));
 
   let solver: SolverResult | null = null;
+  // The nominal the SOLVE starts from, which is the world's except under the
+  // `shiftFromTruth` diagnostic. Deliberately not `world.solverNominal` itself:
+  // the documented-calibration baseline above scores the rig an operator would
+  // actually have, and handing it truth would make that baseline meaningless.
+  const solverNominal: RigCalibration =
+    options.shiftFromTruth === true
+      ? {
+          ...world.solverNominal,
+          projectors: world.solverNominal.projectors.map((p, i) => ({
+            ...p,
+            intrinsics: {
+              ...p.intrinsics,
+              shiftH: world.truthRig.projectors[i].intrinsics.shiftH,
+              shiftV: world.truthRig.projectors[i].intrinsics.shiftV,
+            },
+          })),
+        }
+      : world.solverNominal;
+
   let error: string | null = null;
   try {
     solver = solve({
-      nominal: world.solverNominal,
+      nominal: solverNominal,
       cameras: cameraInputs,
       correspondences: capture.correspondences,
       floorReferences,
       options: {
         seed: scenario.seed,
+        // Empty in the bench itself; see `RunOptions.priors`.
+        priors: options.priors ?? {},
         bundle: {
           free: { ...DEFAULT_FREE_FLAGS, projectorFov: scenario.freeFov },
           // The body the bundle fits: the solver's own hierarchy of the mesh the

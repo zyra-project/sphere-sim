@@ -2075,6 +2075,179 @@ async function main(): Promise<void> {
         );
       }
 
+      // A CALIBRATION ON THE MODEL, which is the case no other check reaches.
+      //
+      // `--solve` above recalibrates on the SPHERE. That is a different code
+      // path in the one place it matters here: the image-space silhouette
+      // detector fits a circle, so it runs on the sphere and never on a model,
+      // and `solveInstalled` used to judge a calibration by how many cameras
+      // THAT detector had examined. The count is zero for every mesh solve there
+      // has ever been, so every successful mesh calibration was reported as not
+      // installed and the readout showed the nominal rig's DRIFT where the
+      // recovered pose belonged.
+      //
+      // It survived the whole suite because every test reads the `SolveResponse`
+      // and none read the page, and it survived THIS file because the solve here
+      // ran on a body the bug could not bite. `packages/web/test/display.test.ts`
+      // now covers the decision on values; this covers the wiring that puts the
+      // answer in front of an operator.
+      //
+      // THE TOOLTIP IS THE ASSERTION, not the number. Both readings are
+      // millimetres and either can be small, so a drift figure and a solved one
+      // are indistinguishable by value — the text is the only thing that says
+      // which quantity arrived.
+      if (opts.solve) {
+        // Break the rig again: the sphere solve above left it calibrated, and a
+        // solve with nothing to recover cannot show the difference.
+        await cdp.evaluate(`(() => {
+          const b = [...document.querySelectorAll('#actions button')]
+            .find((x) => /Another install/.test(x.textContent ?? ''));
+          if (b) b.click();
+          return !!b;
+        })()`);
+        // Waited for, not slept through. The rig breaking and the model worker
+        // reporting it are two events, and a guessed interval that is long
+        // enough on an idle machine is not long enough on a busy one — this
+        // file already says so about the sphere solve above.
+        //
+        // Waiting for the DRIFT reading specifically also makes the check
+        // stronger than it would be starting from an unknown state: the cell is
+        // then known to have gone drift -> solved, which is the exact transition
+        // the bug broke. It showed drift forever.
+        let broke = false;
+        const breakUntil = Date.now() + 60_000;
+        while (Date.now() < breakUntil) {
+          await sleep(500);
+          broke = await cdp.evaluate<boolean>(`(() => {
+            const d = document.querySelector('[data-smoke="lens-position"]');
+            if (!d) return false;
+            const v = Number.parseFloat(d.querySelector('.v')?.textContent ?? '');
+            return /moved from where the software believes it is/.test(d.getAttribute('title') ?? '')
+              && Number.isFinite(v) && v > 1;
+          })()`);
+          if (broke) break;
+        }
+        if (!broke) {
+          failures.push(
+            '"Another install" did not put a drift reading in the lens cell, so the mesh solve ' +
+              'has nothing to recover and the check below would pass on an unbroken rig',
+          );
+        }
+        const meshStarted = await cdp.evaluate<boolean>(`(() => {
+          const b = [...document.querySelectorAll('button')]
+            .find((x) => /Recalibrate/.test(x.textContent ?? ''));
+          if (!b || b.disabled) return false;
+          b.click();
+          return true;
+        })()`);
+        if (!meshStarted) {
+          failures.push('Recalibrate is missing or refused while a model is loaded');
+        } else {
+          process.stdout.write('  model: solving on the mesh…\n');
+          // Longer than the sphere's ceiling, deliberately. A mesh solve ray
+          // casts a hierarchy per correspondence instead of intersecting a
+          // sphere analytically, and this container needs 15 s to draw eight
+          // triangles — a limit tuned on the sphere would report the slow path
+          // as the broken one.
+          const until = Date.now() + Math.max(opts.timeoutMs, 900_000);
+          /** The page's own verdict on the solve, or '' while it is still working. */
+          const readoutVerdict = async (): Promise<string> =>
+            cdp.evaluate<string>(`(() => {
+              const t = document.querySelector('#readout')?.textContent ?? '';
+              return (/Did NOT converge[^.]*\\.|Converged in [^.]*\\.|Segmentation could use only[^.]*\\./.exec(t) ?? [''])[0];
+            })()`);
+
+          let cell: { value: string; title: string } | null = null;
+          let geometric = false;
+          let lastSeen = '';
+          let solveStageNow = '';
+          while (Date.now() < until) {
+            await sleep(1000);
+            solveStageNow = await cdp.evaluate<string>(
+              "(/Fitting[^.]*|Photographing[^.]*|Decoding[^.]*/.exec(document.querySelector('#readout')?.textContent ?? '') ?? [''])[0]",
+            );
+            const seen = await cdp.evaluate<{
+              value: string;
+              title: string;
+              geometric: boolean;
+            } | null>(`(() => {
+              const d = document.querySelector('[data-smoke="lens-position"]');
+              if (!d) return null;
+              const v = d.querySelector('.v')?.textContent?.trim() ?? '';
+              if (v === '' || v === '—') return null;
+              return {
+                value: v,
+                title: d.getAttribute('title') ?? '',
+                geometric: document.querySelector('[data-smoke="segmentation-geometric"]') !== null,
+              };
+            })()`);
+            // The SOLVED tooltip is the terminal state. Polling for "a cell
+            // exists" would settle instantly on the drift reading that is
+            // already there, and report the bug as a pass.
+            if (seen !== null && /after removing the unobservable global rotation/.test(seen.title)) {
+              cell = { value: seen.value, title: seen.title };
+              geometric = seen.geometric;
+              break;
+            }
+            // A REFUSAL IS ALSO TERMINAL. Waiting only for success meant every
+            // legitimate non-converged solve — the outcome accepted as correct
+            // below — sat here for the full deadline with the page's verdict
+            // already on screen, adding fifteen minutes to the run and risking
+            // the outer timeout. The page has said all it is going to say.
+            if (/Did NOT converge/.test(await readoutVerdict())) {
+              if (seen !== null) cell = { value: seen.value, title: seen.title };
+              break;
+            }
+            if (seen !== null) cell = { value: seen.value, title: seen.title };
+            // Report the TRANSITIONS, not just the verdict. A failure here has
+            // three candidate causes that look identical from the outside — the
+            // solve never landed, it landed and something discarded it, or the
+            // cell is simply not being updated — and "it still says drift" tells
+            // them apart in none of them. A line per change does.
+            const now = seen === null ? 'no cell' : `${seen.value} / ${solveStageNow}`;
+            if (now !== lastSeen) {
+              process.stdout.write(`    mesh solve: ${now}\n`);
+              lastSeen = now;
+            }
+          }
+          // What the PAGE says about the solve it just refused.
+          //
+          // A cell reading drift is not by itself a defect: a solve that did not
+          // settle is not a calibration, and refusing it is the page working.
+          // The bug this check exists for is narrower — a solve that DID settle,
+          // displayed as drift anyway — so the two have to be told apart, and
+          // the page already distinguishes them in prose it writes for the
+          // operator. Reading that is both the diagnosis and the fair verdict.
+          const why = await readoutVerdict();
+          if (cell === null) {
+            failures.push('no lens-position cell ever rendered while a model was loaded');
+          } else if (/Did NOT converge/.test(why)) {
+            // The optimiser ran out of steps. Refusing is correct, and asserting
+            // otherwise would make this check fail for the page doing its job.
+            process.stdout.write(`  model: the mesh solve did not settle, and was refused — ${why}\n`);
+          } else if (!/after removing the unobservable global rotation/.test(cell.title)) {
+            // The exact shape of the shipped bug: a converged mesh calibration
+            // shown as the drift it was supposed to close.
+            failures.push(
+              'a mesh calibration is displayed as DRIFT rather than as the recovered pose — ' +
+                `the lens-position cell reads "${cell.value}" and still says "${cell.title}"` +
+                (why === '' ? ' (the readout gives no reason)' : ` (the page says: ${why})`),
+            );
+          } else {
+            process.stdout.write(`  model: calibrated, worst lens ${cell.value}\n`);
+            // And it was the RAY CAST that segmented it, not the circle fit —
+            // otherwise the solve that just succeeded was not the mesh path.
+            if (!geometric) {
+              failures.push(
+                'the mesh solve did not report geometric segmentation, so the circle fit ran on a model',
+              );
+            } else {
+              process.stdout.write('  model: segmented by ray cast, as a model must be\n');
+            }
+          }
+        }
+      }
+
       // Phase 4: place the projectors by hand and add a fifth.
       //
       // The chain this proves is the one that cannot be checked from a unit
