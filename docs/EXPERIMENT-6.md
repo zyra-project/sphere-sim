@@ -39,6 +39,10 @@ A-16's. Both are run, because the difference between them is itself a result.
 | `nominal-tight` | 0.0987° | **0.1583°** | 1.60x | -134.7% | 0.27806 px |
 | `truth-tight` | 0.0344° | **0.0169°** | 0.49x | 75.0% | 0.27738 px |
 | `truth-loose` | 0.0463° | **0.0655°** | 1.41x | 2.8% | 0.27729 px |
+| `truth-0.003` | 0.0415° | **0.0404°** | 0.97x | 40.0% | 0.27727 px |
+| `truth-0.008` | 0.0461° | **0.0603°** | 1.31x | 10.6% | 0.27724 px |
+| `truth-0.021` | 0.0459° | **0.0650°** | 1.42x | 3.7% | 0.27736 px |
+| `truth-0.038` | 0.0459° | **0.0657°** | 1.43x | 2.5% | 0.27736 px |
 <!-- /generated -->
 
 Median over the seeds where BOTH bodies converged — the document's own three
@@ -100,12 +104,55 @@ says such a range would be too loose to reach the §7 rotation gate. What the
 gate needs is a shift known to nearer 0.001 than to 0.058, and where between
 those the knee sits is **not measured here** — two points do not locate a knee.
 
+## Round 2: where the knee is
+
+Round 1 measured the two ends and said plainly that two points do not locate a
+knee. Four intermediate widths, same 33 seeds, same converged-pair rule:
+
+| sigma | as yaw (A-12: 0.01 = 0.172°) | mesh rotation | removed | mesh/sphere |
+| --- | --- | --- | --- | --- |
+| free | — | 0.0674° | — | 1.47x |
+| 0.058 | 1.00° | 0.0655° | 2.8% | 1.41x |
+| 0.038 | 0.65° | 0.0657° | 2.5% | 1.43x |
+| 0.021 | 0.36° | 0.0650° | 3.7% | 1.42x |
+| **0.008** | **0.14°** | 0.0603° | **10.6%** | 1.31x |
+| **0.003** | **0.05°** | 0.0404° | **40.0%** | 0.97x |
+| 0.001 | 0.02° | 0.0169° | 75.0% | 0.49x |
+
+**The knee is between 0.021 and 0.008, and the benefit runs steeply below it.**
+From 0.058 down to 0.021 nothing happens — 2.5% to 3.7%, a spread no wider than
+the scatter, so three widths spanning a factor of three are indistinguishable
+from no prior at all. It moves at 0.008, and then climbs hard: 40% at 0.003 and
+75% at 0.001.
+
+**The width that starts to work is the width of the gate.** Converted through
+A-12's own arithmetic, 0.003 is 0.052° of yaw and §7's rotation gate is 0.05°.
+The benefit appears when the shift is pinned to about the tolerance being asked
+for, which is not a coincidence so much as a statement of what a prior can do: a
+prior looser than the tolerance cannot enforce it, whatever it is centred on.
+
+**And the body's advantage is bought at the same price.** The mesh/sphere ratio
+crosses 1.0 between 0.003 and 0.001. The ellipsoid recovering rotation BETTER
+than the sphere — round 1's most surprising result — is not a property of the
+body on its own; it appears only once shift is known to better than about
+0.003, and is invisible at every looser width.
+
+**For A-12, in the units the amendment is written in.** §2's stated ±1-2° mount
+tolerance corresponds to a shift of roughly 0.058 to 0.116. That is the flat
+part of this table. A range for `shift_h`/`shift_v` "in the same spirit" would
+sit entirely inside the region where the prior buys 3%, and §8 item 2's reading
+off the projector's menu has to be good to about **0.003 of the half-image —
+three pixels of principal point on a 1920 raster** — before it is worth writing
+down at all.
+
 ## What is not claimed
 
-- **Where the knee is.** Two sigmas were run, 0.001 and 0.058 — a factor of 58,
-  about 1.8 orders of magnitude, not the three an earlier draft of this page
-  claimed. Two points cannot locate a knee between them; the sweep that would
-  is a sigma ladder and has not been run.
+- **That 0.001 is the floor.** The curve is still climbing there: 75% is the
+  last point measured, not a plateau. What a tighter prior would buy, and
+  whether it ever reaches the gate, is unmeasured.
+- **That the sigmas between 0.008 and 0.003 are resolved.** The knee is bracketed,
+  not located to a figure. Four widths across two orders place it; they do not
+  pin it.
 - **That this closes A-12.** It confirms A-12's mechanism and prices A-12's
   remedy; it does not decide what §3.1 should say, which is the author's.
 - **Anything about the other bodies.** One ellipsoid, at one tessellation.

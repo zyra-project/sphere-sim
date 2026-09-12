@@ -564,10 +564,26 @@ arithmetic derives, the shift worth one degree of pointing against §2's 1–2°
 mount tolerance — removes **2.8%** of the rotation error. At sigma 0.001 the
 same prior removes **75.0%**, for 0.005% more residual. So the benefit is in the
 WIDTH and not in the centring: a shift that is merely known to be small does not
-help, and the reading has to be precise. Where between 0.058 and 0.001 the knee
-sits is not measured — those two are a factor of 58 apart and two points do not
-locate a knee — but a range stated "in the same spirit as §2's ±1–2°" would land
-at the useless end of it. The proposal
+help, and the reading has to be precise.
+
+**How precise is now measured.** A ladder of four intermediate widths over the
+same seeds puts the knee between **0.021 and 0.008**, and the shape either side
+of it is the answer this entry has been waiting for. From 0.058 down to 0.021 —
+three widths spanning a factor of three — the prior removes 2.5% to 3.7%, which
+is to say nothing. It moves at 0.008 (10.6%), then climbs steeply: 40% at 0.003,
+75% at 0.001, still rising at the last point measured.
+
+Converted through this entry's own arithmetic, **0.003 of shift is 0.052° of
+yaw, and §7's rotation gate is 0.05°.** The prior starts to work at about the
+tolerance it is being asked to enforce, which is less a coincidence than a
+statement of what a prior can do.
+
+So the proposal below needs its width naming, and §2's is the wrong one: a ±1–2°
+mount tolerance is a shift of roughly 0.058 to 0.116, the whole of the flat part
+of that ladder. **§8 item 2's reading has to be good to about 0.003 of the
+half-image — three pixels of principal point on a 1920 raster — before it is
+worth recording at all.** Below that it buys nothing; at that width and tighter
+it buys most of the gate. docs/EXPERIMENT-6.md has the ladder. The proposal
 below stands; its SPIRIT clause does not, and §8 item 2's "read it off the
 menu" carries more of the weight than this entry originally gave it.
 

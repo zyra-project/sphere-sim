@@ -86,6 +86,22 @@ export interface Arm {
   shiftFromTruth: boolean;
 }
 
+/**
+ * The ladder between the two widths the first round measured.
+ *
+ * Round 1 measured 0.001 and 0.058 and found 75% of the error removed at one
+ * and 2.8% at the other, then said plainly that two points do not locate a
+ * knee. This is the sweep that does. It is the number A-12 actually needs: the
+ * amendment proposes "a plausible range in §3.1, in the same spirit as §2's
+ * ±1-2° mount tolerance", and whether such a range is worth stating depends
+ * entirely on where the benefit appears.
+ *
+ * Geometric, not linear. The candidate answers span nearly two orders, and a
+ * linear ladder would spend most of its points in the half that is already
+ * known to do nothing.
+ */
+const LADDER = [0.003, 0.008, 0.021, 0.038] as const;
+
 export const ARMS: readonly Arm[] = [
   {
     key: 'free',
@@ -111,6 +127,15 @@ export const ARMS: readonly Arm[] = [
     shiftSigma: LOOSE_SIGMA,
     shiftFromTruth: true,
   },
+  // The ladder. Same shape as `truth-tight` and `truth-loose`, which are its
+  // endpoints, so the seven widths read as one curve rather than as two
+  // measurements with a gap between them.
+  ...LADDER.map((sigma) => ({
+    key: `truth-${sigma}`,
+    question: `The ladder between 0.001 and 0.058: how precise must a shift reading be, at sigma ${sigma}?`,
+    shiftSigma: sigma,
+    shiftFromTruth: true,
+  })),
 ];
 
 /** The two bodies, paired by construction — see bench/test/scenarios.test.ts. */
