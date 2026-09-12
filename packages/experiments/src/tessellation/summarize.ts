@@ -447,6 +447,13 @@ export function signTestP(wins: number, n: number): number {
  * worst projector.
  */
 function worstAxis(r: PointRun, key: 'yawDeg' | 'pitchDeg' | 'rollDeg'): number {
+  // NaN for NO PROJECTORS, not zero. A solve that threw leaves `recovery` null
+  // and `runPoint` records an empty array — faithfully, because there are no
+  // projector errors to record — while every scalar beside it records NaN. A
+  // maximum seeded at zero would turn that absence into a PERFECT score on
+  // every axis, and a crashed solve would win every axis comparison it was in.
+  // The scalars propagate; so must this.
+  if (r.perProjector.length === 0) return NaN;
   let worst = 0;
   for (const p of r.perProjector) worst = Math.max(worst, Math.abs(p[key]));
   return worst;
@@ -519,14 +526,20 @@ export function mechanismRows(
         const key = `${axis}Deg` as 'yawDeg' | 'pitchDeg' | 'rollDeg';
         const f = paired.map((p) => worstAxis(p.facet, key));
         const g = paired.map((p) => worstAxis(p.smooth, key));
-        const wins = f.filter((v, i) => g[i] < v).length;
-        const ties = f.filter((v, i) => g[i] === v).length;
+        // A pair where either side is non-finite is neither a win nor a tie: it
+        // is a comparison that cannot be made, and counting it as a tie would
+        // quietly shrink the denominator while counting it as a loss would
+        // credit the other arm for a solve that never happened.
+        const comparable = f.map((v, i) => Number.isFinite(v) && Number.isFinite(g[i]));
+        const wins = f.filter((v, i) => comparable[i] && g[i] < v).length;
+        const ties = f.filter((v, i) => comparable[i] && g[i] === v).length;
+        const n = comparable.filter(Boolean).length;
         return {
           axis,
           facetMedianDeg: median(f),
           smoothMedianDeg: median(g),
           smoothWins: wins,
-          signP: signTestP(wins, paired.length - ties),
+          signP: signTestP(wins, n - ties),
         };
       }),
       smoothResidualOverFacet:

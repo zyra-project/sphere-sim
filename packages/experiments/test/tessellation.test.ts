@@ -465,3 +465,44 @@ test('the axis figures never purport to decompose the total rotation', () => {
     'the fixture is built so the sum and the total differ; nothing may equate them',
   );
 });
+
+test('a crashed solve scores no axis at all, rather than scoring zero on every axis', () => {
+  // `runPoint` records an empty `perProjector` when the solve threw, because
+  // there are no projector errors to record — while every scalar beside it
+  // records NaN. A maximum seeded at zero turns that absence into a PERFECT
+  // score, and the crashed arm then wins every axis comparison it is in.
+  // Smooth is genuinely better on yaw everywhere, so seeds 1 and 3 are real
+  // wins and the comparison is not a row of ties that would come out vacuous
+  // either way. Seed 2's smooth solve crashed.
+  const runs = fullSweep([1, 2, 3], (arm, seed) => {
+    if (arm === '64x128') return { perProjector: projectors({ yawDeg: 0.09 }) };
+    if (arm !== '64x128-smooth') return {};
+    if (seed !== 2) return { perProjector: projectors({ yawDeg: 0.01 }) };
+    return {
+      converged: false,
+      stopReason: 'no-solve',
+      perProjector: [],
+      posePositionMm: Number.NaN,
+      poseRotationDeg: Number.NaN,
+    };
+  });
+  // The unexcluded scope is where a refused solve still reaches the figures, so
+  // that is where this could do damage.
+  const m = mechanismRows(
+    summarize(runs).filter((r) => r.scope === 'all-including-refused'),
+    runs,
+  ).find((x) => x.facetArm === '64x128');
+  assert.ok(m !== undefined);
+  assert.equal(m.pairs, 3, 'the crashed seed is still a pair in this scope');
+  const yaw = m.axes.find((a) => a.axis === 'yaw');
+  assert.ok(yaw !== undefined);
+  assert.equal(yaw.smoothWins, 2, 'the two real wins, and NOT the crashed seed as a third');
+  // The denominator drops the uncomparable pair rather than keeping it: two
+  // comparable pairs, both won.
+  assert.equal(yaw.signP, signTestP(2, 2));
+  // The axes nothing touched are ties on the comparable seeds, so their test is
+  // vacuous — and the crashed seed must not turn that into a win either.
+  for (const a of m.axes.filter((x) => x.axis !== 'yaw')) {
+    assert.equal(a.smoothWins, 0, `${a.axis} did not move, so nothing may win on it`);
+  }
+});
