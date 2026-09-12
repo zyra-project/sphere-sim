@@ -94,6 +94,24 @@ export function compare(yaml: string, ciScript: string): Parity {
  * this list. That is a real sharp edge and it is the reason this comment is
  * longer than the array.
  */
+/**
+ * Is this filename one GitHub Actions will actually run?
+ *
+ * BOTH extensions, because Actions loads `.yml` and `.yaml` alike. The
+ * accompanying test's directory walk filtered on `.yml` only, so a
+ * `.github/workflows/foo.yaml` would have run npm steps while sitting in
+ * neither `MIRRORED` nor `UNMIRRORED` and failing nothing — the blind spot that
+ * test exists to close, reopened one character wide. Caught in review on the
+ * pull request that added the walk.
+ *
+ * Here rather than inline in the test so the rule is one thing with one test on
+ * it, and so any future walk gets it right by construction rather than by
+ * whoever writes it remembering.
+ */
+export function isWorkflowFile(name: string): boolean {
+  return name.endsWith('.yml') || name.endsWith('.yaml');
+}
+
 export const MIRRORED: readonly { workflow: string; script: string }[] = [
   { workflow: '.github/workflows/ci.yml', script: 'ci' },
   { workflow: '.github/workflows/solve-smoke.yml', script: 'ci:solve' },

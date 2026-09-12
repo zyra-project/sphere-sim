@@ -19,6 +19,7 @@ import {
   UNMIRRORED,
   check,
   compare,
+  isWorkflowFile,
   scriptSteps,
   workflowSteps,
 } from '../../../tools/check-ci-parity.ts';
@@ -115,7 +116,7 @@ test('every workflow that runs checks is mirrored, and nothing is checked by nob
   const dir = path.join(REPO, '.github/workflows');
   const named = new Set(MIRRORED.map((m) => path.basename(m.workflow)));
   const exempt = new Set(UNMIRRORED.map((m) => m.workflow));
-  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.yml'))) {
+  for (const file of fs.readdirSync(dir).filter(isWorkflowFile)) {
     const steps = workflowSteps(fs.readFileSync(path.join(dir, file), 'utf8'));
     if (steps.length === 0) continue; // runs no npm steps; nothing to mirror.
     assert.ok(
@@ -165,4 +166,26 @@ test('and the comparison is not vacuous on this repository', () => {
   );
   assert.ok(workflowSteps(solveYaml).length >= 3, 'the solve workflow reader found almost nothing');
   assert.ok(scriptSteps(pkg.scripts['ci:solve']).length >= 3, 'the ci:solve reader found nothing');
+});
+
+test('the workflow walk sees both extensions GitHub Actions runs', () => {
+  // The walk above filtered on `.yml` alone. GitHub Actions loads `.yaml` too,
+  // so `.github/workflows/foo.yaml` would have run npm steps while appearing in
+  // neither list and failing nothing — this test's own blind spot, reopened one
+  // character wide, in the test written to close it. Found in review.
+  assert.ok(isWorkflowFile('ci.yml'));
+  assert.ok(isWorkflowFile('solve-smoke.yaml'), 'a .yaml workflow is a workflow');
+  assert.ok(!isWorkflowFile('README.md'));
+  assert.ok(!isWorkflowFile('ci.yml.bak'), 'only the real extension, not a prefix of it');
+
+  // And the walk actually uses it: every file in the directory that Actions
+  // would run must be reachable by the same predicate the assertion filters on.
+  const dir = path.join(REPO, '.github/workflows');
+  const runnable = fs.readdirSync(dir).filter(isWorkflowFile);
+  assert.ok(runnable.length > 0, 'the workflow directory should not be empty');
+  for (const f of fs.readdirSync(dir)) {
+    if (f.endsWith('.yml') || f.endsWith('.yaml')) {
+      assert.ok(runnable.includes(f), `${f} is a workflow the walk would skip`);
+    }
+  }
 });
