@@ -2202,27 +2202,38 @@ describes a curve that fixture does not contain.
 
 THE READING MAKES A PREDICTION, AND THE PREDICTION IS WRONG. If the mechanism
 were fidelity to an approximated surface, smoothing should buy nothing where
-there is nothing being approximated. docs/EXPERIMENT-7.md runs that in the bench mesh cell: ten arms,
-thirteen paired seeds, each pair the same mesh and the same photographs with only
-the derivative swapped. Smoothing helps anyway, and what it helps is rotation.
+there is nothing being approximated. docs/EXPERIMENT-7.md runs that in the bench
+mesh cell: ten arms, thirty paired seeds plus the documented one, 310 solves,
+each pair the same mesh and the same photographs with only the derivative
+swapped. Smoothing helps anyway, and what it helps is YAW.
 
 <!-- generated: experiment-7-mechanism-arbitrary-shapes -->
 | pair | pos: smooth wins | pos excess recovered | rot: smooth wins | rot excess recovered | smooth residual |
 | --- | --- | --- | --- | --- | --- |
-| coarsest grid, shift free | 9/11, p=0.065 | 106% | **9/11**, p=0.065 | 101% | 1.0023x |
-| coarsest grid, shift at truth | 4/12, p=0.39 | -40% | **10/12**, p=0.039 | 141% | 0.9986x |
-| finest grid, shift free | 7/10, p=0.34 | 46% | **6/10**, p=0.75 | — (no excess) | 1.0008x |
+| coarsest grid, shift free | 21/26, p=0.0025 | 70% | **22/26**, p=0.00053 | 64% | 0.9939x |
+| coarsest grid, shift at truth | 13/25, p=1.0 | 69% | **21/25**, p=0.00091 | 107% | 1.0000x |
+| finest grid, shift free | 15/24, p=0.31 | 57% | **11/24**, p=0.84 | — (no excess) | 1.0001x |
 <!-- /generated -->
 
 Three things follow. The POSITION cost is A-12's lens shift degeneracy, not the
-derivative: 9 of 11 with shift free becomes 4 of 12 with shift handed to the
-solver at truth, which is experiment 6's finding arriving on a second body. The
-ROTATION cost survives the degeneracy and tracks facet coarseness — 10 of 12 at
-64×128 with shift pinned, 6 of 10 at 192×384, which has nine times as many
-facets. And it costs no residual anywhere, 0.9986 to 1.0023, so the two
+derivative: 21 of 26 seeds with shift free (p=0.0025) becomes 13 of 25 (p=1.0)
+with shift handed to the solver at truth — not weakened, gone. That is
+experiment 6's finding arriving on a second body. The ROTATION cost survives the
+degeneracy and tracks facet coarseness: 21 of 25 at 64×128 with shift pinned
+(p=0.00091), 11 of 24 at 192×384 (p=0.84), which has nine times as many facets.
+And with the degeneracy closed it costs NO residual — 1.0000× — so the two
 derivatives reach calibrations that fit the same photographs and point
 differently, which is A-18's definition of a degenerate direction rather than a
-better fit.
+better fit. (With shift free the fits do differ slightly, 0.9939×, which is the
+second reason the shift-pinned pair is the one the claim rests on.)
+
+AND WHICH DIRECTION CARRIES IT IS NOW MEASURED, which the paragraph above asked
+for and left undone. It is yaw. With the degeneracy closed, yaw goes 0.0410° to
+0.0167° on 21 of 25 seeds (p=0.00091) while pitch does nothing (12 of 25) and
+roll does nothing (9 of 25); at the finest grid yaw stops moving too (14 of 24,
+p=0.54), as the coarseness story requires. Smoothing also costs a little ROLL,
+in all three pairs and weakly in each (8/26, 9/25, 7/24) — too consistent to
+omit, too weak to call established.
 
 WHAT SURVIVES OF THE READING IS NOT FIDELITY BUT CONTINUITY. In this cell the
 interpolated normal is the WRONG derivative — `mesh.test.ts` measures its error
@@ -2231,15 +2242,18 @@ produces the better pointing. An exact derivative that jumps at every facet edge
 navigates a weakly determined direction worse than an inexact one that does not
 jump. The optimiser says so in its stop reasons, which nothing set out to measure:
 `meshPlateauTol`, the rule that exists because the facet Jacobian's jitter stops
-the cost tolerance firing twice running, fires on 11 of 13 coarse facet solves
-and on NONE of either coarse smooth arm, which stop on the ordinary `step` rule;
-and the smooth arms take about half the iterations.
+the cost tolerance firing twice running, fires on 26 of 31 coarse facet solves
+and 20 of 31 with shift pinned, against 2 and 0 on the corresponding smooth
+arms, which stop on the ordinary `step` rule 22 and 23 times; the smooth arms
+take about half the iterations; and every one of the sweep's 15 `lambda` stalls
+is in a smooth arm while every one of its 14 `maxIterations` stops is in a facet
+arm.
 
 That is a reading and not a proof, offered as what the measurements are
-consistent with. WHICH direction carries the error is still unmeasured, as the
-Phase-5 paragraph itself said — and the stiffness test reports one pinned
-direction on every arm including the analytic control, so a tessellation frees
-nothing a sphere does not and the gauge does not distinguish it.
+consistent with. WHY yaw and not pitch is the part still unmeasured: the
+stiffness test reports one pinned direction on every arm including the analytic
+control, so a tessellation frees nothing a sphere does not, and the gauge does
+not distinguish the axis that moves.
 
 TWO SMALLER CORRECTIONS IN THE SAME SENTENCE. "The cleanest comparison in the
 table, since it changes the representation and nothing else" changes the body

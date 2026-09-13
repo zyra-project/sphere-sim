@@ -155,6 +155,7 @@ interface Experiment7 {
     controlMedianRotDeg: number;
     rotRecoveredPercent: number | null;
     pairs: number;
+    axes: { axis: string; facetMedianDeg: number; smoothMedianDeg: number; smoothWins: number; signP: number }[];
     posSmoothWins: number;
     rotSmoothWins: number;
     posSignP: number;
@@ -479,7 +480,39 @@ function experiment7Mechanism(result: Experiment7): string {
   return out.join('\n');
 }
 
+/**
+ * Which axis the derivative moves, paired by seed.
+ *
+ * The question `docs/ARBITRARY-SHAPES.md` left open beside the reading this
+ * experiment tests — "which directions carry the error has not been measured".
+ * Each cell is the worst projector's |error| on that axis, so the three do NOT
+ * sum to the rotation total beside them: they say which axis is larger, not how
+ * a matrix angle decomposes.
+ */
+function experiment7Axes(result: Experiment7): string {
+  const out = [
+    '| pair | axis | facet | smooth | smooth wins | sign test |',
+    '| --- | --- | --- | --- | --- | --- |',
+  ];
+  for (const m of result.mechanism) {
+    for (const a of m.axes) {
+      const better = a.smoothMedianDeg < a.facetMedianDeg;
+      out.push(
+        `| ${a.axis === m.axes[0].axis ? m.label : ''} | \`${a.axis}\` | ` +
+          `${a.facetMedianDeg.toFixed(4)}° | ${better ? '**' : ''}${a.smoothMedianDeg.toFixed(4)}°` +
+          `${better ? '**' : ''} | ${a.smoothWins}/${m.pairs} | ${a.signP.toPrecision(2)} |`,
+      );
+    }
+  }
+  return out.join('\n');
+}
+
 const BLOCKS: Record<string, Block> = {
+  'experiment-7-axes': {
+    doc: 'docs/EXPERIMENT-7.md',
+    data: 'experiments/experiment-7.json',
+    render: experiment7Axes as (r: never) => string,
+  },
   'experiment-7-arms': {
     doc: 'docs/EXPERIMENT-7.md',
     data: 'experiments/experiment-7.json',

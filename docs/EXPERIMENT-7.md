@@ -96,16 +96,16 @@ see the note under it.
 <!-- generated: experiment-7-arms -->
 | arm | facets | shift | n | median pos | vs control | median rot | vs control | residual | vs control | iters |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `analytic` | — | free | 6 | 25.1 mm | 1.00x | **0.0488°** | 1.00x | 0.27431 px | 1.000x | 23 |
-| `64x128` | 16,384 | free | 6 | 45.6 mm | 1.82x | **0.0608°** | 1.25x | 0.28401 px | 1.035x | 34 |
-| `64x128-smooth` | 16,384 | free | 6 | 29.9 mm | 1.19x | **0.0344°** | 0.71x | 0.28382 px | 1.035x | 27 |
-| `96x192` | 36,864 | free | 6 | 27.4 mm | 1.09x | **0.0448°** | 0.92x | 0.27889 px | 1.017x | 36 |
-| `128x256` | 65,536 | free | 6 | 24.1 mm | 0.96x | **0.0381°** | 0.78x | 0.27393 px | 0.999x | 43 |
-| `192x384` | 147,456 | free | 6 | 36.2 mm | 1.44x | **0.0354°** | 0.73x | 0.27429 px | 1.000x | 39 |
-| `192x384-smooth` | 147,456 | free | 6 | 32.5 mm | 1.30x | **0.0440°** | 0.90x | 0.27433 px | 1.000x | 20 |
-| `analytic-shift-known` | — | at truth | 6 | 22.2 mm | 1.00x | **0.0312°** | 1.00x | 0.27447 px | 1.000x | 20 |
-| `64x128-shift-known` | 16,384 | at truth | 6 | 36.3 mm | 1.64x | **0.0439°** | 1.41x | 0.28360 px | 1.033x | 31 |
-| `64x128-smooth-shift-known` | 16,384 | at truth | 6 | 24.9 mm | 1.12x | **0.0294°** | 0.94x | 0.28390 px | 1.034x | 19 |
+| `analytic` | — | free | 12 | 25.1 mm | 1.00x | **0.0488°** | 1.00x | 0.27340 px | 1.000x | 25 |
+| `64x128` | 16,128 | free | 12 | 53.5 mm | 2.13x | **0.0934°** | 1.92x | 0.28401 px | 1.039x | 44 |
+| `64x128-smooth` | 16,128 | free | 12 | 32.3 mm | 1.29x | **0.0568°** | 1.16x | 0.28382 px | 1.038x | 25 |
+| `96x192` | 36,480 | free | 12 | 49.7 mm | 1.98x | **0.0554°** | 1.13x | 0.27613 px | 1.010x | 39 |
+| `128x256` | 65,024 | free | 12 | 35.9 mm | 1.43x | **0.0581°** | 1.19x | 0.27430 px | 1.003x | 39 |
+| `192x384` | 146,688 | free | 12 | 36.2 mm | 1.44x | **0.0354°** | 0.73x | 0.27356 px | 1.001x | 37 |
+| `192x384-smooth` | 146,688 | free | 12 | 32.5 mm | 1.30x | **0.0403°** | 0.83x | 0.27353 px | 1.000x | 21 |
+| `analytic-shift-known` | — | at truth | 12 | 22.2 mm | 1.00x | **0.0350°** | 1.00x | 0.27348 px | 1.000x | 21 |
+| `64x128-shift-known` | 16,128 | at truth | 12 | 41.6 mm | 1.88x | **0.0505°** | 1.44x | 0.28360 px | 1.037x | 45 |
+| `64x128-smooth-shift-known` | 16,128 | at truth | 12 | 24.9 mm | 1.12x | **0.0376°** | 1.07x | 0.28390 px | 1.038x | 25 |
 <!-- /generated -->
 
 ## The mechanism pairs
@@ -122,91 +122,100 @@ above.
 <!-- generated: experiment-7-mechanism -->
 | pair | pos: smooth wins | pos excess recovered | rot: smooth wins | rot excess recovered | smooth residual |
 | --- | --- | --- | --- | --- | --- |
-| coarsest grid, shift free | 9/11, p=0.065 | 106% | **9/11**, p=0.065 | 101% | 1.0023x |
-| coarsest grid, shift at truth | 4/12, p=0.39 | -40% | **10/12**, p=0.039 | 141% | 0.9986x |
-| finest grid, shift free | 7/10, p=0.34 | 46% | **6/10**, p=0.75 | — (no excess) | 1.0008x |
+| coarsest grid, shift free | 21/26, p=0.0025 | 70% | **22/26**, p=0.00053 | 64% | 0.9939x |
+| coarsest grid, shift at truth | 13/25, p=1.0 | 69% | **21/25**, p=0.00091 | 107% | 1.0000x |
+| finest grid, shift free | 15/24, p=0.31 | 57% | **11/24**, p=0.84 | — (no excess) | 1.0001x |
 <!-- /generated -->
 
 ## What it says
 
+Thirty paired seeds plus the documented one, 310 solves. The twelve-seed pass
+said the same three things more weakly; every one of them survives, and the
+axis table below is new.
+
 **1. The position cost at a coarse tessellation is A-12's lens shift
-degeneracy, not the derivative.** With shift free, the smooth normal beats the
-facet normal on position in 9 of 11 seeds — p=0.065, which on its own is a lean
-and not a result. Hand the solver the true shift and pin it, and it becomes
-**4 of 12**: whatever the lean was, it does not merely weaken, it goes and
-slightly reverses. The facet arm's own median moves 44.3 → 28.8 mm against a
-control that moves only 29.8 → 24.0. This is experiment 6's
-finding arriving again on a different body: what looked like a cost of being a
-mesh was a degenerate direction the two derivatives happened to land in
-different places along.
+degeneracy, not the derivative.** With shift free the smooth normal beats the
+facet normal on position in **21 of 26** seeds (p=0.0025). Hand the solver the
+true shift and pin it and that becomes **13 of 25** (p=1.0) — not weakened,
+gone. The twelve-seed pass saw 9/11 → 4/12 and called it a lean; thirty seeds
+make it a result, in the same direction.
 
-**2. The rotation cost survives the degeneracy being removed, and it tracks
-facet coarseness.** At the coarsest grid with shift pinned at truth, smooth wins
-rotation **10 of 12** (median 0.0462° → 0.0358°) — the one comparison here that
-clears p < 0.05, at 0.039. At the finest grid, with nine times as many facets, it is
-**6 of 10** and the facet arm is already better than the analytic control. That
-is the direction the design registered before the sweep ran: 64×128 is where a
-facet normal is furthest from the surface and any derivative effect is largest,
-192×384 is where it should not show, and neither prediction had to be chosen
-after the fact.
+**2. The rotation cost survives the degeneracy and tracks facet coarseness.**
+At the coarsest grid with shift pinned at truth, smooth wins rotation **21 of
+25** (p=0.00091), median 0.0524° → 0.0385°. At the finest grid, with nine times
+as many facets, it is **11 of 24** (p=0.84) and the facet arm is already better
+than the analytic control. Both directions were registered in the design before
+either sweep ran: 64×128 as the rung where a facet normal is furthest from the
+surface, 192×384 as the rung where it should not show.
 
-**3. And it costs nothing in residual.** Across all three pairs the smooth arm's
-residual is 0.9986 to 1.0023 of the facet arm's. Both derivatives reach
-calibrations that fit the same photographs equally well and point differently.
-By A-18's test that is a degenerate direction, not a better fit — the rotation
-gain is the two modes choosing different points along a direction the data does
-not constrain.
+**3. It is YAW, and that is the answer to the question the record left open.**
+`ARBITRARY-SHAPES.md` says, in the same paragraph as the reading this
+experiment tests, "which directions carry the error has not been measured; this
+is the reading, not the proof." It is measured now. With the degeneracy closed,
+yaw goes 0.0410° → 0.0167° on **21 of 25** seeds (p=0.00091) while pitch does
+nothing (12/25) and roll does nothing (9/25). At the finest grid yaw stops
+moving too (14/24, p=0.54), exactly as the coarseness story requires.
 
-**4. So the mechanism on record cannot be the one operating.** The Phase-5
-reading says a smooth Jacobian helps because "the derivative describes the curve
-the tessellation is standing in for". In this cell there is no such curve: the
-facets are the body the cameras photographed, so the facet normal is the exact
-derivative of the real surface and the interpolated normal is the WRONG one —
-`packages/solver/test/mesh.test.ts` measures its error against the facet
-geometry as the whole facet-to-sphere gap. The wrong derivative produces the
-better pointing. What is left of the explanation is not fidelity but
-CONTINUITY: an exact derivative that jumps at every facet edge navigates a
-weakly determined direction worse than an inexact one that does not jump.
+**4. Smoothing costs a little roll**, and this is the one thing neither sweep
+was looking for. Roll goes the wrong way in all three pairs — 8/26, 9/25, 7/24 —
+each individually weak (p=0.076, 0.23, 0.064) and all three in the same
+direction. Too consistent to omit and too weak to call established; recorded as
+a trade to watch rather than a finding.
 
-This is a reading, not a proof, and it is offered as the one the measurements
-are consistent with rather than the one they compel. What would test it is
-measuring WHICH direction carries the error, which nothing here does — the
-stiffness test reports one pinned direction (`gauge 1`) on every arm including
-the analytic control, so a tessellation frees nothing a sphere does not, and the
-direction in question is not one the gauge distinguishes.
+**5. With the degeneracy closed it costs no residual.** In the shift-pinned
+pair the smooth arm's residual is **1.0000×** the facet arm's: the same fit,
+reached at a different pointing, which is A-18's degenerate direction rather
+than a better fit. With shift free the fits do differ slightly (0.9939×), so
+that pair is not a clean degeneracy argument — which is the second reason the
+shift-pinned pair is the one the claim rests on.
 
-**5. The optimiser says the same thing in its stop reasons**, which is the part
-that was not designed for and came out anyway. `meshPlateauTol` exists because
-the facet Jacobian's jitter stops the ordinary cost tolerance firing twice
-running. Over 13 seeds it fires on **11 of 13** coarse facet solves, 10 of 13
-with shift pinned, 9 and 10 at the middle grids — and on **none at all** of
-either coarse smooth arm, which stop on the ordinary `step` rule 10 and 11 times
-out of 13. The smooth arms are also about twice as cheap: 22 against 42 median
-iterations at the coarse grid, 15 against 36 with shift pinned, 18 against 43 at
-the finest. All six `lambda` stalls in the sweep are in smooth arms and all four
-`maxIterations` stops are in facet arms — the same asymmetry the record measured
-in the realistic cell, reproduced here.
+**6. The optimiser says the same thing in its stop reasons**, unbidden.
+`meshPlateauTol` — the rule that exists because the facet Jacobian's jitter
+stops the ordinary cost tolerance firing twice running — fires on **26 of 31**
+coarse facet solves and 20 of 31 with shift pinned, against **2 and 0** on the
+corresponding smooth arms, which stop on the ordinary `step` rule 22 and 23
+times. Smooth is also about half the work: 25 median iterations against 44, and
+25 against 45 with shift pinned. Every `lambda` stall in the sweep (15) is in a
+smooth arm; every `maxIterations` stop (14) is in a facet arm.
+
+So what survives of the reading is not fidelity but **continuity**: an exact
+derivative that jumps at every facet edge steers a weakly determined direction —
+yaw — worse than an inexact one that does not jump. Offered as a reading. What
+would test it further is why yaw and not pitch, which nothing here measures.
 
 ## What is not claimed
 
-- **That any single test is strong.** Six sign tests were run and one clears
-  0.05. Under a correction for six comparisons none would. The evidence is the
-  PATTERN and not any one p-value: rotation favours smooth in all three pairs,
-  position does not — it flips exactly when the shift degeneracy is closed —
-  the rotation effect goes exactly when the facets flatten, and the stop reasons
-  agree with both. Thirteen seeds is a small sweep, and the record this corrects
-  has more than once had to retract a conclusion drawn from three.
+- **That the arms table is strong.** It is n=12, because a seed counts there
+  only if all ten arms converged and 19 of 31 lost at least one. The mechanism
+  pairs are n=24–26 because a pair pays for its own three arms; that difference
+  is the whole reason the policy is split, and the claims live on the pairs.
+- **That roll is established.** Three weak results in one direction is a reason
+  to look, not a conclusion.
 - **Anything about the shipped default.** `meshNormal: 'facet'` was settled on
-  540 solves in the realistic cell. This is a different cell, chosen because
-  model error is zero in it, and a deployment never has that property. Nothing
-  here is an argument for flipping a default.
-- **That the facet Jacobian is wrong.** It is exact for what it differentiates,
+  540 solves in the realistic cell, which is the cell a deployment is in. This
+  one was chosen because model error is zero in it, which no deployment has.
+- **That the facet Jacobian is wrong.** It is exact for what it differentiates
   and `mesh.test.ts` holds it to central differences. The finding is about what
-  an exact but discontinuous derivative does to a search, not about correctness.
-- **Which direction carries the error.** Unmeasured; see above.
-- **That the position result at the coarse grid is null.** 9 of 11 at p=0.065
-  with shift free is not nothing; what the shift-pinned arm shows is that
-  whatever it is, it is not the derivative.
+  an exact but discontinuous derivative does to a search.
+- **Why yaw.** The stiffness test reports one pinned direction (`gauge 1`) on
+  every arm including the analytic control, so a tessellation frees nothing a
+  sphere does not, and the gauge does not distinguish the axis that moves.
+
+## Which axis the derivative moves
+
+<!-- generated: experiment-7-axes -->
+| pair | axis | facet | smooth | smooth wins | sign test |
+| --- | --- | --- | --- | --- | --- |
+| coarsest grid, shift free | `yaw` | 0.0902° | **0.0389°** | 22/26 | 0.00053 |
+|  | `pitch` | 0.0651° | **0.0477°** | 21/26 | 0.0025 |
+|  | `roll` | 0.0227° | 0.0300° | 8/26 | 0.076 |
+| coarsest grid, shift at truth | `yaw` | 0.0410° | **0.0167°** | 21/25 | 0.00091 |
+|  | `pitch` | 0.0259° | 0.0321° | 12/25 | 1.0 |
+|  | `roll` | 0.0204° | 0.0283° | 9/25 | 0.23 |
+| finest grid, shift free | `yaw` | 0.0218° | **0.0199°** | 14/24 | 0.54 |
+|  | `pitch` | 0.0305° | 0.0367° | 9/24 | 0.31 |
+|  | `roll` | 0.0196° | 0.0225° | 7/24 | 0.064 |
+<!-- /generated -->
 
 ## Reproducing
 
