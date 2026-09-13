@@ -2213,6 +2213,7 @@ swapped. Smoothing helps anyway, and what it helps is YAW.
 | coarsest grid, shift free | 21/26, p=0.0025 | 70% | **22/26**, p=0.00053 | 64% | 0.9939x |
 | coarsest grid, shift at truth | 13/25, p=1.0 | 69% | **21/25**, p=0.00091 | 107% | 1.0000x |
 | finest grid, shift free | 15/24, p=0.31 | 57% | **11/24**, p=0.84 | — (no excess) | 1.0001x |
+| coarsest grid, shift at truth, POLES ON X | 21/25, p=0.00091 | 104% | **20/25**, p=0.0041 | 63% | 0.9967x |
 <!-- /generated -->
 
 Three things follow. The POSITION cost is A-12's lens shift degeneracy, not the
@@ -2254,6 +2255,21 @@ consistent with. WHY yaw and not pitch is the part still unmeasured: the
 stiffness test reports one pinned direction on every arm including the analytic
 control, so a tessellation frees nothing a sphere does not, and the gauge does
 not distinguish the axis that moves.
+
+AND THE OBVIOUS CANDIDATE IS REFUTED. Yaw is rotation about Z and
+`ellipsoidMesh` puts its UV poles on Z — where the bands emit one triangle per
+cell instead of two and the vertex fans collapse — so the axis carrying the
+error was the axis the tessellation's singularities sat on. `poleAxis: 'x'`
+turns the grid ninety degrees without moving the body, which on a sphere is a
+change of parametrisation and nothing else, and the prediction was registered
+before the arms ran. Yaw STAYS: 23 of 25 seeds with the poles on X (p=1.9e-5)
+against 21 of 25 with them on Z, pitch and roll doing nothing in both. The
+coincidence was a coincidence and whatever selects yaw is upstream of the mesh.
+
+One thing did follow the tessellation, which is why this is a negative result
+rather than a null one: turning the grid made the facet solve WORSE, yaw 0.0410°
+to 0.0590° and total rotation 0.0524° to 0.0873°. The grid's orientation sets the
+MAGNITUDE without touching the AXIS, and nothing predicted those would separate.
 
 TWO SMALLER CORRECTIONS IN THE SAME SENTENCE. "The cleanest comparison in the
 table, since it changes the representation and nothing else" changes the body

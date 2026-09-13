@@ -96,16 +96,18 @@ see the note under it.
 <!-- generated: experiment-7-arms -->
 | arm | facets | shift | n | median pos | vs control | median rot | vs control | residual | vs control | iters |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `analytic` | — | free | 12 | 25.1 mm | 1.00x | **0.0488°** | 1.00x | 0.27340 px | 1.000x | 25 |
-| `64x128` | 16,128 | free | 12 | 53.5 mm | 2.13x | **0.0934°** | 1.92x | 0.28401 px | 1.039x | 44 |
-| `64x128-smooth` | 16,128 | free | 12 | 32.3 mm | 1.29x | **0.0568°** | 1.16x | 0.28382 px | 1.038x | 25 |
-| `96x192` | 36,480 | free | 12 | 49.7 mm | 1.98x | **0.0554°** | 1.13x | 0.27613 px | 1.010x | 39 |
-| `128x256` | 65,024 | free | 12 | 35.9 mm | 1.43x | **0.0581°** | 1.19x | 0.27430 px | 1.003x | 39 |
-| `192x384` | 146,688 | free | 12 | 36.2 mm | 1.44x | **0.0354°** | 0.73x | 0.27356 px | 1.001x | 37 |
-| `192x384-smooth` | 146,688 | free | 12 | 32.5 mm | 1.30x | **0.0403°** | 0.83x | 0.27353 px | 1.000x | 21 |
-| `analytic-shift-known` | — | at truth | 12 | 22.2 mm | 1.00x | **0.0350°** | 1.00x | 0.27348 px | 1.000x | 21 |
-| `64x128-shift-known` | 16,128 | at truth | 12 | 41.6 mm | 1.88x | **0.0505°** | 1.44x | 0.28360 px | 1.037x | 45 |
-| `64x128-smooth-shift-known` | 16,128 | at truth | 12 | 24.9 mm | 1.12x | **0.0376°** | 1.07x | 0.28390 px | 1.038x | 25 |
+| `analytic` | — | free | 8 | 35.3 mm | 1.00x | **0.0488°** | 1.00x | 0.27522 px | 1.000x | 25 |
+| `64x128` | 16,128 | free | 8 | 43.5 mm | 1.23x | **0.0836°** | 1.71x | 0.28784 px | 1.046x | 44 |
+| `64x128-smooth` | 16,128 | free | 8 | 37.5 mm | 1.06x | **0.0583°** | 1.20x | 0.28804 px | 1.047x | 34 |
+| `96x192` | 36,480 | free | 8 | 49.7 mm | 1.41x | **0.0552°** | 1.13x | 0.28037 px | 1.019x | 39 |
+| `128x256` | 65,024 | free | 8 | 40.6 mm | 1.15x | **0.0659°** | 1.35x | 0.27674 px | 1.006x | 38 |
+| `192x384` | 146,688 | free | 8 | 33.8 mm | 0.96x | **0.0364°** | 0.75x | 0.27429 px | 0.997x | 36 |
+| `192x384-smooth` | 146,688 | free | 8 | 35.0 mm | 0.99x | **0.0440°** | 0.90x | 0.27433 px | 0.997x | 22 |
+| `analytic-shift-known` | — | at truth | 8 | 31.2 mm | 1.00x | **0.0322°** | 1.00x | 0.27538 px | 1.000x | 21 |
+| `64x128-shift-known` | 16,128 | at truth | 8 | 40.4 mm | 1.29x | **0.0481°** | 1.50x | 0.28765 px | 1.045x | 41 |
+| `64x128-poleX-shift-known` | 16,128 | at truth | 8 | 48.2 mm | 1.54x | **0.0859°** | 2.67x | 0.28753 px | 1.044x | 36 |
+| `64x128-poleX-smooth-shift-known` | 16,128 | at truth | 8 | 33.3 mm | 1.07x | **0.0593°** | 1.84x | 0.28654 px | 1.041x | 21 |
+| `64x128-smooth-shift-known` | 16,128 | at truth | 8 | 38.0 mm | 1.22x | **0.0376°** | 1.17x | 0.28695 px | 1.042x | 25 |
 <!-- /generated -->
 
 ## The mechanism pairs
@@ -125,6 +127,7 @@ above.
 | coarsest grid, shift free | 21/26, p=0.0025 | 70% | **22/26**, p=0.00053 | 64% | 0.9939x |
 | coarsest grid, shift at truth | 13/25, p=1.0 | 69% | **21/25**, p=0.00091 | 107% | 1.0000x |
 | finest grid, shift free | 15/24, p=0.31 | 57% | **11/24**, p=0.84 | — (no excess) | 1.0001x |
+| coarsest grid, shift at truth, POLES ON X | 21/25, p=0.00091 | 104% | **20/25**, p=0.0041 | 63% | 0.9967x |
 <!-- /generated -->
 
 ## What it says
@@ -197,9 +200,11 @@ would test it further is why yaw and not pitch, which nothing here measures.
 - **That the facet Jacobian is wrong.** It is exact for what it differentiates
   and `mesh.test.ts` holds it to central differences. The finding is about what
   an exact but discontinuous derivative does to a search.
-- **Why yaw.** The stiffness test reports one pinned direction (`gauge 1`) on
-  every arm including the analytic control, so a tessellation frees nothing a
-  sphere does not, and the gauge does not distinguish the axis that moves.
+- **Why yaw.** Still unexplained, though one candidate is now ruled out — see
+  the section after next. The stiffness test reports one pinned direction
+  (`gauge 1`) on every arm including the analytic control, so a tessellation
+  frees nothing a sphere does not, and the gauge does not distinguish the axis
+  that moves.
 
 ## Which axis the derivative moves
 
@@ -215,7 +220,47 @@ would test it further is why yaw and not pitch, which nothing here measures.
 | finest grid, shift free | `yaw` | 0.0218° | **0.0199°** | 14/24 | 0.54 |
 |  | `pitch` | 0.0305° | 0.0367° | 9/24 | 0.31 |
 |  | `roll` | 0.0196° | 0.0225° | 7/24 | 0.064 |
+| coarsest grid, shift at truth, POLES ON X | `yaw` | 0.0590° | **0.0228°** | 23/25 | 0.000019 |
+|  | `pitch` | 0.0450° | **0.0406°** | 10/25 | 0.42 |
+|  | `roll` | 0.0256° | 0.0357° | 11/25 | 0.69 |
 <!-- /generated -->
+
+## The tessellation's poles are NOT why it is yaw
+
+Yaw is rotation about Z (`rotZ(pose.yawDeg)`) and `ellipsoidMesh` puts its UV
+poles on Z — where the facets are least like the surface, the bands emit one
+triangle per cell instead of two, and the vertex fans collapse to a duplicated
+point. The axis carrying the error was the axis the tessellation's singularities
+sat on. Either a mechanism or a coincidence, and turning the tessellation tells
+which.
+
+`EllipsoidSpec.poleAxis` puts the poles on X instead. On a sphere the body does
+not move — a sphere is the same sphere however its parametrisation is oriented,
+and `ellipsoidMesh` refuses the option on anything that is not one — so only the
+facet layout changes. The prediction was registered in `design.ts` before the
+arms ran: if the poles carry it, yaw stops being the axis smoothing rescues; if
+the rig or the gauge carries it, yaw stays wherever the poles are.
+
+**It stays.** Paired, shift pinned at truth, worst projector per axis:
+
+| poles | yaw, facet → smooth | yaw wins | pitch wins | roll wins |
+| --- | --- | --- | --- | --- |
+| on Z | 0.0410° → 0.0167° | 21/25, p=0.00091 | 12/25 | 9/25 |
+| on X | 0.0590° → 0.0228° | 23/25, p=1.9e-05 | 10/25 | 11/25 |
+
+Same axis, same profile, if anything a stronger effect. **The coincidence was a
+coincidence**, and whatever selects yaw is upstream of the mesh's
+parametrisation entirely.
+
+ONE THING DID FOLLOW THE TESSELLATION, which is why this is a negative result
+and not a null one: turning the grid made the facet solve WORSE — yaw 0.0410° to
+0.0590°, total rotation 0.0524° to 0.0873°. The orientation of the tessellation
+sets the MAGNITUDE of the error without touching the AXIS that carries it, and
+nothing predicted those would separate.
+
+Recorded because a refutation nobody writes down gets proposed again. The
+hypothesis was formed in five minutes from two lines of code, said so before it
+was run, and was wrong.
 
 ## Reproducing
 

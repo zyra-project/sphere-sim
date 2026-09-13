@@ -88,6 +88,28 @@
         "shiftKnown": true
       },
       {
+        "key": "64x128-poleX-shift-known",
+        "question": "THE POLE TEST, facet side. The same sphere with its tessellation turned 90°, so the UV poles lie on X instead of on the yaw axis.",
+        "grid": {
+          "nLat": 64,
+          "nLon": 128
+        },
+        "meshNormal": "facet",
+        "shiftKnown": true,
+        "poleAxis": "x"
+      },
+      {
+        "key": "64x128-poleX-smooth-shift-known",
+        "question": "THE POLE TEST, smooth side. If the axis smoothing rescues follows the tessellation here, the poles are the mechanism; if it stays on yaw, they are a coincidence.",
+        "grid": {
+          "nLat": 64,
+          "nLon": 128
+        },
+        "meshNormal": "smooth",
+        "shiftKnown": true,
+        "poleAxis": "x"
+      },
+      {
         "key": "64x128-smooth-shift-known",
         "question": "THE ARM THAT DECIDES WHAT THE GAP IS. If facet and smooth agree once the degenerate direction is pinned, the normal was choosing a point along it rather than fitting better, and no claim about the derivative survives.",
         "grid": {
@@ -228,6 +250,49 @@
         }
       ],
       "smoothResidualOverFacet": 1.0000632795154147
+    },
+    {
+      "label": "coarsest grid, shift at truth, POLES ON X",
+      "facetArm": "64x128-poleX-shift-known",
+      "smoothArm": "64x128-poleX-smooth-shift-known",
+      "control": "analytic-shift-known",
+      "facetMedianPosMm": 44.561445607457735,
+      "smoothMedianPosMm": 24.664774413236323,
+      "controlMedianPosMm": 25.518923163630767,
+      "posRecoveredPercent": 104.4854811273773,
+      "facetMedianRotDeg": 0.08800208713479986,
+      "smoothMedianRotDeg": 0.05595233341260866,
+      "controlMedianRotDeg": 0.03728706234779013,
+      "rotRecoveredPercent": 63.19577651158026,
+      "pairs": 25,
+      "posSmoothWins": 21,
+      "rotSmoothWins": 20,
+      "posSignP": 0.0009105205535888672,
+      "rotSignP": 0.004077315330505371,
+      "axes": [
+        {
+          "axis": "yaw",
+          "facetMedianDeg": 0.05896462080991682,
+          "smoothMedianDeg": 0.022814551948513895,
+          "smoothWins": 23,
+          "signP": 0.000019431114196777344
+        },
+        {
+          "axis": "pitch",
+          "facetMedianDeg": 0.044959150883200905,
+          "smoothMedianDeg": 0.04058098360455337,
+          "smoothWins": 10,
+          "signP": 0.42435622215270996
+        },
+        {
+          "axis": "roll",
+          "facetMedianDeg": 0.025557192039105336,
+          "smoothMedianDeg": 0.03567718954971599,
+          "smoothWins": 11,
+          "signP": 0.6900379657745361
+        }
+      ],
+      "smoothResidualOverFacet": 0.9966656849055198
     }
   ],
   "summary": [
@@ -494,6 +559,64 @@
     },
     {
       "scope": "documented",
+      "arm": "64x128-poleX-shift-known",
+      "question": "THE POLE TEST, facet side. The same sphere with its tessellation turned 90°, so the UV poles lie on X instead of on the yaw axis.",
+      "facets": 16128,
+      "bodyDeficitMeanMm": 0.3485860924859525,
+      "bodyDeficitMaxMm": 0.46231519843276114,
+      "shiftKnown": true,
+      "control": "analytic-shift-known",
+      "n": 1,
+      "seedsDropped": 0,
+      "medianPosMm": 22.716694425910738,
+      "worstPosMm": 22.716694425910738,
+      "medianRotDeg": 0.06701554724133107,
+      "worstRotDeg": 0.06701554724133107,
+      "medianResidualPx": 0.2894917885165429,
+      "medianIterations": 31,
+      "medianSeconds": 25.905,
+      "notConverged": 0,
+      "gaugeConstraints": [
+        1
+      ],
+      "stops": {
+        "plateau": 1
+      },
+      "posVsControl": 2.173284619230891,
+      "rotVsControl": 1.8084106561545419,
+      "residualVsControl": 1.0495278578527192
+    },
+    {
+      "scope": "documented",
+      "arm": "64x128-poleX-smooth-shift-known",
+      "question": "THE POLE TEST, smooth side. If the axis smoothing rescues follows the tessellation here, the poles are the mechanism; if it stays on yaw, they are a coincidence.",
+      "facets": 16128,
+      "bodyDeficitMeanMm": 0.3485860924859525,
+      "bodyDeficitMaxMm": 0.46231519843276114,
+      "shiftKnown": true,
+      "control": "analytic-shift-known",
+      "n": 1,
+      "seedsDropped": 0,
+      "medianPosMm": 22.353485452949414,
+      "worstPosMm": 22.353485452949414,
+      "medianRotDeg": 0.035118723400527185,
+      "worstRotDeg": 0.035118723400527185,
+      "medianResidualPx": 0.28864688757621054,
+      "medianIterations": 9,
+      "medianSeconds": 18.478,
+      "notConverged": 0,
+      "gaugeConstraints": [
+        1
+      ],
+      "stops": {
+        "step": 1
+      },
+      "posVsControl": 2.1385367611268897,
+      "rotVsControl": 0.9476767144697542,
+      "residualVsControl": 1.0464647413527703
+    },
+    {
+      "scope": "documented",
       "arm": "64x128-smooth-shift-known",
       "question": "THE ARM THAT DECIDES WHAT THE GAP IS. If facet and smooth agree once the degenerate direction is pinned, the normal was choosing a point along it rather than fitting better, and no claim about the derivative survives.",
       "facets": 16128,
@@ -530,15 +653,15 @@
       "bodyDeficitMaxMm": 0,
       "shiftKnown": false,
       "control": "analytic",
-      "n": 12,
-      "seedsDropped": 19,
-      "medianPosMm": 25.062480050989013,
+      "n": 8,
+      "seedsDropped": 23,
+      "medianPosMm": 35.26438759345197,
       "worstPosMm": 70.06230507026902,
       "medianRotDeg": 0.048773996189357044,
       "worstRotDeg": 0.07883298833974706,
-      "medianResidualPx": 0.2733950938657579,
+      "medianResidualPx": 0.27522310638425396,
       "medianIterations": 24.5,
-      "medianSeconds": 11.248999999999999,
+      "medianSeconds": 11.503499999999999,
       "notConverged": 0,
       "gaugeConstraints": [
         1
@@ -560,15 +683,15 @@
       "bodyDeficitMaxMm": 0.46231519843276114,
       "shiftKnown": false,
       "control": "analytic",
-      "n": 12,
-      "seedsDropped": 19,
-      "medianPosMm": 53.45545597560607,
+      "n": 8,
+      "seedsDropped": 23,
+      "medianPosMm": 43.45633171638384,
       "worstPosMm": 269.95079469715216,
-      "medianRotDeg": 0.09343856727365817,
+      "medianRotDeg": 0.08363069553317223,
       "worstRotDeg": 0.6729266907703744,
-      "medianResidualPx": 0.28400743951295593,
-      "medianIterations": 43.5,
-      "medianSeconds": 43.5845,
+      "medianResidualPx": 0.2878364132665724,
+      "medianIterations": 44,
+      "medianSeconds": 45.176,
       "notConverged": 1,
       "gaugeConstraints": [
         1
@@ -579,9 +702,9 @@
         "step": 1,
         "maxIterations": 1
       },
-      "posVsControl": 2.1328877216800666,
-      "rotVsControl": 1.9157455729257502,
-      "residualVsControl": 1.0388168840089314
+      "posVsControl": 1.2323007623830957,
+      "rotVsControl": 1.714657441815712,
+      "residualVsControl": 1.045829389283574
     },
     {
       "scope": "all",
@@ -592,15 +715,15 @@
       "bodyDeficitMaxMm": 0.46231519843276114,
       "shiftKnown": false,
       "control": "analytic",
-      "n": 12,
-      "seedsDropped": 19,
-      "medianPosMm": 32.32649814744545,
-      "worstPosMm": 59.77485742618349,
-      "medianRotDeg": 0.05678057626080777,
+      "n": 8,
+      "seedsDropped": 23,
+      "medianPosMm": 37.48143862169185,
+      "worstPosMm": 57.39794020552492,
+      "medianRotDeg": 0.05832539235779837,
       "worstRotDeg": 0.11205223340933143,
-      "medianResidualPx": 0.2838173134786784,
-      "medianIterations": 24.5,
-      "medianSeconds": 36.4455,
+      "medianResidualPx": 0.2880428449482828,
+      "medianIterations": 34,
+      "medianSeconds": 43.1485,
       "notConverged": 4,
       "gaugeConstraints": [
         1
@@ -611,9 +734,9 @@
         "cost": 3,
         "plateau": 2
       },
-      "posVsControl": 1.2898363642256458,
-      "rotVsControl": 1.1641567371344044,
-      "residualVsControl": 1.0381214580903855
+      "posVsControl": 1.062869403938027,
+      "rotVsControl": 1.1958296820986247,
+      "residualVsControl": 1.0465794414300758
     },
     {
       "scope": "all",
@@ -624,15 +747,15 @@
       "bodyDeficitMaxMm": 0.20550016753861922,
       "shiftKnown": false,
       "control": "analytic",
-      "n": 12,
-      "seedsDropped": 19,
+      "n": 8,
+      "seedsDropped": 23,
       "medianPosMm": 49.67748911689617,
-      "worstPosMm": 78.14622657127988,
-      "medianRotDeg": 0.05535154240207077,
-      "worstRotDeg": 0.12093684785753614,
-      "medianResidualPx": 0.2761297183305709,
+      "worstPosMm": 72.57678670719598,
+      "medianRotDeg": 0.05523798859334023,
+      "worstRotDeg": 0.0870754907442328,
+      "medianResidualPx": 0.2803742520846779,
       "medianIterations": 38.5,
-      "medianSeconds": 42.4765,
+      "medianSeconds": 42.388999999999996,
       "notConverged": 3,
       "gaugeConstraints": [
         1
@@ -643,9 +766,9 @@
         "cost": 5,
         "maxIterations": 3
       },
-      "posVsControl": 1.9821457818950283,
-      "rotVsControl": 1.134857643962112,
-      "residualVsControl": 1.0100024635634308
+      "posVsControl": 1.4087154919463418,
+      "rotVsControl": 1.1325294810555977,
+      "residualVsControl": 1.018716254489302
     },
     {
       "scope": "all",
@@ -656,15 +779,15 @@
       "bodyDeficitMaxMm": 0.11559911005809553,
       "shiftKnown": false,
       "control": "analytic",
-      "n": 12,
-      "seedsDropped": 19,
-      "medianPosMm": 35.92214386903396,
-      "worstPosMm": 57.38513222543311,
-      "medianRotDeg": 0.058098236403018595,
-      "worstRotDeg": 0.0915661428243046,
-      "medianResidualPx": 0.2742998136133522,
-      "medianIterations": 39,
-      "medianSeconds": 44.332,
+      "n": 8,
+      "seedsDropped": 23,
+      "medianPosMm": 40.62421864637756,
+      "worstPosMm": 55.66849258398502,
+      "medianRotDeg": 0.06588818079247326,
+      "worstRotDeg": 0.09050995512946972,
+      "medianResidualPx": 0.2767441330185769,
+      "medianIterations": 37.5,
+      "medianSeconds": 48.275000000000006,
       "notConverged": 5,
       "gaugeConstraints": [
         1
@@ -675,9 +798,9 @@
         "maxIterations": 5,
         "step": 1
       },
-      "posVsControl": 1.433303639382504,
-      "rotVsControl": 1.1911723652386759,
-      "residualVsControl": 1.0033092025712742
+      "posVsControl": 1.15198990876339,
+      "rotVsControl": 1.3508874798093886,
+      "residualVsControl": 1.0055265222978749
     },
     {
       "scope": "all",
@@ -688,15 +811,15 @@
       "bodyDeficitMaxMm": 0.051379053964017984,
       "shiftKnown": false,
       "control": "analytic",
-      "n": 12,
-      "seedsDropped": 19,
-      "medianPosMm": 36.19573541732832,
+      "n": 8,
+      "seedsDropped": 23,
+      "medianPosMm": 33.788915088390716,
       "worstPosMm": 57.62625886834995,
-      "medianRotDeg": 0.035361610937971966,
+      "medianRotDeg": 0.036415742023764935,
       "worstRotDeg": 0.06326460326698743,
-      "medianResidualPx": 0.27355542398069077,
-      "medianIterations": 36.5,
-      "medianSeconds": 54.0125,
+      "medianResidualPx": 0.2742889082936187,
+      "medianIterations": 35.5,
+      "medianSeconds": 52.6005,
       "notConverged": 1,
       "gaugeConstraints": [
         1
@@ -706,9 +829,9 @@
         "maxIterations": 1,
         "plateau": 19
       },
-      "posVsControl": 1.4442200190758843,
-      "rotVsControl": 0.7250095071292971,
-      "residualVsControl": 1.0005864410829977
+      "posVsControl": 0.9581597014508987,
+      "rotVsControl": 0.7466220705473218,
+      "residualVsControl": 0.9966056698403404
     },
     {
       "scope": "all",
@@ -719,15 +842,15 @@
       "bodyDeficitMaxMm": 0.051379053964017984,
       "shiftKnown": false,
       "control": "analytic",
-      "n": 12,
-      "seedsDropped": 19,
-      "medianPosMm": 32.53804052264536,
+      "n": 8,
+      "seedsDropped": 23,
+      "medianPosMm": 34.97505331521166,
       "worstPosMm": 59.636594135111075,
-      "medianRotDeg": 0.040344702390284815,
+      "medianRotDeg": 0.04401503943494473,
       "worstRotDeg": 0.08641368237111108,
-      "medianResidualPx": 0.27352775464027335,
-      "medianIterations": 21,
-      "medianSeconds": 38.3365,
+      "medianResidualPx": 0.27433483170143325,
+      "medianIterations": 22,
+      "medianSeconds": 37.0955,
       "notConverged": 7,
       "gaugeConstraints": [
         1
@@ -738,9 +861,9 @@
         "plateau": 1,
         "cost": 3
       },
-      "posVsControl": 1.2982769644683008,
-      "rotVsControl": 0.8271764780899462,
-      "residualVsControl": 1.0004852346567001
+      "posVsControl": 0.9917952841950377,
+      "rotVsControl": 0.9024284018898833,
+      "residualVsControl": 0.9967725286786766
     },
     {
       "scope": "all",
@@ -751,15 +874,15 @@
       "bodyDeficitMaxMm": 0,
       "shiftKnown": true,
       "control": "analytic-shift-known",
-      "n": 12,
-      "seedsDropped": 19,
-      "medianPosMm": 22.19009312519632,
+      "n": 8,
+      "seedsDropped": 23,
+      "medianPosMm": 31.18704062922379,
       "worstPosMm": 64.1002671214437,
-      "medianRotDeg": 0.03500462838614288,
+      "medianRotDeg": 0.032158058163685735,
       "worstRotDeg": 0.06218992741637795,
-      "medianResidualPx": 0.27347652513833587,
-      "medianIterations": 21,
-      "medianSeconds": 10.8115,
+      "medianResidualPx": 0.27538073101227545,
+      "medianIterations": 20.5,
+      "medianSeconds": 10.8345,
       "notConverged": 0,
       "gaugeConstraints": [
         1
@@ -780,15 +903,15 @@
       "bodyDeficitMaxMm": 0.46231519843276114,
       "shiftKnown": true,
       "control": "analytic-shift-known",
-      "n": 12,
-      "seedsDropped": 19,
-      "medianPosMm": 41.62809726269553,
-      "worstPosMm": 81.01644770173347,
-      "medianRotDeg": 0.050456419292494614,
-      "worstRotDeg": 0.1001852674021193,
-      "medianResidualPx": 0.2836029829866463,
-      "medianIterations": 45,
-      "medianSeconds": 41.208,
+      "n": 8,
+      "seedsDropped": 23,
+      "medianPosMm": 40.38548436016646,
+      "worstPosMm": 58.98139570897681,
+      "medianRotDeg": 0.04814957914897638,
+      "worstRotDeg": 0.07323866561501877,
+      "medianResidualPx": 0.2876530970313982,
+      "medianIterations": 41,
+      "medianSeconds": 41.7065,
       "notConverged": 4,
       "gaugeConstraints": [
         1
@@ -799,9 +922,74 @@
         "cost": 6,
         "step": 1
       },
-      "posVsControl": 1.8759766814780883,
-      "rotVsControl": 1.4414213667946998,
-      "residualVsControl": 1.0370286182449775
+      "posVsControl": 1.2949444238810934,
+      "rotVsControl": 1.4972788127906602,
+      "residualVsControl": 1.0445650862135873
+    },
+    {
+      "scope": "all",
+      "arm": "64x128-poleX-shift-known",
+      "question": "THE POLE TEST, facet side. The same sphere with its tessellation turned 90°, so the UV poles lie on X instead of on the yaw axis.",
+      "facets": 16128,
+      "bodyDeficitMeanMm": 0.3485860924859525,
+      "bodyDeficitMaxMm": 0.46231519843276114,
+      "shiftKnown": true,
+      "control": "analytic-shift-known",
+      "n": 8,
+      "seedsDropped": 23,
+      "medianPosMm": 48.152181350274866,
+      "worstPosMm": 78.0022447364669,
+      "medianRotDeg": 0.08591842159288632,
+      "worstRotDeg": 0.1270999713564548,
+      "medianResidualPx": 0.2875307297175426,
+      "medianIterations": 36,
+      "medianSeconds": 28.1385,
+      "notConverged": 2,
+      "gaugeConstraints": [
+        1
+      ],
+      "stops": {
+        "plateau": 23,
+        "maxIterations": 2,
+        "cost": 3,
+        "step": 3
+      },
+      "posVsControl": 1.543980460433745,
+      "rotVsControl": 2.671754033018981,
+      "residualVsControl": 1.0441207293647774
+    },
+    {
+      "scope": "all",
+      "arm": "64x128-poleX-smooth-shift-known",
+      "question": "THE POLE TEST, smooth side. If the axis smoothing rescues follows the tessellation here, the poles are the mechanism; if it stays on yaw, they are a coincidence.",
+      "facets": 16128,
+      "bodyDeficitMeanMm": 0.3485860924859525,
+      "bodyDeficitMaxMm": 0.46231519843276114,
+      "shiftKnown": true,
+      "control": "analytic-shift-known",
+      "n": 8,
+      "seedsDropped": 23,
+      "medianPosMm": 33.33213755892622,
+      "worstPosMm": 65.7429104539357,
+      "medianRotDeg": 0.05926747111674722,
+      "worstRotDeg": 0.0980454937657495,
+      "medianResidualPx": 0.28654319678260737,
+      "medianIterations": 21,
+      "medianSeconds": 22.5815,
+      "notConverged": 4,
+      "gaugeConstraints": [
+        1
+      ],
+      "stops": {
+        "step": 20,
+        "lambda": 3,
+        "cost": 5,
+        "plateau": 2,
+        "maxIterations": 1
+      },
+      "posVsControl": 1.0687816761841895,
+      "rotVsControl": 1.8430052839345443,
+      "residualVsControl": 1.04053466533152
     },
     {
       "scope": "all",
@@ -812,15 +1000,15 @@
       "bodyDeficitMaxMm": 0.46231519843276114,
       "shiftKnown": true,
       "control": "analytic-shift-known",
-      "n": 12,
-      "seedsDropped": 19,
-      "medianPosMm": 24.923859897472198,
+      "n": 8,
+      "seedsDropped": 23,
+      "medianPosMm": 37.982132881916726,
       "worstPosMm": 67.87823189557949,
       "medianRotDeg": 0.03756834905885807,
-      "worstRotDeg": 0.08286549175474457,
-      "medianResidualPx": 0.28390010938627497,
+      "worstRotDeg": 0.07115791150420929,
+      "medianResidualPx": 0.28695002767841926,
       "medianIterations": 25,
-      "medianSeconds": 39.9535,
+      "medianSeconds": 41.695499999999996,
       "notConverged": 4,
       "gaugeConstraints": [
         1
@@ -830,9 +1018,9 @@
         "lambda": 4,
         "cost": 4
       },
-      "posVsControl": 1.123197625032576,
-      "rotVsControl": 1.0732394769181461,
-      "residualVsControl": 1.0381150968722688
+      "posVsControl": 1.2178819187584473,
+      "rotVsControl": 1.1682405967311134,
+      "residualVsControl": 1.0420120050651913
     },
     {
       "scope": "all-including-refused",
@@ -1115,6 +1303,71 @@
       "posVsControl": 1.8491683037746098,
       "rotVsControl": 1.48865409178167,
       "residualVsControl": 1.0382494172552563
+    },
+    {
+      "scope": "all-including-refused",
+      "arm": "64x128-poleX-shift-known",
+      "question": "THE POLE TEST, facet side. The same sphere with its tessellation turned 90°, so the UV poles lie on X instead of on the yaw axis.",
+      "facets": 16128,
+      "bodyDeficitMeanMm": 0.3485860924859525,
+      "bodyDeficitMaxMm": 0.46231519843276114,
+      "shiftKnown": true,
+      "control": "analytic-shift-known",
+      "n": 31,
+      "seedsDropped": 0,
+      "medianPosMm": 44.561445607457735,
+      "worstPosMm": 96.34360968369255,
+      "medianRotDeg": 0.08731631238880179,
+      "worstRotDeg": 0.20683862257960975,
+      "medianResidualPx": 0.2836152147960986,
+      "medianIterations": 42,
+      "medianSeconds": 31.209,
+      "notConverged": 2,
+      "gaugeConstraints": [
+        1
+      ],
+      "stops": {
+        "plateau": 23,
+        "maxIterations": 2,
+        "cost": 3,
+        "step": 3
+      },
+      "posVsControl": 1.8626895265686019,
+      "rotVsControl": 2.2809197296334265,
+      "residualVsControl": 1.0391147160904912
+    },
+    {
+      "scope": "all-including-refused",
+      "arm": "64x128-poleX-smooth-shift-known",
+      "question": "THE POLE TEST, smooth side. If the axis smoothing rescues follows the tessellation here, the poles are the mechanism; if it stays on yaw, they are a coincidence.",
+      "facets": 16128,
+      "bodyDeficitMeanMm": 0.3485860924859525,
+      "bodyDeficitMaxMm": 0.46231519843276114,
+      "shiftKnown": true,
+      "control": "analytic-shift-known",
+      "n": 31,
+      "seedsDropped": 0,
+      "medianPosMm": 23.559159954913408,
+      "worstPosMm": 65.7429104539357,
+      "medianRotDeg": 0.054147619394412566,
+      "worstRotDeg": 0.10618810765514429,
+      "medianResidualPx": 0.28337037313235697,
+      "medianIterations": 21,
+      "medianSeconds": 26.697,
+      "notConverged": 4,
+      "gaugeConstraints": [
+        1
+      ],
+      "stops": {
+        "step": 20,
+        "lambda": 3,
+        "cost": 5,
+        "plateau": 2,
+        "maxIterations": 1
+      },
+      "posVsControl": 0.9847840415533413,
+      "rotVsControl": 1.4144707902854212,
+      "residualVsControl": 1.0382176606342495
     },
     {
       "scope": "all-including-refused",
@@ -20058,6 +20311,3788 @@
         }
       ],
       "seconds": 24.718
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1,
+      "documented": true,
+      "posePositionMm": 22.716694425910738,
+      "poseRotationDeg": 0.06701554724133107,
+      "residualRmsPx": 0.2894917885165429,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 31,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 14.30909757398673,
+          "rotationDeg": 0.03741329525461137,
+          "dxMm": 14.301297957342918,
+          "dyMm": -0.01447113803598743,
+          "dzMm": 0.47216597011658523,
+          "yawDeg": 0.032344232390698835,
+          "pitchDeg": 0.009027416717391074,
+          "rollDeg": 0.016395289563177595
+        },
+        {
+          "id": "P2",
+          "positionMm": 22.716694425910738,
+          "rotationDeg": 0.03951524761663142,
+          "dxMm": 0.2936898609879578,
+          "dyMm": 22.69414642566403,
+          "dzMm": -0.9683335769647208,
+          "yawDeg": 0.035833218549171875,
+          "pitchDeg": 0.014459335828771458,
+          "rollDeg": 0.008373928957525686
+        },
+        {
+          "id": "P3",
+          "positionMm": 16.72994888968415,
+          "rotationDeg": 0.06701554724133107,
+          "dxMm": -16.702651450451356,
+          "dyMm": -0.2884289630411957,
+          "dzMm": -0.9107321831680649,
+          "yawDeg": 0.06363008378249146,
+          "pitchDeg": 0.014380740061828434,
+          "rollDeg": -0.01479208942654777
+        },
+        {
+          "id": "P4",
+          "positionMm": 7.539552502423929,
+          "rotationDeg": 0.034257863896257006,
+          "dxMm": -0.09018565836805409,
+          "dyMm": -7.322510888702283,
+          "dzMm": 1.7937538205306074,
+          "yawDeg": 0.031130444044023875,
+          "pitchDeg": -0.012903512592885469,
+          "rollDeg": -0.005759799968961199
+        }
+      ],
+      "seconds": 25.905
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1,
+      "documented": true,
+      "posePositionMm": 22.353485452949414,
+      "poseRotationDeg": 0.035118723400527185,
+      "residualRmsPx": 0.28864688757621054,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 9,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 13.856264752924044,
+          "rotationDeg": 0.035118723400527185,
+          "dxMm": 13.773076022711273,
+          "dyMm": 0.11049000936819153,
+          "dzMm": -1.5120323189571394,
+          "yawDeg": -0.0017044898693256982,
+          "pitchDeg": 0.031241572961926145,
+          "rollDeg": -0.015943764866112153
+        },
+        {
+          "id": "P2",
+          "positionMm": 22.353485452949414,
+          "rotationDeg": 0.02645982164535267,
+          "dxMm": 0.10617731563452096,
+          "dyMm": 22.27003117368298,
+          "dzMm": 1.9268497076975095,
+          "yawDeg": 0.016550701771379295,
+          "pitchDeg": -0.014191773685760856,
+          "rollDeg": -0.014940419154257034
+        },
+        {
+          "id": "P3",
+          "positionMm": 15.872084457746093,
+          "rotationDeg": 0.02032000505718682,
+          "dxMm": -15.820557189452522,
+          "dyMm": -0.27569709189684266,
+          "dzMm": 1.247808624191566,
+          "yawDeg": 0.011942320293003572,
+          "pitchDeg": -0.005362383230850476,
+          "rollDeg": 0.01564946435139966
+        },
+        {
+          "id": "P4",
+          "positionMm": 6.631349141099813,
+          "rotationDeg": 0.026194021167799147,
+          "dxMm": -0.0421656140554387,
+          "dyMm": -6.558947178552543,
+          "dzMm": -0.9763326283158784,
+          "yawDeg": -0.002303724686072428,
+          "pitchDeg": 0.020390233979082018,
+          "rollDeg": 0.01625032934790424
+        }
+      ],
+      "seconds": 18.478
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1823051870,
+      "documented": false,
+      "posePositionMm": 44.561445607457735,
+      "poseRotationDeg": 0.0582758025527573,
+      "residualRmsPx": 0.292927233439242,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 215,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 1.3978826882830853,
+          "rotationDeg": 0.038208503634618966,
+          "dxMm": -0.7905796666429765,
+          "dyMm": -0.039545527001576264,
+          "dzMm": 1.1521701055774678,
+          "yawDeg": -0.025273001987642374,
+          "pitchDeg": -0.017964883312077788,
+          "rollDeg": -0.022308601019180627
+        },
+        {
+          "id": "P2",
+          "positionMm": 20.140221515155577,
+          "rotationDeg": 0.03063666887083325,
+          "dxMm": 0.5911478307392137,
+          "dyMm": -20.060742622365346,
+          "dzMm": 1.6869120786105802,
+          "yawDeg": -0.02538753646288683,
+          "pitchDeg": -0.008553382079354521,
+          "rollDeg": 0.014746513678205952
+        },
+        {
+          "id": "P3",
+          "positionMm": 4.943003217672045,
+          "rotationDeg": 0.0582758025527573,
+          "dxMm": 4.775259952723765,
+          "dyMm": -0.28863687251591463,
+          "dzMm": -1.2437290499353326,
+          "yawDeg": -0.05362128278334416,
+          "pitchDeg": 0.012005164661388162,
+          "rollDeg": 0.019406068411617128
+        },
+        {
+          "id": "P4",
+          "positionMm": 44.561445607457735,
+          "rotationDeg": 0.0253800450517989,
+          "dxMm": 1.152516466472922,
+          "dyMm": -44.52914853989487,
+          "dzMm": -1.2446167011979543,
+          "yawDeg": -0.021383009016346932,
+          "pitchDeg": 0.004186524341690312,
+          "rollDeg": -0.013232502413735192
+        }
+      ],
+      "seconds": 83.755
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1823051870,
+      "documented": false,
+      "posePositionMm": 41.15095621587051,
+      "poseRotationDeg": 0.07722332879327332,
+      "residualRmsPx": 0.29200067428271526,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 22,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 6.657867535959658,
+          "rotationDeg": 0.07722332879327332,
+          "dxMm": -4.2757248032812,
+          "dyMm": -0.3392218017135157,
+          "dzMm": 5.092180878782067,
+          "yawDeg": 0.002071618415584453,
+          "pitchDeg": -0.06409105758493376,
+          "rollDeg": -0.0430294661131483
+        },
+        {
+          "id": "P2",
+          "positionMm": 23.898665090492656,
+          "rotationDeg": 0.06815709378241333,
+          "dxMm": 0.7578281949915666,
+          "dyMm": -23.6339981119027,
+          "dzMm": 3.464970819644482,
+          "yawDeg": -0.013672813755803759,
+          "pitchDeg": -0.030059985433920355,
+          "rollDeg": 0.05955680319575063
+        },
+        {
+          "id": "P3",
+          "positionMm": 9.77954848265425,
+          "rotationDeg": 0.0731345114052174,
+          "dxMm": 8.339105880117437,
+          "dyMm": -0.4001262475102135,
+          "dzMm": -5.093012922703928,
+          "yawDeg": -0.022361075595335997,
+          "pitchDeg": 0.05595554198769928,
+          "rollDeg": 0.041451557144158574
+        },
+        {
+          "id": "P4",
+          "positionMm": 41.15095621587051,
+          "rotationDeg": 0.06343439890791824,
+          "dxMm": 1.1047051951474511,
+          "dyMm": -41.00990016842143,
+          "dzMm": -3.2200795158525732,
+          "yawDeg": 0.0014372460352234384,
+          "pitchDeg": 0.02757568210348249,
+          "rollDeg": -0.057094797561736854
+        }
+      ],
+      "seconds": 23.293
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1081093444,
+      "documented": false,
+      "posePositionMm": 28.56834729681644,
+      "poseRotationDeg": 0.04515457818357477,
+      "residualRmsPx": 0.27485853534520344,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 32,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 22.054317033964463,
+          "rotationDeg": 0.03601686570864206,
+          "dxMm": -22.02638500428833,
+          "dyMm": 0.12293425781775835,
+          "dzMm": -1.1027922042398681,
+          "yawDeg": 0.01475210382849923,
+          "pitchDeg": 0.021499310848396652,
+          "rollDeg": 0.024898317584468366
+        },
+        {
+          "id": "P2",
+          "positionMm": 4.959178360229781,
+          "rotationDeg": 0.03585964122191994,
+          "dxMm": 0.15792844225457486,
+          "dyMm": 4.502893731153534,
+          "dzMm": -2.071824476551182,
+          "yawDeg": 0.01667999929952657,
+          "pitchDeg": 0.03048350835183461,
+          "rollDeg": -0.008767291835914626
+        },
+        {
+          "id": "P3",
+          "positionMm": 14.850478003657132,
+          "rotationDeg": 0.04515457818357477,
+          "dxMm": 14.815921897594286,
+          "dyMm": -0.764720049568457,
+          "dzMm": 0.6635951380762669,
+          "yawDeg": 0.03340127170154972,
+          "pitchDeg": -0.018373625567317406,
+          "rollDeg": -0.024226806593518058
+        },
+        {
+          "id": "P4",
+          "positionMm": 28.56834729681644,
+          "rotationDeg": 0.03864957132986473,
+          "dxMm": -0.7575396961975456,
+          "dyMm": 28.438038478006966,
+          "dzMm": 2.6181230688413666,
+          "yawDeg": 0.012931031936346926,
+          "pitchDeg": -0.03495174085122571,
+          "rollDeg": 0.01014140641319082
+        }
+      ],
+      "seconds": 20.609
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1081093444,
+      "documented": false,
+      "posePositionMm": 19.51162829786094,
+      "poseRotationDeg": 0.028698171074124527,
+      "residualRmsPx": 0.2747651807400474,
+      "converged": false,
+      "stopReason": "lambda",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 9,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 7.823902684236079,
+          "rotationDeg": 0.027339480423109505,
+          "dxMm": -7.4888689422172305,
+          "dyMm": 0.08723855088816485,
+          "dzMm": -2.2633348435283795,
+          "yawDeg": -0.00008684341179332478,
+          "pitchDeg": 0.02732027443990595,
+          "rollDeg": -0.0010212062343016859
+        },
+        {
+          "id": "P2",
+          "positionMm": 19.51162829786094,
+          "rotationDeg": 0.023925274338840574,
+          "dxMm": 0.039818807169467174,
+          "dyMm": 19.50738326042245,
+          "dzMm": 0.4050328720898288,
+          "yawDeg": -0.007144451663961604,
+          "pitchDeg": 0.00045915068396568115,
+          "rollDeg": -0.022869580421956415
+        },
+        {
+          "id": "P3",
+          "positionMm": 1.9762408092920007,
+          "rotationDeg": 0.028698171074124527,
+          "dxMm": -0.13481858406549918,
+          "dyMm": -0.2456457228884601,
+          "dzMm": 1.9562744859881707,
+          "yawDeg": 0.005198446314053307,
+          "pitchDeg": -0.028200820601566187,
+          "rollDeg": 0.001125591275861093
+        },
+        {
+          "id": "P4",
+          "positionMm": 13.821573317062361,
+          "rotationDeg": 0.023633394383313685,
+          "dxMm": -0.2064089543960118,
+          "dyMm": 13.819364667654987,
+          "dzMm": 0.1358104739859721,
+          "yawDeg": 0.003345029270818145,
+          "pitchDeg": -0.0037693223745946525,
+          "rollDeg": 0.023062085280166837
+        }
+      ],
+      "seconds": 18.181
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 649236331,
+      "documented": false,
+      "posePositionMm": 9.5074931497201,
+      "poseRotationDeg": 0.08800208713479986,
+      "residualRmsPx": 0.15513582776404056,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 36,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 8.267483417454535,
+          "rotationDeg": 0.08253413963924736,
+          "dxMm": -5.885101617034039,
+          "dyMm": 0.2716645313399074,
+          "dzMm": -5.800263735165923,
+          "yawDeg": 0.03957713728132717,
+          "pitchDeg": 0.06812793770729991,
+          "rollDeg": -0.024273587373570438
+        },
+        {
+          "id": "P2",
+          "positionMm": 8.609864130319869,
+          "rotationDeg": 0.08508204261640911,
+          "dxMm": -0.11973284479366297,
+          "dyMm": -8.336375812741714,
+          "dzMm": 2.1494796340466307,
+          "yawDeg": 0.05129677025423973,
+          "pitchDeg": -0.029878473440017317,
+          "rollDeg": -0.06137248785656457
+        },
+        {
+          "id": "P3",
+          "positionMm": 9.5074931497201,
+          "rotationDeg": 0.08699246029584759,
+          "dxMm": 7.435121861692373,
+          "dyMm": 0.7013257232059283,
+          "dzMm": 5.8838364290425735,
+          "yawDeg": 0.060185555215313435,
+          "pitchDeg": -0.057183711444850405,
+          "rollDeg": 0.025677601177602385
+        },
+        {
+          "id": "P4",
+          "positionMm": 5.416337620964524,
+          "rotationDeg": 0.08800208713479986,
+          "dxMm": -0.05324803567759162,
+          "dyMm": -5.046215080396266,
+          "dzMm": -1.9671276606650183,
+          "yawDeg": 0.04860426618533609,
+          "pitchDeg": 0.0294742531871098,
+          "rollDeg": 0.06717882406165554
+        }
+      ],
+      "seconds": 24.232
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 649236331,
+      "documented": false,
+      "posePositionMm": 7.286088086786029,
+      "poseRotationDeg": 0.048379597853238955,
+      "residualRmsPx": 0.15504743793309225,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 33,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 4.488804305514067,
+          "rotationDeg": 0.030618603614361785,
+          "dxMm": -3.614939823009422,
+          "dyMm": 0.1590907565990063,
+          "dzMm": 2.656362983552322,
+          "yawDeg": -0.002937360482889062,
+          "pitchDeg": -0.020012258050393472,
+          "rollDeg": -0.023011594966828808
+        },
+        {
+          "id": "P2",
+          "positionMm": 6.267123565875488,
+          "rotationDeg": 0.045670773737315276,
+          "dxMm": 0.03940751313270818,
+          "dyMm": -5.898424924897228,
+          "dzMm": 2.1175146382520507,
+          "yawDeg": 0.022814551948513895,
+          "pitchDeg": -0.025341395816889656,
+          "rollDeg": 0.030195360272799787
+        },
+        {
+          "id": "P3",
+          "positionMm": 5.867482655652886,
+          "rotationDeg": 0.048379597853238955,
+          "dxMm": 5.25636860597789,
+          "dyMm": 0.2974219184344873,
+          "dzMm": -2.59026678064485,
+          "yawDeg": 0.009308959973389541,
+          "pitchDeg": 0.04058098360455337,
+          "rollDeg": 0.0245833727557146
+        },
+        {
+          "id": "P4",
+          "positionMm": 7.286088086786029,
+          "rotationDeg": 0.04762137079547514,
+          "dxMm": 0.002872267010955998,
+          "dyMm": -6.974344303841029,
+          "dzMm": -2.1084574669572302,
+          "yawDeg": 0.017978400658350324,
+          "pitchDeg": 0.034700350802803565,
+          "rollDeg": -0.027212908728376478
+        }
+      ],
+      "seconds": 50.174
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1322716256,
+      "documented": false,
+      "posePositionMm": 25.746427342670422,
+      "poseRotationDeg": 0.01785189368215984,
+      "residualRmsPx": 0.2942200952814776,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 28,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 2.149976637851417,
+          "rotationDeg": 0.005131944687578733,
+          "dxMm": 2.1411790292882316,
+          "dyMm": -0.10672769855634215,
+          "dzMm": 0.16236103659455006,
+          "yawDeg": 0.00492059297346259,
+          "pitchDeg": -0.0007385857133513363,
+          "rollDeg": 0.0012823452202640473
+        },
+        {
+          "id": "P2",
+          "positionMm": 25.746427342670422,
+          "rotationDeg": 0.009943452122397849,
+          "dxMm": 0.22132955323642123,
+          "dyMm": -25.744023627547463,
+          "dzMm": -0.2734622543409636,
+          "yawDeg": -0.0075841215840313225,
+          "pitchDeg": -0.0060859143761133865,
+          "rollDeg": 0.002076193847289687
+        },
+        {
+          "id": "P3",
+          "positionMm": 19.013670484321587,
+          "rotationDeg": 0.01785189368215984,
+          "dxMm": -19.005751627151568,
+          "dyMm": -0.5175856039559418,
+          "dzMm": -0.18214147239174402,
+          "yawDeg": 0.01513418947229761,
+          "pitchDeg": 0.009314752302869045,
+          "rollDeg": -0.0017131030727048913
+        },
+        {
+          "id": "P4",
+          "positionMm": 9.56042324845156,
+          "rotationDeg": 0.013104071293494777,
+          "dxMm": 0.11466321279616012,
+          "dyMm": 9.559312310533308,
+          "dzMm": 0.08996214120788118,
+          "yawDeg": 0.012914505068948756,
+          "pitchDeg": 0.00202020195165626,
+          "rollDeg": -0.0009108094776378861
+        }
+      ],
+      "seconds": 18.276
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1322716256,
+      "documented": false,
+      "posePositionMm": 27.659260549438876,
+      "poseRotationDeg": 0.01985977894894811,
+      "residualRmsPx": 0.2945077531818962,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 14,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 0.7114330655058845,
+          "rotationDeg": 0.010099059492623913,
+          "dxMm": 0.23209737044194156,
+          "dyMm": -0.09009670709941506,
+          "dzMm": 0.666446097369381,
+          "yawDeg": 0.003293415530862376,
+          "pitchDeg": -0.006996777385479547,
+          "rollDeg": -0.006478148339183254
+        },
+        {
+          "id": "P2",
+          "positionMm": 27.659260549438876,
+          "rotationDeg": 0.019775409983016565,
+          "dxMm": 0.2525788750585775,
+          "dyMm": -27.654573342106303,
+          "dzMm": 0.44212138568862014,
+          "yawDeg": -0.010856656231183592,
+          "pitchDeg": -0.014503395756200667,
+          "rollDeg": 0.00792556988780102
+        },
+        {
+          "id": "P3",
+          "positionMm": 17.13133751374188,
+          "rotationDeg": 0.01985977894894811,
+          "dxMm": -17.108390637896598,
+          "dyMm": -0.49589063832870817,
+          "dzMm": -0.7347021612120891,
+          "yawDeg": 0.01170242209818717,
+          "pitchDeg": 0.015012285859970997,
+          "rollDeg": 0.005652770966156684
+        },
+        {
+          "id": "P4",
+          "positionMm": 11.458377019411095,
+          "rotationDeg": 0.016677993225812284,
+          "dxMm": 0.1403229280426757,
+          "dyMm": 11.441597200819054,
+          "dzMm": -0.6037937471052718,
+          "yawDeg": 0.011789418529886575,
+          "pitchDeg": 0.009674769886637173,
+          "rollDeg": -0.00674014691459357
+        }
+      ],
+      "seconds": 20.277
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 908708639,
+      "documented": false,
+      "posePositionMm": 73.04590824109704,
+      "poseRotationDeg": 0.13737862798387857,
+      "residualRmsPx": 0.2798057821792248,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 36,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 65.38356622564638,
+          "rotationDeg": 0.04005247550940227,
+          "dxMm": 65.3603198669952,
+          "dyMm": 0.4513026245435564,
+          "dzMm": 1.6839374123284838,
+          "yawDeg": 0.02791472309144183,
+          "pitchDeg": -0.024722302276587393,
+          "rollDeg": 0.014829940186858015
+        },
+        {
+          "id": "P2",
+          "positionMm": 73.04590824109704,
+          "rotationDeg": 0.13737862798387857,
+          "dxMm": -0.14004717833740465,
+          "dyMm": 73.01348316893375,
+          "dzMm": -2.1717212285273235,
+          "yawDeg": 0.1295929699076197,
+          "pitchDeg": 0.04487109645432799,
+          "rollDeg": 0.007638264745952306
+        },
+        {
+          "id": "P3",
+          "positionMm": 36.30349159025266,
+          "rotationDeg": 0.04338039331487096,
+          "dxMm": -36.30187789860706,
+          "dyMm": 0.2000741749780266,
+          "dzMm": -0.2777282892985509,
+          "yawDeg": 0.040823884050986026,
+          "pitchDeg": -0.0005783413955005035,
+          "rollDeg": -0.014418963676344682
+        },
+        {
+          "id": "P4",
+          "positionMm": 36.71790483798738,
+          "rotationDeg": 0.056172490066066685,
+          "dxMm": -0.8614058122191209,
+          "dyMm": -36.68799423480795,
+          "dzMm": 1.2056511704763342,
+          "yawDeg": 0.054975828423366124,
+          "pitchDeg": -0.009853714439290284,
+          "rollDeg": -0.005837511020798936
+        }
+      ],
+      "seconds": 26.816
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 908708639,
+      "documented": false,
+      "posePositionMm": 24.664774413236323,
+      "poseRotationDeg": 0.04960017110058299,
+      "residualRmsPx": 0.2793707302522357,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 8,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 16.658785503525216,
+          "rotationDeg": 0.02365624197354811,
+          "dxMm": 16.552844084216645,
+          "dyMm": 0.45322948455100986,
+          "dzMm": -1.820184114426235,
+          "yawDeg": 0.013382110782146128,
+          "pitchDeg": 0.015386113037406945,
+          "rollDeg": -0.011897498653334782
+        },
+        {
+          "id": "P2",
+          "positionMm": 24.664774413236323,
+          "rotationDeg": 0.04960017110058299,
+          "dxMm": -0.15084561190939483,
+          "dyMm": 24.654338668238296,
+          "dzMm": 0.7013752840060398,
+          "yawDeg": 0.04271329834357118,
+          "pitchDeg": 0.003696846387825331,
+          "rollDeg": -0.025073160173794684
+        },
+        {
+          "id": "P3",
+          "positionMm": 11.940134004239491,
+          "rotationDeg": 0.022110280845066763,
+          "dxMm": 11.74155440021174,
+          "dyMm": 0.4729257936434972,
+          "dzMm": 2.1163746123432845,
+          "yawDeg": -0.00923946339606374,
+          "pitchDeg": -0.01606272888497523,
+          "rollDeg": 0.012005466510320237
+        },
+        {
+          "id": "P4",
+          "positionMm": 11.859649326247277,
+          "rotationDeg": 0.03430100738667608,
+          "dxMm": 0.01644670518903546,
+          "dyMm": 11.793145977105901,
+          "dzMm": -1.254081181629316,
+          "yawDeg": 0.0015693996914478703,
+          "pitchDeg": 0.02289493427171299,
+          "rollDeg": 0.025497528983174922
+        }
+      ],
+      "seconds": 20.646
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1502120869,
+      "documented": false,
+      "posePositionMm": 20.81835064686796,
+      "poseRotationDeg": 0.08556446940053601,
+      "residualRmsPx": 0.28717508800381425,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 50,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 16.74861761118673,
+          "rotationDeg": 0.07527968235668611,
+          "dxMm": -15.547130892225702,
+          "dyMm": 0.11904978335882527,
+          "dzMm": 6.228060697748353,
+          "yawDeg": 0.01665695514148524,
+          "pitchDeg": -0.07334487017524705,
+          "rollDeg": -0.002796233742809573
+        },
+        {
+          "id": "P2",
+          "positionMm": 20.81835064686796,
+          "rotationDeg": 0.08556446940053601,
+          "dxMm": -0.26721054682524864,
+          "dyMm": -20.812053961765997,
+          "dzMm": 0.43672883137382607,
+          "yawDeg": 0.03680419057599238,
+          "pitchDeg": 0.000963282220524421,
+          "rollDeg": 0.07727690100488821
+        },
+        {
+          "id": "P3",
+          "positionMm": 9.82469200815702,
+          "rotationDeg": 0.07297832348802405,
+          "dxMm": -7.074731028680503,
+          "dyMm": 1.2935249471622279,
+          "dzMm": -6.69324638258885,
+          "yawDeg": -0.018956866962532293,
+          "pitchDeg": 0.07038927278281121,
+          "rollDeg": 0.0033228627124242127
+        },
+        {
+          "id": "P4",
+          "positionMm": 10.963134694898027,
+          "rotationDeg": 0.07726196113870146,
+          "dxMm": 0.923356118056256,
+          "dyMm": -10.923340756887612,
+          "dzMm": -0.1355084006361175,
+          "yawDeg": 0.011073284722101562,
+          "pitchDeg": 0.0009276443686006552,
+          "rollDeg": -0.07642867144771959
+        }
+      ],
+      "seconds": 37.752
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1502120869,
+      "documented": false,
+      "posePositionMm": 17.342503875739382,
+      "poseRotationDeg": 0.10618810765514429,
+      "residualRmsPx": 0.28711269560726843,
+      "converged": true,
+      "stopReason": "cost",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 35,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 12.61588177966767,
+          "rotationDeg": 0.10520670318148521,
+          "dxMm": -9.263520728113761,
+          "dyMm": 0.09250715081291633,
+          "dzMm": 8.563825034726358,
+          "yawDeg": 0.009455473451822627,
+          "pitchDeg": -0.10331023755695079,
+          "rollDeg": 0.017730222365652137
+        },
+        {
+          "id": "P2",
+          "positionMm": 14.46890963120795,
+          "rotationDeg": 0.10618810765514429,
+          "dxMm": -0.14895073006569032,
+          "dyMm": -14.393182894547607,
+          "dzMm": -1.4708656499412858,
+          "yawDeg": 0.025883510834802337,
+          "pitchDeg": 0.021001687153909772,
+          "rollDeg": 0.10084346829162516
+        },
+        {
+          "id": "P3",
+          "positionMm": 16.13098392352139,
+          "rotationDeg": 0.10200496419942766,
+          "dxMm": -13.461277344280376,
+          "dyMm": 1.2037516752088953,
+          "dzMm": -8.806454252745608,
+          "yawDeg": -0.029402054189647142,
+          "pitchDeg": 0.0961137650919956,
+          "rollDeg": -0.017574344133827524
+        },
+        {
+          "id": "P4",
+          "positionMm": 17.342503875739382,
+          "rotationDeg": 0.1023441699686808,
+          "dxMm": 0.956166836711344,
+          "dyMm": -17.223326716064413,
+          "dzMm": 1.7903079322034652,
+          "yawDeg": 0.0005571801322474812,
+          "pitchDeg": -0.02018691321861149,
+          "rollDeg": -0.1003303716919213
+        }
+      ],
+      "seconds": 36.302
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 767537560,
+      "documented": false,
+      "posePositionMm": 67.54158900507558,
+      "poseRotationDeg": 0.1194327266792398,
+      "residualRmsPx": 0.28063694944615303,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 48,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 20.059509570532214,
+          "rotationDeg": 0.024362294907265422,
+          "dxMm": -20.047885208301253,
+          "dyMm": -0.525346029755902,
+          "dzMm": 0.43615872577427994,
+          "yawDeg": 0.005182043191297225,
+          "pitchDeg": -0.0055809916107637525,
+          "rollDeg": -0.023054063195027605
+        },
+        {
+          "id": "P2",
+          "positionMm": 4.644448076562252,
+          "rotationDeg": 0.05626735030812916,
+          "dxMm": 0.7198528665548903,
+          "dyMm": -4.2654988235044655,
+          "dzMm": 1.6906299338050115,
+          "yawDeg": 0.04713079779938312,
+          "pitchDeg": -0.029320813765125187,
+          "rollDeg": 0.009651460703739734
+        },
+        {
+          "id": "P3",
+          "positionMm": 67.54158900507558,
+          "rotationDeg": 0.1194327266792398,
+          "dxMm": 67.53059601074618,
+          "dyMm": -1.2055136299662546,
+          "dzMm": -0.17772071320942828,
+          "yawDeg": 0.1170158903506931,
+          "pitchDeg": -0.006437325514475255,
+          "rollDeg": 0.02308694472543149
+        },
+        {
+          "id": "P4",
+          "positionMm": 55.07466885205783,
+          "rotationDeg": 0.06042029062301957,
+          "dxMm": 0.1489198230546847,
+          "dyMm": 54.998826743620555,
+          "dzMm": -2.8854858993484775,
+          "yawDeg": 0.05068203298867502,
+          "pitchDeg": 0.03221197507989859,
+          "rollDeg": -0.00618625532328182
+        }
+      ],
+      "seconds": 48.227
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 767537560,
+      "documented": false,
+      "posePositionMm": 34.16804542790409,
+      "poseRotationDeg": 0.05383230011477968,
+      "residualRmsPx": 0.28139501303706566,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 43,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 18.011535831623355,
+          "rotationDeg": 0.01706128975934719,
+          "dxMm": 17.98544388680945,
+          "dyMm": -0.9270223121129878,
+          "dzMm": -0.28259660494299454,
+          "yawDeg": -0.009270401838563203,
+          "pitchDeg": 0.0066064973585324704,
+          "rollDeg": -0.012864667352157313
+        },
+        {
+          "id": "P2",
+          "positionMm": 34.16804542790409,
+          "rotationDeg": 0.03967287248087565,
+          "dxMm": 0.006729861747309385,
+          "dyMm": 34.1367193793749,
+          "dzMm": 1.4627621426903172,
+          "yawDeg": 0.01700167193179425,
+          "pitchDeg": -0.03520484271228064,
+          "rollDeg": -0.006593706142307032
+        },
+        {
+          "id": "P3",
+          "positionMm": 29.628771092850627,
+          "rotationDeg": 0.05383230011477968,
+          "dxMm": 29.607740105476843,
+          "dyMm": -0.817994070465955,
+          "dzMm": 0.7593997759820642,
+          "yawDeg": 0.05133313095621378,
+          "pitchDeg": -0.009848828080609072,
+          "rollDeg": 0.0129073303119287
+        },
+        {
+          "id": "P4",
+          "positionMm": 17.384755480104495,
+          "rotationDeg": 0.016724159724642834,
+          "dxMm": 0.0556357352641374,
+          "dyMm": 17.334401239537556,
+          "dzMm": -1.3210455838856134,
+          "yawDeg": 0.013420789778777475,
+          "pitchDeg": 0.005890649407413129,
+          "rollDeg": 0.008188743612751181
+        }
+      ],
+      "seconds": 31.08
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1659257193,
+      "documented": false,
+      "posePositionMm": 60.61387467640239,
+      "poseRotationDeg": 0.08731631238880179,
+      "residualRmsPx": 0.27385856283404086,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 42,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 60.61387467640239,
+          "rotationDeg": 0.08731631238880179,
+          "dxMm": -60.43879683222375,
+          "dyMm": -0.8702630720547333,
+          "dzMm": -4.52065072143534,
+          "yawDeg": -0.026562845723873352,
+          "pitchDeg": 0.07419487608214731,
+          "rollDeg": 0.03757840321894007
+        },
+        {
+          "id": "P2",
+          "positionMm": 29.93649367620266,
+          "rotationDeg": 0.0676623756854668,
+          "dxMm": 0.3686720316629145,
+          "dyMm": 29.805183966968407,
+          "dzMm": -2.776462363072992,
+          "yawDeg": -0.03848143882346733,
+          "pitchDeg": 0.02495412163803934,
+          "rollDeg": -0.05036817886098954
+        },
+        {
+          "id": "P3",
+          "positionMm": 18.004950775459807,
+          "rotationDeg": 0.06315857061429733,
+          "dxMm": -17.59156266036932,
+          "dyMm": -0.5208885087316789,
+          "dzMm": 3.800506644449122,
+          "yawDeg": -0.027444287629717415,
+          "pitchDeg": -0.041994143805944066,
+          "rollDeg": -0.038381230706333
+        },
+        {
+          "id": "P4",
+          "positionMm": 7.500782249749357,
+          "rotationDeg": 0.062114249640261764,
+          "dxMm": 0.038482211085960616,
+          "dyMm": 6.664074990582414,
+          "dzMm": 3.442434893716797,
+          "yawDeg": -0.02777651608991505,
+          "pitchDeg": -0.030153607094933976,
+          "rollDeg": 0.04704499424897368
+        }
+      ],
+      "seconds": 30.957
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1659257193,
+      "documented": false,
+      "posePositionMm": 65.7429104539357,
+      "poseRotationDeg": 0.0980454937657495,
+      "residualRmsPx": 0.27424552366226157,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 14,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 65.7429104539357,
+          "rotationDeg": 0.0980454937657495,
+          "dxMm": -65.7214103902497,
+          "dyMm": -1.0812199650919592,
+          "dzMm": -1.2874217093374907,
+          "yawDeg": -0.011655336948848571,
+          "pitchDeg": 0.042614877161264005,
+          "rollDeg": 0.08751520340336538
+        },
+        {
+          "id": "P2",
+          "positionMm": 25.609694213976375,
+          "rotationDeg": 0.07804579735541374,
+          "dxMm": 0.627777563575526,
+          "dyMm": 24.48049560484833,
+          "dzMm": -7.494509190403866,
+          "yawDeg": -0.00622240417524722,
+          "pitchDeg": 0.07652105436575907,
+          "rollDeg": -0.014131632709567465
+        },
+        {
+          "id": "P3",
+          "positionMm": 12.41663707927706,
+          "rotationDeg": 0.08889782652735667,
+          "dxMm": -12.382328382936514,
+          "dyMm": -0.5097574227309887,
+          "dzMm": 0.7687441353099153,
+          "yawDeg": 0.014177989014286727,
+          "pitchDeg": -0.011791277606071474,
+          "rollDeg": -0.08696249183777749
+        },
+        {
+          "id": "P4",
+          "positionMm": 14.322007180530193,
+          "rotationDeg": 0.08769018179764308,
+          "dxMm": 0.2139389382607767,
+          "dyMm": 11.835325595384028,
+          "dzMm": 8.062207381424885,
+          "yawDeg": 0.0017168662226509923,
+          "pitchDeg": -0.0868936013553454,
+          "rollDeg": 0.011644488454563673
+        }
+      ],
+      "seconds": 26.599
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1316222295,
+      "documented": false,
+      "posePositionMm": 53.39361390479024,
+      "poseRotationDeg": 0.04240230003244832,
+      "residualRmsPx": 0.30165448553095503,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 28,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 1.310432485549272,
+          "rotationDeg": 0.008730044410729462,
+          "dxMm": 0.248931689293741,
+          "dyMm": 0.03373564011560984,
+          "dzMm": 1.2861291614119468,
+          "yawDeg": 0.00033208969929887644,
+          "pitchDeg": -0.007461955340450022,
+          "rollDeg": -0.004522516349029171
+        },
+        {
+          "id": "P2",
+          "positionMm": 16.543300037987947,
+          "rotationDeg": 0.01416578793261599,
+          "dxMm": -0.3936001121843946,
+          "dyMm": 16.53861705192572,
+          "dzMm": 0.0010527735753926293,
+          "yawDeg": 0.0035505140528897527,
+          "pitchDeg": 0.004463387560169729,
+          "rollDeg": 0.012915374599701435
+        },
+        {
+          "id": "P3",
+          "positionMm": 23.238832668245195,
+          "rotationDeg": 0.014933631480450963,
+          "dxMm": -23.218724169267624,
+          "dyMm": -0.5870811680099077,
+          "dzMm": -0.7678069004220267,
+          "yawDeg": 0.013809346261420163,
+          "pitchDeg": 0.0035954643496496907,
+          "rollDeg": 0.004500563075376163
+        },
+        {
+          "id": "P4",
+          "positionMm": 53.39361390479024,
+          "rotationDeg": 0.04240230003244832,
+          "dxMm": -1.54252193025127,
+          "dyMm": 53.35806129474996,
+          "dzMm": -1.189927213828757,
+          "yawDeg": -0.03493799781870166,
+          "pitchDeg": 0.02083553595783394,
+          "rollDeg": -0.012341441125911068
+        }
+      ],
+      "seconds": 20.488
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1316222295,
+      "documented": false,
+      "posePositionMm": 53.911024240174434,
+      "poseRotationDeg": 0.05595233341260866,
+      "residualRmsPx": 0.30012267545802035,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 21,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 3.138211167269338,
+          "rotationDeg": 0.03130673286511916,
+          "dxMm": -0.28099697243177957,
+          "dyMm": 0.04648479200401734,
+          "dzMm": 3.125259860550879,
+          "yawDeg": 0.00008080431271650923,
+          "pitchDeg": -0.02849041178636602,
+          "rollDeg": -0.012977764507984157
+        },
+        {
+          "id": "P2",
+          "positionMm": 16.01653965739868,
+          "rotationDeg": 0.033465038872016975,
+          "dxMm": -0.30967890395609476,
+          "dyMm": 15.994462309358859,
+          "dzMm": 0.7815478283304602,
+          "yawDeg": 0.0013546531610302281,
+          "pitchDeg": -0.0029553366322478958,
+          "rollDeg": 0.0332871315221534
+        },
+        {
+          "id": "P3",
+          "positionMm": 22.86636858840204,
+          "rotationDeg": 0.03214314140465113,
+          "dxMm": -22.70600576007542,
+          "dyMm": -0.720070625800498,
+          "dzMm": -2.6056886110854878,
+          "yawDeg": 0.016630597511269718,
+          "pitchDeg": 0.024489402479697386,
+          "rollDeg": 0.012638426824629012
+        },
+        {
+          "id": "P4",
+          "positionMm": 53.911024240174434,
+          "rotationDeg": 0.05595233341260866,
+          "dxMm": -1.6299523274258265,
+          "dyMm": 53.85194421438477,
+          "dzMm": -1.9261086069546247,
+          "yawDeg": -0.035983548736595594,
+          "pitchDeg": 0.028048239366460836,
+          "rollDeg": -0.03277180034467475
+        }
+      ],
+      "seconds": 19.816
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1148107905,
+      "documented": false,
+      "posePositionMm": 62.47369413414566,
+      "poseRotationDeg": 0.07475904290599057,
+      "residualRmsPx": 0.28291257460045477,
+      "converged": false,
+      "stopReason": "maxIterations",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 234,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 37.596542045719914,
+          "rotationDeg": 0.047018391788778584,
+          "dxMm": -37.591336130688546,
+          "dyMm": -0.5378876063319472,
+          "dzMm": -0.3195287594721999,
+          "yawDeg": -0.04005924151059048,
+          "pitchDeg": -0.0027540859722086624,
+          "rollDeg": 0.02445330294280179
+        },
+        {
+          "id": "P2",
+          "positionMm": 42.42828239232173,
+          "rotationDeg": 0.03612670864656059,
+          "dxMm": -0.5911035972604693,
+          "dyMm": -42.35016579023476,
+          "dzMm": -2.5046358696491513,
+          "yawDeg": -0.02118406267580042,
+          "pitchDeg": 0.028335050365513537,
+          "rollDeg": -0.007455789396766943
+        },
+        {
+          "id": "P3",
+          "positionMm": 62.47369413414566,
+          "rotationDeg": 0.07475904290599057,
+          "dxMm": 62.46198754285892,
+          "dyMm": -0.14181469452404297,
+          "dzMm": 1.2010243773297133,
+          "yawDeg": -0.06414573075439955,
+          "pitchDeg": -0.03090051189134657,
+          "rollDeg": -0.02246972965122751
+        },
+        {
+          "id": "P4",
+          "positionMm": 47.7390085743419,
+          "rotationDeg": 0.041091364758949527,
+          "dxMm": -1.0125482765025033,
+          "dyMm": 47.71284576557289,
+          "dzMm": 1.2132743298588557,
+          "yawDeg": -0.038597458419715736,
+          "pitchDeg": -0.013498194528469842,
+          "rollDeg": 0.0037408477360023618
+        }
+      ],
+      "seconds": 95.038
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1148107905,
+      "documented": false,
+      "posePositionMm": 24.97833171636051,
+      "poseRotationDeg": 0.054147619394412566,
+      "residualRmsPx": 0.28305386797210447,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 17,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 0.14471966708494138,
+          "rotationDeg": 0.04708043201140561,
+          "dxMm": -0.050196692168213985,
+          "dyMm": -0.1350061848796255,
+          "dzMm": 0.014050059814613158,
+          "yawDeg": 0.017178619071614776,
+          "pitchDeg": -0.00014276795739826854,
+          "rollDeg": 0.04383769671103316
+        },
+        {
+          "id": "P2",
+          "positionMm": 6.16695103651598,
+          "rotationDeg": 0.03780062503734678,
+          "dxMm": -0.3168818191273074,
+          "dyMm": -4.853331380120451,
+          "dzMm": -3.791575597852455,
+          "yawDeg": -0.012974387000397769,
+          "pitchDeg": 0.03545556664391186,
+          "rollDeg": -0.001945802538891539
+        },
+        {
+          "id": "P3",
+          "positionMm": 24.97833171636051,
+          "rotationDeg": 0.054147619394412566,
+          "dxMm": 24.973272053996354,
+          "dyMm": 0.37347832414620985,
+          "dzMm": 0.33652962873899717,
+          "yawDeg": -0.0328348779939021,
+          "pitchDeg": -0.010865228382354597,
+          "rollDeg": -0.04149206206301745
+        },
+        {
+          "id": "P4",
+          "positionMm": 10.708735874855018,
+          "rotationDeg": 0.040672209678025796,
+          "dxMm": -0.010523725942804263,
+          "dyMm": 10.153698168144487,
+          "dzMm": 3.4028409893526352,
+          "yawDeg": 0.004368141937149517,
+          "pitchDeg": -0.040436237001959474,
+          "rollDeg": -0.0002060346801745494
+        }
+      ],
+      "seconds": 22.44
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1842228489,
+      "documented": false,
+      "posePositionMm": 36.26000217363809,
+      "poseRotationDeg": 0.03464335112744176,
+      "residualRmsPx": 0.27593124644287875,
+      "converged": false,
+      "stopReason": "maxIterations",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 217,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 3.9463783027047317,
+          "rotationDeg": 0.030040082637598914,
+          "dxMm": 3.9458741767885996,
+          "dyMm": -0.008278939982106492,
+          "dzMm": 0.06253117753844337,
+          "yawDeg": -0.02904804067435407,
+          "pitchDeg": 0.006470127391031394,
+          "rollDeg": 0.004031920537452299
+        },
+        {
+          "id": "P2",
+          "positionMm": 36.26000217363809,
+          "rotationDeg": 0.03435754719708559,
+          "dxMm": 0.023112427870605745,
+          "dyMm": 36.25957899301557,
+          "dzMm": -0.1736510788359416,
+          "yawDeg": -0.033412253705563444,
+          "pitchDeg": 0.007982940537514041,
+          "rollDeg": 0.0005255843759611883
+        },
+        {
+          "id": "P3",
+          "positionMm": 13.672924231028286,
+          "rotationDeg": 0.02778804931298801,
+          "dxMm": -13.651679203860567,
+          "dyMm": -0.32911309725475874,
+          "dzMm": -0.6871655634101449,
+          "yawDeg": -0.026821931350034023,
+          "pitchDeg": 0.005875771108522693,
+          "rollDeg": -0.0042012615548751575
+        },
+        {
+          "id": "P4",
+          "positionMm": 19.392498250641847,
+          "rotationDeg": 0.03464335112744176,
+          "dxMm": -0.27753846041247976,
+          "dyMm": -19.383529336335137,
+          "dzMm": 0.520337651505354,
+          "yawDeg": -0.0327704354769196,
+          "pitchDeg": -0.011194633094883263,
+          "rollDeg": -0.0010342997072443905
+        }
+      ],
+      "seconds": 112.817
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1842228489,
+      "documented": false,
+      "posePositionMm": 18.560724534823393,
+      "poseRotationDeg": 0.022120326815134237,
+      "residualRmsPx": 0.2776846953164094,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 13,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 13.465818307053695,
+          "rotationDeg": 0.022120326815134237,
+          "dxMm": -13.464406536622953,
+          "dyMm": -0.19224219590738278,
+          "dzMm": 0.032591919861227336,
+          "yawDeg": -0.015743618851615793,
+          "pitchDeg": 0.005486365792647191,
+          "rollDeg": 0.014504149634353203
+        },
+        {
+          "id": "P2",
+          "positionMm": 18.560724534823393,
+          "rotationDeg": 0.01734727471576239,
+          "dxMm": 0.07588236555363531,
+          "dyMm": 18.52483308832209,
+          "dzMm": -1.1512150858984478,
+          "yawDeg": -0.00702777327458648,
+          "pitchDeg": 0.01584145452132804,
+          "rollDeg": 0.0007547424995034413
+        },
+        {
+          "id": "P3",
+          "positionMm": 3.7450864433466378,
+          "rotationDeg": 0.019758911095501805,
+          "dxMm": 3.6874633477630425,
+          "dyMm": -0.27323779330248876,
+          "dzMm": -0.5946659863773351,
+          "yawDeg": -0.012396322680682359,
+          "pitchDeg": 0.006751154858933711,
+          "rollDeg": -0.013794138022462654
+        },
+        {
+          "id": "P4",
+          "positionMm": 2.3918845991539097,
+          "rotationDeg": 0.016958238017036543,
+          "dxMm": 0.02443589200035179,
+          "dyMm": -1.943236301205964,
+          "dzMm": 1.394398616080485,
+          "yawDeg": -0.0032769995951582587,
+          "pitchDeg": -0.016612368640356506,
+          "rollDeg": -0.0009404048419025535
+        }
+      ],
+      "seconds": 29.393
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 86864400,
+      "documented": false,
+      "posePositionMm": 30.29823636785579,
+      "poseRotationDeg": 0.06036139764225072,
+      "residualRmsPx": 0.2804833060798904,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 36,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 30.238894459162463,
+          "rotationDeg": 0.0054500945504024735,
+          "dxMm": 30.216989650540427,
+          "dyMm": 0.9686503341915093,
+          "dzMm": 0.6212818213739528,
+          "yawDeg": -0.0014831377992550188,
+          "pitchDeg": 0.0038763799218236306,
+          "rollDeg": 0.0035296636468793996
+        },
+        {
+          "id": "P2",
+          "positionMm": 9.882656384073309,
+          "rotationDeg": 0.03119433395189529,
+          "dxMm": 0.40126054464901956,
+          "dyMm": 9.862434779557283,
+          "dzMm": -0.4881264180023003,
+          "yawDeg": -0.029347186320194396,
+          "pitchDeg": 0.00817777003621049,
+          "rollDeg": 0.006698818212881097
+        },
+        {
+          "id": "P3",
+          "positionMm": 3.5058878250907908,
+          "rotationDeg": 0.02354248068085324,
+          "dxMm": 3.4061159576879163,
+          "dyMm": -0.45775012671124893,
+          "dzMm": -0.6928840786158963,
+          "yawDeg": -0.02266663343435628,
+          "pitchDeg": 0.005028524033426129,
+          "rollDeg": -0.004226914082613997
+        },
+        {
+          "id": "P4",
+          "positionMm": 30.29823636785579,
+          "rotationDeg": 0.06036139764225072,
+          "dxMm": -0.2944471458003022,
+          "dyMm": -30.289039656236305,
+          "dzMm": 0.6859333668323454,
+          "yawDeg": -0.05896462080991682,
+          "pitchDeg": -0.010351810250027571,
+          "rollDeg": -0.00819187996372353
+        }
+      ],
+      "seconds": 24.742
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 86864400,
+      "documented": false,
+      "posePositionMm": 22.721414989848416,
+      "poseRotationDeg": 0.03125525959291902,
+      "residualRmsPx": 0.279677000364919,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 25,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 11.085068164285085,
+          "rotationDeg": 0.02092053536960711,
+          "dxMm": 11.080137701661386,
+          "dyMm": 0.3093921182383136,
+          "dzMm": -0.11645272105303972,
+          "yawDeg": 0.0005172894421434648,
+          "pitchDeg": 0.008715010440749502,
+          "rollDeg": 0.019012749500749826
+        },
+        {
+          "id": "P2",
+          "positionMm": 9.808277171877073,
+          "rotationDeg": 0.02212507100025358,
+          "dxMm": 0.35932041390457925,
+          "dyMm": -9.615965923788217,
+          "dzMm": -1.8990495709855013,
+          "yawDeg": -0.0038258560763324567,
+          "pitchDeg": 0.02173459337569626,
+          "rollDeg": -0.0015779869289005433
+        },
+        {
+          "id": "P3",
+          "positionMm": 22.721414989848416,
+          "rotationDeg": 0.01966560083195166,
+          "dxMm": 22.71562826873108,
+          "dyMm": -0.4945914979911613,
+          "dzMm": -0.1353172119449922,
+          "yawDeg": -0.0050401147535360236,
+          "pitchDeg": -0.00024589422456733345,
+          "rollDeg": -0.019078047274137144
+        },
+        {
+          "id": "P4",
+          "positionMm": 11.153489487391965,
+          "rotationDeg": 0.03125525959291902,
+          "dxMm": -0.17481094871408046,
+          "dyMm": -10.994499577989814,
+          "dzMm": 1.8683543312644282,
+          "yawDeg": -0.02493572327303184,
+          "pitchDeg": -0.01881911963161853,
+          "rollDeg": 0.0007924988366198801
+        }
+      ],
+      "seconds": 26.697
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1515419424,
+      "documented": false,
+      "posePositionMm": 48.04956724899637,
+      "poseRotationDeg": 0.11945718182062254,
+      "residualRmsPx": 0.284492309359262,
+      "converged": true,
+      "stopReason": "cost",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 80,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 9.744201217962306,
+          "rotationDeg": 0.10248247530739636,
+          "dxMm": 8.445842143859572,
+          "dyMm": -0.2367538131953853,
+          "dzMm": 4.853983466090616,
+          "yawDeg": 0.007581442023706586,
+          "pitchDeg": -0.05687216020897834,
+          "rollDeg": 0.08504049287410312
+        },
+        {
+          "id": "P2",
+          "positionMm": 7.627947423520705,
+          "rotationDeg": 0.10708893110227383,
+          "dxMm": 0.8097161428566174,
+          "dyMm": -0.19971552297004536,
+          "dzMm": -7.5822196864690214,
+          "yawDeg": -0.022369035002697046,
+          "pitchDeg": 0.093551928148782,
+          "rollDeg": 0.04689864219928097
+        },
+        {
+          "id": "P3",
+          "positionMm": 26.45813660592699,
+          "rotationDeg": 0.0925495122200188,
+          "dxMm": 25.90266231339733,
+          "dyMm": -1.613171252415904,
+          "dzMm": -5.146139936532859,
+          "yawDeg": -0.0035279324691486202,
+          "pitchDeg": 0.04079168902618613,
+          "rollDeg": -0.08303952375326981
+        },
+        {
+          "id": "P4",
+          "positionMm": 48.04956724899637,
+          "rotationDeg": 0.11945718182062254,
+          "dxMm": -0.34684469299516363,
+          "dyMm": 47.44409469494837,
+          "dzMm": 7.595952221514872,
+          "yawDeg": -0.025669704381797942,
+          "pitchDeg": -0.104978350225434,
+          "rollDeg": -0.050862251564092575
+        }
+      ],
+      "seconds": 49.221
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1515419424,
+      "documented": false,
+      "posePositionMm": 47.116875458475334,
+      "poseRotationDeg": 0.06537191630054702,
+      "residualRmsPx": 0.2835437223579019,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 31,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 9.180974608143709,
+          "rotationDeg": 0.046733031199343564,
+          "dxMm": 9.165286482222257,
+          "dyMm": -0.4024341780448984,
+          "dzMm": -0.354774839179485,
+          "yawDeg": 0.021329259572240744,
+          "pitchDeg": -0.0005388602171656487,
+          "rollDeg": 0.04191893580026011
+        },
+        {
+          "id": "P2",
+          "positionMm": 3.661287774569751,
+          "rotationDeg": 0.04961226784465514,
+          "dxMm": 0.8197746431229391,
+          "dyMm": 0.19859968002577943,
+          "dzMm": -3.562801688250447,
+          "yawDeg": 0.003978420040894548,
+          "pitchDeg": 0.04862139906610213,
+          "rollDeg": -0.008995967445069808
+        },
+        {
+          "id": "P3",
+          "positionMm": 25.612543110982003,
+          "rotationDeg": 0.046205705862952966,
+          "dxMm": 25.55415686668905,
+          "dyMm": -1.7282618122432676,
+          "dzMm": 0.023292765019347628,
+          "yawDeg": 0.018718502771902568,
+          "pitchDeg": -0.015015187202716551,
+          "rollDeg": -0.03926778084409953
+        },
+        {
+          "id": "P4",
+          "positionMm": 47.116875458475334,
+          "rotationDeg": 0.06537191630054702,
+          "dxMm": -0.3535194322709483,
+          "dyMm": 46.95891104407046,
+          "dzMm": 3.8387042782115492,
+          "yawDeg": -0.013821785017583466,
+          "pitchDeg": -0.06348184334294832,
+          "rollDeg": 0.007270212131330722
+        }
+      ],
+      "seconds": 33.888
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 848810557,
+      "documented": false,
+      "posePositionMm": 92.98995116294587,
+      "poseRotationDeg": 0.19679773753689553,
+      "residualRmsPx": 0.1500460311591248,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 47,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 81.64814380099116,
+          "rotationDeg": 0.06872061457649628,
+          "dxMm": 81.64066298316808,
+          "dyMm": 0.9706224122947721,
+          "dzMm": -0.5286075565579135,
+          "yawDeg": 0.04091973136834781,
+          "pitchDeg": 0.054926358004485865,
+          "rollDeg": -0.005970782996575941
+        },
+        {
+          "id": "P2",
+          "positionMm": 51.603897592707426,
+          "rotationDeg": 0.12191738058661022,
+          "dxMm": -1.0676143180059217,
+          "dyMm": 51.560232252741756,
+          "dzMm": 1.8343654134203717,
+          "yawDeg": 0.11316569322517012,
+          "pitchDeg": -0.04441565122450242,
+          "rollDeg": 0.010811701478029123
+        },
+        {
+          "id": "P3",
+          "positionMm": 52.23318567485116,
+          "rotationDeg": 0.103131340964442,
+          "dxMm": -52.17164251530537,
+          "dyMm": 1.8531174935109833,
+          "dzMm": -1.7295544379697103,
+          "yawDeg": 0.0910783264991966,
+          "pitchDeg": 0.047021186813431926,
+          "rollDeg": 0.010276073013037235
+        },
+        {
+          "id": "P4",
+          "positionMm": 92.98995116294587,
+          "rotationDeg": 0.19679773753689553,
+          "dxMm": -0.020712797229607838,
+          "dyMm": -92.9893183441335,
+          "dzMm": -0.34243562969808194,
+          "yawDeg": 0.1964218915846203,
+          "pitchDeg": 0.010680066064568531,
+          "rollDeg": -0.005783188402603862
+        }
+      ],
+      "seconds": 34.44
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 848810557,
+      "documented": false,
+      "posePositionMm": 20.95213211648632,
+      "poseRotationDeg": 0.10604540116943056,
+      "residualRmsPx": 0.14997429256233238,
+      "converged": true,
+      "stopReason": "cost",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 40,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 12.265019196301578,
+          "rotationDeg": 0.08811002201921563,
+          "dxMm": 9.649531573877823,
+          "dyMm": 0.042920713645533404,
+          "dzMm": 7.570693105833926,
+          "yawDeg": -0.01280231781851171,
+          "pitchDeg": -0.06657889089086444,
+          "rollDeg": 0.05637696918674906
+        },
+        {
+          "id": "P2",
+          "positionMm": 20.450498239247015,
+          "rotationDeg": 0.10302085929381695,
+          "dxMm": -0.6376745374911431,
+          "dyMm": -19.759715435855085,
+          "dzMm": -5.231624538488113,
+          "yawDeg": 0.015673719437344857,
+          "pitchDeg": 0.06005618784141531,
+          "rollDeg": 0.082417237363208
+        },
+        {
+          "id": "P3",
+          "positionMm": 20.882785639025766,
+          "rotationDeg": 0.07848057243155858,
+          "dxMm": 19.638908576633973,
+          "dyMm": 0.7055498850065782,
+          "dzMm": -7.064432413427177,
+          "yawDeg": 0.004620121442582836,
+          "pitchDeg": 0.05676301927604088,
+          "rollDeg": -0.05405849637719412
+        },
+        {
+          "id": "P4",
+          "positionMm": 20.95213211648632,
+          "rotationDeg": 0.10604540116943056,
+          "dxMm": -0.21833831766458062,
+          "dyMm": -20.393291841127592,
+          "dzMm": 4.801855525558418,
+          "yawDeg": 0.03850665652662144,
+          "pitchDeg": -0.053817181953476366,
+          "rollDeg": -0.08283837446046316
+        }
+      ],
+      "seconds": 34.247
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 541602785,
+      "documented": false,
+      "posePositionMm": 38.908706566427185,
+      "poseRotationDeg": 0.06875284804276934,
+      "residualRmsPx": 0.34850683487910605,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 34,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 38.908706566427185,
+          "rotationDeg": 0.03334438852022539,
+          "dxMm": 38.84617308438898,
+          "dyMm": 0.5966556626088859,
+          "dzMm": -2.122801307306868,
+          "yawDeg": -0.021969589944404788,
+          "pitchDeg": 0.013644776571282102,
+          "rollDeg": 0.021161692473931723
+        },
+        {
+          "id": "P2",
+          "positionMm": 15.543992956908609,
+          "rotationDeg": 0.04895278747353506,
+          "dxMm": -0.0690613322067643,
+          "dyMm": 15.426855933634798,
+          "dzMm": -1.9034346796501858,
+          "yawDeg": -0.038571669904783334,
+          "pitchDeg": 0.02138414424666979,
+          "rollDeg": -0.020970509783470648
+        },
+        {
+          "id": "P3",
+          "positionMm": 1.8391083343763495,
+          "rotationDeg": 0.03798576152699375,
+          "dxMm": -0.1395691717736014,
+          "dyMm": -0.384986683006433,
+          "dzMm": 1.7929375799984464,
+          "yawDeg": -0.02839190003551534,
+          "pitchDeg": -0.00872285373658982,
+          "rollDeg": -0.023434762869922417
+        },
+        {
+          "id": "P4",
+          "positionMm": 37.490371113841604,
+          "rotationDeg": 0.06875284804276934,
+          "dxMm": 1.1325619355087857,
+          "dyMm": -37.396833919402184,
+          "dzMm": 2.3920791208603203,
+          "yawDeg": -0.04110863770185347,
+          "pitchDeg": -0.04989327313944922,
+          "rollDeg": 0.02325829596272805
+        }
+      ],
+      "seconds": 26.215
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 541602785,
+      "documented": false,
+      "posePositionMm": 23.559159954913408,
+      "poseRotationDeg": 0.01654689178852421,
+      "residualRmsPx": 0.3481329608727313,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 11,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 23.559159954913408,
+          "rotationDeg": 0.004427144598895744,
+          "dxMm": 23.550631058228078,
+          "dyMm": 0.1322238598309433,
+          "dzMm": -0.6199285372605126,
+          "yawDeg": 0.0004913706773663762,
+          "pitchDeg": -0.0035424029187452466,
+          "rollDeg": -0.0026119808491289753
+        },
+        {
+          "id": "P2",
+          "positionMm": 0.46641907454816506,
+          "rotationDeg": 0.007739604798603765,
+          "dxMm": -0.25330694983782126,
+          "dyMm": 0.1013677620109732,
+          "dzMm": 0.37829475160397474,
+          "yawDeg": -0.0028554038001118442,
+          "pitchDeg": -0.005225938936516239,
+          "rollDeg": -0.004923754032159833
+        },
+        {
+          "id": "P3",
+          "positionMm": 15.138250248666395,
+          "rotationDeg": 0.00876516027470232,
+          "dxMm": 15.127399873143155,
+          "dyMm": -0.09616992783338663,
+          "dzMm": 0.5649292117222565,
+          "yawDeg": 0.0008236419206714141,
+          "pitchDeg": 0.00856917701750215,
+          "rollDeg": 0.0016416423417587173
+        },
+        {
+          "id": "P4",
+          "positionMm": 22.214113486884738,
+          "rotationDeg": 0.01654689178852421,
+          "dxMm": 0.6989714605633024,
+          "dyMm": -22.203093305925847,
+          "dzMm": 0.030406477321984204,
+          "yawDeg": -0.00470336372023894,
+          "pitchDeg": -0.014777430171486639,
+          "rollDeg": 0.005755962308209683
+        }
+      ],
+      "seconds": 20.533
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 237416946,
+      "documented": false,
+      "posePositionMm": 54.656232783446825,
+      "poseRotationDeg": 0.11478632344296458,
+      "residualRmsPx": 0.27738618734860804,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 38,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 12.766177851046999,
+          "rotationDeg": 0.0648426369557558,
+          "dxMm": 11.590243134550704,
+          "dyMm": -0.5738573752428477,
+          "dzMm": -5.320925551014847,
+          "yawDeg": 0.03242175298251482,
+          "pitchDeg": 0.055808474679061026,
+          "rollDeg": -0.006160111830198767
+        },
+        {
+          "id": "P2",
+          "positionMm": 0.855213261219565,
+          "rotationDeg": 0.06039547864940209,
+          "dxMm": 0.5929829180851242,
+          "dyMm": 0.1702946552013529,
+          "dzMm": 0.5922505478553035,
+          "yawDeg": 0.0008842210281443386,
+          "pitchDeg": -0.012312459341182191,
+          "rollDeg": -0.05913147149201589
+        },
+        {
+          "id": "P3",
+          "positionMm": 54.656232783446825,
+          "rotationDeg": 0.11478632344296458,
+          "dxMm": -54.357953981512,
+          "dyMm": -1.1956524206081318,
+          "dzMm": 5.5755749758429465,
+          "yawDeg": 0.09059338534773587,
+          "pitchDeg": -0.06982619974504789,
+          "rollDeg": 0.009924974561735744
+        },
+        {
+          "id": "P4",
+          "positionMm": 24.213055905753826,
+          "rotationDeg": 0.05934457400637783,
+          "dxMm": -0.11718257360287393,
+          "dyMm": 24.193627424910602,
+          "dzMm": -0.9626715765087115,
+          "yawDeg": -0.007831863903490444,
+          "pitchDeg": 0.008133942484354048,
+          "rollDeg": 0.05824983293705055
+        }
+      ],
+      "seconds": 30.372
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 237416946,
+      "documented": false,
+      "posePositionMm": 43.200216770437336,
+      "poseRotationDeg": 0.06258260882088577,
+      "residualRmsPx": 0.27707346265324606,
+      "converged": true,
+      "stopReason": "cost",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 69,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 8.250199673848728,
+          "rotationDeg": 0.04130497158360961,
+          "dxMm": -7.670883485836555,
+          "dyMm": -0.2874182527695668,
+          "dzMm": -3.0233643434208495,
+          "yawDeg": 0.0061754330794769885,
+          "pitchDeg": 0.033429269376889045,
+          "rollDeg": 0.02347622241435754
+        },
+        {
+          "id": "P2",
+          "positionMm": 18.726148038813502,
+          "rotationDeg": 0.0385082843730644,
+          "dxMm": 0.5740955530649273,
+          "dyMm": -18.644866510438618,
+          "dzMm": -1.64559638898314,
+          "yawDeg": -0.019360234564473444,
+          "pitchDeg": 0.007889571838315068,
+          "rollDeg": -0.03209684167299273
+        },
+        {
+          "id": "P3",
+          "positionMm": 35.14225414248565,
+          "rotationDeg": 0.06258260882088577,
+          "dxMm": -35.01472467626776,
+          "dyMm": -0.7682363384595107,
+          "dzMm": 2.8908294637500593,
+          "yawDeg": 0.049036115936290536,
+          "pitchDeg": -0.03280769033384043,
+          "rollDeg": -0.020740655979875566
+        },
+        {
+          "id": "P4",
+          "positionMm": 43.200216770437336,
+          "rotationDeg": 0.03664489473470918,
+          "dxMm": -0.14284756277304494,
+          "dyMm": 43.16154134505101,
+          "dzMm": 1.8219967908964692,
+          "yawDeg": -0.0029191168008395607,
+          "pitchDeg": -0.019467545621238966,
+          "rollDeg": 0.030903944879592582
+        }
+      ],
+      "seconds": 49.521
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 2139448108,
+      "documented": false,
+      "posePositionMm": 68.86032892021525,
+      "poseRotationDeg": 0.04764307382392542,
+      "residualRmsPx": 0.35363959829398106,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 33,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 1.33174339010452,
+          "rotationDeg": 0.031420586753137886,
+          "dxMm": 0.9746344115519889,
+          "dyMm": -0.23894469459278395,
+          "dzMm": -0.8755190767948742,
+          "yawDeg": 0.029239557178527775,
+          "pitchDeg": 0.011250821020631074,
+          "rollDeg": 0.0021948359446222893
+        },
+        {
+          "id": "P2",
+          "positionMm": 37.57395067192319,
+          "rotationDeg": 0.04764307382392542,
+          "dxMm": 0.0476706402965793,
+          "dyMm": 37.57302956212971,
+          "dzMm": 0.25873950123144007,
+          "yawDeg": 0.042759419223855843,
+          "pitchDeg": -0.018752295163220856,
+          "rollDeg": -0.009194453089773846
+        },
+        {
+          "id": "P3",
+          "positionMm": 5.549700627281068,
+          "rotationDeg": 0.03534474981617495,
+          "dxMm": -5.519688041921711,
+          "dyMm": 0.4787145525431413,
+          "dzMm": 0.32101923539527843,
+          "yawDeg": 0.030914546545793842,
+          "pitchDeg": -0.016927518589911872,
+          "rollDeg": -0.0024189324261175704
+        },
+        {
+          "id": "P4",
+          "positionMm": 68.86032892021525,
+          "rotationDeg": 0.031158249428002483,
+          "dxMm": -1.0621519611094672,
+          "dyMm": -68.8479157329418,
+          "dzMm": 0.7623853628507364,
+          "yawDeg": 0.024853305188472063,
+          "pitchDeg": -0.015281159245341708,
+          "rollDeg": 0.011007253048366195
+        }
+      ],
+      "seconds": 22.05
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 2139448108,
+      "documented": false,
+      "posePositionMm": 42.62602443598493,
+      "poseRotationDeg": 0.052048689700110735,
+      "residualRmsPx": 0.3409070258250682,
+      "converged": false,
+      "stopReason": "maxIterations",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 207,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 25.194642236347022,
+          "rotationDeg": 0.04191095546753145,
+          "dxMm": -25.194439597566287,
+          "dyMm": -0.011633414651969487,
+          "dzMm": -0.10037652000726316,
+          "yawDeg": -0.0020458132611054225,
+          "pitchDeg": -0.006466488923172031,
+          "rollDeg": 0.04137260595895753
+        },
+        {
+          "id": "P2",
+          "positionMm": 11.666529514078855,
+          "rotationDeg": 0.038959904025645566,
+          "dxMm": 0.09499208294231481,
+          "dyMm": 11.030988996068913,
+          "dzMm": -3.7968630704382518,
+          "yawDeg": -0.006809336074994121,
+          "pitchDeg": 0.03796422728471882,
+          "rollDeg": -0.005540444779470022
+        },
+        {
+          "id": "P3",
+          "positionMm": 20.061214140012726,
+          "rotationDeg": 0.04238576537790612,
+          "dxMm": 20.05878532278782,
+          "dyMm": -0.2691679929162083,
+          "dzMm": -0.15809091481775936,
+          "yawDeg": 0.0017315696307940165,
+          "pitchDeg": -0.005797754583995451,
+          "rollDeg": -0.04193850395943555
+        },
+        {
+          "id": "P4",
+          "positionMm": 42.62602443598493,
+          "rotationDeg": 0.052048689700110735,
+          "dxMm": -0.4497445922809623,
+          "dyMm": -42.43406076791878,
+          "dzMm": 4.015740998056837,
+          "yawDeg": 0.019981010801345178,
+          "pitchDeg": -0.047673455602319975,
+          "rollDeg": 0.006149866296222328
+        }
+      ],
+      "seconds": 85.581
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1114407494,
+      "documented": false,
+      "posePositionMm": 45.26122633643456,
+      "poseRotationDeg": 0.09022781449129555,
+      "residualRmsPx": 0.29060568493424466,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 35,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 20.47607216627132,
+          "rotationDeg": 0.0274980134247629,
+          "dxMm": 20.461312118506214,
+          "dyMm": -0.760195273743311,
+          "dzMm": 0.16229877756835429,
+          "yawDeg": 0.027287796894285066,
+          "pitchDeg": 0.0021951567254136495,
+          "rollDeg": -0.0028052422635922447
+        },
+        {
+          "id": "P2",
+          "positionMm": 45.26122633643456,
+          "rotationDeg": 0.01705371021780772,
+          "dxMm": 0.8522857111274429,
+          "dyMm": -45.25244609314871,
+          "dzMm": 0.26142136721339637,
+          "yawDeg": 0.01584383598813588,
+          "pitchDeg": 0.005666058418049624,
+          "rollDeg": 0.002735585395783835
+        },
+        {
+          "id": "P3",
+          "positionMm": 30.29603043969491,
+          "rotationDeg": 0.025266670877730255,
+          "dxMm": 30.27861351406358,
+          "dyMm": 0.9384266197957001,
+          "dzMm": -0.4175877729844212,
+          "yawDeg": 0.02185636240607569,
+          "pitchDeg": 0.011791464108150351,
+          "rollDeg": 0.004804595769932696
+        },
+        {
+          "id": "P4",
+          "positionMm": 44.38712182377936,
+          "rotationDeg": 0.09022781449129555,
+          "dxMm": 1.2964776232188626,
+          "dyMm": 44.36817303256113,
+          "dzMm": -0.030843544508718512,
+          "yawDeg": 0.08843829074811538,
+          "pitchDeg": 0.01772844923302963,
+          "rollDeg": -0.0026696407718336673
+        }
+      ],
+      "seconds": 26.534
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1114407494,
+      "documented": false,
+      "posePositionMm": 44.57764040369021,
+      "poseRotationDeg": 0.0866651819564191,
+      "residualRmsPx": 0.2926704026515768,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 30,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 44.57764040369021,
+          "rotationDeg": 0.07371039214936571,
+          "dxMm": 44.50065731920105,
+          "dyMm": -0.7322958542995208,
+          "dzMm": -2.5142125808146645,
+          "yawDeg": -0.00821884438221332,
+          "pitchDeg": 0.03903489365035817,
+          "rollDeg": -0.061917980965693564
+        },
+        {
+          "id": "P2",
+          "positionMm": 22.37246902750089,
+          "rotationDeg": 0.06549194100839983,
+          "dxMm": 0.2112090929770466,
+          "dyMm": -21.640847118225004,
+          "dzMm": 5.670669899680555,
+          "yawDeg": -0.0013551785926750881,
+          "pitchDeg": -0.06191266225278237,
+          "rollDeg": -0.021308952102758183
+        },
+        {
+          "id": "P3",
+          "positionMm": 7.119700847380823,
+          "rotationDeg": 0.06669801134347822,
+          "dxMm": 6.8401761077092615,
+          "dyMm": 0.47134930148232806,
+          "dzMm": 1.9183223941013423,
+          "yawDeg": 0.0012264758590944114,
+          "pitchDeg": -0.022067798782214765,
+          "rollDeg": 0.06293823363604284
+        },
+        {
+          "id": "P4",
+          "positionMm": 21.401127467288273,
+          "rotationDeg": 0.0866651819564191,
+          "dxMm": 0.9261476547406909,
+          "dyMm": 20.69474429862428,
+          "dzMm": -5.373831576007633,
+          "yawDeg": 0.04236417036531748,
+          "pitchDeg": 0.07176176012002353,
+          "rollDeg": 0.023627103845620556
+        }
+      ],
+      "seconds": 27.451
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 337041661,
+      "documented": false,
+      "posePositionMm": 22.25774255068688,
+      "poseRotationDeg": 0.1270999713564548,
+      "residualRmsPx": 0.28556967091854235,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 38,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 22.25774255068688,
+          "rotationDeg": 0.12532911012107578,
+          "dxMm": -22.23796029553604,
+          "dyMm": 0.10122965186372401,
+          "dzMm": -0.9327260607506771,
+          "yawDeg": 0.013757823349266118,
+          "pitchDeg": 0.024497119322301808,
+          "rollDeg": -0.12189656907176173
+        },
+        {
+          "id": "P2",
+          "positionMm": 15.223224747350967,
+          "rotationDeg": 0.12039459395813573,
+          "dxMm": 0.4620201492926551,
+          "dyMm": -10.70723459792422,
+          "dzMm": 10.811486315720938,
+          "yawDeg": 0.022779474157616164,
+          "pitchDeg": -0.11820323497466934,
+          "rollDeg": 0.002089189245789661
+        },
+        {
+          "id": "P3",
+          "positionMm": 5.653179553180989,
+          "rotationDeg": 0.1270999713564548,
+          "dxMm": 5.620374672785644,
+          "dyMm": -0.14131695682058354,
+          "dzMm": -0.5914872067325148,
+          "yawDeg": 0.03642610179653971,
+          "pitchDeg": 0.0014155354390030794,
+          "rollDeg": 0.12233035680784687
+        },
+        {
+          "id": "P4",
+          "positionMm": 14.513032534598256,
+          "rotationDeg": 0.11569930633622862,
+          "dxMm": 0.35983837001889174,
+          "dyMm": 9.943508238233534,
+          "dzMm": -10.56528625328966,
+          "yawDeg": 0.035610671197218835,
+          "pitchDeg": 0.10997802592350814,
+          "rollDeg": 0.0046660450703363
+        }
+      ],
+      "seconds": 32.713
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 337041661,
+      "documented": false,
+      "posePositionMm": 13.267768640598346,
+      "poseRotationDeg": 0.07482636021189293,
+      "residualRmsPx": 0.2844395059890042,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 29,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 4.27319956124667,
+          "rotationDeg": 0.07436051024118961,
+          "dxMm": -3.376019674435682,
+          "dyMm": 0.34625988209575215,
+          "dzMm": -2.596695927927058,
+          "yawDeg": -0.006789301408929305,
+          "pitchDeg": 0.03642884735665941,
+          "rollDeg": -0.06458889480606958
+        },
+        {
+          "id": "P2",
+          "positionMm": 10.01538796573528,
+          "rotationDeg": 0.06174362389880493,
+          "dxMm": 0.08755637710712583,
+          "dyMm": 8.269307153079275,
+          "dzMm": 5.649680450525933,
+          "yawDeg": -0.006218496939354168,
+          "pitchDeg": -0.05685330600635652,
+          "rollDeg": -0.023289833071025747
+        },
+        {
+          "id": "P3",
+          "positionMm": 13.267768640598346,
+          "rotationDeg": 0.07076982001533878,
+          "dxMm": -13.035639258788478,
+          "dyMm": 0.9516005414503537,
+          "dzMm": 2.280405714930753,
+          "yawDeg": -0.015333863511110213,
+          "pitchDeg": -0.030249474836675172,
+          "rollDeg": 0.061871261897044394
+        },
+        {
+          "id": "P4",
+          "positionMm": 10.610834510963974,
+          "rotationDeg": 0.07482636021189293,
+          "dxMm": 0.5776623504132119,
+          "dyMm": -8.861366873718524,
+          "dzMm": -5.807950788130283,
+          "yawDeg": 0.014746835745967246,
+          "pitchDeg": 0.0675263723711855,
+          "rollDeg": 0.02861445421528991
+        }
+      ],
+      "seconds": 32.763
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 401596147,
+      "documented": false,
+      "posePositionMm": 42.65670765629628,
+      "poseRotationDeg": 0.0804103304591287,
+      "residualRmsPx": 0.27837392403839106,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 30,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 8.20393810259254,
+          "rotationDeg": 0.0804103304591287,
+          "dxMm": 7.376306809322664,
+          "dyMm": -0.4517294146272766,
+          "dzMm": 3.562392283546309,
+          "yawDeg": -0.04742399141156284,
+          "pitchDeg": -0.04140073561382429,
+          "rollDeg": 0.05052932744623452
+        },
+        {
+          "id": "P2",
+          "positionMm": 8.697724901246708,
+          "rotationDeg": 0.0624684141833952,
+          "dxMm": -0.07990127720913787,
+          "dyMm": -7.4981007075196615,
+          "dzMm": -4.407098821624103,
+          "yawDeg": -0.02002511600244361,
+          "pitchDeg": 0.04246802718229434,
+          "rollDeg": 0.041170436705239385
+        },
+        {
+          "id": "P3",
+          "positionMm": 13.140053927391914,
+          "rotationDeg": 0.07655737105187822,
+          "dxMm": -12.50191444816462,
+          "dyMm": -0.019772197330930608,
+          "dzMm": -4.045091025644925,
+          "yawDeg": -0.028060371045066423,
+          "pitchDeg": 0.04846196458774099,
+          "rollDeg": -0.0519640939626895
+        },
+        {
+          "id": "P4",
+          "positionMm": 42.65670765629628,
+          "rotationDeg": 0.07211993322388704,
+          "dxMm": -0.6471337263463106,
+          "dyMm": 42.33750908457079,
+          "dzMm": 5.168292806027513,
+          "yawDeg": -0.026765905129096268,
+          "pitchDeg": -0.05306340254486064,
+          "rollDeg": -0.04067804852434376
+        }
+      ],
+      "seconds": 29.859
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 401596147,
+      "documented": false,
+      "posePositionMm": 40.588120712911774,
+      "poseRotationDeg": 0.04657453181544835,
+      "residualRmsPx": 0.27726229832103877,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 218,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 9.390041865988904,
+          "rotationDeg": 0.04637154738225057,
+          "dxMm": 9.147887049548054,
+          "dyMm": -0.5686947472347339,
+          "dzMm": 2.040988745241633,
+          "yawDeg": -0.03017914568084734,
+          "pitchDeg": -0.021265701507812262,
+          "rollDeg": 0.028383865331151958
+        },
+        {
+          "id": "P2",
+          "positionMm": 6.2435587298629756,
+          "rotationDeg": 0.03499765462112943,
+          "dxMm": 0.1922833239265606,
+          "dyMm": -5.710662529554433,
+          "dzMm": -2.516621983956049,
+          "yawDeg": 0.010249812620415355,
+          "pitchDeg": 0.024127131083042,
+          "rollDeg": 0.023206270468124113
+        },
+        {
+          "id": "P3",
+          "positionMm": 14.533204792017791,
+          "rotationDeg": 0.04277062130680646,
+          "dxMm": -14.327819602420355,
+          "dyMm": -0.5663486902920262,
+          "dzMm": -2.3678843147908193,
+          "yawDeg": 0.01588595913976576,
+          "pitchDeg": 0.027962225034595944,
+          "rollDeg": -0.028329758810713316
+        },
+        {
+          "id": "P4",
+          "positionMm": 40.588120712911774,
+          "rotationDeg": 0.04657453181544835,
+          "dxMm": -1.0598231542110204,
+          "dyMm": 40.452849784074374,
+          "dzMm": 3.1367598305911057,
+          "yawDeg": -0.024279732743949012,
+          "pitchDeg": -0.03158864763835184,
+          "rollDeg": -0.023956318906339452
+        }
+      ],
+      "seconds": 92.533
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 582658629,
+      "documented": false,
+      "posePositionMm": 77.07797027960324,
+      "poseRotationDeg": 0.09964701516058105,
+      "residualRmsPx": 0.1721514107522276,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 47,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 71.92062834026385,
+          "rotationDeg": 0.06033334146007447,
+          "dxMm": -71.8751256062955,
+          "dyMm": -0.6757784028872255,
+          "dzMm": -2.4670677914885033,
+          "yawDeg": 0.03738750879614372,
+          "pitchDeg": 0.04420648284955808,
+          "rollDeg": -0.017164765101858603
+        },
+        {
+          "id": "P2",
+          "positionMm": 59.228157360382426,
+          "rotationDeg": 0.09029299157495933,
+          "dxMm": -0.2616852833426837,
+          "dyMm": -59.21303009549472,
+          "dzMm": 1.3127117081603787,
+          "yawDeg": 0.08416436359932788,
+          "pitchDeg": -0.007953951331419372,
+          "rollDeg": -0.03165712810483545
+        },
+        {
+          "id": "P3",
+          "positionMm": 77.07797027960324,
+          "rotationDeg": 0.07277510923336247,
+          "dxMm": 77.00602499413111,
+          "dyMm": 1.0914899604979218,
+          "dzMm": 3.145515330241694,
+          "yawDeg": 0.05399898098395722,
+          "pitchDeg": -0.04440952340242041,
+          "rollDeg": 0.020072279588537578
+        },
+        {
+          "id": "P4",
+          "positionMm": 65.11065562310361,
+          "rotationDeg": 0.09964701516058105,
+          "dxMm": -0.06536431891562833,
+          "dyMm": 65.10194588185581,
+          "dzMm": -1.0629419420285815,
+          "yawDeg": 0.09336886360441099,
+          "pitchDeg": -0.008247440273654205,
+          "rollDeg": 0.03303836204075021
+        }
+      ],
+      "seconds": 41.028
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 582658629,
+      "documented": false,
+      "posePositionMm": 11.510161745314736,
+      "poseRotationDeg": 0.03971247483555241,
+      "residualRmsPx": 0.1738829655603463,
+      "converged": false,
+      "stopReason": "lambda",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 13,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 6.197473857242291,
+          "rotationDeg": 0.03045547168130878,
+          "dxMm": -5.4004286130506785,
+          "dyMm": 0.4823525815374763,
+          "dzMm": -3.0018975654790907,
+          "yawDeg": -0.005941066060842104,
+          "pitchDeg": 0.0298346335878778,
+          "rollDeg": 0.001490767103769608
+        },
+        {
+          "id": "P2",
+          "positionMm": 6.97940412792851,
+          "rotationDeg": 0.037264578354934574,
+          "dxMm": 0.1786201666600061,
+          "dyMm": 6.975725051161064,
+          "dzMm": -0.1394160235118364,
+          "yawDeg": 0.01660710572809876,
+          "pitchDeg": -0.0034062409609264058,
+          "rollDeg": -0.033174081309957804
+        },
+        {
+          "id": "P3",
+          "positionMm": 11.510161745314736,
+          "rotationDeg": 0.0352650483083253,
+          "dxMm": 11.098880063963534,
+          "dyMm": 0.7630802633048981,
+          "dzMm": 2.9523538474942566,
+          "yawDeg": 0.012097340488334662,
+          "pitchDeg": -0.03312510489884721,
+          "rollDeg": 0.000049242935028448453
+        },
+        {
+          "id": "P4",
+          "positionMm": 0.9355315451247613,
+          "rotationDeg": 0.03971247483555241,
+          "dxMm": 0.30201935930044416,
+          "dyMm": -0.885419396610132,
+          "dzMm": -0.0060058836004392435,
+          "yawDeg": 0.02113105495244838,
+          "pitchDeg": 0.001549591616126167,
+          "rollDeg": 0.033407851782982764
+        }
+      ],
+      "seconds": 29.751
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 873556579,
+      "documented": false,
+      "posePositionMm": 30.673471070942064,
+      "poseRotationDeg": 0.11789116357444522,
+      "residualRmsPx": 0.3064198738719121,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 68,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 3.3902242722043745,
+          "rotationDeg": 0.0896675616393388,
+          "dxMm": 1.6842526080242948,
+          "dyMm": 0.12063122584987651,
+          "dzMm": 2.939789427077559,
+          "yawDeg": -0.03341431475803347,
+          "pitchDeg": -0.02759935675497524,
+          "rollDeg": 0.07840599702768497
+        },
+        {
+          "id": "P2",
+          "positionMm": 8.109226134538858,
+          "rotationDeg": 0.09758340019724282,
+          "dxMm": -0.15662330976878858,
+          "dyMm": 4.327154760165541,
+          "dzMm": -6.856438530425383,
+          "yawDeg": -0.049226365420665275,
+          "pitchDeg": 0.07724863444659898,
+          "rollDeg": 0.033686373920628766
+        },
+        {
+          "id": "P3",
+          "positionMm": 30.673471070942064,
+          "rotationDeg": 0.11482885096955994,
+          "dxMm": -30.465309918474404,
+          "dyMm": -0.6655045044802466,
+          "dzMm": -3.504828507322609,
+          "yawDeg": -0.06950172380857622,
+          "pitchDeg": 0.044813223989928486,
+          "rollDeg": -0.07890166652932668
+        },
+        {
+          "id": "P4",
+          "positionMm": 11.691747444380642,
+          "rotationDeg": 0.11789116357444522,
+          "dxMm": -0.2330657970131128,
+          "dyMm": -9.31052444563818,
+          "dzMm": 7.068010553516299,
+          "yawDeg": -0.07443832718968224,
+          "pitchDeg": -0.08334089881106371,
+          "rollDeg": -0.037108316063896085
+        }
+      ],
+      "seconds": 43.89
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 873556579,
+      "documented": false,
+      "posePositionMm": 17.4227809487024,
+      "poseRotationDeg": 0.10615675496958892,
+      "residualRmsPx": 0.30455073881903916,
+      "converged": false,
+      "stopReason": "lambda",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 11,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 17.19642949742674,
+          "rotationDeg": 0.09638784512000984,
+          "dxMm": -17.10046745344762,
+          "dyMm": -0.6685494717153517,
+          "dzMm": -1.6864880484060274,
+          "yawDeg": -0.003957325699445846,
+          "pitchDeg": 0.026072007074525047,
+          "rollDeg": 0.09270121816383359
+        },
+        {
+          "id": "P2",
+          "positionMm": 17.4227809487024,
+          "rotationDeg": 0.09874858964991105,
+          "dxMm": -0.12974024073277024,
+          "dyMm": -15.351452650396169,
+          "dzMm": -8.238286531739858,
+          "yawDeg": -0.03153199604469137,
+          "pitchDeg": 0.09233505863357638,
+          "rollDeg": -0.015175951408539431
+        },
+        {
+          "id": "P3",
+          "positionMm": 11.301558973145022,
+          "rotationDeg": 0.09306722146761012,
+          "dxMm": -11.242198271140147,
+          "dyMm": -0.5007505736735542,
+          "dzMm": 1.0428145179339696,
+          "yawDeg": -0.008653617557481896,
+          "pitchDeg": -0.0012390050426696053,
+          "rollDeg": -0.0925634221471299
+        },
+        {
+          "id": "P4",
+          "positionMm": 13.115595658166718,
+          "rotationDeg": 0.10615675496958892,
+          "dxMm": -0.3620924094857869,
+          "dyMm": 9.902335166770193,
+          "dzMm": 8.592525635717406,
+          "yawDeg": -0.029949061750883743,
+          "pitchDeg": -0.10083439635799663,
+          "rollDeg": 0.014492355716021255
+        }
+      ],
+      "seconds": 22.16
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1688379556,
+      "documented": false,
+      "posePositionMm": 25.514485356202997,
+      "poseRotationDeg": 0.20683862257960975,
+      "residualRmsPx": 0.2952282185411353,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 39,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 17.104985853687776,
+          "rotationDeg": 0.20042369462552082,
+          "dxMm": -8.746012670182601,
+          "dyMm": 0.20763621548660488,
+          "dzMm": 14.698458784167908,
+          "yawDeg": 0.011101920561316092,
+          "pitchDeg": -0.16213666633008392,
+          "rollDeg": -0.11724501588531985
+        },
+        {
+          "id": "P2",
+          "positionMm": 16.316773961639786,
+          "rotationDeg": 0.20453573363915994,
+          "dxMm": -0.4591339532692973,
+          "dyMm": 12.757920599886674,
+          "dzMm": 10.161779888148956,
+          "yawDeg": 0.020540194182117943,
+          "pitchDeg": -0.11754537003826437,
+          "rollDeg": 0.1662275825980104
+        },
+        {
+          "id": "P3",
+          "positionMm": 14.890863168633226,
+          "rotationDeg": 0.19964166060783306,
+          "dxMm": -3.2490359491692544,
+          "dyMm": 0.332530690590499,
+          "dzMm": -14.528282577365394,
+          "yawDeg": 0.0008361153490217266,
+          "pitchDeg": 0.15702581281859818,
+          "rollDeg": 0.12327896645008332
+        },
+        {
+          "id": "P4",
+          "positionMm": 25.514485356202997,
+          "rotationDeg": 0.20683862257960975,
+          "dxMm": -0.1147123954755129,
+          "dyMm": -23.24860393384931,
+          "dzMm": -10.510861962048017,
+          "yawDeg": 0.01596808293740537,
+          "pitchDeg": 0.12401615153614624,
+          "rollDeg": -0.16471469123235183
+        }
+      ],
+      "seconds": 30.892
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1688379556,
+      "documented": false,
+      "posePositionMm": 22.099448252208386,
+      "poseRotationDeg": 0.10187076640263378,
+      "residualRmsPx": 0.2931145742627883,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 42,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 12.716552601349017,
+          "rotationDeg": 0.0934477024245963,
+          "dxMm": -10.4140141735094,
+          "dyMm": 0.2051928354498897,
+          "dzMm": 7.294992443937263,
+          "yawDeg": -0.007625786143478308,
+          "pitchDeg": -0.08112642900068526,
+          "rollDeg": -0.045776340756025075
+        },
+        {
+          "id": "P2",
+          "positionMm": 11.994244461641996,
+          "rotationDeg": 0.10187076640263378,
+          "dxMm": -0.48552542749752403,
+          "dyMm": 11.319668515014314,
+          "dzMm": 3.935895066573377,
+          "yawDeg": 0.025020625491279702,
+          "pitchDeg": -0.055469707958237635,
+          "rollDeg": 0.08181581518335372
+        },
+        {
+          "id": "P3",
+          "positionMm": 7.261794977011497,
+          "rotationDeg": 0.09099037293921465,
+          "dxMm": -1.3222266467565191,
+          "dyMm": 0.18336561338766488,
+          "dzMm": -7.138050156351059,
+          "yawDeg": 0.00736170730969099,
+          "pitchDeg": 0.07598097513194635,
+          "rollDeg": 0.04947614664124231
+        },
+        {
+          "id": "P4",
+          "positionMm": 22.099448252208386,
+          "rotationDeg": 0.09758716623268748,
+          "dxMm": -0.37164690089291563,
+          "dyMm": -21.702268531645252,
+          "dzMm": -4.1543991398821225,
+          "yawDeg": 0.01150457672184757,
+          "pitchDeg": 0.05194696505097718,
+          "rollDeg": -0.08176427155843369
+        }
+      ],
+      "seconds": 40.036
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1196537905,
+      "documented": false,
+      "posePositionMm": 92.74333307537492,
+      "poseRotationDeg": 0.1022139954181648,
+      "residualRmsPx": 0.28191938033364805,
+      "converged": true,
+      "stopReason": "cost",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 69,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 78.18800347656769,
+          "rotationDeg": 0.10007460543475692,
+          "dxMm": -78.16100130848191,
+          "dyMm": -1.8225883784883101,
+          "dzMm": -0.9486483594294687,
+          "yawDeg": -0.08303274044467912,
+          "pitchDeg": -0.027129212980569917,
+          "rollDeg": 0.048005288409268404
+        },
+        {
+          "id": "P2",
+          "positionMm": 87.14981049287907,
+          "rotationDeg": 0.09754856628870241,
+          "dxMm": -0.2088013534785882,
+          "dyMm": -87.0278870472152,
+          "dzMm": -4.603558084424957,
+          "yawDeg": -0.09029769015442923,
+          "pitchDeg": 0.0368278315829301,
+          "rollDeg": -0.002786275227778967
+        },
+        {
+          "id": "P3",
+          "positionMm": 82.64167929027735,
+          "rotationDeg": 0.1022139954181648,
+          "dxMm": 82.63260626340596,
+          "dyMm": -1.2126673766664486,
+          "dzMm": -0.1702229935927682,
+          "yawDeg": -0.08717551954733704,
+          "pitchDeg": -0.014211776416259536,
+          "rollDeg": -0.051786036715743625
+        },
+        {
+          "id": "P4",
+          "positionMm": 92.74333307537492,
+          "rotationDeg": 0.07266916927370451,
+          "dxMm": 1.3213810494613065,
+          "dyMm": 92.66749709293443,
+          "dzMm": 3.509239886791554,
+          "yawDeg": -0.05709099521826033,
+          "pitchDeg": -0.044959150883200905,
+          "rollDeg": -0.0013415200002857564
+        }
+      ],
+      "seconds": 42.208
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1196537905,
+      "documented": false,
+      "posePositionMm": 18.68868436807881,
+      "poseRotationDeg": 0.03604845853266771,
+      "residualRmsPx": 0.2807915497140908,
+      "converged": true,
+      "stopReason": "cost",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 30,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 5.877607086461048,
+          "rotationDeg": 0.03433267876028038,
+          "dxMm": -5.3732014142262585,
+          "dyMm": -0.34884934335002726,
+          "dzMm": 2.3565389367923295,
+          "yawDeg": -0.006883769637397563,
+          "pitchDeg": -0.03143997325877501,
+          "rollDeg": 0.011883889737328707
+        },
+        {
+          "id": "P2",
+          "positionMm": 12.997592662409081,
+          "rotationDeg": 0.031229146065825195,
+          "dxMm": 0.028378801332329395,
+          "dyMm": -12.966701674923975,
+          "dzMm": -0.8951297867176161,
+          "yawDeg": -0.001136760555453975,
+          "pitchDeg": 0.009909251836142913,
+          "rollDeg": 0.02958869014571694
+        },
+        {
+          "id": "P3",
+          "positionMm": 10.044003234802327,
+          "rotationDeg": 0.0343591351350381,
+          "dxMm": 9.641812225777535,
+          "dyMm": -0.23063510560758504,
+          "dzMm": -2.8043297651360146,
+          "yawDeg": 0.0003345739380151147,
+          "pitchDeg": 0.03241233682546241,
+          "rollDeg": -0.011395247101904177
+        },
+        {
+          "id": "P4",
+          "positionMm": 18.68868436807881,
+          "rotationDeg": 0.03604845853266771,
+          "dxMm": 0.3701076297904088,
+          "dyMm": 18.657903146016785,
+          "dzMm": 1.0062772708856471,
+          "yawDeg": -0.015098080872647301,
+          "pitchDeg": -0.010441046610608962,
+          "rollDeg": -0.031187845988630114
+        }
+      ],
+      "seconds": 34.84
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 2081807274,
+      "documented": false,
+      "posePositionMm": 78.0022447364669,
+      "poseRotationDeg": 0.1237688264949927,
+      "residualRmsPx": 0.2731989597955136,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 47,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 7.394934533151039,
+          "rotationDeg": 0.05943448380642516,
+          "dxMm": 7.015328522326669,
+          "dyMm": 0.26917077204859086,
+          "dzMm": 2.323310045795537,
+          "yawDeg": 0.05201632982928572,
+          "pitchDeg": -0.022693818544853694,
+          "rollDeg": -0.01759634835557705
+        },
+        {
+          "id": "P2",
+          "positionMm": 78.0022447364669,
+          "rotationDeg": 0.1237688264949927,
+          "dxMm": -0.8500814743486922,
+          "dyMm": 77.99545311778289,
+          "dzMm": 0.5803777790212294,
+          "yawDeg": 0.11990420877340568,
+          "pitchDeg": -0.015547192848965607,
+          "rollDeg": 0.025557192039105336
+        },
+        {
+          "id": "P3",
+          "positionMm": 35.784136773453355,
+          "rotationDeg": 0.0651137947905891,
+          "dxMm": -35.748691460528725,
+          "dyMm": 0.9530311228985872,
+          "dzMm": -1.275631278984645,
+          "yawDeg": 0.06147125349369498,
+          "pitchDeg": -0.013139154163437805,
+          "rollDeg": 0.017675151052564675
+        },
+        {
+          "id": "P4",
+          "positionMm": 48.452898787316684,
+          "rotationDeg": 0.0551047281764746,
+          "dxMm": -0.07383729642729958,
+          "dyMm": -48.429942929002046,
+          "dzMm": -1.489488785192835,
+          "yawDeg": 0.050425688406576796,
+          "pitchDeg": 0.0035511137315249767,
+          "rollDeg": -0.021932518437809717
+        }
+      ],
+      "seconds": 37.973
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 2081807274,
+      "documented": false,
+      "posePositionMm": 39.00501456841357,
+      "poseRotationDeg": 0.08095039118538615,
+      "residualRmsPx": 0.2743621955309275,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 21,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 32.15792063902637,
+          "rotationDeg": 0.05670656104267426,
+          "dxMm": -31.870589000441818,
+          "dyMm": 0.6252715906169479,
+          "dzMm": 4.243400997879262,
+          "yawDeg": -0.0008742642575327864,
+          "pitchDeg": -0.04356235046696215,
+          "rollDeg": -0.036294302750412566
+        },
+        {
+          "id": "P2",
+          "positionMm": 39.00501456841357,
+          "rotationDeg": 0.08095039118538615,
+          "dxMm": -0.5271497912952101,
+          "dyMm": 38.90475972041507,
+          "dzMm": 2.744621226410164,
+          "yawDeg": 0.05434598912789568,
+          "pitchDeg": -0.03429421490220608,
+          "rollDeg": 0.04882332075184803
+        },
+        {
+          "id": "P3",
+          "positionMm": 5.393679559693109,
+          "rotationDeg": 0.05494490417195652,
+          "dxMm": 3.354758265026625,
+          "dyMm": 1.163126336962049,
+          "dzMm": -4.060112473830257,
+          "yawDeg": 0.0018985632493779825,
+          "pitchDeg": 0.04215317257965945,
+          "rollDeg": 0.03521161140919569
+        },
+        {
+          "id": "P4",
+          "positionMm": 9.545012549542305,
+          "rotationDeg": 0.05294327139352715,
+          "dxMm": 0.3359201721839268,
+          "dyMm": -9.005590157983079,
+          "dzMm": -3.145436077124808,
+          "yawDeg": 0.009504868377817388,
+          "pitchDeg": 0.02489420127112256,
+          "rollDeg": -0.04574969990301676
+        }
+      ],
+      "seconds": 22.702
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1879595147,
+      "documented": false,
+      "posePositionMm": 75.54142098683745,
+      "poseRotationDeg": 0.10468182640893471,
+      "residualRmsPx": 0.2792684651562296,
+      "converged": true,
+      "stopReason": "cost",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 93,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 69.58043626254307,
+          "rotationDeg": 0.05359362291360954,
+          "dxMm": 69.47826620300557,
+          "dyMm": -1.8053464689291865,
+          "dzMm": -3.308830614769942,
+          "yawDeg": 0.026909495267034345,
+          "pitchDeg": 0.042234016781776296,
+          "rollDeg": -0.01935663182917173
+        },
+        {
+          "id": "P2",
+          "positionMm": 56.203037911357455,
+          "rotationDeg": 0.10468182640893471,
+          "dxMm": -0.7649017600683122,
+          "dyMm": 56.149284997339954,
+          "dzMm": 2.335420743768128,
+          "yawDeg": 0.09099472571062961,
+          "pitchDeg": -0.046290128197261166,
+          "rollDeg": -0.022899786157185464
+        },
+        {
+          "id": "P3",
+          "positionMm": 62.604579710513434,
+          "rotationDeg": 0.04824707494344041,
+          "dxMm": -62.595666116250115,
+          "dyMm": 0.6907850011932462,
+          "dzMm": 0.799249820202616,
+          "yawDeg": 0.04282367698340983,
+          "pitchDeg": -0.0015481476181828935,
+          "rollDeg": 0.02173750844681588
+        },
+        {
+          "id": "P4",
+          "positionMm": 75.54142098683745,
+          "rotationDeg": 0.08975506783959494,
+          "dxMm": 1.3130445127524302,
+          "dyMm": -75.50911466573228,
+          "dzMm": -1.7764574904649901,
+          "yawDeg": 0.08590508565141874,
+          "pitchDeg": 0.007703784431846439,
+          "rollDeg": 0.02432824019253843
+        }
+      ],
+      "seconds": 46.232
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1879595147,
+      "documented": false,
+      "posePositionMm": 16.50253096744493,
+      "poseRotationDeg": 0.05429497430182785,
+      "residualRmsPx": 0.2797001428321949,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 20,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 11.551026642474254,
+          "rotationDeg": 0.049959763753520306,
+          "dxMm": 10.579332884937287,
+          "dyMm": 0.18229271609249142,
+          "dzMm": -4.633648839790752,
+          "yawDeg": -0.0016893288371591098,
+          "pitchDeg": 0.04992968757577476,
+          "rollDeg": -0.0003715397306457008
+        },
+        {
+          "id": "P2",
+          "positionMm": 2.2967993116926495,
+          "rotationDeg": 0.05429497430182785,
+          "dxMm": -0.4639893697790942,
+          "dyMm": -2.2479550913532265,
+          "dzMm": -0.08184650379176178,
+          "yawDeg": 0.022173864492089024,
+          "pitchDeg": 0.0013365809895860281,
+          "rollDeg": -0.0494930303270692
+        },
+        {
+          "id": "P3",
+          "positionMm": 5.576097933889107,
+          "rotationDeg": 0.04525065335511731,
+          "dxMm": -3.4152088310612783,
+          "dyMm": 0.8660394292432788,
+          "dzMm": 4.321943141176131,
+          "yawDeg": -0.0011817261476069207,
+          "pitchDeg": -0.045177567053006906,
+          "rollDeg": 0.0022947464645168836
+        },
+        {
+          "id": "P4",
+          "positionMm": 16.50253096744493,
+          "rotationDeg": 0.052902537004802255,
+          "dxMm": 0.312953205660986,
+          "dyMm": -16.499342027716857,
+          "dzMm": -0.08544749827615883,
+          "yawDeg": 0.014161124365074329,
+          "pitchDeg": -0.0005587459878794165,
+          "rollDeg": 0.05088503052093357
+        }
+      ],
+      "seconds": 22.77
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 280666901,
+      "documented": false,
+      "posePositionMm": 96.34360968369255,
+      "poseRotationDeg": 0.10625155102014806,
+      "residualRmsPx": 0.2836152147960986,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 47,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 61.71550953867784,
+          "rotationDeg": 0.10625155102014806,
+          "dxMm": 61.682678573770744,
+          "dyMm": -1.0846275811033887,
+          "dzMm": 1.6955425662098744,
+          "yawDeg": -0.10489701516439709,
+          "pitchDeg": -0.014523531936344754,
+          "rollDeg": 0.00873500205711858
+        },
+        {
+          "id": "P2",
+          "positionMm": 96.34360968369255,
+          "rotationDeg": 0.07011561036535004,
+          "dxMm": 0.6231948484933282,
+          "dyMm": 96.34150318772328,
+          "dzMm": 0.1323578271667479,
+          "yawDeg": -0.0674925012048817,
+          "pitchDeg": -0.004004073767723493,
+          "rollDeg": 0.01814208402835582
+        },
+        {
+          "id": "P3",
+          "positionMm": 61.54777268199506,
+          "rotationDeg": 0.05888589498060182,
+          "dxMm": -61.492117937005375,
+          "dyMm": -1.5529600789092601,
+          "dzMm": -2.1061976947269865,
+          "yawDeg": -0.05658131844103326,
+          "pitchDeg": 0.012343558670349197,
+          "rollDeg": -0.010938319063196755
+        },
+        {
+          "id": "P4",
+          "positionMm": 91.40425350601068,
+          "rotationDeg": 0.07013747312687398,
+          "dxMm": 0.09087579599831308,
+          "dyMm": -91.36646683302807,
+          "dzMm": 2.6264118165183863,
+          "yawDeg": -0.05954750281360077,
+          "pitchDeg": -0.029929512572721473,
+          "rollDeg": -0.02246462865930321
+        }
+      ],
+      "seconds": 31.209
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 280666901,
+      "documented": false,
+      "posePositionMm": 42.145738749114514,
+      "poseRotationDeg": 0.09855604509435405,
+      "residualRmsPx": 0.28337037313235697,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 9,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 8.632018897537785,
+          "rotationDeg": 0.09541619660493275,
+          "dxMm": 8.05667652638764,
+          "dyMm": 0.0329658216265509,
+          "dzMm": -3.098487832993428,
+          "yawDeg": -0.012469815644038817,
+          "pitchDeg": 0.03747714524875498,
+          "rollDeg": 0.08687145336978253
+        },
+        {
+          "id": "P2",
+          "positionMm": 42.145738749114514,
+          "rotationDeg": 0.08202228779525457,
+          "dxMm": 0.48737300035210956,
+          "dyMm": 41.47257403975857,
+          "dzMm": -7.486745940920131,
+          "yawDeg": -0.014227697328706768,
+          "pitchDeg": 0.07323897844840405,
+          "rollDeg": -0.03415983159031688
+        },
+        {
+          "id": "P3",
+          "positionMm": 9.379176701425614,
+          "rotationDeg": 0.09474366685267926,
+          "dxMm": -8.980905878187784,
+          "dyMm": -0.18012181607642008,
+          "dzMm": 2.6981181099185596,
+          "yawDeg": -0.014191679700154503,
+          "pitchDeg": -0.03556476039397383,
+          "rollDeg": -0.08673456362393761
+        },
+        {
+          "id": "P4",
+          "positionMm": 38.088245113727524,
+          "rotationDeg": 0.09855604509435405,
+          "dxMm": 0.11816102047046417,
+          "dyMm": -37.03434063771205,
+          "dzMm": 8.897081956829464,
+          "yawDeg": 0.008543781290285324,
+          "pitchDeg": -0.09221988431656736,
+          "rollDeg": 0.03379272846609743
+        }
+      ],
+      "seconds": 20.629
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 560573515,
+      "documented": false,
+      "posePositionMm": 30.28928580320336,
+      "poseRotationDeg": 0.08342694003517731,
+      "residualRmsPx": 0.29273745629105863,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 49,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 6.297482621887853,
+          "rotationDeg": 0.08342694003517731,
+          "dxMm": 2.3071859976200315,
+          "dyMm": 0.48706187013804536,
+          "dzMm": -5.839345072867607,
+          "yawDeg": 0.0009811817809293188,
+          "pitchDeg": 0.06966104813257393,
+          "rollDeg": -0.04589804502467343
+        },
+        {
+          "id": "P2",
+          "positionMm": 4.606577181569764,
+          "rotationDeg": 0.07706420620250942,
+          "dxMm": 0.5155574235703175,
+          "dyMm": 2.3625445908344034,
+          "dzMm": 3.9208592080154925,
+          "yawDeg": 0.00771037841248301,
+          "pitchDeg": -0.04240128344534366,
+          "rollDeg": -0.06383796794766136
+        },
+        {
+          "id": "P3",
+          "positionMm": 12.872165501037655,
+          "rotationDeg": 0.07552849128814243,
+          "dxMm": 11.472793909468315,
+          "dyMm": -0.1705839357066738,
+          "dzMm": 5.834256226619601,
+          "yawDeg": 0.026065433433035134,
+          "pitchDeg": -0.05633941011835253,
+          "rollDeg": 0.042712500752985716
+        },
+        {
+          "id": "P4",
+          "positionMm": 30.28928580320336,
+          "rotationDeg": 0.0821173055387651,
+          "dxMm": 0.3283433661425833,
+          "dyMm": -30.048019867768616,
+          "dzMm": -3.8012533628040908,
+          "yawDeg": 0.023719641993679375,
+          "pitchDeg": 0.04470701892319312,
+          "rollDeg": 0.06474474403701463
+        }
+      ],
+      "seconds": 33.58
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 560573515,
+      "documented": false,
+      "posePositionMm": 44.58161985782206,
+      "poseRotationDeg": 0.03654686983576946,
+      "residualRmsPx": 0.2867346943783232,
+      "converged": true,
+      "stopReason": "cost",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 70,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 16.746311633492972,
+          "rotationDeg": 0.02502882968458378,
+          "dxMm": 16.640919652339825,
+          "dyMm": 0.41427692459459,
+          "dzMm": -1.829513891770369,
+          "yawDeg": 0.00415082211603135,
+          "pitchDeg": 0.017208344254091693,
+          "rollDeg": 0.017686903700362744
+        },
+        {
+          "id": "P2",
+          "positionMm": 16.61969455846676,
+          "rotationDeg": 0.02461231119494202,
+          "dxMm": 0.7320762862922381,
+          "dyMm": 16.543153605294236,
+          "dzMm": -1.4150548821224227,
+          "yawDeg": -0.005248358448412205,
+          "pitchDeg": 0.014931480468373726,
+          "rollDeg": -0.018879565522605363
+        },
+        {
+          "id": "P3",
+          "positionMm": 3.2160309002230334,
+          "rotationDeg": 0.029497940222709632,
+          "dxMm": -2.61587800373686,
+          "dyMm": 0.26318026039708065,
+          "dzMm": 1.8522346426120966,
+          "yawDeg": 0.0018346178841176508,
+          "pitchDeg": -0.022346534139289886,
+          "rollDeg": -0.019190075806822304
+        },
+        {
+          "id": "P4",
+          "positionMm": 44.58161985782206,
+          "rotationDeg": 0.03654686983576946,
+          "dxMm": 0.9607727715130743,
+          "dyMm": -44.51371879018229,
+          "dzMm": 2.2641961702657056,
+          "yawDeg": 0.011876741430896232,
+          "pitchDeg": -0.027852628363027848,
+          "rollDeg": 0.020511891046899544
+        }
+      ],
+      "seconds": 48.645
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1988132759,
+      "documented": false,
+      "posePositionMm": 42.91074879575949,
+      "poseRotationDeg": 0.08452053079697083,
+      "residualRmsPx": 0.293147658361103,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 34,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 27.556020361258266,
+          "rotationDeg": 0.07232985396361266,
+          "dxMm": 27.373323953974626,
+          "dyMm": 0.22371359102692223,
+          "dzMm": -3.1599598241162843,
+          "yawDeg": 0.06422306691897006,
+          "pitchDeg": 0.032516511256467276,
+          "rollDeg": -0.007105541086340872
+        },
+        {
+          "id": "P2",
+          "positionMm": 35.12268779890524,
+          "rotationDeg": 0.08452053079697083,
+          "dxMm": -0.24338468873394242,
+          "dyMm": 35.10236214113149,
+          "dzMm": 1.1696727001668101,
+          "yawDeg": 0.07707716331704262,
+          "pitchDeg": -0.01369423080286647,
+          "rollDeg": -0.031173444974451348
+        },
+        {
+          "id": "P3",
+          "positionMm": 42.5628568963013,
+          "rotationDeg": 0.03986337689656865,
+          "dxMm": -42.453857724692234,
+          "dyMm": 1.6991215407452311,
+          "dzMm": 2.5258142165226136,
+          "yawDeg": 0.03833208273740962,
+          "pitchDeg": 0.0014453500911846273,
+          "rollDeg": 0.010673093574357528
+        },
+        {
+          "id": "P4",
+          "positionMm": 42.91074879575949,
+          "rotationDeg": 0.07802024970157558,
+          "dxMm": 0.01131676603317866,
+          "dyMm": -42.90228961535547,
+          "dzMm": -0.8519271704454447,
+          "yawDeg": 0.06533842842796389,
+          "pitchDeg": 0.02513543434185589,
+          "rollDeg": 0.03427722595821392
+        }
+      ],
+      "seconds": 25.379
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1988132759,
+      "documented": false,
+      "posePositionMm": 19.161888557064284,
+      "poseRotationDeg": 0.04896081164219705,
+      "residualRmsPx": 0.2917312906166488,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 21,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 3.559087978415955,
+          "rotationDeg": 0.04493024360301339,
+          "dxMm": 3.4504022201007345,
+          "dyMm": 0.00899692492525861,
+          "dzMm": 0.8727833711584896,
+          "yawDeg": 0.0156084119415425,
+          "pitchDeg": -0.022400710776197034,
+          "rollDeg": 0.03567718954971599
+        },
+        {
+          "id": "P2",
+          "positionMm": 11.757278896103678,
+          "rotationDeg": 0.03547886079601379,
+          "dxMm": -0.24377339353844585,
+          "dyMm": 11.389432206163619,
+          "dzMm": -2.907750951262944,
+          "yawDeg": 0.010952713639568401,
+          "pitchDeg": 0.03182663047061701,
+          "rollDeg": 0.011313662906033806
+        },
+        {
+          "id": "P3",
+          "positionMm": 18.79259995860091,
+          "rotationDeg": 0.04896081164219705,
+          "dxMm": -18.739506170966536,
+          "dyMm": 0.7186405251126265,
+          "dzMm": -1.2150215915694256,
+          "yawDeg": -0.0039796739493378475,
+          "pitchDeg": 0.03479148922521713,
+          "rollDeg": -0.03419873464490242
+        },
+        {
+          "id": "P4",
+          "positionMm": 19.161888557064284,
+          "rotationDeg": 0.03221689903204937,
+          "dxMm": 0.012863509922300675,
+          "dyMm": -18.89589412639836,
+          "dzMm": 3.1816650935331916,
+          "yawDeg": 0.002902729821585126,
+          "pitchDeg": -0.029922108772470743,
+          "rollDeg": -0.011589133949118646
+        }
+      ],
+      "seconds": 22.461
+    },
+    {
+      "arm": "64x128-poleX-shift-known",
+      "seed": 1003582623,
+      "documented": false,
+      "posePositionMm": 31.856458814687397,
+      "poseRotationDeg": 0.05745110123784206,
+      "residualRmsPx": 0.2876617083790798,
+      "converged": true,
+      "stopReason": "plateau",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 42,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 31.856458814687397,
+          "rotationDeg": 0.05745110123784206,
+          "dxMm": -31.84524614886275,
+          "dyMm": -0.3348956479529569,
+          "dzMm": 0.7759580112343921,
+          "yawDeg": -0.047279186806576945,
+          "pitchDeg": -0.0020230835076614495,
+          "rollDeg": -0.03269268934179517
+        },
+        {
+          "id": "P2",
+          "positionMm": 3.093916730689497,
+          "rotationDeg": 0.04276546569700312,
+          "dxMm": 0.20176850667584512,
+          "dyMm": 0.8655647293860369,
+          "dzMm": 2.9635127645071924,
+          "yawDeg": -0.027432419512251727,
+          "pitchDeg": -0.03076110677411542,
+          "rollDeg": 0.011315452907054047
+        },
+        {
+          "id": "P3",
+          "positionMm": 18.67727191477162,
+          "rotationDeg": 0.04841519384902841,
+          "dxMm": 18.618303193587593,
+          "dyMm": -0.8718664164923464,
+          "dzMm": -1.1996338281974015,
+          "yawDeg": -0.03380610594770146,
+          "pitchDeg": 0.014428893973054614,
+          "rollDeg": 0.031480630272507304
+        },
+        {
+          "id": "P4",
+          "positionMm": 25.303898421102097,
+          "rotationDeg": 0.04509911171793733,
+          "dxMm": -0.538456572336754,
+          "dyMm": 25.101980500176424,
+          "dzMm": -3.1445054927481224,
+          "yawDeg": -0.015502999871671364,
+          "pitchDeg": 0.04035916647354759,
+          "rollDeg": -0.012972402807028563
+        }
+      ],
+      "seconds": 33.345
+    },
+    {
+      "arm": "64x128-poleX-smooth-shift-known",
+      "seed": 1003582623,
+      "documented": false,
+      "posePositionMm": 18.203505694393613,
+      "poseRotationDeg": 0.05668457579877892,
+      "residualRmsPx": 0.28389356164831353,
+      "converged": true,
+      "stopReason": "step",
+      "gaugeConstraints": 1,
+      "shiftKnown": true,
+      "iterations": 11,
+      "facets": 16128,
+      "perProjector": [
+        {
+          "id": "P1",
+          "positionMm": 15.322631770971055,
+          "rotationDeg": 0.05505836582717274,
+          "dxMm": -15.160322959087758,
+          "dyMm": -0.2387456398785931,
+          "dzMm": 2.211482010862216,
+          "yawDeg": -0.02289012078728092,
+          "pitchDeg": -0.02768690933592524,
+          "rollDeg": -0.041785532767536465
+        },
+        {
+          "id": "P2",
+          "positionMm": 18.203505694393613,
+          "rotationDeg": 0.05668457579877892,
+          "dxMm": 0.7240331698789987,
+          "dyMm": 17.766690906496407,
+          "dzMm": 3.897189983533454,
+          "yawDeg": -0.0086286594579974,
+          "pitchDeg": -0.049312710431395346,
+          "rollDeg": 0.026558375667118606
+        },
+        {
+          "id": "P3",
+          "positionMm": 3.269635361015261,
+          "rotationDeg": 0.048592179604047964,
+          "dxMm": 1.84050541297065,
+          "dyMm": -0.7365723800338425,
+          "dzMm": -2.6000992957574547,
+          "yawDeg": 0.005420869571293979,
+          "pitchDeg": 0.025520936607853074,
+          "rollDeg": 0.04099830715413513
+        },
+        {
+          "id": "P4",
+          "positionMm": 9.09597006084959,
+          "rotationDeg": 0.05219152560982369,
+          "dxMm": -0.32337732909756833,
+          "dyMm": 8.29985091562957,
+          "dzMm": -3.7073674257107023,
+          "yawDeg": 0.003788864969337169,
+          "pitchDeg": 0.044222521029723905,
+          "rollDeg": -0.02742511328666402
+        }
+      ],
+      "seconds": 19.673
     }
   ]
 }
