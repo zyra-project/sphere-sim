@@ -177,6 +177,16 @@ export interface Arm {
   grid: { nLat: number; nLon: number } | null;
   meshNormal: 'facet' | 'smooth';
   /**
+   * Which axis the tessellation's poles sit on. Undefined is `z`, the default
+   * everywhere else in the bench.
+   *
+   * The body does not move — a sphere is the same sphere however its UV grid is
+   * oriented, and `ellipsoidMesh` refuses this on anything that is not one. What
+   * moves is where the facet edges run, where the bands are degenerate, and
+   * where the vertex fans collapse.
+   */
+  poleAxis?: 'z' | 'x';
+  /**
    * Hand the solver the TRUE lens shift and pin it there with `TIGHT_SIGMA`.
    *
    * Both halves or neither, which is A-18's correction to A-16: `solve` centres
@@ -196,6 +206,39 @@ export interface Arm {
   shiftKnown?: boolean;
 }
 
+/**
+ * ## WHY YAW AND NOT PITCH, and the prediction registered before it was run
+ *
+ * The thirty-seed sweep found the derivative's cost concentrated in YAW: with
+ * the shift degeneracy closed, yaw 0.0410° to 0.0167° on 21 of 25 seeds while
+ * pitch (12/25) and roll (9/25) did nothing. The write-up called the reason
+ * unmeasured, and it is — but two lines of code make a specific guess available.
+ *
+ * `rotZ(pose.yawDeg)`: yaw is rotation about Z. `ellipsoidMesh`: the UV grid's
+ * poles are on Z. THE AXIS THAT CARRIES THE ERROR IS THE AXIS THE TESSELLATION'S
+ * POLES SIT ON — where the facets are least like the surface, the bands emit one
+ * triangle instead of two, and the vertex fans collapse to a single duplicated
+ * point.
+ *
+ * That is either a mechanism or a coincidence, and turning the tessellation
+ * tells which. These two arms put the poles on X and change nothing else: the
+ * body is the same sphere, the rig is the same rig, the photons are the same
+ * photons, and the rotation is a rotation rather than a reflection so the
+ * derived vertex normals are not silently inverted.
+ *
+ * REGISTERED BEFORE RUNNING, because a prediction written afterwards is a
+ * description:
+ *
+ *  - IF THE POLES CARRY IT, the effect follows the mesh. With poles on X, yaw
+ *    should stop being the axis smoothing rescues and pitch or roll should take
+ *    its place.
+ *  - IF THE RIG OR THE GAUGE CARRIES IT, yaw stays the affected axis wherever
+ *    the mesh's poles are, and the coincidence above is exactly that.
+ *
+ * Both arms pin lens shift at truth, matching the pair where the yaw result is
+ * cleanest, so the comparison is against `64x128-shift-known` and
+ * `64x128-smooth-shift-known` with one thing different.
+ */
 export const ARMS: readonly Arm[] = [
   {
     key: 'analytic',
@@ -266,6 +309,26 @@ export const ARMS: readonly Arm[] = [
     grid: { nLat: 64, nLon: 128 },
     meshNormal: 'facet',
     shiftKnown: true,
+  },
+  {
+    key: '64x128-poleX-shift-known',
+    question:
+      "THE POLE TEST, facet side. The same sphere with its tessellation turned 90°, so the UV " +
+      'poles lie on X instead of on the yaw axis.',
+    grid: { nLat: 64, nLon: 128 },
+    meshNormal: 'facet',
+    shiftKnown: true,
+    poleAxis: 'x',
+  },
+  {
+    key: '64x128-poleX-smooth-shift-known',
+    question:
+      'THE POLE TEST, smooth side. If the axis smoothing rescues follows the tessellation here, ' +
+      'the poles are the mechanism; if it stays on yaw, they are a coincidence.',
+    grid: { nLat: 64, nLon: 128 },
+    meshNormal: 'smooth',
+    shiftKnown: true,
+    poleAxis: 'x',
   },
   {
     key: '64x128-smooth-shift-known',
