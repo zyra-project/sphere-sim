@@ -1,11 +1,31 @@
 # Arbitrary shapes: a feasibility study
 
-**Status: Phases 0–4 landed. Phase 5 (the solve) is unimplemented.** Phase 2's
-shader wiring landed after this line last claimed it was outstanding; both
-renderers now trace and shade a mesh, the harness page can put one in front of
-the projectors, and link (3) passes on both mesh fixtures under a software
-driver. Phase 3 closed by deciding the polar mask is refused rather than
-generalized — see that phase.
+**Status: a dropped mesh calibrates. What is open is how well.** Phase 5's solve
+is implemented and runs: `.github/workflows/solve-smoke.yml` drops a `.glb` in a
+real browser nightly, and the page traces it, lights it, segments it by ray cast
+and calibrates on it. Phases 0 and 4 are landed. Phases 1, 2 and 3 are each
+substantially landed with named remainders, and **their own headings below are
+the authority on which** — Phase 1 still owes a mesh through `RigCalibration`,
+and Phase 3 closed the polar mask by refusing to generalize it rather than by
+building one. Phase 2's shader wiring landed after this line last claimed it was
+outstanding; both renderers now trace and shade a mesh, the harness page can put
+one in front of the projectors, and link (3) passes on both mesh fixtures under a
+software driver.
+
+New GATES for a mesh remain open **on purpose**, and that is not the same as
+work outstanding: §7's numbers are sphere theorems, nobody has measured a mesh
+installation, and inventing a mesh version of them is the one thing this document
+will not do. See Phase 5's "Still to do". The accuracy question — a dropped mesh
+recovers, and not as well as the sphere does — is tracked in Phase 5 and in the
+experiment write-ups, not here.
+
+**This line has now been wrong in both directions, which is why it names the
+check that backs it.** It previously read *"Phases 0–4 landed. Phase 5 (the solve)
+is unimplemented"* — over-claiming three phases whose own headings said IN
+PROGRESS, and under-claiming a phase whose own section said LANDED twice and
+which CI had been exercising nightly. A status line nobody re-derives is a
+comment asserting a state nobody established, and this is the second time this
+particular one has drifted.
 
 **Phase 2 is wired.** The app page hands its display shader the dropped model:
 `main.ts` prepares both rigs on one `MeshSurface` and passes `packMesh`'s result
