@@ -12,6 +12,35 @@ would be inverting the simulator's own arithmetic, every recovery score would be
 circular, and the project would be worthless. `tools/boundary-lint.ts` fails the
 build on any import across that line.
 
+## Try it
+
+**[Open the simulator](https://zyra-project.github.io/sphere-sim/app/)** — it runs
+in your browser, installs nothing, and uploads nothing. Every file you give it is
+read in the page.
+
+Four projectors ring a 68-inch ball and paint one image between them. Press
+**Bump all 4**: the worst grid-line error jumps from hundredths of a millimetre to
+over a hundred, the badge turns red, and the seam inspector shows two projectors
+drawing the same coastline in different places. Press **Recalibrate** and the
+solver photographs the sphere with structured light and works out where the lenses
+actually are — about ten seconds, and the error comes back under a millimetre. It
+does not undo the bump. The sliders still read what you moved; the picture is
+correct again because the software now knows where the light comes from.
+
+Drop a `.glb` and the same machinery runs on your own geometry: the model is
+traced, lit, blended, segmented by ray cast, and calibrated. Accuracy on an
+arbitrary mesh is not yet the sphere's — see `docs/ARBITRARY-SHAPES.md` for what
+is measured and what is still open.
+
+The [developer harness](https://zyra-project.github.io/sphere-sim/harness/) is the
+same engine with its cover off: one WebGL2 context, five viewports, and every
+slider labelled with the provenance class of the constant it moves.
+
+Both pages are published from `main` by
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml), and
+[`.github/workflows/solve-smoke.yml`](.github/workflows/solve-smoke.yml) drives
+both calibration paths through a real browser nightly.
+
 ## Start here
 
 | Document | What it is |
