@@ -123,6 +123,47 @@ function poseTable(rows: Row[], firstColumn = 'arm', withGrid = false): string {
 // Experiment 5
 // ---------------------------------------------------------------------------
 
+interface Experiment7 {
+  summary: {
+    scope: string;
+    arm: string;
+    facets: number;
+    shiftKnown: boolean;
+    control: string;
+    n: number;
+    medianPosMm: number;
+    medianRotDeg: number;
+    medianResidualPx: number;
+    medianIterations: number;
+    posVsControl: number;
+    rotVsControl: number;
+    residualVsControl: number;
+    bodyDeficitMaxMm: number;
+    notConverged: number;
+    gaugeConstraints: number[];
+  }[];
+  mechanism: {
+    label: string;
+    facetArm: string;
+    smoothArm: string;
+    facetMedianPosMm: number;
+    smoothMedianPosMm: number;
+    controlMedianPosMm: number;
+    posRecoveredPercent: number | null;
+    facetMedianRotDeg: number;
+    smoothMedianRotDeg: number;
+    controlMedianRotDeg: number;
+    rotRecoveredPercent: number | null;
+    pairs: number;
+    axes: { axis: string; facetMedianDeg: number; smoothMedianDeg: number; smoothWins: number; signP: number }[];
+    posSmoothWins: number;
+    rotSmoothWins: number;
+    posSignP: number;
+    rotSignP: number;
+    smoothResidualOverFacet: number;
+  }[];
+}
+
 interface Experiment6 {
   summary: {
     scope: string;
@@ -371,7 +412,126 @@ function experiment6Arms(result: Experiment6): string {
   return out.join('\n');
 }
 
+/**
+ * Experiment 7's arms, over the full seed set.
+ *
+ * Position AND rotation AND the residual in one table, because no one of them
+ * decides anything here. A pose difference at an unchanged residual is two
+ * calibrations fitting the same photographs, which is a degenerate direction
+ * rather than a better fit — and the document this corrects reached its reading
+ * by looking at position alone.
+ */
+function experiment7Arms(result: Experiment7): string {
+  const rows = result.summary.filter((s) => s.scope === 'all');
+  const out = [
+    // `n` is a column and not a footnote: these are medians over a seed set the
+    // drop policy shrinks, and a median whose sample size is not on the same row
+    // is an invitation to read it as the whole sweep.
+    '| arm | facets | shift | n | median pos | vs control | median rot | vs control | residual | vs control | iters |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+  ];
+  for (const r of rows) {
+    out.push(
+      `| \`${r.arm}\` | ${r.facets === 0 ? '—' : r.facets.toLocaleString('en-US')} | ` +
+        `${r.shiftKnown ? 'at truth' : 'free'} | ${r.n} | ${r.medianPosMm.toFixed(1)} mm | ` +
+        `${r.posVsControl.toFixed(2)}x | **${r.medianRotDeg.toFixed(4)}°** | ` +
+        `${r.rotVsControl.toFixed(2)}x | ${r.medianResidualPx.toFixed(5)} px | ` +
+        `${r.residualVsControl.toFixed(3)}x | ${r.medianIterations.toFixed(0)} |`,
+    );
+  }
+  return out.join('\n');
+}
+
+/**
+ * The pairs where the derivative is the only thing that changed.
+ *
+ * The one table in this experiment that isolates anything: same mesh, same
+ * photographs, same starting rig, two normals. The `vs control` columns of the
+ * table above cannot do that, because a control with no facets is also a
+ * different body.
+ */
+/**
+ * The recovered fraction, or an em dash.
+ *
+ * Null means there was no meaningful positive excess to recover a fraction OF —
+ * either the facet arm sat on its control, or it was already BETTER than the
+ * control, which the finest grid's rotation row actually is. It does not mean
+ * nothing was recovered, so it must not render as `0%`: that is a different
+ * claim and a wrong one.
+ */
+const pct = (v: number | null): string => (v === null ? '— (no excess)' : `${v.toFixed(0)}%`);
+
+function experiment7Mechanism(result: Experiment7): string {
+  // The per-arm medians are in the table above; repeating them here would give a
+  // reader two places to read the same number out of and one of them to get
+  // wrong. This table carries only what belongs to the PAIR.
+  const out = [
+    '| pair | pos: smooth wins | pos excess recovered | rot: smooth wins | rot excess recovered | smooth residual |',
+    '| --- | --- | --- | --- | --- | --- |',
+  ];
+  for (const m of result.mechanism) {
+    out.push(
+      `| ${m.label} | ${m.posSmoothWins}/${m.pairs}, p=${m.posSignP.toPrecision(2)} | ` +
+        `${pct(m.posRecoveredPercent)} | ` +
+        `**${m.rotSmoothWins}/${m.pairs}**, p=${m.rotSignP.toPrecision(2)} | ` +
+        `${pct(m.rotRecoveredPercent)} | ${m.smoothResidualOverFacet.toFixed(4)}x |`,
+    );
+  }
+  return out.join('\n');
+}
+
+/**
+ * Which axis the derivative moves, paired by seed.
+ *
+ * The question `docs/ARBITRARY-SHAPES.md` left open beside the reading this
+ * experiment tests — "which directions carry the error has not been measured".
+ * Each cell is the worst projector's |error| on that axis, so the three do NOT
+ * sum to the rotation total beside them: they say which axis is larger, not how
+ * a matrix angle decomposes.
+ */
+function experiment7Axes(result: Experiment7): string {
+  const out = [
+    '| pair | axis | facet | smooth | smooth wins | sign test |',
+    '| --- | --- | --- | --- | --- | --- |',
+  ];
+  for (const m of result.mechanism) {
+    for (const a of m.axes) {
+      const better = a.smoothMedianDeg < a.facetMedianDeg;
+      out.push(
+        `| ${a.axis === m.axes[0].axis ? m.label : ''} | \`${a.axis}\` | ` +
+          `${a.facetMedianDeg.toFixed(4)}° | ${better ? '**' : ''}${a.smoothMedianDeg.toFixed(4)}°` +
+          `${better ? '**' : ''} | ${a.smoothWins}/${m.pairs} | ${a.signP.toPrecision(2)} |`,
+      );
+    }
+  }
+  return out.join('\n');
+}
+
 const BLOCKS: Record<string, Block> = {
+  'experiment-7-axes': {
+    doc: 'docs/EXPERIMENT-7.md',
+    data: 'experiments/experiment-7.json',
+    render: experiment7Axes as (r: never) => string,
+  },
+  'experiment-7-arms': {
+    doc: 'docs/EXPERIMENT-7.md',
+    data: 'experiments/experiment-7.json',
+    render: experiment7Arms as (r: never) => string,
+  },
+  'experiment-7-mechanism': {
+    doc: 'docs/EXPERIMENT-7.md',
+    data: 'experiments/experiment-7.json',
+    render: experiment7Mechanism as (r: never) => string,
+  },
+  // The same table, in the entry that corrects the Phase-5 reading it refutes.
+  // A second registration rather than a copy: that entry's whole argument is
+  // these numbers, and a hand-copied table there would be the fault this file
+  // exists to prevent, sitting inside a paragraph about a claim that rotted.
+  'experiment-7-mechanism-arbitrary-shapes': {
+    doc: 'docs/ARBITRARY-SHAPES.md',
+    data: 'experiments/experiment-7.json',
+    render: experiment7Mechanism as (r: never) => string,
+  },
   'experiment-6-arms': {
     doc: 'docs/EXPERIMENT-6.md',
     data: 'experiments/experiment-6.json',
@@ -480,8 +640,70 @@ export function syncDocs(write: boolean): { mismatched: string[]; missing: strin
   return { mismatched, missing };
 }
 
+/**
+ * Markers in the documentation that no block claims.
+ *
+ * `syncDocs` catches the opposite direction — a block registered here whose
+ * marker has gone from its document — and that is the check this file was
+ * written with. It does not catch a marker that was never registered, and the
+ * consequence is worse than an unmarked table: the marker ANNOUNCES that the
+ * numbers below it are generated, so a reader trusts them and no tool checks
+ * them. A hand-copied table wearing a generated table's label.
+ *
+ * Found by writing one. The experiment-7 entry in ARBITRARY-SHAPES.md was
+ * pasted under `<!-- generated: experiment-7-mechanism -->` — an id registered
+ * against a DIFFERENT document — and `check:docs` passed, because nothing looks
+ * at the markers a document actually carries. The same blind spot
+ * `check:ci-parity` had when it read one workflow and called that the set.
+ */
+export function unregisteredBlocks(): { doc: string; id: string }[] {
+  const docs = new Set<string>(Object.values(BLOCKS).map((b) => b.doc));
+  for (const name of fs.readdirSync(path.join(ROOT, 'docs'))) {
+    if (name.endsWith('.md')) docs.add(path.join('docs', name));
+  }
+  const out: { doc: string; id: string }[] = [];
+  const marker = /<!--\s*generated:\s*([A-Za-z0-9_-]+)\s*-->/g;
+  for (const doc of [...docs].sort()) {
+    const file = path.join(ROOT, doc);
+    if (!fs.existsSync(file)) continue;
+    const text = fs.readFileSync(file, 'utf8');
+    const seen = new Set<string>();
+    for (const m of text.matchAll(marker)) {
+      const id = m[1];
+      // Registered, but against some OTHER document — which is the case that
+      // produced this check and the one a bare `id in BLOCKS` would miss.
+      if (BLOCKS[id]?.doc !== doc) {
+        out.push({ doc, id });
+        continue;
+      }
+      // A SECOND occurrence of a properly registered id, which the first version
+      // of this check waved through. `syncDocs` finds a block with `indexOf`, so
+      // it regenerates the first occurrence and never looks at the rest: a
+      // duplicate marker keeps the generated label over a table nothing writes
+      // or compares. The same hole as an unregistered marker, one step further
+      // in. Caught in review.
+      if (seen.has(id)) out.push({ doc, id });
+      seen.add(id);
+    }
+  }
+  return out;
+}
+
 function main(): void {
   const write = process.argv.includes('--write');
+
+  const stray = unregisteredBlocks();
+  if (stray.length > 0) {
+    process.stderr.write(
+      `\nThese documents carry a generated-table marker that no block renders into them:\n` +
+        stray.map(({ doc, id }) => `  ${doc}: ${OPEN(id)}\n`).join('') +
+        `\nA marker tells a reader the table below it is machine-written and checked.\n` +
+        `One nothing renders is a hand-copied table wearing that label, which is worse\n` +
+        `than an unmarked one. Register it in BLOCKS, or take the marker off.\n\n`,
+    );
+    process.exit(1);
+  }
+
   const { mismatched, missing } = syncDocs(write);
 
   if (missing.length > 0) {

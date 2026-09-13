@@ -40,6 +40,7 @@
     "check:determinism": "npm run bench -- --scenarios 13 --seed 1234 --out bench-results-2.json --allow-failure && node tools/assert-deterministic.ts bench-results.json bench-results-2.json",
     "check:ci-parity": "node tools/check-ci-parity.ts",
     "experiment6": "node packages/experiments/src/meshrot/cli.ts",
+    "experiment7": "node packages/experiments/src/tessellation/cli.ts",
     "ci:solve": "npm run build:web && npm run build:app && npm run smoke:solve"
   },
   "devDependencies": {

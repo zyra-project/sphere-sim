@@ -1287,7 +1287,11 @@ and from 1 : 1 : 0.8 on (11 to 17) the spheroids sit inside the analytic
 sphere's own range — while still running to the cap, so the stall and the gap
 are two effects, not one.
 
-**What this does not fix, and is recorded as the next measurement.** A nearly
+**What this does not fix, and is recorded as the next measurement.** (ITS
+MECHANISM IS REFUTED below by experiment 7: the reading needs a surface the
+facets approximate, and the fixture it was measured in — photograph the
+tessellation, fit the tessellation — has none. The measurements in this entry
+stand.) A nearly
 spherical mesh is less accurate than the sphere it approximates — the tessellated
 sphere at 32 to 137 mm against the same body's analytic 8 to 17 is the cleanest
 comparison in the table, since it changes the representation and nothing else —
@@ -2170,6 +2174,103 @@ beside PASS/FAIL and the fatal NOT-MEASURED of a crashed solve. The twelve spher
 scenarios' digests did not move: the new `inputs.surface` key is written only
 when there is a surface, and the baseline check lists exactly the new scenario's
 paths plus the run, aggregate and gate blocks that now include it.
+
+**The Phase-5 reading above names a mechanism its own fixture cannot contain,
+and experiment 7 measures what is there instead.** The paragraph beginning "What
+this does not fix" reads the tessellated sphere's cost as a Jacobian defect: "a
+flat facet normal is the derivative of the facet, not of the surface the facets
+approximate, so every step carries a Jacobian error that changes at each facet
+edge." It has been cited forward ever since and never measured in a cell that
+could isolate it from the other explanation available — MODEL error, the facets
+simply not being the body.
+
+IT CONFLATES TWO PROPERTIES THIS REPOSITORY'S OWN TESTS KEEP APART, and
+`mesh.test.ts` states the distinction in a docblock: "The central-difference
+tests above confirm this code differentiates what it COMPUTES. They cannot
+confirm it differentiates the right geometry — a derivative can be perfectly
+self-consistent about the wrong surface." A facet normal is EXACT for the
+residual and APPROXIMATE for the sphere. "Carries a Jacobian error" is true only
+of the second.
+
+AND THE FIXTURE HAS NO SECOND. Every row of that table photographs the
+tessellation and fits the tessellation; `buildWorld` derives the cameras'
+surface and the bundle's hierarchy from one `ellipsoidMesh`. There is no surface
+the facets approximate. The facet normal is the exact derivative of the body in
+the room, and the remedy the paragraph proposes — "interpolated vertex normals,
+so the derivative describes the curve the tessellation is standing in for" —
+describes a curve that fixture does not contain.
+
+THE READING MAKES A PREDICTION, AND THE PREDICTION IS WRONG. If the mechanism
+were fidelity to an approximated surface, smoothing should buy nothing where
+there is nothing being approximated. docs/EXPERIMENT-7.md runs that in the bench
+mesh cell: ten arms, thirty paired seeds plus the documented one, 310 solves,
+each pair the same mesh and the same photographs with only the derivative
+swapped. Smoothing helps anyway, and what it helps is YAW.
+
+<!-- generated: experiment-7-mechanism-arbitrary-shapes -->
+| pair | pos: smooth wins | pos excess recovered | rot: smooth wins | rot excess recovered | smooth residual |
+| --- | --- | --- | --- | --- | --- |
+| coarsest grid, shift free | 21/26, p=0.0025 | 70% | **22/26**, p=0.00053 | 64% | 0.9939x |
+| coarsest grid, shift at truth | 13/25, p=1.0 | 69% | **21/25**, p=0.00091 | 107% | 1.0000x |
+| finest grid, shift free | 15/24, p=0.31 | 57% | **11/24**, p=0.84 | — (no excess) | 1.0001x |
+<!-- /generated -->
+
+Three things follow. The POSITION cost is A-12's lens shift degeneracy, not the
+derivative: 21 of 26 seeds with shift free (p=0.0025) becomes 13 of 25 (p=1.0)
+with shift handed to the solver at truth — not weakened, gone. That is
+experiment 6's finding arriving on a second body. The ROTATION cost survives the
+degeneracy and tracks facet coarseness: 21 of 25 at 64×128 with shift pinned
+(p=0.00091), 11 of 24 at 192×384 (p=0.84), which has nine times as many facets.
+And with the degeneracy closed it costs NO residual — 1.0000× — so the two
+derivatives reach calibrations that fit the same photographs and point
+differently, which is A-18's definition of a degenerate direction rather than a
+better fit. (With shift free the fits do differ slightly, 0.9939×, which is the
+second reason the shift-pinned pair is the one the claim rests on.)
+
+AND WHICH DIRECTION CARRIES IT IS NOW MEASURED, which the paragraph above asked
+for and left undone. It is yaw. With the degeneracy closed, yaw goes 0.0410° to
+0.0167° on 21 of 25 seeds (p=0.00091) while pitch does nothing (12 of 25) and
+roll does nothing (9 of 25); at the finest grid yaw stops moving too (14 of 24,
+p=0.54), as the coarseness story requires. Smoothing also costs a little ROLL,
+in all three pairs and weakly in each (8/26, 9/25, 7/24) — too consistent to
+omit, too weak to call established.
+
+WHAT SURVIVES OF THE READING IS NOT FIDELITY BUT CONTINUITY. In this cell the
+interpolated normal is the WRONG derivative — `mesh.test.ts` measures its error
+against the facet geometry as the whole facet-to-sphere gap — and it still
+produces the better pointing. An exact derivative that jumps at every facet edge
+navigates a weakly determined direction worse than an inexact one that does not
+jump. The optimiser says so in its stop reasons, which nothing set out to measure:
+`meshPlateauTol`, the rule that exists because the facet Jacobian's jitter stops
+the cost tolerance firing twice running, fires on 26 of 31 coarse facet solves
+and 20 of 31 with shift pinned, against 2 and 0 on the corresponding smooth
+arms, which stop on the ordinary `step` rule 22 and 23 times; the smooth arms
+take about half the iterations; and every one of the sweep's 15 `lambda` stalls
+is in a smooth arm while every one of its 14 `maxIterations` stops is in a facet
+arm.
+
+That is a reading and not a proof, offered as what the measurements are
+consistent with. WHY yaw and not pitch is the part still unmeasured: the
+stiffness test reports one pinned direction on every arm including the analytic
+control, so a tessellation frees nothing a sphere does not, and the gauge does
+not distinguish the axis that moves.
+
+TWO SMALLER CORRECTIONS IN THE SAME SENTENCE. "The cleanest comparison in the
+table, since it changes the representation and nothing else" changes the body
+too: `ellipsoidMesh` interpolates the sphere rather than approximating it, so
+every facet lies inside, measured at 0.349 mm mean and 0.462 mm deepest at
+64×128 against the rig's 0.8636 m radius and falling as the square of the
+refinement to 0.039 / 0.051 at 192×384 — agreeing with the 0.218 mm the
+midsurface entry below measured independently. Small against the pose errors
+compared, and refuted there as a mechanism, but not nothing else. And "finer
+tessellation helps but not monotonically … the signature of noise rather than
+bias" rests on three numbers whose worst, 137.4 mm, is the 400-iteration cap the
+table's own caption names; the realistic cell measured the same ladder monotone
+on three seeds and again on sixty.
+
+NOTHING HERE TOUCHES THE SHIPPED DEFAULT. `meshNormal: 'facet'` was settled on
+540 solves in the realistic cell, which is the cell a deployment is in. This one
+was chosen precisely because it is not.
 
 **Still to do:** the measured gauge null space is DONE (the gauge bullet above)
 and the first mesh scenario is DONE (the entry above). New GATES for a mesh
