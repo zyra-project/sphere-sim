@@ -2223,7 +2223,7 @@ describes a curve that fixture does not contain.
 THE READING MAKES A PREDICTION, AND THE PREDICTION IS WRONG. If the mechanism
 were fidelity to an approximated surface, smoothing should buy nothing where
 there is nothing being approximated. docs/EXPERIMENT-7.md runs that in the bench
-mesh cell: ten arms, thirty paired seeds plus the documented one, 310 solves,
+mesh cell: twelve arms, thirty paired seeds plus the documented one, 372 solves,
 each pair the same mesh and the same photographs with only the derivative
 swapped. Smoothing helps anyway, and what it helps is YAW.
 
@@ -2288,7 +2288,7 @@ coincidence was a coincidence and whatever selects yaw is upstream of the mesh.
 
 One thing did follow the tessellation, which is why this is a negative result
 rather than a null one: turning the grid made the facet solve WORSE, yaw 0.0410°
-to 0.0590° and total rotation 0.0524° to 0.0873°. The grid's orientation sets the
+to 0.0590° and total rotation 0.0524° to 0.0880°. The grid's orientation sets the
 MAGNITUDE without touching the AXIS, and nothing predicted those would separate.
 
 TWO SMALLER CORRECTIONS IN THE SAME SENTENCE. "The cleanest comparison in the

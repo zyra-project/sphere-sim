@@ -87,8 +87,8 @@ facet normal rests on those.
 
 Medians over the seeds where **every** arm converged. That rule is what the arms
 table needs and what it costs: the `vs control` columns are ratios taken across
-arms, so they need one seed set common to all ten, and a seed any arm failed has
-to go from all of them. On thirteen seeds and ten arms it took seven.
+arms, so they need one seed set common to all twelve, and a seed any arm failed
+has to go from all of them. It costs 23 of the 31 seeds here, leaving eight.
 
 The mechanism table below is over a different and larger set, and deliberately —
 see the note under it.
@@ -113,10 +113,10 @@ see the note under it.
 ## The mechanism pairs
 
 **These are over more seeds than the table above, on purpose.** A pair reads
-three arms — the two normals and their control — so requiring the other seven to
+three arms — the two normals and their control — so requiring the other nine to
 have converged would exclude seeds for the behaviour of arms the comparison never
-looks at. Restricting the rule to the three arms actually read keeps eleven,
-twelve and ten seeds instead of six, and is no weaker for the rows it reports:
+looks at. Restricting the rule to the three arms actually read keeps 26, 25, 24
+and 25 seeds instead of eight, and is no weaker for the rows it reports:
 every one of them is still a solve the page would install. Every median in this
 table is computed over its own pairs and none is carried over from the table
 above.
@@ -132,7 +132,7 @@ above.
 
 ## What it says
 
-Thirty paired seeds plus the documented one, 310 solves. The twelve-seed pass
+Thirty paired seeds plus the documented one, twelve arms, 372 solves. The twelve-seed pass
 said the same three things more weakly; every one of them survives, and the
 axis table below is new.
 
@@ -188,8 +188,8 @@ would test it further is why yaw and not pitch, which nothing here measures.
 
 ## What is not claimed
 
-- **That the arms table is strong.** It is n=12, because a seed counts there
-  only if all ten arms converged and 19 of 31 lost at least one. The mechanism
+- **That the arms table is strong.** It is n=8, because a seed counts there
+  only if all twelve arms converged and 23 of 31 lost at least one. The mechanism
   pairs are n=24–26 because a pair pays for its own three arms; that difference
   is the whole reason the policy is split, and the claims live on the pairs.
 - **That roll is established.** Three weak results in one direction is a reason
@@ -254,7 +254,7 @@ parametrisation entirely.
 
 ONE THING DID FOLLOW THE TESSELLATION, which is why this is a negative result
 and not a null one: turning the grid made the facet solve WORSE — yaw 0.0410° to
-0.0590°, total rotation 0.0524° to 0.0873°. The orientation of the tessellation
+0.0590°, total rotation 0.0524° to 0.0880°. The orientation of the tessellation
 sets the MAGNITUDE of the error without touching the AXIS that carries it, and
 nothing predicted those would separate.
 

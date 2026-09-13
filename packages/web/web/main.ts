@@ -5297,7 +5297,7 @@ function renderActions(): void {
 }
 
 // ---------------------------------------------------------------------------
-// The inspect card: one projector, three ways
+// The inspect card: one projector, four ways
 // ---------------------------------------------------------------------------
 
 const INSPECT_VIEWS = [
@@ -6021,6 +6021,10 @@ function renderInspect(): void {
     const why = el('p', { className: 'note' });
     const scrub = el('input', { className: 'scrub', type: 'range', min: '0', step: '1' });
     scrub.max = String(notes.length - 1);
+    // Named, because a bare range input is announced as an anonymous slider and
+    // a reader is told neither what it selects nor where it is. The paragraph
+    // beside it is prose, not a label, and nothing associates the two.
+    scrub.setAttribute('aria-label', 'Frame of the structured-light sequence');
     const play = el('button', { className: 'linkish' });
 
     const paint = (): void => {
@@ -6037,6 +6041,9 @@ function renderInspect(): void {
       canvas.setAttribute('aria-label', `${note.label}. ${note.why}`);
       why.textContent = note.why;
       scrub.value = String(patternIndex);
+      // `aria-valuetext` rather than leaving the raw index to be read out: "17"
+      // says nothing, and the frame's name is the whole content of the control.
+      scrub.setAttribute('aria-valuetext', `${patternIndex + 1} of ${notes.length}, ${note.label}`);
       play.textContent = patternPlaying ? 'pause' : 'play the sequence';
     };
 

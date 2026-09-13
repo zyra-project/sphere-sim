@@ -2487,14 +2487,40 @@ async function main(): Promise<void> {
             // invent a mesh version of them rather than report them NOT
             // MEASURABLE. A relative check invents no constant.
             //
-            // The two readings are not quite the same measurement — the solved
-            // one has the unobservable global rotation removed and the drift one
-            // does not, so the bar is generous. That direction is the safe one:
-            // gauge removal can only lower the number it is applied to, so this
-            // cannot fail a healthy solve, and a regression large enough to
-            // matter clears the slack easily.
+            // The two readings are not the same statistic, and the earlier draft
+            // of this comment papered over that by claiming gauge removal "can
+            // only lower the number it is applied to". That is not established:
+            // `maxPositionMm` is a MAX over projectors, while the alignment that
+            // removes the unobservable rotation minimises an aggregate, and a fit
+            // that lowers the sum can raise one member of it. Review caught the
+            // claim; it is withdrawn rather than defended.
+            //
+            // What the bar actually rests on is that the drift is one this check
+            // MANUFACTURED and then verified is larger than 1 mm, and a converged
+            // solve lands far below it — 95.4 mm in, 27.7 mm out when this was
+            // written, a factor of 3.4. So the comparison has slack measured in
+            // multiples rather than in an argument about which statistic bounds
+            // which. If a healthy solve ever does trip it, the log line below
+            // prints both numbers, which is what makes that diagnosable instead
+            // of mysterious.
             const after = Number.parseFloat(cell.value);
-            if (driftMm !== null && Number.isFinite(after)) {
+            if (driftMm === null) {
+              // Already reported above, where the drift failed to appear at all.
+            } else if (!Number.isFinite(after)) {
+              // NOT a skip. `fmtMm` renders a non-finite recovery as an em dash,
+              // so this cell reads "— mm" — which the poll above lets through,
+              // because it rejects a bare "—" and this is not one. The first
+              // version of this check used `Number.isFinite` as a GUARD, so a
+              // solve that converged, claimed the solved tooltip, and reported no
+              // position at all passed here in silence. That is precisely the
+              // fault this whole block exists to close, written into the fix for
+              // it.
+              failures.push(
+                `the mesh calibration reported no lens position — the cell reads ` +
+                  `"${cell.value}" while the tooltip says it solved, so the number this check ` +
+                  'exists to read does not exist',
+              );
+            } else {
               // Printed as well as enforced, and printed either way. The margin
               // is what tells whoever reads this log next whether the bar is
               // tight or slack, and a check whose only output is silence is one
