@@ -1,8 +1,9 @@
 # Calibrating a real sphere — the operator path
 
-**Status: nothing here is built.** This is a plan, written because the question
-"what would an operator actually do?" had no answer anywhere in the repository —
-not in code, not in a document — while the simulator implied one.
+**Status: Phase 0 landed — `docs/CALIBRATE.md`. Phases 1–5 are not built, so an
+operator still cannot complete a calibration.** This is a plan, written because
+the question "what would an operator actually do?" had no answer anywhere in the
+repository — not in code, not in a document — while the simulator implied one.
 
 What exists today is a proof that the arithmetic works: the page photographs a
 simulated sphere with structured light, fits a rig to the photographs, and
@@ -101,11 +102,12 @@ Two measured facts shape the procedure more than any of the above:
 
 ---
 
-## Phase 0 — Write the procedure down. No code. **NOT STARTED**
+## Phase 0 — Write the procedure down. No code. **LANDED**
 
-A numbered field card for calibrating, in the register `docs/VISIT.md` already
-uses: what to bring, where to stand, what to set on the camera, what to do at
-each position, what "good" looks like, what to do when it is not.
+`docs/CALIBRATE.md` — a numbered field card for calibrating, in the register
+`docs/VISIT.md` already uses: what to bring, where to stand, what to set on the
+camera, what to do at each position, what "good" looks like, and what it cannot
+tell you yet.
 
 This comes first because it is the cheapest way to find out what is missing, and
 because it is the deliverable that is useful even if every later phase is
@@ -118,6 +120,17 @@ landed, it says so.
 
 **Done when** somebody who has not read this repository can follow it end to end
 on paper and point at the step where they would get stuck.
+
+**What writing it changed.** Two things the plan had not noticed. The projectors
+have to be warmed for twenty minutes first — A-23 makes that a precondition, and
+it binds harder here than on the photometric sequence, because a capture is
+hundreds of frames that have to agree with each other and a lamp still climbing
+changes the thing being measured *between* the two frames that are supposed to
+cancel. And the largest piece of friction this procedure does not have was
+missing from the card until it was written down: **the operator never measures
+where they stood.** Camera poses are solved, not supplied, so the three positions
+have to be different from each other and nothing more. An operator who does not
+know that goes looking for a tape measure.
 
 ## Phase 1 — Put the patterns on the sphere, with no install. **NOT STARTED**
 
