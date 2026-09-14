@@ -158,7 +158,15 @@ export function runPoint(arm: Arm, seed: number, documented: boolean): PointRun 
     // wrong. `ellipsoidMesh` interpolates the sphere rather than approximating
     // it, so every facet lies inside: `radiusDeficitMm` below measures how far,
     // and the design says what the arms can and cannot conclude because of it.
-    scenario.surface = { kind: 'ellipsoid', scaleY: 1, scaleZ: 1, ...arm.grid };
+    scenario.surface = {
+      kind: 'ellipsoid',
+      scaleY: 1,
+      scaleZ: 1,
+      ...arm.grid,
+      // Omitted unless an arm asks, so every other arm's scenario is the object
+      // it always was rather than one carrying an explicit default.
+      ...(arm.poleAxis === undefined ? {} : { poleAxis: arm.poleAxis }),
+    };
   }
   const result = runScenario(scenario, {
     preset,

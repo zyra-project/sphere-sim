@@ -2,6 +2,10 @@
 
 A projected sphere you can walk around, and a calibration you can run.
 
+It is published: **<https://zyra-project.github.io/sphere-sim/app/>**.
+Everything below runs there, in the browser, with nothing uploaded — the
+commands are for working on it rather than for using it.
+
 ```bash
 npm run build:app     # compile to packages/web/dist
 npm run app           # serve on http://localhost:8174/

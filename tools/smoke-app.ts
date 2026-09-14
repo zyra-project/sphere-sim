@@ -2342,20 +2342,26 @@ async function main(): Promise<void> {
         // stronger than it would be starting from an unknown state: the cell is
         // then known to have gone drift -> solved, which is the exact transition
         // the bug broke. It showed drift forever.
-        let broke = false;
+        //
+        // KEPT, not merely detected. This loop used to record only WHETHER a
+        // drift appeared, and the number it threw away is the one the solve has
+        // to beat. Without it the strongest thing anything downstream can say is
+        // that the page stopped displaying DRIFT — which a solve that moved the
+        // rig FURTHER from the truth also does.
+        let driftMm: number | null = null;
         const breakUntil = Date.now() + 60_000;
         while (Date.now() < breakUntil) {
           await sleep(500);
-          broke = await cdp.evaluate<boolean>(`(() => {
+          driftMm = await cdp.evaluate<number | null>(`(() => {
             const d = document.querySelector('[data-smoke="lens-position"]');
-            if (!d) return false;
+            if (!d) return null;
             const v = Number.parseFloat(d.querySelector('.v')?.textContent ?? '');
             return /moved from where the software believes it is/.test(d.getAttribute('title') ?? '')
-              && Number.isFinite(v) && v > 1;
+              && Number.isFinite(v) && v > 1 ? v : null;
           })()`);
-          if (broke) break;
+          if (driftMm !== null) break;
         }
-        if (!broke) {
+        if (driftMm === null) {
           failures.push(
             '"Another install" did not put a drift reading in the lens cell, so the mesh solve ' +
               'has nothing to recover and the check below would pass on an unbroken rig',
@@ -2463,6 +2469,72 @@ async function main(): Promise<void> {
             );
           } else {
             process.stdout.write(`  model: calibrated, worst lens ${cell.value}\n`);
+            // WHAT THE CALIBRATION ACHIEVED, not just that one happened.
+            //
+            // Every check above this line is satisfied by a solve that converged
+            // and was displayed as a calibration rather than as drift. None of
+            // them reads the number. So a mesh solve that settled ten times
+            // further from the truth than the drift it was handed passed here in
+            // silence — on the one quantity the whole mesh effort is trying to
+            // improve, and in the job whose entire premise is that a check that
+            // does not run is indistinguishable from one that passes.
+            //
+            // The bar is the drift this check created two blocks up, which is the
+            // same self-consistency rule the sphere solve is held to above. It is
+            // deliberately NOT an absolute figure in millimetres: PARAMETERS §7's
+            // numbers are sphere theorems, nobody has measured a mesh
+            // installation, and Phase 5 of docs/ARBITRARY-SHAPES.md refuses to
+            // invent a mesh version of them rather than report them NOT
+            // MEASURABLE. A relative check invents no constant.
+            //
+            // The two readings are not the same statistic, and the earlier draft
+            // of this comment papered over that by claiming gauge removal "can
+            // only lower the number it is applied to". That is not established:
+            // `maxPositionMm` is a MAX over projectors, while the alignment that
+            // removes the unobservable rotation minimises an aggregate, and a fit
+            // that lowers the sum can raise one member of it. Review caught the
+            // claim; it is withdrawn rather than defended.
+            //
+            // What the bar actually rests on is that the drift is one this check
+            // MANUFACTURED and then verified is larger than 1 mm, and a converged
+            // solve lands far below it — 95.4 mm in, 27.7 mm out when this was
+            // written, a factor of 3.4. So the comparison has slack measured in
+            // multiples rather than in an argument about which statistic bounds
+            // which. If a healthy solve ever does trip it, the log line below
+            // prints both numbers, which is what makes that diagnosable instead
+            // of mysterious.
+            const after = Number.parseFloat(cell.value);
+            if (driftMm === null) {
+              // Already reported above, where the drift failed to appear at all.
+            } else if (!Number.isFinite(after)) {
+              // NOT a skip. `fmtMm` renders a non-finite recovery as an em dash,
+              // so this cell reads "— mm" — which the poll above lets through,
+              // because it rejects a bare "—" and this is not one. The first
+              // version of this check used `Number.isFinite` as a GUARD, so a
+              // solve that converged, claimed the solved tooltip, and reported no
+              // position at all passed here in silence. That is precisely the
+              // fault this whole block exists to close, written into the fix for
+              // it.
+              failures.push(
+                `the mesh calibration reported no lens position — the cell reads ` +
+                  `"${cell.value}" while the tooltip says it solved, so the number this check ` +
+                  'exists to read does not exist',
+              );
+            } else {
+              // Printed as well as enforced, and printed either way. The margin
+              // is what tells whoever reads this log next whether the bar is
+              // tight or slack, and a check whose only output is silence is one
+              // nobody can calibrate their trust in.
+              process.stdout.write(
+                `  model: ${driftMm} mm of drift going in, ${after} mm coming out\n`,
+              );
+              if (after >= driftMm) {
+                failures.push(
+                  `the mesh calibration did not improve the rig: ${driftMm} mm of drift going ` +
+                    `in, ${cell.value} coming out`,
+                );
+              }
+            }
             // And it was the RAY CAST that segmented it, not the circle fit —
             // otherwise the solve that just succeeded was not the mesh path.
             if (!geometric) {

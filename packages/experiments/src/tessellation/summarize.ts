@@ -47,6 +47,11 @@ export const MECHANISM: readonly { label: string; facet: string; smooth: string 
   { label: 'coarsest grid, shift free', facet: '64x128', smooth: '64x128-smooth' },
   { label: 'coarsest grid, shift at truth', facet: '64x128-shift-known', smooth: '64x128-smooth-shift-known' },
   { label: 'finest grid, shift free', facet: '192x384', smooth: '192x384-smooth' },
+  {
+    label: 'coarsest grid, shift at truth, POLES ON X',
+    facet: '64x128-poleX-shift-known',
+    smooth: '64x128-poleX-smooth-shift-known',
+  },
 ];
 
 /**

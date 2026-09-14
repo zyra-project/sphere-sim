@@ -1,11 +1,31 @@
 # Arbitrary shapes: a feasibility study
 
-**Status: Phases 0–4 landed. Phase 5 (the solve) is unimplemented.** Phase 2's
-shader wiring landed after this line last claimed it was outstanding; both
-renderers now trace and shade a mesh, the harness page can put one in front of
-the projectors, and link (3) passes on both mesh fixtures under a software
-driver. Phase 3 closed by deciding the polar mask is refused rather than
-generalized — see that phase.
+**Status: a dropped mesh calibrates. What is open is how well.** Phase 5's solve
+is implemented and runs: `.github/workflows/solve-smoke.yml` drops a `.glb` in a
+real browser nightly, and the page traces it, lights it, segments it by ray cast
+and calibrates on it. Phases 0 and 4 are landed. Phases 1, 2 and 3 are each
+substantially landed with named remainders, and **their own headings below are
+the authority on which** — Phase 1 still owes a mesh through `RigCalibration`,
+and Phase 3 closed the polar mask by refusing to generalize it rather than by
+building one. Phase 2's shader wiring landed after this line last claimed it was
+outstanding; both renderers now trace and shade a mesh, the harness page can put
+one in front of the projectors, and link (3) passes on both mesh fixtures under a
+software driver.
+
+New GATES for a mesh remain open **on purpose**, and that is not the same as
+work outstanding: §7's numbers are sphere theorems, nobody has measured a mesh
+installation, and inventing a mesh version of them is the one thing this document
+will not do. See Phase 5's "Still to do". The accuracy question — a dropped mesh
+recovers, and not as well as the sphere does — is tracked in Phase 5 and in the
+experiment write-ups, not here.
+
+**This line has now been wrong in both directions, which is why it names the
+check that backs it.** It previously read *"Phases 0–4 landed. Phase 5 (the solve)
+is unimplemented"* — over-claiming three phases whose own headings said IN
+PROGRESS, and under-claiming a phase whose own section said LANDED twice and
+which CI had been exercising nightly. A status line nobody re-derives is a
+comment asserting a state nobody established, and this is the second time this
+particular one has drifted.
 
 **Phase 2 is wired.** The app page hands its display shader the dropped model:
 `main.ts` prepares both rigs on one `MeshSurface` and passes `packMesh`'s result
@@ -2203,7 +2223,7 @@ describes a curve that fixture does not contain.
 THE READING MAKES A PREDICTION, AND THE PREDICTION IS WRONG. If the mechanism
 were fidelity to an approximated surface, smoothing should buy nothing where
 there is nothing being approximated. docs/EXPERIMENT-7.md runs that in the bench
-mesh cell: ten arms, thirty paired seeds plus the documented one, 310 solves,
+mesh cell: twelve arms, thirty paired seeds plus the documented one, 372 solves,
 each pair the same mesh and the same photographs with only the derivative
 swapped. Smoothing helps anyway, and what it helps is YAW.
 
@@ -2213,6 +2233,7 @@ swapped. Smoothing helps anyway, and what it helps is YAW.
 | coarsest grid, shift free | 21/26, p=0.0025 | 70% | **22/26**, p=0.00053 | 64% | 0.9939x |
 | coarsest grid, shift at truth | 13/25, p=1.0 | 69% | **21/25**, p=0.00091 | 107% | 1.0000x |
 | finest grid, shift free | 15/24, p=0.31 | 57% | **11/24**, p=0.84 | — (no excess) | 1.0001x |
+| coarsest grid, shift at truth, POLES ON X | 21/25, p=0.00091 | 104% | **20/25**, p=0.0041 | 63% | 0.9967x |
 <!-- /generated -->
 
 Three things follow. The POSITION cost is A-12's lens shift degeneracy, not the
@@ -2254,6 +2275,21 @@ consistent with. WHY yaw and not pitch is the part still unmeasured: the
 stiffness test reports one pinned direction on every arm including the analytic
 control, so a tessellation frees nothing a sphere does not, and the gauge does
 not distinguish the axis that moves.
+
+AND THE OBVIOUS CANDIDATE IS REFUTED. Yaw is rotation about Z and
+`ellipsoidMesh` puts its UV poles on Z — where the bands emit one triangle per
+cell instead of two and the vertex fans collapse — so the axis carrying the
+error was the axis the tessellation's singularities sat on. `poleAxis: 'x'`
+turns the grid ninety degrees without moving the body, which on a sphere is a
+change of parametrisation and nothing else, and the prediction was registered
+before the arms ran. Yaw STAYS: 23 of 25 seeds with the poles on X (p=1.9e-5)
+against 21 of 25 with them on Z, pitch and roll doing nothing in both. The
+coincidence was a coincidence and whatever selects yaw is upstream of the mesh.
+
+One thing did follow the tessellation, which is why this is a negative result
+rather than a null one: turning the grid made the facet solve WORSE, yaw 0.0410°
+to 0.0590° and total rotation 0.0524° to 0.0880°. The grid's orientation sets the
+MAGNITUDE without touching the AXIS, and nothing predicted those would separate.
 
 TWO SMALLER CORRECTIONS IN THE SAME SENTENCE. "The cleanest comparison in the
 table, since it changes the representation and nothing else" changes the body

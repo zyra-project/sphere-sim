@@ -33,6 +33,21 @@ export interface EllipsoidSpec {
   nLat: number;
   /** Longitude segments of the tessellation. */
   nLon: number;
+  /**
+   * Which axis the UV grid's POLES sit on. Undefined means `z`, which is what
+   * every scenario in the bench uses and what this builder has always done.
+   *
+   * A diagnostic, not a shape. On a SPHERE the body is unchanged — a sphere is
+   * the same sphere however its parametrisation is oriented — so this moves the
+   * tessellation and nothing else: where the facet edges run, where the bands
+   * are degenerate, where the vertex fans collapse. That is the one thing an
+   * experiment can vary to ask whether an effect belongs to the tessellation's
+   * own geometry or to the rig.
+   *
+   * On anything but a sphere it would rotate the BODY, which is a different
+   * measurement wearing the same name, so `ellipsoidMesh` refuses it there.
+   */
+  poleAxis?: 'z' | 'x';
 }
 
 export type SurfaceSpec = EllipsoidSpec;
@@ -50,16 +65,31 @@ export function ellipsoidMesh(spec: EllipsoidSpec, radiusM: number): SurfaceMesh
     // was never emitted, and an infinite one never finishes emitting.
     throw new Error(`ellipsoidMesh: tessellation ${nLat}x${nLon} is not a closed integer grid`);
   }
+  // Only on a sphere, and refused rather than documented: on a tri-axial body
+  // this would turn the ellipsoid on its side, which is a change of SHAPE, and
+  // an experiment reading it as a change of tessellation would be measuring the
+  // wrong thing under the right name.
+  if (spec.poleAxis === 'x' && (spec.scaleY !== 1 || spec.scaleZ !== 1)) {
+    throw new Error(
+      `ellipsoidMesh: poleAxis 'x' moves the tessellation, not the body, and only a sphere is ` +
+        `unchanged by it — got scales 1:${spec.scaleY}:${spec.scaleZ}`,
+    );
+  }
   const positions: number[] = [];
   for (let i = 0; i <= nLat; i++) {
     const theta = (Math.PI * i) / nLat;
     for (let j = 0; j < nLon; j++) {
       const phi = (2 * Math.PI * j) / nLon;
-      positions.push(
-        radiusM * Math.sin(theta) * Math.cos(phi),
-        radiusM * spec.scaleY * Math.sin(theta) * Math.sin(phi),
-        radiusM * spec.scaleZ * Math.cos(theta),
-      );
+      const x = radiusM * Math.sin(theta) * Math.cos(phi);
+      const y = radiusM * spec.scaleY * Math.sin(theta) * Math.sin(phi);
+      const z = radiusM * spec.scaleZ * Math.cos(theta);
+      // A ROTATION about y, not a swap of components. (x,y,z) -> (z,y,-x) has
+      // determinant +1 and carries the pole (0,0,R) to (R,0,0); the obvious
+      // (x,y,z) -> (z,y,x) is a reflection, which reverses every triangle's
+      // winding and so inverts the vertex normals `meshNormal: 'smooth'`
+      // derives from it — silently, and in the one mode the experiment is about.
+      if (spec.poleAxis === 'x') positions.push(z, y, -x);
+      else positions.push(x, y, z);
     }
   }
   const at = (i: number, j: number): number => i * nLon + (j % nLon);

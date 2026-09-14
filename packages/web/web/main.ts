@@ -70,6 +70,13 @@ import {
 } from '../../sim/src/sosconfig.ts';
 import type { SosConfig, SosConfigUpdate } from '../../sim/src/sosconfig.ts';
 import { wrapDeg180 } from '../../sim/src/vec.ts';
+import { DEFAULT_PATTERN_PLAN, planFrames } from '../../bench/src/patterns.ts';
+import {
+  describeSequence,
+  encodeToRgba,
+  sampleFrame,
+  strideInfo,
+} from '../src/patternfilm.ts';
 import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
   BOULDER_PRESET,
@@ -5290,7 +5297,7 @@ function renderActions(): void {
 }
 
 // ---------------------------------------------------------------------------
-// The inspect card: one projector, three ways
+// The inspect card: one projector, four ways
 // ---------------------------------------------------------------------------
 
 const INSPECT_VIEWS = [
@@ -5305,11 +5312,45 @@ const INSPECT_VIEWS = [
     label: 'Warp mesh',
     title: 'The per-vertex correction the config file cannot carry.',
   },
+  {
+    id: 'patterns' as const,
+    label: 'Structured light',
+    title: 'The sequence this projector plays during a calibration, and what each frame is for.',
+  },
 ];
 
 let inspectView: (typeof INSPECT_VIEWS)[number]['id'] = 'frame';
 
+/**
+ * Playback state for the structured-light view.
+ *
+ * Module-level rather than inside `renderInspect`, because the view outlives any
+ * one render: every setting change re-renders the card, and a sequence that
+ * restarted from frame 0 each time somebody nudged a slider would be unwatchable.
+ *
+ * The timer is cleared at the top of every render and restarted only by the
+ * view that owns it. That is deliberately blunt — the alternative is tracking
+ * which of a dozen re-render paths should keep it alive, and a stray interval
+ * repainting a canvas that is no longer on the page is the kind of leak that
+ * shows up as a mystery later.
+ */
+let patternIndex = 0;
+let patternPlaying = false;
+let patternTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Milliseconds per frame. Slow enough to read the caption that goes with it. */
+const PATTERN_FRAME_MS = 700;
+
+function stopPatternPlayback(): void {
+  if (patternTimer !== null) {
+    clearInterval(patternTimer);
+    patternTimer = null;
+  }
+}
+
 function renderInspect(): void {
+  // Before anything is torn out from under it. See `patternTimer`.
+  stopPatternPlayback();
   inspectEl.replaceChildren();
   const frame = model?.projectorFrames[state.selected] ?? null;
   // Shown whenever a projector is the subject — either because the Projectors
@@ -5951,6 +5992,135 @@ function renderInspect(): void {
       inspectEl.append(save);
     }
   }
+
+  if (inspectView === 'patterns') {
+    // The plan this view depicts. DEFAULT_PATTERN_PLAN rather than the plan a
+    // capture would compute for itself: `grayBitsForCamera` lowers the bit count
+    // when a strip would land inside a camera pixel, and it needs the capture
+    // geometry to do it. The SCHEME is exactly this either way, and the caption
+    // below names what moves the number rather than letting the view imply it
+    // is fixed.
+    const plan = DEFAULT_PATTERN_PLAN;
+    const notes = describeSequence(plan);
+    const specs = planFrames(plan);
+    if (patternIndex >= notes.length || patternIndex < 0) patternIndex = 0;
+
+    // The aspect is the projector's own when there is a frame to take it from.
+    // The RESOLUTION is not needed and is not guessed: `compileFrame` divides
+    // the coordinate by a stride that is itself the resolution over 2^bits, so
+    // the resolution cancels and the picture is the same at any raster. Passing
+    // the preview's own size says that out loud instead of inventing a 1920.
+    const aspect = frame && frame.height > 0 ? frame.width / frame.height : 16 / 10;
+    const w = 288;
+    const h = Math.max(1, Math.round(w / aspect));
+    const canvas = el('canvas', { className: on ? 'framepic' : 'framepic dark' });
+    canvas.width = w;
+    canvas.height = h;
+
+    const caption = el('p', { className: 'note tiny num' });
+    const why = el('p', { className: 'note' });
+    const scrub = el('input', { className: 'scrub', type: 'range', min: '0', step: '1' });
+    scrub.max = String(notes.length - 1);
+    // Named, because a bare range input is announced as an anonymous slider and
+    // a reader is told neither what it selects nor where it is. The paragraph
+    // beside it is prose, not a label, and nothing associates the two.
+    scrub.setAttribute('aria-label', 'Frame of the structured-light sequence');
+    const play = el('button', { className: 'linkish' });
+
+    const paint = (): void => {
+      const note = notes[patternIndex];
+      const linear = sampleFrame(specs[patternIndex], plan, w, h, w, h);
+      const ctx = canvas.getContext('2d');
+      if (ctx !== null) ctx.putImageData(new ImageData(encodeToRgba(linear), w, h), 0, 0);
+      caption.textContent = `${patternIndex + 1} of ${notes.length} — ${note.label}`;
+      // The picture is the content here, so it is labelled like the warp-mesh
+      // diagram is rather than left as an unnamed canvas. Updated with the frame,
+      // because a label fixed at "structured light" would go stale the moment
+      // the sequence advanced.
+      canvas.setAttribute('role', 'img');
+      canvas.setAttribute('aria-label', `${note.label}. ${note.why}`);
+      why.textContent = note.why;
+      scrub.value = String(patternIndex);
+      // `aria-valuetext` rather than leaving the raw index to be read out: "17"
+      // says nothing, and the frame's name is the whole content of the control.
+      scrub.setAttribute('aria-valuetext', `${patternIndex + 1} of ${notes.length}, ${note.label}`);
+      play.textContent = patternPlaying ? 'pause' : 'play the sequence';
+    };
+
+    const start = (): void => {
+      stopPatternPlayback();
+      patternTimer = setInterval(() => {
+        patternIndex = (patternIndex + 1) % notes.length;
+        paint();
+      }, PATTERN_FRAME_MS);
+    };
+
+    play.addEventListener('click', () => {
+      patternPlaying = !patternPlaying;
+      if (patternPlaying) start();
+      else stopPatternPlayback();
+      paint();
+    });
+    scrub.addEventListener('input', () => {
+      // Scrubbing is taking hold of it, so it stops advancing under the hand.
+      patternPlaying = false;
+      stopPatternPlayback();
+      patternIndex = Number(scrub.value);
+      paint();
+    });
+
+    // Picture, then what it is, then the controls, and only then the paragraph
+    // explaining it. The first arrangement put the play button after the prose,
+    // which on a panel this narrow is below the fold: the one control the view
+    // exists for was the one thing a reader had to scroll to find.
+    //
+    // Appended bare, as the warp view's save buttons are. The first version
+    // wrapped it in a `div.seg` — the class the TAB GROUP uses — which made
+    // `#inspect .seg button` select the tabs and this button together. Nothing
+    // reads that selector by index today, and the point is that nothing should
+    // have to know not to.
+    inspectEl.append(canvas, caption, play, scrub, why);
+
+    const info = strideInfo(plan, mesh?.resX ?? 0, mesh?.resY ?? 0);
+    inspectEl.append(
+      el('p', {
+        className: 'note tiny num',
+        textContent:
+          `${notes.length} frames per projector, per camera position — ` +
+          `${plan.grayBits} Gray planes and their ${plan.grayBits} complements on each of two ` +
+          `axes, ${plan.phaseSteps} phase steps on each, and the white and black references. ` +
+          `${info.strips} strips` +
+          (mesh ? ` of ${info.strideXPx.toFixed(0)} × ${info.strideYPx.toFixed(0)} pixels` : '') +
+          '.',
+      }),
+    );
+    inspectEl.append(
+      el('p', {
+        className: 'note',
+        textContent:
+          'This is the sequence, not a picture of it: every frame is evaluated from the same ' +
+          'pattern definition the capture photographs through, so what plays here is what goes ' +
+          'down the cable. A calibration runs it once per projector from each camera position — ' +
+          'three positions is what Experiment 1 measured as the knee, so a four-projector rig ' +
+          'is 408 frames. None of them is a photograph anybody has to compose: the camera is on ' +
+          'a tripod and the software drives both ends.',
+      }),
+    );
+    inspectEl.append(
+      el('p', {
+        className: 'note',
+        textContent:
+          'How many Gray planes a real capture uses is not fixed at ' +
+          `${plan.grayBits}: the finest strip has to stay several camera pixels wide or the ` +
+          'camera cannot read it, so the count is computed from the camera at capture time and ' +
+          'falls when the camera is further away or lower resolution.',
+      }),
+    );
+
+    paint();
+    if (patternPlaying) start();
+  }
+
 }
 
 // ---------------------------------------------------------------------------

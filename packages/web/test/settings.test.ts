@@ -712,7 +712,7 @@ test('the warp export ships the calibration the software believes, never ground 
   );
   const actions = MAIN_SOURCE.slice(
     MAIN_SOURCE.indexOf('function renderActions(): void {'),
-    MAIN_SOURCE.indexOf('// The inspect card: one projector, three ways'),
+    MAIN_SOURCE.indexOf('// The inspect card: one projector, four ways'),
   );
   assert.ok(actions.length > 0, 'renderActions has moved; this test can no longer find it');
   assert.ok(
