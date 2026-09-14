@@ -5,8 +5,9 @@ calibration. Companion to `docs/VISIT.md`, which is a different errand: that car
 *measures an installation to check the model*, this one *photographs an
 installation to recover its geometry*.
 
-> **This procedure cannot be completed today.** Phases 1, 2 and 3 of
-> `docs/OPERATOR-PATH.md` are not built: nothing puts the patterns on the sphere,
+> **This procedure cannot be completed today.** Phase 1 of
+> `docs/OPERATOR-PATH.md` has landed, so there is now a supported way to put the
+> patterns on the sphere — Part 4 says what it is. Phases 2 and 3 are not built:
 > nothing works out which pattern a photograph shows, and the solver has never
 > been given a real photograph. Following this card today produces **a folder of
 > photographs that nothing can currently read.**
@@ -168,9 +169,39 @@ except to move the tripod.
 
 ## Part 4 · The sequence, at each position
 
+**Putting the patterns up.** On the display machine, open the projector emitter
+in a browser — `/emit/` on the published site, or `/emit.html` from `npm run app`
+on a laptop you can reach it from — and put the window **full-screen on the
+framebuffer that drives the projectors**. That window is the projectors: SOS
+drives all of them as quadrants of one X screen, so a page that fills it can
+address each projector's raster without anything being installed.
+
+It has to arrive over `http://`. Copying the folder to the machine and
+double-clicking the file does **not** work — a browser will not load a page's
+code from a `file://` address — so if the display machine has no route to the
+site, serve the folder from a laptop on the same network rather than carrying it
+across. The page says this itself if it ever fails to start, instead of showing
+you a blank screen.
+
+Tell it how many projectors the rig has and what one projector's raster is. It
+will say whether each quadrant came out exactly one raster; if it did not, the
+window is not the framebuffer — display scaling, or not quite full-screen — and
+every frame is being resampled on its way out. Fix that before shooting.
+
+**Then check the labels before anything else.** Step to each projector's white
+frame and confirm that the projector which lights up is the one the page names.
+If it is not, this display's quadrant order differs from the config's, and every
+photograph afterwards would be filed under the wrong projector — which is a
+confidently wrong calibration rather than a failed one.
+
 **One projector lit at a time.** The patterns address each projector's own raster
 separately, and two lit at once puts two different codes on the same patch of
-sphere.
+sphere. The page sequences this; you never arrange it.
+
+**Nothing but the pattern may be on screen.** Everything the page draws is light
+on the ball, its own control panel included. Arm it — the panel and the cursor go
+away — before the shutter opens. When the sequence ends the screen goes black,
+which is the only end-of-sequence signal visible from where you are standing.
 
 At the page's settings the sequence is **34 frames per projector**: an all-white
 and an all-black reference, then per axis six Gray planes each followed
@@ -225,8 +256,8 @@ for software that does not exist yet, and it should get shorter as the phases in
 | Shoot in strict order; never delete, skip or re-shoot one frame | **Phase 2 deletes it.** Order is only load-bearing because nothing yet reads which pattern a photograph shows |
 | Re-shoot a whole projector's 34 if you spoil one | **Phase 2 deletes it** |
 | Make sure filenames sort in capture order | **Phase 2 deletes it** |
-| One projector lit at a time | **Phase 1 deletes it as a task.** Still true of the physics; the software sequences it and the operator never thinks about it |
-| Count 34 frames, 136 per position | **Phase 1 deletes it.** Nobody counts frames |
+| One projector lit at a time | **Phase 1 deleted it as a task.** Still true of the physics; the emitter sequences it and the operator never arranges it |
+| Count 34 frames, 136 per position | **Phase 1 deleted it.** The page counts, and can tick so you need not watch it |
 | Check on the camera what "good" looks like | **Phase 3 deletes it.** The software reads the capture and says |
 | Press the shutter 408 times | **Phase 5 deletes it** |
 | Set exposure, focus and white balance by hand | **Phase 5 narrows it** to confirming what the software proposes |
@@ -255,8 +286,10 @@ need to know which *camera* took it.
 Stated as gaps rather than omitted, because an operator who discovers them at the
 sphere has wasted a trip:
 
-- **How to get the patterns onto the projectors.** Phase 1. Today there is no
-  supported way; the sequence exists only inside the page.
+- **Which photograph is which.** Phase 2, and it is the reason the ordering rules
+  in Part 4 are as strict as they are. The emitter counts its own steps; nothing
+  connects that count to the files on your card, so today the shooting order is
+  the only record and it is yours to protect.
 - **Whether your capture decoded.** Phase 3. Nothing will read these photographs,
   so there is no answer to take home.
 - **What to do when it fails.** Phase 3 is also where a refusal gets a reason —

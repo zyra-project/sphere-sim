@@ -87,10 +87,14 @@ function main(): void {
     );
   }
   createServer().listen(port, host, () => {
+    const origin = `http://${host === '127.0.0.1' ? 'localhost' : host}:${port}`;
     process.stdout.write(
-      `sphere-sim installation simulator on http://${host === '127.0.0.1' ? 'localhost' : host}:${port}/\n` +
+      `sphere-sim installation simulator on ${origin}/\n` +
         `  the picture is a shader; every number beside it comes from packages/sim in a worker\n` +
-        `  Recalibrate runs packages/solver on structured light the simulator photographed\n`,
+        `  Recalibrate runs packages/solver on structured light the simulator photographed\n` +
+        `\nprojector emitter on ${origin}/emit.html\n` +
+        `  the same sequence, played into a REAL rig — full-screen on the framebuffer that\n` +
+        `  drives the projectors. docs/CALIBRATE.md is the field card that goes with it.\n`,
     );
   });
 }

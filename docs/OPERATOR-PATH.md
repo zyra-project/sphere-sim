@@ -1,17 +1,19 @@
 # Calibrating a real sphere — the operator path
 
-**Status: Phase 0 landed — `docs/CALIBRATE.md`. Phases 1–5 are not built, so an
-operator still cannot complete a calibration.** This is a plan, written because
-the question "what would an operator actually do?" had no answer anywhere in the
-repository — not in code, not in a document — while the simulator implied one.
+**Status: Phases 0 and 1 landed — `docs/CALIBRATE.md` and the projector emitter.
+Phases 2–5 are not built, so an operator can now put the sequence on a real
+sphere and still cannot complete a calibration: nothing yet reads the
+photographs back.** This is a plan, written because the question "what would an
+operator actually do?" had no answer anywhere in the repository — not in code,
+not in a document — while the simulator implied one.
 
-What exists today is a proof that the arithmetic works: the page photographs a
-simulated sphere with structured light, fits a rig to the photographs, and
-recovers a bumped installation to a fraction of a millimetre. Every camera in
-that sentence is simulated. Nothing drives a real projector, nothing accepts a
-real photograph into the solver, and `validation/` — the one place real
-photographs appear — says in its own header that they are **not read by any
-critic**, plausibility only.
+What existed before this plan was a proof that the arithmetic works: the page
+photographs a simulated sphere with structured light, fits a rig to the
+photographs, and recovers a bumped installation to a fraction of a millimetre.
+Every camera in that sentence is simulated. Phase 1 has since given the sequence
+a way out to a real projector, but nothing accepts a real photograph back into
+the solver, and `validation/` — the one place real photographs appear — says in
+its own header that they are **not read by any critic**, plausibility only.
 
 `docs/VISIT.md` is the closest thing to a field procedure and it is a different
 activity: it measures an installation to check the model, and contains no
@@ -83,8 +85,8 @@ the phase order, so it is stated before the phases rather than implied by them.
 
 | # | Friction | Why it is fatal | Addressed in |
 | --- | --- | --- | --- |
-| 1 | Installing software | Locked-down machine, absent approver, wrong OS | Phase 1 |
-| 2 | Getting patterns onto the projectors | Structured light is projector-raster-space; SOS content is sphere-space, so the ordinary content path cannot carry it | Phase 1 |
+| 1 | Installing software | Locked-down machine, absent approver, wrong OS | Phase 1 — **landed** |
+| 2 | Getting patterns onto the projectors | Structured light is projector-raster-space; SOS content is sphere-space, so the ordinary content path cannot carry it | Phase 1 — **landed** |
 | 3 | Knowing which pattern each photo shows | The one genuinely unsolved problem here | Phase 2 |
 | 4 | Knowing where to stand and what to set | "Three positions" is measured; *which* three is not written down anywhere | Phase 0 |
 | 5 | Getting photographs to the solver | Hundreds of files, and the solver has never seen a real one | Phase 3 |
@@ -166,13 +168,15 @@ roughly where each position was. The card now says so; the error is noted here
 because a plan that quietly drops a solver input is worse than one that never
 mentioned it.
 
-## Phase 1 — Put the patterns on the sphere, with no install. **NOT STARTED**
+## Phase 1 — Put the patterns on the sphere, with no install. **LANDED**
 
-A page that fills the display machine's framebuffer and plays the sequence into
-each projector's own raster. A browser is the one piece of software already on
-every machine, which removes friction 1 outright — the operator opens a URL.
+`packages/web/emit.html`, published at `/emit/` and served locally at
+`/emit.html` by `npm run app`. A page that fills the display machine's
+framebuffer and plays the sequence into each projector's own raster. A browser is
+the one piece of software already on every machine, which removes friction 1
+outright — the operator opens a URL.
 
-The mechanism is already proven in this repository: the developer harness draws
+The mechanism was already proven in this repository: the developer harness draws
 one WebGL2 context as five viewports, four of them the projector rasters as
 quadrants of the single framebuffer SOS drives (`SOS_QUADRANT_VIEWPORTS`). Phase 1
 is that, full-screen, with `compileFrame`'s output instead of a room render.
@@ -187,7 +191,50 @@ The page takes the projector count and the output mapping from the rig it is
 given — see "Shape and projector count" below.
 
 **Done when** a projector shows frame *N* of the sequence, full raster, on
-command, for a rig the page was told about rather than one it assumed.
+command, for a rig the page was told about rather than one it assumed. It does,
+and the arithmetic behind it — placement, order, and whether the window can
+carry the pattern — is `packages/web/src/emit.ts`, tested in Node against the
+conventions rather than against itself.
+
+**What building it changed.** Four things, three of them corrections.
+
+- **The viewport origin is not the canvas origin, and getting that wrong is
+  silent.** conventions.ts §V normalizes `Viewport` with its origin at
+  BOTTOM-left, matching the SOS config; a 2-D canvas has it at top-left. So slot
+  0 — `{0, 0, 0.5, 0.5}`, which is P1, the projector nearest the SOS computer —
+  is the LOWER half of the framebuffer, and the first draft of `viewportPixels`
+  passed `y` straight through and put it in the upper one. Nothing about the
+  picture says so: the pattern still looks right, the operator still photographs
+  it, and every frame is filed under the wrong projector. The harness never hit
+  this because GL's viewport origin is bottom-left too and the two conventions
+  agree there.
+- **Above four projectors the page refuses rather than guesses.** The three caps
+  this plan already recorded (8 in the app shader, 4 in the harness, 4 in the SOS
+  config format) turn into a decision as soon as something has to address a real
+  output: nothing documents where a fifth raster lives in a framebuffer, because
+  that is a property of a display pipeline nobody here has seen. A tool that
+  guessed would light one projector under another's name.
+- **Whether the window IS the framebuffer is measurable, and has to be shown.**
+  An operator cannot see by eye that display scaling is on or that the window is
+  not quite full-screen, and either makes the browser resample every frame — so
+  the Gray edges land off the projector's own pixel grid and the calibration
+  measures that displacement along with the optics. The page states the quadrant
+  size against the raster it was told about, and refuses outright when the finest
+  strip falls under two pixels, because at that point one fringe period is under
+  four samples and the phase steps stop being sinusoids before they leave the
+  machine.
+- **Everything the page draws is on the sphere.** A panel, a cursor, a focus
+  ring — all of it is light on the ball while the shutter is open. That forced an
+  explicit ARMED state rather than an idle timeout a bumped mouse can undo, and
+  it means the end-of-sequence signal has to be something an operator with a
+  blank screen can perceive: the room going dark.
+
+**What it deliberately does not do:** record what it emitted. Friction 3 is
+Phase 2's to settle **by measurement between three candidate mechanisms**, and a
+manifest format invented here would pre-empt that measurement with a guess that
+everything downstream then rested on. The page shows the plan it is playing and
+counts the steps; turning that into an index a decoder can trust is the next
+phase and is named as such on the page itself.
 
 ## Phase 2 — Make every photograph say which frame it is. **NOT STARTED**
 

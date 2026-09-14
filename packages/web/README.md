@@ -12,6 +12,27 @@ npm run app           # serve on http://localhost:8174/
 node tools/smoke-app.ts   # load it in a real browser and check the shader compiled
 ```
 
+## Two pages, and only one of them is a simulator
+
+`index.html` is the simulator, and is what the rest of this document is about.
+
+`emit.html` — published at **<https://zyra-project.github.io/sphere-sim/emit/>**,
+served here at `/emit.html` — is the **projector emitter**, and it is the one
+page in this repository aimed at a real installation rather than a modelled one.
+Opened full-screen on the framebuffer a Science On a Sphere machine drives, that
+window *is* the four projector rasters (§3.4: one X screen split 2×2), so it can
+put a structured-light frame on any projector with nothing installed and nothing
+on the display machine changed. It is Phase 1 of `docs/OPERATOR-PATH.md`;
+`docs/CALIBRATE.md` is the field card that goes with it.
+
+They share this package because they share the pattern definition and the
+quadrant conventions, and for no other reason. The emitter imports no worker, no
+shader and no rig: its arithmetic is `src/emit.ts` — placement, capture order,
+and whether the window can carry the pattern — and its frames come from
+`src/patternfilm.ts` sampling `compileFrame` directly. It is also the one place
+in the project where the pattern is quantized to a pixel grid, because a real
+projector supplies the pixel footprint the bench deliberately does not model.
+
 ## What is on the page
 
 - **The sphere**, full-bleed, drag to walk around. The graticule is a toggle over
@@ -442,6 +463,14 @@ node --test "packages/web/test/**/*.test.ts"
 - `solve.test.ts` — a real capture and a real bundle adjustment, asserting the
   calibration improves the alignment by more than 2× and that the same seed gives
   the same answer
+- `emit.test.ts` — the emitter's arithmetic, against the conventions rather than
+  against itself: a projector takes its *slot's* quadrant and not its index's, so
+  a two-projector rig is P1 and P3; the quadrants tile an odd framebuffer with no
+  seam; slot 0 is the LOWER half of the canvas, because conventions.ts §V puts the
+  viewport origin at bottom-left and a canvas puts it at top-left; no Gray plane
+  is ever separated from its own complement; a fifth projector is refused with the
+  missing framebuffer layout named; and a window that is not the framebuffer says
+  so with the scale
 
 `tools/smoke-app.ts` covers the things none of them can, by driving Chromium
 over the DevTools protocol with nothing but Node 22's built-in `WebSocket`:

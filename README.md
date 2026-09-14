@@ -36,7 +36,15 @@ The [developer harness](https://zyra-project.github.io/sphere-sim/harness/) is t
 same engine with its cover off: one WebGL2 context, five viewports, and every
 slider labelled with the provenance class of the constant it moves.
 
-Both pages are published from `main` by
+The [projector emitter](https://zyra-project.github.io/sphere-sim/emit/) is the
+one page meant for a real sphere rather than a simulated one. Opened full-screen
+on the framebuffer a Science On a Sphere installation drives, it plays the same
+structured-light sequence into one projector's raster at a time, with nothing
+installed on the display machine. It is Phase 1 of `docs/OPERATOR-PATH.md`:
+`docs/CALIBRATE.md` is the field card that goes with it, and both are candid
+that the phases which read the photographs back do not exist yet.
+
+These pages are published from `main` by
 [`.github/workflows/pages.yml`](.github/workflows/pages.yml), and
 [`.github/workflows/solve-smoke.yml`](.github/workflows/solve-smoke.yml) drives
 both calibration paths through a real browser nightly.

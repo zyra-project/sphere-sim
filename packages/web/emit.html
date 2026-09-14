@@ -1,0 +1,249 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 The Zyra Project -->
+
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Structured light — projector emitter</title>
+<!-- Inlined, like the simulator's: this page is opened on a display machine
+     that may have no route to the internet at all, and a favicon 404 is console
+     noise in the one place a real failure would be reported. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23000'/%3E%3Cpath d='M4 4h6v24H4zM14 4h4v24h-4zM22 4h2v24h-2zM27 4h1v24h-1z' fill='%23ff8a3d'/%3E%3C/svg%3E"/>
+<style>
+/* Black, and not "nearly black". Every pixel this page paints leaves the
+   building through a projector and lands on the sphere, so a #0a0a0e ground is
+   not a design choice about contrast — it is four projectors quietly washing
+   the room while the operator photographs it.
+
+   The chrome is amber for the same reason a darkroom is: the operator has spent
+   twenty minutes letting their eyes adapt to a dark gallery, and a white panel
+   at full brightness undoes that in a second. */
+:root {
+  --stage: #000;
+  --panel: rgba(12, 7, 4, 0.95);
+  --fg: #e8b483;
+  --fg-2: #c08d63;
+  --muted: #8a6547;
+  --line: rgba(255, 150, 80, 0.2);
+  --line-strong: rgba(255, 150, 80, 0.38);
+  --accent: #ff8a3d;
+  --bad: #ff6b5a;
+  --good: #7ad17a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; background: var(--stage); overflow: hidden; }
+body {
+  color: var(--fg);
+  font: 14px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.mono, code { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* The emitted framebuffer. Nothing is ever drawn behind it and nothing is drawn
+   over it except the two panels, both of which the operator dismisses before a
+   shutter opens. */
+#stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; background: #000; }
+body.armed { cursor: none; }
+
+.panel {
+  position: fixed; z-index: 2;
+  background: var(--panel); border: 1px solid var(--line-strong); border-radius: 10px;
+  padding: 20px 22px;
+}
+#setup, #needserver {
+  top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
+}
+#needserver { border-color: rgba(255, 107, 90, 0.6); }
+#needserver h1 { color: var(--bad); }
+#hud { left: 18px; bottom: 18px; width: min(560px, calc(100vw - 36px)); }
+[hidden] { display: none !important; }
+
+h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  margin: 0 0 4px; color: var(--accent); }
+.lede { color: var(--fg-2); margin: 0 0 18px; font-size: 13px; }
+
+fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 14px; padding: 12px 14px 14px; }
+legend { padding: 0 6px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field > span { font-size: 11.5px; color: var(--muted); }
+select, input[type="number"] {
+  font: inherit; color: var(--fg); background: #140c07;
+  border: 1px solid var(--line-strong); border-radius: 6px; padding: 5px 8px; min-width: 7ch;
+}
+input[type="number"] { width: 9ch; }
+label.check { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--fg-2); }
+
+button {
+  font: inherit; color: var(--fg); background: #1a0f08;
+  border: 1px solid var(--line-strong); border-radius: 6px; padding: 6px 13px; cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: 0.4; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #180a02; font-weight: 600; }
+button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); }
+
+.note { font-size: 12.5px; color: var(--muted); margin: 10px 0 0; }
+.verdict { font-size: 12.5px; margin: 12px 0 0; padding: 9px 11px; border-radius: 6px;
+  border: 1px solid var(--line); color: var(--fg-2); }
+.verdict.ok { border-color: rgba(122, 209, 122, 0.4); color: var(--good); }
+.verdict.warn { border-color: rgba(255, 138, 61, 0.55); color: var(--accent); }
+.verdict.bad { border-color: rgba(255, 107, 90, 0.6); color: var(--bad); }
+
+.counter { font-size: 21px; font-weight: 600; letter-spacing: 0.01em; margin: 0 0 2px; color: var(--accent); }
+.frameline { font-size: 13.5px; color: var(--fg); margin: 0 0 6px; }
+.why { font-size: 12.5px; color: var(--fg-2); margin: 0 0 12px; }
+.keys { font-size: 12px; color: var(--muted); margin: 10px 0 0; line-height: 1.7; }
+.keys kbd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px;
+  border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--fg-2); }
+.warnbar { font-size: 12px; color: var(--bad); border: 1px solid rgba(255,107,90,.5);
+  border-radius: 6px; padding: 7px 10px; margin: 0 0 12px; }
+.hudrow { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+.spacer { flex: 1 1 auto; }
+</style>
+</head>
+<body>
+
+<canvas id="stage"></canvas>
+
+<!-- Setup. Nothing here has a value the page invented: the projector count, the
+     raster and the plan are all things the operator has to state, because a tool
+     that defaults to a nominal rig calibrates whatever it assumed. -->
+<div id="setup" class="panel">
+  <h1>Structured light — projector emitter</h1>
+  <p class="lede">
+    This window is the projectors. Put it full-screen on the framebuffer that drives them, tell it
+    what the rig is, and it plays the calibration sequence into one projector’s raster at a time.
+    Nothing is installed and nothing on the display machine is changed.
+  </p>
+
+  <fieldset>
+    <legend>The rig</legend>
+    <div class="row">
+      <label class="field"><span>Projectors</span>
+        <select id="count">
+          <option value="">— choose —</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+        </select>
+      </label>
+      <label class="field"><span>Each projector’s raster</span>
+        <select id="res"></select>
+      </label>
+      <label class="field"><span>Across</span><input id="resX" type="number" min="16" step="1"/></label>
+      <label class="field"><span>Down</span><input id="resY" type="number" min="16" step="1"/></label>
+      <button id="matchwin" type="button">Match this window</button>
+    </div>
+    <p class="note" id="rignote"></p>
+  </fieldset>
+
+  <fieldset>
+    <legend>The sequence</legend>
+    <div class="row">
+      <label class="field"><span>Gray planes per axis</span>
+        <input id="bits" type="number" min="1" max="8" step="1"/></label>
+      <label class="field"><span>Phase steps</span>
+        <input id="phase" type="number" min="4" max="12" step="1"/></label>
+      <label class="field"><span>Auto-advance, seconds</span>
+        <input id="dwell" type="number" min="0.2" max="30" step="0.1"/></label>
+      <label class="check"><input id="tick" type="checkbox"/>
+        Tick on each step, so you can work without watching the screen</label>
+    </div>
+    <p class="note" id="plannote"></p>
+    <p class="note">
+      Frames leave here encoded for a display gamma of 2.2 — PARAMETERS.md §3.2’s nominal. The Gray
+      planes do not care, being black or white either way; the phase steps are sinusoids in emitted
+      light and would be biased by a projector whose transfer is far from that. §3.2 classes the
+      per-channel exponents as unmeasured and notes real projectors diverge 0.1–0.3 between channels,
+      so this is an assumption rather than a measurement, and nothing here can check it for you.
+    </p>
+  </fieldset>
+
+  <div id="fit" class="verdict"></div>
+
+  <div class="hudrow">
+    <button id="fullscreen" type="button">Full screen</button>
+    <span class="spacer"></span>
+    <button id="start" class="primary" type="button" disabled>Start</button>
+  </div>
+  <p class="note">
+    Before you photograph anything, step to each projector’s white frame and check that the projector
+    that lights up is the one the panel names. If it is not, this display’s quadrant order differs
+    from the config’s, and every frame after that would be filed under the wrong projector.
+  </p>
+</div>
+
+<!-- The heads-up. Visible only while the operator is between exposures: it is
+     painted on the sphere like everything else on this page, which is what the
+     warning bar says and why arming hides it completely. -->
+<div id="hud" class="panel" hidden>
+  <div class="warnbar">This panel is on the sphere. Arm before you open the shutter.</div>
+  <p class="counter num" id="counter"></p>
+  <p class="frameline" id="frameline"></p>
+  <p class="why" id="why"></p>
+  <div class="hudrow">
+    <button id="prev" type="button">Previous</button>
+    <button id="next" type="button">Next</button>
+    <button id="play" type="button">Play</button>
+    <span class="spacer"></span>
+    <button id="back" type="button">Setup</button>
+    <button id="arm" class="primary" type="button">Arm</button>
+  </div>
+  <p class="keys">
+    <kbd>Space</kbd> next · <kbd>←</kbd> <kbd>→</kbd> step · <kbd>[</kbd> <kbd>]</kbd> projector ·
+    <kbd>Home</kbd> <kbd>End</kbd> ends · <kbd>P</kbd> play · <kbd>F</kbd> full screen ·
+    <kbd>Enter</kbd> arm · <kbd>Esc</kbd> back
+  </p>
+</div>
+
+<!-- The failure this page must never have is a blank screen beside a sphere.
+     It boots from an ES module, and a browser refuses to fetch one over file://
+     — the origin is opaque, so it is a CORS failure with nothing visible on the
+     page and an error only in a console nobody has open. Verified in Chromium:
+     "Access to script ... from origin 'null' has been blocked by CORS policy".
+     The same blank screen is what a 404 or a syntax error produces.
+
+     So the boot is checked rather than assumed. The module stamps the document
+     when it runs; this classic inline script — which file:// does allow, because
+     it is not fetched — says what went wrong if the stamp never appears. The
+     delay is what keeps a normal load from flashing the message. -->
+<div id="needserver" class="panel" hidden>
+  <h1>This page has to be served</h1>
+  <p class="lede">Its code never loaded, so nothing below it will work.</p>
+  <p class="note">
+    <strong>If you opened this from a file or a USB stick</strong> — a
+    <code>file://</code> address in the bar — that is the cause. Browsers refuse to load a page’s
+    modules from a file origin, and the refusal is silent. Copying the folder does not help; it has
+    to come off an <code>http://</code> address. Any static server will do, on this machine or a
+    laptop you can reach: from a checkout, <code>npm run app</code> serves it at
+    <code>http://localhost:8174/emit.html</code>.
+  </p>
+  <p class="note">
+    <strong>If the address already starts with <code>http</code></strong>, then
+    <code>dist/web/web/emit.js</code> did not arrive beside this page. Open the browser console —
+    a 404 names the file it wanted.
+  </p>
+</div>
+
+<script type="module" src="./dist/web/web/emit.js"></script>
+<script>
+  setTimeout(function () {
+    if (document.documentElement.dataset.emitBooted === undefined) {
+      var el = document.getElementById('needserver');
+      if (el) el.hidden = false;
+      var setup = document.getElementById('setup');
+      if (setup) setup.hidden = true;
+    }
+  }, 1200);
+</script>
+<noscript><p style="color:#e8b483;padding:20px">This page emits its frames from the pattern
+definition itself rather than from image files, so it needs JavaScript.</p></noscript>
+</body>
+</html>
