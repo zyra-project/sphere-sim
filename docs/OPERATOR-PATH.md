@@ -1,9 +1,10 @@
 # Calibrating a real sphere — the operator path
 
 **Status: Phases 0 and 1 landed — `docs/CALIBRATE.md` and the projector emitter.
-Phases 2–5 are not built, so an operator can now put the sequence on a real
-sphere and still cannot complete a calibration: nothing yet reads the
-photographs back.** This is a plan, written because the question "what would an
+Phase 2 is measured but not settled: the two cheap mechanisms are built and
+scored, and they leave a blind spot that needs a real sphere to price. Phases
+3–5 are not built, so an operator can now put the sequence on a real sphere and
+still cannot complete a calibration: nothing yet reads the photographs back.** This is a plan, written because the question "what would an
 operator actually do?" had no answer anywhere in the repository — not in code,
 not in a document — while the simulator implied one.
 
@@ -87,7 +88,7 @@ the phase order, so it is stated before the phases rather than implied by them.
 | --- | --- | --- | --- |
 | 1 | Installing software | Locked-down machine, absent approver, wrong OS | Phase 1 — **landed** |
 | 2 | Getting patterns onto the projectors | Structured light is projector-raster-space; SOS content is sphere-space, so the ordinary content path cannot carry it | Phase 1 — **landed** |
-| 3 | Knowing which pattern each photo shows | The one genuinely unsolved problem here | Phase 2 |
+| 3 | Knowing which pattern each photo shows | The one genuinely unsolved problem here | Phase 2 — **measured, not settled** |
 | 4 | Knowing where to stand and what to set | "Three positions" is measured; *which* three is not written down anywhere | Phase 0 |
 | 5 | Getting photographs to the solver | Hundreds of files, and the solver has never seen a real one | Phase 3 |
 | 6 | Trusting the result | A number with no before/after is a claim, not evidence | Phase 4 |
@@ -97,6 +98,12 @@ the phase order, so it is stated before the phases rather than implied by them.
 Friction 3 is the crux and is worth stating plainly: **something has to know that
 pattern *N* was on the sphere when the shutter opened.** Everything else on this
 list is work; that one is a design problem with no settled answer.
+
+It is now a *smaller* problem with a measured boundary rather than an open one.
+`docs/EXPERIMENT-8.md` scores the two cheap mechanisms and finds they remove most
+of the exposure and leave one case — see Phase 2 — so the rule this friction
+forces on an operator softens from *never delete a frame* to *a spoiled frame
+costs that projector's run*. The remaining case still needs a real sphere.
 
 ---
 
@@ -236,7 +243,7 @@ everything downstream then rested on. The page shows the plan it is playing and
 counts the steps; turning that into an index a decoder can trust is the next
 phase and is named as such on the page itself.
 
-## Phase 2 — Make every photograph say which frame it is. **NOT STARTED**
+## Phase 2 — Make every photograph say which frame it is. **MEASURED, NOT SETTLED**
 
 The crux, and the phase that decides whether this is adoptable. If the software
 can work out which pattern a photograph shows, **tethering leaves the critical
@@ -250,16 +257,17 @@ room in one building and not in another:
 
 1. **Ordering alone.** The frames are shot in order, so the order is the index.
    Cheap and needs nothing; breaks on a dropped or duplicated frame, and gives no
-   way to detect that it broke.
+   way to detect that it broke. **Built** — `indexByOrder`, as the baseline.
 2. **Structural bookends.** White and black open each sequence and are trivially
    separable from every patterned frame, so software can find sequence boundaries
    and check the count between them. A black frame inserted between projectors
    segments the whole capture. Cheap, self-checking, and still ordering-dependent
-   *within* a run.
+   *within* a run. **Built** — `indexByBookends`.
 3. **A frame index projected into the frame itself.** Fully self-describing and
    robust to any drop — and it spends raster area, and there is no single region
    of a sphere every camera position can see, so the marker has to be repeated or
-   placed per projector.
+   placed per projector. **Not built, and the measurement below is the argument
+   for why not yet.**
 
 **The measurement that decides it:** capture a real sequence with deliberate
 drops and duplicates, and score each mechanism on how often it recovers the right
@@ -267,8 +275,49 @@ indexing and, more importantly, how often it *notices* that it has not. A
 mechanism that silently mis-indexes is worse than one that refuses — a
 mis-indexed Gray plane is a confidently wrong calibration.
 
+`docs/EXPERIMENT-8.md` is that measurement, over 10 000 faulty captures:
+
+<!-- generated: experiment-8-headline-operator-path -->
+| mechanism | captures silently wrong | projector runs offered wrong |
+| --- | --- | --- |
+| ordering alone | 4000 / 10000 (40.0%) | 10688 / 40000 (26.7%) |
+| structural bookends | 603 / 10000 (6.0%) | 1367 / 40000 (3.4%) |
+<!-- /generated -->
+
+**Read the second column.** The share of captures that come back without a
+complaint understates the bookends' exposure by a factor of three, because a
+capture they refuse can still contain a run they got wrong and offered — `ok:
+false` means some run was rejected, not that the rest are sound. The honest unit
+is the projector run, since that is what goes into a bundle adjustment.
+
+**What that settles.** The bookends are worth having and are not sufficient. They
+cost one number read off each photograph and they never once offered a wrong run
+on any capture that could not contain a cancelling pair — 8 000 trials of clean,
+one drop, two drops and one duplicate. Their blind spot is exactly one case: a
+drop and a duplicate that cancel *inside one run*, both landing on patterned
+frames, where the count still adds up and every frame is still a patterned frame.
+A lit-pixel fraction cannot tell one Gray plane from another, and that is the same
+property that makes the white and black references separable in the first place.
+
+**What it does not settle**, and what a real sphere is now needed for:
+
+- **Whether the references stay separable in a room.** Classification is exact by
+  construction in that experiment, so every number in it is an upper bound.
+  `indexByBookends` refuses below a stated margin rather than segmenting noise,
+  and what that margin costs on real images is unmeasured. §5's ambient term
+  spans 1%–15% and a sphere that fills too little of the frame dilutes every
+  reference toward the middle.
+- **Whether mechanism 3 is worth its cost.** It obviously closes the blind spot —
+  it is the only candidate that tells patterned frames apart from each other. The
+  question is whether its photometric risk is smaller than a 3.4% poisoned-run
+  rate, and that cannot be answered from a simulator. A cheaper candidate is
+  untested and would close the same hole without spending raster area: a per-frame
+  fingerprint asking whether a Gray plane and its neighbour are still complements.
+
 **Done when** a folder of photographs, shot without tethering, is turned into a
-correctly indexed capture, or refused with a reason.
+correctly indexed capture, or refused with a reason. **Not yet** — the blind spot
+returns a wrong capture rather than a refusal, and until it is closed or measured
+on a real sphere this phase stays open.
 
 ## Phase 3 — Let the solver see a real photograph. **NOT STARTED**
 

@@ -507,7 +507,99 @@ function experiment7Axes(result: Experiment7): string {
   return out.join('\n');
 }
 
+
+/** Experiment 8 — indexing a folder of photographs under drops and duplicates. */
+interface Experiment8Mechanism {
+  clean: number;
+  refused: number;
+  silent: number;
+  misplacedWorst: number;
+  usableRunsMean: number;
+  trialsWithBadUsableRun: number;
+  badUsableRunsTotal: number;
+}
+
+interface Experiment8 {
+  generatedFrom: { trials: number; projectors: number; framesPerProjector: number };
+  arms: {
+    key: string;
+    drops: number;
+    dupes: number;
+    story: string;
+    order: Experiment8Mechanism;
+    bookends: Experiment8Mechanism;
+  }[];
+}
+
+function experiment8Arms(result: Experiment8): string {
+  const trials = result.generatedFrom.trials;
+  const runs = trials * result.generatedFrom.projectors;
+  const share = (n: number, d: number): string => `${((100 * n) / d).toFixed(1)}%`;
+  const out = [
+    '| what went wrong | mechanism | silently wrong | runs offered wrong | runs kept |',
+    '| --- | --- | --- | --- | --- |',
+  ];
+  for (const a of result.arms) {
+    for (const [name, m] of [
+      ['ordering', a.order],
+      ['bookends', a.bookends],
+    ] as const) {
+      out.push(
+        `| ${name === 'ordering' ? a.story : ''} | ${name} | ` +
+          `${share(m.silent, trials)} | ${m.badUsableRunsTotal} (${share(m.badUsableRunsTotal, runs)}) | ` +
+          `${m.usableRunsMean.toFixed(2)} / ${result.generatedFrom.projectors} |`,
+      );
+    }
+  }
+  return out.join('\n');
+}
+
+function experiment8Headline(result: Experiment8): string {
+  const faulty = result.arms.filter((a) => a.drops + a.dupes > 0);
+  const trials = faulty.length * result.generatedFrom.trials;
+  const runs = trials * result.generatedFrom.projectors;
+  const sum = (pick: (a: Experiment8['arms'][number]) => number): number =>
+    faulty.reduce((t, a) => t + pick(a), 0);
+  const share = (n: number, d: number): string => `${((100 * n) / d).toFixed(1)}%`;
+  const rows: [string, (a: Experiment8['arms'][number]) => Experiment8Mechanism][] = [
+    ['ordering alone', (a) => a.order],
+    ['structural bookends', (a) => a.bookends],
+  ];
+  const out = [
+    `| mechanism | captures silently wrong | projector runs offered wrong |`,
+    '| --- | --- | --- |',
+  ];
+  for (const [label, pick] of rows) {
+    const silent = sum((a) => pick(a).silent);
+    const bad = sum((a) => pick(a).badUsableRunsTotal);
+    out.push(
+      `| ${label} | ${silent} / ${trials} (${share(silent, trials)}) | ` +
+        `${bad} / ${runs} (${share(bad, runs)}) |`,
+    );
+  }
+  return out.join('\n');
+}
+
 const BLOCKS: Record<string, Block> = {
+  'experiment-8-headline': {
+    doc: 'docs/EXPERIMENT-8.md',
+    data: 'experiments/experiment-8.json',
+    render: experiment8Headline as (r: never) => string,
+  },
+  'experiment-8-arms': {
+    doc: 'docs/EXPERIMENT-8.md',
+    data: 'experiments/experiment-8.json',
+    render: experiment8Arms as (r: never) => string,
+  },
+  // The same headline in the plan the measurement was run to settle. Registered
+  // a second time rather than copied: Phase 2's status IS these two numbers, and
+  // a hand-typed version of them sitting in the plan would be exactly the fault
+  // this file exists to prevent, in the document a reader checks the status in.
+  'experiment-8-headline-operator-path': {
+    doc: 'docs/OPERATOR-PATH.md',
+    data: 'experiments/experiment-8.json',
+    render: experiment8Headline as (r: never) => string,
+  },
   'experiment-7-axes': {
     doc: 'docs/EXPERIMENT-7.md',
     data: 'experiments/experiment-7.json',
