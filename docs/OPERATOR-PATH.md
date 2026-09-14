@@ -278,17 +278,21 @@ mis-indexed Gray plane is a confidently wrong calibration.
 `docs/EXPERIMENT-8.md` is that measurement, over 10 000 faulty captures:
 
 <!-- generated: experiment-8-headline-operator-path -->
-| mechanism | captures silently wrong | projector runs offered wrong |
-| --- | --- | --- |
-| ordering alone | 4000 / 10000 (40.0%) | 10688 / 40000 (26.7%) |
-| structural bookends | 603 / 10000 (6.0%) | 1367 / 40000 (3.4%) |
+| mechanism | captures silently wrong | runs offered | of those, mis-indexed | mis-indexed per run captured |
+| --- | --- | --- | --- | --- |
+| ordering alone | 4000 / 10000 (40.0%) | 16000 | 10688 (66.8%) | 26.7% of 40000 |
+| structural bookends | 603 / 10000 (6.0%) | 23600 | 1367 (5.8%) | 3.4% of 40000 |
 <!-- /generated -->
 
-**Read the second column.** The share of captures that come back without a
-complaint understates the bookends' exposure by a factor of three, because a
-capture they refuse can still contain a run they got wrong and offered — `ok:
-false` means some run was rejected, not that the rest are sound. The honest unit
-is the projector run, since that is what goes into a bundle adjustment.
+**The run columns are the ones to read.** The share of captures that come back
+without a complaint understates the bookends' exposure by a factor of three,
+because a capture they refuse can still contain a run they got wrong and
+offered — `ok: false` means some run was rejected, not that the rest are sound.
+The honest unit is the projector run, since that is what goes into a bundle
+adjustment, and there are two rates on it: of the runs a mechanism hands back,
+how many are wrong (what a caller experiences), and wrong runs per run the
+capture contained (what a session costs). Ordering scores far worse on the first
+because on a faulty capture it offers runs **only where it noticed nothing**.
 
 **What that settles.** The bookends are worth having and are not sufficient. They
 cost one number read off each photograph and they never once offered a wrong run
@@ -302,15 +306,20 @@ property that makes the white and black references separable in the first place.
 **What it does not settle**, and what a real sphere is now needed for:
 
 - **Whether the references stay separable in a room.** Classification is exact by
-  construction in that experiment, so every number in it is an upper bound.
+  construction in that experiment — it renders nothing — so its numbers are an
+  **ideal-classification baseline**, not an upper bound: exact classification
+  bounds recoverability from above, but a misread reference in a real room can
+  either break a run's structure into an extra refusal or leave it intact and
+  raise the silent rate, and neither direction is established.
   `indexByBookends` refuses below a stated margin rather than segmenting noise,
-  and what that margin costs on real images is unmeasured. §5's ambient term
-  spans 1%–15% and a sphere that fills too little of the frame dilutes every
-  reference toward the middle.
+  and what that margin costs on real images is measured by nothing in this
+  repository. §5's ambient term spans 1%–15% and a sphere that fills too little
+  of the frame dilutes every reference toward the middle.
 - **Whether mechanism 3 is worth its cost.** It obviously closes the blind spot —
   it is the only candidate that tells patterned frames apart from each other. The
-  question is whether its photometric risk is smaller than a 3.4% poisoned-run
-  rate, and that cannot be answered from a simulator. A cheaper candidate is
+  question is whether its photometric risk is smaller than the bookends' residual
+  — 5.8% of the runs they offer, 3.4% of the runs a session contains — and that
+  cannot be answered from a simulator. A cheaper candidate is
   untested and would close the same hole without spending raster area: a per-frame
   fingerprint asking whether a Gray plane and its neighbour are still complements.
 

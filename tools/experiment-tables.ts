@@ -517,6 +517,7 @@ interface Experiment8Mechanism {
   usableRunsMean: number;
   trialsWithBadUsableRun: number;
   badUsableRunsTotal: number;
+  runsOfferedTotal: number;
 }
 
 interface Experiment8 {
@@ -533,11 +534,11 @@ interface Experiment8 {
 
 function experiment8Arms(result: Experiment8): string {
   const trials = result.generatedFrom.trials;
-  const runs = trials * result.generatedFrom.projectors;
-  const share = (n: number, d: number): string => `${((100 * n) / d).toFixed(1)}%`;
+  const share = (n: number, d: number): string =>
+    d === 0 ? '—' : `${((100 * n) / d).toFixed(1)}%`;
   const out = [
-    '| what went wrong | mechanism | silently wrong | runs offered wrong | runs kept |',
-    '| --- | --- | --- | --- | --- |',
+    '| what went wrong | mechanism | captures silently wrong | runs offered | of those, wrong | runs kept |',
+    '| --- | --- | --- | --- | --- | --- |',
   ];
   for (const a of result.arms) {
     for (const [name, m] of [
@@ -546,7 +547,8 @@ function experiment8Arms(result: Experiment8): string {
     ] as const) {
       out.push(
         `| ${name === 'ordering' ? a.story : ''} | ${name} | ` +
-          `${share(m.silent, trials)} | ${m.badUsableRunsTotal} (${share(m.badUsableRunsTotal, runs)}) | ` +
+          `${share(m.silent, trials)} | ${m.runsOfferedTotal} | ` +
+          `${m.badUsableRunsTotal} (${share(m.badUsableRunsTotal, m.runsOfferedTotal)}) | ` +
           `${m.usableRunsMean.toFixed(2)} / ${result.generatedFrom.projectors} |`,
       );
     }
@@ -557,24 +559,29 @@ function experiment8Arms(result: Experiment8): string {
 function experiment8Headline(result: Experiment8): string {
   const faulty = result.arms.filter((a) => a.drops + a.dupes > 0);
   const trials = faulty.length * result.generatedFrom.trials;
-  const runs = trials * result.generatedFrom.projectors;
+  const runsIn = trials * result.generatedFrom.projectors;
   const sum = (pick: (a: Experiment8['arms'][number]) => number): number =>
     faulty.reduce((t, a) => t + pick(a), 0);
-  const share = (n: number, d: number): string => `${((100 * n) / d).toFixed(1)}%`;
+  const share = (n: number, d: number): string =>
+    d === 0 ? '—' : `${((100 * n) / d).toFixed(1)}%`;
   const rows: [string, (a: Experiment8['arms'][number]) => Experiment8Mechanism][] = [
     ['ordering alone', (a) => a.order],
     ['structural bookends', (a) => a.bookends],
   ];
+  // Both rates, each against its own denominator. The conditional one is what a
+  // caller experiences; the exposure one is what a session costs. Reporting only
+  // the second under the first's label was the error review caught.
   const out = [
-    `| mechanism | captures silently wrong | projector runs offered wrong |`,
-    '| --- | --- | --- |',
+    `| mechanism | captures silently wrong | runs offered | of those, mis-indexed | mis-indexed per run captured |`,
+    '| --- | --- | --- | --- | --- |',
   ];
   for (const [label, pick] of rows) {
     const silent = sum((a) => pick(a).silent);
     const bad = sum((a) => pick(a).badUsableRunsTotal);
+    const offered = sum((a) => pick(a).runsOfferedTotal);
     out.push(
-      `| ${label} | ${silent} / ${trials} (${share(silent, trials)}) | ` +
-        `${bad} / ${runs} (${share(bad, runs)}) |`,
+      `| ${label} | ${silent} / ${trials} (${share(silent, trials)}) | ${offered} | ` +
+        `${bad} (${share(bad, offered)}) | ${share(bad, runsIn)} of ${runsIn} |`,
     );
   }
   return out.join('\n');

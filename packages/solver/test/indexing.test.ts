@@ -30,6 +30,7 @@ import {
   indexByBookends,
   indexByOrder,
   observe,
+  observeCapture,
   type ExpectedSequence,
   type FrameKind,
   type FrameObservation,
@@ -82,25 +83,65 @@ function image(values: readonly number[], width: number, channels = 1): LinearIm
   return { width, height, channels, data };
 }
 
-test('a photograph reports the fraction of itself that is lit', () => {
-  // Four pixels: all on, all off, half on. The fraction is what separates a
-  // white frame from a Gray plane, and it is the one that does not move with
-  // how much of the picture the sphere happens to fill.
-  assert.equal(observe(image([1, 1, 1, 1], 2), 0).litFraction, 0);
-  assert.equal(observe(image([0, 0, 0, 0], 2), 0).litFraction, 0);
-  const half = observe(image([1, 1, 0, 0], 2), 0);
-  assert.equal(half.litFraction, 0.5);
-  assert.equal(half.mean, 0.5);
-  // A flat frame has no mid-level to be above, which is why a folder is
-  // classified against its own BRIGHTEST frame rather than against each frame.
-  const lit = observe(image([1, 1, 0, 0, 0, 0, 0, 0], 4), 0);
-  assert.equal(lit.litFraction, 0.25);
+test('the capture sets one threshold, and no frame is measured against itself', () => {
+  // THE test this module did not have, and the reason the first version of
+  // `observe` was inverted rather than merely weak. It computed each frame's
+  // mid-level from that frame's own extrema, so:
+  //
+  //   - a flat WHITE frame has nothing above its own midpoint     -> 0.0
+  //   - an all-black frame with a hair of ambient, [0, e, 0, e],
+  //     has half its pixels above its own midpoint                -> 0.5
+  //
+  // which classified a white-black-patterned folder as black-white-patterned.
+  // Every other test here builds observations by hand and never called it, so
+  // nothing failed. The threshold now comes from the capture's whole dynamic
+  // range, which is the scale a per-image statistic cannot see.
+  const obs = observeCapture([
+    image([1, 1, 1, 1], 2), // white: flat, and the brightest thing in the folder
+    image([0, 0.002, 0, 0.002], 2), // black, with the faint gradient a real room leaves
+    image([0, 1, 0, 1], 2), // a Gray plane: half the crescent
+    image([0.1, 0.9, 0.1, 0.9], 2), // a phase step: soft edges, still half
+  ]);
+  assert.equal(obs[0].litFraction, 1, 'white lights all of it');
+  assert.equal(obs[1].litFraction, 0, 'black lights none of it');
+  assert.equal(obs[2].litFraction, 0.5);
+  assert.equal(obs[3].litFraction, 0.5);
+  const c = classify(obs);
+  assert.deepEqual(c.kinds, ['white', 'black', 'patterned', 'patterned']);
+  assert.equal(c.margin, 0.5);
+});
+
+test('a lit fraction survives the sphere being a small part of the picture', () => {
+  // The crescent covering a quarter of the frame scales every fraction by a
+  // quarter and reorders nothing, which is the property `classify` rests on when
+  // it normalises by the brightest frame. Eight pixels, two of them sphere.
+  const bg = [0, 0, 0, 0, 0, 0];
+  const obs = observeCapture([
+    image([1, 1, ...bg], 4),
+    image([0, 0, ...bg], 4),
+    image([1, 0, ...bg], 4),
+  ]);
+  assert.equal(obs[0].litFraction, 0.25, 'white lights the whole crescent, a quarter of the frame');
+  assert.equal(obs[1].litFraction, 0);
+  assert.equal(obs[2].litFraction, 0.125);
+  assert.deepEqual(classify(obs).kinds, ['white', 'black', 'patterned']);
+});
+
+test('one photograph reports what it holds, and honours a mask', () => {
   // Channel 0 only, matching decode.ts — a three-channel white frame reads the
   // same as a one-channel one rather than three times as bright.
   assert.equal(observe(image([1, 1, 0, 0], 2, 3), 0).mean, 0.5);
   // A mask measures the sphere and not the wall behind it.
   const mask = new Uint8Array([1, 1, 0, 0]);
-  assert.equal(observe(image([1, 1, 0, 0], 2), 0, mask).mean, 1);
+  const masked = observe(image([1, 1, 0, 0], 2), 0, mask);
+  assert.equal(masked.mean, 1);
+  assert.equal(masked.pixels, 2);
+  assert.equal(masked.lo, 1);
+  assert.equal(masked.hi, 1);
+  // A frame with nothing to measure reports so rather than dividing by zero.
+  const empty = observe(image([1, 1, 0, 0], 2), 0, new Uint8Array([0, 0, 0, 0]));
+  assert.equal(empty.pixels, 0);
+  assert.equal(observeCapture([image([1, 1, 0, 0], 2)])[0].litFraction, 0.5);
 });
 
 test('the three kinds separate, and the margin says by how much', () => {

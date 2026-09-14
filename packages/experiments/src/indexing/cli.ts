@@ -41,6 +41,15 @@ interface MechanismSummary {
   misplacedWorst: number;
   /** Mean projector runs that survived, out of `PROJECTORS`. */
   usableRunsMean: number;
+  /**
+   * Projector runs handed back as usable, summed over every trial.
+   *
+   * The denominator for "of the runs it offered, how many were wrong" — and it
+   * is mechanism-specific, which review had to point out. The first version
+   * divided by every run in the sweep, so a mechanism that refuses more was
+   * silently credited for the runs it never offered.
+   */
+  runsOfferedTotal: number;
   /** Trials that handed back a usable run holding a misplaced photograph. */
   trialsWithBadUsableRun: number;
   /**
@@ -65,6 +74,7 @@ function summarize(rows: readonly TrialResult[]): MechanismSummary {
     misplacedTotal: rows.reduce((a, r) => a + r.misplaced, 0),
     misplacedWorst: rows.reduce((a, r) => Math.max(a, r.misplaced), 0),
     usableRunsMean: rows.reduce((a, r) => a + r.usableRuns, 0) / Math.max(1, rows.length),
+    runsOfferedTotal: rows.reduce((a, r) => a + r.usableRuns, 0),
     trialsWithBadUsableRun: rows.filter((r) => r.badUsableRuns > 0).length,
     badUsableRunsTotal: rows.reduce((a, r) => a + r.badUsableRuns, 0),
   };
@@ -91,30 +101,46 @@ function main(): void {
 
   // The numbers the phase turns on, taken from the arms rather than chosen.
   //
-  // The headline is POISONED RUNS, not the silent-trial rate, and the difference
-  // is a finding rather than a presentation choice: a mechanism can refuse a
-  // capture as a whole — so `silent` does not count it — and still hand back an
-  // individual run that is mis-indexed. That run goes into a solve. Leading with
-  // `silent` would have understated the bookends' real exposure by three times.
+  // TWO rates, because they answer different questions and review caught the
+  // first version conflating them under one label:
+  //
+  //   - CONDITIONAL — of the runs a mechanism actually handed back, how many
+  //     were wrong. This is what a caller experiences, and its denominator is
+  //     that mechanism's own offered total, not every run in the sweep.
+  //   - EXPOSURE — bad runs per run the capture contained. This is what a whole
+  //     session costs, and it is smaller for a mechanism that refuses a lot.
+  //
+  // Ordering scores far worse on the conditional rate than on exposure, and the
+  // reason is worth reading rather than smoothing over: on a faulty capture it
+  // offers runs ONLY in the arms where it noticed nothing, so nearly everything
+  // it hands back in those arms is wrong.
   const faulty = arms.filter((a) => a.drops + a.dupes > 0);
   const faultyTrials = faulty.length * trials;
-  const runsOffered = faultyTrials * PROJECTORS;
-  const orderBad = faulty.reduce((a, x) => a + x.order.badUsableRunsTotal, 0);
-  const bookendsBad = faulty.reduce((a, x) => a + x.bookends.badUsableRunsTotal, 0);
-  const orderSilent = faulty.reduce((a, x) => a + x.order.silent, 0);
-  const bookendsSilent = faulty.reduce((a, x) => a + x.bookends.silent, 0);
+  const runsIn = faultyTrials * PROJECTORS;
+  const sum = (pick: (x: (typeof arms)[number]) => number): number =>
+    faulty.reduce((a, x) => a + pick(x), 0);
+  const orderBad = sum((x) => x.order.badUsableRunsTotal);
+  const bookendsBad = sum((x) => x.bookends.badUsableRunsTotal);
+  const orderOffered = sum((x) => x.order.runsOfferedTotal);
+  const bookendsOffered = sum((x) => x.bookends.runsOfferedTotal);
+  const orderSilent = sum((x) => x.order.silent);
+  const bookendsSilent = sum((x) => x.bookends.silent);
   const cancel = arms.find((a) => a.key === 'cancel');
   const drop1 = arms.find((a) => a.key === 'drop1');
-  const pct = (n: number, d: number): string => `${((100 * n) / d).toFixed(1)}%`;
+  const pct = (n: number, d: number): string =>
+    d === 0 ? 'n/a' : `${((100 * n) / d).toFixed(1)}%`;
 
   const statement =
-    `Over ${faultyTrials} faulty captures of ${PROJECTORS} projector runs each, ordering alone ` +
-    `handed back ${orderBad} mis-indexed runs as usable (${pct(orderBad, runsOffered)} of every ` +
-    `run offered) and the bookends ${bookendsBad} (${pct(bookendsBad, runsOffered)}) — a factor ` +
-    `of ${(orderBad / Math.max(1, bookendsBad)).toFixed(1)}. Counting whole captures instead, ` +
-    `ordering was silently wrong ${pct(orderSilent, faultyTrials)} of the time and the bookends ` +
-    `${pct(bookendsSilent, faultyTrials)}, but that reading flatters the bookends: a capture they ` +
-    `refuse can still contain a run they got wrong and offered. ` +
+    `Over ${faultyTrials} faulty captures of ${PROJECTORS} projector runs each: ordering alone ` +
+    `handed back ${orderOffered} runs and ${orderBad} of them were mis-indexed ` +
+    `(${pct(orderBad, orderOffered)}); the bookends handed back ${bookendsOffered} and ` +
+    `${bookendsBad} were mis-indexed (${pct(bookendsBad, bookendsOffered)}). Measured instead ` +
+    `against every run the captures contained, that is ${pct(orderBad, runsIn)} and ` +
+    `${pct(bookendsBad, runsIn)} of ${runsIn}. Ordering is worse on the first rate than the ` +
+    `second because on a faulty capture it offers runs only where it noticed nothing. Counting ` +
+    `whole captures, ordering was silently wrong ${pct(orderSilent, faultyTrials)} of the time ` +
+    `and the bookends ${pct(bookendsSilent, faultyTrials)} — but that reading flatters the ` +
+    `bookends, because a capture they refuse can still contain a run they got wrong and offered. ` +
     (cancel === undefined
       ? ''
       : `Both are blind to one case and the bookends only to that case — a drop and a duplicate ` +
@@ -137,7 +163,9 @@ function main(): void {
       rootSeed: EXPERIMENT_ROOT_SEED,
       // Said in the file, because a reader who takes these numbers into a room
       // needs to know classification was exact by construction here.
-      classification: 'exact by construction; this arm does not render frames',
+      classification:
+        'exact by construction; this arm renders no frames, so these are an ' +
+        'ideal-classification baseline rather than an upper bound on room behaviour',
     },
     arms,
     verdict: { statement },

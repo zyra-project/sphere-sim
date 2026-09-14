@@ -19,8 +19,16 @@
  * result. The classification arm measures that one on rendered frames.
  *
  * The consequence, stated so nobody has to infer it: **classification is exact
- * in this arm by construction.** Every number it produces is therefore an upper
- * bound on what the mechanism achieves in a room.
+ * in this arm by construction**, which makes every number here an
+ * IDEAL-CLASSIFICATION BASELINE rather than an upper bound.
+ *
+ * The distinction is one review had to correct. Exact classification does bound
+ * RECOVERABILITY from above — no amount of photometric trouble helps a mechanism
+ * place more frames correctly. It bounds nothing about the failure rates: in a
+ * room a misread reference can break a run's structure and produce an extra
+ * REFUSAL, which lowers the silent-error rate, or it can leave the structure
+ * intact and raise it. Neither direction is established, so "upper bound" was a
+ * claim about the room that this experiment never made.
  */
 
 import { makeBenchRng, deriveSeed } from '../../../bench/src/random.ts';

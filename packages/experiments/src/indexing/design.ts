@@ -19,11 +19,17 @@
  * Nobody has run a real sphere. Every capture this project has ever scored was
  * rendered by it. So this experiment measures the half that does not depend on a
  * real room — a drop is a drop whether the photograph came off a sensor or a ray
- * tracer — and the photometric half is measured separately and more narrowly by
- * the classification arm, which renders frames and asks only whether the white
- * and black references stay separable from the patterned ones.
+ * tracer — and **nothing here measures the photometric half.** No frame is
+ * rendered; every trial supplies exact lit fractions, so `classify` is never
+ * wrong and `MIN_CLASSIFY_MARGIN` is never approached.
  *
- * What remains genuinely unmeasured is mechanism 3, the projected frame index.
+ * An earlier draft of this comment described a "classification arm" that renders
+ * frames and checks the references stay separable. There is no such arm: it was
+ * planned, cut for scope, and left standing in the prose, where review caught
+ * it. What the results below are is an **ideal-classification baseline**, and
+ * the photometric question is open.
+ *
+ * Also genuinely unmeasured is mechanism 3, the projected frame index.
  * Its risk is entirely photometric: a marker has to survive an oblique sphere in
  * a room whose ambient PARAMETERS.md §5 leaves unmeasured across 1%–15%, and
  * there is no one region of a sphere every camera position can see. This
