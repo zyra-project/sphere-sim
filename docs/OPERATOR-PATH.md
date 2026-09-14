@@ -36,6 +36,20 @@ Three clauses of that are load-bearing and each kills adoption on its own:
 - **one obvious way to put everything back** — the first question an operator
   asks about any calibration tool is what happens when it makes things worse.
 
+**What that reduces to in practice, and the target the phases are measured
+against:** warm the projectors, darken the room, put a locked camera on a tripod,
+press start three times, and say yes or no to a before-and-after. Four standing
+rules and three tripod moves. Everything else in `docs/CALIBRATE.md` today is
+scaffolding for software that does not exist yet, and Part 6 of that card names
+which phase deletes which rule — so the card getting shorter is the measure of
+this plan working.
+
+Three tripod moves is not a floor either. Once frames identify themselves
+(Phase 2) a second and third camera cost only hardware: each produces its own
+folder, nothing needs to know which camera took what, and camera poses are solved
+rather than supplied. Three cameras shooting the same sequence is one pass and no
+tripod moves — hardware traded for time, for anyone who prefers that trade.
+
 ## Why friction is the organising principle rather than accuracy
 
 The accuracy is already better than the alternative. PARAMETERS.md §7 wants

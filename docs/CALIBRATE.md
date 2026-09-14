@@ -19,6 +19,45 @@ installation to recover its geometry*.
 
 ---
 
+## Two numbers, and why they multiply
+
+Everything below is easier to read once these are separated, because they look
+alike and are not:
+
+| | **Camera positions** | **Projectors** |
+| --- | --- | --- |
+| what it is | where **you** put the tripod | what the **installation** has |
+| who chooses it | you | nobody — it is bolted to the ceiling |
+| how many | **three** | 2, 3 or 4 on SOS; the app's shader handles 8 |
+| why that number | 1→2 positions is worth **418×**, 2→3 is worth **1.7×**, 3→8 is worth nothing measurable | it is how many projectors are in the room |
+
+**They multiply, and here is the reason they have to.** Only one projector may be
+lit at a time. The patterns address each projector's *own raster*, so two lit at
+once put two different codes on the same patch of sphere and neither decodes.
+Each projector therefore paints the ball alone, for its own 34 frames.
+
+    position 1   P1: 34   P2: 34   P3: 34   P4: 34   = 136
+      move the tripod
+    position 2   P1: 34   P2: 34   P3: 34   P4: 34   = 136
+      move the tripod
+    position 3   P1: 34   P2: 34   P3: 34   P4: 34   = 136
+                                                total = 408
+
+The general form is **positions × projectors × 34**.
+
+**You move the tripod three times.** That is the whole of the operator's physical
+work; the 408 is the camera's problem, and at one frame per second it is about
+two and a half minutes per setup.
+
+The two numbers answer different questions. **Three positions** exist so the
+geometry is *solvable at all* — one viewpoint cannot separate how far a projector
+is from how wide its lens is, and the optimiser wanders along that valley and
+returns 17.5 m, which `docs/EXPERIMENT-1.md` calls "no answer" rather than "a bad
+answer". **Each projector** is photographed separately so that *its own* position
+can be recovered.
+
+---
+
 ## Three rules that outrank everything else on this card
 
 **Warm the projectors 20 minutes before anything.** NOAA's alignment manual makes
@@ -147,7 +186,39 @@ Check these on the camera while you can still re-shoot:
   for this many planes.
 - **The whole silhouette is in frame**, with some room behind it.
 
-## Part 6 · What this card cannot tell you yet
+## Part 6 · How much of this is permanent
+
+Most of this card is not a description of the job. It is scaffolding standing in
+for software that does not exist yet, and it should get shorter as the phases in
+`docs/OPERATOR-PATH.md` land. Which rule each phase deletes:
+
+| rule on this card | survives? |
+| --- | --- |
+| Shoot in strict order; never delete, skip or re-shoot one frame | **Phase 2 deletes it.** Order is only load-bearing because nothing yet reads which pattern a photograph shows |
+| Re-shoot a whole projector's 34 if you spoil one | **Phase 2 deletes it** |
+| Make sure filenames sort in capture order | **Phase 2 deletes it** |
+| One projector lit at a time | **Phase 1 deletes it as a task.** Still true of the physics; the software sequences it and the operator never thinks about it |
+| Count 34 frames, 136 per position | **Phase 1 deletes it.** Nobody counts frames |
+| Check on the camera what "good" looks like | **Phase 3 deletes it.** The software reads the capture and says |
+| Press the shutter 408 times | **Phase 5 deletes it** |
+| Set exposure, focus and white balance by hand | **Phase 5 narrows it** to confirming what the software proposes |
+| Warm the projectors 20 minutes | **permanent.** Lamp physics |
+| Tripod, not hands | **permanent.** Shake is a bias |
+| Darken the room | **permanent.** §5's ambient is unmeasured |
+| Lock the camera; nothing adaptive | **permanent** as a requirement, even when a tether is what enforces it |
+
+So four rules are the job and the rest is the tooling's absence. **The end state
+is: warm the projectors, darken the room, put a locked camera on a tripod, press
+start three times, and say yes or no to a before-and-after.**
+
+**And the three tripod moves may go too.** Once frames identify themselves —
+Phase 2 — a second and third camera cost nothing but hardware: each produces its
+own folder, the software does not care which camera took what, and camera poses
+are solved rather than supplied. Three cameras on three tripods shooting the same
+sequence is **one pass and no tripod moves at all**. That trade is hardware for
+time, and it is available to anyone who would rather spend the former.
+
+## Part 7 · What this card cannot tell you yet
 
 Stated as gaps rather than omitted, because an operator who discovers them at the
 sphere has wasted a trip:
