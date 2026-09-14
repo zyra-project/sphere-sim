@@ -45,16 +45,18 @@ Each projector therefore paints the ball alone, for its own 34 frames.
 
 The general form is **positions × projectors × 34**.
 
-**You move the tripod three times.** That is the whole of the operator's physical
-work; the 408 is the camera's problem, and at one frame per second it is about
-two and a half minutes per setup.
+**Three setups, two moves.** That is the operator's physical work. The 408
+exposures are about two and a half minutes per setup at one frame per second —
+but read Part 6 before treating them as free: until Phase 5 lands, somebody is
+pressing that shutter 408 times.
 
-The two numbers answer different questions. **Three positions** exist so the
-geometry is *solvable at all* — one viewpoint cannot separate how far a projector
-is from how wide its lens is, and the optimiser wanders along that valley and
-returns 17.5 m, which `docs/EXPERIMENT-1.md` calls "no answer" rather than "a bad
-answer". **Each projector** is photographed separately so that *its own* position
-can be recovered.
+The two numbers answer different questions. **Three positions** is where the
+measured return flattens, not the point at which the problem becomes solvable.
+Two cameras already recover pose to 41.82 mm and three to 24.93 mm; it is ONE
+camera that is degenerate, at 17 489.84 mm, because a single view cannot separate
+how far a projector is from how wide its lens is (`docs/EXPERIMENT-1.md`).
+**Each projector** is photographed separately so that *its own* position can be
+recovered.
 
 ---
 
@@ -86,17 +88,27 @@ capture silently**, leaving photographs that look perfectly good.
 
 ## Part 1 · What to bring
 
-1. **A camera you can put in full manual.** The sensor is not the binding term —
+1. **A camera you can put in full manual, and its calibration.** The calibration
+   is not optional and is the item most likely to be forgotten: `SolverCameraInput`
+   takes `intrinsics` — resolution, focal lengths `fx`/`fy`, principal point
+   `cx`/`cy`, and the distortion terms `k1`, `k2`, `p1`, `p2` — as an **input**,
+   described in its own docblock as "a calibration they already have". Arrive
+   without it and there is nothing to hand the solver. Any standard checkerboard
+   calibration produces these, and it must be done at **the same zoom and focus**
+   you will shoot with.
+2. **A camera you can put in full manual.** The sensor is not the binding term —
    error roughly halves from 320×240 to 640×480 to 1280×960 and then stops:
    2560×1920 measured *worse* than 1280×960, and a 4032×3024 phone reached only
    4.61 mm. Past about 1280×960 you are buying nothing. Bring the camera you can
    *control*, not the one with the most pixels.
-2. **A tripod.** See above. Not optional, and not a monopod.
-3. **A remote release or self-timer.** Pressing the shutter by hand on a tripod
+3. **A tripod.** See above. Not optional, and not a monopod.
+4. **A remote release or self-timer.** Pressing the shutter by hand on a tripod
    reintroduces some of what the tripod removes.
-4. **Floor tape.** For marking the three positions, so a spoiled sequence can be
-   re-shot from the same place.
-5. **A way to darken the room.** §5's ambient term spans 1% to 15% relative and
+5. **Floor tape and something to write with.** For marking the three positions,
+   so a spoiled sequence can be re-shot from the same place — and for noting
+   which side of the sphere each one is on, which Part 2 explains is a solver
+   input rather than a convenience.
+6. **A way to darken the room.** §5's ambient term spans 1% to 15% relative and
    is **unmeasured**. The complement trick is what makes ambient survivable at
    all; it is not a licence to work in daylight.
 
@@ -118,14 +130,22 @@ the silhouette.
 **Do not line up with a projector or with a seam.** The three placements the
 experiments use are deliberately offset from both.
 
-> **You do not need to measure where you stood.** The solve *estimates* the
-> camera poses; they are outputs, not inputs. What matters is that the three
-> positions are genuinely different from each other, not that any of them is in a
-> particular place. This is the single largest piece of friction this procedure
-> does *not* have, and it is worth knowing before you start looking for a tape
-> measure.
+> **You do not need to MEASURE where you stood — but you do have to know which
+> side you were on.** An earlier version of this card said camera poses are
+> "outputs, not inputs". That is wrong, and it is the kind of wrong that ends a
+> field trip. `SolverCameraInput` takes a pose, and its docblock is precise about
+> what that pose has to be right about: *"It needs to be right about which side of
+> the sphere the camera was on; it does not need to be right about the distance,
+> which the bootstrap corrects from the images."*
+>
+> So the friction this procedure genuinely does not have is the **tape measure** —
+> distance and aim are recovered from the photographs. What it does have, and what
+> costs nothing if you do it as you go, is **writing down roughly where each
+> position was**: "north side, by the door" is enough. Lose that and the captures
+> cannot be initialised, however good they are.
 
-Mark them with tape anyway. That is for re-shooting, not for accuracy.
+Mark them with tape, and label each mark. The tape is for re-shooting; the label
+is a solver input.
 
 ## Part 3 · What to set on the camera
 
@@ -178,9 +198,17 @@ Then, in order, and this is where the missing Phase 2 costs you:
 
 Check these on the camera while you can still re-shoot:
 
-- **The white frame is bright everywhere on the ball and clipped nowhere.**
-- **The black frame is nearly black.** If it is visibly grey, the room is too
-  light and every later frame is sitting on a pedestal.
+- **The white frame is clipped nowhere** in the patch it lights. Only one
+  projector is on, so that patch is a *crescent* on one side of the ball and not
+  the whole sphere — the capture path calls it exactly that. A frame that is dark
+  outside the crescent is correct, not a failure; a frame that is blown out inside
+  it has lost bits.
+- **The black frame is nearly black.** What it is not is a room-light meter on its
+  own: it carries the room AND the projector's own black floor, which are
+  different terms. `docs/VISIT.md` Part 3 item 1 separates them by shooting full
+  black with the projectors ON and then OFF, and A-29 treats that pair as one
+  joint measurement. If the black frame looks grey, shoot it again with the
+  projectors off before blaming the room.
 - **The finest Gray plane's stripes are clearly separated**, several pixels wide,
   not a shimmer. If they alias, the camera is too far away or too low-resolution
   for this many planes.
@@ -211,12 +239,16 @@ So four rules are the job and the rest is the tooling's absence. **The end state
 is: warm the projectors, darken the room, put a locked camera on a tripod, press
 start three times, and say yes or no to a before-and-after.**
 
-**And the three tripod moves may go too.** Once frames identify themselves —
-Phase 2 — a second and third camera cost nothing but hardware: each produces its
-own folder, the software does not care which camera took what, and camera poses
-are solved rather than supplied. Three cameras on three tripods shooting the same
-sequence is **one pass and no tripod moves at all**. That trade is hardware for
-time, and it is available to anyone who would rather spend the former.
+**And the two tripod moves may go too.** Once frames identify themselves —
+Phase 2 — a second and third camera cost mostly hardware. Three cameras on three
+tripods shooting the same sequence is **one pass and no moves at all**, which is
+hardware traded for time.
+
+What it is *not* is three anonymous folders. Each camera is a separate solver
+input with **its own** intrinsics and its own which-side-of-the-sphere pose, so
+the folders have to stay associated with the camera that made them. Phase 2
+removes the need to know which *frame* a photograph is; it does not remove the
+need to know which *camera* took it.
 
 ## Part 7 · What this card cannot tell you yet
 

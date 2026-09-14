@@ -22,9 +22,9 @@ structured-light capture at all.
 ## The end goal
 
 > An operator who has never read this repository walks up to their sphere with a
-> camera and a tripod, and an hour later the alignment is measurably better than
-> it was — having installed nothing, seen the improvement before committing it,
-> and with one obvious way to put everything back.
+> CALIBRATED camera and a tripod, and an hour later the alignment is measurably
+> better than it was — having installed nothing, seen the improvement before
+> committing it, and with one obvious way to put everything back.
 
 Three clauses of that are load-bearing and each kills adoption on its own:
 
@@ -36,19 +36,31 @@ Three clauses of that are load-bearing and each kills adoption on its own:
 - **one obvious way to put everything back** — the first question an operator
   asks about any calibration tool is what happens when it makes things worse.
 
+**Calibrated** is not decoration in that sentence. `SolverCameraInput.intrinsics`
+is an input — focal lengths, principal point and four distortion terms, described
+in its own docblock as "a calibration they already have" — so a camera nobody has
+calibrated cannot be handed to the solver at all. Review caught this missing from
+both documents, and it is the one prerequisite on the operator's side that no
+phase below removes: Phase 5 can set a camera's exposure over a tether, but
+nothing here derives its intrinsics for it.
+
 **What that reduces to in practice, and the target the phases are measured
 against:** warm the projectors, darken the room, put a locked camera on a tripod,
 press start three times, and say yes or no to a before-and-after. Four standing
-rules and three tripod moves. Everything else in `docs/CALIBRATE.md` today is
+rules, three setups and two moves. Everything else in `docs/CALIBRATE.md` today is
 scaffolding for software that does not exist yet, and Part 6 of that card names
 which phase deletes which rule — so the card getting shorter is the measure of
 this plan working.
 
-Three tripod moves is not a floor either. Once frames identify themselves
-(Phase 2) a second and third camera cost only hardware: each produces its own
-folder, nothing needs to know which camera took what, and camera poses are solved
-rather than supplied. Three cameras shooting the same sequence is one pass and no
-tripod moves — hardware traded for time, for anyone who prefers that trade.
+Two tripod moves is not a floor either. Once frames identify themselves (Phase 2)
+a second and third camera cost mostly hardware, and three cameras shooting the
+same sequence is one pass with no moves at all — hardware traded for time.
+
+Not, however, three anonymous folders. Review caught an overstatement here: each
+camera is a separate `SolverCameraInput` with **its own** intrinsics and its own
+rough pose, so a folder has to stay associated with the camera that produced it.
+Phase 2 removes the need to know which FRAME a photograph is; it does not remove
+the need to know which CAMERA took it.
 
 ## Why friction is the organising principle rather than accuracy
 
@@ -140,11 +152,19 @@ have to be warmed for twenty minutes first — A-23 makes that a precondition, a
 it binds harder here than on the photometric sequence, because a capture is
 hundreds of frames that have to agree with each other and a lamp still climbing
 changes the thing being measured *between* the two frames that are supposed to
-cancel. And the largest piece of friction this procedure does not have was
-missing from the card until it was written down: **the operator never measures
-where they stood.** Camera poses are solved, not supplied, so the three positions
-have to be different from each other and nothing more. An operator who does not
-know that goes looking for a tape measure.
+cancel. And the friction this procedure does not have was missing from the card
+until it was written down: **the operator never measures where they stood.**
+Distance and aim are recovered from the photographs, so nobody needs a tape
+measure.
+
+That was then overstated into "camera poses are outputs, not inputs", which review
+caught and which is false. `SolverCameraInput` takes a pose, and its docblock says
+what the pose must be right about: which side of the sphere the camera was on —
+not the distance, which the bootstrap corrects. So the operator does have one
+thing to record, and it costs nothing if done while the tape is going down:
+roughly where each position was. The card now says so; the error is noted here
+because a plan that quietly drops a solver input is worse than one that never
+mentioned it.
 
 ## Phase 1 — Put the patterns on the sphere, with no install. **NOT STARTED**
 
