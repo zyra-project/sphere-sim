@@ -22,8 +22,36 @@ name: Solve smoke
 
 on:
   schedule:
-    # 06:00 UTC daily, off the peak of the shared runner pool.
-    - cron: '0 6 * * *'
+    # About 06:00 UTC daily, deliberately NOT on the hour.
+    #
+    # This line used to read "06:00 UTC daily, off the peak of the shared runner
+    # pool" and set `0 6 * * *`. Both halves were wrong. What was observed on the
+    # first two nights this schedule existed:
+    #
+    #   2026-09-13 06:00 slot — started 11:23:01Z, 5 h 23 m late. Passed.
+    #   2026-09-14 06:00 slot — started 12:15:35Z, 6 h 15 m late. Passed.
+    #
+    # The second line first read "still no run at 12:02Z" and treated that as the
+    # outcome. The run started at 12:15 — thirteen minutes after the check. That
+    # is the same error this comment was written to correct: a snapshot reported
+    # as a result. Twice, in the same file, is worth recording rather than
+    # quietly fixing.
+    #
+    # So two firings, both LATE and both successful — not dropped. That is a
+    # measurement, not a diagnosis: nobody here has established WHY, and GitHub
+    # does not report it. What is
+    # documented is that scheduled workflows are delayed under load and that the
+    # start of every hour is the heaviest moment, which makes `0 6` the worst
+    # available minute and `37` an ordinary one. The move is a hedge against the
+    # documented cause, not a fix for a proven one, and the next few nights are
+    # what say whether it helped.
+    #
+    # The delay has not cost anything so far: this job exists to catch rot within
+    # a day of it landing, and a run that lands five or six hours late still does
+    # that. Nothing here has yet shown a slot being LOST, only postponed, so the
+    # move to `37` is about predictability rather than about rescuing a check that
+    # was failing to run.
+    - cron: '37 6 * * *'
   workflow_dispatch:
 
 jobs:
