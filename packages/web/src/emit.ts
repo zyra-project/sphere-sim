@@ -216,27 +216,39 @@ export interface RasterFit {
   scaleY: number;
   /** True when this quadrant is exactly one projector raster. */
   exact: boolean;
-  /** The finest Gray stride in CANVAS pixels — the binding axis. */
-  finestStrideCanvasPx: number;
-  /** True when the pattern cannot be represented at this size at all. */
+  /** The finest Gray stride on whichever grid carries it worst. */
+  finestStridePx: number;
+  /** Which grid that was — the one to change. */
+  binding: 'window' | 'raster';
+  /** True when the pattern cannot be represented on that grid at all. */
   fatal: boolean;
   /** null when exact; otherwise what is wrong, with the numbers. */
   problem: string | null;
 }
 
 /**
- * The floor on the finest Gray stride, in canvas pixels.
+ * The floor on the finest Gray stride, in pixels of the narrowest grid.
  *
  * Set by the FRINGE rather than by the planes. `phasePeriodStrides` is 2, so one
- * sinusoid period is two Gray strides; at a stride of 2 canvas pixels a period
- * is 4 pixels, which is the coarsest sampling at which a cosine is still a
- * cosine rather than a triangle. The Gray planes themselves survive a stride of
- * 1 — a one-pixel strip still has edges — so a threshold derived from them would
- * pass a window that emits a usable address and an unusable fringe, and the
- * phase estimate is the half that supplies sub-strip position.
+ * sinusoid period is two Gray strides; at a stride of 2 pixels a period is 4,
+ * which is the coarsest sampling at which a cosine is still a cosine rather than
+ * a triangle. The Gray planes themselves survive a stride of 1 — a one-pixel
+ * strip still has edges — so a threshold derived from them would pass a rig that
+ * emits a usable address and an unusable fringe, and the phase estimate is the
+ * half that supplies sub-strip position.
  */
-export const MIN_STRIDE_CANVAS_PX = 2;
+export const MIN_STRIDE_PX = 2;
 
+/**
+ * Both grids are checked, and the narrower one binds.
+ *
+ * Review caught this: the first version measured the CANVAS only, so a 100-pixel
+ * projector shown in a 128-pixel quadrant passed on a canvas stride of 2 while
+ * its native stride was 1.56 — and the display pipeline resamples the window
+ * down onto that raster on its way out, so the projector emits the undersampled
+ * signal this check exists to refuse. The pattern has to survive every grid it
+ * passes through, and the page lets an operator name both.
+ */
 export function rasterFit(
   quad: { w: number; h: number },
   resX: number,
@@ -246,21 +258,30 @@ export function rasterFit(
   const scaleX = quad.w / resX;
   const scaleY = quad.h / resY;
   const exact = quad.w === resX && quad.h === resY;
-  // The stride in canvas pixels is quadrant / 2^bits on each axis — the raster
-  // cancels, because the quadrant IS the whole raster however it is scaled.
-  const strideU = strideFor(quad.w, plan.grayBits);
-  const strideV = strideFor(quad.h, plan.grayBits);
-  const finestStrideCanvasPx = Math.min(strideU, strideV);
-  const fatal = finestStrideCanvasPx < MIN_STRIDE_CANVAS_PX;
+  // On each grid the stride is that grid's extent / 2^bits, because the quadrant
+  // IS the whole raster however it is scaled. The binding axis is the shorter.
+  const window = Math.min(strideFor(quad.w, plan.grayBits), strideFor(quad.h, plan.grayBits));
+  const raster = Math.min(strideFor(resX, plan.grayBits), strideFor(resY, plan.grayBits));
+  const finestStridePx = Math.min(window, raster);
+  const binding: 'window' | 'raster' = raster <= window ? 'raster' : 'window';
+  const fatal = finestStridePx < MIN_STRIDE_PX;
 
   let problem: string | null = null;
   if (fatal) {
+    const where =
+      binding === 'raster'
+        ? `the ${resX}×${resY} raster you named`
+        : `this ${quad.w}×${quad.h} window`;
     problem =
-      `The finest Gray strip is ${finestStrideCanvasPx.toFixed(2)} canvas pixels wide, under the ` +
-      `${MIN_STRIDE_CANVAS_PX} this needs. One fringe period is two strips, so the phase steps ` +
-      `would be sampled below four pixels a cycle and would not be sinusoids by the time they ` +
-      `left the machine. Open a larger window, or drop to ${Math.max(1, plan.grayBits - 1)} Gray ` +
-      `planes and record that you did — the decode has to be told the same plan the capture used.`;
+      `The finest Gray strip is ${finestStridePx.toFixed(2)} pixels wide on ${where}, under the ` +
+      `${MIN_STRIDE_PX} this needs. One fringe period is two strips, so the phase steps would be ` +
+      `sampled below four pixels a cycle and would not be sinusoids by the time they left the ` +
+      `machine. ` +
+      (binding === 'raster'
+        ? `A larger window cannot fix this — the display resamples down onto that raster on the ` +
+          `way out. Drop to ${Math.max(1, plan.grayBits - 1)} Gray planes`
+        : `Open a larger window, or drop to ${Math.max(1, plan.grayBits - 1)} Gray planes`) +
+      ` and record that you did — the decode has to be told the same plan the capture used.`;
   } else if (!exact) {
     problem =
       `This quadrant is ${quad.w}×${quad.h} canvas pixels but the rig says the raster is ` +
@@ -269,5 +290,55 @@ export function rasterFit(
       `the calibration measures that displacement along with the optics. Full-screen on the ` +
       `framebuffer that drives the projectors is what makes this 1.000.`;
   }
-  return { scaleX, scaleY, exact, finestStrideCanvasPx, fatal, problem };
+  return { scaleX, scaleY, exact, finestStridePx, binding, fatal, problem };
+}
+
+/** The fit of every projector in a rig, and the one worth showing. */
+export interface RigFit {
+  /** One entry per projector, in the rig's own order. */
+  perProjector: RasterFit[];
+  /** The entry the page should report: fatal first, then merely inexact. */
+  worst: RasterFit;
+  /** Which projector {@link worst} belongs to, 0-based. */
+  worstProjector: number;
+  /** True when every quadrant is exactly one raster. */
+  allExact: boolean;
+  /** True when any quadrant cannot carry the pattern. */
+  anyFatal: boolean;
+}
+
+/**
+ * Every projector's fit, not just the first one's.
+ *
+ * Review caught this too, and it is the same odd-framebuffer arithmetic the
+ * tiling test already covers from the other side: `viewportPixels` rounds, so on
+ * a framebuffer 1281 pixels wide the left quadrants come out 641 and the right
+ * ones 640. Reporting only projector 0 could therefore say "exactly one raster"
+ * while the projector beside it was being resampled — a verdict that is true of
+ * the quadrant it measured and false of the rig.
+ */
+export function rigFit(
+  count: number,
+  framebufferW: number,
+  framebufferH: number,
+  resX: number,
+  resY: number,
+  plan: PatternPlan,
+): RigFit {
+  const perProjector = quadrantViewports(count).map((v) =>
+    rasterFit(viewportPixels(v, framebufferW, framebufferH), resX, resY, plan),
+  );
+  let worstProjector = 0;
+  for (let i = 1; i < perProjector.length; i++) {
+    const a = perProjector[worstProjector];
+    const b = perProjector[i];
+    if ((b.fatal && !a.fatal) || (b.fatal === a.fatal && !b.exact && a.exact)) worstProjector = i;
+  }
+  return {
+    perProjector,
+    worst: perProjector[worstProjector],
+    worstProjector,
+    allExact: perProjector.every((f) => f.exact),
+    anyFatal: perProjector.some((f) => f.fatal),
+  };
 }

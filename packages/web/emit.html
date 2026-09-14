@@ -53,10 +53,12 @@ body.armed { cursor: none; }
   background: var(--panel); border: 1px solid var(--line-strong); border-radius: 10px;
   padding: 20px 22px;
 }
-#setup {
+#setup, #needserver {
   top: 50%; left: 50%; transform: translate(-50%, -50%);
   width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
 }
+#needserver { border-color: rgba(255, 107, 90, 0.6); }
+#needserver h1 { color: var(--bad); }
 #hud { left: 18px; bottom: 18px; width: min(560px, calc(100vw - 36px)); }
 [hidden] { display: none !important; }
 
@@ -201,7 +203,46 @@ button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); 
   </p>
 </div>
 
+<!-- The failure this page must never have is a blank screen beside a sphere.
+     It boots from an ES module, and a browser refuses to fetch one over file://
+     — the origin is opaque, so it is a CORS failure with nothing visible on the
+     page and an error only in a console nobody has open. Verified in Chromium:
+     "Access to script ... from origin 'null' has been blocked by CORS policy".
+     The same blank screen is what a 404 or a syntax error produces.
+
+     So the boot is checked rather than assumed. The module stamps the document
+     when it runs; this classic inline script — which file:// does allow, because
+     it is not fetched — says what went wrong if the stamp never appears. The
+     delay is what keeps a normal load from flashing the message. -->
+<div id="needserver" class="panel" hidden>
+  <h1>This page has to be served</h1>
+  <p class="lede">Its code never loaded, so nothing below it will work.</p>
+  <p class="note">
+    <strong>If you opened this from a file or a USB stick</strong> — a
+    <code>file://</code> address in the bar — that is the cause. Browsers refuse to load a page’s
+    modules from a file origin, and the refusal is silent. Copying the folder does not help; it has
+    to come off an <code>http://</code> address. Any static server will do, on this machine or a
+    laptop you can reach: from a checkout, <code>npm run app</code> serves it at
+    <code>http://localhost:8174/emit.html</code>.
+  </p>
+  <p class="note">
+    <strong>If the address already starts with <code>http</code></strong>, then
+    <code>dist/web/web/emit.js</code> did not arrive beside this page. Open the browser console —
+    a 404 names the file it wanted.
+  </p>
+</div>
+
 <script type="module" src="./dist/web/web/emit.js"></script>
+<script>
+  setTimeout(function () {
+    if (document.documentElement.dataset.emitBooted === undefined) {
+      var el = document.getElementById('needserver');
+      if (el) el.hidden = false;
+      var setup = document.getElementById('setup');
+      if (setup) setup.hidden = true;
+    }
+  }, 1200);
+</script>
 <noscript><p style="color:#e8b483;padding:20px">This page emits its frames from the pattern
 definition itself rather than from image files, so it needs JavaScript.</p></noscript>
 </body>

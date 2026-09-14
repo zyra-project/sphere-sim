@@ -176,6 +176,13 @@ framebuffer that drives the projectors**. That window is the projectors: SOS
 drives all of them as quadrants of one X screen, so a page that fills it can
 address each projector's raster without anything being installed.
 
+It has to arrive over `http://`. Copying the folder to the machine and
+double-clicking the file does **not** work — a browser will not load a page's
+code from a `file://` address — so if the display machine has no route to the
+site, serve the folder from a laptop on the same network rather than carrying it
+across. The page says this itself if it ever fails to start, instead of showing
+you a blank screen.
+
 Tell it how many projectors the rig has and what one projector's raster is. It
 will say whether each quadrant came out exactly one raster; if it did not, the
 window is not the framebuffer — display scaling, or not quite full-screen — and

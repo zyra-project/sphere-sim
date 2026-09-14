@@ -70,13 +70,23 @@ const PAGES: Page[] = [
       'drives, this page IS the projectors: it puts one structured-light frame on one projector’s ' +
       'raster at a time, with nothing installed on the display machine. It states what it cannot ' +
       'do yet — nothing here records which photograph is which.',
-    // Its own copy of the built modules rather than a reference into `../app/`.
-    // The page exists for a machine that may have no route off its own subnet,
-    // so `site/emit/` has to survive being copied onto a stick and opened from a
-    // directory with no sibling — and a cross-directory script src is a 404 that
-    // shows as a blank screen beside a sphere, at the one moment nobody can
-    // debug it. `requires` names the page's own entry point, so a build that
-    // produced the app but not this page publishes neither.
+    // Its own copy of the built modules rather than a reference into `../app/`,
+    // so the directory can be SERVED on its own — mirrored onto an intranet,
+    // dropped into a webroot, or handed to `npm run app` on a laptop beside the
+    // sphere — without a sibling that a cross-directory script src would need.
+    // A missing sibling is a 404 that shows as a blank screen at the one moment
+    // nobody can debug it.
+    //
+    // It does NOT make the page openable as a file. Review raised that, and it
+    // is right: the page boots from an ES module and a browser refuses to fetch
+    // one over `file://` because the origin is opaque. Verified in Chromium —
+    // "from origin 'null' has been blocked by CORS policy" — and copying `dist`
+    // alongside changes nothing, because the restriction is on the scheme. The
+    // page now says so on its own face rather than going blank; see the boot
+    // check at the bottom of `packages/web/emit.html`.
+    //
+    // `requires` names the page's own entry point, so a build that produced the
+    // app but not this page publishes neither.
     sources: [
       { from: 'packages/web/emit.html', to: 'index.html' },
       { from: 'packages/web/dist', to: 'dist' },

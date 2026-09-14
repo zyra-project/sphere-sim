@@ -30,12 +30,13 @@ import test from 'node:test';
 
 import {
   MAX_PLACEABLE_PROJECTORS,
-  MIN_STRIDE_CANVAS_PX,
+  MIN_STRIDE_PX,
   emitOrder,
   quadrantName,
   quadrantViewports,
   projectorSlots,
   rasterFit,
+  rigFit,
   viewportPixels,
 } from '../src/emit.ts';
 import { NOMINAL_SLOTS_BY_COUNT } from '../../calibration/src/conventions.ts';
@@ -187,7 +188,7 @@ test('a window that is the framebuffer resamples nothing', () => {
   assert.equal(fit.fatal, false);
   // 1920 / 2^6 = 30 across, 1200 / 2^6 = 18.75 down. The binding axis is the
   // one with fewer pixels, and it is the one the fringe has to live on.
-  assert.equal(fit.finestStrideCanvasPx, 1200 / 64);
+  assert.equal(fit.finestStridePx, 1200 / 64);
 });
 
 test('a window that is not the framebuffer says so, with the scale', () => {
@@ -200,20 +201,68 @@ test('a window that is not the framebuffer says so, with the scale', () => {
   assert.match(fit.problem ?? '', /0\.500/);
 });
 
-test('a window too small for the fringe is fatal, and says which number to change', () => {
+test('a grid too coarse for the fringe is fatal, and says which number to change', () => {
   // 2^6 = 64 strips across 100 pixels is 1.56 px a strip, so a fringe period is
   // 3.1 px — under the four a cosine needs to still be one.
   const plan = DEFAULT_PATTERN_PLAN;
   const fit = rasterFit({ w: 100, h: 100 }, 100, 100, plan);
   assert.equal(fit.fatal, true);
-  assert.ok(fit.finestStrideCanvasPx < MIN_STRIDE_CANVAS_PX);
-  assert.match(fit.problem ?? '', /fringe period is two strips|One fringe period is two strips/);
+  assert.ok(fit.finestStridePx < MIN_STRIDE_PX);
+  assert.match(fit.problem ?? '', /One fringe period is two strips/);
   assert.match(fit.problem ?? '', new RegExp(`${plan.grayBits - 1} Gray`));
   // The plan is part of the capture's identity: a page that quietly dropped a
   // bit would emit one sequence and leave the decode expecting another.
   assert.match(fit.problem ?? '', /record that you did/);
   // Exactly at the floor is not fatal: 2^6 strips across 128 px is 2.00 each.
   const edge = rasterFit({ w: 128, h: 128 }, 128, 128, plan);
-  assert.equal(edge.finestStrideCanvasPx, MIN_STRIDE_CANVAS_PX);
+  assert.equal(edge.finestStridePx, MIN_STRIDE_PX);
   assert.equal(edge.fatal, false);
+});
+
+test('a big window cannot rescue a raster too coarse to carry the fringe', () => {
+  // Review's counter-example, and the first version of this check passed it: a
+  // 100x100 projector in a 128x128 quadrant has a CANVAS stride of 2.00, which
+  // clears the floor, and a NATIVE stride of 1.56, which does not. The display
+  // resamples the window down onto that raster on the way out, so the projector
+  // emits the undersampled signal — the canvas measurement was of a grid the
+  // light does not finally live on.
+  const plan = DEFAULT_PATTERN_PLAN;
+  const fit = rasterFit({ w: 128, h: 128 }, 100, 100, plan);
+  assert.equal(fit.fatal, true, 'a canvas stride of 2.00 must not clear a native stride of 1.56');
+  assert.equal(fit.binding, 'raster');
+  assert.equal(fit.finestStridePx, 100 / 64);
+  // And it must not send the operator after the wrong number.
+  assert.match(fit.problem ?? '', /100×100 raster you named/);
+  assert.match(fit.problem ?? '', /A larger window cannot fix this/);
+  // The mirror case still names the window, so the message tracks the grid.
+  const narrow = rasterFit({ w: 100, h: 100 }, 1920, 1200, plan);
+  assert.equal(narrow.binding, 'window');
+  assert.match(narrow.problem ?? '', /this 100×100 window/);
+  assert.match(narrow.problem ?? '', /Open a larger window/);
+});
+
+test('the fit is the whole rig’s, not the first quadrant’s', () => {
+  const plan = DEFAULT_PATTERN_PLAN;
+  // 1281 is odd, so `viewportPixels` gives the left quadrants 641 columns and
+  // the right ones 640. Declaring 641 makes projector 0 exact and projector 1
+  // resampled — and a verdict read off projector 0 alone would call the rig
+  // exact while a projector beside it was being resampled.
+  const fit = rigFit(4, 1281, 800, 641, 400, plan);
+  assert.equal(fit.perProjector.length, 4);
+  assert.equal(fit.perProjector[0].exact, true, 'projector 0 really is exact');
+  assert.equal(fit.allExact, false, 'but the rig is not');
+  assert.equal(fit.worst.exact, false);
+  assert.ok(fit.worstProjector !== 0, `worst should not be the exact one, got ${fit.worstProjector}`);
+  assert.equal(fit.anyFatal, false);
+
+  // An even framebuffer with a matching raster is exact everywhere.
+  const clean = rigFit(4, 1280, 800, 640, 400, plan);
+  assert.equal(clean.allExact, true);
+  assert.equal(clean.worst.problem, null);
+  assert.equal(clean.anyFatal, false);
+
+  // Fatal outranks merely inexact when choosing what to report.
+  const bad = rigFit(4, 1280, 800, 100, 100, plan);
+  assert.equal(bad.anyFatal, true);
+  assert.equal(bad.worst.fatal, true);
 });

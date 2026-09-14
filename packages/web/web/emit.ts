@@ -67,6 +67,7 @@ import {
   quadrantName,
   quadrantViewports,
   rasterFit,
+  rigFit,
   viewportPixels,
   type EmitStep,
   type RasterFit,
@@ -127,6 +128,9 @@ let playing = false;
 let playTimer: number | null = null;
 /** True once the last step has been played, so the room going dark means done. */
 let finished = false;
+
+/** The shortest dwell the timer will honour — and so the shortest the box may say. */
+const MIN_DWELL_S = 0.2;
 
 // ---- the canvas ------------------------------------------------------------
 
@@ -326,12 +330,38 @@ function readRig(): Rig | null {
   return { count, resX, resY };
 }
 
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
 function readPlan(): PatternPlan {
   return {
     ...DEFAULT_PATTERN_PLAN,
-    grayBits: Math.max(1, Math.min(8, intFrom(bitsEl, DEFAULT_PATTERN_PLAN.grayBits))),
-    phaseSteps: Math.max(4, Math.min(12, intFrom(phaseEl, DEFAULT_PATTERN_PLAN.phaseSteps))),
+    grayBits: clamp(intFrom(bitsEl, DEFAULT_PATTERN_PLAN.grayBits), 1, 8),
+    phaseSteps: clamp(intFrom(phaseEl, DEFAULT_PATTERN_PLAN.phaseSteps), 4, 12),
   };
+}
+
+/**
+ * Write the clamped values back into the boxes the operator reads.
+ *
+ * Review caught this and it is not cosmetic. `readPlan` clamps, so typing 9 Gray
+ * planes emitted 8 while the box went on saying 9 — and this page's own advice is
+ * to WRITE THE PLAN DOWN, because a capture decoded against a different plan
+ * decodes into nonsense. A control that disagrees with what is being emitted is
+ * therefore not a rounding detail; it is the page handing an operator the wrong
+ * number to record.
+ *
+ * On `change` rather than on `input`, so it does not fight somebody typing the
+ * first digit of a two-digit number, and again at Start, which is the last moment
+ * the displayed value can still be believed.
+ */
+function normalizePlanInputs(): void {
+  const p = readPlan();
+  bitsEl.value = String(p.grayBits);
+  phaseEl.value = String(p.phaseSteps);
+  const dwell = Number.parseFloat(dwellEl.value);
+  dwellEl.value = String(Number.isFinite(dwell) ? clamp(dwell, MIN_DWELL_S, 30) : 2);
 }
 
 /** Recompute everything the operator's inputs decide, and say what it means. */
@@ -364,18 +394,28 @@ function refresh(): void {
     `Write the plan down: a capture decoded against a different one decodes into nonsense, and ` +
     `nothing yet records it for you.`;
 
-  const q = viewportPixels(viewports[0], stage.width, stage.height);
-  const fit = rasterFit(q, rig.resX, rig.resY, plan);
-  if (fit.problem === null) {
+  // Every occupied quadrant, not just the first. `viewportPixels` rounds, so on
+  // an odd framebuffer the left quadrants come out a pixel wider than the right
+  // ones — and a verdict read off projector 0 alone can say "exactly one raster"
+  // while the projector beside it is being resampled.
+  const fit = rigFit(rig.count, stage.width, stage.height, rig.resX, rig.resY, plan);
+  if (fit.allExact) {
+    const q = viewportPixels(viewports[0], stage.width, stage.height);
     fitEl.className = 'verdict ok';
     fitEl.textContent =
-      `This window is ${stage.width}×${stage.height} device pixels, so each quadrant is ` +
+      `This window is ${stage.width}×${stage.height} device pixels, so ` +
+      `${rig.count === 1 ? 'the quadrant is' : `all ${rig.count} quadrants are`} ` +
       `${q.w}×${q.h} — exactly one raster. Every emitted pixel is one projector pixel.`;
   } else {
-    fitEl.className = fit.fatal ? 'verdict bad' : 'verdict warn';
-    fitEl.textContent = fit.problem;
+    fitEl.className = fit.anyFatal ? 'verdict bad' : 'verdict warn';
+    const slot = slots[fit.worstProjector];
+    fitEl.textContent =
+      `P${slot + 1} (projector ${fit.worstProjector + 1} of ${rig.count}): ${fit.worst.problem}` +
+      (fit.perProjector.filter((f) => !f.exact).length > 1
+        ? ` Other quadrants are off by their own amounts; fixing the window fixes all of them.`
+        : '');
   }
-  startEl.disabled = fit.fatal;
+  startEl.disabled = fit.anyFatal;
   writeUrl();
   paint();
 }
@@ -417,6 +457,22 @@ function stepProjector(delta: number): void {
   go(target * specs.length + step.frame);
 }
 
+/**
+ * Leave setup for the sequence.
+ *
+ * Normalizes first, because this is the last moment the displayed plan can still
+ * be believed: from here the operator is reading the numbers off the panel to
+ * write them down, and everything downstream depends on those being the numbers
+ * that were emitted.
+ */
+function start(): void {
+  normalizePlanInputs();
+  refresh();
+  if (startEl.disabled) return;
+  go(0);
+  setMode('hud');
+}
+
 function setMode(next: Mode): void {
   mode = next;
   setupEl.hidden = next !== 'setup';
@@ -456,6 +512,12 @@ function tick(hz: number, ms: number): void {
   }
 }
 
+/** The dwell the timer will actually use, which is what the box is normalized to. */
+function dwellMs(): number {
+  const v = Number.parseFloat(dwellEl.value);
+  return Math.round(clamp(Number.isFinite(v) ? v : 2, MIN_DWELL_S, 30) * 1000);
+}
+
 function stopPlaying(): void {
   playing = false;
   if (playTimer !== null) {
@@ -478,8 +540,7 @@ function advance(): void {
   go(at + 1);
   tick(880, 45);
   if (playing) {
-    const dwellMs = Math.max(200, Math.round(Number.parseFloat(dwellEl.value || '2') * 1000));
-    playTimer = window.setTimeout(advance, dwellMs);
+    playTimer = window.setTimeout(advance, dwellMs());
   }
 }
 
@@ -492,8 +553,7 @@ function togglePlay(): void {
   if (steps.length === 0) return;
   playing = true;
   playEl.textContent = 'Pause';
-  const dwellMs = Math.max(200, Math.round(Number.parseFloat(dwellEl.value || '2') * 1000));
-  playTimer = window.setTimeout(advance, dwellMs);
+  playTimer = window.setTimeout(advance, dwellMs());
   hudText();
 }
 
@@ -607,13 +667,15 @@ function main(): void {
     refresh();
   });
   for (const el of [countEl, resXEl, resYEl, bitsEl, phaseEl, dwellEl]) {
-    el.addEventListener('change', refresh);
+    el.addEventListener('change', () => {
+      normalizePlanInputs();
+      refresh();
+    });
     el.addEventListener('input', refresh);
   }
   document.getElementById('fullscreen')?.addEventListener('click', toggleFullscreen);
   startEl.addEventListener('click', () => {
-    go(0);
-    setMode('hud');
+    start();
   });
   document.getElementById('prev')?.addEventListener('click', () => go(at - 1));
   document.getElementById('next')?.addEventListener('click', () => go(at + 1));
@@ -629,8 +691,7 @@ function main(): void {
   window.addEventListener('keydown', (ev) => {
     if (mode === 'setup' && ev.key !== 'F11') {
       if (ev.key === 'Enter' && !startEl.disabled) {
-        go(0);
-        setMode('hud');
+        start();
         ev.preventDefault();
       }
       return;
@@ -679,6 +740,9 @@ function main(): void {
 
   refresh();
   setMode('setup');
+  // The stamp emit.html's inline script looks for. Last thing in `main`, so it
+  // means "this module ran to the end" rather than "this module was fetched".
+  document.documentElement.dataset.emitBooted = 'yes';
 }
 
 main();
