@@ -246,6 +246,10 @@ function paint(): void {
   const r = viewportPixels(viewports[step.projector], w, h);
   if (r.w <= 0 || r.h <= 0) return;
   const fit = rasterFit(r, rig.resX, rig.resY, plan);
+  // Black rather than a pattern that cannot be decoded. Start is gated on
+  // `rigFit().anyFatal`, so this is only reachable by resizing mid-capture — and
+  // once armed there is no panel left to put a warning in, so the honest output
+  // is no output. A frame emitted here would photograph as a plausible capture.
   if (fit.fatal) return;
   ctx.putImageData(frameFor(step.frame, rig, r.w, r.h, fit), r.x, r.y);
 }
