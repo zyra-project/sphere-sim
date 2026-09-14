@@ -4,10 +4,13 @@
 /**
  * Assemble everything publishable into `site/`. `node tools/build-site.ts`
  *
- * Three pages, and they are for three different readers:
+ * Four pages, and they are for four different readers:
  *
  *   - **`/app/`** — the interactive simulator. For somebody who wants to
  *     understand what a projected sphere does and what calibrating one buys.
+ *   - **`/emit/`** — the projector emitter. For an operator standing at a real
+ *     sphere: opened full-screen on the display machine it plays the
+ *     structured-light sequence into one projector's raster at a time.
  *   - **`/harness/`** — the developer harness. Five viewports, a slider per
  *     constant carrying its provenance class, and the GPU↔CPU parity number.
  *   - **`/progress/`** — the measurement record, if one has been generated.
@@ -58,6 +61,27 @@ const PAGES: Page[] = [
       { from: 'packages/web/assets', to: 'assets' },
     ],
     requires: 'packages/web/dist/web/web/main.js',
+  },
+  {
+    slug: 'emit',
+    title: 'Projector emitter',
+    blurb:
+      'The calibration sequence, played into a real rig. Opened full-screen on the framebuffer SOS ' +
+      'drives, this page IS the projectors: it puts one structured-light frame on one projector’s ' +
+      'raster at a time, with nothing installed on the display machine. It states what it cannot ' +
+      'do yet — nothing here records which photograph is which.',
+    // Its own copy of the built modules rather than a reference into `../app/`.
+    // The page exists for a machine that may have no route off its own subnet,
+    // so `site/emit/` has to survive being copied onto a stick and opened from a
+    // directory with no sibling — and a cross-directory script src is a 404 that
+    // shows as a blank screen beside a sphere, at the one moment nobody can
+    // debug it. `requires` names the page's own entry point, so a build that
+    // produced the app but not this page publishes neither.
+    sources: [
+      { from: 'packages/web/emit.html', to: 'index.html' },
+      { from: 'packages/web/dist', to: 'dist' },
+    ],
+    requires: 'packages/web/dist/web/web/emit.js',
   },
   {
     slug: 'harness',
