@@ -899,18 +899,39 @@ async function main(): Promise<void> {
       })()`);
       await sleep(500);
       await cdp.evaluate("document.querySelector('#inspect canvas.framepic')?.click()");
-      await sleep(3500);
-      const lb = await cdp.evaluate<{ modes: string[]; w: number; before: number } | null>(`(() => {
-        const box = document.getElementById('lightbox');
-        if (!box || !box.classList.contains('on')) return null;
-        const a = document.getElementById('lightbox-canvas');
-        const b = document.getElementById('lightbox-canvas-b');
-        return {
-          modes: [...box.querySelectorAll('.modes .chip')].map((c) => c.textContent),
-          w: a ? a.width : 0,
-          before: b ? b.width : 0,
-        };
-      })()`);
+      /**
+       * Poll, because both halves of this comparison arrive from the worker.
+       *
+       * `openLightbox` opens with `before: null` and only then asks for the two
+       * frames at screen width; until the "before" reply lands, `renderLightbox`
+       * takes its no-before branch and appends no mode chips at all. A fixed
+       * `sleep` here therefore measured the runner rather than the page, and the
+       * 2026-09-15 nightly is what that costs: on a box 23% slower than the two
+       * that passed, the read landed mid-flight and the run failed with "0 ways
+       * to read it" on code identical to the green ones.
+       *
+       * Waiting for the chips instead of for the clock keeps the real failure —
+       * a "before" that never comes because the rig was dropped — reported just
+       * as loudly, only 15s later rather than 3.5s.
+       */
+      type Lightbox = { modes: string[]; w: number; before: number };
+      const readLightbox = (): Promise<Lightbox | null> =>
+        cdp.evaluate<Lightbox | null>(`(() => {
+          const box = document.getElementById('lightbox');
+          if (!box || !box.classList.contains('on')) return null;
+          const a = document.getElementById('lightbox-canvas');
+          const b = document.getElementById('lightbox-canvas-b');
+          return {
+            modes: [...box.querySelectorAll('.modes .chip')].map((c) => c.textContent),
+            w: a ? a.width : 0,
+            before: b ? b.width : 0,
+          };
+        })()`);
+      let lb = await readLightbox();
+      for (let i = 0; i < 60 && !(lb && lb.w >= 700 && lb.modes.length === 3); i++) {
+        await sleep(250);
+        lb = await readLightbox();
+      }
       if (!lb) {
         failures.push('clicking the projector frame opened no lightbox');
       } else if (lb.w < 700) {
