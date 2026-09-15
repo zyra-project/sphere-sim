@@ -333,3 +333,10 @@ sphere has wasted a trip:
 - **Whether a rig of more than four projectors can be written back.** It can be
   photographed and solved, and the **SOS config file format carries four**. See
   `docs/OPERATOR-PATH.md`.
+- **How to undo an install.** The archive now tells you which of the files it
+  writes it could put back, and it is currently one of them: your config, which
+  it patches and therefore holds a copy of. The warp meshes and alignment files
+  it generates, so it has never seen what is at those paths on your sphere and
+  cannot return them. `restore/MANIFEST.txt` names them. **Copy anything you are
+  about to overwrite somewhere safe yourself, before you copy a single file in.**
+  There is no one-step way back and this card will say so until there is.

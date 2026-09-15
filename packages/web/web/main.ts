@@ -47,6 +47,7 @@ import { buildWarpExports, formatWarpMesh } from '../../sim/src/warp.ts';
 import { buildZip } from '../src/zip.ts';
 import type { ZipEntry } from '../src/zip.ts';
 import { bundleEntries, CONFIG_ABSENT, FILE_NOTES } from '../src/bundle.ts';
+import { type InstallTarget, type RestorePlan, planRestore } from '../src/restore.ts';
 import {
   fmtMm,
   freshSolve,
@@ -4567,6 +4568,8 @@ function buildBundle(): {
   configNote: string;
   cost: string;
   refused: string[];
+  /** What of this archive could be undone, and what could not. */
+  restore: RestorePlan;
 } {
   const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
   // INSTALL, and the archive is why it matters that all three parts agree: the
@@ -4683,6 +4686,33 @@ function buildBundle(): {
   const rig = `${n} projector${n === 1 ? '' : 's'}, ` +
     `${state.compositorRig === null ? 'as the install describes them' : 'as last recalibrated'}.`;
 
+  const configName = state.sosConfigName || 'local_sos_config.json';
+  /**
+   * What the archive would overwrite, against what this page could put back.
+   *
+   * The targets are exactly the files `bundleEntries` writes, listed from the
+   * same arrays, so the plan cannot drift from the archive it describes.
+   *
+   * The held set is short and will stay short until the page can be given the
+   * operator's existing files: `state.sosConfigText` is the one original it
+   * has, because the config is the one output it PATCHES. `state.sosRead` is
+   * not in here on purpose — it is a parsed reading of an alignment file, not
+   * the bytes that arrived, and restoring from a re-serialization would put
+   * back a file that is equivalent rather than identical.
+   */
+  const targets: InstallTarget[] = [
+    ...warp.map(([id]) => ({ path: `warp/${id}.data`, kind: 'warp' as const })),
+    ...alignment.map(([id]) => ({
+      path: `alignment/${id}.alignment`,
+      kind: 'alignment' as const,
+    })),
+    ...(config !== null ? [{ path: configName, kind: 'config' as const }] : []),
+  ];
+  const held = config !== null && state.sosConfigText !== ''
+    ? [{ path: configName, text: state.sosConfigText }]
+    : [];
+  const restore = planRestore(targets, held);
+
   return {
     configNote,
     entries: bundleEntries({
@@ -4691,14 +4721,16 @@ function buildBundle(): {
       config,
       // The name it arrived under, so what comes out of the archive matches
       // what went in and a diff needs no renaming first.
-      configName: state.sosConfigName || 'local_sos_config.json',
+      configName,
       alignmentCost: cost,
       rigSummary: rig,
       refused,
+      restore,
     }),
     configState,
     cost,
     refused,
+    restore,
   };
 }
 
@@ -7156,6 +7188,28 @@ function renderReadout(): void {
         const p = el('p', { className: 'note tiny', textContent: `Not included — ${r}` });
         p.style.color = 'var(--warn)';
         p.dataset.smoke = 'bundle-refused';
+        box.append(p);
+      }
+
+      /**
+       * What could not be put back, before the button rather than behind the
+       * disclosure below it.
+       *
+       * `bundle.ts` states the rule this follows: the panel and the README are
+       * the same sentences, because "the second audience is the first one an
+       * hour later". This one has to be on the panel for a stronger reason than
+       * symmetry — the README is read at the projector, and the decision it
+       * changes (copy your current files somewhere safe FIRST) is made here,
+       * before the download. A warning that arrives only inside the archive
+       * arrives after the operator has already committed to installing it.
+       */
+      if (!ready.restore.complete) {
+        const p = el('p', {
+          className: 'note tiny',
+          textContent: ready.restore.refusal ?? '',
+        });
+        p.style.color = 'var(--warn)';
+        p.dataset.smoke = 'bundle-restore';
         box.append(p);
       }
 
