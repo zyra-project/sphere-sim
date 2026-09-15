@@ -5,12 +5,13 @@ calibration. Companion to `docs/VISIT.md`, which is a different errand: that car
 *measures an installation to check the model*, this one *photographs an
 installation to recover its geometry*.
 
-> **This procedure cannot be completed today.** Phase 1 of
-> `docs/OPERATOR-PATH.md` has landed, so there is now a supported way to put the
-> patterns on the sphere — Part 4 says what it is. Phases 2 and 3 are not built:
-> nothing works out which pattern a photograph shows, and the solver has never
-> been given a real photograph. Following this card today produces **a folder of
-> photographs that nothing can currently read.**
+> **This procedure cannot be completed today.** Phases 1 and 2 of
+> `docs/OPERATOR-PATH.md` have landed far enough to matter: there is a supported
+> way to put the patterns on the sphere (Part 4), and software can now work out
+> which projector's run a photograph belongs to and say when a run is broken.
+> Phase 3 is not built — **the solver has never been given a real photograph** —
+> so following this card today still produces a folder nothing can currently
+> read.
 >
 > It is written anyway, and first, for two reasons. It is the cheapest way to find
 > out what the procedure gets wrong — cheaper than building three phases and then
@@ -210,17 +211,21 @@ rig that is **136 frames per position, 408 in total** — about two and a half
 minutes of shooting per position at one frame per second. The shooting is not the
 expensive part. Moving the tripod is.
 
-Then, in order, and this is where the missing Phase 2 costs you:
+Then, in order:
 
-1. Shoot every frame **in strict capture order**.
-2. **Do not delete, skip or re-shoot a single frame mid-sequence.** Nothing yet
-   reads which pattern a photograph shows, so today the *order* is the only
-   record of it. One deleted frame silently renumbers everything after it, and a
-   mis-indexed Gray plane is not a failed calibration — it is a confident wrong
-   one.
-3. If you spoil a frame, **re-shoot that projector's whole 34** and keep both
-   runs. Sorting it out later is possible; guessing which frame was replaced is
-   not.
+1. Shoot every frame **in strict capture order**. The order is still what the
+   software counts from inside a run.
+2. **If you spoil a frame, do not try to patch the run — re-shoot that
+   projector's whole 34**, and keep both runs. This is the one rule that carries
+   real risk, and it is worth knowing exactly why. Software can now find each
+   projector's run by its white and black frames and check the count between
+   them, so a frame you simply *lose* costs that projector's run and nothing
+   else. What it cannot see is a frame lost and another added **in the same
+   run**: the count still adds up, every frame still looks like a patterned
+   frame, and the capture comes back wrong with nothing saying so.
+   `docs/EXPERIMENT-8.md` measures that at 22.7% of such sessions.
+3. A deleted frame is therefore **survivable and a patched one is not.** If you
+   delete, delete; do not also add.
 4. Make sure filenames **sort in capture order**. Most cameras do this; some
    restart numbering at 10000.
 5. Do not move the tripod within a position. Move it only between positions.
@@ -253,9 +258,10 @@ for software that does not exist yet, and it should get shorter as the phases in
 
 | rule on this card | survives? |
 | --- | --- |
-| Shoot in strict order; never delete, skip or re-shoot one frame | **Phase 2 deletes it.** Order is only load-bearing because nothing yet reads which pattern a photograph shows |
-| Re-shoot a whole projector's 34 if you spoil one | **Phase 2 deletes it** |
-| Make sure filenames sort in capture order | **Phase 2 deletes it** |
+| Shoot in strict order | **Phase 2 softened it, and cannot yet delete it.** The run's own references re-synchronise the count, so a lost frame costs that projector's run instead of the capture — but the order is still what indexes frames inside a run |
+| Never delete, skip or re-shoot one frame | **Phase 2 narrowed it** to: do not delete one and add another in the same run. That is the one fault the bookends cannot see |
+| Re-shoot a whole projector's 34 if you spoil one | **survives for now.** Phase 2 made it cheap rather than unnecessary |
+| Make sure filenames sort in capture order | **Phase 2 softened it** — a run is found by its references, not by its filenames — but the order inside a run still comes from them |
 | One projector lit at a time | **Phase 1 deleted it as a task.** Still true of the physics; the emitter sequences it and the operator never arranges it |
 | Count 34 frames, 136 per position | **Phase 1 deleted it.** The page counts, and can tick so you need not watch it |
 | Check on the camera what "good" looks like | **Phase 3 deletes it.** The software reads the capture and says |
@@ -286,10 +292,11 @@ need to know which *camera* took it.
 Stated as gaps rather than omitted, because an operator who discovers them at the
 sphere has wasted a trip:
 
-- **Which photograph is which.** Phase 2, and it is the reason the ordering rules
-  in Part 4 are as strict as they are. The emitter counts its own steps; nothing
-  connects that count to the files on your card, so today the shooting order is
-  the only record and it is yours to protect.
+- **Whether a patched run is wrong.** Phase 2 got as far as finding each
+  projector's run and checking its length, which is why Part 4's rules are looser
+  than they were. It cannot see a frame deleted and another added inside one run,
+  and it will not tell you that it cannot. Nothing here connects the emitter's
+  own step count to the files on your card.
 - **Whether your capture decoded.** Phase 3. Nothing will read these photographs,
   so there is no answer to take home.
 - **What to do when it fails.** Phase 3 is also where a refusal gets a reason —

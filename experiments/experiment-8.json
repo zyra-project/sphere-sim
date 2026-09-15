@@ -1,0 +1,183 @@
+{
+  "schema": "sphere-sim/experiment-8@1",
+  "generatedFrom": {
+    "trials": 2000,
+    "projectors": 4,
+    "framesPerProjector": 34,
+    "rootSeed": 489570120,
+    "classification": "exact by construction; this arm renders no frames, so these are an ideal-classification baseline rather than an upper bound on room behaviour"
+  },
+  "arms": [
+    {
+      "key": "clean",
+      "drops": 0,
+      "dupes": 0,
+      "story": "nothing went wrong",
+      "order": {
+        "clean": 2000,
+        "refused": 0,
+        "silent": 0,
+        "misplacedTotal": 0,
+        "misplacedWorst": 0,
+        "usableRunsMean": 4,
+        "runsOfferedTotal": 8000,
+        "trialsWithBadUsableRun": 0,
+        "badUsableRunsTotal": 0
+      },
+      "bookends": {
+        "clean": 2000,
+        "refused": 0,
+        "silent": 0,
+        "misplacedTotal": 0,
+        "misplacedWorst": 0,
+        "usableRunsMean": 4,
+        "runsOfferedTotal": 8000,
+        "trialsWithBadUsableRun": 0,
+        "badUsableRunsTotal": 0
+      }
+    },
+    {
+      "key": "drop1",
+      "drops": 1,
+      "dupes": 0,
+      "story": "one frame deleted off the card",
+      "order": {
+        "clean": 0,
+        "refused": 2000,
+        "silent": 0,
+        "misplacedTotal": 132213,
+        "misplacedWorst": 135,
+        "usableRunsMean": 0,
+        "runsOfferedTotal": 0,
+        "trialsWithBadUsableRun": 0,
+        "badUsableRunsTotal": 0
+      },
+      "bookends": {
+        "clean": 0,
+        "refused": 2000,
+        "silent": 0,
+        "misplacedTotal": 0,
+        "misplacedWorst": 0,
+        "usableRunsMean": 2.8455,
+        "runsOfferedTotal": 5691,
+        "trialsWithBadUsableRun": 0,
+        "badUsableRunsTotal": 0
+      }
+    },
+    {
+      "key": "drop2",
+      "drops": 2,
+      "dupes": 0,
+      "story": "two frames deleted",
+      "order": {
+        "clean": 0,
+        "refused": 2000,
+        "silent": 0,
+        "misplacedTotal": 176881,
+        "misplacedWorst": 134,
+        "usableRunsMean": 0,
+        "runsOfferedTotal": 0,
+        "trialsWithBadUsableRun": 0,
+        "badUsableRunsTotal": 0
+      },
+      "bookends": {
+        "clean": 0,
+        "refused": 2000,
+        "silent": 0,
+        "misplacedTotal": 0,
+        "misplacedWorst": 0,
+        "usableRunsMean": 2.0225,
+        "runsOfferedTotal": 4045,
+        "trialsWithBadUsableRun": 0,
+        "badUsableRunsTotal": 0
+      }
+    },
+    {
+      "key": "dupe1",
+      "drops": 0,
+      "dupes": 1,
+      "story": "the remote double-tapped once",
+      "order": {
+        "clean": 0,
+        "refused": 2000,
+        "silent": 0,
+        "misplacedTotal": 132654,
+        "misplacedWorst": 135,
+        "usableRunsMean": 0,
+        "runsOfferedTotal": 0,
+        "trialsWithBadUsableRun": 0,
+        "badUsableRunsTotal": 0
+      },
+      "bookends": {
+        "clean": 0,
+        "refused": 2000,
+        "silent": 0,
+        "misplacedTotal": 0,
+        "misplacedWorst": 0,
+        "usableRunsMean": 3.0105,
+        "runsOfferedTotal": 6021,
+        "trialsWithBadUsableRun": 0,
+        "badUsableRunsTotal": 0
+      }
+    },
+    {
+      "key": "cancel",
+      "drops": 1,
+      "dupes": 1,
+      "story": "one frame deleted and one shot twice — the count still adds up",
+      "order": {
+        "clean": 0,
+        "refused": 0,
+        "silent": 2000,
+        "misplacedTotal": 91464,
+        "misplacedWorst": 134,
+        "usableRunsMean": 4,
+        "runsOfferedTotal": 8000,
+        "trialsWithBadUsableRun": 2000,
+        "badUsableRunsTotal": 4473
+      },
+      "bookends": {
+        "clean": 0,
+        "refused": 1546,
+        "silent": 454,
+        "misplacedTotal": 5094,
+        "misplacedWorst": 31,
+        "usableRunsMean": 2.3635,
+        "runsOfferedTotal": 4727,
+        "trialsWithBadUsableRun": 454,
+        "badUsableRunsTotal": 454
+      }
+    },
+    {
+      "key": "messy",
+      "drops": 2,
+      "dupes": 2,
+      "story": "a thoroughly bad session",
+      "order": {
+        "clean": 0,
+        "refused": 0,
+        "silent": 2000,
+        "misplacedTotal": 129307,
+        "misplacedWorst": 135,
+        "usableRunsMean": 4,
+        "runsOfferedTotal": 8000,
+        "trialsWithBadUsableRun": 2000,
+        "badUsableRunsTotal": 6215
+      },
+      "bookends": {
+        "clean": 0,
+        "refused": 1851,
+        "silent": 149,
+        "misplacedTotal": 9714,
+        "misplacedWorst": 51,
+        "usableRunsMean": 1.558,
+        "runsOfferedTotal": 3116,
+        "trialsWithBadUsableRun": 779,
+        "badUsableRunsTotal": 913
+      }
+    }
+  ],
+  "verdict": {
+    "statement": "Over 10000 faulty captures of 4 projector runs each: ordering alone handed back 16000 runs and 10688 of them were mis-indexed (66.8%); the bookends handed back 23600 and 1367 were mis-indexed (5.8%). Measured instead against every run the captures contained, that is 26.7% and 3.4% of 40000. Ordering is worse on the first rate than the second because on a faulty capture it offers runs only where it noticed nothing. Counting whole captures, ordering was silently wrong 40.0% of the time and the bookends 6.0% — but that reading flatters the bookends, because a capture they refuse can still contain a run they got wrong and offered. Both are blind to one case and the bookends only to that case — a drop and a duplicate cancelling inside one run, where the count still adds up and every frame is still a patterned frame: ordering is silently wrong in 100.0% of those and the bookends in 22.7%. With no cancelling pair the bookends were never silently wrong and never offered a bad run at all: on a single dropped frame they kept 2.85 of 4 runs, every one of them correct, where ordering kept 0.00."
+  }
+}
