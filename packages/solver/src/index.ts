@@ -865,3 +865,20 @@ export {
   buildLayout,
 } from './bundle.ts';
 export { createRng } from './linalg.ts';
+
+/**
+ * Phase 3's ingest chain.
+ *
+ * Exported so that a caller outside this package can reach it without a deep
+ * import, which is the whole of what "exported" buys here. There is still no
+ * code in this repository that hands any of it a folder: nothing calls
+ * `linearise` but a test, and `solve` does not consult `captureWorth` before
+ * returning a pose. Until something does, this is library code with no user,
+ * and `docs/OPERATOR-PATH.md` says so in those words.
+ */
+export type { EncodedImage, IngestReport, IngestResult, Transfer } from './ingest.ts';
+export { decodeTransfer, linearise, referenceRange } from './ingest.ts';
+export type { AssembleParams, AssembleResult, FrameRole } from './assemble.ts';
+export { assembleCapture } from './assemble.ts';
+export type { CaptureWorth, PairContribution } from './worth.ts';
+export { captureWorth } from './worth.ts';

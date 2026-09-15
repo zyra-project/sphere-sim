@@ -2,9 +2,13 @@
 
 **Status: Phases 0 and 1 landed — `docs/CALIBRATE.md` and the projector emitter.
 Phase 2 is measured but not settled: the two cheap mechanisms are built and
-scored, and they leave a blind spot that needs a real sphere to price. Phases
-3–5 are not built, so an operator can now put the sequence on a real sphere and
-still cannot complete a calibration: nothing yet reads the photographs back.** This is a plan, written because the question "what would an
+scored, and they leave a blind spot that needs a real sphere to price. Phase 3 is
+plumbed but unproven: the modules that turn encoded photographs into
+correspondences exist and agree with each other end to end, no real photograph
+has been through them, and **nothing in this repository calls them** — a test
+does. Phases 4 and 5 are not built. So an operator can put the sequence on a
+real sphere and then has nowhere to take the result: there is no folder reader,
+no before-and-after, and no way to install a calibration.** This is a plan, written because the question "what would an
 operator actually do?" had no answer anywhere in the repository — not in code,
 not in a document — while the simulator implied one.
 
@@ -90,7 +94,7 @@ the phase order, so it is stated before the phases rather than implied by them.
 | 2 | Getting patterns onto the projectors | Structured light is projector-raster-space; SOS content is sphere-space, so the ordinary content path cannot carry it | Phase 1 — **landed** |
 | 3 | Knowing which pattern each photo shows | The one genuinely unsolved problem here | Phase 2 — **measured, not settled** |
 | 4 | Knowing where to stand and what to set | "Three positions" is measured; *which* three is not written down anywhere | Phase 0 |
-| 5 | Getting photographs to the solver | Hundreds of files, and the solver has never seen a real one | Phase 3 |
+| 5 | Getting photographs to the solver | Hundreds of files, and the solver has never seen a real one | Phase 3 — **plumbed, unproven** |
 | 6 | Trusting the result | A number with no before/after is a claim, not evidence | Phase 4 |
 | 7 | Installing the result | Overwriting live geometry with no undo | Phase 4 |
 | 8 | Understanding a failure | "It didn't converge" sends an operator home | every phase |
@@ -328,7 +332,7 @@ correctly indexed capture, or refused with a reason. **Not yet** — the blind s
 returns a wrong capture rather than a refusal, and until it is closed or measured
 on a real sphere this phase stays open.
 
-## Phase 3 — Let the solver see a real photograph. **NOT STARTED**
+## Phase 3 — Let the solver see a real photograph. **PLUMBED, UNPROVEN**
 
 Every image the bundle adjustment has ever been given was rendered by this
 project. Real ones differ in ways that will not all be anticipated: sensor noise,
@@ -349,6 +353,55 @@ biases the phase estimate. Phase 3 is the plumbing plus the honesty:
 
 **Done when** a real capture produces either a pose with its correspondence count
 beside it, or a refusal naming what was wrong with the photographs.
+
+### What landed
+
+Three modules in `packages/solver`, all pure and Node-testable:
+
+- **`ingest.ts`** — camera integers into linear light. The transfer is a required
+  argument with no default, so a caller who does not know what their files are
+  encoded with gets a compile error rather than a plausible-looking calibration.
+  sRGB is named as a curve rather than fitted as a power law, because its toe is
+  linear below 0.04045 and that is precisely where the black reference lives — a
+  pure 2.2 misplaces the frame every other frame is measured against.
+- **`assemble.ts`** — the piece that was actually missing. Phase 2 works out which
+  frame each photograph is, `decodeCapture` reads a `PatternCapture`, and nothing
+  turned one into the other: until now the only thing that ever built one was the
+  bench, which knows the answer because it rendered the frames itself.
+- **`worth.ts`** — the pipeline's zero-correspondence guard, generalised from one
+  refusal into a report. It names the dominant rejection bucket in an operator's
+  words, which is most of the distance between "it didn't converge" and an
+  answer, and it refuses on two grounds rather than one.
+
+**The second refusal is measured rather than asserted.** Fewer than two
+contributing cameras is not a poor calibration but a degenerate one — a single
+view cannot separate a projector's distance from its field of view, and
+`docs/EXPERIMENT-1.md` puts one camera at 17 489.84 mm against 41.82 mm for two.
+Everything else is reported beside the pose rather than used to withhold it,
+because what a thin capture costs on a real sphere is unmeasured and a threshold
+invented here would become the thing the pipeline rested on.
+
+**The chain runs end to end**, in `packages/solver/test/realphotos.test.ts`:
+8-bit sRGB integers, through the transfer, through the assembler, through the
+decoder, to correspondences that name the projector pixels that produced them.
+A useful by-product for an operator choosing a file format: in that fixture —
+noiseless, flat albedo, one camera pixel per projector pixel, so quantisation is
+the only error present — **8-bit sRGB holds the decoded coordinate inside a
+hundredth of a projector pixel**, and 16-bit inside a thousandth. Against §7's
+2 mm on a 1.7 m sphere, the file format is not the term that matters. Shooting
+JPEG does not give up the calibration.
+
+### Why it is UNPROVEN and not LANDED
+
+**No real photograph has been through it.** The fixture is synthetic: flat
+albedo, constant ambient, no sensor noise, no limb, no dust, nobody walking
+through, and a camera whose pixels map one-to-one onto the projector's. What it
+establishes is that the three stages agree with each other and with `decode.ts`'s
+normative pattern order — which is the part that was missing and the part a real
+capture cannot be debugged without. It establishes nothing about a room.
+
+The done-when says *a real capture*, and there has not been one. This phase stays
+open until there is.
 
 ## Phase 4 — Show the improvement, then let it be undone. **NOT STARTED**
 

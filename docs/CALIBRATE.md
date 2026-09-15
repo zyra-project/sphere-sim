@@ -5,13 +5,17 @@ calibration. Companion to `docs/VISIT.md`, which is a different errand: that car
 *measures an installation to check the model*, this one *photographs an
 installation to recover its geometry*.
 
-> **This procedure cannot be completed today.** Phases 1 and 2 of
+> **This procedure cannot be completed today.** Phases 1 to 3 of
 > `docs/OPERATOR-PATH.md` have landed far enough to matter: there is a supported
-> way to put the patterns on the sphere (Part 4), and software can now work out
-> which projector's run a photograph belongs to and say when a run is broken.
-> Phase 3 is not built — **the solver has never been given a real photograph** —
-> so following this card today still produces a folder nothing can currently
-> read.
+> way to put the patterns on the sphere (Part 4), software can work out which
+> projector's run a photograph belongs to, and the arithmetic that turns encoded
+> photographs into the correspondences a solve needs exists and agrees with
+> itself end to end. Two things have **not** happened. None of it has met a real
+> room: every photograph the chain has ever read was synthesised. And none of it
+> is reachable — no code here reads a folder, the ingest modules are called only
+> by a test, and Phases 4 and 5, the before-and-after and the way to install a
+> result, are not built. So a capture made today is worth making, and turning it
+> into a calibration is still a thing nobody can do.
 >
 > It is written anyway, and first, for two reasons. It is the cheapest way to find
 > out what the procedure gets wrong — cheaper than building three phases and then
@@ -164,9 +168,19 @@ except to move the tripod.
 4. **Everything adaptive off.** HDR, scene modes, per-frame noise reduction,
    lens-correction that varies with content.
 5. **The lowest ISO that still exposes** at your chosen aperture and shutter.
-6. **Raw, if the camera offers it.** The decoder works in **linear light**. A
-   JPEG has been through a transfer nobody wrote down, and the phase estimate is
-   biased by exactly that. Raw makes the transfer knowable instead of a guess.
+6. **Raw, if the camera offers it — for the transfer, not for the bit depth.**
+   The decoder works in **linear light**, and the ingest will not run without
+   being told which curve your files are encoded with. Raw makes that knowable;
+   a JPEG has usually been through sRGB but may also carry a picture style or a
+   tone curve nobody wrote down, and a wrong curve biases the phase estimate.
+
+   What raw is **not** needed for is precision. With the curve known, 8-bit sRGB
+   holds the decoded coordinate inside a hundredth of a projector pixel and
+   16-bit inside a thousandth — measured in a noiseless fixture where
+   quantisation is the only error, so a floor rather than a promise, but against
+   §7's 2 mm on a 1.7 m sphere the file format is not the term that matters.
+   **If the choice is between a JPEG you can identify and a raw workflow you
+   cannot complete, shoot the JPEG.**
 
 ## Part 4 · The sequence, at each position
 
@@ -264,7 +278,7 @@ for software that does not exist yet, and it should get shorter as the phases in
 | Make sure filenames sort in capture order | **Phase 2 softened it** — a run is found by its references, not by its filenames — but the order inside a run still comes from them |
 | One projector lit at a time | **Phase 1 deleted it as a task.** Still true of the physics; the emitter sequences it and the operator never arranges it |
 | Count 34 frames, 136 per position | **Phase 1 deleted it.** The page counts, and can tick so you need not watch it |
-| Check on the camera what "good" looks like | **Phase 3 deletes it.** The software reads the capture and says |
+| Check on the camera what "good" looks like | **Phase 3 narrowed it.** The software reads the capture and says what survived — but only once you are home, so the on-camera checks are still what saves a second trip |
 | Press the shutter 408 times | **Phase 5 deletes it** |
 | Set exposure, focus and white balance by hand | **Phase 5 narrows it** to confirming what the software proposes |
 | Warm the projectors 20 minutes | **permanent.** Lamp physics |
@@ -297,11 +311,22 @@ sphere has wasted a trip:
   than they were. It cannot see a frame deleted and another added inside one run,
   and it will not tell you that it cannot. Nothing here connects the emitter's
   own step count to the files on your card.
-- **Whether your capture decoded.** Phase 3. Nothing will read these photographs,
-  so there is no answer to take home.
-- **What to do when it fails.** Phase 3 is also where a refusal gets a reason —
-  how many correspondences survived, from how many pairs, which cameras
-  contributed nothing.
+- **Whether your capture decoded, on the day.** The arithmetic for this exists —
+  how many points survived, from how many camera and projector pairs, which
+  cameras contributed nothing, and a refusal rather than a pose when nothing
+  decoded or when a projector was seen by only one camera. What does not exist
+  is any way for you to run it. Nothing in the repository reads a folder of
+  photographs; the modules are reachable only from code somebody has yet to
+  write. So on the day you will know exactly what you know now, which is
+  nothing, and you will find out when you are back at a desk — and even then
+  only whether it holds on synthesised frames, because no real ones have been
+  through it.
+- **What to do when it fails, beyond the first sentence.** A refusal now names
+  the rejection that dominated — the light never reached those pixels, the finest
+  stripes were finer than the camera could resolve, the Gray address and the
+  phase disagreed — which points at the projector, the tripod distance or the
+  indexing respectively. Whether those pointers are the right ones on a real
+  capture is untested.
 - **What accuracy to expect on a real sphere.** Nobody has run one. Every figure
   quoted on this card is simulated, and is the best available prediction rather
   than a result.
