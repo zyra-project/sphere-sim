@@ -67,7 +67,12 @@ export function decodeTransfer(v: number, transfer: Transfer): number {
 export interface EncodedImage {
   width: number;
   height: number;
-  /** Interleaved samples. 1, 3 or 4 channels; only channel 0 is read. */
+  /**
+   * Interleaved samples: 1 (grey), 2 (grey + alpha), 3 (RGB) or 4 (RGBA).
+   *
+   * Colour survives {@link linearise}. Alpha does not — it is not light, and
+   * putting it through a transfer curve would make it look like light.
+   */
   channels: number;
   /** Integer samples as the file stores them. */
   data: Uint8Array | Uint16Array;
@@ -106,28 +111,59 @@ export function linearise(encoded: EncodedImage, transfer: Transfer): IngestResu
   const stride = encoded.channels;
   const max = encoded.maxValue;
   if (!(max > 0)) throw new Error(`ingest: maxValue must be positive, got ${max}`);
-  const out = new Float32Array(n);
+  if (!Number.isInteger(stride) || stride < 1 || stride > 4) {
+    throw new Error(`ingest: ${stride} channels is not an image this can read`);
+  }
+  /**
+   * Colour is kept, because throwing it away here would quietly override the
+   * decoder's own default.
+   *
+   * `decode.ts` reads Rec.709 luminance unless a caller asks for one channel,
+   * and its docblock gives two reasons: luminance is the highest-SNR
+   * combination of a three-channel capture, and PARAMETERS.md §3.2 warns the
+   * channels diverge in gamma, gain and black floor. Handing it a one-channel
+   * image made that choice for it — every photograph silently became its red
+   * plane, which is both the noisiest channel of a Bayer sensor and the one
+   * most likely to be the odd one out. Selecting a channel is still available;
+   * it is just no longer decided here, by accident, for everyone.
+   *
+   * Alpha is dropped rather than carried: it is coverage, not light, and a
+   * transfer curve applied to it produces a number that looks like light.
+   */
+  const keep = stride >= 3 ? 3 : 1;
+  const out = new Float32Array(n * keep);
   let clippedHigh = 0;
   let clippedLow = 0;
   let sum = 0;
   let lo = Number.POSITIVE_INFINITY;
   let hi = Number.NEGATIVE_INFINITY;
   for (let i = 0; i < n; i++) {
-    const raw = encoded.data[i * stride];
-    if (raw >= max) clippedHigh++;
-    if (raw <= 0) clippedLow++;
-    const v = decodeTransfer(raw / max, transfer);
-    out[i] = v;
-    sum += v;
-    if (v < lo) lo = v;
-    if (v > hi) hi = v;
+    const src = i * stride;
+    const dst = i * keep;
+    // A pixel counts as clipped when ANY channel it keeps is at a rail: the
+    // decoder forms one number out of the three, so one railed channel is
+    // enough to make that number the sensor's limit rather than the scene's.
+    let high = false;
+    let low = false;
+    for (let c = 0; c < keep; c++) {
+      const raw = encoded.data[src + c];
+      if (raw >= max) high = true;
+      if (raw <= 0) low = true;
+      const v = decodeTransfer(raw / max, transfer);
+      out[dst + c] = v;
+      sum += v;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    if (high) clippedHigh++;
+    if (low) clippedLow++;
   }
   return {
-    image: { width: encoded.width, height: encoded.height, channels: 1, data: out },
+    image: { width: encoded.width, height: encoded.height, channels: keep, data: out },
     report: {
       clippedHigh: n === 0 ? 0 : clippedHigh / n,
       clippedLow: n === 0 ? 0 : clippedLow / n,
-      mean: n === 0 ? 0 : sum / n,
+      mean: n === 0 ? 0 : sum / (n * keep),
       lo: n === 0 ? 0 : lo,
       hi: n === 0 ? 0 : hi,
     },

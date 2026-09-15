@@ -163,6 +163,7 @@ test('a folder of 8-bit sRGB frames decodes to the projector pixels that made it
     projector: 0,
     projectorRes: { x: RES, y: RES },
     grayBits: BITS,
+    phaseSteps: STEPS,
     phasePeriodStrides: 2,
   });
   assert.equal(assembled.ok, true, assembled.problems.join(' '));
@@ -197,6 +198,7 @@ test('the assembler refuses a run it cannot decode, and says which part is missi
     projector: 0,
     projectorRes: { x: RES, y: RES },
     grayBits: BITS,
+    phaseSteps: STEPS,
     phasePeriodStrides: 2,
   };
 
@@ -297,6 +299,7 @@ test('8-bit sRGB is not what limits the phase, and the test says by how much', (
       projector: 0,
       projectorRes: { x: RES, y: RES },
       grayBits: BITS,
+      phaseSteps: STEPS,
       phasePeriodStrides: 2,
     });
     assert.equal(a.ok, true, a.problems.join(' '));
@@ -319,4 +322,253 @@ test('8-bit sRGB is not what limits the phase, and the test says by how much', (
   // quantisation rather than something else in the chain.
   assert.ok(sixteen < eight, `16-bit (${sixteen.toFixed(5)}) should beat 8-bit (${eight.toFixed(5)})`);
   assert.ok(sixteen < 0.001, `16-bit worst coordinate error ${sixteen.toFixed(5)}`);
+});
+
+/**
+ * The refusals a review found missing, each with the capture that slipped past.
+ *
+ * Every one of these assembled cleanly before: the frame-count check at the top
+ * cannot see them, because `images` and `roles` still agree about the length.
+ * What they have in common is that the decoder would have accepted the result
+ * and produced coordinates from it.
+ */
+test('a phase pass short of its last frame is refused, not read as a shorter pass', () => {
+  const order = roles();
+  // Drop the final across phase step. The remaining three were shot at 0, 90
+  // and 180 degrees; counted rather than checked they look like a three-step
+  // pass at 0, 120 and 240, and decode to a confidently wrong phase.
+  const cut = order.findIndex((r) => r.kind === 'phase' && r.axis === 'u' && r.index === STEPS - 1);
+  assert.ok(cut >= 0);
+  const short = order.filter((_, i) => i !== cut);
+  const images = short.map(shoot).map((s) => linearise(s, { kind: 'srgb' }).image);
+
+  const a = assembleCapture(images, short, {
+    camera: 0,
+    projector: 0,
+    projectorRes: { x: RES, y: RES },
+    grayBits: BITS,
+    phaseSteps: STEPS,
+    phasePeriodStrides: 2,
+  });
+  assert.equal(a.ok, false);
+  assert.match(a.problems.join(' '), /across phase pass is missing step 4 of 4/);
+});
+
+test('two photographs claiming one slot are refused rather than one overwriting the other', () => {
+  const order = roles();
+  const dupe = order.map((r, i) =>
+    i === order.length - 1 ? { ...order[order.length - 2] } : r,
+  );
+  const images = dupe.map(shoot).map((s) => linearise(s, { kind: 'srgb' }).image);
+  const a = assembleCapture(images, dupe, {
+    camera: 0,
+    projector: 0,
+    projectorRes: { x: RES, y: RES },
+    grayBits: BITS,
+    phaseSteps: STEPS,
+    phasePeriodStrides: 2,
+  });
+  assert.equal(a.ok, false);
+  assert.match(a.problems.join(' '), /both call themselves/);
+});
+
+test('a role indexing past its own plan is refused', () => {
+  const order = roles();
+  const past = order.map((r) =>
+    r.kind === 'gray' && r.axis === 'u' && r.index === 0 ? { ...r, index: BITS } : r,
+  );
+  const images = past.map(shoot).map((s) => linearise(s, { kind: 'srgb' }).image);
+  const a = assembleCapture(images, past, {
+    camera: 0,
+    projector: 0,
+    projectorRes: { x: RES, y: RES },
+    grayBits: BITS,
+    phaseSteps: STEPS,
+    phasePeriodStrides: 2,
+  });
+  assert.equal(a.ok, false);
+  assert.match(a.problems.join(' '), /of an axis whose plan has 5/);
+});
+
+test('an odd or zero fringe period is refused where the phase would use it', () => {
+  const order = roles();
+  const images = order.map(shoot).map((s) => linearise(s, { kind: 'srgb' }).image);
+  const at = (phasePeriodStrides: number) =>
+    assembleCapture(images, order, {
+      camera: 0,
+      projector: 0,
+      projectorRes: { x: RES, y: RES },
+      grayBits: BITS,
+      phaseSteps: STEPS,
+      phasePeriodStrides,
+    });
+  // Zero makes periodPx zero, which the unwrap divides by.
+  assert.equal(at(0).ok, false);
+  // One leaves the Gray address no finer than a fringe, so the cross-check that
+  // catches a mis-indexed capture can never fire — decode.ts's own header.
+  assert.equal(at(1).ok, false);
+  assert.equal(at(3).ok, false);
+  assert.equal(at(2).ok, true, at(2).problems.join(' '));
+});
+
+test('one axis addressed and the other not is refused, not offered as half a capture', () => {
+  const order = roles().filter((r) => r.axis !== 'v');
+  const images = order.map(shoot).map((s) => linearise(s, { kind: 'srgb' }).image);
+  const a = assembleCapture(images, order, {
+    camera: 0,
+    projector: 0,
+    projectorRes: { x: RES, y: RES },
+    grayBits: BITS,
+    phaseSteps: STEPS,
+    phasePeriodStrides: 2,
+  });
+  // Before, `gray.length === 0` was the only gate: a complete across sequence
+  // satisfied it and every pixel then died as `rejectedMissingAxis`.
+  assert.equal(a.ok, false);
+  assert.match(a.problems.join(' '), /Nothing in this run addresses the down axis/);
+});
+
+test('every projector needs two views, not the capture as a whole', () => {
+  const base = {
+    considered: 1000,
+    rejectedLowModulation: 0,
+    rejectedGrayAmbiguous: 0,
+    rejectedPhaseWeak: 0,
+    rejectedDisagreement: 0,
+    rejectedOutOfRange: 0,
+    rejectedMissingAxis: 0,
+    rejectedOffSphere: 0,
+    rejectedOffImage: 0,
+  };
+  const some = { ...base, accepted: 400 };
+
+  // Two cameras, two projectors, and each camera saw only one of them. The
+  // capture-wide count is two and every projector still has a single view, so
+  // each one keeps the distance-versus-field-of-view degeneracy whole.
+  const split = captureWorth([
+    { camera: 0, projector: 0, stats: some },
+    { camera: 1, projector: 1, stats: some },
+  ]);
+  assert.equal(split.contributingCameras.length, 2, 'two cameras did contribute');
+  assert.equal(split.usable, false, 'but neither projector was seen twice');
+  assert.match(split.refusal ?? '', /2 projectors were seen by fewer than two cameras/);
+  assert.match(split.refusal ?? '', /solved from the views that saw IT/);
+  assert.match(split.refusal ?? '', /17 489\.84 mm/);
+
+  // The same two cameras, both looking at both projectors, is the shot list
+  // that works — and it is one move away from the capture above.
+  const both = captureWorth([
+    { camera: 0, projector: 0, stats: some },
+    { camera: 1, projector: 0, stats: some },
+    { camera: 0, projector: 1, stats: some },
+    { camera: 1, projector: 1, stats: some },
+  ]);
+  assert.equal(both.usable, true, both.refusal ?? '');
+  assert.deepEqual(
+    both.camerasPerProjector.map((e) => e.cameras.length),
+    [2, 2],
+  );
+
+  // A pair that decoded nothing does not count as a view of that projector.
+  const silent = captureWorth([
+    { camera: 0, projector: 0, stats: some },
+    { camera: 1, projector: 0, stats: { ...base, accepted: 0 } },
+    { camera: 1, projector: 1, stats: some },
+    { camera: 0, projector: 1, stats: some },
+  ]);
+  assert.equal(silent.usable, false);
+  assert.match(silent.refusal ?? '', /A projector was seen by fewer than two cameras: P1 \(1\)/);
+});
+
+test('colour survives the ingest, because the decoder has its own opinion about channels', () => {
+  // Three channels in, three out: decode.ts reads Rec.709 luminance by default
+  // and PARAMETERS.md §3.2 warns the channels diverge in gamma, gain and black
+  // floor. Returning one channel made that choice for it — and made it red.
+  const rgb = new Uint8Array([0, 255, 0, 0, 255, 0]);
+  const lin = linearise({ width: 2, height: 1, channels: 3, data: rgb, maxValue: 255 }, { kind: 'srgb' });
+  assert.equal(lin.image.channels, 3);
+  assert.equal(lin.image.data.length, 6);
+  // The green is what the old code threw away: it read data[i * 3] and called
+  // a fully lit green frame black.
+  assert.equal(lin.image.data[0], 0);
+  assert.ok(lin.image.data[1] > 0.99, `green came back ${lin.image.data[1]}`);
+
+  // Alpha is coverage, not light, so it is dropped rather than transferred.
+  const rgba = new Uint8Array([0, 255, 0, 255]);
+  const withAlpha = linearise(
+    { width: 1, height: 1, channels: 4, data: rgba, maxValue: 255 },
+    { kind: 'srgb' },
+  );
+  assert.equal(withAlpha.image.channels, 3);
+  assert.equal(withAlpha.image.data.length, 3);
+
+  // A single-channel file is still single-channel: nothing was invented.
+  const grey = linearise(
+    { width: 2, height: 1, channels: 1, data: new Uint8Array([0, 255]), maxValue: 255 },
+    { kind: 'linear' },
+  );
+  assert.equal(grey.image.channels, 1);
+  assert.equal(grey.report.clippedHigh, 0.5);
+  assert.equal(grey.report.clippedLow, 0.5);
+
+  // Clipping is per pixel, and one railed channel is enough: the decoder makes
+  // one number out of the three, and that number is then the sensor's ceiling
+  // rather than the scene's.
+  const oneRailed = linearise(
+    { width: 1, height: 1, channels: 3, data: new Uint8Array([10, 255, 10]), maxValue: 255 },
+    { kind: 'srgb' },
+  );
+  assert.equal(oneRailed.report.clippedHigh, 1);
+});
+
+test('a three-channel folder decodes, so the colour reaches the decoder and not just the ingest', () => {
+  // The junction the previous test cannot see. `linearise` keeping three
+  // channels is only worth something if `decodeCapture` then reads them, and
+  // checking the ingest against itself would miss a decoder that quietly took
+  // channel 0 anyway.
+  //
+  // So the signal is put in GREEN and red is held at a dim constant. Under
+  // Rec.709 luminance this decodes; under "first channel wins" it is a flat
+  // field and nothing decodes at all.
+  const order = roles();
+  const images: LinearImage[] = order.map((role) => {
+    const data = new Uint8Array(RES * RES * 3);
+    for (let y = 0; y < RES; y++) {
+      for (let x = 0; x < RES; x++) {
+        const lit = AMBIENT + ALBEDO * emit(role, x + 0.5, y + 0.5);
+        const at = (y * RES + x) * 3;
+        data[at] = Math.round(srgbEncode(AMBIENT) * 255);
+        data[at + 1] = Math.round(srgbEncode(lit) * 255);
+        data[at + 2] = Math.round(srgbEncode(AMBIENT) * 255);
+      }
+    }
+    return linearise(
+      { width: RES, height: RES, channels: 3, data, maxValue: 255 },
+      { kind: 'srgb' },
+    ).image;
+  });
+  assert.equal(images[0].channels, 3);
+
+  const a = assembleCapture(images, order, {
+    camera: 0,
+    projector: 0,
+    projectorRes: { x: RES, y: RES },
+    grayBits: BITS,
+    phaseSteps: STEPS,
+    phasePeriodStrides: 2,
+  });
+  assert.equal(a.ok, true, a.problems.join(' '));
+  const d = decodeCapture(a.capture as NonNullable<typeof a.capture>);
+  assert.equal(
+    d.correspondences.length,
+    RES * RES,
+    `only ${d.correspondences.length} of ${RES * RES} decoded from a green-carried pattern`,
+  );
+  let worst = 0;
+  for (const c of d.correspondences) {
+    worst = Math.max(worst, Math.abs(c.projU - c.camU), Math.abs(c.projV - c.camV));
+  }
+  // Slightly worse than the grey chain: luminance keeps 0.7152 of the green
+  // and the two dim channels dilute the modulation. Still far inside a pixel.
+  assert.ok(worst < 0.05, `worst coordinate error ${worst.toFixed(4)} projector px`);
 });

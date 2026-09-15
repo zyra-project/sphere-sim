@@ -3,11 +3,12 @@
 **Status: Phases 0 and 1 landed — `docs/CALIBRATE.md` and the projector emitter.
 Phase 2 is measured but not settled: the two cheap mechanisms are built and
 scored, and they leave a blind spot that needs a real sphere to price. Phase 3 is
-plumbed but unproven: a folder of encoded photographs now decodes end to end into
-correspondences, and no real photograph has been through it. Phases 4 and 5 are
-not built. So an operator can put the sequence on a real sphere and the software
-can now read a folder back — but nothing has shown it reads a ROOM back, and
-there is still no before-and-after and no way to install the result.** This is a plan, written because the question "what would an
+plumbed but unproven: the modules that turn encoded photographs into
+correspondences exist and agree with each other end to end, no real photograph
+has been through them, and **nothing in this repository calls them** — a test
+does. Phases 4 and 5 are not built. So an operator can put the sequence on a
+real sphere and then has nowhere to take the result: there is no folder reader,
+no before-and-after, and no way to install a calibration.** This is a plan, written because the question "what would an
 operator actually do?" had no answer anywhere in the repository — not in code,
 not in a document — while the simulator implied one.
 

@@ -8,12 +8,14 @@ installation to recover its geometry*.
 > **This procedure cannot be completed today.** Phases 1 to 3 of
 > `docs/OPERATOR-PATH.md` have landed far enough to matter: there is a supported
 > way to put the patterns on the sphere (Part 4), software can work out which
-> projector's run a photograph belongs to, and a folder of encoded photographs
-> now decodes end to end into the correspondences a solve needs. What has **not**
-> happened is any of it meeting a real room: every photograph the chain has ever
-> read was synthesised, and Phases 4 and 5 — the before-and-after, the way to
-> install a result and the way to put it back — are not built. So a capture made
-> today is worth making and cannot yet be turned into an installed calibration.
+> projector's run a photograph belongs to, and the arithmetic that turns encoded
+> photographs into the correspondences a solve needs exists and agrees with
+> itself end to end. Two things have **not** happened. None of it has met a real
+> room: every photograph the chain has ever read was synthesised. And none of it
+> is reachable — no code here reads a folder, the ingest modules are called only
+> by a test, and Phases 4 and 5, the before-and-after and the way to install a
+> result, are not built. So a capture made today is worth making, and turning it
+> into a calibration is still a thing nobody can do.
 >
 > It is written anyway, and first, for two reasons. It is the cheapest way to find
 > out what the procedure gets wrong — cheaper than building three phases and then
@@ -309,12 +311,16 @@ sphere has wasted a trip:
   than they were. It cannot see a frame deleted and another added inside one run,
   and it will not tell you that it cannot. Nothing here connects the emitter's
   own step count to the files on your card.
-- **Whether your capture decoded, on the day.** The software can now read a
-  folder and will tell you how many points survived, from how many camera and
-  projector pairs, and which cameras contributed nothing — and refuse outright
-  rather than report a pose when nothing decoded or when only one camera did.
-  What it cannot tell you is whether any of that holds on photographs of a real
-  room, because none have been through it.
+- **Whether your capture decoded, on the day.** The arithmetic for this exists —
+  how many points survived, from how many camera and projector pairs, which
+  cameras contributed nothing, and a refusal rather than a pose when nothing
+  decoded or when a projector was seen by only one camera. What does not exist
+  is any way for you to run it. Nothing in the repository reads a folder of
+  photographs; the modules are reachable only from code somebody has yet to
+  write. So on the day you will know exactly what you know now, which is
+  nothing, and you will find out when you are back at a desk — and even then
+  only whether it holds on synthesised frames, because no real ones have been
+  through it.
 - **What to do when it fails, beyond the first sentence.** A refusal now names
   the rejection that dominated — the light never reached those pixels, the finest
   stripes were finer than the camera could resolve, the Gray address and the

@@ -51,6 +51,18 @@ export interface AssembleParams {
   projectorRes: { x: number; y: number };
   /** Gray planes per axis. The stride is `res / 2^bits`. */
   grayBits: number;
+  /**
+   * Phase steps per axis, as the emitter PLANNED them. 0 for a Gray-only plan.
+   *
+   * This is here because without it a short run is indistinguishable from a
+   * shorter plan. `decodePhaseAt` reads `steps` as the number of evenly spaced
+   * shifts the frames were taken at, so a four-step sequence that lost its last
+   * photograph, counted rather than checked, becomes a three-step one: the
+   * 0/90/180 degree frames get solved as 0/120/240 and the phase comes back
+   * confidently wrong. Counting what arrived can never catch that. Only the
+   * planned number can.
+   */
+  phaseSteps: number;
   /** Fringe period as a multiple of the Gray stride. `decode.ts` wants it even. */
   phasePeriodStrides: number;
 }
@@ -94,6 +106,15 @@ export function assembleCapture(
   if (!Number.isInteger(params.grayBits) || params.grayBits < 1) {
     return refuse([`${params.grayBits} Gray planes per axis is not a plan.`]);
   }
+  if (!Number.isInteger(params.phaseSteps) || params.phaseSteps < 0) {
+    return refuse([`${params.phaseSteps} phase steps per axis is not a plan.`]);
+  }
+  if (params.phaseSteps > 0 && params.phaseSteps < 3) {
+    return refuse([
+      `A ${params.phaseSteps}-step phase pass cannot be solved: the estimator fits an offset, ` +
+        `an amplitude and a phase, which is three unknowns and needs at least three shifts.`,
+    ]);
+  }
 
   // Sizes must agree, because every later step subtracts one frame from another.
   const w = images[0].width;
@@ -112,6 +133,8 @@ export function assembleCapture(
   let black: LinearImage | null = null;
   const grays = new Map<DecodeAxis, { patterns: (LinearImage | null)[]; inverses: (LinearImage | null)[] }>();
   const phases = new Map<DecodeAxis, (LinearImage | null)[]>();
+  /** `kind:axis:index` of every slot already spoken for, to the frame that took it. */
+  const claimed = new Map<string, number>();
 
   for (let i = 0; i < roles.length; i++) {
     const role = roles[i];
@@ -130,6 +153,37 @@ export function assembleCapture(
       problems.push(`Frame ${i + 1} is a ${role.kind} frame with no axis, which is not a thing.`);
       continue;
     }
+    /**
+     * The index has to name a slot the plan actually has, and name it once.
+     *
+     * Assigning straight into a sparse array accepts anything: a duplicate
+     * silently replaces the photograph already there, a negative or fractional
+     * index writes a property that no later loop reads, and an index past the
+     * end of the plan is dropped by the validation below without a word. None
+     * of it disturbs the length check at the top, because `images` and `roles`
+     * still match — so a malformed role list assembles a capture that decodes.
+     */
+    const limit = role.kind === 'phase' ? params.phaseSteps : params.grayBits;
+    const what = role.kind === 'phase' ? 'phase step' : 'Gray plane';
+    if (!Number.isInteger(role.index) || role.index < 0 || role.index >= limit) {
+      problems.push(
+        `Frame ${i + 1} calls itself ${what} ${role.index} of an axis whose plan has ${limit}. ` +
+          `An index outside the plan is not a frame the decoder can place.`,
+      );
+      continue;
+    }
+    const key = `${role.kind}:${role.axis}:${role.index}`;
+    if (claimed.has(key)) {
+      problems.push(
+        `Frames ${claimed.get(key)} and ${i + 1} both call themselves ${what} ${role.index + 1} ` +
+          `of the ${role.axis === 'u' ? 'across' : 'down'} axis. Two photographs cannot be the ` +
+          `same frame: one of them is a duplicate the indexing should have caught, and taking ` +
+          `either on faith throws the other away silently.`,
+      );
+      continue;
+    }
+    claimed.set(key, i + 1);
+
     if (role.kind === 'phase') {
       const list = phases.get(role.axis) ?? [];
       list[role.index] = img;
@@ -170,34 +224,84 @@ export function assembleCapture(
   }
 
   const phase: PhaseSequence[] = [];
+  /**
+   * The fringe period is only checked where it is about to be used.
+   *
+   * `decode.ts`'s own header asks for an even multiple of the Gray stride, at
+   * least two, and gives the reason: the Gray address has to be finer than one
+   * fringe or the fringe order is not determined, and at exactly one stride
+   * every Gray misread displaces the coarse estimate by a whole number of
+   * fringes — so the unwrap picks a different order and the Gray-versus-phase
+   * cross-check can never fire. Zero is worse still: the period becomes zero
+   * and the unwrap divides by it.
+   */
+  if (phases.size > 0) {
+    const k = params.phasePeriodStrides;
+    if (!Number.isInteger(k) || k < 2 || k % 2 !== 0) {
+      return refuse([
+        `The fringe period is ${k} Gray strides, and it has to be an even whole number of them, ` +
+          `at least two. ${
+            k === 0
+              ? 'Zero gives a period of zero pixels, which the unwrap divides by.'
+              : k < 2
+                ? 'Below two the Gray address is no finer than one fringe, so the fringe order ' +
+                  'is not determined.'
+                : 'At an odd multiple the Gray-versus-phase cross-check loses the ' +
+                  'incommensurability it is built on and stops catching disagreements.'
+          }`,
+      ]);
+    }
+  }
   for (const [axis, list] of phases) {
     const res = axis === 'u' ? resX : resY;
     const frames: LinearImage[] = [];
-    let gap = false;
-    for (let n = 0; n < list.length; n++) {
+    const missing: number[] = [];
+    // Against the PLANNED count, never against what turned up: `list.length`
+    // stops at the highest index that arrived, so a run that lost its last
+    // photograph looks like a complete shorter run and decodes as one.
+    for (let n = 0; n < params.phaseSteps; n++) {
       const f = list[n];
-      if (f === undefined || f === null) {
-        gap = true;
-        problems.push(
-          `The ${axis === 'u' ? 'across' : 'down'} phase steps are missing step ${n + 1}. An ` +
-            `N-step estimator assumes N evenly spaced shifts; with one absent the remaining ones ` +
-            `are not the set it solves.`,
-        );
-        break;
-      }
-      frames.push(f);
+      if (f === undefined || f === null) missing.push(n + 1);
+      else frames.push(f);
     }
-    if (gap) continue;
+    if (missing.length > 0) {
+      problems.push(
+        `The ${axis === 'u' ? 'across' : 'down'} phase pass is missing ` +
+          `${missing.length === 1 ? `step ${missing[0]}` : `steps ${missing.join(', ')}`} of ` +
+          `${params.phaseSteps}. An N-step estimator assumes N evenly spaced shifts, so the ` +
+          `frames that did arrive are not a shorter pass the decoder could fall back to — they ` +
+          `are the wrong shifts for any N.`,
+      );
+      continue;
+    }
     phase.push({
       axis,
-      steps: frames.length,
+      steps: params.phaseSteps,
       periodPx: (res / Math.pow(2, params.grayBits)) * params.phasePeriodStrides,
       frames,
     });
   }
 
-  if (gray.length === 0) {
-    problems.push('No complete Gray sequence survived, so nothing addresses a projector pixel.');
+  /**
+   * Both axes, not one of them.
+   *
+   * `decodeCapture` decodes u and v for every pixel and discards the pixel when
+   * either fails, so a capture carrying a complete across sequence and nothing
+   * down is not a partial answer that degrades gracefully — it is zero
+   * correspondences, counted one pixel at a time as `rejectedMissingAxis`.
+   * Checking only that SOME Gray sequence survived let exactly that through.
+   *
+   * Per axis the decoder needs one of the two, not both: `decodeAxis` fails
+   * `missing` only when Gray and phase are both absent.
+   */
+  for (const axis of ['u', 'v'] as const) {
+    if (gray.some((g) => g.axis === axis)) continue;
+    if (phase.some((p) => p.axis === axis)) continue;
+    problems.push(
+      `Nothing in this run addresses the ${axis === 'u' ? 'across' : 'down'} axis. Every pixel ` +
+        `needs both coordinates, so a run missing one of them decodes no correspondences at ` +
+        `all rather than half of one.`,
+    );
   }
   if (problems.length > 0) return refuse(problems);
 

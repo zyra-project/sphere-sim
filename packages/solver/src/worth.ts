@@ -100,6 +100,13 @@ export interface CaptureWorth {
   contributingCameras: number[];
   /** Pairs that contributed nothing. */
   silentPairs: { camera: number; projector: number }[];
+  /**
+   * Per projector, the cameras that decoded anything against it.
+   *
+   * A projector is solved from the views that saw IT, so this rather than the
+   * capture-wide camera count is what the degeneracy below is about.
+   */
+  camerasPerProjector: { projector: number; cameras: number[] }[];
   /** The rejection that dominated, if anything was rejected. */
   dominant: { reason: string; count: number; share: number } | null;
   /** False when no pose may be reported at all. */
@@ -122,6 +129,25 @@ export function captureWorth(pairs: readonly PairContribution[]): CaptureWorth {
   const silentPairs = pairs
     .filter((p) => p.stats.accepted === 0)
     .map((p) => ({ camera: p.camera, projector: p.projector }));
+
+  /**
+   * Cameras grouped by the projector they actually saw.
+   *
+   * The capture-wide count answers a different question than the one that
+   * matters. Camera 1 contributing only to projector 1 and camera 2 only to
+   * projector 2 is two contributing cameras and two one-view projectors: every
+   * lens in the rig carries the distance-versus-field-of-view degeneracy this
+   * refusal exists to name, while the capture-wide test waves it through.
+   */
+  const byProjector = new Map<number, Set<number>>();
+  for (const p of pairs) {
+    if (!byProjector.has(p.projector)) byProjector.set(p.projector, new Set());
+    if (p.stats.accepted > 0) byProjector.get(p.projector)?.add(p.camera);
+  }
+  const camerasPerProjector = [...byProjector.entries()]
+    .map(([projector, set]) => ({ projector, cameras: [...set].sort((a, b) => a - b) }))
+    .sort((a, b) => a.projector - b.projector);
+  const underseen = camerasPerProjector.filter((e) => e.cameras.length < 2);
 
   const rejected = REASONS.map((r) => ({
     reason: r.say,
@@ -151,6 +177,7 @@ export function captureWorth(pairs: readonly PairContribution[]): CaptureWorth {
       silentCameras,
       contributingCameras,
       silentPairs,
+      camerasPerProjector,
       dominant,
       usable: false,
       summary: base,
@@ -169,6 +196,7 @@ export function captureWorth(pairs: readonly PairContribution[]): CaptureWorth {
       silentCameras,
       contributingCameras,
       silentPairs,
+      camerasPerProjector,
       dominant,
       usable: false,
       summary: base,
@@ -180,6 +208,38 @@ export function captureWorth(pairs: readonly PairContribution[]): CaptureWorth {
         (silentCameras.length > 0
           ? `Cameras ${silentCameras.map((c) => c + 1).join(', ')} decoded nothing — start there.`
           : `Shoot the sequence from a second position.`),
+    };
+  }
+
+  /**
+   * The same degeneracy per projector, which the capture-wide count cannot see.
+   *
+   * Two cameras that each saw a different projector pass the test above and
+   * leave every projector solved from a single view. It is the same refusal for
+   * the same reason; it just has to be asked once per lens rather than once per
+   * capture.
+   */
+  if (underseen.length > 0) {
+    const named = underseen
+      .map((e) => `P${e.projector + 1} (${e.cameras.length})`)
+      .join(', ');
+    return {
+      accepted,
+      considered,
+      silentCameras,
+      contributingCameras,
+      silentPairs,
+      camerasPerProjector,
+      dominant,
+      usable: false,
+      summary: base,
+      refusal:
+        `${underseen.length === 1 ? 'A projector was' : `${underseen.length} projectors were`} ` +
+        `seen by fewer than two cameras: ${named}. ${base} ${contributingCameras.length} cameras ` +
+        `contributed across the capture as a whole, but a projector is solved from the views ` +
+        `that saw IT, and one view cannot separate its distance from its field of view — ` +
+        `docs/EXPERIMENT-1.md measures one camera at 17 489.84 mm against 41.82 mm for two. ` +
+        `Move so that every projector's light is in shot from at least two positions.`,
     };
   }
 
@@ -196,6 +256,7 @@ export function captureWorth(pairs: readonly PairContribution[]): CaptureWorth {
     silentCameras,
     contributingCameras,
     silentPairs,
+    camerasPerProjector,
     dominant,
     usable: true,
     summary: base + warnings,
