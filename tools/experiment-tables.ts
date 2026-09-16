@@ -587,7 +587,163 @@ function experiment8Headline(result: Experiment8): string {
   return out.join('\n');
 }
 
+interface Experiment9Cell {
+  key: string;
+  startPhase: string;
+  dwellS: number;
+  exposureS: number;
+  trials: number;
+  capturesTouched: number;
+  straddledTotal: number;
+  worstStraddled: number;
+  worstBurst: number;
+  runsTouchedTotal: number;
+  capturesAllRunsTouched: number;
+  positionsTouchedTotal: number;
+  capturesLosingAWholePosition: number;
+}
+
+interface Experiment9 {
+  generatedFrom: {
+    trials: number;
+    frames: number;
+    framesPerPosition: number;
+    positions: number;
+    framesPerRun: number;
+    headlineExposureS: number;
+    startPhases: string[];
+  };
+  arms: { key: string; driftPpm: number; jitterS: number; tethered: boolean; story: string }[];
+  cells: Experiment9Cell[];
+}
+
+/**
+ * Find one cell, and distinguish "unshootable" from "missing".
+ *
+ * `undefined` rendered as `n/a` for every reason was the same fault `at()` in
+ * the CLI was added to prevent: a cell absent because of a bug became a
+ * plausible-looking table entry. A dwell shorter than the exposure genuinely
+ * has no row — the shutter is still open when the next frame is up — and that
+ * is the ONLY reason a blank is allowed.
+ */
+function cell9(
+  result: Experiment9,
+  key: string,
+  phase: string,
+  dwellS: number,
+  exposureS: number,
+): Experiment9Cell | null {
+  const found = result.cells.find(
+    (c) => c.key === key && c.startPhase === phase && c.dwellS === dwellS && c.exposureS === exposureS,
+  );
+  if (found !== undefined) return found;
+  if (exposureS >= dwellS) return null;
+  throw new Error(
+    `experiment-9: no cell for ${key} / ${phase} at dwell ${dwellS}s, exposure ${exposureS}s — ` +
+      `that combination is shootable, so its absence is a fault rather than a blank`,
+  );
+}
+
+const share9 = (n: number, d: number): string =>
+  d === 0 ? '—' : `${((100 * n) / d).toFixed(1)}%`;
+
+/**
+ * The axis the answer turns on: where the first shutter lands.
+ *
+ * Rows are start phases at one crystal, because the experiment's finding is
+ * that this matters more than the clock does.
+ */
+function experiment9Phase(result: Experiment9): string {
+  const exposure = result.generatedFrom.headlineExposureS;
+  const dwells = [...new Set(result.cells.map((c) => c.dwellS))].sort((a, b) => a - b);
+  const out = [
+    `| first shutter | ${dwells.map((d) => `${d} s dwell`).join(' | ')} |`,
+    `| --- | ${dwells.map(() => '---').join(' | ')} |`,
+  ];
+  for (const phase of result.generatedFrom.startPhases) {
+    const row = dwells.map((d) => {
+      const c = cell9(result, 'intervalometer-100ppm', phase, d, exposure);
+      return c === null ? '—' : `${c.capturesTouched} (${share9(c.capturesTouched, c.trials)})`;
+    });
+    out.push(`| ${phase} | ${row.join(' | ')} |`);
+  }
+  return out.join('\n');
+}
+
+/** Captures touched, by shutter arrangement and dwell, at a uniform start. */
+function experiment9Dwell(result: Experiment9): string {
+  const exposure = result.generatedFrom.headlineExposureS;
+  const dwells = [...new Set(result.cells.map((c) => c.dwellS))].sort((a, b) => a - b);
+  const out = [
+    `| shutter | ${dwells.map((d) => `${d} s dwell`).join(' | ')} |`,
+    `| --- | ${dwells.map(() => '---').join(' | ')} |`,
+  ];
+  for (const arm of result.arms) {
+    const row = dwells.map((d) => {
+      const c = cell9(result, arm.key, 'uniform', d, exposure);
+      return c === null ? '—' : `${c.capturesTouched} (${share9(c.capturesTouched, c.trials)})`;
+    });
+    out.push(`| ${arm.key} | ${row.join(' | ')} |`);
+  }
+  return out.join('\n');
+}
+
+/**
+ * The shape of a bad capture.
+ *
+ * "all runs touched" rather than "wholly ruined": the column counts captures
+ * where every run holds at least one straddled frame, and what one straddled
+ * frame costs a decode is exactly what this experiment does not measure.
+ *
+ * "position lost" is the separate, stronger property: a camera position in
+ * which EVERY photograph straddled. It replaced a column counting captures
+ * straddled from frame 1 to frame 408, which only the old single-start model
+ * could produce in quantity — three independent start phases make it a
+ * coincidence rather than a shape, and reporting a coincidence as the
+ * characteristic failure is how the first version of this table read.
+ */
+function experiment9Shape(result: Experiment9): string {
+  const exposure = result.generatedFrom.headlineExposureS;
+  const out = [
+    '| shutter | start | dwell | captures touched | worst capture | worst burst | all runs touched | position lost |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+  ];
+  for (const c of result.cells) {
+    if (c.exposureS !== exposure) continue;
+    if (c.capturesTouched === 0) continue;
+    out.push(
+      `| ${c.key} | ${c.startPhase} | ${c.dwellS} s | ${c.capturesTouched} / ${c.trials} | ` +
+        `${c.worstStraddled} / ${result.generatedFrom.frames} | ${c.worstBurst} | ` +
+        `${c.capturesAllRunsTouched} | ${c.capturesLosingAWholePosition} |`,
+    );
+  }
+  return out.join('\n');
+}
+
 const BLOCKS: Record<string, Block> = {
+  'experiment-9-phase': {
+    doc: 'docs/EXPERIMENT-9.md',
+    data: 'experiments/experiment-9.json',
+    render: experiment9Phase as (r: never) => string,
+  },
+  'experiment-9-phase-operator-path': {
+    doc: 'docs/OPERATOR-PATH.md',
+    data: 'experiments/experiment-9.json',
+    render: experiment9Phase as (r: never) => string,
+  },
+  'experiment-9-dwell': {
+    doc: 'docs/EXPERIMENT-9.md',
+    data: 'experiments/experiment-9.json',
+    render: experiment9Dwell as (r: never) => string,
+  },
+  'experiment-9-shape': {
+    doc: 'docs/EXPERIMENT-9.md',
+    data: 'experiments/experiment-9.json',
+    render: experiment9Shape as (r: never) => string,
+  },
+  // The same dwell table in the plan the measurement was run to settle.
+  // Registered a second time rather than copied, for the reason the Phase 2
+  // entry below gives: Phase 5's status IS this table.
   'experiment-8-headline': {
     doc: 'docs/EXPERIMENT-8.md',
     data: 'experiments/experiment-8.json',

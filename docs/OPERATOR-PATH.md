@@ -457,7 +457,7 @@ exactly the previous state in one step. **Not met**: the plan is computed and
 carried, the copies are not complete, and putting a file back is still the
 operator copying it by hand.
 
-## Phase 5 — Tethering, as an accelerator and not a dependency. **NOT STARTED**
+## Phase 5 — Tethering, as an accelerator and not a dependency. **MEASURED FIRST; THE CASE FOR AN SDK DID NOT SURVIVE IT**
 
 With Phase 2 landed this is a convenience: the laptop advances the pattern and
 trips the shutter, and 408 exposures happen without anybody touching the camera.
@@ -469,6 +469,74 @@ modality for serious work.
 It is deliberately last. Camera SDKs are per-vendor, per-platform and hostile,
 and if this phase is on the critical path then friction 1 comes back in its worst
 form — an install, on a locked machine, that only works for some cameras.
+
+### This was the only phase with no Done-when, so it got a measurement instead
+
+`docs/EXPERIMENT-9.md` asks what the open loop actually costs. The emitter
+advances on a timer; the camera fires on its own clock; neither reads the other,
+so a photograph can be taken while the projector is **changing**. The count is
+still right and every frame is still present, so Phase 2's bookends see a
+healthy capture — a second way into the blind spot EXPERIMENT-8 measured,
+reached without anybody deleting a file.
+
+**The first version of that experiment got the answer wrong, and the correction
+is the finding.** It swept clock drift, found almost nothing, and concluded that
+tethering was unjustified. Review found that the start phase — where in a dwell
+the first shutter lands — was a constant buried in the model, drawn from the
+middle half of the dwell. That excluded every boundary-adjacent start, which is
+the risk in question, so the headline was a property of the sampling rule.
+
+**A second round found the same mistake one level up.** The model ran all 408
+frames as a single sequence, when the emitter plans 136 for one camera position
+and stops — the operator moves the tripod and starts it again, drawing a fresh
+phase. Three positions is three independent chances to begin in the wrong place,
+so the capture-level risk is `1 − (1 − exposure/dwell)³` and the first number
+published here was roughly half what it should have been.
+
+Swept instead of assumed, at the loosest crystal and a 1/4 s exposure:
+
+<!-- generated: experiment-9-phase-operator-path -->
+| first shutter | 0.2 s dwell | 0.5 s dwell | 1 s dwell | 2 s dwell | 4 s dwell |
+| --- | --- | --- | --- | --- | --- |
+| aimed | — | 1767 (88.3%) | 116 (5.8%) | 0 (0.0%) | 0 (0.0%) |
+| uniform | — | 1798 (89.9%) | 1198 (59.9%) | 728 (36.4%) | 468 (23.4%) |
+| on-tick | — | 1830 (91.5%) | 9 (0.5%) | 13 (0.7%) | 20 (1.0%) |
+<!-- /generated -->
+
+Same clocks, same dwell, same exposure — only where the first shot landed.
+
+**Drift is negligible**; that survives, and the three-position correction
+strengthens it because the accumulation restarts at each tripod move. At the
+default dwell one position accumulates ~27 ms against margins of 750 ms and
+1000 ms either side of a mid-dwell shot.
+
+**The start phase is the gamble, and it is taken three times.** A shot opening
+at phase `p` straddles when `p > dwell − exposure`, so a start with no procedure
+behind it straddles its first frame with probability `exposure / dwell` — 12.5%
+at the page's defaults — and nothing about the clocks improves that. Compounded
+over three camera positions that is 33.0% of captures, against 36.4% measured.
+Four in five of those lose a whole position, every frame of it, while the other
+two positions may be perfect.
+
+**The page's tick already does real work.** `emit.ts` plays its tone AT the
+step, so a shutter tripped on it opens a reaction time later, in the roomiest
+part of the dwell. That was never documented as load-bearing and the field card
+does not mention it.
+
+### What that does to this phase
+
+It does not remove the phase's justification, which is what the first pass
+claimed. It **relocates** it: what a tether buys is the removal of the
+start-phase gamble, not clock accuracy. And it puts three cheaper interventions
+in front of it — telling an operator to shoot on the tick, saying what a short
+dwell costs against their exposure, and discouraging a hand-pressed remote.
+
+**Done when** — the clause this phase never had — an operator cannot silently
+shoot a capture whose first shutter lands where the pattern is changing. A
+tether satisfies that; so, more cheaply, might the tick plus a warning, and that
+comparison is now possible where before there was no number at all.
+
+**Not met.** The measurement is here and nothing has changed in the emitter.
 
 ---
 
