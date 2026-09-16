@@ -23,6 +23,7 @@
  */
 
 import type { ZipEntry } from './zip.ts';
+import { type RestorePlan, restoreEntries } from './restore.ts';
 
 /**
  * What each file is, and what it cannot say.
@@ -103,6 +104,15 @@ export interface BundleInput {
    * later wondering where the meshes went.
    */
   refused?: readonly string[];
+  /**
+   * What it would take to undo installing this archive.
+   *
+   * Optional only so that a caller building an archive for something other than
+   * an install does not have to invent one. When it is absent the README says
+   * so rather than staying quiet, because silence here reads as "nothing to
+   * worry about" and that is the one thing it must never read as.
+   */
+  restore?: RestorePlan;
 }
 
 /** The README that travels with the files. */
@@ -143,6 +153,28 @@ export function bundleReadme(input: BundleInput): string {
     FILE_NOTES.config.title,
     input.config === null ? CONFIG_ABSENT : FILE_NOTES.config.readme,
     input.config === null ? [] : [input.configName],
+  );
+
+  /**
+   * Where the operator meets the question of going back.
+   *
+   * Placed before the refusals rather than after, because it is the only
+   * section that changes what somebody does BEFORE they copy a file. The
+   * refusals explain an absence; this one can prevent a loss.
+   */
+  const restore = input.restore;
+  section(
+    'restore/',
+    restore === undefined
+      ? 'No restore point was taken. Nothing in this archive records the state of your ' +
+          'sphere before an install, so nothing here can put it back. Copy anything you are ' +
+          'about to overwrite somewhere safe first.'
+      : restore.complete
+        ? `${restore.summary} Every file this archive installs has its original beside it ` +
+          'under restore/, byte for byte as you loaded it. See restore/MANIFEST.txt.'
+        : `${restore.refusal ?? ''} See restore/MANIFEST.txt for which files are covered ` +
+          'and which are not.',
+    restore === undefined ? [] : ['restore/MANIFEST.txt'],
   );
 
   const refused = input.refused ?? [];
@@ -192,6 +224,10 @@ export function bundleEntries(input: BundleInput): ZipEntry[] {
   if (input.config !== null) {
     entries.push({ name: configEntryName(input.configName, entries), text: input.config });
   }
+  // Last, and inside its own directory: an extractor lists central-directory
+  // order, so the files an operator installs stay together at the top and the
+  // copies of what they are replacing do not interleave with them.
+  if (input.restore !== undefined) entries.push(...restoreEntries(input.restore));
   return entries;
 }
 

@@ -47,6 +47,7 @@ import { buildWarpExports, formatWarpMesh } from '../../sim/src/warp.ts';
 import { buildZip } from '../src/zip.ts';
 import type { ZipEntry } from '../src/zip.ts';
 import { bundleEntries, CONFIG_ABSENT, FILE_NOTES } from '../src/bundle.ts';
+import { type InstallTarget, type RestorePlan, planRestore } from '../src/restore.ts';
 import {
   fmtMm,
   freshSolve,
@@ -272,6 +273,8 @@ interface PageState {
    * on every render costs nothing and cannot go stale.
    */
   sosConfigText: string;
+  /** The config exactly as it arrived, for `restore/`. Null when none loaded. */
+  sosConfigBytes: Uint8Array | null;
   sosConfigName: string;
   sosConfig: SosConfig | null;
   sosConfigError: string;
@@ -321,6 +324,7 @@ const state: PageState = {
   sosReadProjector: 0,
   sosReadError: '',
   sosConfigText: '',
+  sosConfigBytes: null,
   sosConfigName: '',
   sosConfig: null,
   sosConfigError: '',
@@ -4567,6 +4571,8 @@ function buildBundle(): {
   configNote: string;
   cost: string;
   refused: string[];
+  /** What of this archive could be undone, and what could not. */
+  restore: RestorePlan;
 } {
   const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
   // INSTALL, and the archive is why it matters that all three parts agree: the
@@ -4683,6 +4689,33 @@ function buildBundle(): {
   const rig = `${n} projector${n === 1 ? '' : 's'}, ` +
     `${state.compositorRig === null ? 'as the install describes them' : 'as last recalibrated'}.`;
 
+  const configName = state.sosConfigName || 'local_sos_config.json';
+  /**
+   * What the archive would overwrite, against what this page could put back.
+   *
+   * The targets are exactly the files `bundleEntries` writes, listed from the
+   * same arrays, so the plan cannot drift from the archive it describes.
+   *
+   * The held set is short and will stay short until the page can be given the
+   * operator's existing files: `state.sosConfigText` is the one original it
+   * has, because the config is the one output it PATCHES. `state.sosRead` is
+   * not in here on purpose — it is a parsed reading of an alignment file, not
+   * the bytes that arrived, and restoring from a re-serialization would put
+   * back a file that is equivalent rather than identical.
+   */
+  const targets: InstallTarget[] = [
+    ...warp.map(([id]) => ({ path: `warp/${id}.data`, kind: 'warp' as const })),
+    ...alignment.map(([id]) => ({
+      path: `alignment/${id}.alignment`,
+      kind: 'alignment' as const,
+    })),
+    ...(config !== null ? [{ path: configName, kind: 'config' as const }] : []),
+  ];
+  const held = config !== null && state.sosConfigBytes !== null
+    ? [{ path: configName, bytes: state.sosConfigBytes }]
+    : [];
+  const restore = planRestore(targets, held);
+
   return {
     configNote,
     entries: bundleEntries({
@@ -4691,14 +4724,16 @@ function buildBundle(): {
       config,
       // The name it arrived under, so what comes out of the archive matches
       // what went in and a diff needs no renaming first.
-      configName: state.sosConfigName || 'local_sos_config.json',
+      configName,
       alignmentCost: cost,
       rigSummary: rig,
       refused,
+      restore,
     }),
     configState,
     cost,
     refused,
+    restore,
   };
 }
 
@@ -4796,20 +4831,38 @@ function pickSosConfig(): void {
   input.addEventListener('change', () => {
     const file = input.files?.[0];
     if (!file) return;
+    /**
+     * The BYTES are read, and the text is decoded from them here.
+     *
+     * `file.text()` alone was the first version and it cannot support the
+     * restore point: it is a UTF-8 decode, so a config carrying a byte-order
+     * mark comes back three bytes shorter and one with a malformed sequence
+     * comes back altered. Both still parse. Writing that into the archive as
+     * "the file you loaded" would hand an operator a restore copy that differs
+     * from their original in a way neither of us could see.
+     *
+     * So the original bytes are kept for `restore/`, and the text — which is
+     * only ever used for parsing and patching, where a BOM is noise — is
+     * decoded from them.
+     */
     void file
-      .text()
-      .then((text) => {
+      .arrayBuffer()
+      .then((buf) => {
+        const bytes = new Uint8Array(buf);
+        const text = new TextDecoder().decode(bytes);
         // Parsed here and diffed at render time. Anything computed against the
         // rig at THIS moment would be a snapshot of a rig the reader can change
         // with the next slider.
         state.sosConfig = parseSosConfig(text);
         state.sosConfigText = text;
+        state.sosConfigBytes = bytes;
         state.sosConfigName = file.name;
         state.sosConfigError = '';
       })
       .catch((err: unknown) => {
         state.sosConfig = null;
         state.sosConfigText = '';
+        state.sosConfigBytes = null;
         state.sosConfigName = file.name;
         state.sosConfigError = err instanceof Error ? err.message : String(err);
       })
@@ -7156,6 +7209,28 @@ function renderReadout(): void {
         const p = el('p', { className: 'note tiny', textContent: `Not included — ${r}` });
         p.style.color = 'var(--warn)';
         p.dataset.smoke = 'bundle-refused';
+        box.append(p);
+      }
+
+      /**
+       * What could not be put back, before the button rather than behind the
+       * disclosure below it.
+       *
+       * `bundle.ts` states the rule this follows: the panel and the README are
+       * the same sentences, because "the second audience is the first one an
+       * hour later". This one has to be on the panel for a stronger reason than
+       * symmetry — the README is read at the projector, and the decision it
+       * changes (copy your current files somewhere safe FIRST) is made here,
+       * before the download. A warning that arrives only inside the archive
+       * arrives after the operator has already committed to installing it.
+       */
+      if (!ready.restore.complete) {
+        const p = el('p', {
+          className: 'note tiny',
+          textContent: ready.restore.refusal ?? '',
+        });
+        p.style.color = 'var(--warn)';
+        p.dataset.smoke = 'bundle-restore';
         box.append(p);
       }
 

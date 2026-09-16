@@ -8,7 +8,9 @@ correspondences exist and agree with each other end to end, no real photograph
 has been through them, and **nothing in this repository calls them** — a test
 does. Phases 4 and 5 are not built. So an operator can put the sequence on a
 real sphere and then has nowhere to take the result: there is no folder reader,
-no before-and-after, and no way to install a calibration.** This is a plan, written because the question "what would an
+no before-and-after, and no way to install a calibration. Phase 4 has begun at
+the honest end — the export now says which of the files it overwrites it could
+put back, and refuses to call one of five a restore point.** This is a plan, written because the question "what would an
 operator actually do?" had no answer anywhere in the repository — not in code,
 not in a document — while the simulator implied one.
 
@@ -403,22 +405,57 @@ capture cannot be debugged without. It establishes nothing about a room.
 The done-when says *a real capture*, and there has not been one. This phase stays
 open until there is.
 
-## Phase 4 — Show the improvement, then let it be undone. **NOT STARTED**
+## Phase 4 — Show the improvement, then let it be undone. **STARTED: THE GAP IS NAMED, NOT CLOSED**
 
 Frictions 6 and 7, and they are one phase because they are one conversation with
 the operator: *here is what changes, here is how to change it back.*
 
 - **Before and after, on their own sphere**, using the comparison the page
   already builds for the simulated case — overlay, blink, side by side.
+  *Not built, and blocked by Phase 3: this needs a calibration from real
+  photographs, and nothing reads a folder yet.*
 - **The files, written the way the page already writes them**: Bourke
   warp-and-blend per projector, SOS alignment files, and the operator's own
   `sos_stream_control.config` patched rather than rewritten, so every setting the
-  tool does not understand survives untouched.
+  tool does not understand survives untouched. *Landed before this phase —
+  `formatSosConfig` is a surgical edit of the file it was given.*
 - **A restore point taken before anything is written**, and a one-step way back.
-  Not a documented manual procedure — an action.
+  Not a documented manual procedure — an action. *The plan is built and the
+  archive carries it; the action is not.*
+
+### What the first pass found
+
+The archive could only ever have put back one of the files it installs, and
+nothing said so.
+
+The config is **patched**, so the page was handed the original and still holds
+every byte. The warp meshes and alignment files are **generated**, so the page
+has never seen whatever sits at those paths on the sphere. One of five.
+
+That asymmetry is not a missing feature, it is a trap, and the difference
+matters for what to build. The failure is not an operator who finds restore
+unavailable — it is one who believes there is a way back, overwrites an
+alignment they spent a day on, and finds out afterwards. So `planRestore`
+refuses to call a partial cover a restore point at all, and the archive's
+`restore/MANIFEST.txt` leads with what it cannot put back rather than listing
+it under the part it can.
+
+The honest consequence: **today the refusal always fires**, because the page is
+never given the files it would overwrite. That is the next piece of work and it
+is small — the page already has a picker for the config, and the same treatment
+for the current warp and alignment files turns the refusal into a green light.
+Until it exists the refusal says so, and tells an operator to copy those files
+by hand rather than offering them a button that is not there.
+
+Review also caught the guarantee being wider than the code: the config reached
+the page through `File.text()`, which is a UTF-8 decode, so a config carrying a
+byte-order mark would have been restored three bytes shorter and still valid
+JSON. Originals are now held and archived as **bytes**.
 
 **Done when** an operator can install a calibration, dislike it, and be back to
-exactly the previous state in one step.
+exactly the previous state in one step. **Not met**: the plan is computed and
+carried, the copies are not complete, and putting a file back is still the
+operator copying it by hand.
 
 ## Phase 5 — Tethering, as an accelerator and not a dependency. **NOT STARTED**
 
