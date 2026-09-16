@@ -74,6 +74,15 @@ import {
 } from '../src/emit.ts';
 import { describeSequence, encodeToRgba, sampleFrame, strideInfo } from '../src/patternfilm.ts';
 import { RESOLUTIONS } from '../src/settings.ts';
+import {
+  MANIFEST_FILENAME,
+  captureManifest,
+  formatManifest,
+  parseCaptureManifest,
+  type CaptureManifest,
+} from '../src/manifest.ts';
+import { describeRun, readCapture } from '../src/readback.ts';
+import type { Transfer } from '../../solver/src/ingest.ts';
 
 // ---- the elements ----------------------------------------------------------
 
@@ -97,6 +106,15 @@ const counterEl = document.getElementById('counter') as HTMLParagraphElement;
 const frameLineEl = document.getElementById('frameline') as HTMLParagraphElement;
 const whyEl = document.getElementById('why') as HTMLParagraphElement;
 const playEl = document.getElementById('play') as HTMLButtonElement;
+const savePlanEl = document.getElementById('saveplan') as HTMLButtonElement;
+const planFileEl = document.getElementById('planfile') as HTMLInputElement;
+const photosEl = document.getElementById('photos') as HTMLInputElement;
+const transferEl = document.getElementById('transfer') as HTMLSelectElement;
+const camIdxEl = document.getElementById('camidx') as HTMLInputElement;
+const projIdxEl = document.getElementById('projidx') as HTMLInputElement;
+const readbackEl = document.getElementById('readback') as HTMLButtonElement;
+const readNoteEl = document.getElementById('readnote') as HTMLParagraphElement;
+const readoutEl = document.getElementById('readout') as HTMLDivElement;
 
 // Declared in two steps so the type is non-null at its declaration rather than
 // by a narrowing that TypeScript will not carry into a hoisted function body.
@@ -378,6 +396,10 @@ function refresh(): void {
   sizeStage();
 
   matchWinEl.disabled = viewports.length === 0;
+  // The plan file is only worth saving once the rig is stated: its whole job is
+  // to carry the raster and projector count a capture was shot against, and a
+  // file written before those are known would be a plan of nothing.
+  savePlanEl.disabled = rig === null;
   if (rig === null) {
     planNoteEl.textContent = '';
     fitEl.textContent = '';
@@ -395,8 +417,8 @@ function refresh(): void {
     `${specs.length} frames per projector, ${perPos} for the rig — one camera position. ` +
     `${stride.strips} strips across a raster, so the finest Gray strip is ` +
     `${stride.strideXPx.toFixed(1)} projector pixels across and ${stride.strideYPx.toFixed(1)} down. ` +
-    `Write the plan down: a capture decoded against a different one decodes into nonsense, and ` +
-    `nothing yet records it for you.`;
+    `A capture decoded against a different plan decodes into nonsense, so save the plan below ` +
+    `and keep it with the photographs.`;
 
   // Every occupied quadrant, not just the first. `viewportPixels` rounds, so on
   // an odd framebuffer the left quadrants come out a pixel wider than the right
@@ -632,6 +654,161 @@ function buildResolutionMenu(): void {
  * reading "— choose —" beside a filled-in 1920×1200 invites the operator to
  * choose again and overwrite what their site actually has.
  */
+// ---- reading a capture back ------------------------------------------------
+
+/**
+ * The plan the operator is about to play, as a file to keep with the photos.
+ *
+ * This button exists because of the sentence beside it. Since Phase 1 the page
+ * has told operators "write the plan down: a capture decoded against a
+ * different one decodes into nonsense, and nothing yet records it for you" —
+ * which is a real hazard handed over as homework. The page knows every number;
+ * `src/manifest.ts` says at length why retyping them is the trap the assembler
+ * exists to refuse.
+ */
+function savePlan(): void {
+  if (rig === null) return;
+  const m = captureManifest(
+    plan,
+    { x: rig.resX, y: rig.resY },
+    rig.count,
+    Number(dwellEl.value) || 0,
+    new Date().toISOString(),
+  );
+  const url = URL.createObjectURL(new Blob([formatManifest(m)], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = MANIFEST_FILENAME;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** What the picker's transfer menu means, named rather than defaulted. */
+function chosenTransfer(): Transfer {
+  if (transferEl.value === 'linear') return { kind: 'linear' };
+  if (transferEl.value === 'gamma22') return { kind: 'gamma', exponent: 2.2 };
+  return { kind: 'srgb' };
+}
+
+/**
+ * One image file into the integers `linearise` reads.
+ *
+ * `createImageBitmap` plus a 2-D canvas is the only way a page gets at a JPEG's
+ * pixels, and it costs the top two bits of a 10-bit capture: the canvas hands
+ * back 8-bit RGBA whatever the file held. That is stated in the report rather
+ * than hidden, and `docs/OPERATOR-PATH.md` records the measurement that makes
+ * it survivable — in Phase 3's synthetic fixture 8-bit sRGB holds the decoded
+ * coordinate inside a hundredth of a projector pixel.
+ */
+async function readImageFile(file: File): Promise<{ width: number; height: number; channels: number; data: Uint8Array; maxValue: number }> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const c = canvas.getContext('2d', { alpha: false, colorSpace: 'srgb' });
+    if (c === null) throw new Error('this browser gave no 2-D context to read pixels with');
+    c.drawImage(bitmap, 0, 0);
+    const img = c.getImageData(0, 0, bitmap.width, bitmap.height);
+    return {
+      width: bitmap.width,
+      height: bitmap.height,
+      channels: 4,
+      data: new Uint8Array(img.data.buffer.slice(0)),
+      maxValue: 255,
+    };
+  } finally {
+    // Released explicitly: a capture is hundreds of frames and a page that
+    // leaves each decoded bitmap to the collector runs out of memory partway
+    // through, which looks like a bad capture rather than a leak.
+    bitmap.close();
+  }
+}
+
+let heldManifest: CaptureManifest | null = null;
+
+function syncReadback(): void {
+  const haveFiles = (photosEl.files?.length ?? 0) > 0;
+  readbackEl.disabled = heldManifest === null || !haveFiles;
+}
+
+function loadPlanFile(file: File): void {
+  void file.text().then((text) => {
+    const parsed = parseCaptureManifest(text);
+    if (!parsed.ok) {
+      heldManifest = null;
+      readNoteEl.textContent = parsed.problems.join(' ');
+      readNoteEl.dataset.smoke = 'plan-refused';
+      syncReadback();
+      return;
+    }
+    heldManifest = parsed.manifest;
+    const m = parsed.manifest;
+    readNoteEl.textContent =
+      `Plan read: ${m.plan.grayBits} Gray planes per axis, ${m.plan.phaseSteps} phase steps, ` +
+      `${m.framesPerRun} frames per projector run, ${m.projectorRes.x}x${m.projectorRes.y} ` +
+      `raster, ${m.projectors} projectors` +
+      (m.written === '' ? '.' : `, written ${m.written}.`) +
+      ` Hand in one projector's run at a time, in the order it was shot.`;
+    readNoteEl.dataset.smoke = 'plan-read';
+    syncReadback();
+  });
+}
+
+/** Decode the photographs in hand and say what they were worth. */
+async function runReadback(): Promise<void> {
+  const files = Array.from(photosEl.files ?? []);
+  if (heldManifest === null || files.length === 0) return;
+  readbackEl.disabled = true;
+  readoutEl.hidden = false;
+  readoutEl.textContent = `Reading ${files.length} photographs…`;
+  readoutEl.dataset.smoke = 'reading';
+
+  try {
+    // The order files arrive in is the order they are decoded in. `readback.ts`
+    // says why nothing here sorts them: lexicographic order puts IMG_10 before
+    // IMG_2, and a reader that quietly sorted would produce a capture that
+    // decodes wrong with nothing in the output saying so.
+    const images = [];
+    for (const f of files) images.push(await readImageFile(f));
+
+    const result = readCapture(
+      [
+        {
+          camera: Math.max(0, Math.trunc(Number(camIdxEl.value) || 0)),
+          projector: Math.max(0, Math.trunc(Number(projIdxEl.value) || 0)),
+          images,
+          names: files.map((f) => f.name),
+        },
+      ],
+      heldManifest,
+      chosenTransfer(),
+    );
+
+    const lines: string[] = [];
+    for (const run of result.runs) {
+      lines.push(describeRun(run));
+      for (const problem of run.problems) lines.push(`  ${problem}`);
+    }
+    if (result.ok) {
+      lines.push('', result.worth.summary);
+      if (result.worth.refusal !== null) lines.push(result.worth.refusal);
+      readoutEl.dataset.smoke = result.worth.usable ? 'read-ok' : 'read-unusable';
+    } else {
+      lines.push('', result.refusal);
+      readoutEl.dataset.smoke = 'read-refused';
+    }
+    readoutEl.textContent = lines.join('\n');
+  } catch (e) {
+    // A file the browser cannot decode is an ordinary operator mistake — a RAW
+    // file, a stray .txt — and belongs in the report rather than in the console.
+    readoutEl.textContent = `These photographs could not be read: ${(e as Error).message}`;
+    readoutEl.dataset.smoke = 'read-failed';
+  } finally {
+    syncReadback();
+  }
+}
+
 function syncResolutionMenu(resX: number, resY: number): void {
   const match = RESOLUTIONS.find((r) => r.resX === resX && r.resY === resY);
   resEl.value = match === undefined ? (resX > 0 && resY > 0 ? 'custom' : '') : `${resX}x${resY}`;
@@ -677,6 +854,15 @@ function main(): void {
     });
     el.addEventListener('input', refresh);
   }
+  savePlanEl.addEventListener('click', savePlan);
+  planFileEl.addEventListener('change', () => {
+    const f = planFileEl.files?.[0];
+    if (f !== undefined) loadPlanFile(f);
+  });
+  photosEl.addEventListener('change', syncReadback);
+  readbackEl.addEventListener('click', () => {
+    void runReadback();
+  });
   document.getElementById('fullscreen')?.addEventListener('click', toggleFullscreen);
   startEl.addEventListener('click', () => {
     start();
