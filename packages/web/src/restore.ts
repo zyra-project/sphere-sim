@@ -67,19 +67,27 @@ export interface InstallTarget {
 /**
  * One file the page holds verbatim, as it arrived from the operator.
  *
- * `text` is the bytes that were loaded, NOT a re-serialization of anything
- * parsed out of them. Restoring from a re-serialization would put back a file
- * that is equivalent rather than identical, and "exactly the previous state" is
- * the standard the phase set.
+ * BYTES, not text, and the difference is the whole guarantee. An earlier
+ * version of this interface carried a string and the docblock claimed it was
+ * "the bytes that were loaded" — it was not. The page reads a config through
+ * `File.text()`, which is a UTF-8 decode: it strips a leading byte-order mark
+ * and replaces malformed sequences with U+FFFD. Re-encoding that for the
+ * archive returns a file that still parses and is three bytes shorter than the
+ * one the operator loaded, silently.
+ *
+ * A restore point that hands back a subtly different file is the failure this
+ * module exists to prevent, so the original is kept as the bytes that arrived
+ * and travels as those bytes. "Exactly the previous state" is the standard the
+ * phase set, and it is a claim about bytes or it is not a claim.
  */
 export interface HeldOriginal {
   path: string;
-  text: string;
+  bytes: Uint8Array;
 }
 
 /** A target whose original the page can put back. */
 export interface CoveredTarget extends InstallTarget {
-  text: string;
+  bytes: Uint8Array;
 }
 
 export interface RestorePlan {
@@ -132,13 +140,13 @@ export function planRestore(
   targets: readonly InstallTarget[],
   held: readonly HeldOriginal[],
 ): RestorePlan {
-  const originals = new Map(held.map((h) => [h.path, h.text]));
+  const originals = new Map(held.map((h) => [h.path, h.bytes]));
   const covered: CoveredTarget[] = [];
   const uncovered: InstallTarget[] = [];
   for (const target of targets) {
-    const text = originals.get(target.path);
-    if (text === undefined) uncovered.push(target);
-    else covered.push({ ...target, text });
+    const bytes = originals.get(target.path);
+    if (bytes === undefined) uncovered.push(target);
+    else covered.push({ ...target, bytes });
   }
 
   if (targets.length === 0) {
@@ -172,16 +180,51 @@ export function planRestore(
       `never seen whatever is at ${plural(uncovered.length, 'that path', 'those paths')} on your ` +
       `sphere: if a file is there, installing replaces it and nothing here brings it back. ` +
       `Copy ${plural(uncovered.length, 'it', 'them')} somewhere safe yourself before you ` +
-      `install, or load ${plural(uncovered.length, 'it', 'them')} on the page so ` +
-      `${plural(uncovered.length, 'it', 'they')} can travel in the archive. A restore point ` +
+      `install — there is nowhere on this page to hand ${plural(uncovered.length, 'it', 'them')} ` +
+      `in, so copying ${plural(uncovered.length, 'it', 'them')} by hand is the only way back ` +
+      `that exists today. A restore point ` +
       `that covers some of what it overwrote is worse than none, because it is the one that ` +
       `makes you brave.`,
   };
 }
 
-/** Where a covered original travels inside the archive. */
-export function restoreEntryName(path: string): string {
-  return `restore/${path}`;
+/** The manifest's own name, which everything else has to avoid. */
+const MANIFEST_NAME = 'restore/MANIFEST.txt';
+
+/**
+ * Where each covered original travels, with collisions resolved once.
+ *
+ * `bundle.ts`'s `configEntryName` already had to solve this at the top level:
+ * the picker accepts a config by CONTENT, so a site is free to call theirs
+ * anything, and ZIP permits duplicate names while extractors disagree about
+ * which one wins. The same hazard reaches one directory down, and this module
+ * walked straight into it — a config named `MANIFEST.txt` lands on
+ * `restore/MANIFEST.txt`, which is the file explaining what can be put back.
+ * Either the instructions or the operator's own config disappears, and which
+ * one depends on their unzip tool.
+ *
+ * Resolved here, once, and the result is used by both the entries and the
+ * manifest so the two cannot disagree about where a file went. Compared
+ * case-insensitively, because the extractor is what has to cope and Windows
+ * and macOS treat `manifest.txt` as the same file.
+ */
+export function restoreEntryNames(covered: readonly CoveredTarget[]): Map<string, string> {
+  const taken = new Set<string>([MANIFEST_NAME.toLowerCase()]);
+  const out = new Map<string, string>();
+  for (const c of covered) {
+    const wanted = `restore/${c.path}`;
+    let name = wanted;
+    // A numbered suffix before the extension rather than after: `MANIFEST-2.txt`
+    // still opens in a text editor, `MANIFEST.txt-2` does not.
+    for (let n = 2; taken.has(name.toLowerCase()); n++) {
+      const dot = wanted.lastIndexOf('.');
+      const cut = dot > wanted.lastIndexOf('/') ? dot : wanted.length;
+      name = `${wanted.slice(0, cut)}-${n}${wanted.slice(cut)}`;
+    }
+    taken.add(name.toLowerCase());
+    out.set(c.path, name);
+  }
+  return out;
 }
 
 /**
@@ -193,9 +236,13 @@ export function restoreEntryName(path: string): string {
  * is the only version of this that can prevent the mistake.
  */
 export function restoreEntries(plan: RestorePlan): ZipEntry[] {
-  const entries: ZipEntry[] = [{ name: 'restore/MANIFEST.txt', text: restoreManifest(plan) }];
+  const names = restoreEntryNames(plan.covered);
+  const entries: ZipEntry[] = [{ name: MANIFEST_NAME, text: restoreManifest(plan) }];
   for (const c of plan.covered) {
-    entries.push({ name: restoreEntryName(c.path), text: c.text });
+    // `text` is unused for these — `buildZip` stores `bytes` verbatim when it is
+    // present — and is empty rather than a decoded view of the same file, so
+    // nothing downstream can read a lossy copy by mistake.
+    entries.push({ name: names.get(c.path) ?? `restore/${c.path}`, text: '', bytes: c.bytes });
   }
   return entries;
 }
@@ -239,9 +286,10 @@ export function restoreManifest(plan: RestorePlan): string {
   }
 
   if (plan.covered.length > 0) {
+    const names = restoreEntryNames(plan.covered);
     lines.push('Copies in this archive', '----------------------');
     for (const c of plan.covered) {
-      lines.push(`  ${restoreEntryName(c.path)}  ->  ${c.path}`);
+      lines.push(`  ${names.get(c.path) ?? `restore/${c.path}`}  ->  ${c.path}`);
     }
     lines.push(
       '',

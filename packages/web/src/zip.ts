@@ -35,6 +35,23 @@
 export interface ZipEntry {
   name: string;
   text: string;
+  /**
+   * The exact bytes to store, when `text` cannot carry them.
+   *
+   * Every other entry in this archive is written by this project, so its text
+   * IS the file. A restored original is not: it came off an operator's disk,
+   * reached the page through `File.text()`, and that is a UTF-8 DECODE — it
+   * drops a leading byte-order mark and replaces anything malformed with
+   * U+FFFD. Re-encoding the result gives a file that parses and is not the one
+   * that was loaded, which for a restore point is the whole failure.
+   *
+   * Measured rather than assumed: `[0xEF,0xBB,0xBF,0x7B,0x7D,0x0A]` through
+   * `text()` and back comes out `[0x7B,0x7D,0x0A]`, three bytes shorter and
+   * still valid JSON.
+   *
+   * When present this is stored verbatim and `text` is ignored.
+   */
+  bytes?: Uint8Array;
 }
 
 /**
@@ -106,7 +123,7 @@ export function buildZip(entries: readonly ZipEntry[]): Uint8Array {
 
   for (const entry of entries) {
     const name = enc.encode(entry.name);
-    const body = enc.encode(entry.text);
+    const body = entry.bytes ?? enc.encode(entry.text);
     const sum = crc32(body);
     const offset = local.length;
 

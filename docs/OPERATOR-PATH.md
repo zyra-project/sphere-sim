@@ -444,6 +444,13 @@ The honest consequence: **today the refusal always fires**, because the page is
 never given the files it would overwrite. That is the next piece of work and it
 is small — the page already has a picker for the config, and the same treatment
 for the current warp and alignment files turns the refusal into a green light.
+Until it exists the refusal says so, and tells an operator to copy those files
+by hand rather than offering them a button that is not there.
+
+Review also caught the guarantee being wider than the code: the config reached
+the page through `File.text()`, which is a UTF-8 decode, so a config carrying a
+byte-order mark would have been restored three bytes shorter and still valid
+JSON. Originals are now held and archived as **bytes**.
 
 **Done when** an operator can install a calibration, dislike it, and be back to
 exactly the previous state in one step. **Not met**: the plan is computed and

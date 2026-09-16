@@ -14,15 +14,19 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
 import { bundleEntries } from '../src/bundle.ts';
+import { buildZip } from '../src/zip.ts';
 import {
   type HeldOriginal,
   type InstallTarget,
   planRestore,
   restoreEntries,
+  restoreEntryNames,
   restoreManifest,
 } from '../src/restore.ts';
 
 const CONFIG_TEXT = '{\n  "hgt": { "value": 209.0 }\n}\n';
+const enc = new TextEncoder();
+const bytes = (s: string): Uint8Array => enc.encode(s);
 
 /** What the page installs today: two warps, two alignments, one config. */
 function targets(): InstallTarget[] {
@@ -38,11 +42,11 @@ function targets(): InstallTarget[] {
 /** Everything, as it would be once the page can be given the current files. */
 function everything(): HeldOriginal[] {
   return [
-    { path: 'warp/P1.data', text: 'old P1 warp\n' },
-    { path: 'warp/P3.data', text: 'old P3 warp\n' },
-    { path: 'alignment/P1.alignment', text: 'old P1 alignment\n' },
-    { path: 'alignment/P3.alignment', text: 'old P3 alignment\n' },
-    { path: 'local_sos_config.json', text: CONFIG_TEXT },
+    { path: 'warp/P1.data', bytes: bytes('old P1 warp\n') },
+    { path: 'warp/P3.data', bytes: bytes('old P3 warp\n') },
+    { path: 'alignment/P1.alignment', bytes: bytes('old P1 alignment\n') },
+    { path: 'alignment/P3.alignment', bytes: bytes('old P3 alignment\n') },
+    { path: 'local_sos_config.json', bytes: bytes(CONFIG_TEXT) },
   ];
 }
 
@@ -50,7 +54,7 @@ test('holding only the config is refused as a restore point, not offered as a pa
   // This is the page's real situation today. The config is PATCHED, so the page
   // was handed it and still has every byte; the warps and alignments are
   // GENERATED, so it has never seen what is at those paths.
-  const plan = planRestore(targets(), [{ path: 'local_sos_config.json', text: CONFIG_TEXT }]);
+  const plan = planRestore(targets(), [{ path: 'local_sos_config.json', bytes: bytes(CONFIG_TEXT) }]);
 
   assert.equal(plan.covered.length, 1);
   assert.equal(plan.uncovered.length, 4);
@@ -79,19 +83,19 @@ test('a complete plan says so without hedging', () => {
 test('originals travel byte for byte, under a path that says where they go back', () => {
   const plan = planRestore(targets(), everything());
   const entries = restoreEntries(plan);
-  const byName = new Map(entries.map((e) => [e.name, e.text]));
+  const byName = new Map(entries.map((e) => [e.name, e.bytes]));
 
-  // Byte for byte: restoring from a re-serialization would put back a file
-  // that is equivalent rather than identical, and "exactly the previous state"
-  // is the standard the phase set.
-  assert.equal(byName.get('restore/local_sos_config.json'), CONFIG_TEXT);
-  assert.equal(byName.get('restore/warp/P1.data'), 'old P1 warp\n');
+  // Byte for byte, and checked as bytes: restoring from a re-encoded string
+  // would put back a file that is equivalent rather than identical, and
+  // "exactly the previous state" is the standard the phase set.
+  assert.deepEqual(byName.get('restore/local_sos_config.json'), bytes(CONFIG_TEXT));
+  assert.deepEqual(byName.get('restore/warp/P1.data'), bytes('old P1 warp\n'));
   assert.ok(byName.has('restore/MANIFEST.txt'));
   assert.equal(entries.length, 6, 'five originals and the manifest');
 });
 
 test('the manifest is written even when the plan is incomplete — especially then', () => {
-  const plan = planRestore(targets(), [{ path: 'local_sos_config.json', text: CONFIG_TEXT }]);
+  const plan = planRestore(targets(), [{ path: 'local_sos_config.json', bytes: bytes(CONFIG_TEXT) }]);
   const entries = restoreEntries(plan);
   const manifest = entries.find((e) => e.name === 'restore/MANIFEST.txt')?.text ?? '';
 
@@ -128,7 +132,7 @@ test('an original at a different path does not count as covering a target', () =
   // right — so a near-match is not a match.
   const plan = planRestore(
     [{ path: 'alignment/P1.alignment', kind: 'alignment' }],
-    [{ path: 'alignment/P2.alignment', text: 'someone else\n' }],
+    [{ path: 'alignment/P2.alignment', bytes: bytes('someone else\n') }],
   );
   assert.equal(plan.complete, false);
   assert.equal(plan.covered.length, 0);
@@ -136,7 +140,7 @@ test('an original at a different path does not count as covering a target', () =
 });
 
 test('the archive carries the restore directory and the README states the refusal', () => {
-  const plan = planRestore(targets(), [{ path: 'local_sos_config.json', text: CONFIG_TEXT }]);
+  const plan = planRestore(targets(), [{ path: 'local_sos_config.json', bytes: bytes(CONFIG_TEXT) }]);
   const entries = bundleEntries({
     warp: [['P1', 'warp one\n'], ['P3', 'warp three\n']],
     alignment: [['P1', 'align one\n'], ['P3', 'align three\n']],
@@ -183,7 +187,7 @@ test('the warning comes before the file lists, not under them', () => {
   // A heading that says to read it first, printed below two file listings, is
   // not read first. This pins the order rather than the wording.
   const text = restoreManifest(
-    planRestore(targets(), [{ path: 'local_sos_config.json', text: CONFIG_TEXT }]),
+    planRestore(targets(), [{ path: 'local_sos_config.json', bytes: bytes(CONFIG_TEXT) }]),
   );
   const warning = text.indexOf('BEFORE YOU INSTALL');
   const covered = text.indexOf('Copies in this archive');
@@ -196,4 +200,67 @@ test('the warning comes before the file lists, not under them', () => {
   const whole = restoreManifest(planRestore(targets(), everything()));
   assert.ok(!whole.includes('BEFORE YOU INSTALL'));
   assert.match(whole, /5 of 5 files/);
+});
+
+test('a config with a byte-order mark comes back with its byte-order mark', () => {
+  // The defect this interface changed for. `File.text()` is a UTF-8 DECODE: it
+  // strips a leading BOM, so a config written by a Windows tool came back three
+  // bytes shorter and still valid JSON. A restore copy that differs from the
+  // original in a way nobody can see is the exact trap this module argues about.
+  const withBom = new Uint8Array([0xef, 0xbb, 0xbf, ...bytes(CONFIG_TEXT)]);
+
+  // What the old path did, shown rather than asserted about: decode, re-encode.
+  const roundTripped = enc.encode(new TextDecoder().decode(withBom));
+  assert.equal(roundTripped.length, withBom.length - 3, 'the decode really does eat the BOM');
+
+  const plan = planRestore(
+    [{ path: 'local_sos_config.json', kind: 'config' }],
+    [{ path: 'local_sos_config.json', bytes: withBom }],
+  );
+  const entry = restoreEntries(plan).find((e) => e.name === 'restore/local_sos_config.json');
+  assert.ok(entry !== undefined);
+  assert.deepEqual(entry.bytes, withBom);
+
+  // And it survives the archive, not just the plan: `buildZip` stores `bytes`
+  // verbatim when they are present rather than encoding `text`.
+  const zip = buildZip(restoreEntries(plan));
+  const haystack = Array.from(zip).join(',');
+  assert.ok(haystack.includes(Array.from(withBom).join(',')), 'the BOM is in the archive');
+});
+
+test('a config named MANIFEST.txt does not evict the manifest', () => {
+  // The picker accepts a config by CONTENT, so a site may call theirs anything.
+  // ZIP permits duplicate names and extractors disagree about which wins, so an
+  // unresolved collision loses either the operator's config or the file
+  // explaining what can be put back. `bundle.ts` already solved this one
+  // directory up; this module walked into it one directory down.
+  const plan = planRestore(
+    [{ path: 'MANIFEST.txt', kind: 'config' }],
+    [{ path: 'MANIFEST.txt', bytes: bytes('their config\n') }],
+  );
+  const entries = restoreEntries(plan);
+  const names = entries.map((e) => e.name);
+  assert.equal(new Set(names).size, names.length, `duplicate entry names: ${names.join(', ')}`);
+  assert.ok(names.includes('restore/MANIFEST.txt'));
+
+  // The suffix goes before the extension, so the file still opens in an editor.
+  const moved = restoreEntryNames(plan.covered).get('MANIFEST.txt');
+  assert.equal(moved, 'restore/MANIFEST-2.txt');
+
+  // And the manifest points at where the file actually went, rather than at
+  // the name it wanted. The two are resolved once, together.
+  const manifest = entries.find((e) => e.name === 'restore/MANIFEST.txt')?.text ?? '';
+  assert.match(manifest, /restore\/MANIFEST-2\.txt {2}-> {2}MANIFEST\.txt/);
+});
+
+test('the refusal does not offer an action the page cannot perform', () => {
+  // There is no picker for existing warp or alignment files — docs/OPERATOR-PATH.md
+  // says so in this PR's own words. Telling an operator to "load them on the
+  // page" is an instruction that cannot be followed, which is the same fault
+  // this module exists to argue against, committed inside the argument.
+  const plan = planRestore(targets(), [
+    { path: 'local_sos_config.json', bytes: bytes(CONFIG_TEXT) },
+  ]);
+  assert.ok(!/load (it|them) on the page/.test(plan.refusal ?? ''));
+  assert.match(plan.refusal ?? '', /nowhere on this page to hand them in/);
 });

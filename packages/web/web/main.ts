@@ -273,6 +273,8 @@ interface PageState {
    * on every render costs nothing and cannot go stale.
    */
   sosConfigText: string;
+  /** The config exactly as it arrived, for `restore/`. Null when none loaded. */
+  sosConfigBytes: Uint8Array | null;
   sosConfigName: string;
   sosConfig: SosConfig | null;
   sosConfigError: string;
@@ -322,6 +324,7 @@ const state: PageState = {
   sosReadProjector: 0,
   sosReadError: '',
   sosConfigText: '',
+  sosConfigBytes: null,
   sosConfigName: '',
   sosConfig: null,
   sosConfigError: '',
@@ -4708,8 +4711,8 @@ function buildBundle(): {
     })),
     ...(config !== null ? [{ path: configName, kind: 'config' as const }] : []),
   ];
-  const held = config !== null && state.sosConfigText !== ''
-    ? [{ path: configName, text: state.sosConfigText }]
+  const held = config !== null && state.sosConfigBytes !== null
+    ? [{ path: configName, bytes: state.sosConfigBytes }]
     : [];
   const restore = planRestore(targets, held);
 
@@ -4828,20 +4831,38 @@ function pickSosConfig(): void {
   input.addEventListener('change', () => {
     const file = input.files?.[0];
     if (!file) return;
+    /**
+     * The BYTES are read, and the text is decoded from them here.
+     *
+     * `file.text()` alone was the first version and it cannot support the
+     * restore point: it is a UTF-8 decode, so a config carrying a byte-order
+     * mark comes back three bytes shorter and one with a malformed sequence
+     * comes back altered. Both still parse. Writing that into the archive as
+     * "the file you loaded" would hand an operator a restore copy that differs
+     * from their original in a way neither of us could see.
+     *
+     * So the original bytes are kept for `restore/`, and the text — which is
+     * only ever used for parsing and patching, where a BOM is noise — is
+     * decoded from them.
+     */
     void file
-      .text()
-      .then((text) => {
+      .arrayBuffer()
+      .then((buf) => {
+        const bytes = new Uint8Array(buf);
+        const text = new TextDecoder().decode(bytes);
         // Parsed here and diffed at render time. Anything computed against the
         // rig at THIS moment would be a snapshot of a rig the reader can change
         // with the next slider.
         state.sosConfig = parseSosConfig(text);
         state.sosConfigText = text;
+        state.sosConfigBytes = bytes;
         state.sosConfigName = file.name;
         state.sosConfigError = '';
       })
       .catch((err: unknown) => {
         state.sosConfig = null;
         state.sosConfigText = '';
+        state.sosConfigBytes = null;
         state.sosConfigName = file.name;
         state.sosConfigError = err instanceof Error ? err.message : String(err);
       })
