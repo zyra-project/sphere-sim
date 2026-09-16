@@ -195,8 +195,39 @@ export const ARMS: readonly Arm[] = [
   },
 ];
 
-/** Frames in one full capture: 34 per projector per position, 4 projectors, 3 positions. */
-export const FRAMES = 408;
+/**
+ * Exposures the emitter plans for ONE camera position: 34 per projector, 4 projectors.
+ *
+ * This is the unit the capture is actually SHOT in, and getting it wrong is the
+ * defect review found in the first version of this module. `emit.ts` builds its
+ * step list for the rig and names it in so many words — *"136 for the rig — one
+ * camera position"* — and `advance()` calls `stopPlaying()` when the list runs
+ * out. The sequence does not continue to the next position; it ENDS, the
+ * operator moves the tripod, and starts it again.
+ *
+ * So a capture is three separate emitter runs with a tripod move between them,
+ * and the shutter's phase against the emitter is drawn afresh at each one.
+ */
+export const FRAMES_PER_POSITION = 136;
+
+/**
+ * Camera positions in one capture, each a fresh start of the emitter.
+ *
+ * Three is `docs/OPERATOR-PATH.md`'s measured figure for a four-projector rig.
+ * It is a count of INDEPENDENT chances to start in the wrong place, which is
+ * why it belongs in the model rather than only in the frame total.
+ */
+export const POSITIONS = 3;
+
+/**
+ * Frames in one full capture.
+ *
+ * Derived rather than written, because the first version wrote `408` directly
+ * and simulated it as one uninterrupted run. That is the same fault as the
+ * start phase one level up: a constant that looked like a total was carrying an
+ * assumption about the procedure, and the assumption was false.
+ */
+export const FRAMES = FRAMES_PER_POSITION * POSITIONS;
 
 /** Frames belonging to one projector's run, which is the unit a decode fails in. */
 export const FRAMES_PER_RUN = 34;

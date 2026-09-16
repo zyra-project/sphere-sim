@@ -449,26 +449,37 @@ the first shutter lands — was a constant buried in the model, drawn from the
 middle half of the dwell. That excluded every boundary-adjacent start, which is
 the risk in question, so the headline was a property of the sampling rule.
 
+**A second round found the same mistake one level up.** The model ran all 408
+frames as a single sequence, when the emitter plans 136 for one camera position
+and stops — the operator moves the tripod and starts it again, drawing a fresh
+phase. Three positions is three independent chances to begin in the wrong place,
+so the capture-level risk is `1 − (1 − exposure/dwell)³` and the first number
+published here was roughly half what it should have been.
+
 Swept instead of assumed, at the loosest crystal and a 1/4 s exposure:
 
 <!-- generated: experiment-9-phase-operator-path -->
 | first shutter | 0.2 s dwell | 0.5 s dwell | 1 s dwell | 2 s dwell | 4 s dwell |
 | --- | --- | --- | --- | --- | --- |
-| aimed | — | 1091 (54.5%) | 83 (4.2%) | 0 (0.0%) | 0 (0.0%) |
-| uniform | — | 1120 (56.0%) | 569 (28.4%) | 345 (17.3%) | 247 (12.3%) |
-| on-tick | — | 1161 (58.0%) | 4 (0.2%) | 25 (1.3%) | 148 (7.4%) |
+| aimed | — | 1767 (88.3%) | 116 (5.8%) | 0 (0.0%) | 0 (0.0%) |
+| uniform | — | 1798 (89.9%) | 1198 (59.9%) | 728 (36.4%) | 468 (23.4%) |
+| on-tick | — | 1830 (91.5%) | 9 (0.5%) | 13 (0.7%) | 20 (1.0%) |
 <!-- /generated -->
 
 Same clocks, same dwell, same exposure — only where the first shot landed.
 
-**Drift is negligible**; that survives. At the default dwell a capture
-accumulates ~82 ms against margins of 750 ms and 1000 ms either side of a
-mid-dwell shot.
+**Drift is negligible**; that survives, and the three-position correction
+strengthens it because the accumulation restarts at each tripod move. At the
+default dwell one position accumulates ~27 ms against margins of 750 ms and
+1000 ms either side of a mid-dwell shot.
 
-**The start phase is the gamble.** A shot opening at phase `p` straddles when
-`p > dwell − exposure`, so a start with no procedure behind it straddles its
-first frame with probability `exposure / dwell` — 12.5% at the page's defaults —
-and nothing about the clocks improves that.
+**The start phase is the gamble, and it is taken three times.** A shot opening
+at phase `p` straddles when `p > dwell − exposure`, so a start with no procedure
+behind it straddles its first frame with probability `exposure / dwell` — 12.5%
+at the page's defaults — and nothing about the clocks improves that. Compounded
+over three camera positions that is 33.0% of captures, against 36.4% measured.
+Four in five of those lose a whole position, every frame of it, while the other
+two positions may be perfect.
 
 **The page's tick already does real work.** `emit.ts` plays its tone AT the
 step, so a shutter tripped on it opens a reaction time later, in the roomiest

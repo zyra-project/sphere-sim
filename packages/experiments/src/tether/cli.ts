@@ -25,7 +25,9 @@ import {
   EXPERIMENT_ROOT_SEED,
   EXPOSURES_S,
   FRAMES,
+  FRAMES_PER_POSITION,
   FRAMES_PER_RUN,
+  POSITIONS,
   TRIALS,
 } from './design.ts';
 import { summarise, type ArmSummary } from './run.ts';
@@ -97,10 +99,17 @@ function main(): void {
    * probability of the FIRST shot is `exposure / dwell`, whatever the crystal.
    */
   const loosestPpm = Math.max(...ARMS.map((a) => a.driftPpm));
-  const driftAtDefaultMs = (DEFAULT_DWELL_S * (loosestPpm / 1e6) * FRAMES * 1000) / 1;
+  // Across ONE position, because the emitter stops at the end of each and the
+  // operator starts it again. The first version accumulated across all 408 and
+  // so overstated the drift by a factor of three — in the direction that made
+  // drift look more dangerous than it is.
+  const driftAtDefaultMs = DEFAULT_DWELL_S * (loosestPpm / 1e6) * FRAMES_PER_POSITION * 1000;
   const marginUpMs = (DEFAULT_DWELL_S / 2 - HEADLINE_EXPOSURE_S) * 1000;
   const marginDownMs = (DEFAULT_DWELL_S / 2) * 1000;
   const uniformFirstShot = (100 * HEADLINE_EXPOSURE_S) / DEFAULT_DWELL_S;
+  // Three positions, three independent draws, so the capture-level risk is the
+  // complement of getting away with it three times.
+  const uniformCapture = 100 * (1 - (1 - HEADLINE_EXPOSURE_S / DEFAULT_DWELL_S) ** POSITIONS);
 
   const aimed = at('intervalometer-100ppm', 'aimed', DEFAULT_DWELL_S);
   const uniform = at('intervalometer-100ppm', 'uniform', DEFAULT_DWELL_S);
@@ -118,30 +127,36 @@ function main(): void {
     `who starts the camera at no particular phase ruined ` +
     `${uniform.capturesTouched} of ${uniform.trials} captures ` +
     `(${pct(uniform.capturesTouched, uniform.trials)}), and ` +
-    `${uniform.capturesWhollyStraddled} of them straddled every frame from the first to the ` +
-    `last. That rate is not a property of the clocks: a shot opening at phase p straddles when ` +
-    `p > dwell - exposure, so a uniform start straddles its first frame with probability ` +
-    `exposure / dwell, ${uniformFirstShot.toFixed(1)}% here, and drift is far too small to move ` +
-    `it afterwards. Shooting on the page's own tick instead puts the shutter a reaction time ` +
+    `${uniform.capturesLosingAWholePosition} of them lost a whole camera position, every frame ` +
+    `of it, from that position's first photograph to its last. That rate is not a property of ` +
+    `the clocks: a shot opening at phase p straddles when p > dwell - exposure, so a start at no ` +
+    `particular phase straddles its first frame with probability exposure / dwell, ` +
+    `${uniformFirstShot.toFixed(1)}% here, and drift is far too small to move it afterwards. ` +
+    `A capture is ${POSITIONS} positions and the emitter stops between them, so that gamble is ` +
+    `taken ${POSITIONS} times over and the capture-level risk is ` +
+    `${uniformCapture.toFixed(1)}%. Shooting on the page's own tick instead puts the shutter a reaction time ` +
     `after the boundary — the roomiest place in the dwell — and ruined ` +
     `${onTick.capturesTouched} (${pct(onTick.capturesTouched, onTick.trials)}); deliberately ` +
     `aiming mid-dwell ruined ${aimed.capturesTouched} ` +
     `(${pct(aimed.capturesTouched, aimed.trials)}). Clock drift really is negligible at this ` +
-    `dwell — ${driftAtDefaultMs.toFixed(0)} ms accumulated across ${FRAMES} frames, against ` +
-    `margins of ${marginUpMs.toFixed(0)} ms above a mid-dwell shot and ${marginDownMs.toFixed(0)} ` +
-    `ms below — so what a tether removes is not drift but the start-phase gamble. A hand-pressed ` +
+    `dwell — ${driftAtDefaultMs.toFixed(0)} ms accumulated across the ${FRAMES_PER_POSITION} ` +
+    `frames of one camera position, against margins of ${marginUpMs.toFixed(0)} ms above a ` +
+    `mid-dwell shot and ${marginDownMs.toFixed(0)} ms below — so what a tether removes ` +
+    `is not drift but the start-phase gamble. A hand-pressed ` +
     `remote is worse and differently shaped: at a uniform start it touched ` +
     `${handUniform.capturesTouched} of ${handUniform.trials} ` +
     `(${pct(handUniform.capturesTouched, handUniform.trials)}) and on the tick still ` +
     `${handTick.capturesTouched} (${pct(handTick.capturesTouched, handTick.trials)}), with ` +
     `scattered straddles rather than one continuous ruined stretch — only ` +
-    `${handTick.capturesWhollyStraddled} of those were straddled end to end.`;
+    `${handTick.capturesLosingAWholePosition} of those lost a whole position end to end.`;
 
   const doc = {
     schema: 'sphere-sim/experiment-9@1',
     generatedFrom: {
       trials: TRIALS,
       frames: FRAMES,
+      framesPerPosition: FRAMES_PER_POSITION,
+      positions: POSITIONS,
       framesPerRun: FRAMES_PER_RUN,
       dwellsS: DWELLS_S,
       startPhases: START_PHASES,

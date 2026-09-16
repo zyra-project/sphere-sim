@@ -599,13 +599,16 @@ interface Experiment9Cell {
   worstBurst: number;
   runsTouchedTotal: number;
   capturesAllRunsTouched: number;
-  capturesWhollyStraddled: number;
+  positionsTouchedTotal: number;
+  capturesLosingAWholePosition: number;
 }
 
 interface Experiment9 {
   generatedFrom: {
     trials: number;
     frames: number;
+    framesPerPosition: number;
+    positions: number;
     framesPerRun: number;
     headlineExposureS: number;
     startPhases: string[];
@@ -691,12 +694,18 @@ function experiment9Dwell(result: Experiment9): string {
  * "all runs touched" rather than "wholly ruined": the column counts captures
  * where every run holds at least one straddled frame, and what one straddled
  * frame costs a decode is exactly what this experiment does not measure.
- * "end to end" is the separate, stronger property, evaluated per capture.
+ *
+ * "position lost" is the separate, stronger property: a camera position in
+ * which EVERY photograph straddled. It replaced a column counting captures
+ * straddled from frame 1 to frame 408, which only the old single-start model
+ * could produce in quantity — three independent start phases make it a
+ * coincidence rather than a shape, and reporting a coincidence as the
+ * characteristic failure is how the first version of this table read.
  */
 function experiment9Shape(result: Experiment9): string {
   const exposure = result.generatedFrom.headlineExposureS;
   const out = [
-    '| shutter | start | dwell | captures touched | worst capture | worst burst | all runs touched | end to end |',
+    '| shutter | start | dwell | captures touched | worst capture | worst burst | all runs touched | position lost |',
     '| --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
   for (const c of result.cells) {
@@ -705,7 +714,7 @@ function experiment9Shape(result: Experiment9): string {
     out.push(
       `| ${c.key} | ${c.startPhase} | ${c.dwellS} s | ${c.capturesTouched} / ${c.trials} | ` +
         `${c.worstStraddled} / ${result.generatedFrom.frames} | ${c.worstBurst} | ` +
-        `${c.capturesAllRunsTouched} | ${c.capturesWhollyStraddled} |`,
+        `${c.capturesAllRunsTouched} | ${c.capturesLosingAWholePosition} |`,
     );
   }
   return out.join('\n');

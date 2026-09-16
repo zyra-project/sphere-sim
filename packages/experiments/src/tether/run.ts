@@ -10,6 +10,19 @@
  * each release scatters. A photograph straddles when a step falls inside the
  * interval the shutter is open.
  *
+ * ## A capture is three runs, not one
+ *
+ * The emitter's sequence covers ONE camera position and then stops. A capture
+ * is three of them with a tripod move in between, so the shutter's phase
+ * against the emitter is drawn three times and each position is an independent
+ * chance to start in the wrong place.
+ *
+ * The first version of this module ran all 408 frames as a single sequence with
+ * a single start phase. It made the headline roughly half what it should be —
+ * one draw of a 1-in-8 risk rather than three — and manufactured its own second
+ * finding, since the only way to straddle from the first frame to the last is
+ * for one start phase to cover the lot. See {@link design.POSITIONS}.
+ *
  * ## Why the shots are placed mid-dwell
  *
  * An operator setting this up aims the shutter at the MIDDLE of a dwell, not at
@@ -26,7 +39,15 @@
 
 import { makeBenchRng, deriveSeed, type BenchRng } from '../../../bench/src/random.ts';
 
-import { FRAMES, FRAMES_PER_RUN, REACTION_S, type Arm, type StartPhase } from './design.ts';
+import {
+  FRAMES,
+  FRAMES_PER_POSITION,
+  FRAMES_PER_RUN,
+  POSITIONS,
+  REACTION_S,
+  type Arm,
+  type StartPhase,
+} from './design.ts';
 
 export interface TrialResult {
   /** Photographs whose shutter was open across a pattern change. */
@@ -42,15 +63,25 @@ export interface TrialResult {
    * RUNS says more about a night's work than counting frames does.
    */
   runsTouched: number;
+  /**
+   * Camera positions, of {@link POSITIONS}, in which at least one photograph straddled.
+   *
+   * The unit that matters once the capture is modelled as three separate
+   * emitter runs: each position is an independent draw of the start phase, so
+   * this is how many of the operator's three trips to the tripod went wrong.
+   */
+  positionsTouched: number;
+  /**
+   * Camera positions in which EVERY photograph straddled.
+   *
+   * This is what "all-or-nothing" turns into once the phase is redrawn per
+   * position. A position whose start lands inside the danger zone stays there
+   * for all 136 of its frames — drift is far too small to walk back out — so
+   * the whole position is lost, and the other two may be perfect.
+   */
+  positionsLostEndToEnd: number;
   /** The first frame index that straddled, or -1. Where the night went wrong. */
   firstStraddle: number;
-  /**
-   * True when this ONE capture straddled every frame from the first to the last.
-   *
-   * The literal reading of "all-or-nothing", evaluated per capture rather than
-   * inferred from maxima taken across different seeds.
-   */
-  straddledFromFirstToLast: boolean;
 }
 
 /**
@@ -117,8 +148,9 @@ export function runTrial(
       straddled: 0,
       longestBurst: 0,
       runsTouched: 0,
+      positionsTouched: 0,
+      positionsLostEndToEnd: 0,
       firstStraddle: -1,
-      straddledFromFirstToLast: false,
     };
   }
 
@@ -126,43 +158,61 @@ export function runTrial(
   // Sign per capture: two crystals are equally likely to be fast or slow
   // relative to each other, and the margins either side of a mid-dwell shot are
   // not equal, so sampling one sign measured half the band.
+  //
+  // Drawn ONCE for the capture and not per position, because it is a property
+  // of the two crystals rather than of the sitting. Moving the tripod does not
+  // give the camera a different oscillator.
   const signed = rng.nextFloat() < 0.5 ? -arm.driftPpm : arm.driftPpm;
   const rate = 1 + signed / 1e6;
-  const start = startPhase(phase, dwellS, rng);
 
   let straddled = 0;
   let longestBurst = 0;
-  let burst = 0;
   let firstStraddle = -1;
-  let lastStraddle = -1;
+  let positionsTouched = 0;
+  let positionsLostEndToEnd = 0;
   const touched = new Set<number>();
 
-  for (let k = 0; k < FRAMES; k++) {
-    // The camera's k-th release on the EMITTER's clock.
-    const nominal = (k * dwellS) / rate + start;
-    const open = nominal + (arm.jitterS > 0 ? rng.normal(0, arm.jitterS) : 0);
-    if (straddles(open, exposureS, dwellS)) {
-      straddled++;
-      burst++;
-      if (burst > longestBurst) longestBurst = burst;
-      if (firstStraddle < 0) firstStraddle = k;
-      lastStraddle = k;
-      touched.add(Math.floor(k / FRAMES_PER_RUN));
-    } else {
-      burst = 0;
+  for (let pos = 0; pos < POSITIONS; pos++) {
+    // A fresh start of the emitter, so a fresh phase and no inherited drift:
+    // `advance()` stopped the sequence at the end of the last position and the
+    // operator pressed start again after moving the tripod. Both resets follow
+    // from the same fact and neither is a modelling convenience.
+    const start = startPhase(phase, dwellS, rng);
+    let burst = 0;
+    let straddledHere = 0;
+
+    for (let j = 0; j < FRAMES_PER_POSITION; j++) {
+      const k = pos * FRAMES_PER_POSITION + j;
+      // The camera's j-th release of THIS position, on the emitter's clock.
+      const nominal = (j * dwellS) / rate + start;
+      const open = nominal + (arm.jitterS > 0 ? rng.normal(0, arm.jitterS) : 0);
+      if (straddles(open, exposureS, dwellS)) {
+        straddled++;
+        straddledHere++;
+        burst++;
+        if (burst > longestBurst) longestBurst = burst;
+        if (firstStraddle < 0) firstStraddle = k;
+        touched.add(Math.floor(k / FRAMES_PER_RUN));
+      } else {
+        burst = 0;
+      }
     }
+
+    // `burst` is deliberately not carried across this boundary. Minutes of
+    // tripod moving sit between the last frame of one position and the first of
+    // the next, so calling them one unbroken stretch would be false whatever
+    // the arithmetic says.
+    if (straddledHere > 0) positionsTouched++;
+    if (straddledHere === FRAMES_PER_POSITION) positionsLostEndToEnd++;
   }
 
   return {
     straddled,
     longestBurst,
     runsTouched: touched.size,
+    positionsTouched,
+    positionsLostEndToEnd,
     firstStraddle,
-    // A PER-CAPTURE property, which is what "all-or-nothing" has to mean. The
-    // first version compared a maximum burst against a maximum straddle count
-    // taken over DIFFERENT seeds and read the coincidence as this.
-    straddledFromFirstToLast: straddled > 0 && longestBurst === straddled && firstStraddle === 0
-      && lastStraddle === FRAMES - 1,
   };
 }
 
@@ -183,8 +233,19 @@ export interface ArmSummary {
   runsTouchedTotal: number;
   /** Captures in which every run held at least one straddled frame. */
   capturesAllRunsTouched: number;
-  /** Captures straddled from the first frame to the last. */
-  capturesWhollyStraddled: number;
+  /** Camera positions touched, summed over every trial. */
+  positionsTouchedTotal: number;
+  /**
+   * Captures that lost at least one camera position from its first frame to its last.
+   *
+   * The headline catastrophe, and the one an operator can actually picture: a
+   * whole sitting at the tripod in which every photograph was taken across a
+   * pattern change, with the other positions possibly perfect. It replaces a
+   * count of captures straddled end to end over all 408 frames, which the
+   * three-position model makes very nearly impossible and which was therefore
+   * measuring the old model's single start phase rather than the procedure.
+   */
+  capturesLosingAWholePosition: number;
 }
 
 export function summarise(
@@ -202,7 +263,8 @@ export function summarise(
   let worstBurst = 0;
   let runsTouchedTotal = 0;
   let capturesAllRunsTouched = 0;
-  let capturesWhollyStraddled = 0;
+  let positionsTouchedTotal = 0;
+  let capturesLosingAWholePosition = 0;
 
   for (let t = 0; t < trials; t++) {
     const seed = deriveSeed(rootSeed, `${arm.key}:${phase}:${dwellS}:${exposureS}:${t}`);
@@ -213,7 +275,8 @@ export function summarise(
     if (r.longestBurst > worstBurst) worstBurst = r.longestBurst;
     runsTouchedTotal += r.runsTouched;
     if (r.runsTouched === runsPerCapture) capturesAllRunsTouched++;
-    if (r.straddledFromFirstToLast) capturesWhollyStraddled++;
+    positionsTouchedTotal += r.positionsTouched;
+    if (r.positionsLostEndToEnd > 0) capturesLosingAWholePosition++;
   }
 
   return {
@@ -228,6 +291,7 @@ export function summarise(
     worstBurst,
     runsTouchedTotal,
     capturesAllRunsTouched,
-    capturesWhollyStraddled,
+    positionsTouchedTotal,
+    capturesLosingAWholePosition,
   };
 }
