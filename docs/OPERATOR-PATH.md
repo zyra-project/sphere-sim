@@ -420,7 +420,7 @@ the operator: *here is what changes, here is how to change it back.*
 **Done when** an operator can install a calibration, dislike it, and be back to
 exactly the previous state in one step.
 
-## Phase 5 — Tethering, as an accelerator and not a dependency. **NOT STARTED**
+## Phase 5 — Tethering, as an accelerator and not a dependency. **MEASURED FIRST; THE CASE FOR AN SDK DID NOT SURVIVE IT**
 
 With Phase 2 landed this is a convenience: the laptop advances the pattern and
 trips the shutter, and 408 exposures happen without anybody touching the camera.
@@ -432,6 +432,60 @@ modality for serious work.
 It is deliberately last. Camera SDKs are per-vendor, per-platform and hostile,
 and if this phase is on the critical path then friction 1 comes back in its worst
 form — an install, on a locked machine, that only works for some cameras.
+
+### This was the only phase with no Done-when, so it got a measurement instead
+
+`docs/EXPERIMENT-9.md` asks what the open loop actually costs. The emitter
+already advances on a timer; the camera fires on its own clock; neither reads
+the other, so a photograph can be taken while the projector is **changing**. The
+count is still right and every frame is still present, so Phase 2's bookends see
+a healthy capture — a second way into the blind spot EXPERIMENT-8 measured,
+reached without anybody deleting a file.
+
+Captures touched, out of 2 000 per cell, at a 1/4 s exposure:
+
+<!-- generated: experiment-9-dwell-operator-path -->
+| shutter | 0.2 s dwell | 0.5 s dwell | 1 s dwell | 2 s dwell | 4 s dwell |
+| --- | --- | --- | --- | --- | --- |
+| tethered | n/a | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
+| intervalometer-20ppm | n/a | 1067 (53.4%) | 53 (2.6%) | 0 (0.0%) | 0 (0.0%) |
+| intervalometer-50ppm | n/a | 1118 (55.9%) | 112 (5.6%) | 0 (0.0%) | 0 (0.0%) |
+| intervalometer-100ppm | n/a | 1211 (60.5%) | 180 (9.0%) | 0 (0.0%) | 0 (0.0%) |
+| handheld-remote | n/a | 2000 (100.0%) | 2000 (100.0%) | 1442 (72.1%) | 56 (2.8%) |
+<!-- /generated -->
+
+**Clock drift is not what breaks an untethered capture.** At the default 2 s
+dwell a whole capture accumulates ~82 ms of drift against 875 ms of slack. The
+thing tethering is usually justified by does not bite.
+
+**The dwell is the margin**, `(dwell − exposure) / 2`, and the emitter lets an
+operator take dwell to 0.2 s with nothing on the page saying what that spends.
+
+**And the failure is all-or-nothing.** The phase error is fixed for the whole
+capture, so a bad capture is wrong from its first frame to its last — decided
+silently, at frame one, by where the operator happened to start the camera.
+
+### What that does to this phase
+
+It removes most of its justification. A capture shot at the page's default dwell
+with a cheap intervalometer straddled **nothing** across 2 000 simulated
+captures at the loosest crystal in the sweep. The per-vendor SDK buys that
+operator nothing.
+
+What the numbers support is smaller and already reachable:
+
+1. The emitter says what a short dwell costs, against the operator's own
+   exposure. It already knows the dwell.
+2. The field card discourages a hand-pressed remote, with the number attached.
+3. Tethering, if built, is justified as removing the **start-phase gamble** —
+   not as fixing drift, which is not broken.
+
+**Done when** — the clause this phase never had — an operator cannot silently
+shoot a capture whose dwell is too short for their exposure. Note what that
+does: it is satisfiable by a warning on a page that exists, and a tether is one
+way to satisfy it rather than the definition of it.
+
+**Not met.** The measurement is here and nothing has changed in the emitter.
 
 ---
 

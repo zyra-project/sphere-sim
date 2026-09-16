@@ -587,7 +587,97 @@ function experiment8Headline(result: Experiment8): string {
   return out.join('\n');
 }
 
+interface Experiment9Cell {
+  key: string;
+  dwellS: number;
+  exposureS: number;
+  trials: number;
+  capturesTouched: number;
+  straddledTotal: number;
+  worstStraddled: number;
+  worstBurst: number;
+  runsTouchedTotal: number;
+  capturesWhollyTouched: number;
+}
+
+interface Experiment9 {
+  generatedFrom: { trials: number; frames: number; framesPerRun: number; headlineExposureS: number };
+  arms: { key: string; driftPpm: number; jitterS: number; tethered: boolean; story: string }[];
+  cells: Experiment9Cell[];
+}
+
+/**
+ * Captures touched, by arm and dwell, at the headline exposure.
+ *
+ * Dwell across the top because dwell is the axis the phase turns on, and a
+ * reader who takes one number from this page should take the one in their own
+ * dwell's column.
+ */
+function experiment9Dwell(result: Experiment9): string {
+  const exposure = result.generatedFrom.headlineExposureS;
+  const dwells = [...new Set(result.cells.map((c) => c.dwellS))].sort((a, b) => a - b);
+  const keys = result.arms.map((a) => a.key);
+  const share = (n: number, d: number): string =>
+    d === 0 ? '—' : `${((100 * n) / d).toFixed(1)}%`;
+  const out = [
+    `| shutter | ${dwells.map((d) => `${d} s dwell`).join(' | ')} |`,
+    `| --- | ${dwells.map(() => '---').join(' | ')} |`,
+  ];
+  for (const key of keys) {
+    const cells = dwells.map((d) =>
+      result.cells.find((c) => c.key === key && c.dwellS === d && c.exposureS === exposure),
+    );
+    const row = cells.map((c) =>
+      c === undefined ? 'n/a' : `${c.capturesTouched} (${share(c.capturesTouched, c.trials)})`,
+    );
+    out.push(`| ${key} | ${row.join(' | ')} |`);
+  }
+  return out.join('\n');
+}
+
+/**
+ * The shape of a bad capture, which is the result rather than the counts.
+ *
+ * `worst burst` beside `worst straddled` is the whole point: when they are
+ * equal, the capture was wrong from its first frame to its last.
+ */
+function experiment9Shape(result: Experiment9): string {
+  const exposure = result.generatedFrom.headlineExposureS;
+  const out = [
+    '| shutter | dwell | captures touched | worst capture | worst burst | runs touched | wholly ruined |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
+  ];
+  for (const c of result.cells) {
+    if (c.exposureS !== exposure) continue;
+    if (c.capturesTouched === 0) continue;
+    out.push(
+      `| ${c.key} | ${c.dwellS} s | ${c.capturesTouched} / ${c.trials} | ` +
+        `${c.worstStraddled} / ${result.generatedFrom.frames} | ${c.worstBurst} | ` +
+        `${c.runsTouchedTotal} | ${c.capturesWhollyTouched} |`,
+    );
+  }
+  return out.join('\n');
+}
+
 const BLOCKS: Record<string, Block> = {
+  'experiment-9-dwell': {
+    doc: 'docs/EXPERIMENT-9.md',
+    data: 'experiments/experiment-9.json',
+    render: experiment9Dwell as (r: never) => string,
+  },
+  'experiment-9-shape': {
+    doc: 'docs/EXPERIMENT-9.md',
+    data: 'experiments/experiment-9.json',
+    render: experiment9Shape as (r: never) => string,
+  },
+  // The same dwell table in the plan the measurement was run to settle.
+  // Registered a second time rather than copied, for the reason the Phase 2
+  // entry below gives: Phase 5's status IS this table.
+  'experiment-9-dwell-operator-path': {
+    doc: 'docs/OPERATOR-PATH.md',
+    data: 'experiments/experiment-9.json',
+    render: experiment9Dwell as (r: never) => string,
+  },
   'experiment-8-headline': {
     doc: 'docs/EXPERIMENT-8.md',
     data: 'experiments/experiment-8.json',

@@ -42,7 +42,8 @@
     "experiment6": "node packages/experiments/src/meshrot/cli.ts",
     "experiment7": "node packages/experiments/src/tessellation/cli.ts",
     "experiment8": "node packages/experiments/src/indexing/cli.ts",
-    "ci:solve": "npm run build:web && npm run build:app && npm run smoke:solve"
+    "ci:solve": "npm run build:web && npm run build:app && npm run smoke:solve",
+    "experiment9": "node packages/experiments/src/tether/cli.ts"
   },
   "devDependencies": {
     "typescript": "5.9.3",
