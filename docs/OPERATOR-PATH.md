@@ -436,54 +436,57 @@ form — an install, on a locked machine, that only works for some cameras.
 ### This was the only phase with no Done-when, so it got a measurement instead
 
 `docs/EXPERIMENT-9.md` asks what the open loop actually costs. The emitter
-already advances on a timer; the camera fires on its own clock; neither reads
-the other, so a photograph can be taken while the projector is **changing**. The
-count is still right and every frame is still present, so Phase 2's bookends see
-a healthy capture — a second way into the blind spot EXPERIMENT-8 measured,
+advances on a timer; the camera fires on its own clock; neither reads the other,
+so a photograph can be taken while the projector is **changing**. The count is
+still right and every frame is still present, so Phase 2's bookends see a
+healthy capture — a second way into the blind spot EXPERIMENT-8 measured,
 reached without anybody deleting a file.
 
-Captures touched, out of 2 000 per cell, at a 1/4 s exposure:
+**The first version of that experiment got the answer wrong, and the correction
+is the finding.** It swept clock drift, found almost nothing, and concluded that
+tethering was unjustified. Review found that the start phase — where in a dwell
+the first shutter lands — was a constant buried in the model, drawn from the
+middle half of the dwell. That excluded every boundary-adjacent start, which is
+the risk in question, so the headline was a property of the sampling rule.
 
-<!-- generated: experiment-9-dwell-operator-path -->
-| shutter | 0.2 s dwell | 0.5 s dwell | 1 s dwell | 2 s dwell | 4 s dwell |
+Swept instead of assumed, at the loosest crystal and a 1/4 s exposure:
+
+<!-- generated: experiment-9-phase-operator-path -->
+| first shutter | 0.2 s dwell | 0.5 s dwell | 1 s dwell | 2 s dwell | 4 s dwell |
 | --- | --- | --- | --- | --- | --- |
-| tethered | n/a | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
-| intervalometer-20ppm | n/a | 1067 (53.4%) | 53 (2.6%) | 0 (0.0%) | 0 (0.0%) |
-| intervalometer-50ppm | n/a | 1118 (55.9%) | 112 (5.6%) | 0 (0.0%) | 0 (0.0%) |
-| intervalometer-100ppm | n/a | 1211 (60.5%) | 180 (9.0%) | 0 (0.0%) | 0 (0.0%) |
-| handheld-remote | n/a | 2000 (100.0%) | 2000 (100.0%) | 1442 (72.1%) | 56 (2.8%) |
+| aimed | — | 1091 (54.5%) | 83 (4.2%) | 0 (0.0%) | 0 (0.0%) |
+| uniform | — | 1120 (56.0%) | 569 (28.4%) | 345 (17.3%) | 247 (12.3%) |
+| on-tick | — | 1161 (58.0%) | 4 (0.2%) | 25 (1.3%) | 148 (7.4%) |
 <!-- /generated -->
 
-**Clock drift is not what breaks an untethered capture.** At the default 2 s
-dwell a whole capture accumulates ~82 ms of drift against 875 ms of slack. The
-thing tethering is usually justified by does not bite.
+Same clocks, same dwell, same exposure — only where the first shot landed.
 
-**The dwell is the margin**, `(dwell − exposure) / 2`, and the emitter lets an
-operator take dwell to 0.2 s with nothing on the page saying what that spends.
+**Drift is negligible**; that survives. At the default dwell a capture
+accumulates ~82 ms against margins of 750 ms and 1000 ms either side of a
+mid-dwell shot.
 
-**And the failure is all-or-nothing.** The phase error is fixed for the whole
-capture, so a bad capture is wrong from its first frame to its last — decided
-silently, at frame one, by where the operator happened to start the camera.
+**The start phase is the gamble.** A shot opening at phase `p` straddles when
+`p > dwell − exposure`, so a start with no procedure behind it straddles its
+first frame with probability `exposure / dwell` — 12.5% at the page's defaults —
+and nothing about the clocks improves that.
+
+**The page's tick already does real work.** `emit.ts` plays its tone AT the
+step, so a shutter tripped on it opens a reaction time later, in the roomiest
+part of the dwell. That was never documented as load-bearing and the field card
+does not mention it.
 
 ### What that does to this phase
 
-It removes most of its justification. A capture shot at the page's default dwell
-with a cheap intervalometer straddled **nothing** across 2 000 simulated
-captures at the loosest crystal in the sweep. The per-vendor SDK buys that
-operator nothing.
-
-What the numbers support is smaller and already reachable:
-
-1. The emitter says what a short dwell costs, against the operator's own
-   exposure. It already knows the dwell.
-2. The field card discourages a hand-pressed remote, with the number attached.
-3. Tethering, if built, is justified as removing the **start-phase gamble** —
-   not as fixing drift, which is not broken.
+It does not remove the phase's justification, which is what the first pass
+claimed. It **relocates** it: what a tether buys is the removal of the
+start-phase gamble, not clock accuracy. And it puts three cheaper interventions
+in front of it — telling an operator to shoot on the tick, saying what a short
+dwell costs against their exposure, and discouraging a hand-pressed remote.
 
 **Done when** — the clause this phase never had — an operator cannot silently
-shoot a capture whose dwell is too short for their exposure. Note what that
-does: it is satisfiable by a warning on a page that exists, and a tether is one
-way to satisfy it rather than the definition of it.
+shoot a capture whose first shutter lands where the pattern is changing. A
+tether satisfies that; so, more cheaply, might the tick plus a warning, and that
+comparison is now possible where before there was no number at all.
 
 **Not met.** The measurement is here and nothing has changed in the emitter.
 

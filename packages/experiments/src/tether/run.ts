@@ -24,9 +24,9 @@
  * keeps eating — see {@link runTrial}'s burst accounting.
  */
 
-import { makeBenchRng, deriveSeed } from '../../../bench/src/random.ts';
+import { makeBenchRng, deriveSeed, type BenchRng } from '../../../bench/src/random.ts';
 
-import { FRAMES, FRAMES_PER_RUN, type Arm } from './design.ts';
+import { FRAMES, FRAMES_PER_RUN, REACTION_S, type Arm, type StartPhase } from './design.ts';
 
 export interface TrialResult {
   /** Photographs whose shutter was open across a pattern change. */
@@ -44,6 +44,13 @@ export interface TrialResult {
   runsTouched: number;
   /** The first frame index that straddled, or -1. Where the night went wrong. */
   firstStraddle: number;
+  /**
+   * True when this ONE capture straddled every frame from the first to the last.
+   *
+   * The literal reading of "all-or-nothing", evaluated per capture rather than
+   * inferred from maxima taken across different seeds.
+   */
+  straddledFromFirstToLast: boolean;
 }
 
 /**
@@ -67,64 +74,101 @@ export function straddles(open: number, exposure: number, dwell: number): boolea
 }
 
 /**
+ * Where the first shutter opens within the dwell, per {@link StartPhase}.
+ *
+ * Returned as a phase in `[0, dwell)`. Which of these an operator actually does
+ * is unmeasured; see the type's docblock for why it is swept rather than
+ * assumed.
+ */
+export function startPhase(phase: StartPhase, dwellS: number, rng: BenchRng): number {
+  if (phase === 'uniform') return rng.uniform(0, dwellS);
+  if (phase === 'on-tick') {
+    // The tone fires AT the step, so a shutter tripped on it opens a reaction
+    // time later — early in the dwell, which is the roomiest place to be.
+    const react = rng.normal(REACTION_S.mean, REACTION_S.sd);
+    return ((react % dwellS) + dwellS) % dwellS;
+  }
+  // `aimed`: the middle, give or take a quarter of a dwell.
+  return dwellS / 2 + rng.uniform(-dwellS / 4, dwellS / 4);
+}
+
+/**
  * One capture, frame by frame.
  *
- * The camera's clock runs at `1 + driftPpm / 1e6` times the emitter's, so its
- * nominal interval of `dwell` seconds actually takes slightly more or less than
- * a dwell of emitter time. The error accumulates across 408 frames, which is
- * the point: at 100 ppm over a 2 s dwell the drift is 200 microseconds per
- * frame, and only 0.08 s across the whole capture — small against a 0.25 s
- * exposure, and that is a result rather than an assumption.
+ * The camera's clock runs at `rate` times the emitter's, so an interval it
+ * counts as `dwell` takes `dwell / rate` of EMITTER time — division, not
+ * multiplication. The first version multiplied, which simulated the opposite
+ * drift direction; review caught it, and it is not cosmetic, because an
+ * exposure extends forward from its opening instant and so the two directions
+ * meet a boundary after different amounts of travel.
  */
-export function runTrial(arm: Arm, dwellS: number, exposureS: number, seed: number): TrialResult {
+export function runTrial(
+  arm: Arm,
+  phase: StartPhase,
+  dwellS: number,
+  exposureS: number,
+  seed: number,
+): TrialResult {
   if (arm.tethered) {
     // One clock. The emitter does not advance until the frame is in, so there
     // is no interval for a boundary to fall inside. Zero by construction, not
     // by measurement — the arm exists to make the others legible.
-    return { straddled: 0, longestBurst: 0, runsTouched: 0, firstStraddle: -1 };
+    return {
+      straddled: 0,
+      longestBurst: 0,
+      runsTouched: 0,
+      firstStraddle: -1,
+      straddledFromFirstToLast: false,
+    };
   }
 
   const rng = makeBenchRng(seed);
-  const rate = 1 + arm.driftPpm / 1e6;
-  /**
-   * Where in the first dwell the operator aimed, and how far off they were.
-   *
-   * The aim is the middle; the constant offset is whatever slop there was in
-   * starting the camera, drawn once per capture because it does not change
-   * during one. It is bounded by a quarter dwell so the capture starts in a
-   * plausible place rather than already broken.
-   */
-  const aim = dwellS / 2;
-  const startOffset = rng.uniform(-dwellS / 4, dwellS / 4);
+  // Sign per capture: two crystals are equally likely to be fast or slow
+  // relative to each other, and the margins either side of a mid-dwell shot are
+  // not equal, so sampling one sign measured half the band.
+  const signed = rng.nextFloat() < 0.5 ? -arm.driftPpm : arm.driftPpm;
+  const rate = 1 + signed / 1e6;
+  const start = startPhase(phase, dwellS, rng);
 
   let straddled = 0;
   let longestBurst = 0;
   let burst = 0;
   let firstStraddle = -1;
+  let lastStraddle = -1;
   const touched = new Set<number>();
 
   for (let k = 0; k < FRAMES; k++) {
-    // The camera's k-th release, expressed on the EMITTER's clock: its own
-    // interval times the rate error, plus where it started, plus this shot's
-    // scatter.
-    const nominal = k * dwellS * rate + aim + startOffset;
+    // The camera's k-th release on the EMITTER's clock.
+    const nominal = (k * dwellS) / rate + start;
     const open = nominal + (arm.jitterS > 0 ? rng.normal(0, arm.jitterS) : 0);
     if (straddles(open, exposureS, dwellS)) {
       straddled++;
       burst++;
       if (burst > longestBurst) longestBurst = burst;
       if (firstStraddle < 0) firstStraddle = k;
+      lastStraddle = k;
       touched.add(Math.floor(k / FRAMES_PER_RUN));
     } else {
       burst = 0;
     }
   }
 
-  return { straddled, longestBurst, runsTouched: touched.size, firstStraddle };
+  return {
+    straddled,
+    longestBurst,
+    runsTouched: touched.size,
+    firstStraddle,
+    // A PER-CAPTURE property, which is what "all-or-nothing" has to mean. The
+    // first version compared a maximum burst against a maximum straddle count
+    // taken over DIFFERENT seeds and read the coincidence as this.
+    straddledFromFirstToLast: straddled > 0 && longestBurst === straddled && firstStraddle === 0
+      && lastStraddle === FRAMES - 1,
+  };
 }
 
 export interface ArmSummary {
   key: string;
+  startPhase: StartPhase;
   dwellS: number;
   exposureS: number;
   trials: number;
@@ -137,12 +181,15 @@ export interface ArmSummary {
   worstBurst: number;
   /** Runs of 34 touched, summed over every trial. */
   runsTouchedTotal: number;
-  /** Captures in which every run was touched. */
-  capturesWhollyTouched: number;
+  /** Captures in which every run held at least one straddled frame. */
+  capturesAllRunsTouched: number;
+  /** Captures straddled from the first frame to the last. */
+  capturesWhollyStraddled: number;
 }
 
 export function summarise(
   arm: Arm,
+  phase: StartPhase,
   dwellS: number,
   exposureS: number,
   trials: number,
@@ -154,21 +201,24 @@ export function summarise(
   let worstStraddled = 0;
   let worstBurst = 0;
   let runsTouchedTotal = 0;
-  let capturesWhollyTouched = 0;
+  let capturesAllRunsTouched = 0;
+  let capturesWhollyStraddled = 0;
 
   for (let t = 0; t < trials; t++) {
-    const seed = deriveSeed(rootSeed, `${arm.key}:${dwellS}:${exposureS}:${t}`);
-    const r = runTrial(arm, dwellS, exposureS, seed);
+    const seed = deriveSeed(rootSeed, `${arm.key}:${phase}:${dwellS}:${exposureS}:${t}`);
+    const r = runTrial(arm, phase, dwellS, exposureS, seed);
     if (r.straddled > 0) capturesTouched++;
     straddledTotal += r.straddled;
     if (r.straddled > worstStraddled) worstStraddled = r.straddled;
     if (r.longestBurst > worstBurst) worstBurst = r.longestBurst;
     runsTouchedTotal += r.runsTouched;
-    if (r.runsTouched === runsPerCapture) capturesWhollyTouched++;
+    if (r.runsTouched === runsPerCapture) capturesAllRunsTouched++;
+    if (r.straddledFromFirstToLast) capturesWhollyStraddled++;
   }
 
   return {
     key: arm.key,
+    startPhase: phase,
     dwellS,
     exposureS,
     trials,
@@ -177,6 +227,7 @@ export function summarise(
     worstStraddled,
     worstBurst,
     runsTouchedTotal,
-    capturesWhollyTouched,
+    capturesAllRunsTouched,
+    capturesWhollyStraddled,
   };
 }

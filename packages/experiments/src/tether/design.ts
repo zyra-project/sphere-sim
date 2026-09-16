@@ -64,23 +64,81 @@
  * - **Clock drift** is the invented part, and it is invented from a real
  *   engineering range rather than from nothing: uncompensated consumer quartz
  *   is commonly specified around ±20 to ±100 ppm, and the arms below sweep
- *   that band. The DISTRIBUTION is a fixed offset per capture, not a random
- *   walk, because two crystals at fixed temperature differ by a roughly
- *   constant rate over the twenty minutes a capture takes.
+ *   that band with the SIGN drawn per capture. The DISTRIBUTION is a fixed
+ *   rate per capture, not a random walk, because two crystals at fixed
+ *   temperature differ by a roughly constant rate over the twenty minutes a
+ *   capture takes.
+ * - **Where the first shutter lands in the dwell** is swept as
+ *   {@link START_PHASES} rather than assumed, because it turned out to matter
+ *   more than the crystal and the first version buried it in a constant.
  * - **Jitter** is the other invented term: per-shot scatter in when the shutter
  *   actually opens. A remote release pressed by hand is worse than an
  *   intervalometer by an order of magnitude, and both arms are here.
  *
- * Stated plainly so a reader can discount it: nobody has measured either term
- * against a real camera beside a real sphere. What this experiment shows is the
- * SHAPE of the cost across a plausible band, and the shape turns out to be the
- * interesting part — see the burst result in `docs/EXPERIMENT-9.md`.
+ * ## The emitter is modelled as a perfect timer, and it is not one
+ *
+ * `emit.ts` chains `setTimeout` after `go()` has painted, so each step runs a
+ * little late and the lateness accumulates — a drift of the emitter's own, in a
+ * known direction, of an unmeasured size. This model puts the projector's steps
+ * at exact multiples of the dwell.
+ *
+ * That is stated rather than modelled because the alternative is inventing a
+ * fourth number, and this experiment already rests on three. Its direction is
+ * worth knowing though: a real emitter is slower than this one, which widens
+ * the gap between the two clocks rather than narrowing it, so the straddle
+ * rates here are optimistic.
+ *
+ * Stated plainly so a reader can discount it: nobody has measured any of these
+ * terms against a real camera beside a real sphere.
  */
+
+/**
+ * Where in a dwell the operator's first shutter lands.
+ *
+ * This was a hidden constant and it was the load-bearing assumption of the
+ * whole experiment. The first version drew the start offset from the middle
+ * half of the dwell, on the reasoning that "an operator aims at the middle" —
+ * which excluded every boundary-adjacent start, which is precisely the risk a
+ * tether removes. The headline zero was substantially a property of that
+ * sampling rule rather than of the rig, and review caught it.
+ *
+ * So the assumption is now an axis, swept and reported:
+ *
+ *   - `aimed` — the old rule, kept so the change is visible rather than
+ *     quietly replaced. An operator who deliberately centres the shutter.
+ *   - `uniform` — no procedure at all. The first shot lands anywhere in the
+ *     dwell with equal probability, which is what happens when somebody starts
+ *     an intervalometer without reference to the projector.
+ *   - `on-tick` — `emit.ts` plays a tone AT each step, so the natural drill is
+ *     "tick, then shoot". That puts the shutter just AFTER a boundary, by a
+ *     human reaction time — which is the safest place in the dwell, and is the
+ *     one case where the page's existing feedback is doing real work.
+ *
+ * Nobody has measured which of these an operator actually does. They are three
+ * stated procedures, and the point of sweeping them is that the answer depends
+ * on which one far more than it depends on the crystal.
+ */
+export type StartPhase = 'aimed' | 'uniform' | 'on-tick';
+
+export const START_PHASES: readonly StartPhase[] = ['aimed', 'uniform', 'on-tick'];
+
+/** Human reaction time after the tick, seconds: mean and spread. */
+export const REACTION_S = { mean: 0.25, sd: 0.08 };
 
 /** One way of running the shutter against the emitter's timer. */
 export interface Arm {
   key: string;
-  /** Relative rate error between the two clocks, parts per million. */
+  /**
+   * Magnitude of the relative rate error between the two clocks, in ppm.
+   *
+   * The SIGN is drawn per capture rather than fixed. Two crystals are equally
+   * likely to be fast or slow relative to each other, and the sign is not
+   * cosmetic here: an exposure extends FORWARD from its opening instant, so a
+   * shot drifting later meets the next boundary after `dwell - exposure` of
+   * travel while one drifting earlier has to cross zero, a different distance.
+   * Sampling only the positive sign measured one of the two directions and
+   * reported it as the band.
+   */
   driftPpm: number;
   /** Standard deviation of per-shot timing scatter, seconds. */
   jitterS: number;

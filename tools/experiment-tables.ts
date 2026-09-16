@@ -589,6 +589,7 @@ function experiment8Headline(result: Experiment8): string {
 
 interface Experiment9Cell {
   key: string;
+  startPhase: string;
   dwellS: number;
   exposureS: number;
   trials: number;
@@ -597,69 +598,130 @@ interface Experiment9Cell {
   worstStraddled: number;
   worstBurst: number;
   runsTouchedTotal: number;
-  capturesWhollyTouched: number;
+  capturesAllRunsTouched: number;
+  capturesWhollyStraddled: number;
 }
 
 interface Experiment9 {
-  generatedFrom: { trials: number; frames: number; framesPerRun: number; headlineExposureS: number };
+  generatedFrom: {
+    trials: number;
+    frames: number;
+    framesPerRun: number;
+    headlineExposureS: number;
+    startPhases: string[];
+  };
   arms: { key: string; driftPpm: number; jitterS: number; tethered: boolean; story: string }[];
   cells: Experiment9Cell[];
 }
 
 /**
- * Captures touched, by arm and dwell, at the headline exposure.
+ * Find one cell, and distinguish "unshootable" from "missing".
  *
- * Dwell across the top because dwell is the axis the phase turns on, and a
- * reader who takes one number from this page should take the one in their own
- * dwell's column.
+ * `undefined` rendered as `n/a` for every reason was the same fault `at()` in
+ * the CLI was added to prevent: a cell absent because of a bug became a
+ * plausible-looking table entry. A dwell shorter than the exposure genuinely
+ * has no row — the shutter is still open when the next frame is up — and that
+ * is the ONLY reason a blank is allowed.
  */
+function cell9(
+  result: Experiment9,
+  key: string,
+  phase: string,
+  dwellS: number,
+  exposureS: number,
+): Experiment9Cell | null {
+  const found = result.cells.find(
+    (c) => c.key === key && c.startPhase === phase && c.dwellS === dwellS && c.exposureS === exposureS,
+  );
+  if (found !== undefined) return found;
+  if (exposureS >= dwellS) return null;
+  throw new Error(
+    `experiment-9: no cell for ${key} / ${phase} at dwell ${dwellS}s, exposure ${exposureS}s — ` +
+      `that combination is shootable, so its absence is a fault rather than a blank`,
+  );
+}
+
+const share9 = (n: number, d: number): string =>
+  d === 0 ? '—' : `${((100 * n) / d).toFixed(1)}%`;
+
+/**
+ * The axis the answer turns on: where the first shutter lands.
+ *
+ * Rows are start phases at one crystal, because the experiment's finding is
+ * that this matters more than the clock does.
+ */
+function experiment9Phase(result: Experiment9): string {
+  const exposure = result.generatedFrom.headlineExposureS;
+  const dwells = [...new Set(result.cells.map((c) => c.dwellS))].sort((a, b) => a - b);
+  const out = [
+    `| first shutter | ${dwells.map((d) => `${d} s dwell`).join(' | ')} |`,
+    `| --- | ${dwells.map(() => '---').join(' | ')} |`,
+  ];
+  for (const phase of result.generatedFrom.startPhases) {
+    const row = dwells.map((d) => {
+      const c = cell9(result, 'intervalometer-100ppm', phase, d, exposure);
+      return c === null ? '—' : `${c.capturesTouched} (${share9(c.capturesTouched, c.trials)})`;
+    });
+    out.push(`| ${phase} | ${row.join(' | ')} |`);
+  }
+  return out.join('\n');
+}
+
+/** Captures touched, by shutter arrangement and dwell, at a uniform start. */
 function experiment9Dwell(result: Experiment9): string {
   const exposure = result.generatedFrom.headlineExposureS;
   const dwells = [...new Set(result.cells.map((c) => c.dwellS))].sort((a, b) => a - b);
-  const keys = result.arms.map((a) => a.key);
-  const share = (n: number, d: number): string =>
-    d === 0 ? '—' : `${((100 * n) / d).toFixed(1)}%`;
   const out = [
     `| shutter | ${dwells.map((d) => `${d} s dwell`).join(' | ')} |`,
     `| --- | ${dwells.map(() => '---').join(' | ')} |`,
   ];
-  for (const key of keys) {
-    const cells = dwells.map((d) =>
-      result.cells.find((c) => c.key === key && c.dwellS === d && c.exposureS === exposure),
-    );
-    const row = cells.map((c) =>
-      c === undefined ? 'n/a' : `${c.capturesTouched} (${share(c.capturesTouched, c.trials)})`,
-    );
-    out.push(`| ${key} | ${row.join(' | ')} |`);
+  for (const arm of result.arms) {
+    const row = dwells.map((d) => {
+      const c = cell9(result, arm.key, 'uniform', d, exposure);
+      return c === null ? '—' : `${c.capturesTouched} (${share9(c.capturesTouched, c.trials)})`;
+    });
+    out.push(`| ${arm.key} | ${row.join(' | ')} |`);
   }
   return out.join('\n');
 }
 
 /**
- * The shape of a bad capture, which is the result rather than the counts.
+ * The shape of a bad capture.
  *
- * `worst burst` beside `worst straddled` is the whole point: when they are
- * equal, the capture was wrong from its first frame to its last.
+ * "all runs touched" rather than "wholly ruined": the column counts captures
+ * where every run holds at least one straddled frame, and what one straddled
+ * frame costs a decode is exactly what this experiment does not measure.
+ * "end to end" is the separate, stronger property, evaluated per capture.
  */
 function experiment9Shape(result: Experiment9): string {
   const exposure = result.generatedFrom.headlineExposureS;
   const out = [
-    '| shutter | dwell | captures touched | worst capture | worst burst | runs touched | wholly ruined |',
-    '| --- | --- | --- | --- | --- | --- | --- |',
+    '| shutter | start | dwell | captures touched | worst capture | worst burst | all runs touched | end to end |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
   for (const c of result.cells) {
     if (c.exposureS !== exposure) continue;
     if (c.capturesTouched === 0) continue;
     out.push(
-      `| ${c.key} | ${c.dwellS} s | ${c.capturesTouched} / ${c.trials} | ` +
+      `| ${c.key} | ${c.startPhase} | ${c.dwellS} s | ${c.capturesTouched} / ${c.trials} | ` +
         `${c.worstStraddled} / ${result.generatedFrom.frames} | ${c.worstBurst} | ` +
-        `${c.runsTouchedTotal} | ${c.capturesWhollyTouched} |`,
+        `${c.capturesAllRunsTouched} | ${c.capturesWhollyStraddled} |`,
     );
   }
   return out.join('\n');
 }
 
 const BLOCKS: Record<string, Block> = {
+  'experiment-9-phase': {
+    doc: 'docs/EXPERIMENT-9.md',
+    data: 'experiments/experiment-9.json',
+    render: experiment9Phase as (r: never) => string,
+  },
+  'experiment-9-phase-operator-path': {
+    doc: 'docs/OPERATOR-PATH.md',
+    data: 'experiments/experiment-9.json',
+    render: experiment9Phase as (r: never) => string,
+  },
   'experiment-9-dwell': {
     doc: 'docs/EXPERIMENT-9.md',
     data: 'experiments/experiment-9.json',
@@ -673,11 +735,6 @@ const BLOCKS: Record<string, Block> = {
   // The same dwell table in the plan the measurement was run to settle.
   // Registered a second time rather than copied, for the reason the Phase 2
   // entry below gives: Phase 5's status IS this table.
-  'experiment-9-dwell-operator-path': {
-    doc: 'docs/OPERATOR-PATH.md',
-    data: 'experiments/experiment-9.json',
-    render: experiment9Dwell as (r: never) => string,
-  },
   'experiment-8-headline': {
     doc: 'docs/EXPERIMENT-8.md',
     data: 'experiments/experiment-8.json',

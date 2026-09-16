@@ -21,6 +21,7 @@ import {
   ARMS,
   DEFAULT_DWELL_S,
   DWELLS_S,
+  START_PHASES,
   EXPERIMENT_ROOT_SEED,
   EXPOSURES_S,
   FRAMES,
@@ -28,6 +29,7 @@ import {
   TRIALS,
 } from './design.ts';
 import { summarise, type ArmSummary } from './run.ts';
+import type { StartPhase } from './design.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const OUT = path.join(ROOT, 'experiments', 'experiment-9.json');
@@ -42,21 +44,29 @@ function pct(n: number, d: number): string {
 function main(): void {
   const cells: ArmSummary[] = [];
   for (const arm of ARMS) {
-    for (const dwellS of DWELLS_S) {
-      for (const exposureS of EXPOSURES_S) {
+    for (const phase of START_PHASES) {
+      for (const dwellS of DWELLS_S) {
+        for (const exposureS of EXPOSURES_S) {
         // A dwell shorter than the exposure is not a capture anybody can shoot:
         // the shutter is still open when the next frame is already up, so every
         // photograph straddles by construction and the row says nothing about
         // timing. Recorded as skipped rather than silently omitted.
-        if (exposureS >= dwellS) continue;
-        cells.push(summarise(arm, dwellS, exposureS, TRIALS, EXPERIMENT_ROOT_SEED));
+          if (exposureS >= dwellS) continue;
+          cells.push(summarise(arm, phase, dwellS, exposureS, TRIALS, EXPERIMENT_ROOT_SEED));
+        }
       }
     }
   }
 
-  const at = (key: string, dwellS: number, exposureS = HEADLINE_EXPOSURE_S): ArmSummary => {
+  const at = (
+    key: string,
+    phase: StartPhase,
+    dwellS: number,
+    exposureS = HEADLINE_EXPOSURE_S,
+  ): ArmSummary => {
     const cell = cells.find(
-      (c) => c.key === key && c.dwellS === dwellS && c.exposureS === exposureS,
+      (c) =>
+        c.key === key && c.startPhase === phase && c.dwellS === dwellS && c.exposureS === exposureS,
     );
     // Thrown rather than skipped. The first version of this verdict asked for a
     // 1/4 s exposure at the 0.2 s dwell — a cell the sweep correctly refuses as
@@ -64,63 +74,68 @@ function main(): void {
     // from the printed result. A headline that can silently lose its middle is
     // the same class of fault this file exists to prevent.
     if (cell === undefined) {
-      throw new Error(`no cell for ${key} at dwell ${dwellS}s, exposure ${exposureS}s`);
+      throw new Error(
+        `no cell for ${key} / ${phase} at dwell ${dwellS}s, exposure ${exposureS}s`,
+      );
     }
     return cell;
   };
 
   const runsPerCapture = FRAMES / FRAMES_PER_RUN;
-  const crystal = cells.filter((c) => c.key.startsWith('intervalometer'));
-  const worstBurstAnywhere = crystal.reduce((m, c) => Math.max(m, c.worstBurst), 0);
 
   /**
-   * The arithmetic quoted in the sentence, derived rather than typed.
+   * The margin, stated correctly.
    *
-   * An earlier draft wrote "about 82 ms against 875 ms" and "27 minutes" as
-   * prose. Those are the same three constants the sweep runs on, and a number
-   * retyped beside the thing that produces it is precisely what
-   * `tools/experiment-tables.ts` was built after.
+   * A shot opening at phase `p` within a dwell straddles exactly when
+   * `p > dwell - exposure`, so the safe window is `[0, dwell - exposure)` and
+   * the margins either side of a MID-dwell shot are not equal: `dwell/2` below
+   * and `dwell/2 - exposure` above. An earlier draft quoted `(dwell - exposure)
+   * / 2` as "slack either side", which is the half-width of the safe window and
+   * not a margin at all.
+   *
+   * It also gives the answer for a uniform start analytically: the straddle
+   * probability of the FIRST shot is `exposure / dwell`, whatever the crystal.
    */
   const loosestPpm = Math.max(...ARMS.map((a) => a.driftPpm));
-  const driftAtDefaultMs = DEFAULT_DWELL_S * (loosestPpm / 1e6) * FRAMES * 1000;
-  const slackAtDefaultMs = ((DEFAULT_DWELL_S - HEADLINE_EXPOSURE_S) / 2) * 1000;
-  const cautiousDwellS = Math.max(...DWELLS_S);
-  const cautiousMinutes = (FRAMES * cautiousDwellS) / 60;
+  const driftAtDefaultMs = (DEFAULT_DWELL_S * (loosestPpm / 1e6) * FRAMES * 1000) / 1;
+  const marginUpMs = (DEFAULT_DWELL_S / 2 - HEADLINE_EXPOSURE_S) * 1000;
+  const marginDownMs = (DEFAULT_DWELL_S / 2) * 1000;
+  const uniformFirstShot = (100 * HEADLINE_EXPOSURE_S) / DEFAULT_DWELL_S;
 
-  const steadyDefault = at('intervalometer-100ppm', 2);
-  const steadyOne = at('intervalometer-100ppm', 1);
-  const handDefault = at('handheld-remote', 2);
-  const handCautious = at('handheld-remote', 4);
-  const handOne = at('handheld-remote', 1);
+  const aimed = at('intervalometer-100ppm', 'aimed', DEFAULT_DWELL_S);
+  const uniform = at('intervalometer-100ppm', 'uniform', DEFAULT_DWELL_S);
+  const onTick = at('intervalometer-100ppm', 'on-tick', DEFAULT_DWELL_S);
+  const handUniform = at('handheld-remote', 'uniform', DEFAULT_DWELL_S);
+  const handTick = at('handheld-remote', 'on-tick', DEFAULT_DWELL_S);
 
-  // Assembled from the cells rather than written, so it cannot drift from the
-  // file it summarises. It deliberately does NOT lead with a sweep-wide
-  // average: the sweep contains dwell/exposure pairs nobody would shoot, and an
-  // average over those describes the sweep rather than the decision.
+  // Assembled from the cells rather than written. It leads with the axis the
+  // answer actually turns on, which is not the one this experiment was opened
+  // to investigate.
   const statement =
-    `At the emitter's default 2 s dwell and a 1/4 s exposure, an intervalometer at the loosest ` +
-    `plausible crystal error (${loosestPpm} ppm) straddled ${steadyDefault.straddledTotal} ` +
-    `photographs in ` +
-    `${steadyDefault.trials} captures. Clock drift is not what breaks an untethered capture: ` +
-    `across ${FRAMES} frames at ${DEFAULT_DWELL_S} s it accumulates about ` +
-    `${driftAtDefaultMs.toFixed(0)} ms against ${slackAtDefaultMs.toFixed(0)} ms of slack either ` +
-    `side of a mid-dwell shot. Shorten the dwell and that slack is what goes. At 1 s the same rig ` +
-    `touched ${steadyOne.capturesTouched} of ${steadyOne.trials} captures ` +
-    `(${pct(steadyOne.capturesTouched, steadyOne.trials)}), and the failure is not graceful: ` +
-    `the worst run of consecutive straddled photographs anywhere in the crystal arms is ` +
-    `${worstBurstAnywhere} of ${FRAMES}. A capture that starts at the wrong phase stays there, ` +
-    `so an open-loop night is close to all-or-nothing rather than degraded at the edges. ` +
-    `A hand-pressed remote is a separate problem and the tether does answer it: at 2 s it ` +
-    `touched ${handDefault.capturesTouched} of ${handDefault.trials} captures ` +
-    `(${pct(handDefault.capturesTouched, handDefault.trials)}) and ` +
-    `${handDefault.runsTouchedTotal} projector runs; at 1 s, ` +
-    `${handOne.capturesWhollyTouched} of ${handOne.trials} captures had all ${runsPerCapture} ` +
-    `runs affected. Only at a 4 s dwell does it fall to ${handCautious.capturesTouched} ` +
-    `(${pct(handCautious.capturesTouched, handCautious.trials)}), which costs ` +
-    `${cautiousMinutes.toFixed(0)} minutes of dwell alone for the ${FRAMES} frames. So the ` +
-    `margin an untethered capture runs on is the DWELL, ` +
-    `and the emitter lets an operator take it to 0.2 s with nothing on the page saying what ` +
-    `that spends.`;
+    `Where the first shutter lands in the dwell decides an untethered capture, and it decides ` +
+    `it far more than the crystal does. At the emitter's default ${DEFAULT_DWELL_S} s dwell and ` +
+    `a 1/4 s exposure, with the loosest crystal in the sweep (${loosestPpm} ppm): an operator ` +
+    `who starts the camera at no particular phase ruined ` +
+    `${uniform.capturesTouched} of ${uniform.trials} captures ` +
+    `(${pct(uniform.capturesTouched, uniform.trials)}), and ` +
+    `${uniform.capturesWhollyStraddled} of them straddled every frame from the first to the ` +
+    `last. That rate is not a property of the clocks: a shot opening at phase p straddles when ` +
+    `p > dwell - exposure, so a uniform start straddles its first frame with probability ` +
+    `exposure / dwell, ${uniformFirstShot.toFixed(1)}% here, and drift is far too small to move ` +
+    `it afterwards. Shooting on the page's own tick instead puts the shutter a reaction time ` +
+    `after the boundary — the roomiest place in the dwell — and ruined ` +
+    `${onTick.capturesTouched} (${pct(onTick.capturesTouched, onTick.trials)}); deliberately ` +
+    `aiming mid-dwell ruined ${aimed.capturesTouched} ` +
+    `(${pct(aimed.capturesTouched, aimed.trials)}). Clock drift really is negligible at this ` +
+    `dwell — ${driftAtDefaultMs.toFixed(0)} ms accumulated across ${FRAMES} frames, against ` +
+    `margins of ${marginUpMs.toFixed(0)} ms above a mid-dwell shot and ${marginDownMs.toFixed(0)} ` +
+    `ms below — so what a tether removes is not drift but the start-phase gamble. A hand-pressed ` +
+    `remote is worse and differently shaped: at a uniform start it touched ` +
+    `${handUniform.capturesTouched} of ${handUniform.trials} ` +
+    `(${pct(handUniform.capturesTouched, handUniform.trials)}) and on the tick still ` +
+    `${handTick.capturesTouched} (${pct(handTick.capturesTouched, handTick.trials)}), with ` +
+    `scattered straddles rather than one continuous ruined stretch — only ` +
+    `${handTick.capturesWhollyStraddled} of those were straddled end to end.`;
 
   const doc = {
     schema: 'sphere-sim/experiment-9@1',
@@ -129,6 +144,7 @@ function main(): void {
       frames: FRAMES,
       framesPerRun: FRAMES_PER_RUN,
       dwellsS: DWELLS_S,
+      startPhases: START_PHASES,
       exposuresS: EXPOSURES_S,
       headlineExposureS: HEADLINE_EXPOSURE_S,
       rootSeed: EXPERIMENT_ROOT_SEED,

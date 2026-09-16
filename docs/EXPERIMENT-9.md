@@ -38,62 +38,139 @@ A straddle is worse than a drop for one specific reason:
 drop-and-duplicate inside one run. This is a second way into the same blind spot,
 reached without anybody deleting a file.
 
-## The answer
+## The answer, and it is not the axis this experiment was opened on
+
+The first version of this experiment swept clock drift, found almost nothing,
+and concluded that tethering was unjustified. Review found the reason: the start
+phase — where in a dwell the operator's first shutter lands — was a constant
+buried in the model, drawn from the middle half of the dwell on the reasoning
+that "an operator aims at the middle". That excluded every boundary-adjacent
+start, which is exactly the risk in question. **The headline was a property of
+the sampling rule.**
+
+It is now an axis. Captures touched at the loosest crystal, 1/4 s exposure:
+
+<!-- generated: experiment-9-phase -->
+| first shutter | 0.2 s dwell | 0.5 s dwell | 1 s dwell | 2 s dwell | 4 s dwell |
+| --- | --- | --- | --- | --- | --- |
+| aimed | — | 1091 (54.5%) | 83 (4.2%) | 0 (0.0%) | 0 (0.0%) |
+| uniform | — | 1120 (56.0%) | 569 (28.4%) | 345 (17.3%) | 247 (12.3%) |
+| on-tick | — | 1161 (58.0%) | 4 (0.2%) | 25 (1.3%) | 148 (7.4%) |
+<!-- /generated -->
+
+Same clocks, same dwell, same exposure. Only where the first shot landed.
+
+A shot opening at phase `p` within a dwell straddles exactly when
+`p > dwell − exposure`, so under a start with no procedure behind it the first
+frame straddles with probability `exposure / dwell` — **12.5%** at the default
+dwell and a 1/4 s exposure — and drift is far too small to move it afterwards.
+That number is arithmetic, not simulation, and no crystal improves it.
+
+Shooting on the page's own tick is materially better, because `emit.ts` plays
+its tone **at** the step: a shutter tripped on it opens a reaction time later,
+which is near the start of the dwell and so has the whole safe window ahead of
+it. The page's existing feedback was doing real work and nobody had noticed.
+
+It is not monotonic, and the reason is worth reading rather than smoothing away.
+The `on-tick` row gets **worse** as the dwell lengthens — 0.2% at 1 s, 1.3% at
+2 s, 7.4% at 4 s — because a reaction time is absolute while accumulated phase
+drift scales with the dwell. At 1 s the drift over a whole capture is 41 ms,
+2.6 standard deviations below the 250 ms the operator is sitting at; at 4 s it
+is 163 ms, only 1.1 away. The shot walks backwards past the start of the dwell
+and wraps into the change it was avoiding. Sitting close to a boundary is safe
+only while nothing moves you.
+
+By shutter arrangement, at a start with no procedure:
 
 <!-- generated: experiment-9-dwell -->
 | shutter | 0.2 s dwell | 0.5 s dwell | 1 s dwell | 2 s dwell | 4 s dwell |
 | --- | --- | --- | --- | --- | --- |
-| tethered | n/a | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
-| intervalometer-20ppm | n/a | 1067 (53.4%) | 53 (2.6%) | 0 (0.0%) | 0 (0.0%) |
-| intervalometer-50ppm | n/a | 1118 (55.9%) | 112 (5.6%) | 0 (0.0%) | 0 (0.0%) |
-| intervalometer-100ppm | n/a | 1211 (60.5%) | 180 (9.0%) | 0 (0.0%) | 0 (0.0%) |
-| handheld-remote | n/a | 2000 (100.0%) | 2000 (100.0%) | 1442 (72.1%) | 56 (2.8%) |
+| tethered | — | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) |
+| intervalometer-20ppm | — | 1039 (52.0%) | 551 (27.6%) | 265 (13.3%) | 113 (5.7%) |
+| intervalometer-50ppm | — | 1067 (53.4%) | 558 (27.9%) | 284 (14.2%) | 177 (8.8%) |
+| intervalometer-100ppm | — | 1120 (56.0%) | 569 (28.4%) | 345 (17.3%) | 247 (12.3%) |
+| handheld-remote | — | 2000 (100.0%) | 2000 (100.0%) | 1727 (86.3%) | 872 (43.6%) |
 <!-- /generated -->
 
-Three things fall out of that table, and the first one is the surprise.
+**Clock drift really is negligible**, which was the first version's one
+surviving finding. At the default dwell a whole capture accumulates about 82 ms
+at the loosest crystal, against margins of 750 ms above a mid-dwell shot and
+1000 ms below. (Those margins are asymmetric, and an earlier draft quoted
+`(dwell − exposure) / 2` as "slack either side" — that is the half-width of the
+safe window, not a margin.)
 
-**Clock drift is not what breaks an untethered capture.** At the emitter's
-default 2 s dwell, a whole 408-frame capture at the loosest plausible crystal
-error accumulates about 82 ms — against 875 ms of slack either side of a
-mid-dwell shot. It never gets near the boundary. The worry tethering is usually
-justified by is not the one that bites.
+**The dwell still matters**, because the safe window is `dwell − exposure` wide:
+shortening the step shrinks it, and the emitter lets an operator take dwell to
+`MIN_DWELL_S`, 0.2 s, with nothing on the page saying what that spends.
 
-**What bites is the dwell.** The slack is `(dwell − exposure) / 2`, so it
-collapses as an operator shortens the step to get 408 frames done sooner. The
-emitter lets them take it to `MIN_DWELL_S`, 0.2 s, with nothing on the page
-saying what that spends.
-
-**A hand-pressed remote is a different problem, and it is the one a tether
-actually solves.** Even at the default dwell it touches most captures.
+**A hand-pressed remote is worse and differently shaped** — see below.
 
 ## The shape matters more than the count
 
 <!-- generated: experiment-9-shape -->
-| shutter | dwell | captures touched | worst capture | worst burst | runs touched | wholly ruined |
-| --- | --- | --- | --- | --- | --- | --- |
-| intervalometer-20ppm | 0.5 s | 1067 / 2000 | 408 / 408 | 408 | 12595 | 1031 |
-| intervalometer-20ppm | 1 s | 53 / 2000 | 367 / 408 | 245 | 425 | 15 |
-| intervalometer-50ppm | 0.5 s | 1118 / 2000 | 408 / 408 | 408 | 12865 | 1030 |
-| intervalometer-50ppm | 1 s | 112 / 2000 | 390 / 408 | 347 | 797 | 24 |
-| intervalometer-100ppm | 0.5 s | 1211 / 2000 | 408 / 408 | 408 | 13678 | 1053 |
-| intervalometer-100ppm | 1 s | 180 / 2000 | 401 / 408 | 384 | 1196 | 25 |
-| handheld-remote | 0.5 s | 2000 / 2000 | 238 / 408 | 17 | 24000 | 2000 |
-| handheld-remote | 1 s | 2000 / 2000 | 166 / 408 | 11 | 23888 | 1894 |
-| handheld-remote | 2 s | 1442 / 2000 | 75 / 408 | 6 | 7998 | 198 |
-| handheld-remote | 4 s | 56 / 2000 | 4 / 408 | 1 | 71 | 0 |
+| shutter | start | dwell | captures touched | worst capture | worst burst | all runs touched | end to end |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| intervalometer-20ppm | aimed | 0.5 s | 1054 / 2000 | 408 / 408 | 408 | 1011 | 947 |
+| intervalometer-20ppm | aimed | 1 s | 25 / 2000 | 358 / 408 | 133 | 7 | 0 |
+| intervalometer-20ppm | uniform | 0.5 s | 1039 / 2000 | 408 / 408 | 408 | 1001 | 934 |
+| intervalometer-20ppm | uniform | 1 s | 551 / 2000 | 408 / 408 | 408 | 515 | 480 |
+| intervalometer-20ppm | uniform | 2 s | 265 / 2000 | 408 / 408 | 408 | 239 | 226 |
+| intervalometer-20ppm | uniform | 4 s | 113 / 2000 | 408 / 408 | 408 | 88 | 81 |
+| intervalometer-20ppm | on-tick | 0.5 s | 1078 / 2000 | 408 / 408 | 408 | 1022 | 956 |
+| intervalometer-20ppm | on-tick | 1 s | 2 / 2000 | 408 / 408 | 408 | 2 | 2 |
+| intervalometer-20ppm | on-tick | 2 s | 2 / 2000 | 408 / 408 | 408 | 2 | 1 |
+| intervalometer-20ppm | on-tick | 4 s | 4 / 2000 | 308 / 408 | 267 | 0 | 0 |
+| intervalometer-50ppm | aimed | 0.5 s | 1048 / 2000 | 408 / 408 | 408 | 979 | 895 |
+| intervalometer-50ppm | aimed | 1 s | 65 / 2000 | 385 / 408 | 340 | 9 | 0 |
+| intervalometer-50ppm | uniform | 0.5 s | 1067 / 2000 | 408 / 408 | 408 | 1000 | 944 |
+| intervalometer-50ppm | uniform | 1 s | 558 / 2000 | 408 / 408 | 408 | 489 | 454 |
+| intervalometer-50ppm | uniform | 2 s | 284 / 2000 | 408 / 408 | 408 | 206 | 193 |
+| intervalometer-50ppm | uniform | 4 s | 177 / 2000 | 408 / 408 | 408 | 112 | 105 |
+| intervalometer-50ppm | on-tick | 0.5 s | 1130 / 2000 | 408 / 408 | 408 | 1025 | 944 |
+| intervalometer-50ppm | on-tick | 1 s | 5 / 2000 | 408 / 408 | 408 | 2 | 2 |
+| intervalometer-50ppm | on-tick | 2 s | 8 / 2000 | 408 / 408 | 408 | 2 | 1 |
+| intervalometer-50ppm | on-tick | 4 s | 21 / 2000 | 408 / 408 | 408 | 2 | 2 |
+| intervalometer-100ppm | aimed | 0.5 s | 1091 / 2000 | 408 / 408 | 408 | 956 | 868 |
+| intervalometer-100ppm | aimed | 1 s | 83 / 2000 | 394 / 408 | 375 | 9 | 0 |
+| intervalometer-100ppm | uniform | 0.5 s | 1120 / 2000 | 408 / 408 | 408 | 982 | 911 |
+| intervalometer-100ppm | uniform | 1 s | 569 / 2000 | 408 / 408 | 408 | 415 | 381 |
+| intervalometer-100ppm | uniform | 2 s | 345 / 2000 | 408 / 408 | 408 | 184 | 160 |
+| intervalometer-100ppm | uniform | 4 s | 247 / 2000 | 408 / 408 | 408 | 75 | 54 |
+| intervalometer-100ppm | on-tick | 0.5 s | 1161 / 2000 | 408 / 408 | 408 | 977 | 888 |
+| intervalometer-100ppm | on-tick | 1 s | 4 / 2000 | 408 / 408 | 408 | 1 | 1 |
+| intervalometer-100ppm | on-tick | 2 s | 25 / 2000 | 408 / 408 | 408 | 1 | 1 |
+| intervalometer-100ppm | on-tick | 4 s | 148 / 2000 | 408 / 408 | 408 | 2 | 1 |
+| handheld-remote | aimed | 0.5 s | 2000 / 2000 | 239 / 408 | 17 | 2000 | 0 |
+| handheld-remote | aimed | 1 s | 2000 / 2000 | 165 / 408 | 9 | 1904 | 0 |
+| handheld-remote | aimed | 2 s | 1458 / 2000 | 75 / 408 | 7 | 166 | 0 |
+| handheld-remote | aimed | 4 s | 36 / 2000 | 3 / 408 | 1 | 0 | 0 |
+| handheld-remote | uniform | 0.5 s | 2000 / 2000 | 237 / 408 | 19 | 2000 | 0 |
+| handheld-remote | uniform | 1 s | 2000 / 2000 | 186 / 408 | 14 | 1946 | 0 |
+| handheld-remote | uniform | 2 s | 1727 / 2000 | 182 / 408 | 9 | 888 | 0 |
+| handheld-remote | uniform | 4 s | 872 / 2000 | 188 / 408 | 10 | 445 | 0 |
+| handheld-remote | on-tick | 0.5 s | 2000 / 2000 | 240 / 408 | 17 | 2000 | 0 |
+| handheld-remote | on-tick | 1 s | 2000 / 2000 | 157 / 408 | 8 | 1907 | 0 |
+| handheld-remote | on-tick | 2 s | 2000 / 2000 | 148 / 408 | 9 | 1592 | 0 |
+| handheld-remote | on-tick | 4 s | 2000 / 2000 | 163 / 408 | 11 | 1542 | 0 |
 <!-- /generated -->
 
-Read `worst burst` beside `worst capture`. Where they are equal, the capture was
-wrong from its first frame to its last.
+The two failure modes have different shapes, and an earlier draft of this page
+asserted the stronger one of both. Measured per capture rather than inferred
+from maxima taken across different seeds:
 
-That is the real finding. The phase error that decides an open-loop capture is
-**fixed for the whole capture** — the start offset does not wander, and drift is
-too small to move it — so a capture is not degraded at the edges. It is either
-clean or it is ruined, and it was decided at the first frame, silently, by where
-the operator happened to start the camera.
+- **A crystal capture fails in one concentrated stretch.** The phase moves
+  monotonically, so a touched capture puts a median **98%** of its straddles in
+  a single run, and a large minority — around 45% of touched captures at the
+  default dwell — run from the first frame to the last. Not all of them: a
+  capture can drift into the straddle zone partway through, and the 2 ms
+  per-shot jitter makes one sitting on the edge flicker in and out, so
+  "contiguous" is false as an absolute too.
+- **A handheld capture fails in scattered frames.** Median longest run is about
+  **5%** of its straddles, and none run end to end. Calling this
+  "all-or-nothing" was simply wrong.
 
-An operator whose capture is ruined this way has no signal at all. Every file is
-present, every file is the right size, and the bookends say the run is sound.
+What both share is the absence of a signal. Every file is present, every file is
+the right size, and the bookends say the run is sound.
 
 ## What this does not measure
 
@@ -116,23 +193,28 @@ takes. All three choices are stated here so a reader can discount them.
 
 ## What it argues for
 
-Not, on this evidence, a camera SDK.
+**This reversed under review, and the reversal is the useful part.** The first
+version concluded that a camera SDK was unjustified, on a zero that its own
+sampling rule had produced. With the start phase swept instead of assumed, an
+operator who starts the camera at no particular phase ruins about one capture in
+six at the page's default settings — and cannot tell.
 
-A capture shot at the page's default dwell with a $20 intervalometer straddles
-nothing across 2 000 simulated captures at the loosest crystal in the sweep. The
-expensive, per-vendor, per-platform thing Phase 5 describes buys nothing over
-that, for that operator.
+So there is a real gap, and tethering is one way to close it. What the numbers
+say about *which* way:
 
-What the numbers do argue for is much cheaper, and it is in the page that already
-exists:
+1. **What a tether removes is the start-phase gamble, not drift.** Drift is
+   negligible at any sane dwell. Justifying an SDK on clock accuracy would be
+   justifying it on the one thing that is not broken.
+2. **The page's tick already closes most of the gap**, because it fires at the
+   step and so puts a shutter tripped on it in the roomiest part of the dwell.
+   That is nearly free and it is already shipped — it is just not documented as
+   load-bearing, and the field card does not tell an operator to use it.
+3. **The emitter should say what a short dwell costs**, against the operator's
+   own exposure, since the safe window is `dwell − exposure` wide and the page
+   knows the dwell.
+4. **A hand-pressed remote should be discouraged**, with its number attached.
 
-1. **The emitter should say what a short dwell costs**, and it should say it
-   against the operator's own exposure, because the margin is
-   `(dwell − exposure) / 2` and the page already knows the dwell.
-2. **A hand-pressed remote should be discouraged in the field card**, with the
-   number attached: at the default dwell it touches most captures.
-3. **Tethering, if it is built, should be justified as the thing that removes the
-   start-phase gamble** — not as the thing that fixes clock drift, which is not
-   broken.
-
-That is a done-when about an outcome, and Phase 5 did not have one.
+A tether is the thorough answer and remains the expensive one. The cheap
+interventions are worth measuring against it before paying for it — and that
+comparison is now possible, which it was not when this phase had no number at
+all.

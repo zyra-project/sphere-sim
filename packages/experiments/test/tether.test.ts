@@ -43,27 +43,80 @@ test('drift alone does not straddle at the default dwell, and that is the findin
   assert.ok(loosest !== undefined);
   let touched = 0;
   for (let seed = 1; seed <= 200; seed++) {
-    if (runTrial(loosest, 2, 1 / 4, seed).straddled > 0) touched++;
+    if (runTrial(loosest, 'aimed', 2, 1 / 4, seed).straddled > 0) touched++;
   }
   assert.equal(touched, 0, `${touched} of 200 captures straddled at a 2 s dwell`);
 });
 
-test('when an open-loop capture goes wrong it goes wrong for a long stretch', () => {
-  // The shape the write-up turns on. The phase error is fixed for the capture,
-  // so a shot placed badly is placed badly every time — the failure does not
-  // sprinkle, it sits.
+test('a crystal capture fails in one concentrated stretch, measured per capture', () => {
+  // The claim the write-up rests on, stated to what the data supports. An
+  // earlier version asserted "all-or-nothing" from maxima taken over DIFFERENT
+  // seeds, which only shows some seed had a long burst and some seed had many
+  // straddles. And the stronger readings are both false: straddles are not
+  // strictly contiguous — the 2 ms per-shot jitter makes a capture sitting on
+  // the edge flicker in and out — and not every touched capture spans the whole
+  // sequence, because the phase can drift into the straddle zone partway.
+  //
+  // What IS true is concentration: the phase moves monotonically, so a touched
+  // capture puts most of its straddles in a single long run.
   const loosest = ARMS.find((a) => a.key === 'intervalometer-100ppm');
   assert.ok(loosest !== undefined);
-  let worstBurst = 0;
-  let worstStraddled = 0;
-  for (let seed = 1; seed <= 400; seed++) {
-    const r = runTrial(loosest, 0.5, 1 / 4, seed);
-    worstBurst = Math.max(worstBurst, r.longestBurst);
-    worstStraddled = Math.max(worstStraddled, r.straddled);
+  const shares: number[] = [];
+  let endToEnd = 0;
+  for (let seed = 1; seed <= 2000; seed++) {
+    const r = runTrial(loosest, 'uniform', 2, 1 / 4, seed);
+    if (r.straddled === 0) continue;
+    shares.push(r.longestBurst / r.straddled);
+    if (r.straddledFromFirstToLast) endToEnd++;
   }
-  // Not "some frames": essentially the whole capture.
-  assert.ok(worstBurst > FRAMES * 0.9, `longest burst was only ${worstBurst} of ${FRAMES}`);
-  assert.equal(worstStraddled, worstBurst, 'a bad capture is bad from its first frame to its last');
+  assert.ok(shares.length > 100, `only ${shares.length} touched captures to measure`);
+  shares.sort((a, b) => a - b);
+  const median = shares[Math.floor(shares.length / 2)];
+  assert.ok(median > 0.9, `median longest-burst share was ${median.toFixed(3)}`);
+  // A large minority run the whole capture — worth stating as a minority.
+  assert.ok(endToEnd > shares.length * 0.25, `${endToEnd} of ${shares.length} ran end to end`);
+  assert.ok(endToEnd < shares.length, 'but not all of them, so do not say "always"');
+});
+
+test('a hand-pressed remote fails in scattered frames, which refutes stating it generally', () => {
+  // The other half, and the half that stops "concentrated" being said of the
+  // whole experiment: jitter an order of magnitude larger produces isolated
+  // straddles, so a touched handheld capture is nothing like one long stretch.
+  const hand = ARMS.find((a) => a.key === 'handheld-remote');
+  assert.ok(hand !== undefined);
+  const shares: number[] = [];
+  let endToEnd = 0;
+  for (let seed = 1; seed <= 500; seed++) {
+    const r = runTrial(hand, 'on-tick', 2, 1 / 4, seed);
+    if (r.straddled === 0) continue;
+    shares.push(r.longestBurst / r.straddled);
+    if (r.straddledFromFirstToLast) endToEnd++;
+  }
+  assert.ok(shares.length > 100);
+  shares.sort((a, b) => a - b);
+  const median = shares[Math.floor(shares.length / 2)];
+  assert.ok(median < 0.2, `median longest-burst share was ${median.toFixed(3)}`);
+  assert.equal(endToEnd, 0, 'no handheld capture straddles end to end');
+});
+
+test('where the first shutter lands matters more than the crystal', () => {
+  // The experiment's actual finding, and the one its first version hid inside a
+  // sampling rule. Same clock, same dwell, same exposure — only the start.
+  const loosest = ARMS.find((a) => a.key === 'intervalometer-100ppm');
+  assert.ok(loosest !== undefined);
+  const touchedUnder = (phase: 'aimed' | 'uniform' | 'on-tick'): number => {
+    let n = 0;
+    for (let seed = 1; seed <= 1000; seed++) {
+      if (runTrial(loosest, phase, 2, 1 / 4, seed).straddled > 0) n++;
+    }
+    return n;
+  };
+  const uniform = touchedUnder('uniform');
+  const tick = touchedUnder('on-tick');
+  const aimed = touchedUnder('aimed');
+  assert.ok(uniform > 100, `a uniform start should ruin captures, got ${uniform}`);
+  assert.ok(tick < uniform, 'the page tick puts the shutter somewhere roomier');
+  assert.equal(aimed, 0, 'and a deliberately centred shutter has room to spare');
 });
 
 test('a tethered capture cannot straddle, by construction rather than by luck', () => {
@@ -72,7 +125,7 @@ test('a tethered capture cannot straddle, by construction rather than by luck', 
   // Every dwell and exposure in the sweep, including ones nobody would shoot.
   for (const dwell of [0.2, 0.5, 1, 2, 4]) {
     for (const exposure of [1 / 60, 1 / 8, 1 / 4, 1 / 2]) {
-      const r = runTrial(tethered, dwell, exposure, 7);
+      const r = runTrial(tethered, 'uniform', dwell, exposure, 7);
       assert.equal(r.straddled, 0, `tethered straddled at dwell ${dwell}, exposure ${exposure}`);
     }
   }
@@ -85,7 +138,7 @@ test('runs are counted by the unit a decode actually fails in', () => {
   // and those are a ruined night and a ruined run respectively.
   const hand = ARMS.find((a) => a.key === 'handheld-remote');
   assert.ok(hand !== undefined);
-  const r = runTrial(hand, 0.5, 1 / 4, 11);
+  const r = runTrial(hand, 'uniform', 0.5, 1 / 4, 11);
   assert.ok(r.runsTouched <= FRAMES / FRAMES_PER_RUN);
   assert.ok(r.straddled >= r.runsTouched, 'a touched run needs at least one straddled frame');
   assert.ok(r.firstStraddle >= 0, 'a capture with straddles names where it started');
@@ -96,7 +149,7 @@ test('the sweep is deterministic for a given seed', () => {
   // the results file. Both rest on the sweep being reproducible.
   const hand = ARMS.find((a) => a.key === 'handheld-remote');
   assert.ok(hand !== undefined);
-  const a = summarise(hand, 2, 1 / 4, 50, 0x9e5a1109);
-  const b = summarise(hand, 2, 1 / 4, 50, 0x9e5a1109);
+  const a = summarise(hand, 'uniform', 2, 1 / 4, 50, 0x9e5a1109);
+  const b = summarise(hand, 'uniform', 2, 1 / 4, 50, 0x9e5a1109);
   assert.deepEqual(a, b);
 });
