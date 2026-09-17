@@ -529,8 +529,16 @@ interface Experiment8 {
     story: string;
     order: Experiment8Mechanism;
     bookends: Experiment8Mechanism;
+    fingerprint: Experiment8Mechanism;
   }[];
 }
+
+/** The mechanisms in the order they were built, which is also worst to best. */
+const EXPERIMENT_8_MECHANISMS: [string, keyof Experiment8['arms'][number] & string][] = [
+  ['ordering', 'order'],
+  ['bookends', 'bookends'],
+  ['fingerprint', 'fingerprint'],
+];
 
 function experiment8Arms(result: Experiment8): string {
   const trials = result.generatedFrom.trials;
@@ -541,12 +549,10 @@ function experiment8Arms(result: Experiment8): string {
     '| --- | --- | --- | --- | --- | --- |',
   ];
   for (const a of result.arms) {
-    for (const [name, m] of [
-      ['ordering', a.order],
-      ['bookends', a.bookends],
-    ] as const) {
+    for (const [name, key] of EXPERIMENT_8_MECHANISMS) {
+      const m = a[key] as Experiment8Mechanism;
       out.push(
-        `| ${name === 'ordering' ? a.story : ''} | ${name} | ` +
+        `| ${key === 'order' ? a.story : ''} | ${name} | ` +
           `${share(m.silent, trials)} | ${m.runsOfferedTotal} | ` +
           `${m.badUsableRunsTotal} (${share(m.badUsableRunsTotal, m.runsOfferedTotal)}) | ` +
           `${m.usableRunsMean.toFixed(2)} / ${result.generatedFrom.projectors} |`,
@@ -567,20 +573,29 @@ function experiment8Headline(result: Experiment8): string {
   const rows: [string, (a: Experiment8['arms'][number]) => Experiment8Mechanism][] = [
     ['ordering alone', (a) => a.order],
     ['structural bookends', (a) => a.bookends],
+    ['bookends + complement fingerprint', (a) => a.fingerprint],
   ];
   // Both rates, each against its own denominator. The conditional one is what a
   // caller experiences; the exposure one is what a session costs. Reporting only
   // the second under the first's label was the error review caught.
+  // `carrying` sits next to `silent` on purpose. The gap between them IS the
+  // finding — a capture refused as a whole can still hand back a run it got
+  // wrong — and it used to be prose carrying a hand-computed multiplier, which
+  // said "a factor of three" while the file said two. Nothing checked it,
+  // because this was the one number in the results that no table rendered.
   const out = [
-    `| mechanism | captures silently wrong | runs offered | of those, mis-indexed | mis-indexed per run captured |`,
-    '| --- | --- | --- | --- | --- |',
+    `| mechanism | captures silently wrong | captures carrying a wrong run | runs offered | ` +
+      `of those, mis-indexed | mis-indexed per run captured |`,
+    '| --- | --- | --- | --- | --- | --- |',
   ];
   for (const [label, pick] of rows) {
     const silent = sum((a) => pick(a).silent);
+    const carrying = sum((a) => pick(a).trialsWithBadUsableRun);
     const bad = sum((a) => pick(a).badUsableRunsTotal);
     const offered = sum((a) => pick(a).runsOfferedTotal);
     out.push(
-      `| ${label} | ${silent} / ${trials} (${share(silent, trials)}) | ${offered} | ` +
+      `| ${label} | ${silent} / ${trials} (${share(silent, trials)}) | ` +
+        `${carrying} / ${trials} (${share(carrying, trials)}) | ${offered} | ` +
         `${bad} (${share(bad, offered)}) | ${share(bad, runsIn)} of ${runsIn} |`,
     );
   }

@@ -36,6 +36,23 @@
  * experiment is what decides whether that cost is worth paying, and it can only
  * do so by showing what the cheap mechanisms leave on the table.
  *
+ * ## The third mechanism, which this sweep is the reason for
+ *
+ * The first run of this experiment left the bookends' blind spot measured and
+ * open, and named the cheap candidate for closing it: ask whether a Gray plane
+ * and the frame beside it are still complements of one another. That is now
+ * built — `indexByFingerprint` — and it is scored here beside the other two on
+ * the same broken captures.
+ *
+ * It is scored under the same limit as everything else in this arm: the
+ * fingerprints are exact, computed from the pattern plan in projector space
+ * with no sphere, no warp and no albedo between the emitter and the number. So
+ * its catch rate is an ideal-fingerprint baseline in exactly the way the other
+ * two are ideal-classification baselines. What the identity survives — and it
+ * is the whole reason the mechanism is cheap — is shown in
+ * `packages/solver/test/indexing.test.ts`, where the affine per-pixel camera
+ * term is applied and cancels.
+ *
  * ## Why the fault model is uniform and independent
  *
  * A real operator's mistakes are not uniform — a spoiled frame is more likely at
@@ -46,6 +63,8 @@
  * the least, and it is stated here rather than buried so a reader can discount
  * it.
  */
+
+import { DEFAULT_PATTERN_PLAN, complementPlan, planFrames } from '../../../bench/src/patterns.ts';
 
 /** Every fault the sweep injects, as (frames removed, frames duplicated). */
 export interface Arm {
@@ -73,19 +92,48 @@ export const ARMS: readonly Arm[] = [
   { key: 'messy', drops: 2, dupes: 2, story: 'a thoroughly bad session' },
 ];
 
-/** Four projectors, 34 frames each, which is the page's own plan. */
+/** Four projectors, and the page's own plan rather than a copy of its length. */
 export const PROJECTORS = 4;
-export const FRAMES_PER_PROJECTOR = 34;
+
+/**
+ * The plan the emitter page actually plays.
+ *
+ * Imported rather than restated. The first version of this file carried
+ * `FRAMES_PER_PROJECTOR = 34` as a literal beside a comment saying it was the
+ * page's plan, which was true when written and had nothing holding it there —
+ * and the fingerprint mechanism needs more from the plan than its length
+ * anyway, since it has to know which positions hold a pattern and its
+ * complement.
+ */
+export const PLAN = DEFAULT_PATTERN_PLAN;
+export const FRAMES_PER_PROJECTOR = planFrames(PLAN).length;
+
+/**
+ * Blocks per axis the fingerprints carry.
+ *
+ * `complementPlan`'s own floor and not a block more. It is the cost driver of
+ * the whole sweep — every pair checked is a pass over `FINGERPRINT_BLOCKS^2`
+ * numbers — and going above the floor would buy nothing this experiment
+ * measures, since the residuals are exact here.
+ */
+export const FINGERPRINT_BLOCKS = complementPlan(PLAN).minBlocks;
 
 /**
  * Trials per arm.
  *
- * 2000 rather than the 30-ish the solve experiments use, and the reason is that
- * a trial here costs microseconds rather than minutes: nothing is rendered and
- * nothing is solved, so the sample size is set by what makes the rare outcomes
- * legible rather than by the compute budget. The outcome that decides the phase
- * is the silent one, and at 2000 trials a rate of 1% is 20 events rather than
- * one.
+ * 2000 rather than the 30-ish the solve experiments use, because nothing is
+ * rendered and nothing is solved: the sample size is set by what makes the rare
+ * outcomes legible rather than by the compute budget. The outcome that decides
+ * the phase is the silent one, and at 2000 trials a rate of 1% is 20 events
+ * rather than one — which is what the fingerprint's 1.1% on the cancelling arm
+ * needs to be read at all.
+ *
+ * A trial is no longer free, and this comment used to say it cost microseconds.
+ * The complement check is a pass over `FINGERPRINT_BLOCKS^2` numbers per pair
+ * per run, so the sweep went from under a second to about 16, and raising the
+ * trial count is now a decision with a price rather than a formality. That is a
+ * property of running 18 000 trials, not of the mechanism: one real capture
+ * costs one such check.
  */
 export const TRIALS = 2000;
 

@@ -1,8 +1,12 @@
 # Calibrating a real sphere — the operator path
 
 **Status: Phases 0 and 1 landed — `docs/CALIBRATE.md` and the projector emitter.
-Phase 2 is measured but not settled: the two cheap mechanisms are built and
-scored, and they leave a blind spot that needs a real sphere to price. Phase 3 is
+Phase 2's blind spot is closed bar one named case: three mechanisms are built and
+scored, and the cheapest of them — asking whether a Gray plane and the frame
+beside it still add up to the run's own white and black — takes a cancelling drop
+and duplicate from 22.7% of captures silently wrong to 1.1% without spending any
+raster area. What it still needs is a real sphere, because every number scoring it
+comes from an experiment that renders nothing. Phase 3 is
 plumbed and now reachable but still unproven: the modules that turn encoded
 photographs into correspondences exist, agree with each other end to end, and
 the emitter page now **calls them on photographs an operator hands in** — but no
@@ -251,7 +255,7 @@ everything downstream then rested on. The page shows the plan it is playing and
 counts the steps; turning that into an index a decoder can trust is the next
 phase and is named as such on the page itself.
 
-## Phase 2 — Make every photograph say which frame it is. **MEASURED, NOT SETTLED**
+## Phase 2 — Make every photograph say which frame it is. **THE BLIND SPOT IS CLOSED BAR ONE CASE; THE ROOM IS STILL UNMEASURED**
 
 The crux, and the phase that decides whether this is adoptable. If the software
 can work out which pattern a photograph shows, **tethering leaves the critical
@@ -259,9 +263,9 @@ path** — the operator shoots however they like and drops the files in. If it
 cannot, every operator needs a camera SDK working on their machine, and most will
 stop there.
 
-Three candidate mechanisms. **This phase picks by measurement, not by argument**
-— the failure mode of choosing on plausibility is a capture that works in a dark
-room in one building and not in another:
+Three candidate mechanisms, as this plan first named them. **This phase picks by
+measurement, not by argument** — the failure mode of choosing on plausibility is
+a capture that works in a dark room in one building and not in another:
 
 1. **Ordering alone.** The frames are shot in order, so the order is the index.
    Cheap and needs nothing; breaks on a dropped or duplicated frame, and gives no
@@ -277,6 +281,17 @@ room in one building and not in another:
    placed per projector. **Not built, and the measurement below is the argument
    for why not yet.**
 
+A fourth, which the first measurement turned up rather than the plan:
+
+4. **A per-frame fingerprint asking whether a Gray plane and the frame beside it
+   are still complements.** The emitter already plays every plane next to its own
+   complement, and in linear radiance the two add to exactly the run's own white
+   plus black — an identity that holds through albedo, ambient, gain and exposure
+   because the camera's response is affine in the target. So the check needs no
+   photometric constant and no raster area: a thumbnail per photograph, compared
+   against the frames the capture already contains. **Built** —
+   `indexByFingerprint`.
+
 **The measurement that decides it:** capture a real sequence with deliberate
 drops and duplicates, and score each mechanism on how often it recovers the right
 indexing and, more importantly, how often it *notices* that it has not. A
@@ -286,16 +301,18 @@ mis-indexed Gray plane is a confidently wrong calibration.
 `docs/EXPERIMENT-8.md` is that measurement, over 10 000 faulty captures:
 
 <!-- generated: experiment-8-headline-operator-path -->
-| mechanism | captures silently wrong | runs offered | of those, mis-indexed | mis-indexed per run captured |
-| --- | --- | --- | --- | --- |
-| ordering alone | 4000 / 10000 (40.0%) | 16000 | 10688 (66.8%) | 26.7% of 40000 |
-| structural bookends | 603 / 10000 (6.0%) | 23600 | 1367 (5.8%) | 3.4% of 40000 |
+| mechanism | captures silently wrong | captures carrying a wrong run | runs offered | of those, mis-indexed | mis-indexed per run captured |
+| --- | --- | --- | --- | --- | --- |
+| ordering alone | 4000 / 10000 (40.0%) | 4000 / 10000 (40.0%) | 16000 | 10688 (66.8%) | 26.7% of 40000 |
+| structural bookends | 603 / 10000 (6.0%) | 1233 / 10000 (12.3%) | 23600 | 1367 (5.8%) | 3.4% of 40000 |
+| bookends + complement fingerprint | 23 / 10000 (0.2%) | 84 / 10000 (0.8%) | 22317 | 84 (0.4%) | 0.2% of 40000 |
 <!-- /generated -->
 
 **The run columns are the ones to read.** The share of captures that come back
-without a complaint understates the bookends' exposure by a factor of three,
-because a capture they refuse can still contain a run they got wrong and
-offered — `ok: false` means some run was rejected, not that the rest are sound.
+without a complaint understates the bookends' exposure twofold — 603 captures
+silently wrong against 1233 that carried a wrong run — because a capture they
+refuse can still contain a run they got wrong and offered, and `ok: false` means
+some run was rejected, not that the rest are sound.
 The honest unit is the projector run, since that is what goes into a bundle
 adjustment, and there are two rates on it: of the runs a mechanism hands back,
 how many are wrong (what a caller experiences), and wrong runs per run the
@@ -311,6 +328,22 @@ frames, where the count still adds up and every frame is still a patterned frame
 A lit-pixel fraction cannot tell one Gray plane from another, and that is the same
 property that makes the white and black references separable in the first place.
 
+**And what closed it.** Mechanism 4 takes that case from 22.7% of captures
+silently wrong to 1.1%, the runs it hands back from 5.8% mis-indexed to 0.4%, and
+a session's exposure from 3.4% to 0.2% — while offering exactly the same runs as
+the bookends on every arm that cannot contain a cancelling pair, so it is not a
+trade of recall for precision. It pays for that by refusing more where the fault
+is real: 2.15 runs kept of 4 against the bookends' 2.36 on the cancelling arm.
+A refused run costs a re-shoot; a mis-indexed one costs a calibration nobody
+knows is wrong.
+
+Its own hole is one case and it is the shape of the plan rather than a threshold:
+the plan pairs Gray planes with their complements and pairs the phase steps with
+nothing, so a fault that disturbs no pair is invisible. Swept exhaustively over
+every way a drop and a duplicate can cancel inside one run, it catches 928 of 992
+and the 64 it misses are exactly those that leave every Gray pair intact — the
+phase block rearranging within itself.
+
 **What it does not settle**, and what a real sphere is now needed for:
 
 - **Whether the references stay separable in a room.** Classification is exact by
@@ -323,18 +356,34 @@ property that makes the white and black references separable in the first place.
   and what that margin costs on real images is measured by nothing in this
   repository. §5's ambient term spans 1%–15% and a sphere that fills too little
   of the frame dilutes every reference toward the middle.
-- **Whether mechanism 3 is worth its cost.** It obviously closes the blind spot —
-  it is the only candidate that tells patterned frames apart from each other. The
-  question is whether its photometric risk is smaller than the bookends' residual
-  — 5.8% of the runs they offer, 3.4% of the runs a session contains — and that
-  cannot be answered from a simulator. A cheaper candidate is
-  untested and would close the same hole without spending raster area: a per-frame
-  fingerprint asking whether a Gray plane and its neighbour are still complements.
+- **Whether the complement residual survives a room.** The identity itself does
+  — the affine camera term cancels, and that is tested rather than argued. What is
+  unmeasured is how far from zero a *correct* pair drifts once sensor noise, a
+  nudged tripod and a flickering room are in it, and `COMPLEMENT_LIMIT` therefore
+  sits above an edge nobody has seen, exactly like `MIN_CLASSIFY_MARGIN`. The far
+  edge of that gap is known exactly: a broken pair misses by at least twice the
+  limit.
+- **Whether mechanism 3 is still worth its cost.** The question it has to answer
+  is now much narrower. It is no longer "is there anything better than 5.8%" but
+  whether projecting an index into the frame is worth its photometric risk to
+  recover the 0.4% the fingerprint still offers wrong, plus the phase-block faults
+  it cannot see. A cheaper option remains untried and costs nothing extra to
+  shoot: the phase steps of one axis sum to a flat field the same way a
+  complementary pair does. It is a weaker signal — a fringe is finer than most
+  Gray planes, so it is the first thing a coarse thumbnail stops resolving — which
+  is why it is named here rather than assumed.
 
 **Done when** a folder of photographs, shot without tethering, is turned into a
-correctly indexed capture, or refused with a reason. **Not yet** — the blind spot
-returns a wrong capture rather than a refusal, and until it is closed or measured
-on a real sphere this phase stays open.
+correctly indexed capture, or refused with a reason. **Not yet, and now for one
+reason rather than two.** The blind spot that returned a wrong capture instead of
+a refusal is closed bar the phase block, and that part is named and bounded rather
+than open-ended. What remains is the room: every number above is an
+ideal-classification, ideal-fingerprint baseline from an experiment that renders
+nothing, and neither threshold this phase leans on has been priced on a real
+photograph. Nothing here is also wired into the page yet — `readback.ts` takes a
+folder in capture order and says so, and indexing it is a separate change on
+purpose, because doing it badly would hide which of the two stages a bad decode
+came from.
 
 ## Phase 3 — Let the solver see a real photograph. **REACHABLE; STILL NO REAL PHOTOGRAPH**
 

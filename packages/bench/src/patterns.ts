@@ -42,11 +42,13 @@
  * floor: a projector commanded to emit zero still leaks `gain * blackFloor`,
  * and that leak is what sets the modulation floor the decoder rejects on.
  * {@link emittedRadianceForTarget} is that one-line result, and
- * `test/patterns.test.ts` checks it against `packages/sim`'s own forward
- * transfer rather than against itself.
+ * `test/units.test.ts` checks it against `packages/sim`'s own forward transfer
+ * rather than against itself. (That path said `test/patterns.test.ts` until
+ * this was written — a file that has never existed in this repository.)
  */
 
 import type { ProjectorTransfer } from '../../calibration/src/index.ts';
+import type { ComplementPlan } from '../../solver/src/indexing.ts';
 
 export type PatternAxis = 'u' | 'v';
 
@@ -167,6 +169,50 @@ export function planFrames(plan: PatternPlan, axes: PatternAxis[] = ['u', 'v']):
   return out;
 }
 
+/**
+ * Which frames of a run are complements of one another, and the fingerprint
+ * resolution it takes to still see that.
+ *
+ * It lives here for {@link previewFrameIndex}'s reason, one step further: the
+ * pairing is DEFINED by {@link planFrames} three lines up, and a second place
+ * that knows which positions hold a pattern and its complement would be a
+ * second statement of the capture order. The first thing to notice they had
+ * drifted apart would be a capture the indexer passed with a hole in it.
+ *
+ * `packages/solver/src/indexing.ts` is where this is consumed and it cannot
+ * compute it: `ComplementPlan` is carried as positions precisely because the
+ * solver may not see a `PatternPlan`. Importing the TYPE back the other way is
+ * not the circularity this module's header warns about — that one is about the
+ * bench importing the solver's decoder to build its patterns, which would make
+ * the two sides of the contract one side. A data shape is not a decoder.
+ *
+ * `minBlocks` is `2^grayBits`: a fingerprint coarser than the finest Gray plane
+ * averages that plane to a flat one-half in every block, and a frame paired
+ * with a duplicate of itself then satisfies the identity exactly. Derived here
+ * rather than left to the caller because it is a property of the plan, and a
+ * caller in a position to get it wrong eventually will.
+ */
+export function complementPlan(
+  plan: PatternPlan,
+  axes: PatternAxis[] = ['u', 'v'],
+): ComplementPlan {
+  const specs = planFrames(plan, axes);
+  const pairs: [number, number][] = [];
+  for (let i = 0; i + 1 < specs.length; i++) {
+    const a = specs[i];
+    const b = specs[i + 1];
+    if (
+      a.kind === 'gray' &&
+      b.kind === 'grayInverse' &&
+      a.axis === b.axis &&
+      a.index === b.index
+    ) {
+      pairs.push([i, i + 1]);
+    }
+  }
+  return { pairs, minBlocks: Math.pow(2, plan.grayBits) };
+}
+
 /** `code ^ (code >> 1)`, the standard binary-reflected Gray code. */
 export function binaryToGray(v: number): number {
   return v ^ (v >>> 1);
@@ -282,7 +328,7 @@ export function emittedRadianceForTarget(
 /**
  * The signal the compositor would write for a target radiance — the actual
  * inversion of §P, used only to prove {@link emittedRadianceForTarget} in
- * `test/patterns.test.ts` by running it back through `packages/sim`'s forward
+ * `test/units.test.ts` by running it back through `packages/sim`'s forward
  * transfer.
  *
  * Not on the render path. If it were, every pattern pixel would cost three

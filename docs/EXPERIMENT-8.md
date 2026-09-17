@@ -6,7 +6,7 @@ here: the subject is the indexing logic, and a deleted file is deleted whether
 the picture behind it came off a sensor or a ray tracer.
 
 - **Data** — [`experiments/experiment-8.json`](../experiments/experiment-8.json)
-- **Reproduce** — `npm run experiment8` (12 000 trials, under a second)
+- **Reproduce** — `npm run experiment8` (18 000 trials, about 16 s)
 - **Code** — [`packages/solver/src/indexing.ts`](../packages/solver/src/indexing.ts),
   [`packages/experiments/src/indexing/`](../packages/experiments/src/indexing/)
 
@@ -23,33 +23,48 @@ there.
 The plan names three candidate mechanisms and is explicit that the phase **picks
 by measurement, not by argument** — *the failure mode of choosing on plausibility
 is a capture that works in a dark room in one building and not in another.* This
-is that measurement, for the two cheap mechanisms.
+is that measurement, for the two cheap ones and for a third the plan named only
+in passing.
+
+**That third mechanism exists because of this experiment's first run.** It left
+the bookends' blind spot measured and open, and ended by naming the cheapest
+thing that could shut it: ask whether a Gray plane and the frame beside it are
+still complements of one another. It is now built, and scored here on the same
+broken captures as the other two.
 
 ## The answer
 
 <!-- generated: experiment-8-headline -->
-| mechanism | captures silently wrong | runs offered | of those, mis-indexed | mis-indexed per run captured |
-| --- | --- | --- | --- | --- |
-| ordering alone | 4000 / 10000 (40.0%) | 16000 | 10688 (66.8%) | 26.7% of 40000 |
-| structural bookends | 603 / 10000 (6.0%) | 23600 | 1367 (5.8%) | 3.4% of 40000 |
+| mechanism | captures silently wrong | captures carrying a wrong run | runs offered | of those, mis-indexed | mis-indexed per run captured |
+| --- | --- | --- | --- | --- | --- |
+| ordering alone | 4000 / 10000 (40.0%) | 4000 / 10000 (40.0%) | 16000 | 10688 (66.8%) | 26.7% of 40000 |
+| structural bookends | 603 / 10000 (6.0%) | 1233 / 10000 (12.3%) | 23600 | 1367 (5.8%) | 3.4% of 40000 |
+| bookends + complement fingerprint | 23 / 10000 (0.2%) | 84 / 10000 (0.8%) | 22317 | 84 (0.4%) | 0.2% of 40000 |
 <!-- /generated -->
 
-**Do not read the first column on its own.** The share of captures that come back
-without a complaint flatters the bookends by a factor of three, and the reason is
-a finding rather than a presentation choice: **a capture the bookends refuse can
-still contain a run they got wrong and offered.** `ok: false` says some run was
-rejected; it does not say the rest are sound. That happened in 630 trials where
-the whole-capture verdict looked safe.
+**Do not read the first column on its own — read it against the second.** The
+gap between them is a finding rather than a presentation choice: **a capture a
+mechanism refuses can still contain a run it got wrong and offered.** `ok: false`
+says some run was rejected; it does not say the rest are sound. For the bookends
+that gap is 603 captures against 1233, so the silent-capture column understates
+their exposure twofold — 630 trials where the whole-capture verdict looked safe
+and a bad run went out anyway.
+
+(That second column is new, and it is new because the sentence it replaces
+carried a hand-computed *"factor of three"* while the results file said two.
+`trialsWithBadUsableRun` was the one number in the file that no generated table
+rendered, which is exactly how it drifted. It is rendered now.)
 
 So the honest unit is the **projector run** — the thing that actually goes into a
 bundle adjustment. There are two rates on it, they answer different questions,
 and an earlier version of this page reported one under the other's name:
 
-- **Of the runs a mechanism handed back, how many were wrong** — 66.8% against
-  5.8%. This is what a caller experiences, and each mechanism is measured against
-  its own offered total.
-- **Wrong runs per run the captures contained** — 26.7% against 3.4%. This is
-  what a session costs, and it is smaller for a mechanism that refuses a lot.
+- **Of the runs a mechanism handed back, how many were wrong** — 66.8%, then
+  5.8%, then 0.4%. This is what a caller experiences, and each mechanism is
+  measured against its own offered total.
+- **Wrong runs per run the captures contained** — 26.7%, then 3.4%, then 0.2%.
+  This is what a session costs, and it is smaller for a mechanism that refuses a
+  lot.
 
 Ordering looks far worse on the first than the second, and the reason is worth
 reading rather than smoothing over: on a faulty capture it offers runs **only in
@@ -69,16 +84,22 @@ two-fault trial into a clean one and flattering every mechanism.
 | --- | --- | --- | --- | --- | --- |
 | nothing went wrong | ordering | 0.0% | 8000 | 0 (0.0%) | 4.00 / 4 |
 |  | bookends | 0.0% | 8000 | 0 (0.0%) | 4.00 / 4 |
+|  | fingerprint | 0.0% | 8000 | 0 (0.0%) | 4.00 / 4 |
 | one frame deleted off the card | ordering | 0.0% | 0 | 0 (—) | 0.00 / 4 |
 |  | bookends | 0.0% | 5691 | 0 (0.0%) | 2.85 / 4 |
+|  | fingerprint | 0.0% | 5691 | 0 (0.0%) | 2.85 / 4 |
 | two frames deleted | ordering | 0.0% | 0 | 0 (—) | 0.00 / 4 |
 |  | bookends | 0.0% | 4045 | 0 (0.0%) | 2.02 / 4 |
+|  | fingerprint | 0.0% | 4045 | 0 (0.0%) | 2.02 / 4 |
 | the remote double-tapped once | ordering | 0.0% | 0 | 0 (—) | 0.00 / 4 |
 |  | bookends | 0.0% | 6021 | 0 (0.0%) | 3.01 / 4 |
+|  | fingerprint | 0.0% | 6021 | 0 (0.0%) | 3.01 / 4 |
 | one frame deleted and one shot twice — the count still adds up | ordering | 100.0% | 8000 | 4473 (55.9%) | 4.00 / 4 |
 |  | bookends | 22.7% | 4727 | 454 (9.6%) | 2.36 / 4 |
+|  | fingerprint | 1.1% | 4296 | 23 (0.5%) | 2.15 / 4 |
 | a thoroughly bad session | ordering | 100.0% | 8000 | 6215 (77.7%) | 4.00 / 4 |
 |  | bookends | 7.5% | 3116 | 913 (29.3%) | 1.56 / 4 |
+|  | fingerprint | 0.0% | 2264 | 61 (2.7%) | 1.13 / 4 |
 <!-- /generated -->
 
 Three things in that table are worth naming.
@@ -108,6 +129,45 @@ the references separable — a white frame lights the crescent, a black frame
 lights none, and *every patterned frame lights about half* — is the same property
 that makes patterned frames interchangeable.
 
+**And the fingerprint costs nothing to add.** Read the first four arms down the
+table: on every capture without a cancelling pair it offers the same runs as the
+bookends, keeps the same number, and gets none of them wrong — 8 000, 5 691,
+4 045 and 6 021 runs, identical in both rows. It is not a trade of recall for
+precision. It refuses strictly more of the captures the bookends were wrong
+about and none of the ones they were right about.
+
+## What the fingerprint is, in one paragraph
+
+The emitter plays each Gray plane immediately followed by its own complement, so
+in the projector the two add to a flat field. What a camera records is
+`a(p) * target(p) + b(p)`, with `a` carrying albedo, the cosine falloff, the
+projector gain and the exposure, and `b` carrying ambient and the black floor —
+all per-pixel unknowns nothing at this stage can measure. Every one of them
+cancels, because that map is **affine** and the two frames were shot back to back
+through the same one:
+
+    gray(p) + grayInverse(p) = a(p) + 2 b(p) = white(p) + black(p)
+
+So the run's own white and black frames are the reference, and the check is
+whether each pair still reproduces them. A drop and a duplicate that cancel
+inside a run shift every frame between them by one position, and a Gray plane
+that has moved by one is no longer beside its own complement — so the residual
+comes back near a half instead of near zero. The comparison needs a thumbnail per
+photograph rather than the photograph, because the identity is pointwise and
+linear and therefore survives block-averaging exactly.
+
+**It has one hole and it is a property of the plan, not a threshold.** The plan
+pairs the Gray planes with their complements and pairs the phase steps with
+nothing. A fault that disturbs no pair is invisible — which in the page's own
+plan means the eight phase frames rearranging among themselves. Swept
+exhaustively over every way a drop and a duplicate can cancel inside one run
+(`packages/bench/test/complements.test.ts`), the mechanism catches **928 of
+992**, and the 64 it misses are *exactly* the ones that leave every Gray pair
+intact. Closing that would need a second identity — the phase steps of one axis
+also sum to a flat field — which is not built here and is a weaker signal, since
+a fringe is finer than most Gray planes and so is the first thing a coarse
+thumbnail stops resolving.
+
 ## What this does not measure
 
 Stated before anyone builds on it.
@@ -133,12 +193,24 @@ Stated before anyone builds on it.
   likeliest from a double-tapped remote. Modelling that would mean inventing a
   distribution nobody has measured, and the headline would become a property of
   the invention.
-- **Mechanism 3 is not here.** Projecting a frame index into the frame itself is
-  the one mechanism that closes the blind spot, because it is the only one that
-  tells patterned frames apart from each other. It is also the expensive one: it
-  spends raster area, and its risk is entirely photometric — a marker must
-  survive an oblique sphere in an unmeasured room, and there is no one region of
-  a sphere every camera position can see.
+- **The fingerprints are exact too, and for the same reason.** They are computed
+  from the pattern plan in projector space, with no sphere, no warp and no albedo
+  between the emitter and the number, so every complement residual here is either
+  0 or the full mismatch. That makes the fingerprint's catch rate an
+  **ideal-fingerprint baseline** on exactly the footing of the classification
+  above — a reader who discounts one should discount both. What *is* established,
+  in `packages/solver/test/indexing.test.ts`, is the part that matters most: the
+  affine per-pixel camera term cancels out of the identity, so the check needs no
+  photometric constant to be known. What is **not** established is the noise floor
+  — how far from zero a correct pair drifts on real photographs — and
+  `COMPLEMENT_LIMIT` sits above an unmeasured edge for that reason, exactly like
+  `MIN_CLASSIFY_MARGIN`.
+- **Mechanism 3 is not here.** Projecting a frame index into the frame itself
+  remains unbuilt. It is the expensive one: it spends raster area, and its risk is
+  entirely photometric — a marker must survive an oblique sphere in an unmeasured
+  room, and there is no one region of a sphere every camera position can see.
+  It is also no longer the only thing that tells patterned frames apart from each
+  other, which is what changed about the case for it.
 
 ## What it decides
 
@@ -151,16 +223,31 @@ a frame* to *a spoiled frame costs you that projector's run*, which is the
 difference between a rule an operator must not break and a mistake they can
 recover from.
 
-It is **not** enough to let the operator stop caring. A capture with one frame
-deleted and one shot twice comes back a confidently wrong calibration 22.7% of
-the time — that being the share of trials where the two faults land in the same
-run and cancel — and nothing in this mechanism can see it.
+It is **not** enough on its own to let the operator stop caring. A capture with
+one frame deleted and one shot twice comes back a confidently wrong calibration
+22.7% of the time — that being the share of trials where the two faults land in
+the same run and cancel — and nothing in the bookends can see it.
 
-So the next question is not "is mechanism 3 better" — it obviously is — but
-whether its photometric risk is smaller than the bookends' residual: 5.8% of the
-runs they offer, 3.4% of the runs a session contains. **That
-cannot be answered from a simulator**, and this experiment is the argument for
-answering it on a real sphere rather than by building the expensive option on a
-hunch. A cheaper candidate exists and is untested: a per-frame fingerprint that
-asks whether a Gray plane and its neighbour are still complements of one another,
-which would close the same hole without spending raster area.
+**The complement fingerprint closes most of that, and it is the cheap one.** It
+takes the same capture from 22.7% silently wrong to 1.1%, the runs it hands back
+from 5.8% mis-indexed to 0.4%, and a whole session's exposure from 3.4% to 0.2%.
+It buys that by refusing more: on the cancelling arm it keeps 2.15 runs of 4
+where the bookends keep 2.36, and on a thoroughly bad session 1.13 against 1.56.
+That is the trade in both directions and it is the right way round — a refused
+run costs a re-shoot, a mis-indexed one costs a calibration nobody knows is
+wrong.
+
+It spends **no raster area**, which is the whole reason it was worth building
+before mechanism 3. Its cost is a thumbnail per photograph, and the grid has to
+be at least `2^grayBits` blocks per axis or a duplicated fine plane washes out —
+a floor that is derived from the plan rather than tuned, and refused rather than
+assumed.
+
+So the question mechanism 3 now has to answer is much narrower than before.
+It is no longer "is there anything better than 5.8%"; it is whether projecting an
+index into the frame is worth its photometric risk to recover the **0.4%** the
+fingerprint still offers wrong, and the phase-block faults it cannot see at all.
+The cheaper of the two remaining options is the second identity named above,
+which costs nothing new to shoot. **Neither question can be answered from a
+simulator,** and that has not changed: what these numbers bound is recoverability
+under exact photometry, and the room is still unmeasured.

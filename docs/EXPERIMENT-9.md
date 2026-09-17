@@ -38,6 +38,20 @@ A straddle is worse than a drop for one specific reason:
 drop-and-duplicate inside one run. This is a second way into the same blind spot,
 reached without anybody deleting a file.
 
+**That is still true of the bookends and is no longer true of the mechanism that
+followed them.** Experiment 8 has since added a complement fingerprint, and a
+straddle is not invisible to it: a Gray plane's temporal neighbour is its own
+complement, so a photograph that is a fraction `a` of the pattern and `1 - a` of
+the complement misses the complement identity by exactly `1 - a`
+(`packages/solver/test/indexing.test.ts`). At `COMPLEMENT_LIMIT` that means a
+straddle of more than about a seventh of the exposure is refused rather than
+offered.
+
+What is **not** established is how often a straddle is that large, because the
+sweep below was not re-run against the fingerprint. The numbers on this page are
+the bookends' exposure, and they are the right numbers for the mechanism they
+describe.
+
 ## The answer, and it is not the axis this experiment was opened on
 
 The first version of this experiment swept clock drift, found almost nothing,
