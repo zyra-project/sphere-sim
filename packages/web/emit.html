@@ -89,7 +89,10 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); }
 
 .note { font-size: 12.5px; color: var(--muted); margin: 10px 0 0; }
-.verdict { font-size: 12.5px; margin: 12px 0 0; padding: 9px 11px; border-radius: 6px;
+/* `pre-wrap` because the readback report is newline-separated, one line per run
+   and one indented line per problem, and a normal div collapses every one of
+   them into a single paragraph an operator cannot pick apart. */
+.verdict { white-space: pre-wrap; font-size: 12.5px; margin: 12px 0 0; padding: 9px 11px; border-radius: 6px;
   border: 1px solid var(--line); color: var(--fg-2); }
 .verdict.ok { border-color: rgba(122, 209, 122, 0.4); color: var(--good); }
 .verdict.warn { border-color: rgba(255, 138, 61, 0.55); color: var(--accent); }
@@ -157,6 +160,9 @@ button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); 
         Tick on each step, so you can work without watching the screen</label>
     </div>
     <p class="note" id="plannote"></p>
+    <div class="hudrow">
+      <button id="saveplan" type="button" disabled>Save the plan beside your photographs</button>
+    </div>
     <p class="note">
       Frames leave here encoded for a display gamma of 2.2 — PARAMETERS.md §3.2’s nominal. The Gray
       planes do not care, being black or white either way; the phase steps are sinusoids in emitted
@@ -164,6 +170,40 @@ button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); 
       per-channel exponents as unmeasured and notes real projectors diverge 0.1–0.3 between channels,
       so this is an assumption rather than a measurement, and nothing here can check it for you.
     </p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Read a capture back</legend>
+    <p class="note">
+      After shooting, bring the photographs here with the plan file you saved above. This decodes
+      them and says what the capture was worth — how many correspondences survived, out of how many
+      camera pixels, and which projectors nothing reached. It does not compute a pose: that needs
+      each camera’s intrinsics, which this page does not have and cannot derive.
+    </p>
+    <p class="note">
+      Your files are read through a canvas, which converts whatever colour profile they carry into
+      sRGB before this page sees a single pixel. So the transfer is not a setting: these bytes are
+      sRGB whatever the camera wrote, and telling the decoder otherwise would leave every
+      correspondence in place and move it about thirteen times further from the truth. Shoot JPEG
+      or PNG. A RAW file the browser cannot decode is refused rather than guessed at.
+    </p>
+    <div class="row">
+      <label class="field"><span>The plan file</span>
+        <input id="planfile" type="file" accept="application/json,.json"/></label>
+      <label class="field"><span>One projector’s run of photographs</span>
+        <input id="photos" type="file" accept="image/*" multiple/></label>
+
+    </div>
+    <div class="hudrow">
+      <label class="field"><span>Camera</span>
+        <input id="camidx" type="number" min="0" step="1" value="0"/></label>
+      <label class="field"><span>Projector</span>
+        <input id="projidx" type="number" min="0" step="1" value="0"/></label>
+      <span class="spacer"></span>
+      <button id="readback" type="button" disabled>Decode these photographs</button>
+    </div>
+    <p class="note" id="readnote"></p>
+    <div id="readout" class="verdict" hidden></div>
   </fieldset>
 
   <div id="fit" class="verdict"></div>

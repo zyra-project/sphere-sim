@@ -26,7 +26,10 @@
  */
 
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   MAX_PLACEABLE_PROJECTORS,
@@ -265,4 +268,25 @@ test('the fit is the whole rig’s, not the first quadrant’s', () => {
   const bad = rigFit(4, 1280, 800, 100, 100, plan);
   assert.equal(bad.anyFatal, true);
   assert.equal(bad.worst.fatal, true);
+});
+
+test('every element the emitter page reaches for exists in its markup', () => {
+  // The emit page has no browser smoke coverage — `tools/smoke-app.ts` drives
+  // the simulator page only — so a mistyped id here is caught by nobody until
+  // an operator opens the page and gets a blank screen. `web/emit.ts` casts
+  // every lookup (`as HTMLButtonElement`), so a missing id is `null` wearing a
+  // type, and the failure is a TypeError at the first `addEventListener`.
+  //
+  // This is the cheapest guard that actually holds: parse both files and check
+  // the module never reaches for something the markup does not have.
+  const root = path.resolve(fileURLToPath(import.meta.url), '../../../..');
+  const html = fs.readFileSync(path.join(root, 'packages/web/emit.html'), 'utf8');
+  const module_ = fs.readFileSync(path.join(root, 'packages/web/web/emit.ts'), 'utf8');
+
+  const present = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+  const wanted = [...module_.matchAll(/getElementById\('([^']+)'\)/g)].map((m) => m[1]);
+
+  assert.ok(wanted.length > 10, `expected the page to reach for many ids, found ${wanted.length}`);
+  const missing = [...new Set(wanted)].filter((id) => id !== undefined && !present.has(id));
+  assert.deepEqual(missing, [], `emit.ts reaches for ids emit.html does not define`);
 });

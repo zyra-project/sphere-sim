@@ -3,14 +3,15 @@
 **Status: Phases 0 and 1 landed — `docs/CALIBRATE.md` and the projector emitter.
 Phase 2 is measured but not settled: the two cheap mechanisms are built and
 scored, and they leave a blind spot that needs a real sphere to price. Phase 3 is
-plumbed but unproven: the modules that turn encoded photographs into
-correspondences exist and agree with each other end to end, no real photograph
-has been through them, and **nothing in this repository calls them** — a test
-does. Phases 4 and 5 are not built. So an operator can put the sequence on a
-real sphere and then has nowhere to take the result: there is no folder reader,
-no before-and-after, and no way to install a calibration. Phase 4 has begun at
-the honest end — the export now says which of the files it overwrites it could
-put back, and refuses to call one of five a restore point.** This is a plan, written because the question "what would an
+plumbed and now reachable but still unproven: the modules that turn encoded
+photographs into correspondences exist, agree with each other end to end, and
+the emitter page now **calls them on photographs an operator hands in** — but no
+real photograph has been through them. Phase 5 is measured rather than built. So
+an operator can put the sequence on a real sphere and now get a number back
+saying what the capture was worth — but not a pose, not a before-and-after, and
+there is still no way to install a calibration. Phase 4 has begun at the honest
+end — the export now says which of the files it overwrites it could put back,
+and refuses to call one of five a restore point.** This is a plan, written because the question "what would an
 operator actually do?" had no answer anywhere in the repository — not in code,
 not in a document — while the simulator implied one.
 
@@ -96,7 +97,7 @@ the phase order, so it is stated before the phases rather than implied by them.
 | 2 | Getting patterns onto the projectors | Structured light is projector-raster-space; SOS content is sphere-space, so the ordinary content path cannot carry it | Phase 1 — **landed** |
 | 3 | Knowing which pattern each photo shows | The one genuinely unsolved problem here | Phase 2 — **measured, not settled** |
 | 4 | Knowing where to stand and what to set | "Three positions" is measured; *which* three is not written down anywhere | Phase 0 |
-| 5 | Getting photographs to the solver | Hundreds of files, and the solver has never seen a real one | Phase 3 — **plumbed, unproven** |
+| 5 | Getting photographs to the solver | Hundreds of files, and the solver has never seen a real one | Phase 3 — **reachable, unproven** |
 | 6 | Trusting the result | A number with no before/after is a claim, not evidence | Phase 4 |
 | 7 | Installing the result | Overwriting live geometry with no undo | Phase 4 |
 | 8 | Understanding a failure | "It didn't converge" sends an operator home | every phase |
@@ -334,7 +335,7 @@ correctly indexed capture, or refused with a reason. **Not yet** — the blind s
 returns a wrong capture rather than a refusal, and until it is closed or measured
 on a real sphere this phase stays open.
 
-## Phase 3 — Let the solver see a real photograph. **PLUMBED, UNPROVEN**
+## Phase 3 — Let the solver see a real photograph. **REACHABLE; STILL NO REAL PHOTOGRAPH**
 
 Every image the bundle adjustment has ever been given was rendered by this
 project. Real ones differ in ways that will not all be anticipated: sensor noise,
@@ -383,6 +384,30 @@ Everything else is reported beside the pose rather than used to withhold it,
 because what a thin capture costs on a real sphere is unmeasured and a threshold
 invented here would become the thing the pipeline rested on.
 
+**And something now calls it.** The status line above used to end *"nothing in
+this repository calls them — a test does"*, which was the honest description of
+three modules that worked and could not be reached. The emitter page now has a
+reader: hand it the plan it wrote and one projector's run of photographs, and it
+runs `linearise` -> `assembleCapture` -> `decodeCapture` -> `captureWorth` and
+reports what the capture was worth.
+
+**The plan travels with the photographs**, which is the part that makes the
+reader trustworthy rather than merely present. `assembleCapture` needs
+`grayBits`, `phaseSteps`, `phasePeriodStrides` and the raster, and every one of
+them decodes *wrong* rather than failing when it is wrong — the `phaseSteps`
+case being the sharpest, where a four-step run read as three solves 0/90/180
+degrees as 0/120/240. Since Phase 1 the emitter page had been telling operators
+*"write the plan down… nothing yet records it for you"*, which is a real hazard
+handed over as homework. It now writes `capture-plan.json`, and the reader
+refuses a folder without one rather than assuming the defaults.
+
+`packages/web/src/manifest.ts` is also the only place in the repository where
+the emitter's frame order and the decoder's expectations can be checked against
+each other: `boundary-lint` lets `solver` reach only `calibration`, so
+`assembleCapture` can never see `planFrames`, and no test inside `solver` can
+notice if the two drift apart. `packages/web/test/readback.test.ts` drives that
+join directly.
+
 **The chain runs end to end**, in `packages/solver/test/realphotos.test.ts`:
 8-bit sRGB integers, through the transfer, through the assembler, through the
 decoder, to correspondences that name the projector pixels that produced them.
@@ -393,14 +418,51 @@ hundredth of a projector pixel**, and 16-bit inside a thousandth. Against §7's
 2 mm on a 1.7 m sphere, the file format is not the term that matters. Shooting
 JPEG does not give up the calibration.
 
-### Why it is UNPROVEN and not LANDED
+### Why it is still UNPROVEN and not LANDED
 
-**No real photograph has been through it.** The fixture is synthetic: flat
-albedo, constant ambient, no sensor noise, no limb, no dust, nobody walking
-through, and a camera whose pixels map one-to-one onto the projector's. What it
+**No real photograph has been through it.** That was true when nothing called
+these modules and it is still true now that something does — a reader an
+operator can reach is not a capture an operator has shot. The fixture is
+synthetic: flat albedo, constant ambient, no sensor noise, no limb, no dust,
+nobody walking through, and a camera whose pixels map one-to-one onto the
+projector's. What it
 establishes is that the three stages agree with each other and with `decode.ts`'s
 normative pattern order — which is the part that was missing and the part a real
 capture cannot be debugged without. It establishes nothing about a room.
+
+**And it stops short of a pose, deliberately.** The done-when asks for *"a pose
+with its correspondence count beside it, or a refusal naming what was wrong with
+the photographs"*, and this phase's own text orders those two: *report what the
+capture was worth before reporting a pose*. The second half is built. The first
+needs each camera's intrinsics and a rough pose, which the reader does not have
+— and intrinsics are the one operator-side prerequisite the end goal says no
+phase here removes. Inventing them to reach a number would make that number the
+thing somebody trusted.
+
+**Three things the reader does not do**, each named rather than left to be
+discovered:
+
+- **It does not index the photographs.** The order files arrive in is taken as
+  the order they were shot in. Phase 2 built mechanisms for establishing that
+  from the pictures themselves and they are not wired in here, because a bad
+  decode should say which of the two stages produced it.
+- **It reads one projector run at a time.** A whole capture is twelve of them
+  and the operator drives them one by one.
+- **The browser gives it 8-bit sRGB pixels** whatever the file held, because
+  `createImageBitmap` onto a canvas is how a page gets at a JPEG at all. The
+  measurement above is what makes the 8 bits survivable rather than an
+  assumption. The sRGB half is newer and came from review: `drawImage` converts
+  its source into the canvas's colour space, so a Display P3 or Adobe RGB
+  photograph is sRGB before the page sees a pixel. The reader therefore states
+  the transfer rather than offering it — the menu that used to be there could
+  only be set to a wrong answer, and a wrong one leaves every correspondence in
+  place while moving it thirteen times further from the truth.
+- **It refuses a capture it cannot hold**, rather than letting the tab die. Both
+  representations are alive while a run is assembled — 4 bytes a pixel encoded
+  and 12 more for the three-channel linear copy `ingest.ts` deliberately keeps —
+  so the documented 34 frames at 1920×1200 is about 1.17 GiB, and the same run
+  off a 24-megapixel camera is roughly 13 GiB. The page stops at 2 GiB and says
+  the number. A limit of this page, not of the decode.
 
 The done-when says *a real capture*, and there has not been one. This phase stays
 open until there is.
