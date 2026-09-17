@@ -47,7 +47,13 @@ import { buildWarpExports, formatWarpMesh } from '../../sim/src/warp.ts';
 import { buildZip } from '../src/zip.ts';
 import type { ZipEntry } from '../src/zip.ts';
 import { bundleEntries, CONFIG_ABSENT, FILE_NOTES } from '../src/bundle.ts';
-import { type InstallTarget, type RestorePlan, planRestore } from '../src/restore.ts';
+import {
+  type HeldOriginal,
+  type InstallTarget,
+  type RestorePlan,
+  planRestore,
+} from '../src/restore.ts';
+import { adoptOriginals, type Adoption } from '../src/adopt.ts';
 import {
   fmtMm,
   freshSolve,
@@ -275,6 +281,16 @@ interface PageState {
   sosConfigText: string;
   /** The config exactly as it arrived, for `restore/`. Null when none loaded. */
   sosConfigBytes: Uint8Array | null;
+  /**
+   * The operator's EXISTING warp and alignment files, as bytes, for `restore/`.
+   *
+   * Empty until they hand them in, which is the state Phase 4 shipped in and
+   * the reason its refusal always fired: the page generates these files and has
+   * never seen what sits at their paths. See `src/adopt.ts`.
+   */
+  adopted: HeldOriginal[];
+  /** What the last hand-in was taken as, file by file, including refusals. */
+  adoptions: Adoption[];
   sosConfigName: string;
   sosConfig: SosConfig | null;
   sosConfigError: string;
@@ -325,6 +341,8 @@ const state: PageState = {
   sosReadError: '',
   sosConfigText: '',
   sosConfigBytes: null,
+  adopted: [],
+  adoptions: [],
   sosConfigName: '',
   sosConfig: null,
   sosConfigError: '',
@@ -4534,6 +4552,12 @@ function bundleForPanel(): { value: ReturnType<typeof buildBundle> | null; refus
     state.compositorRig,
     displayMeshId(),
     sosConfigSeq,
+    // Without this the panel goes on showing the refusal after the operator has
+    // handed in the very files that answer it — the same fault `sosConfigSeq`
+    // exists to prevent, one picker over. A counter rather than the adopted
+    // set, because comparing megabytes of mesh bytes on every render to decide
+    // whether to repaint a paragraph is the wrong trade.
+    adoptSeq,
     suppliedName(),
     customPlacements,
   ]);
@@ -4573,6 +4597,19 @@ function buildBundle(): {
   refused: string[];
   /** What of this archive could be undone, and what could not. */
   restore: RestorePlan;
+  /**
+   * Exactly the files this archive would write, for the adoption picker.
+   *
+   * Returned rather than recomputed there, so the list an operator is asked to
+   * supply originals for cannot drift from the list that gets installed.
+   */
+  targets: InstallTarget[];
+  /**
+   * The originals the page holds by a route OTHER than the adoption picker — in
+   * practice the config. Separate from `state.adopted` because a second hand-in
+   * REPLACES the adopted set, and the config must survive that.
+   */
+  configHeld: HeldOriginal[];
 } {
   const world = buildWorld(state.settings, state.compositorRig ?? undefined, suppliedImage());
   // INSTALL, and the archive is why it matters that all three parts agree: the
@@ -4711,10 +4748,24 @@ function buildBundle(): {
     })),
     ...(config !== null ? [{ path: configName, kind: 'config' as const }] : []),
   ];
-  const held = config !== null && state.sosConfigBytes !== null
-    ? [{ path: configName, bytes: state.sosConfigBytes }]
-    : [];
-  const restore = planRestore(targets, held);
+  /**
+   * The config arrives through its own picker; everything else through the
+   * adoption picker. Config FIRST, deliberately: `planRestore` builds a map and
+   * a later entry would win, and the config's own bytes are the ones actually
+   * being patched. `adoptOriginals` refuses a duplicate anyway, so this is
+   * belt and braces on an ordering that should never matter.
+   */
+  const configHeld: HeldOriginal[] =
+    config !== null && state.sosConfigBytes !== null
+      ? [{ path: configName, bytes: state.sosConfigBytes }]
+      : [];
+  /**
+   * Config FIRST, deliberately: `planRestore` builds a map and a later entry
+   * would win, and the config's own bytes are the ones actually being patched.
+   * `adoptOriginals` refuses a duplicate anyway, so this is belt and braces on
+   * an ordering that should never matter.
+   */
+  const restore = planRestore(targets, [...configHeld, ...state.adopted]);
 
   return {
     configNote,
@@ -4734,7 +4785,24 @@ function buildBundle(): {
     cost,
     refused,
     restore,
+    targets,
+    configHeld,
   };
+}
+
+/**
+ * What the adoption picker needs: the current targets, and what is already held.
+ *
+ * Reads through `bundleForPanel` rather than calling `buildBundle` directly
+ * because that one is memoised and this runs on a click — rebuilding a world
+ * and a display model to find out a list of filenames would be a visible pause
+ * for nothing. A null value means the archive cannot be built at all right now,
+ * in which case there is nothing to adopt originals FOR.
+ */
+function restoreInputs(): { targets: InstallTarget[]; held: HeldOriginal[] } {
+  const ready = bundleForPanel().value;
+  if (ready === null) return { targets: [], held: [] };
+  return { targets: ready.targets, held: ready.configHeld };
 }
 
 /** Hand the archive over. One click, one file, one browser prompt. */
@@ -4824,6 +4892,67 @@ function pickSosAlignment(projector: number, resX: number, resY: number): void {
  * it identifies the loaded file, where the text's own length cannot.
  */
 let sosConfigSeq = 0;
+
+/**
+ * Take in the files this archive would overwrite, so it can put them back.
+ *
+ * Phase 4 landed the accounting and said what it left: *"today the refusal
+ * always fires, because the page is never given the files it would overwrite.
+ * That is the next piece of work and it is small."* This is it.
+ *
+ * Multi-select rather than one input per projector, because a four-projector
+ * rig is eight files and eight file inputs is a form, not a step. The cost is
+ * that a browser hands back bare names with no directory, so `adoptOriginals`
+ * has to relate `P1.data` to `warp/P1.data` — see its module note for why that
+ * is determined rather than guessed, and checked rather than assumed.
+ *
+ * Nothing is matched against the CONTENT of these files. They are stored and
+ * handed back verbatim; this page has no reader for a Bourke mesh and inventing
+ * one to validate a restore copy would be a second implementation of a format
+ * whose only job here is to survive a round trip untouched.
+ */
+function pickExistingFiles(): void {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.addEventListener('change', () => {
+    const files = Array.from(input.files ?? []);
+    if (files.length === 0) return;
+    // The targets as they stand RIGHT NOW. Recomputed here rather than closed
+    // over, because the rig can change between opening the picker and choosing.
+    const { targets, held } = restoreInputs();
+
+    void Promise.all(
+      files.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })),
+    )
+      .then((picked) => {
+        const result = adoptOriginals(targets, picked, held);
+        // Replaces rather than accumulates. A second hand-in is the operator
+        // correcting the first, and merging the two would leave bytes in the
+        // archive from a file they had already decided against.
+        state.adopted = result.held;
+        state.adoptions = result.adoptions;
+      })
+      .catch((err: unknown) => {
+        state.adopted = [];
+        state.adoptions = [
+          {
+            name: files.map((f) => f.name).join(', '),
+            path: null,
+            problem: `Those files could not be read: ${err instanceof Error ? err.message : String(err)}`,
+          },
+        ];
+      })
+      .finally(() => {
+        adoptSeq++;
+        renderReadout();
+      });
+  });
+  input.click();
+}
+
+/** Bumped on every hand-in, so `bundleForPanel`'s memo sees a new selection. */
+let adoptSeq = 0;
 
 function pickSosConfig(): void {
   const input = document.createElement('input');
@@ -7232,6 +7361,56 @@ function renderReadout(): void {
         p.style.color = 'var(--warn)';
         p.dataset.smoke = 'bundle-restore';
         box.append(p);
+      } else {
+        // The green light, and it is worth printing rather than merely leaving
+        // the warning out. Phase 4 shipped with the refusal always firing, so
+        // an operator who has just done the work of finding four files should
+        // be told it worked, not left to infer it from an absence.
+        const p = el('p', {
+          className: 'note tiny',
+          textContent: ready.restore.summary,
+        });
+        p.style.color = 'var(--good)';
+        p.dataset.smoke = 'bundle-restore-ok';
+        box.append(p);
+      }
+
+      /**
+       * The picker that answers the refusal above, and the report of what it did.
+       *
+       * Below the refusal rather than above it, because the refusal is what
+       * explains why this button is worth pressing. An operator who has not read
+       * it yet has no reason to go and find four files.
+       */
+      if (ready.targets.length > 0) {
+        const adopt = el('button', {
+          className: 'btn',
+          textContent:
+            state.adopted.length === 0
+              ? 'Load the files this would overwrite'
+              : 'Load different files to put back',
+          title:
+            'Open your sphere\u2019s current warp and alignment files so copies of them travel ' +
+            'in the archive. Nothing is read out of them \u2014 they are stored and handed back ' +
+            'byte for byte.',
+        });
+        adopt.dataset.smoke = 'bundle-adopt-pick';
+        adopt.addEventListener('click', pickExistingFiles);
+        box.append(adopt);
+
+        // File by file, because the one thing this page cannot check is whether
+        // the bytes handed in are the ones at that path on the sphere — and the
+        // person who CAN check that needs to see the mapping to do it.
+        for (const a of state.adoptions) {
+          const line = el('p', {
+            className: 'note tiny',
+            textContent:
+              a.path === null ? `${a.name} — ${a.problem}` : `${a.name} → ${a.path}`,
+          });
+          line.style.color = a.path === null ? 'var(--warn)' : 'var(--muted)';
+          line.dataset.smoke = a.path === null ? 'bundle-adopt-refused' : 'bundle-adopt-took';
+          box.append(line);
+        }
       }
 
       const go = el('button', {
