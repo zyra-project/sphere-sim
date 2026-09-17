@@ -9,9 +9,10 @@ the emitter page now **calls them on photographs an operator hands in** — but 
 real photograph has been through them. Phase 5 is measured rather than built. So
 an operator can put the sequence on a real sphere and now get a number back
 saying what the capture was worth — but not a pose, not a before-and-after, and
-there is still no way to install a calibration. Phase 4 has begun at the honest
-end — the export now says which of the files it overwrites it could put back,
-and refuses to call one of five a restore point.** This is a plan, written because the question "what would an
+there is still no way to install a calibration. Phase 4's archive can now carry
+a copy of every file it overwrites, once the operator hands those files in — so
+it refuses to call itself a restore point only when it would actually be one in
+name alone. Putting a file back is still a manual copy.** This is a plan, written because the question "what would an
 operator actually do?" had no answer anywhere in the repository — not in code,
 not in a document — while the simulator implied one.
 
@@ -467,7 +468,7 @@ discovered:
 The done-when says *a real capture*, and there has not been one. This phase stays
 open until there is.
 
-## Phase 4 — Show the improvement, then let it be undone. **STARTED: THE GAP IS NAMED, NOT CLOSED**
+## Phase 4 — Show the improvement, then let it be undone. **THE ARCHIVE CAN BE COMPLETE; PUTTING IT BACK IS STILL BY HAND**
 
 Frictions 6 and 7, and they are one phase because they are one conversation with
 the operator: *here is what changes, here is how to change it back.*
@@ -482,8 +483,9 @@ the operator: *here is what changes, here is how to change it back.*
   tool does not understand survives untouched. *Landed before this phase —
   `formatSosConfig` is a surgical edit of the file it was given.*
 - **A restore point taken before anything is written**, and a one-step way back.
-  Not a documented manual procedure — an action. *The plan is built and the
-  archive carries it; the action is not.*
+  Not a documented manual procedure — an action. *The plan is built, the archive
+  carries it, and it can now cover every file it overwrites. The ACTION is still
+  not built: putting a file back is the operator copying it out of `restore/`.*
 
 ### What the first pass found
 
@@ -502,12 +504,35 @@ refuses to call a partial cover a restore point at all, and the archive's
 `restore/MANIFEST.txt` leads with what it cannot put back rather than listing
 it under the part it can.
 
-The honest consequence: **today the refusal always fires**, because the page is
-never given the files it would overwrite. That is the next piece of work and it
-is small — the page already has a picker for the config, and the same treatment
-for the current warp and alignment files turns the refusal into a green light.
-Until it exists the refusal says so, and tells an operator to copy those files
-by hand rather than offering them a button that is not there.
+That consequence has now been removed. **The refusal no longer always fires**:
+the panel has a second picker, and an operator who hands in their current warp
+and alignment files gets copies of all five originals travelling in the archive
+and a green line saying installing is reversible. Until they do, the refusal
+still says exactly which paths are uncovered.
+
+The picker's one risky step is relating a picked file to the path it goes back
+to. A browser hands back a bare `File.name` from a multi-select, so something
+has to know that `P1.data` is the original of `warp/P1.data` — and `restore.ts`
+is emphatic that "a near-match is not a match". It is determined rather than
+guessed for the files this picker can take: the page generates them itself, and
+`warp/<id>.data` and `alignment/<id>.alignment` differ by extension while two
+projectors cannot share an id.
+
+**The config is the exception, and the first version of this got it wrong.** Its
+target path is its own filename, which the operator chooses — so a config named
+`P1.data` collided with `warp/P1.data`, the ambiguity check refused the
+operator's warp original, and a complete restore became impossible. Review
+caught it. Already-held paths are now excluded from candidacy outright, which is
+right on its own terms as well as fixing the collision: a path whose original is
+already in hand is not something this picker can take, so it cannot be one of
+the things a name is ambiguous between. `adoptOriginals` still **checks** the
+remaining distinctness rather than trusting it, and a regression test covers the
+collision.
+
+What it still cannot know is whether the bytes handed in are the ones currently
+at that path on the sphere — an operator can pick last month's backup and
+nothing in a browser can tell. So the page prints the mapping it made, file by
+file, for the one person who can check it.
 
 Review also caught the guarantee being wider than the code: the config reached
 the page through `File.text()`, which is a UTF-8 decode, so a config carrying a
@@ -515,9 +540,13 @@ byte-order mark would have been restored three bytes shorter and still valid
 JSON. Originals are now held and archived as **bytes**.
 
 **Done when** an operator can install a calibration, dislike it, and be back to
-exactly the previous state in one step. **Not met**: the plan is computed and
-carried, the copies are not complete, and putting a file back is still the
-operator copying it by hand.
+exactly the previous state in one step. **Still not met, and now for one reason
+rather than two.** The copies can be complete — that is what this piece changed.
+Putting a file back is still the operator copying it out of `restore/` by hand,
+because a browser page cannot write to the sphere's filesystem, so "one step"
+has to mean a script the archive carries or an installer somebody runs. Neither
+is built, and guessing at which before the accounting was honest would have been
+the wrong order.
 
 ## Phase 5 — Tethering, as an accelerator and not a dependency. **MEASURED FIRST; THE CASE FOR AN SDK DID NOT SURVIVE IT**
 

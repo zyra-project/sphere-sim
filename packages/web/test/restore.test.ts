@@ -262,5 +262,5 @@ test('the refusal does not offer an action the page cannot perform', () => {
     { path: 'local_sos_config.json', bytes: bytes(CONFIG_TEXT) },
   ]);
   assert.ok(!/load (it|them) on the page/.test(plan.refusal ?? ''));
-  assert.match(plan.refusal ?? '', /nowhere on this page to hand them in/);
+  assert.match(plan.refusal ?? '', /Load them on this page and a copy travels in the archive/);
 });
