@@ -41,6 +41,31 @@ import type { FrameRole } from '../../solver/src/assemble.ts';
 export const MANIFEST_FILENAME = 'capture-plan.json';
 
 /**
+ * What this page can actually emit, and therefore what a plan file may say.
+ *
+ * These are the emitter's own control ranges, in one place so the number box,
+ * the clamp behind it and the parser cannot drift apart. Review found the
+ * parser had no upper bound at all, and the consequence was not a lax check but
+ * a crash: {@link parseCaptureManifest} derives `framesPerRun` by calling
+ * `planFrames`, so a plan claiming a hundred million Gray planes spent 21
+ * seconds building an array and then threw `Invalid array length` — an
+ * exception, from the function whose docblock promises it refuses rather than
+ * guesses, inside a promise with nothing to catch it. The operator picks a file
+ * and the page does nothing at all.
+ *
+ * `phaseSteps` has a floor of 4 rather than 3 because that is what this page
+ * emits; `assembleCapture` independently refuses anything under 3, and the
+ * gap between the two is deliberate — the manifest describes what was SHOT, and
+ * this page cannot have shot a 3-step pass.
+ */
+export const PLAN_LIMITS = {
+  grayBits: { min: 1, max: 8 },
+  phaseSteps: { min: 4, max: 12 },
+  /** Even multiples of the Gray stride. Two is the natural choice; see decode.ts. */
+  phasePeriodStrides: { min: 2, max: 16 },
+} as const;
+
+/**
  * A version on the format, checked rather than ignored.
  *
  * The one thing worse than no manifest is a manifest from a different version
@@ -107,6 +132,18 @@ function posInt(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v > 0;
 }
 
+/** An integer inside a stated inclusive range. Rejects NaN and Infinity by construction. */
+function inRange(v: unknown, limit: { min: number; max: number }): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= limit.min && v <= limit.max;
+}
+
+/** A value named so a refusal can quote it without printing `[object Object]`. */
+function describe(v: unknown): string {
+  if (typeof v === 'number') return String(v);
+  if (v === undefined) return 'missing';
+  return `not a number (${typeof v})`;
+}
+
 /**
  * Read a manifest back, refusing rather than defaulting.
  *
@@ -140,12 +177,28 @@ export function parseCaptureManifest(text: string): ManifestParse {
   if (typeof plan !== 'object' || plan === null) {
     return refuse(['The capture plan has no `plan`, so nothing here says what was projected.']);
   }
-  if (!posInt(plan.grayBits)) problems.push('`plan.grayBits` is missing or not a positive integer.');
-  if (typeof plan.phaseSteps !== 'number' || !Number.isInteger(plan.phaseSteps) || plan.phaseSteps < 0) {
-    problems.push('`plan.phaseSteps` is missing or not a whole number of steps.');
+  // Ranges before anything is derived from them. `planFrames` expands the plan
+  // into an array, so an unbounded value is not a lenient check, it is a hang
+  // followed by a throw. See PLAN_LIMITS.
+  if (!inRange(plan.grayBits, PLAN_LIMITS.grayBits)) {
+    problems.push(
+      `\`plan.grayBits\` is ${describe(plan.grayBits)}. This page emits ` +
+        `${PLAN_LIMITS.grayBits.min}–${PLAN_LIMITS.grayBits.max} Gray planes per axis, so a ` +
+        `plan outside that was not written by it.`,
+    );
   }
-  if (!posInt(plan.phasePeriodStrides)) {
-    problems.push('`plan.phasePeriodStrides` is missing or not a positive integer.');
+  if (!inRange(plan.phaseSteps, PLAN_LIMITS.phaseSteps)) {
+    problems.push(
+      `\`plan.phaseSteps\` is ${describe(plan.phaseSteps)}. This page emits ` +
+        `${PLAN_LIMITS.phaseSteps.min}–${PLAN_LIMITS.phaseSteps.max} steps, and the decoder ` +
+        `cannot solve fewer than three at all.`,
+    );
+  }
+  if (!inRange(plan.phasePeriodStrides, PLAN_LIMITS.phasePeriodStrides)) {
+    problems.push(
+      `\`plan.phasePeriodStrides\` is ${describe(plan.phasePeriodStrides)}, outside ` +
+        `${PLAN_LIMITS.phasePeriodStrides.min}–${PLAN_LIMITS.phasePeriodStrides.max}.`,
+    );
   } else if ((plan.phasePeriodStrides as number) % 2 !== 0) {
     // decode.ts's normative header requires an even multiple, and an odd one is
     // not a near miss: at 1 every Gray misread displaces the estimate by a whole

@@ -109,7 +109,6 @@ const playEl = document.getElementById('play') as HTMLButtonElement;
 const savePlanEl = document.getElementById('saveplan') as HTMLButtonElement;
 const planFileEl = document.getElementById('planfile') as HTMLInputElement;
 const photosEl = document.getElementById('photos') as HTMLInputElement;
-const transferEl = document.getElementById('transfer') as HTMLSelectElement;
 const camIdxEl = document.getElementById('camidx') as HTMLInputElement;
 const projIdxEl = document.getElementById('projidx') as HTMLInputElement;
 const readbackEl = document.getElementById('readback') as HTMLButtonElement;
@@ -683,10 +682,27 @@ function savePlan(): void {
   URL.revokeObjectURL(url);
 }
 
-/** What the picker's transfer menu means, named rather than defaulted. */
-function chosenTransfer(): Transfer {
-  if (transferEl.value === 'linear') return { kind: 'linear' };
-  if (transferEl.value === 'gamma22') return { kind: 'gamma', exponent: 2.2 };
+/**
+ * The transfer these bytes actually carry, which is not a choice.
+ *
+ * This was a menu, and the menu was wrong. `drawImage` converts its source into
+ * the canvas's colour space, so a profile-tagged photograph — Display P3 off a
+ * phone, Adobe RGB off a camera — is converted to sRGB before `getImageData`
+ * ever sees it. Whatever the file was encoded with, what comes back here is
+ * sRGB-encoded, and the operator picking "Linear" or "Gamma 2.2" was telling
+ * `linearise` something false about bytes the browser had already decided.
+ *
+ * That is not a cosmetic wrong. This PR's own measurement is what it costs:
+ * treating these bytes as linear leaves every one of the 65 536 correspondences
+ * in place and moves them 0.0060 px -> 0.0791 px, so the capture does not
+ * refuse, it comes back the same size and quietly misplaced. A menu that can
+ * only be set to a wrong answer is worse than no menu.
+ *
+ * So it is stated rather than asked. `readCapture` still takes the transfer as
+ * a required argument, because the module does not know it is being fed canvas
+ * output and should not assume — this is the one caller that does know.
+ */
+function canvasTransfer(): Transfer {
   return { kind: 'srgb' };
 }
 
@@ -725,41 +741,152 @@ async function readImageFile(file: File): Promise<{ width: number; height: numbe
   }
 }
 
+/**
+ * Bytes one photograph costs while a run is being decoded.
+ *
+ * Both representations are alive at once and that is not an oversight that can
+ * be tidied away: `readImageFile` holds RGBA bytes (4/pixel) and `linearise`
+ * builds a three-channel Float32 copy (12/pixel) while the encoded originals
+ * are still referenced by the run. `ingest.ts` explains at length why it keeps
+ * three channels rather than collapsing to luminance — doing that here would
+ * silently override the decoder's own channel choice — so 16 bytes per pixel is
+ * the real figure, not a pessimistic one.
+ */
+const BYTES_PER_PIXEL_WHILE_DECODING = 16;
+
+/**
+ * As much as one capture may occupy before this page refuses it.
+ *
+ * Review worked the arithmetic out and it is worth keeping: the documented
+ * 34-frame run at 1920x1200 is 299 MiB encoded plus 897 MiB linear, about
+ * 1.17 GiB coexisting, which a desktop tab survives. A 24-megapixel camera is
+ * the case that does not — the same 34 frames come to roughly 13 GiB and the
+ * tab is killed, which an operator reads as "the tool is broken" rather than
+ * as "those files are too big".
+ *
+ * So the bound is set above what the documentation promises and below what
+ * cannot work, and the refusal says the number. It is a limit of this page
+ * rather than of the decode: the same photographs downscaled go through.
+ */
+const MAX_CAPTURE_BYTES = 2 * 1024 * 1024 * 1024;
+
+/** A message when the run in hand cannot be held in memory, or null while it can. */
+function captureTooLarge(
+  images: readonly { width: number; height: number }[],
+): string | null {
+  let pixels = 0;
+  for (const img of images) pixels += img.width * img.height;
+  const bytes = pixels * BYTES_PER_PIXEL_WHILE_DECODING;
+  if (bytes <= MAX_CAPTURE_BYTES) return null;
+  const gib = (bytes / (1024 * 1024 * 1024)).toFixed(1);
+  const first = images[0];
+  const each = first === undefined ? '' :
+    ` At ${first.width}x${first.height} that is ${(first.width * first.height / 1e6).toFixed(1)} megapixels a frame.`;
+  return (
+    `These photographs are too large for this page to decode in one run. ${images.length} of ` +
+    `them need about ${gib} GiB of memory at once — the encoded pixels and the linear-light ` +
+    `copy the decoder reads are both held while a run is assembled — and this page stops at ` +
+    `${(MAX_CAPTURE_BYTES / (1024 * 1024 * 1024)).toFixed(0)} GiB rather than letting the ` +
+    `browser kill the tab.${each} Downscale the capture and hand it in again; the decode ` +
+    `itself has no such limit.`
+  );
+}
+
 let heldManifest: CaptureManifest | null = null;
+/** True while `runReadback` is between its first await and its last. */
+let reading = false;
+/**
+ * Which plan selection is current.
+ *
+ * Reading a file is asynchronous, so two quick selections race and the one that
+ * resolves LAST wins — which is not necessarily the one the operator chose
+ * last. This counter makes a stale resolution recognisable so it can be
+ * dropped.
+ */
+let planPick = 0;
 
 function syncReadback(): void {
   const haveFiles = (photosEl.files?.length ?? 0) > 0;
-  readbackEl.disabled = heldManifest === null || !haveFiles;
+  // `reading` is part of the condition and was not, which is how a photo change
+  // mid-read re-enabled this button and let a second decode start on top of the
+  // first.
+  readbackEl.disabled = heldManifest === null || !haveFiles || reading;
 }
 
+/**
+ * Take a plan file, and stop trusting the old one the instant it is chosen.
+ *
+ * The clearing is the point, and review caught its absence. `heldManifest` used
+ * to stay live until the read resolved, with Decode still enabled — so an
+ * operator who picked a second plan and pressed Decode straight away decoded
+ * their photographs against the FIRST plan. This module exists to stop a
+ * capture being decoded against the wrong plan, and the picker in front of it
+ * was doing exactly that.
+ */
 function loadPlanFile(file: File): void {
-  void file.text().then((text) => {
-    const parsed = parseCaptureManifest(text);
-    if (!parsed.ok) {
+  const pick = ++planPick;
+  // Before the await, not after it: until this file has been read there is no
+  // plan in hand, and the button must say so.
+  heldManifest = null;
+  readNoteEl.textContent = `Reading ${file.name}…`;
+  readNoteEl.dataset.smoke = 'plan-reading';
+  syncReadback();
+
+  void file
+    .text()
+    .then((text) => {
+      if (pick !== planPick) return; // a later selection already won
+      const parsed = parseCaptureManifest(text);
+      if (!parsed.ok) {
+        heldManifest = null;
+        readNoteEl.textContent = parsed.problems.join(' ');
+        readNoteEl.dataset.smoke = 'plan-refused';
+        syncReadback();
+        return;
+      }
+      heldManifest = parsed.manifest;
+      const m = parsed.manifest;
+      readNoteEl.textContent =
+        `Plan read: ${m.plan.grayBits} Gray planes per axis, ${m.plan.phaseSteps} phase steps, ` +
+        `${m.framesPerRun} frames per projector run, ${m.projectorRes.x}x${m.projectorRes.y} ` +
+        `raster, ${m.projectors} projectors` +
+        (m.written === '' ? '.' : `, written ${m.written}.`) +
+        ` Hand in one projector's run at a time, in the order it was shot.`;
+      readNoteEl.dataset.smoke = 'plan-read';
+      syncReadback();
+    })
+    .catch((e: unknown) => {
+      // A file the browser cannot read — moved, renamed, permission withdrawn
+      // — is an ordinary mistake. Unhandled, it left the page silent.
+      if (pick !== planPick) return;
       heldManifest = null;
-      readNoteEl.textContent = parsed.problems.join(' ');
+      readNoteEl.textContent = `That plan file could not be read: ${(e as Error).message}`;
       readNoteEl.dataset.smoke = 'plan-refused';
       syncReadback();
-      return;
-    }
-    heldManifest = parsed.manifest;
-    const m = parsed.manifest;
-    readNoteEl.textContent =
-      `Plan read: ${m.plan.grayBits} Gray planes per axis, ${m.plan.phaseSteps} phase steps, ` +
-      `${m.framesPerRun} frames per projector run, ${m.projectorRes.x}x${m.projectorRes.y} ` +
-      `raster, ${m.projectors} projectors` +
-      (m.written === '' ? '.' : `, written ${m.written}.`) +
-      ` Hand in one projector's run at a time, in the order it was shot.`;
-    readNoteEl.dataset.smoke = 'plan-read';
-    syncReadback();
-  });
+    });
 }
 
-/** Decode the photographs in hand and say what they were worth. */
+/**
+ * Decode the photographs in hand and say what they were worth.
+ *
+ * Every input is read ONCE, before the first await, and nothing after that
+ * looks at the DOM again. Review found the opposite: the files were snapshotted
+ * but the manifest, the transfer and the two indices were read after the
+ * decode loop, so a run could pair the photographs the operator chose with a
+ * camera index they changed while it was working. A reader that silently
+ * combines two different intentions is the same class of fault as decoding
+ * against the wrong plan.
+ */
 async function runReadback(): Promise<void> {
   const files = Array.from(photosEl.files ?? []);
-  if (heldManifest === null || files.length === 0) return;
-  readbackEl.disabled = true;
+  const manifest = heldManifest;
+  const camera = Math.max(0, Math.trunc(Number(camIdxEl.value) || 0));
+  const projector = Math.max(0, Math.trunc(Number(projIdxEl.value) || 0));
+  const transfer = canvasTransfer();
+  if (manifest === null || files.length === 0 || reading) return;
+
+  reading = true;
+  syncReadback();
   readoutEl.hidden = false;
   readoutEl.textContent = `Reading ${files.length} photographs…`;
   readoutEl.dataset.smoke = 'reading';
@@ -770,19 +897,23 @@ async function runReadback(): Promise<void> {
     // IMG_2, and a reader that quietly sorted would produce a capture that
     // decodes wrong with nothing in the output saying so.
     const images = [];
-    for (const f of files) images.push(await readImageFile(f));
+    for (const f of files) {
+      images.push(await readImageFile(f));
+      // Checked as the run grows rather than at the end, so an impossible
+      // capture is refused before it has eaten the memory it would be refused
+      // for. See `captureTooLarge`.
+      const over = captureTooLarge(images);
+      if (over !== null) {
+        readoutEl.textContent = over;
+        readoutEl.dataset.smoke = 'read-too-large';
+        return;
+      }
+    }
 
     const result = readCapture(
-      [
-        {
-          camera: Math.max(0, Math.trunc(Number(camIdxEl.value) || 0)),
-          projector: Math.max(0, Math.trunc(Number(projIdxEl.value) || 0)),
-          images,
-          names: files.map((f) => f.name),
-        },
-      ],
-      heldManifest,
-      chosenTransfer(),
+      [{ camera, projector, images, names: files.map((f) => f.name) }],
+      manifest,
+      transfer,
     );
 
     const lines: string[] = [];
@@ -805,6 +936,7 @@ async function runReadback(): Promise<void> {
     readoutEl.textContent = `These photographs could not be read: ${(e as Error).message}`;
     readoutEl.dataset.smoke = 'read-failed';
   } finally {
+    reading = false;
     syncReadback();
   }
 }

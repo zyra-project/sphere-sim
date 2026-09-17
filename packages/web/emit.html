@@ -89,7 +89,10 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); }
 
 .note { font-size: 12.5px; color: var(--muted); margin: 10px 0 0; }
-.verdict { font-size: 12.5px; margin: 12px 0 0; padding: 9px 11px; border-radius: 6px;
+/* `pre-wrap` because the readback report is newline-separated, one line per run
+   and one indented line per problem, and a normal div collapses every one of
+   them into a single paragraph an operator cannot pick apart. */
+.verdict { white-space: pre-wrap; font-size: 12.5px; margin: 12px 0 0; padding: 9px 11px; border-radius: 6px;
   border: 1px solid var(--line); color: var(--fg-2); }
 .verdict.ok { border-color: rgba(122, 209, 122, 0.4); color: var(--good); }
 .verdict.warn { border-color: rgba(255, 138, 61, 0.55); color: var(--accent); }
@@ -177,18 +180,19 @@ button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); 
       camera pixels, and which projectors nothing reached. It does not compute a pose: that needs
       each camera’s intrinsics, which this page does not have and cannot derive.
     </p>
+    <p class="note">
+      Your files are read through a canvas, which converts whatever colour profile they carry into
+      sRGB before this page sees a single pixel. So the transfer is not a setting: these bytes are
+      sRGB whatever the camera wrote, and telling the decoder otherwise would leave every
+      correspondence in place and move it about thirteen times further from the truth. Shoot JPEG
+      or PNG. A RAW file the browser cannot decode is refused rather than guessed at.
+    </p>
     <div class="row">
       <label class="field"><span>The plan file</span>
         <input id="planfile" type="file" accept="application/json,.json"/></label>
       <label class="field"><span>One projector’s run of photographs</span>
         <input id="photos" type="file" accept="image/*" multiple/></label>
-      <label class="field"><span>What the files are encoded with</span>
-        <select id="transfer">
-          <option value="srgb">sRGB — ordinary JPEG or PNG</option>
-          <option value="gamma22">Gamma 2.2</option>
-          <option value="linear">Linear — already undone</option>
-        </select>
-      </label>
+
     </div>
     <div class="hudrow">
       <label class="field"><span>Camera</span>

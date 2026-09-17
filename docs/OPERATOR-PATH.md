@@ -448,9 +448,21 @@ discovered:
   decode should say which of the two stages produced it.
 - **It reads one projector run at a time.** A whole capture is twelve of them
   and the operator drives them one by one.
-- **The browser gives it 8-bit pixels** whatever the file held, because
+- **The browser gives it 8-bit sRGB pixels** whatever the file held, because
   `createImageBitmap` onto a canvas is how a page gets at a JPEG at all. The
-  measurement above is what makes that survivable rather than an assumption.
+  measurement above is what makes the 8 bits survivable rather than an
+  assumption. The sRGB half is newer and came from review: `drawImage` converts
+  its source into the canvas's colour space, so a Display P3 or Adobe RGB
+  photograph is sRGB before the page sees a pixel. The reader therefore states
+  the transfer rather than offering it — the menu that used to be there could
+  only be set to a wrong answer, and a wrong one leaves every correspondence in
+  place while moving it thirteen times further from the truth.
+- **It refuses a capture it cannot hold**, rather than letting the tab die. Both
+  representations are alive while a run is assembled — 4 bytes a pixel encoded
+  and 12 more for the three-channel linear copy `ingest.ts` deliberately keeps —
+  so the documented 34 frames at 1920×1200 is about 1.17 GiB, and the same run
+  off a 24-megapixel camera is roughly 13 GiB. The page stops at 2 GiB and says
+  the number. A limit of this page, not of the decode.
 
 The done-when says *a real capture*, and there has not been one. This phase stays
 open until there is.

@@ -21,9 +21,13 @@
  * `packages/solver/test/realphotos.test.ts` already runs the same four calls.
  * What it cannot do is be reached by an operator, and a module that only tests
  * call has not closed the gap — it has moved it one directory. So the DOM half
- * of this lives in `web/read.ts` and is wired into the emitter page, and this
+ * of this lives in `web/emit.ts`, on the emitter page's setup panel, and this
  * half is pure so it can be tested in Node. The split is the same one
  * `src/emit.ts` uses and for the same reason.
+ *
+ * (That path said `web/read.ts` when this landed, which was the separate page
+ * this was going to be before it moved onto the emitter — a name for a file
+ * that never existed. Review caught it.)
  *
  * ## What it deliberately does not do
  *

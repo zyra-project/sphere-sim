@@ -30,6 +30,7 @@ import type { FrameRole } from '../../solver/src/assemble.ts';
 import type { EncodedImage } from '../../solver/src/ingest.ts';
 import {
   MANIFEST_VERSION,
+  PLAN_LIMITS,
   captureManifest,
   formatManifest,
   manifestFrameRoles,
@@ -318,4 +319,74 @@ test('a file that is not a plan says so instead of throwing', () => {
     assert.equal(parsed.ok, false, `"${text}" should be refused`);
     assert.ok(parsed.problems.length > 0, `"${text}" should say why`);
   }
+});
+
+test('an out-of-range plan is refused fast, not expanded into an array first', () => {
+  // The sharpest of review's findings on this PR, and it was not a lax check
+  // but a crash. `parseCaptureManifest` derives `framesPerRun` via `planFrames`,
+  // which expands the plan into a real array — so an unbounded `grayBits` spent
+  // 21.5 seconds allocating and then threw `Invalid array length`, out of the
+  // function whose docblock promises it refuses rather than guesses, inside a
+  // promise with no catch. The operator picked a file and the page did nothing.
+  //
+  // The timing is asserted because the refusal has to happen BEFORE the
+  // expansion; a version that checked afterwards would still hang.
+  const huge = {
+    version: MANIFEST_VERSION,
+    plan: { grayBits: 100000000, phaseSteps: 4, phasePeriodStrides: 2, includeWhiteBlack: true },
+    projectorRes: { x: 1920, y: 1200 },
+    projectors: 4,
+  };
+  const started = Date.now();
+  const parsed = parseCaptureManifest(JSON.stringify(huge));
+  const elapsed = Date.now() - started;
+
+  assert.equal(parsed.ok, false, 'an impossible plan must be refused, not built');
+  assert.ok(
+    parsed.problems.some((p) => p.includes('grayBits')),
+    `expected the field to be named, got ${JSON.stringify(parsed.problems)}`,
+  );
+  assert.ok(elapsed < 250, `refusing took ${elapsed} ms, so it expanded the plan before checking`);
+});
+
+test('the plan bounds are the emitter’s own, so the file and the boxes cannot disagree', () => {
+  // PLAN_LIMITS is shared with `readPlan`'s clamp. These assertions are against
+  // the CONVENTION — emit.html's number boxes say 1-8 and 4-12 — rather than
+  // against the constant restating itself.
+  assert.deepEqual(PLAN_LIMITS.grayBits, { min: 1, max: 8 });
+  assert.deepEqual(PLAN_LIMITS.phaseSteps, { min: 4, max: 12 });
+
+  // Each case is a manifest built from its own plan, NOT an existing one with
+  // the plan swapped underneath it: `framesPerRun` is derived from the plan, so
+  // patching one field leaves the file self-inconsistent and the refusal would
+  // come from the wrong check. The first draft of this test did exactly that
+  // and passed for a reason it was not testing.
+  const withPlan = (over: Partial<PatternPlan>): string =>
+    JSON.stringify(captureManifest({ ...PLAN, ...over }, { x: RES, y: RES }, 1, 2, ''));
+
+  for (const grayBits of [0, 9, -1, 1.5]) {
+    assert.equal(parseCaptureManifest(withPlan({ grayBits })).ok, false, `grayBits ${grayBits}`);
+  }
+  // Three steps is the interesting one: `assembleCapture` refuses under three,
+  // and this page cannot emit under four, so the manifest is refused by the
+  // tighter of the two rather than left for the assembler to catch later.
+  for (const phaseSteps of [0, 1, 2, 3, 13]) {
+    assert.equal(parseCaptureManifest(withPlan({ phaseSteps })).ok, false, `phaseSteps ${phaseSteps}`);
+  }
+  for (const ok of [4, 8, 12]) {
+    assert.equal(parseCaptureManifest(withPlan({ phaseSteps: ok })).ok, true, `phaseSteps ${ok}`);
+  }
+});
+
+test('a NaN or Infinity in the plan is refused rather than propagated', () => {
+  // JSON cannot carry them literally, but a hand-rolled file can hold `1e999`,
+  // which parses to Infinity. `Number.isInteger` rejects both, and this pins
+  // that rather than leaving it to a range comparison that would pass for
+  // Infinity if the bound were only a lower one.
+  const parsed = parseCaptureManifest(
+    '{"version":1,"plan":{"grayBits":1e999,"phaseSteps":4,"phasePeriodStrides":2,' +
+      '"includeWhiteBlack":true},"projectorRes":{"x":1920,"y":1200},"projectors":4}',
+  );
+  assert.equal(parsed.ok, false);
+  assert.ok(parsed.problems.some((p) => p.includes('grayBits')));
 });
