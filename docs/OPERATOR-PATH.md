@@ -514,11 +514,20 @@ The picker's one risky step is relating a picked file to the path it goes back
 to. A browser hands back a bare `File.name` from a multi-select, so something
 has to know that `P1.data` is the original of `warp/P1.data` — and `restore.ts`
 is emphatic that "a near-match is not a match". It is determined rather than
-guessed, because this page generates the targets itself and their basenames are
-distinct by construction: `warp/<id>.data` and `alignment/<id>.alignment` differ
-by extension, and two projectors cannot share an id. `adoptOriginals` **checks**
-that rather than trusting it, refusing a name that matches two targets and
-naming both, and a test asserts the distinctness the fast path relies on.
+guessed for the files this picker can take: the page generates them itself, and
+`warp/<id>.data` and `alignment/<id>.alignment` differ by extension while two
+projectors cannot share an id.
+
+**The config is the exception, and the first version of this got it wrong.** Its
+target path is its own filename, which the operator chooses — so a config named
+`P1.data` collided with `warp/P1.data`, the ambiguity check refused the
+operator's warp original, and a complete restore became impossible. Review
+caught it. Already-held paths are now excluded from candidacy outright, which is
+right on its own terms as well as fixing the collision: a path whose original is
+already in hand is not something this picker can take, so it cannot be one of
+the things a name is ambiguous between. `adoptOriginals` still **checks** the
+remaining distinctness rather than trusting it, and a regression test covers the
+collision.
 
 What it still cannot know is whether the bytes handed in are the ones currently
 at that path on the sphere — an operator can pick last month's backup and

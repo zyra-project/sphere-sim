@@ -4760,12 +4760,17 @@ function buildBundle(): {
       ? [{ path: configName, bytes: state.sosConfigBytes }]
       : [];
   /**
-   * Config FIRST, deliberately: `planRestore` builds a map and a later entry
-   * would win, and the config's own bytes are the ones actually being patched.
-   * `adoptOriginals` refuses a duplicate anyway, so this is belt and braces on
-   * an ordering that should never matter.
+   * Config LAST, and the order is the whole point of writing it down.
+   *
+   * `planRestore` does `new Map(held.map(...))`, so a LATER entry wins. The
+   * first version put the config first and its comment claimed that protected
+   * it — which is exactly backwards, and review caught the contradiction
+   * between the sentence and the line under it. `adoptOriginals` refuses a
+   * duplicate so it cannot arise today; the point of a fallback is the day the
+   * thing it falls back from stops holding, and one that is the wrong way round
+   * is worse than none because it reads like a guarantee.
    */
-  const restore = planRestore(targets, [...configHeld, ...state.adopted]);
+  const restore = planRestore(targets, [...state.adopted, ...configHeld]);
 
   return {
     configNote,
@@ -4918,14 +4923,31 @@ function pickExistingFiles(): void {
   input.addEventListener('change', () => {
     const files = Array.from(input.files ?? []);
     if (files.length === 0) return;
-    // The targets as they stand RIGHT NOW. Recomputed here rather than closed
-    // over, because the rig can change between opening the picker and choosing.
-    const { targets, held } = restoreInputs();
+    /**
+     * Which hand-in this is, so a slow earlier read cannot land on top of a
+     * later one.
+     *
+     * Reading several files is asynchronous and nothing was tracking which
+     * selection a completion belonged to, so two hand-ins raced and the one
+     * that RESOLVED last won rather than the one the operator chose last — the
+     * documented behaviour is that a second hand-in replaces the first, and it
+     * was only true when the reads happened to finish in order.
+     *
+     * This is the same fault as the plan picker's on the previous phase, fixed
+     * there and then written again here. The counter is the fix in both places.
+     */
+    const pick = ++pickGen;
 
     void Promise.all(
       files.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })),
     )
       .then((picked) => {
+        if (pick !== pickGen) return; // a later hand-in already won
+        // Resolved HERE rather than before the read: the rig can change while
+        // several files are being read, and the mapping has to be against the
+        // targets as they are when it is committed, not as they were when the
+        // dialog opened.
+        const { targets, held } = restoreInputs();
         const result = adoptOriginals(targets, picked, held);
         // Replaces rather than accumulates. A second hand-in is the operator
         // correcting the first, and merging the two would leave bytes in the
@@ -4934,6 +4956,7 @@ function pickExistingFiles(): void {
         state.adoptions = result.adoptions;
       })
       .catch((err: unknown) => {
+        if (pick !== pickGen) return;
         state.adopted = [];
         state.adoptions = [
           {
@@ -4944,6 +4967,7 @@ function pickExistingFiles(): void {
         ];
       })
       .finally(() => {
+        if (pick !== pickGen) return;
         adoptSeq++;
         renderReadout();
       });
@@ -4953,6 +4977,9 @@ function pickExistingFiles(): void {
 
 /** Bumped on every hand-in, so `bundleForPanel`'s memo sees a new selection. */
 let adoptSeq = 0;
+
+/** Which hand-in is current, so a stale asynchronous read can be recognised. */
+let pickGen = 0;
 
 function pickSosConfig(): void {
   const input = document.createElement('input');

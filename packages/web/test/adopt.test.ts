@@ -169,3 +169,62 @@ test('no targets at all is stated rather than divided by zero', () => {
   assert.match(result.summary, /writes no files/);
   assert.equal(result.held.length, 0);
 });
+
+test('a config named after a warp file does not block adopting that warp file', () => {
+  // The regression review asked for, and it defeated the feature outright.
+  // The config's target path IS its filename and the operator chooses that
+  // name, so a config called `P1.data` used to collide with `warp/P1.data`:
+  // the picked warp original matched two targets, the ambiguity branch refused
+  // it, and a complete restore became impossible. The refusal even read
+  // "could be warp/P1.data or P1.data" — naming the config, which this picker
+  // can never take because its original is already in hand.
+  const targets: InstallTarget[] = [
+    { path: 'warp/P1.data', kind: 'warp' },
+    { path: 'alignment/P1.alignment', kind: 'alignment' },
+    { path: 'P1.data', kind: 'config' },
+  ];
+  const configHeld = [{ path: 'P1.data', bytes: bytes('{"config":true}') }];
+
+  const result = adoptOriginals(targets, [pick('P1.data', 'the warp mesh')], configHeld);
+
+  assert.deepEqual(
+    result.held.map((h) => h.path),
+    ['warp/P1.data'],
+    'the warp original must be taken despite sharing a name with the config',
+  );
+  assert.equal(result.adoptions[0]?.problem, '', 'and taken cleanly, with no ambiguity reported');
+
+  // And the whole thing still reaches a complete restore point.
+  const withAlignment = adoptOriginals(
+    targets,
+    [pick('P1.data', 'the warp mesh'), pick('P1.alignment')],
+    configHeld,
+  );
+  const plan = planRestore(targets, [...withAlignment.held, ...configHeld]);
+  assert.equal(plan.complete, true, 'a name collision must not make a complete restore impossible');
+  assert.equal(plan.refusal, null);
+});
+
+test('the config original wins if both routes ever supply one', () => {
+  // `planRestore` builds `new Map(held.map(...))`, so a LATER entry wins. The
+  // page therefore lists adopted originals first and the config last, and the
+  // first version had it backwards while its comment claimed otherwise.
+  //
+  // `adoptOriginals` refuses the duplicate so this cannot arise through the UI;
+  // the point of a fallback is the day the thing it falls back from stops
+  // holding, and one that is the wrong way round reads like a guarantee while
+  // being the opposite.
+  const configBytes = bytes('{"the config picker read this"}');
+  const strayAdopted = [{ path: 'local_sos_config.json', bytes: bytes('{"stray"}') }];
+
+  const plan = planRestore(TARGETS, [
+    ...strayAdopted,
+    { path: 'local_sos_config.json', bytes: configBytes },
+  ]);
+  const covered = plan.covered.find((c) => c.path === 'local_sos_config.json');
+  assert.deepEqual(
+    [...(covered?.bytes ?? [])],
+    [...configBytes],
+    'the config picker bytes are the ones being patched and must survive',
+  );
+});

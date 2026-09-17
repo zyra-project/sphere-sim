@@ -29,6 +29,13 @@
  * itself a restore point whenever anything is uncovered, rather than offering
  * a partial one and listing the gaps in small print.
  *
+ * The refusal used to end "there is nowhere on this page to hand them in, so
+ * copying them by hand is the only way back that exists today", which was true
+ * when it was written and stopped being true the moment `adopt.ts` landed. It
+ * now points at the picker. Worth recording because the sentence also travels
+ * inside the archive, where nobody would have been reading it against the page
+ * that had just gained the button it denied.
+ *
  * ## What this cannot know
  *
  * A browser page cannot see the sphere's filesystem. It does not know whether a
@@ -179,10 +186,9 @@ export function planRestore(
       `${plural(uncovered.length, 'is', 'are')} generated rather than patched, so the page has ` +
       `never seen whatever is at ${plural(uncovered.length, 'that path', 'those paths')} on your ` +
       `sphere: if a file is there, installing replaces it and nothing here brings it back. ` +
-      `Copy ${plural(uncovered.length, 'it', 'them')} somewhere safe yourself before you ` +
-      `install — there is nowhere on this page to hand ${plural(uncovered.length, 'it', 'them')} ` +
-      `in, so copying ${plural(uncovered.length, 'it', 'them')} by hand is the only way back ` +
-      `that exists today. A restore point ` +
+      `Load ${plural(uncovered.length, 'it', 'them')} on this page and a copy travels in the ` +
+      `archive; until you do, copying ${plural(uncovered.length, 'it', 'them')} somewhere safe ` +
+      `by hand is the only way back. A restore point ` +
       `that covers some of what it overwrote is worse than none, because it is the one that ` +
       `makes you brave.`,
   };

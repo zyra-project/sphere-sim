@@ -99,13 +99,34 @@ export function adoptOriginals(
 ): AdoptResult {
   const heldPaths = new Set(alreadyHeld.map((h) => h.path));
 
+  /**
+   * Only targets this picker can actually adopt are candidates.
+   *
+   * Review found the bug this fixes and it defeated the feature outright. The
+   * index used to hold EVERY target, including the ones already supplied
+   * elsewhere — and the config's target path is its own filename, which the
+   * operator chooses. A config named `P1.data` therefore collided with
+   * `warp/P1.data`, the ambiguity branch refused the operator's warp original,
+   * and a complete restore became impossible. The refusal even read
+   * "could be warp/P1.data or P1.data", naming a candidate that was never one.
+   *
+   * A path whose original is already in hand is not something this picker can
+   * take, so it cannot be one of the things a name is ambiguous BETWEEN.
+   */
+  const adoptable = targets.filter((t) => !heldPaths.has(t.path));
+
   // Names are collected rather than assumed unique. See the module note.
   const byName = new Map<string, InstallTarget[]>();
-  for (const t of targets) {
+  for (const t of adoptable) {
     const list = byName.get(basename(t.path)) ?? [];
     list.push(t);
     byName.set(basename(t.path), list);
   }
+
+  // Kept separately so a file named after an already-held target still gets the
+  // specific answer — "that one already has an original" — rather than the
+  // blanker "nothing here is called that".
+  const heldNames = new Set(targets.filter((t) => heldPaths.has(t.path)).map((t) => basename(t.path)));
 
   const held: HeldOriginal[] = [];
   const adoptions: Adoption[] = [];
@@ -117,10 +138,13 @@ export function adoptOriginals(
       adoptions.push({
         name: file.name,
         path: null,
-        problem:
-          `Nothing this archive installs is called ${file.name}, so it was not taken. The ` +
-          `files that would be overwritten are listed below by the name this page writes them ` +
-          `under.`,
+        problem: heldNames.has(file.name)
+          ? `${file.name} already has an original — the one loaded through its own picker, ` +
+            `which is the copy being patched. This file was not taken, so the two cannot ` +
+            `disagree.`
+          : `Nothing this archive installs is called ${file.name}, so it was not taken. The ` +
+            `files that would be overwritten are listed below by the name this page writes ` +
+            `them under.`,
       });
       continue;
     }
@@ -136,19 +160,11 @@ export function adoptOriginals(
       });
       continue;
     }
+    // `adoptable` excludes every already-held path, so a hit here is by
+    // construction a target this picker may take. The held case is answered
+    // above, where the name matched nothing adoptable.
     const target = hits[0];
     if (target === undefined) continue;
-    if (heldPaths.has(target.path)) {
-      adoptions.push({
-        name: file.name,
-        path: null,
-        problem:
-          `${target.path} already has an original — the one loaded through its own picker, ` +
-          `which is the copy being patched. This file was not taken, so the two cannot ` +
-          `disagree.`,
-      });
-      continue;
-    }
     if (taken.has(target.path)) {
       adoptions.push({
         name: file.name,
