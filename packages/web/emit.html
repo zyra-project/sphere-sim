@@ -187,20 +187,27 @@ button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); 
       correspondence in place and move it about thirteen times further from the truth. Shoot JPEG
       or PNG. A RAW file the browser cannot decode is refused rather than guessed at.
     </p>
+    <p class="note">
+      Hand in the <strong>whole camera position</strong> — every projector’s run, back to back,
+      in the order they were shot. This page finds where each run starts, from the white and black
+      frames that open it, and then checks that each Gray plane still sits beside its own
+      complement. A frame deleted or shot twice inside one run is usually caught, and costs that
+      projector’s run rather than the capture. You still have to say which <em>camera</em> took
+      them: each camera is a separate solver input with its own pose, and nothing in a photograph
+      says which one held the shutter.
+    </p>
     <div class="row">
       <label class="field"><span>The plan file</span>
         <input id="planfile" type="file" accept="application/json,.json"/></label>
-      <label class="field"><span>One projector’s run of photographs</span>
+      <label class="field"><span>This camera position’s photographs</span>
         <input id="photos" type="file" accept="image/*" multiple/></label>
 
     </div>
     <div class="hudrow">
       <label class="field"><span>Camera</span>
         <input id="camidx" type="number" min="0" step="1" value="0"/></label>
-      <label class="field"><span>Projector</span>
-        <input id="projidx" type="number" min="0" step="1" value="0"/></label>
       <span class="spacer"></span>
-      <button id="readback" type="button" disabled>Decode these photographs</button>
+      <button id="readback" type="button" disabled>Index and decode these photographs</button>
     </div>
     <p class="note" id="readnote"></p>
     <div id="readout" class="verdict" hidden></div>

@@ -1,12 +1,14 @@
 # Calibrating a real sphere — the operator path
 
 **Status: Phases 0 and 1 landed — `docs/CALIBRATE.md` and the projector emitter.
-Phase 2's blind spot is closed bar one named case: three mechanisms are built and
-scored, and the cheapest of them — asking whether a Gray plane and the frame
-beside it still add up to the run's own white and black — takes a cancelling drop
-and duplicate from 22.7% of captures silently wrong to 1.1% without spending any
-raster area. What it still needs is a real sphere, because every number scoring it
-comes from an experiment that renders nothing. Phase 3 is
+Phase 2's blind spot is closed bar one named case, and it is wired into the page:
+three mechanisms are built and scored, the cheapest of them — asking whether a
+Gray plane and the frame beside it still add up to the run's own white and black
+— takes a cancelling drop and duplicate from 22.7% of captures silently wrong to
+1.1% without spending any raster area, and the emitter page now indexes a whole
+camera position with it rather than asking an operator to hand in one run at a
+time. What it still needs is a real sphere, because every number scoring it comes
+from an experiment that renders nothing. Phase 3 is
 plumbed and now reachable but still unproven: the modules that turn encoded
 photographs into correspondences exist, agree with each other end to end, and
 the emitter page now **calls them on photographs an operator hands in** — but no
@@ -383,10 +385,17 @@ a refusal is closed bar the phase block, and that part is named and bounded rath
 than open-ended. What remains is the room: every number above is an
 ideal-classification, ideal-fingerprint baseline from an experiment that renders
 nothing, and neither threshold this phase leans on has been priced on a real
-photograph. Nothing here is also wired into the page yet — `readback.ts` takes a
-folder in capture order and says so, and indexing it is a separate change on
-purpose, because doing it badly would hide which of the two stages a bad decode
-came from.
+photograph.
+
+**It is wired into the page now**, which it was not when the mechanisms landed.
+The emitter page takes a whole camera position — every projector's run back to
+back — finds where each run starts, checks each Gray plane against its own
+complement, and decodes the runs it can vouch for. The instruction it replaces
+was *"hand in one projector's run at a time, in the order it was shot"*: the
+indexing done by a person, unchecked, with nothing to notice when they got it
+wrong. What the page still asks for is the **camera** index, and that is not an
+oversight — `docs/CALIBRATE.md` is explicit that Phase 2 removes the need to know
+which frame a photograph is and not the need to know which camera took it.
 
 ## Phase 3 — Let the solver see a real photograph. **REACHABLE; STILL NO REAL PHOTOGRAPH**
 
@@ -440,9 +449,11 @@ invented here would become the thing the pipeline rested on.
 **And something now calls it.** The status line above used to end *"nothing in
 this repository calls them — a test does"*, which was the honest description of
 three modules that worked and could not be reached. The emitter page now has a
-reader: hand it the plan it wrote and one projector's run of photographs, and it
-runs `linearise` -> `assembleCapture` -> `decodeCapture` -> `captureWorth` and
-reports what the capture was worth.
+reader: hand it the plan it wrote and a camera position's photographs, and it
+indexes them into projector runs and then runs `linearise` -> `assembleCapture`
+-> `decodeCapture` -> `captureWorth` over each one, reporting what the capture
+was worth. (It took one run at a time, in shot order, until Phase 2's indexing
+was wired in.)
 
 **The plan travels with the photographs**, which is the part that makes the
 reader trustworthy rather than merely present. `assembleCapture` needs
@@ -495,12 +506,16 @@ thing somebody trusted.
 **Three things the reader does not do**, each named rather than left to be
 discovered:
 
-- **It does not index the photographs.** The order files arrive in is taken as
-  the order they were shot in. Phase 2 built mechanisms for establishing that
-  from the pictures themselves and they are not wired in here, because a bad
-  decode should say which of the two stages produced it.
-- **It reads one projector run at a time.** A whole capture is twelve of them
-  and the operator drives them one by one.
+- **It indexes the photographs now, and that is Phase 2's work rather than this
+  phase's.** The two stages stay separable on purpose — the report says what the
+  indexer made of the folder before it says what decoded — so a bad result still
+  names which of them produced it. What indexing does not touch is the order
+  files arrive in: that is still read as the order they were shot in, and what
+  changed is that a fault in it is usually caught rather than decoded.
+- **It reads one camera position at a time.** A whole capture is three of them
+  and the operator drives them one by one. Within a position the projector runs
+  are found rather than stated, which is the part that used to be the operator's
+  job.
 - **The browser gives it 8-bit sRGB pixels** whatever the file held, because
   `createImageBitmap` onto a canvas is how a page gets at a JPEG at all. The
   measurement above is what makes the 8 bits survivable rather than an

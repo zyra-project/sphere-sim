@@ -78,10 +78,24 @@ import {
   MANIFEST_FILENAME,
   captureManifest,
   formatManifest,
+  manifestExpectedSequence,
+  manifestFrameRoles,
   parseCaptureManifest,
   type CaptureManifest,
 } from '../src/manifest.ts';
-import { describeRun, readCapture } from '../src/readback.ts';
+import {
+  describeIndexing,
+  describeRun,
+  finishCapture,
+  indexPhotographs,
+  readRun,
+  summarisePhoto,
+  type PhotoSummary,
+  type RunOutcome,
+} from '../src/readback.ts';
+import type { EncodedImage } from '../../solver/src/ingest.ts';
+import type { Correspondence } from '../../solver/src/decode.ts';
+import type { PairContribution } from '../../solver/src/worth.ts';
 import type { Transfer } from '../../solver/src/ingest.ts';
 
 // ---- the elements ----------------------------------------------------------
@@ -110,7 +124,6 @@ const savePlanEl = document.getElementById('saveplan') as HTMLButtonElement;
 const planFileEl = document.getElementById('planfile') as HTMLInputElement;
 const photosEl = document.getElementById('photos') as HTMLInputElement;
 const camIdxEl = document.getElementById('camidx') as HTMLInputElement;
-const projIdxEl = document.getElementById('projidx') as HTMLInputElement;
 const readbackEl = document.getElementById('readback') as HTMLButtonElement;
 const readNoteEl = document.getElementById('readnote') as HTMLParagraphElement;
 const readoutEl = document.getElementById('readout') as HTMLDivElement;
@@ -851,7 +864,8 @@ function loadPlanFile(file: File): void {
         `${m.framesPerRun} frames per projector run, ${m.projectorRes.x}x${m.projectorRes.y} ` +
         `raster, ${m.projectors} projectors` +
         (m.written === '' ? '.' : `, written ${m.written}.`) +
-        ` Hand in one projector's run at a time, in the order it was shot.`;
+        ` Hand in the whole camera position — every projector's run, back to back, in the ` +
+        `order they were shot. This page works out where each run starts.`;
       readNoteEl.dataset.smoke = 'plan-read';
       syncReadback();
     })
@@ -881,7 +895,6 @@ async function runReadback(): Promise<void> {
   const files = Array.from(photosEl.files ?? []);
   const manifest = heldManifest;
   const camera = Math.max(0, Math.trunc(Number(camIdxEl.value) || 0));
-  const projector = Math.max(0, Math.trunc(Number(projIdxEl.value) || 0));
   const transfer = canvasTransfer();
   if (manifest === null || files.length === 0 || reading) return;
 
@@ -892,31 +905,89 @@ async function runReadback(): Promise<void> {
   readoutEl.dataset.smoke = 'reading';
 
   try {
-    // The order files arrive in is the order they are decoded in. `readback.ts`
-    // says why nothing here sorts them: lexicographic order puts IMG_10 before
-    // IMG_2, and a reader that quietly sorted would produce a capture that
-    // decodes wrong with nothing in the output saying so.
-    const images = [];
-    for (const f of files) {
-      images.push(await readImageFile(f));
-      // Checked as the run grows rather than at the end, so an impossible
-      // capture is refused before it has eaten the memory it would be refused
-      // for. See `captureTooLarge`.
-      const over = captureTooLarge(images);
+    // The grid the plan needs, not a number this page picks. `summarisePhoto`
+    // has no default for it and `indexPhotographs` refuses a summary too coarse
+    // for the plan, so getting it wrong is caught rather than believed.
+    const blocks = manifestExpectedSequence(manifest).complements.minBlocks;
+
+    // Pass one: read each photograph, reduce it to what indexing needs, and let
+    // the pixels go. A camera position is every projector's run back to back —
+    // 136 frames at the page's own plan — and holding that as linear light is
+    // several gigabytes. What survives per photograph is a histogram and a
+    // block grid, a few kilobytes. See `PhotoSummary`.
+    const summaries: PhotoSummary[] = [];
+    for (let i = 0; i < files.length; i++) {
+      readoutEl.textContent = `Reading photograph ${i + 1} of ${files.length}…`;
+      summaries.push(
+        summarisePhoto(await readImageFile(files[i]), i, files[i].name, transfer, blocks),
+      );
+    }
+
+    const indexed = indexPhotographs(summaries, manifest);
+    const lines: string[] = [describeIndexing(indexed, manifest.projectors)];
+    for (const problem of indexed.problems) lines.push(`  ${problem}`);
+
+    if (indexed.runs.length === 0) {
+      readoutEl.textContent = lines.join('\n');
+      readoutEl.dataset.smoke = 'read-unindexed';
+      return;
+    }
+
+    // Pass two: decode the runs the indexer vouched for, ONE AT A TIME, so the
+    // peak is one run's pixels rather than the position's. The files are read a
+    // second time for this, which is the price of not holding them all — and it
+    // is paid only for runs that survived indexing.
+    const roles = manifestFrameRoles(manifest);
+    const outcomes: RunOutcome[] = [];
+    const pairs: PairContribution[] = [];
+    const correspondences: Correspondence[] = [];
+    for (const run of indexed.runs) {
+      readoutEl.textContent = `Decoding projector ${run.projector + 1}…`;
+      const images: EncodedImage[] = [];
+      let over: string | null = null;
+      for (const ordinal of run.ordinals) {
+        images.push(await readImageFile(files[ordinal]));
+        // Checked as the run GROWS, not once it is whole. An impossible capture
+        // should be refused before it has eaten the memory it would be refused
+        // for — the property the one-run-at-a-time version had, and which the
+        // first draft of this loop quietly dropped by checking at the end.
+        over = captureTooLarge(images);
+        if (over !== null) break;
+      }
       if (over !== null) {
-        readoutEl.textContent = over;
+        // What already decoded is still worth saying. Returning with only the
+        // refusal would throw away the runs that came back fine, and on a
+        // four-projector position that is most of the answer.
+        for (const done of outcomes) {
+          lines.push(describeRun(done));
+          for (const problem of done.problems) lines.push(`  ${problem}`);
+        }
+        lines.push('', over);
+        readoutEl.textContent = lines.join('\n');
         readoutEl.dataset.smoke = 'read-too-large';
         return;
       }
+      const one = readRun(
+        {
+          camera,
+          projector: run.projector,
+          images,
+          names: run.ordinals.map((o) => files[o].name),
+        },
+        roles,
+        manifest,
+        transfer,
+      );
+      outcomes.push(one.outcome);
+      if (one.pair !== null) pairs.push(one.pair);
+      // A loop rather than a spread: see `readCapture`. One argument per
+      // correspondence overflows the call stack above about 0.13 megapixels of
+      // camera, which is every camera an operator owns.
+      for (const c of one.correspondences) correspondences.push(c);
     }
 
-    const result = readCapture(
-      [{ camera, projector, images, names: files.map((f) => f.name) }],
-      manifest,
-      transfer,
-    );
-
-    const lines: string[] = [];
+    const result = finishCapture(outcomes, pairs, correspondences, indexed.runs.length);
+    lines.push('');
     for (const run of result.runs) {
       lines.push(describeRun(run));
       for (const problem of run.problems) lines.push(`  ${problem}`);

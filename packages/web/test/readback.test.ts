@@ -25,7 +25,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { DEFAULT_PATTERN_PLAN, planFrames, type PatternPlan } from '../../bench/src/patterns.ts';
+import {
+  DEFAULT_PATTERN_PLAN,
+  compileFrame,
+  complementPlan,
+  planFrames,
+  type FrameSpec,
+  type PatternPlan,
+} from '../../bench/src/patterns.ts';
 import type { FrameRole } from '../../solver/src/assemble.ts';
 import type { EncodedImage } from '../../solver/src/ingest.ts';
 import {
@@ -33,11 +40,18 @@ import {
   PLAN_LIMITS,
   captureManifest,
   formatManifest,
+  manifestExpectedSequence,
   manifestFrameRoles,
   parseCaptureManifest,
   type CaptureManifest,
 } from '../src/manifest.ts';
-import { readCapture, type CaptureRun } from '../src/readback.ts';
+import {
+  describeIndexing,
+  indexPhotographs,
+  readCapture,
+  summarisePhoto,
+  type CaptureRun,
+} from '../src/readback.ts';
 
 const RES = 256;
 const BITS = 5;
@@ -389,4 +403,234 @@ test('a NaN or Infinity in the plan is refused rather than propagated', () => {
   );
   assert.equal(parsed.ok, false);
   assert.ok(parsed.problems.some((p) => p.includes('grayBits')));
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2, reached from the page: a folder of photographs turned into runs
+// ---------------------------------------------------------------------------
+
+/**
+ * A plan small enough to render a whole camera position of.
+ *
+ * Two Gray planes per axis, so `minBlocks` is 4 and a 16x16 photograph gives
+ * each fingerprint block a 4x4 patch of pixels. Eighteen frames a run, two
+ * runs — thirty-six photographs, which is a position this test can build and
+ * still be read.
+ */
+const SMALL: PatternPlan = {
+  grayBits: 2,
+  phaseSteps: 4,
+  phasePeriodStrides: 2,
+  includeWhiteBlack: true,
+};
+const SMALL_RES = { x: 16, y: 16 };
+const SMALL_PROJECTORS = 2;
+const SMALL_MANIFEST: CaptureManifest = captureManifest(
+  SMALL,
+  SMALL_RES,
+  SMALL_PROJECTORS,
+  0.5,
+  '2026-09-18T00:00:00Z',
+);
+
+/**
+ * One frame of the plan as a photograph — the projector's raster, straight.
+ *
+ * No sphere, no warp, no albedo, and `linearise` is given the matching linear
+ * transfer, so what comes back out is what `compileFrame` put in. That is the
+ * same separation Experiment 8 keeps and for the same reason: this is a test of
+ * whether the INDEXING places photographs correctly, and a photometric wobble
+ * mixed into it would be reported as a fault-tolerance result.
+ */
+function photographOf(spec: FrameSpec): EncodedImage {
+  const frame = compileFrame(spec, SMALL, SMALL_RES.x, SMALL_RES.y);
+  const data = new Uint8Array(SMALL_RES.x * SMALL_RES.y);
+  for (let y = 0; y < SMALL_RES.y; y++) {
+    for (let x = 0; x < SMALL_RES.x; x++) {
+      const coord = frame.axis === null ? 0 : frame.axis === 'u' ? x + 0.5 : y + 0.5;
+      data[y * SMALL_RES.x + x] = Math.round(255 * Math.min(1, Math.max(0, frame.at(coord))));
+    }
+  }
+  return { width: SMALL_RES.x, height: SMALL_RES.y, channels: 1, data, maxValue: 255 };
+}
+
+/** A whole camera position, as the frame indices it is built from. */
+function position(order: readonly number[]): ReturnType<typeof summarisePhoto>[] {
+  const specs = planFrames(SMALL);
+  const blocks = complementPlan(SMALL).minBlocks;
+  return order.map((frame, i) =>
+    summarisePhoto(photographOf(specs[frame]), i, `IMG_${i}.jpg`, { kind: 'linear' }, blocks),
+  );
+}
+
+/** The frame indices a clean position holds: every run played in plan order. */
+function cleanOrder(): number[] {
+  const perRun = planFrames(SMALL).length;
+  const out: number[] = [];
+  for (let p = 0; p < SMALL_PROJECTORS; p++) for (let f = 0; f < perRun; f++) out.push(f);
+  return out;
+}
+
+test('the manifest states the shape an indexer should expect, and it matches the plan', () => {
+  const expected = manifestExpectedSequence(SMALL_MANIFEST);
+  const specs = planFrames(SMALL);
+  assert.equal(expected.kinds.length, specs.length);
+  assert.equal(expected.projectors, SMALL_PROJECTORS);
+  assert.deepEqual(expected.kinds.slice(0, 2), ['white', 'black']);
+  assert.ok(
+    expected.kinds.slice(2).every((k) => k === 'patterned'),
+    'every frame after the references is one a lit fraction cannot tell apart',
+  );
+  // The pairs have to land inside the run they describe — the invariant a
+  // mismatched length broke in the experiment, asserted here for the page's own
+  // producer as well.
+  for (const [a, b] of expected.complements?.pairs ?? []) {
+    assert.ok(a >= 0 && b < expected.kinds.length, `pair [${a},${b}] outside the run`);
+  }
+});
+
+test('a clean camera position is split into its projector runs, in plan order', () => {
+  // The call Phase 2 was built for and nothing made. Before this, the page told
+  // the operator to hand in "one projector's run at a time, in the order it was
+  // shot" — the indexing performed by a person, unchecked.
+  const indexed = indexPhotographs(position(cleanOrder()), SMALL_MANIFEST);
+  const perRun = planFrames(SMALL).length;
+
+  assert.equal(indexed.ok, true, indexed.problems.join(' '));
+  assert.equal(indexed.total, perRun * SMALL_PROJECTORS);
+  assert.equal(indexed.placed, perRun * SMALL_PROJECTORS);
+  assert.deepEqual(
+    indexed.runs.map((r) => r.projector),
+    [0, 1],
+  );
+  // Each run's ordinals are the folder positions it occupies, in plan order.
+  assert.deepEqual(
+    indexed.runs[0].ordinals,
+    Array.from({ length: perRun }, (_, i) => i),
+  );
+  assert.deepEqual(
+    indexed.runs[1].ordinals,
+    Array.from({ length: perRun }, (_, i) => perRun + i),
+  );
+  assert.deepEqual(indexed.problems, []);
+  assert.equal(indexed.mechanism, 'fingerprint');
+});
+
+test('a cancelling drop and duplicate costs its own run and leaves the other decodable', () => {
+  // The fault Experiment 8 exists for: the count still adds up and every frame
+  // is still a patterned frame, so the bookends see nothing. Here the whole
+  // point is that run 1 survives — a fault stops at the next boundary, which is
+  // what makes a spoiled frame cost a re-shoot of one projector rather than of
+  // the trip.
+  const perRun = planFrames(SMALL).length;
+  const order = cleanOrder();
+  const graySlot = 2; // the first Gray plane of run 0
+  order.splice(graySlot, 1); // drop it
+  order.splice(perRun - 2, 0, order[perRun - 3]); // and shoot another twice
+
+  const indexed = indexPhotographs(position(order), SMALL_MANIFEST);
+  assert.equal(indexed.ok, false);
+  assert.deepEqual(
+    indexed.runs.map((r) => r.projector),
+    [1],
+    'the broken run is dropped and the good one is still offered',
+  );
+  assert.equal(indexed.placed, perRun, 'exactly the surviving run was placed');
+  assert.match(indexed.problems.join(' '), /Re-shoot projector 1/);
+
+  const line = describeIndexing(indexed, SMALL_PROJECTORS);
+  assert.match(line, /1 of 2 projector runs/);
+});
+
+test('what the indexer vouches for is what the decoder can read', () => {
+  // The join that makes the wiring worth anything: the ordinals come back in
+  // plan order, so handing those photographs to `readCapture` decodes. If the
+  // ordering were wrong the decode would collapse, which is the failure the
+  // whole phase is about.
+  const order = cleanOrder();
+  const specs = planFrames(SMALL);
+  const indexed = indexPhotographs(position(order), SMALL_MANIFEST);
+  assert.ok(indexed.runs.length > 0);
+
+  const run = indexed.runs[0];
+  const images = run.ordinals.map((o) => photographOf(specs[order[o]]));
+  const result = readCapture(
+    [{ camera: 0, projector: run.projector, images, names: run.ordinals.map((o) => `IMG_${o}.jpg`) }],
+    SMALL_MANIFEST,
+    { kind: 'linear' },
+  );
+  assert.equal(result.ok, true, result.ok ? '' : result.refusal);
+  assert.ok(
+    result.runs[0].correspondences > 0,
+    'the frames the indexer placed have to be the frames the decoder wants',
+  );
+});
+
+test('an empty folder is refused with what a position is supposed to hold', () => {
+  const indexed = indexPhotographs([], SMALL_MANIFEST);
+  assert.equal(indexed.ok, false);
+  assert.deepEqual(indexed.runs, []);
+  assert.match(indexed.problems[0] ?? '', /2 of them, 18 frames each/);
+});
+
+test('a fingerprint too coarse for the plan is refused rather than believed', () => {
+  // `summarisePhoto` does not default the block count, so a caller can pass one
+  // the plan cannot be checked at. The refusal is the same one the mechanism
+  // makes for itself; this asserts the page's route reaches it.
+  const specs = planFrames(SMALL);
+  const coarse = cleanOrder().map((frame, i) =>
+    summarisePhoto(photographOf(specs[frame]), i, `IMG_${i}.jpg`, { kind: 'linear' }, 1),
+  );
+  const indexed = indexPhotographs(coarse, SMALL_MANIFEST);
+  assert.equal(indexed.ok, false);
+  assert.deepEqual(indexed.runs, []);
+  assert.match(indexed.problems.join(' '), /1 blocks across and this plan needs at least 4/);
+});
+
+test('a capture big enough to be a real photograph does not overflow the call stack', () => {
+  // `readCapture` accumulated each run's correspondences with
+  // `push(...one.correspondences)`, which passes one ARGUMENT per element. V8
+  // throws `RangeError: Maximum call stack size exceeded` somewhere between
+  // 100 000 and 131 072 arguments — measured, not assumed.
+  //
+  // A run yields up to one correspondence per camera pixel, so the threshold is
+  // about 0.13 megapixels: every camera an operator owns clears it by two
+  // orders of magnitude. The page caught the throw and reported "these
+  // photographs could not be read", blaming the operator's files for a defect
+  // in the accumulation.
+  //
+  // 512x512 is 262 144 pixels, which is twice the limit and still about half a
+  // second here.
+  const plan: PatternPlan = {
+    grayBits: 2,
+    phaseSteps: 4,
+    phasePeriodStrides: 2,
+    includeWhiteBlack: true,
+  };
+  const res = { x: 512, y: 512 };
+  const specs = planFrames(plan);
+  const images = specs.map((spec) => {
+    const frame = compileFrame(spec, plan, res.x, res.y);
+    const data = new Uint8Array(res.x * res.y);
+    for (let y = 0; y < res.y; y++) {
+      for (let x = 0; x < res.x; x++) {
+        const coord = frame.axis === null ? 0 : frame.axis === 'u' ? x + 0.5 : y + 0.5;
+        data[y * res.x + x] = Math.round(255 * Math.min(1, Math.max(0, frame.at(coord))));
+      }
+    }
+    return { width: res.x, height: res.y, channels: 1, data, maxValue: 255 };
+  });
+
+  const manifest = captureManifest(plan, res, 1, 0.5, '2026-09-18T00:00:00Z');
+  const result = readCapture(
+    [{ camera: 0, projector: 0, images, names: specs.map((_, i) => `f${i}.png`) }],
+    manifest,
+    { kind: 'linear' },
+  );
+
+  assert.equal(result.ok, true, result.ok ? '' : result.refusal);
+  assert.ok(
+    result.correspondences.length > 131072,
+    `the capture has to clear the spread limit to test anything, got ${result.correspondences.length}`,
+  );
 });

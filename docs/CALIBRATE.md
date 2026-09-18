@@ -273,7 +273,7 @@ for software that does not exist yet, and it should get shorter as the phases in
 | rule on this card | survives? |
 | --- | --- |
 | Shoot in strict order | **Phase 2 softened it, and cannot yet delete it.** The run's own references re-synchronise the count, so a lost frame costs that projector's run instead of the capture — but the order is still what indexes frames inside a run |
-| Never delete, skip or re-shoot one frame | **Phase 2 narrowed it** to: do not delete one and add another in the same run — and has since built the check that catches most of even that, though nothing you can run reaches it yet. Keep the rule |
+| Never delete, skip or re-shoot one frame | **Phase 2 narrowed it** to: do not delete one and add another in the same run, and the page now catches most of even that and tells you which projector to re-shoot. Still worth keeping — what it catches, it catches by refusing that run |
 | Re-shoot a whole projector's 34 if you spoil one | **survives for now.** Phase 2 made it cheap rather than unnecessary |
 | Make sure filenames sort in capture order | **Phase 2 softened it** — a run is found by its references, not by its filenames — but the order inside a run still comes from them |
 | One projector lit at a time | **Phase 1 deleted it as a task.** Still true of the physics; the emitter sequences it and the operator never arranges it |
@@ -306,15 +306,18 @@ need to know which *camera* took it.
 Stated as gaps rather than omitted, because an operator who discovers them at the
 sphere has wasted a trip:
 
-- **Whether a patched run is wrong.** Phase 2 got as far as finding each
-  projector's run and checking its length, which is why Part 4's rules are looser
-  than they were. A frame deleted and another added inside one run leaves both of
-  those checks satisfied — and there is now a third that catches most of it, by
-  asking whether each pattern and its complement still add up to the run's own
-  white and black. **You cannot run it.** Like the decode below, it is reachable
-  only from code somebody has yet to write, so on the day the rule on the card is
-  still the thing protecting you. Nothing here connects the emitter's own step
-  count to the files on your card.
+- **Whether a patched run is wrong — mostly you can now find out.** Phase 2
+  finds each projector's run, checks its length, and asks whether each pattern
+  and its complement still add up to the run's own white and black. A frame
+  deleted and another added inside one run satisfies the first two and is caught
+  by the third, and the page names the projector to re-shoot. **What it still
+  cannot see** is a fault that disturbs no complementary pair — in the plan this
+  page writes, the phase frames rearranging among themselves. And it is a
+  refusal, not a repair: a run it doubts is dropped, not fixed.
+
+  **Still true on the day:** none of this happens at the sphere. You hand the
+  folder in when you are home, so the rules in Part 4 are what protect the trip.
+  Nothing connects the emitter's own step count to the files on your card.
 - **Whether your capture decoded, on the day.** The arithmetic for this exists —
   how many points survived, from how many camera and projector pairs, which
   cameras contributed nothing, and a refusal rather than a pose when nothing
