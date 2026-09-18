@@ -42,11 +42,13 @@
  * floor: a projector commanded to emit zero still leaks `gain * blackFloor`,
  * and that leak is what sets the modulation floor the decoder rejects on.
  * {@link emittedRadianceForTarget} is that one-line result, and
- * `test/patterns.test.ts` checks it against `packages/sim`'s own forward
- * transfer rather than against itself.
+ * `test/units.test.ts` checks it against `packages/sim`'s own forward transfer
+ * rather than against itself. (That path said `test/patterns.test.ts` until
+ * this was written — a file that has never existed in this repository.)
  */
 
 import type { ProjectorTransfer } from '../../calibration/src/index.ts';
+import type { ComplementPlan } from '../../solver/src/indexing.ts';
 
 export type PatternAxis = 'u' | 'v';
 
@@ -167,6 +169,135 @@ export function planFrames(plan: PatternPlan, axes: PatternAxis[] = ['u', 'v']):
   return out;
 }
 
+/**
+ * Which frames of a run are complements of one another, and the fingerprint
+ * resolution it takes to still see that.
+ *
+ * It lives here for {@link previewFrameIndex}'s reason, one step further: the
+ * pairing is DEFINED by {@link planFrames} three lines up, and a second place
+ * that knows which positions hold a pattern and its complement would be a
+ * second statement of the capture order. The first thing to notice they had
+ * drifted apart would be a capture the indexer passed with a hole in it.
+ *
+ * `packages/solver/src/indexing.ts` is where this is consumed and it cannot
+ * compute it: `ComplementPlan` is carried as positions precisely because the
+ * solver may not see a `PatternPlan`. Importing the TYPE back the other way is
+ * not the circularity this module's header warns about — that one is about the
+ * bench importing the solver's decoder to build its patterns, which would make
+ * the two sides of the contract one side. A data shape is not a decoder.
+ *
+ * `minBlocks` is `2^grayBits`: a fingerprint coarser than the finest Gray plane
+ * averages that plane to a flat one-half in every block, and a frame paired
+ * with a duplicate of itself then satisfies the identity exactly. Derived here
+ * rather than left to the caller because it is a property of the plan, and a
+ * caller in a position to get it wrong eventually will.
+ */
+export function complementPlan(
+  plan: PatternPlan,
+  axes: PatternAxis[] = ['u', 'v'],
+): ComplementPlan {
+  const specs = planFrames(plan, axes);
+  const pairs: [number, number][] = [];
+  for (let i = 0; i + 1 < specs.length; i++) {
+    const a = specs[i];
+    const b = specs[i + 1];
+    if (
+      a.kind === 'gray' &&
+      b.kind === 'grayInverse' &&
+      a.axis === b.axis &&
+      a.index === b.index
+    ) {
+      pairs.push([i, i + 1]);
+    }
+  }
+  return { pairs, minBlocks: Math.pow(2, plan.grayBits) };
+}
+
+/**
+ * One frame reduced to the block grid a complement fingerprint compares, in
+ * PROJECTOR space.
+ *
+ * The emitter side of `indexing.ts`'s {@link ComplementPlan} check, and it
+ * lives here for the reason the pairing does: Experiment 8's sweep and the test
+ * that certifies the gap `COMPLEMENT_LIMIT` sits in both need it, and if the
+ * two reduce frames differently they stop measuring the same thing. Review
+ * found them holding the same twenty lines twice with nothing to notice a
+ * drift, and nothing tests `packages/experiments`.
+ *
+ * No sphere, no warp, no albedo: this is what the projector puts out, averaged.
+ * `complementResidual`'s own test is where the affine camera term is shown to
+ * cancel; separating the two is what stops a photometric wobble being reported
+ * as a fault-tolerance result.
+ *
+ * `offsetBlocks` slides the grid off the raster origin, and which way that cuts
+ * depends on the grid. Below `ComplementPlan.minBlocks` an aligned grid is the
+ * worst case, because each block spans a whole number of periods of the finest
+ * plane and averages it to a flat half. AT or above it, alignment is the BEST
+ * case: each block resolves one Gray cell exactly. So an offset grid is the
+ * conservative choice at the resolution the check actually runs at.
+ *
+ * ## Every sample stays inside the raster, and that had to be made explicit
+ *
+ * An offset grid pushes the last window past the end of the raster — at 64
+ * blocks and an offset of 0.37, twelve of that block's thirty-two samples sat
+ * beyond 1920. Out there the frame kinds stop agreeing with each other:
+ * {@link compileFrame} CLAMPS a Gray coordinate, so a Gray plane holds its edge
+ * value, while a phase frame is a cosine of the coordinate and simply keeps
+ * oscillating. Measured at 1931 px on a 1920 raster: the Gray plane read 0 and
+ * the phase step read 0.7034, neither of which the projector ever emitted.
+ *
+ * Review caught it, and caught why it mattered more than a rounding error: the
+ * sweep and the test that certifies `COMPLEMENT_LIMIT`'s margin both reduce
+ * frames through this function, so an edge artifact would have appeared on both
+ * sides of the comparison and they would have agreed with each other about a
+ * number neither had measured properly.
+ *
+ * So each window is CLIPPED to the raster and averaged over what is left. A
+ * block near the edge covers less of the frame than the others, which is true
+ * of a real grid over a real image too.
+ */
+export function frameBlockGrid(
+  spec: FrameSpec,
+  plan: PatternPlan,
+  blocks: number,
+  resX: number,
+  resY: number,
+  offsetBlocks = 0,
+  samplesPerBlock = 32,
+): Float32Array {
+  const frame = compileFrame(spec, plan, resX, resY);
+  const values = new Float32Array(blocks * blocks);
+  if (frame.axis === null) {
+    values.fill(frame.at(0));
+    return values;
+  }
+  const res = frame.axis === 'u' ? resX : resY;
+  const per = res / blocks;
+  const line = new Float64Array(blocks);
+  for (let b = 0; b < blocks; b++) {
+    // The window, clipped to the raster. `hi > lo` for every block while
+    // `offsetBlocks` is in [0, 1), because the last window then still starts
+    // before the end; the guard covers a caller who passes more than that.
+    const lo = Math.max(0, (b + offsetBlocks) * per);
+    const hi = Math.min(res, (b + offsetBlocks + 1) * per);
+    if (!(hi > lo)) {
+      line[b] = frame.at(Math.min(res, Math.max(0, lo)));
+      continue;
+    }
+    let sum = 0;
+    for (let k = 0; k < samplesPerBlock; k++) {
+      sum += frame.at(lo + ((k + 0.5) / samplesPerBlock) * (hi - lo));
+    }
+    line[b] = sum / samplesPerBlock;
+  }
+  for (let by = 0; by < blocks; by++) {
+    for (let bx = 0; bx < blocks; bx++) {
+      values[by * blocks + bx] = frame.axis === 'u' ? line[bx] : line[by];
+    }
+  }
+  return values;
+}
+
 /** `code ^ (code >> 1)`, the standard binary-reflected Gray code. */
 export function binaryToGray(v: number): number {
   return v ^ (v >>> 1);
@@ -282,7 +413,7 @@ export function emittedRadianceForTarget(
 /**
  * The signal the compositor would write for a target radiance — the actual
  * inversion of §P, used only to prove {@link emittedRadianceForTarget} in
- * `test/patterns.test.ts` by running it back through `packages/sim`'s forward
+ * `test/units.test.ts` by running it back through `packages/sim`'s forward
  * transfer.
  *
  * Not on the render path. If it were, every pattern pixel would cost three

@@ -5,7 +5,9 @@
     "projectors": 4,
     "framesPerProjector": 34,
     "rootSeed": 489570120,
-    "classification": "exact by construction; this arm renders no frames, so these are an ideal-classification baseline rather than an upper bound on room behaviour"
+    "fingerprintBlocks": 64,
+    "classification": "exact by construction; this arm renders no frames, so these are an ideal-classification baseline rather than an upper bound on room behaviour",
+    "fingerprints": "computed from the pattern plan in projector space with no sphere, warp or albedo between the emitter and the number, so the complement residuals are exact and these are an ideal-fingerprint baseline on the same footing as the classification above"
   },
   "arms": [
     {
@@ -25,6 +27,17 @@
         "badUsableRunsTotal": 0
       },
       "bookends": {
+        "clean": 2000,
+        "refused": 0,
+        "silent": 0,
+        "misplacedTotal": 0,
+        "misplacedWorst": 0,
+        "usableRunsMean": 4,
+        "runsOfferedTotal": 8000,
+        "trialsWithBadUsableRun": 0,
+        "badUsableRunsTotal": 0
+      },
+      "fingerprint": {
         "clean": 2000,
         "refused": 0,
         "silent": 0,
@@ -62,6 +75,17 @@
         "runsOfferedTotal": 5691,
         "trialsWithBadUsableRun": 0,
         "badUsableRunsTotal": 0
+      },
+      "fingerprint": {
+        "clean": 0,
+        "refused": 2000,
+        "silent": 0,
+        "misplacedTotal": 0,
+        "misplacedWorst": 0,
+        "usableRunsMean": 2.8455,
+        "runsOfferedTotal": 5691,
+        "trialsWithBadUsableRun": 0,
+        "badUsableRunsTotal": 0
       }
     },
     {
@@ -81,6 +105,17 @@
         "badUsableRunsTotal": 0
       },
       "bookends": {
+        "clean": 0,
+        "refused": 2000,
+        "silent": 0,
+        "misplacedTotal": 0,
+        "misplacedWorst": 0,
+        "usableRunsMean": 2.0225,
+        "runsOfferedTotal": 4045,
+        "trialsWithBadUsableRun": 0,
+        "badUsableRunsTotal": 0
+      },
+      "fingerprint": {
         "clean": 0,
         "refused": 2000,
         "silent": 0,
@@ -118,6 +153,17 @@
         "runsOfferedTotal": 6021,
         "trialsWithBadUsableRun": 0,
         "badUsableRunsTotal": 0
+      },
+      "fingerprint": {
+        "clean": 0,
+        "refused": 2000,
+        "silent": 0,
+        "misplacedTotal": 0,
+        "misplacedWorst": 0,
+        "usableRunsMean": 3.0105,
+        "runsOfferedTotal": 6021,
+        "trialsWithBadUsableRun": 0,
+        "badUsableRunsTotal": 0
       }
     },
     {
@@ -146,6 +192,17 @@
         "runsOfferedTotal": 4727,
         "trialsWithBadUsableRun": 454,
         "badUsableRunsTotal": 454
+      },
+      "fingerprint": {
+        "clean": 0,
+        "refused": 1977,
+        "silent": 23,
+        "misplacedTotal": 63,
+        "misplacedWorst": 7,
+        "usableRunsMean": 2.148,
+        "runsOfferedTotal": 4296,
+        "trialsWithBadUsableRun": 23,
+        "badUsableRunsTotal": 23
       }
     },
     {
@@ -174,10 +231,21 @@
         "runsOfferedTotal": 3116,
         "trialsWithBadUsableRun": 779,
         "badUsableRunsTotal": 913
+      },
+      "fingerprint": {
+        "clean": 0,
+        "refused": 2000,
+        "silent": 0,
+        "misplacedTotal": 190,
+        "misplacedWorst": 7,
+        "usableRunsMean": 1.132,
+        "runsOfferedTotal": 2264,
+        "trialsWithBadUsableRun": 61,
+        "badUsableRunsTotal": 61
       }
     }
   ],
   "verdict": {
-    "statement": "Over 10000 faulty captures of 4 projector runs each: ordering alone handed back 16000 runs and 10688 of them were mis-indexed (66.8%); the bookends handed back 23600 and 1367 were mis-indexed (5.8%). Measured instead against every run the captures contained, that is 26.7% and 3.4% of 40000. Ordering is worse on the first rate than the second because on a faulty capture it offers runs only where it noticed nothing. Counting whole captures, ordering was silently wrong 40.0% of the time and the bookends 6.0% — but that reading flatters the bookends, because a capture they refuse can still contain a run they got wrong and offered. Both are blind to one case and the bookends only to that case — a drop and a duplicate cancelling inside one run, where the count still adds up and every frame is still a patterned frame: ordering is silently wrong in 100.0% of those and the bookends in 22.7%. With no cancelling pair the bookends were never silently wrong and never offered a bad run at all: on a single dropped frame they kept 2.85 of 4 runs, every one of them correct, where ordering kept 0.00."
+    "statement": "Over 10000 faulty captures of 4 projector runs each: ordering alone handed back 16000 runs and 10688 of them were mis-indexed (66.8%); the bookends handed back 23600 and 1367 were mis-indexed (5.8%); the complement fingerprint handed back 22317 and 84 were mis-indexed (0.4%). Measured instead against every run the captures contained, that is 26.7%, 3.4% and 0.2% of 40000. Ordering is worse on the first rate than the second because on a faulty capture it offers runs only where it noticed nothing. Counting whole captures, ordering was silently wrong 40.0% of the time, the bookends 6.0% and the fingerprint 0.2% — but that reading flatters the bookends, because a capture they refuse can still contain a run they got wrong and offered. The case that separates them is a drop and a duplicate cancelling inside one run, where the count still adds up and every frame is still a patterned frame: ordering is silently wrong in 100.0% of those, the bookends in 22.7% and the fingerprint in 1.1%. What the fingerprint has left is the part of that case which disturbs no complementary pair — mostly the phase frames moving among themselves, and partly a duplicated last Gray frame whose copy lands in the first phase slot. With no cancelling pair the bookends were never silently wrong and never offered a bad run at all: on a single dropped frame they kept 2.85 of 4 runs, every one of them correct, where ordering kept 0.00 and the fingerprint 2.85."
   }
 }

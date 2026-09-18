@@ -38,6 +38,32 @@ A straddle is worse than a drop for one specific reason:
 drop-and-duplicate inside one run. This is a second way into the same blind spot,
 reached without anybody deleting a file.
 
+**That is still true of the bookends and is only partly true of the mechanism
+that followed them.** Experiment 8 has since added a complement fingerprint, and
+a straddle is not invisible to it — but the response depends on *which* frame of
+a pair the shutter smeared, and an earlier version of this paragraph claimed a
+single crossing point that does not exist.
+
+A Gray plane is followed by its own complement, so a photograph that is a
+fraction `a` of the pattern and `1 - a` of the frame after it misses the
+identity by exactly `1 - a`. The complement is followed by the **next plane**,
+not by its own pattern, and two different Gray planes disagree over only half
+the raster — so the same straddle there misses by about `(1 - a) / 2`. Measured
+on the page's own plan at the required grid, a 15% straddle reads 0.1500 on the
+pattern side and 0.0750 on the complement side, and on the finest plane at the
+sweep's own grid offset the pattern side falls to 0.0938
+(`packages/solver/test/indexing.test.ts` pins both sides).
+
+So at `COMPLEMENT_LIMIT` the crossing into a refusal is **not** one number: it is
+about a seventh of the exposure for a straddled pattern on a coarse plane, about
+a third for a straddled complement, and further still on the finest planes. A
+straddle smaller than that is offered rather than refused.
+
+What is **not** established is how often a straddle is large enough, because the
+sweep below was not re-run against the fingerprint. The numbers on this page are
+the bookends' exposure, and they are the right numbers for the mechanism they
+describe.
+
 ## The answer, and it is not the axis this experiment was opened on
 
 The first version of this experiment swept clock drift, found almost nothing,

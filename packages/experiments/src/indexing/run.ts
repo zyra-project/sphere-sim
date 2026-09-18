@@ -31,26 +31,87 @@
  * claim about the room that this experiment never made.
  */
 
+import {
+  complementPlan,
+  frameBlockGrid,
+  planFrames,
+  type FrameSpec,
+} from '../../../bench/src/patterns.ts';
 import { makeBenchRng, deriveSeed } from '../../../bench/src/random.ts';
 import {
   indexByBookends,
+  indexByFingerprint,
   indexByOrder,
   type ExpectedSequence,
+  type FrameFingerprint,
   type FrameKind,
   type FrameObservation,
   type IndexingResult,
 } from '../../../solver/src/indexing.ts';
-import { EXPERIMENT_ROOT_SEED, FRAMES_PER_PROJECTOR, PROJECTORS, type Arm } from './design.ts';
+import {
+  EXPERIMENT_ROOT_SEED,
+  FINGERPRINT_BLOCKS,
+  PLAN,
+  PROJECTORS,
+  type Arm,
+} from './design.ts';
 
-/** The plan's shape: white, black, then the patterned frames. */
-export function expectedSequence(
-  projectors = PROJECTORS,
-  framesPerProjector = FRAMES_PER_PROJECTOR,
-): ExpectedSequence {
-  const kinds: FrameKind[] = ['white', 'black'];
-  while (kinds.length < framesPerProjector) kinds.push('patterned');
-  return { kinds, projectors };
+const kindOf = (spec: FrameSpec): FrameKind =>
+  spec.kind === 'white' ? 'white' : spec.kind === 'black' ? 'black' : 'patterned';
+
+/**
+ * The plan's shape: white, black, the patterned frames, and which of them pair.
+ *
+ * Derived from ONE frame list, which review had to point out. This used to take
+ * a `framesPerProjector` override while the complement pairs and the block
+ * grids still came from the whole plan, so the three could describe different
+ * runs: a shorter length left pair positions pointing past the end of `kinds`
+ * and the fingerprint indexer refused every run, and a longer one let
+ * {@link runTrial} index past `FRAME_GRIDS`. Nothing ever passed the override —
+ * `cli.ts` calls this with no arguments — so it was a trap with no user, and
+ * the plan is the one thing that decides a run's length.
+ */
+export function expectedSequence(projectors = PROJECTORS): ExpectedSequence {
+  const specs = planFrames(PLAN);
+  return {
+    kinds: specs.map(kindOf),
+    projectors,
+    complements: complementPlan(PLAN),
+  };
 }
+
+/**
+ * The projector raster the fingerprints are computed over.
+ *
+ * Any raster does: the residuals below depend on the pattern's SHAPE relative
+ * to the block grid, and both scale together. This is the page's own default so
+ * the numbers are about the capture an operator would shoot.
+ */
+const RES_X = 1920;
+const RES_Y = 1200;
+
+/**
+ * One block grid per frame of the plan, computed once for the whole sweep.
+ *
+ * The grid is offset off the raster origin by a fraction of a block, and the
+ * first version of this comment had the reason backwards. It said an aligned
+ * grid is the worst case; review measured it and the opposite is true AT THIS
+ * RESOLUTION. `FINGERPRINT_BLOCKS` is `ComplementPlan.minBlocks`, where each
+ * block resolves exactly one Gray cell, so alignment is the most FAVOURABLE
+ * case: the faintest broken pair returns 0.5000 aligned against 0.3957 at this
+ * offset. The flat-half resonance that makes alignment catastrophic belongs to
+ * grids coarser than the floor, which is what `minBlocks` exists to exclude.
+ *
+ * Offsetting is still the right choice — it is the conservative one, and a real
+ * projection onto a sphere is warped and lands wherever it lands — but anyone
+ * who set this to 0 believing they were picking the worst case would be picking
+ * the best, and the sweep's catch rate would silently improve.
+ */
+const GRID_OFFSET = 0.37;
+const FRAME_GRIDS: Float32Array[] = planFrames(PLAN).map((spec) =>
+  frameBlockGrid(spec, PLAN, FINGERPRINT_BLOCKS, RES_X, RES_Y, GRID_OFFSET),
+);
+const ALL_MEASURED = new Uint8Array(FINGERPRINT_BLOCKS * FINGERPRINT_BLOCKS).fill(1);
 
 /** A photograph on the card: what it looks like, and what it actually is. */
 interface Shot {
@@ -98,7 +159,7 @@ export type Outcome = 'clean' | 'refused' | 'silent';
 export interface TrialResult {
   arm: string;
   seed: number;
-  mechanism: 'order' | 'bookends';
+  mechanism: 'order' | 'bookends' | 'fingerprint';
   /**
    * `clean` — said nothing was wrong and was right.
    * `refused` — noticed, whether it kept part of the capture or none of it.
@@ -160,7 +221,7 @@ export function seedFor(arm: Arm, trial: number): number {
   return deriveSeed(EXPERIMENT_ROOT_SEED, `indexing/${arm.key}/${trial}`);
 }
 
-/** Both mechanisms on the same broken capture, so the comparison is paired. */
+/** All three mechanisms on the same broken capture, so the comparison is paired. */
 export function runTrial(arm: Arm, trial: number, expected: ExpectedSequence): TrialResult[] {
   const seed = seedFor(arm, trial);
   const shots = breakCapture(cleanCapture(expected), arm, seed);
@@ -169,8 +230,17 @@ export function runTrial(arm: Arm, trial: number, expected: ExpectedSequence): T
     mean: s.lit,
     litFraction: s.lit,
   }));
+  // The grids are shared rather than copied: `indexByFingerprint` reads them and
+  // writes nothing, and a copy per shot would be 2 MB per trial for no reason.
+  const fingerprints: FrameFingerprint[] = shots.map((s, i) => ({
+    ordinal: i,
+    blocks: FINGERPRINT_BLOCKS,
+    values: FRAME_GRIDS[s.trueFrame % expected.kinds.length],
+    measured: ALL_MEASURED,
+  }));
   return [
     score(indexByOrder(observations, expected), shots, expected, arm, seed),
     score(indexByBookends(observations, expected), shots, expected, arm, seed),
+    score(indexByFingerprint(observations, fingerprints, expected), shots, expected, arm, seed),
   ];
 }

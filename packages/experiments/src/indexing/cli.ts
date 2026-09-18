@@ -5,8 +5,15 @@
  * `npm run experiment8` — the fault-tolerance sweep for Phase 2's indexing.
  *
  * Writes `experiments/experiment-8.json`. Nothing is rendered and nothing is
- * solved, so the whole sweep runs in under a second and there is no checkpoint
- * machinery: re-running it from scratch is cheaper than resuming it.
+ * solved, so there is no checkpoint machinery: re-running the sweep from scratch
+ * is cheaper than resuming it. It takes about 15 seconds, nearly all of it in
+ * the complement fingerprint — 12 pairs compared over a 64x64 grid, for every
+ * run of every trial. That is a property of running 12 000 trials across three
+ * mechanisms rather than of the mechanism itself: one real capture costs one
+ * such check, which is microseconds. (It ran in under a second with two
+ * mechanisms, and this docblock said so until the third one landed. It then
+ * said 18 000 trials, which is not a number this sweep produces — six arms of
+ * 2 000 is 12 000 trials and 36 000 mechanism scorings.)
  *
  * The verdict sentence at the end of the file is written HERE, from the counts,
  * rather than by a person reading them. `tools/experiment-tables.ts` exists
@@ -22,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import {
   ARMS,
   EXPERIMENT_ROOT_SEED,
+  FINGERPRINT_BLOCKS,
   FRAMES_PER_PROJECTOR,
   PROJECTORS,
   TRIALS,
@@ -96,6 +104,7 @@ function main(): void {
       story: arm.story,
       order: summarize(rows.filter((r) => r.mechanism === 'order')),
       bookends: summarize(rows.filter((r) => r.mechanism === 'bookends')),
+      fingerprint: summarize(rows.filter((r) => r.mechanism === 'fingerprint')),
     };
   });
 
@@ -121,10 +130,13 @@ function main(): void {
     faulty.reduce((a, x) => a + pick(x), 0);
   const orderBad = sum((x) => x.order.badUsableRunsTotal);
   const bookendsBad = sum((x) => x.bookends.badUsableRunsTotal);
+  const printBad = sum((x) => x.fingerprint.badUsableRunsTotal);
   const orderOffered = sum((x) => x.order.runsOfferedTotal);
   const bookendsOffered = sum((x) => x.bookends.runsOfferedTotal);
+  const printOffered = sum((x) => x.fingerprint.runsOfferedTotal);
   const orderSilent = sum((x) => x.order.silent);
   const bookendsSilent = sum((x) => x.bookends.silent);
+  const printSilent = sum((x) => x.fingerprint.silent);
   const cancel = arms.find((a) => a.key === 'cancel');
   const drop1 = arms.find((a) => a.key === 'drop1');
   const pct = (n: number, d: number): string =>
@@ -134,25 +146,34 @@ function main(): void {
     `Over ${faultyTrials} faulty captures of ${PROJECTORS} projector runs each: ordering alone ` +
     `handed back ${orderOffered} runs and ${orderBad} of them were mis-indexed ` +
     `(${pct(orderBad, orderOffered)}); the bookends handed back ${bookendsOffered} and ` +
-    `${bookendsBad} were mis-indexed (${pct(bookendsBad, bookendsOffered)}). Measured instead ` +
-    `against every run the captures contained, that is ${pct(orderBad, runsIn)} and ` +
-    `${pct(bookendsBad, runsIn)} of ${runsIn}. Ordering is worse on the first rate than the ` +
+    `${bookendsBad} were mis-indexed (${pct(bookendsBad, bookendsOffered)}); the complement ` +
+    `fingerprint handed back ${printOffered} and ${printBad} were mis-indexed ` +
+    `(${pct(printBad, printOffered)}). Measured instead ` +
+    `against every run the captures contained, that is ${pct(orderBad, runsIn)}, ` +
+    `${pct(bookendsBad, runsIn)} and ${pct(printBad, runsIn)} of ${runsIn}. Ordering is worse ` +
+    `on the first rate than the ` +
     `second because on a faulty capture it offers runs only where it noticed nothing. Counting ` +
-    `whole captures, ordering was silently wrong ${pct(orderSilent, faultyTrials)} of the time ` +
-    `and the bookends ${pct(bookendsSilent, faultyTrials)} — but that reading flatters the ` +
+    `whole captures, ordering was silently wrong ${pct(orderSilent, faultyTrials)} of the time, ` +
+    `the bookends ${pct(bookendsSilent, faultyTrials)} and the fingerprint ` +
+    `${pct(printSilent, faultyTrials)} — but that reading flatters the ` +
     `bookends, because a capture they refuse can still contain a run they got wrong and offered. ` +
     (cancel === undefined
       ? ''
-      : `Both are blind to one case and the bookends only to that case — a drop and a duplicate ` +
-        `cancelling inside one run, where the count still adds up and every frame is still a ` +
-        `patterned frame: ordering is silently wrong in ${pct(cancel.order.silent, trials)} of ` +
-        `those and the bookends in ${pct(cancel.bookends.silent, trials)}. `) +
+      : `The case that separates them is a drop and a duplicate cancelling inside one run, ` +
+        `where the count still adds up and every frame is still a patterned frame: ordering is ` +
+        `silently wrong in ${pct(cancel.order.silent, trials)} of those, the bookends in ` +
+        `${pct(cancel.bookends.silent, trials)} and the fingerprint in ` +
+        `${pct(cancel.fingerprint.silent, trials)}. What the fingerprint has left is the part of ` +
+        `that case which disturbs no complementary pair — mostly the phase frames moving among ` +
+        `themselves, and partly a duplicated last Gray frame whose copy lands in the first phase ` +
+        `slot. `) +
     (drop1 === undefined
       ? ''
       : `With no cancelling pair the bookends were never silently wrong and never offered a bad ` +
         `run at all: on a single dropped frame they kept ` +
         `${drop1.bookends.usableRunsMean.toFixed(2)} of ${PROJECTORS} runs, every one of them ` +
-        `correct, where ordering kept ${drop1.order.usableRunsMean.toFixed(2)}.`);
+        `correct, where ordering kept ${drop1.order.usableRunsMean.toFixed(2)} and the ` +
+        `fingerprint ${drop1.fingerprint.usableRunsMean.toFixed(2)}.`);
 
   const doc = {
     schema: 'sphere-sim/experiment-8@1',
@@ -161,11 +182,18 @@ function main(): void {
       projectors: PROJECTORS,
       framesPerProjector: FRAMES_PER_PROJECTOR,
       rootSeed: EXPERIMENT_ROOT_SEED,
+      fingerprintBlocks: FINGERPRINT_BLOCKS,
       // Said in the file, because a reader who takes these numbers into a room
       // needs to know classification was exact by construction here.
       classification:
         'exact by construction; this arm renders no frames, so these are an ' +
         'ideal-classification baseline rather than an upper bound on room behaviour',
+      // Same standing, said separately because it is a separate mechanism's
+      // separate assumption. A reader who discounts one should discount both.
+      fingerprints:
+        'computed from the pattern plan in projector space with no sphere, warp or albedo ' +
+        'between the emitter and the number, so the complement residuals are exact and these ' +
+        'are an ideal-fingerprint baseline on the same footing as the classification above',
     },
     arms,
     verdict: { statement },
