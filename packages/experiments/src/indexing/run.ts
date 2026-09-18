@@ -31,7 +31,12 @@
  * claim about the room that this experiment never made.
  */
 
-import { compileFrame, complementPlan, planFrames, type FrameSpec } from '../../../bench/src/patterns.ts';
+import {
+  complementPlan,
+  frameBlockGrid,
+  planFrames,
+  type FrameSpec,
+} from '../../../bench/src/patterns.ts';
 import { makeBenchRng, deriveSeed } from '../../../bench/src/random.ts';
 import {
   indexByBookends,
@@ -79,39 +84,24 @@ const RES_Y = 1200;
 /**
  * One block grid per frame of the plan, computed once for the whole sweep.
  *
- * The grid is offset off the raster origin by a fraction of a block on purpose.
- * A grid landing exactly in step with a pattern averages it to a flat one half
- * and is the WORST case for the check — see `ComplementPlan.minBlocks` — so
- * scoring on a perfectly aligned grid would be scoring a resonance rather than
- * the mechanism. A real projection onto a sphere is warped and lands wherever
- * it lands; this is the ordinary case rather than either extreme.
+ * The grid is offset off the raster origin by a fraction of a block, and the
+ * first version of this comment had the reason backwards. It said an aligned
+ * grid is the worst case; review measured it and the opposite is true AT THIS
+ * RESOLUTION. `FINGERPRINT_BLOCKS` is `ComplementPlan.minBlocks`, where each
+ * block resolves exactly one Gray cell, so alignment is the most FAVOURABLE
+ * case: the faintest broken pair returns 0.5000 aligned against 0.3961 at this
+ * offset. The flat-half resonance that makes alignment catastrophic belongs to
+ * grids coarser than the floor, which is what `minBlocks` exists to exclude.
+ *
+ * Offsetting is still the right choice — it is the conservative one, and a real
+ * projection onto a sphere is warped and lands wherever it lands — but anyone
+ * who set this to 0 believing they were picking the worst case would be picking
+ * the best, and the sweep's catch rate would silently improve.
  */
 const GRID_OFFSET = 0.37;
-const FRAME_GRIDS: Float32Array[] = planFrames(PLAN).map((spec) => {
-  const frame = compileFrame(spec, PLAN, RES_X, RES_Y);
-  const values = new Float32Array(FINGERPRINT_BLOCKS * FINGERPRINT_BLOCKS);
-  if (frame.axis === null) {
-    values.fill(frame.at(0));
-    return values;
-  }
-  const res = frame.axis === 'u' ? RES_X : RES_Y;
-  const per = res / FINGERPRINT_BLOCKS;
-  const line = new Float64Array(FINGERPRINT_BLOCKS);
-  const samples = 32;
-  for (let b = 0; b < FINGERPRINT_BLOCKS; b++) {
-    let sum = 0;
-    for (let k = 0; k < samples; k++) {
-      sum += frame.at((b + GRID_OFFSET + (k + 0.5) / samples) * per);
-    }
-    line[b] = sum / samples;
-  }
-  for (let by = 0; by < FINGERPRINT_BLOCKS; by++) {
-    for (let bx = 0; bx < FINGERPRINT_BLOCKS; bx++) {
-      values[by * FINGERPRINT_BLOCKS + bx] = frame.axis === 'u' ? line[bx] : line[by];
-    }
-  }
-  return values;
-});
+const FRAME_GRIDS: Float32Array[] = planFrames(PLAN).map((spec) =>
+  frameBlockGrid(spec, PLAN, FINGERPRINT_BLOCKS, RES_X, RES_Y, GRID_OFFSET),
+);
 const ALL_MEASURED = new Uint8Array(FINGERPRINT_BLOCKS * FINGERPRINT_BLOCKS).fill(1);
 
 /** A photograph on the card: what it looks like, and what it actually is. */

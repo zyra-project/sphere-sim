@@ -213,6 +213,62 @@ export function complementPlan(
   return { pairs, minBlocks: Math.pow(2, plan.grayBits) };
 }
 
+/**
+ * One frame reduced to the block grid a complement fingerprint compares, in
+ * PROJECTOR space.
+ *
+ * The emitter side of `indexing.ts`'s {@link ComplementPlan} check, and it
+ * lives here for the reason the pairing does: Experiment 8's sweep and the test
+ * that certifies the gap `COMPLEMENT_LIMIT` sits in both need it, and if the
+ * two reduce frames differently they stop measuring the same thing. Review
+ * found them holding the same twenty lines twice with nothing to notice a
+ * drift, and nothing tests `packages/experiments`.
+ *
+ * No sphere, no warp, no albedo: this is what the projector puts out, averaged.
+ * `complementResidual`'s own test is where the affine camera term is shown to
+ * cancel; separating the two is what stops a photometric wobble being reported
+ * as a fault-tolerance result.
+ *
+ * `offsetBlocks` slides the grid off the raster origin, and which way that cuts
+ * depends on the grid. Below `ComplementPlan.minBlocks` an aligned grid is the
+ * worst case, because each block spans a whole number of periods of the finest
+ * plane and averages it to a flat half. AT or above it, alignment is the BEST
+ * case: each block resolves one Gray cell exactly. So an offset grid is the
+ * conservative choice at the resolution the check actually runs at.
+ */
+export function frameBlockGrid(
+  spec: FrameSpec,
+  plan: PatternPlan,
+  blocks: number,
+  resX: number,
+  resY: number,
+  offsetBlocks = 0,
+  samplesPerBlock = 32,
+): Float32Array {
+  const frame = compileFrame(spec, plan, resX, resY);
+  const values = new Float32Array(blocks * blocks);
+  if (frame.axis === null) {
+    values.fill(frame.at(0));
+    return values;
+  }
+  const res = frame.axis === 'u' ? resX : resY;
+  const per = res / blocks;
+  const line = new Float64Array(blocks);
+  for (let b = 0; b < blocks; b++) {
+    let sum = 0;
+    for (let k = 0; k < samplesPerBlock; k++) {
+      sum += frame.at((b + offsetBlocks + (k + 0.5) / samplesPerBlock) * per);
+    }
+    line[b] = sum / samplesPerBlock;
+  }
+  for (let by = 0; by < blocks; by++) {
+    for (let bx = 0; bx < blocks; bx++) {
+      values[by * blocks + bx] = frame.axis === 'u' ? line[bx] : line[by];
+    }
+  }
+  return values;
+}
+
 /** `code ^ (code >> 1)`, the standard binary-reflected Gray code. */
 export function binaryToGray(v: number): number {
   return v ^ (v >>> 1);

@@ -17,9 +17,10 @@
  *      at least twice `COMPLEMENT_LIMIT`. If the plan changes shape, or somebody
  *      moves the constant, this fails.
  *   2. **The hole.** The faults the mechanism does NOT catch are exactly the
- *      ones that land entirely inside the phase block, which the plan pairs with
- *      nothing. Asserted as an equality rather than a bound, so the claim in
- *      `docs/EXPERIMENT-8.md` cannot quietly become false in either direction.
+ *      ones that disturb no complementary pair — mostly, but not only, the
+ *      phase frames moving among themselves. Asserted as an equality rather
+ *      than a bound, so the claim in `docs/EXPERIMENT-8.md` cannot quietly
+ *      become false in either direction.
  */
 
 import assert from 'node:assert/strict';
@@ -27,8 +28,8 @@ import test from 'node:test';
 
 import {
   DEFAULT_PATTERN_PLAN,
-  compileFrame,
   complementPlan,
+  frameBlockGrid,
   planFrames,
   type FrameSpec,
   type PatternPlan,
@@ -47,48 +48,20 @@ const RES_X = 1920;
 const RES_Y = 1200;
 
 /**
- * One frame reduced to a block grid, computed in PROJECTOR space.
+ * The plan's frames as fingerprints, reduced by the emitter's own block grid.
  *
- * No sphere, no warp, no albedo: this is the same discipline as Experiment 8's
- * indexing arm, and for the same reason — the question here is whether the
- * pairing logic sees the fault, and mixing a photometric wobble into it would
- * let one be reported as the other. `complementResidual`'s own test in
- * `packages/solver` is where the affine camera term is shown to cancel.
- *
- * `offsetBlocks` slides the grid off the raster origin. A grid landing exactly
- * in step with a pattern is the worst case for the check, so the sweeps below
- * run both.
+ * `frameBlockGrid` rather than a copy of it: Experiment 8's sweep reduces
+ * frames with the same function, and if this file and that one did it
+ * differently they would stop certifying the same thing. Review found them
+ * holding the same twenty lines twice.
  */
-function gridOf(spec: FrameSpec, plan: PatternPlan, blocks: number, offset: number): Float32Array {
-  const frame = compileFrame(spec, plan, RES_X, RES_Y);
-  const values = new Float32Array(blocks * blocks);
-  if (frame.axis === null) {
-    values.fill(frame.at(0));
-    return values;
-  }
-  const res = frame.axis === 'u' ? RES_X : RES_Y;
-  const per = res / blocks;
-  const line = new Float64Array(blocks);
-  const samples = 32;
-  for (let b = 0; b < blocks; b++) {
-    let sum = 0;
-    for (let k = 0; k < samples; k++) sum += frame.at((b + offset + (k + 0.5) / samples) * per);
-    line[b] = sum / samples;
-  }
-  for (let by = 0; by < blocks; by++) {
-    for (let bx = 0; bx < blocks; bx++) {
-      values[by * blocks + bx] = frame.axis === 'u' ? line[bx] : line[by];
-    }
-  }
-  return values;
-}
-
 function fingerprintsFor(plan: PatternPlan, blocks: number, offset: number): FrameFingerprint[] {
+  const measured = new Uint8Array(blocks * blocks).fill(1);
   return planFrames(plan).map((spec, i) => ({
     ordinal: i,
     blocks,
-    values: gridOf(spec, plan, blocks, offset),
-    measured: new Uint8Array(blocks * blocks).fill(1),
+    values: frameBlockGrid(spec, plan, blocks, RES_X, RES_Y, offset),
+    measured,
   }));
 }
 
@@ -199,7 +172,7 @@ test('a grid coarser than the plan needs passes a run it should reject', () => {
   assert.ok(seen !== null && seen > 2 * COMPLEMENT_LIMIT, `got ${String(seen)}`);
 });
 
-test('every cancelling drop-and-duplicate is caught except the ones inside the phase block', () => {
+test('every cancelling drop-and-duplicate is caught except the ones that disturb no pair', () => {
   // The exhaustive version of Experiment 8's `cancel` arm: instead of sampling
   // faults at random, put one drop and one duplicate at EVERY pair of positions
   // in a single run and ask what the mechanism does. The misses are asserted as
@@ -271,10 +244,27 @@ test('every cancelling drop-and-duplicate is caught except the ones inside the p
     caught / total > 0.9,
     `caught ${caught} of ${total}, which is below what the docs claim`,
   );
+
+  // Not every miss is two phase frames, and saying so is the difference between
+  // a claim and a slogan. Some duplicate a GRAY frame whose copy lands in the
+  // first phase slot, so no pair moves and nothing fires. The docs said "both
+  // faults inside the phase block" in four places; review found that wording
+  // survived here as the printed summary even after the assertion above was
+  // corrected to the equivalence.
+  const grayDuplicates = missed.filter(([, dupe]) => dupe < firstPhase);
+  assert.ok(
+    grayDuplicates.length > 0,
+    'the counter-example class must be present, or the wording below overstates the hole',
+  );
+  assert.ok(
+    grayDuplicates.every(([, dupe]) => dupe === firstPhase - 1),
+    'and it is the LAST Gray frame, whose copy lands in the first phase slot',
+  );
   process.stdout.write(
     `    complement fingerprint: caught ${caught} of ${total} cancelling pairs ` +
       `(${((100 * caught) / total).toFixed(1)}%); the ${missed.length} it misses are exactly ` +
-      `those that disturb no Gray pair, which is the ${specs.length - firstPhase}-frame phase ` +
-      `block moving within itself\n`,
+      `those that disturb no Gray pair — ${missed.length - grayDuplicates.length} of them the ` +
+      `${specs.length - firstPhase}-frame phase block moving within itself, and ` +
+      `${grayDuplicates.length} duplicating the last Gray frame into the first phase slot\n`,
   );
 });

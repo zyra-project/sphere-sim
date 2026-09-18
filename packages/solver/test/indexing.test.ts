@@ -519,18 +519,40 @@ test('a straddled frame misses the identity by exactly how much of it is the wro
   const w = fp(0, TOY.white);
   const k = fp(1, TOY.black);
   for (const blend of [0.5, 0.75, 0.85, 0.9, 0.95]) {
-    const straddled = TOY.gray0.map((v, i) => blend * v + (1 - blend) * TOY.grayInv0[i]);
-    const r = complementResidual(fp(2, straddled), fp(3, TOY.grayInv0), w, k);
-    assert.ok(r !== null);
+    // The pattern frame, smeared into the frame shown next — which for a Gray
+    // plane IS its own complement, because that is how `planFrames` orders them.
+    const onto = TOY.gray0.map((v, i) => blend * v + (1 - blend) * TOY.grayInv0[i]);
+    const rGray = complementResidual(fp(2, onto), fp(3, TOY.grayInv0), w, k);
+    assert.ok(rGray !== null);
     assert.ok(
-      Math.abs(r - (1 - blend)) < 1e-6,
-      `a ${(100 * (1 - blend)).toFixed(0)}% straddle should read ${1 - blend}, got ${r}`,
+      Math.abs(rGray - (1 - blend)) < 1e-6,
+      `a ${(100 * (1 - blend)).toFixed(0)}% straddle of the pattern should read ${1 - blend}, got ${rGray}`,
+    );
+
+    // The COMPLEMENT frame is the other boundary, and it does not behave the
+    // same way — which the first version of this test never looked at, so the
+    // page it backs claimed a single crossing point that does not exist. The
+    // complement's temporal neighbour is the NEXT PLANE, not its own pattern,
+    // and two different Gray planes disagree over only half the raster, so the
+    // same straddle reads half as far from the identity.
+    const onward = TOY.grayInv0.map((v, i) => blend * v + (1 - blend) * TOY.gray1[i]);
+    const rInverse = complementResidual(fp(2, TOY.gray0), fp(3, onward), w, k);
+    assert.ok(rInverse !== null);
+    assert.ok(
+      Math.abs(rInverse - (1 - blend) / 2) < 1e-6,
+      `the same straddle on the complement should read ${(1 - blend) / 2}, got ${rInverse}`,
     );
   }
-  // So the limit says where the response crosses into a refusal, and it is a
-  // straddle of roughly a seventh of the exposure rather than a coin flip.
-  const caught = 1 - COMPLEMENT_LIMIT;
-  assert.ok(caught > 0.8 && caught < 0.9, `COMPLEMENT_LIMIT puts the crossing at ${caught}`);
+
+  // So there is no single crossing point. At COMPLEMENT_LIMIT a straddle of the
+  // pattern frame is refused above about a seventh of the exposure and one of
+  // the complement frame only above about a third — and on the real plan the
+  // finest planes are fainter still, which `packages/bench/test/complements.test.ts`
+  // is where any claim about them belongs.
+  assert.ok(
+    Math.abs(1 - COMPLEMENT_LIMIT - 0.85) < 1e-9 && Math.abs(1 - 2 * COMPLEMENT_LIMIT - 0.7) < 1e-9,
+    'the two crossings this test pins are 15% and 30% of the exposure',
+  );
 });
 
 test('a block the projector never reached is not evidence either way', () => {
@@ -587,7 +609,7 @@ test('a clean capture is still clean, and the mechanism says which one it was', 
   assert.deepEqual(r.assignment, Array.from({ length: 16 }, (_, i) => i));
 });
 
-test('a cancelling pair inside the phase block is NOT caught, and that is the documented limit', () => {
+test('a cancelling fault that disturbs no pair is NOT caught, and that is the documented limit', () => {
   // Not a defect being pinned: the plan pairs Gray planes with their complements
   // and pairs the phase steps with nothing, so a drop and a duplicate that both
   // land among the phase frames shift only frames this check does not look at.
@@ -672,6 +694,95 @@ test('the pair a refusal names is the pair that broke, adjacent or not', () => {
   const r = indexByFingerprint(observations, fingerprints, spread);
   assert.equal(r.ok, false);
   assert.match(r.problems[0] ?? '', /frames 3 and 6/, 'the two positions the plan actually paired');
+});
+
+test('background blocks cannot inflate a correct pair, however the shot is framed', () => {
+  // Review found the filter was half of one. `white > black` admits any block
+  // where noise landed the right way up, and such a block then contributes the
+  // whole size of its disagreement to the deviation while contributing only the
+  // positive part to the modulation — so a CORRECT pair's residual climbed with
+  // how much of the photograph was background. Measured before the fix, with
+  // 2% pixel noise: 0.0400 with the sphere filling the frame, 0.0950 at a
+  // quarter of it, 0.2432 at a twentieth. That last one is a false refusal, and
+  // the quantity driving it is the framing — the one thing this statistic is
+  // supposed to be independent of.
+  //
+  // Deterministic here rather than simulated: the background blocks carry a
+  // little modulation and disagree completely, which is the worst shape the
+  // noise can take. The assertion is that ADDING them changes nothing.
+  const sphere = { white: 1, black: 0, gray: 1, grayInv: 0 };
+  const bg = { white: 0.02, black: 0, gray: 0.02, grayInv: 0.02 };
+  const build = (backgroundBlocks: number): FrameFingerprint[] => {
+    const pick = (k: 'white' | 'black' | 'gray' | 'grayInv'): FrameFingerprint => {
+      const vals = [
+        ...Array.from({ length: 4 }, () => sphere[k]),
+        ...Array.from({ length: backgroundBlocks }, () => bg[k]),
+      ];
+      return fp(0, vals, 1);
+    };
+    return [pick('white'), pick('black'), pick('gray'), pick('grayInv')];
+  };
+  const residualWith = (n: number): number | null => {
+    const [w, k, g, G] = build(n);
+    return complementResidual(g, G, w, k);
+  };
+  assert.equal(residualWith(0), 0, 'the sphere alone: a correct pair is exact');
+  for (const n of [4, 40, 400]) {
+    assert.equal(
+      residualWith(n),
+      0,
+      `${n} background blocks must not move a correct pair's residual`,
+    );
+  }
+});
+
+test('a plan whose pairs fall outside the run is refused, not skipped one at a time', () => {
+  // The silent no-op review found: positions outside the run used to `continue`,
+  // so a plan whose pairs ALL fell outside checked nothing, found nothing, and
+  // returned ok with mechanism 'fingerprint' on a run carrying a cancelling drop
+  // and duplicate — the same "bookends wearing its name" outcome the empty-pairs
+  // branch refuses a few lines earlier.
+  const broken = ['white', 'black', 'grayInv0', 'gray1', 'grayInv1', 'grayInv1', 'phase0', 'phase1'];
+  const { observations, fingerprints } = toyCapture([broken]);
+  const offRun: ExpectedSequence = {
+    kinds: TOY_KINDS,
+    projectors: 1,
+    complements: { pairs: [[8, 9]], minBlocks: BLOCKS },
+  };
+  const r = indexByFingerprint(observations, fingerprints, offRun);
+  assert.equal(r.ok, false, 'a check that cannot run is not a check that passed');
+  assert.deepEqual(r.usableProjectors, [], 'and the broken run must not be offered');
+  assert.match(r.problems[0] ?? '', /pairs frames 9 and 10 of a run, and a run here holds 8/);
+});
+
+test('fingerprints that have been reordered are caught by their own ordinals', () => {
+  // Both types carry an `ordinal` documented as the position in the folder, and
+  // nothing read either — so a caller whose fingerprints came back out of order
+  // passed the length check and then had every pair compared against the wrong
+  // frames, with the refusal naming frames that were never in the pair.
+  const { observations, fingerprints } = toyCapture([TOY_ORDER, TOY_ORDER]);
+  const swapped = fingerprints.slice();
+  [swapped[4], swapped[5]] = [swapped[5], swapped[4]];
+  const r = indexByFingerprint(observations, swapped, TOY_EXPECTED);
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.usableProjectors, []);
+  assert.match(r.problems[0] ?? '', /says it is photograph 5 and the observation in that position says 4/);
+});
+
+test('an uncheckable run says so without naming a cause it cannot know', () => {
+  // Two causes remain once mismatched grids are ruled out — no block clearing
+  // the modulation floor, and a photograph with no readable pixels — and this
+  // cannot tell them apart. The refusal used to assert the first.
+  const { observations, fingerprints } = toyCapture([TOY_ORDER]);
+  const oneRun: ExpectedSequence = { ...TOY_EXPECTED, projectors: 1 };
+  const blinded = fingerprints.map((f, i) =>
+    i === 4 ? { ...f, measured: new Uint8Array(f.values.length) } : f,
+  );
+  const r = indexByFingerprint(observations, blinded, oneRun);
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.usableProjectors, [], 'dropped rather than passed untested');
+  assert.match(r.problems[0] ?? '', /either no part of the frame carries enough modulation/);
+  assert.match(r.problems[0] ?? '', /or one of the photographs came back with no readable pixels/);
 });
 
 test('one fingerprint per photograph, or the two lists are not the same capture', () => {

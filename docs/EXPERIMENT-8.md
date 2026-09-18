@@ -6,7 +6,7 @@ here: the subject is the indexing logic, and a deleted file is deleted whether
 the picture behind it came off a sensor or a ray tracer.
 
 - **Data** — [`experiments/experiment-8.json`](../experiments/experiment-8.json)
-- **Reproduce** — `npm run experiment8` (18 000 trials, about 16 s)
+- **Reproduce** — `npm run experiment8` (6 arms x 2 000 = 12 000 trials, three mechanisms scored on each, about 15 s)
 - **Code** — [`packages/solver/src/indexing.ts`](../packages/solver/src/indexing.ts),
   [`packages/experiments/src/indexing/`](../packages/experiments/src/indexing/)
 
@@ -158,12 +158,15 @@ linear and therefore survives block-averaging exactly.
 
 **It has one hole and it is a property of the plan, not a threshold.** The plan
 pairs the Gray planes with their complements and pairs the phase steps with
-nothing. A fault that disturbs no pair is invisible — which in the page's own
-plan means the eight phase frames rearranging among themselves. Swept
-exhaustively over every way a drop and a duplicate can cancel inside one run
+nothing, so a fault that disturbs no pair is invisible. Swept exhaustively over
+every way a drop and a duplicate can cancel inside one run
 (`packages/bench/test/complements.test.ts`), the mechanism catches **928 of
 992**, and the 64 it misses are *exactly* the ones that leave every Gray pair
-intact. Closing that would need a second identity — the phase steps of one axis
+intact: 56 are the eight phase frames rearranging among themselves, and 8
+duplicate the **last Gray frame**, whose copy lands in the first phase slot so
+that no pair moves either. The deciding question is whether a pair is disturbed,
+not where the two mistakes fell — a distinction the first version of this
+paragraph got wrong, and the sweep refuted on its first run. Closing that would need a second identity — the phase steps of one axis
 also sum to a flat field — which is not built here and is a weaker signal, since
 a fringe is finer than most Gray planes and so is the first thing a coarse
 thumbnail stops resolving.

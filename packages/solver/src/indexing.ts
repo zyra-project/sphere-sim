@@ -73,8 +73,8 @@
  *
  * at every pixel, for every plane `j`. See {@link complementResidual} for why
  * that survives the camera, and {@link indexByFingerprint} for what it still
- * cannot see — a cancelling pair that lands entirely inside the phase block,
- * which the plan pairs with nothing.
+ * cannot see — a cancelling fault that disturbs no pair at all, the phase
+ * frames being the ones the plan pairs with nothing.
  *
  * ## Refusing is a result
  *
@@ -367,18 +367,26 @@ export function fingerprint(
   const measured = new Uint8Array(blocks * blocks);
   const stride = image.channels;
   const sums = new Float64Array(blocks * blocks);
+  // Column index per x, built once. It depends only on x, and computing it
+  // inside the pixel loop costs a divide and a floor per pixel — 24 million of
+  // each per frame on a 24 MP photograph, in a function whose whole
+  // justification is being cheap enough to run on every one of them.
+  //
+  // Clamped rather than rounded, so the last row and column cannot land one
+  // past the end on a frame whose dimensions do not divide the grid.
+  const columnOf = new Uint32Array(image.width);
+  for (let x = 0; x < image.width; x++) {
+    columnOf[x] = Math.min(blocks - 1, Math.floor((x * blocks) / image.width));
+  }
   for (let y = 0; y < image.height; y++) {
-    // Block index from the pixel's own position, clamped rather than rounded, so
-    // the last row and column cannot land one past the end on a frame whose
-    // dimensions do not divide the grid.
-    const by = Math.min(blocks - 1, Math.floor((y * blocks) / image.height));
+    const row = Math.min(blocks - 1, Math.floor((y * blocks) / image.height)) * blocks;
+    const base = y * image.width;
     for (let x = 0; x < image.width; x++) {
-      const i = y * image.width + x;
+      const i = base + x;
       if (mask !== undefined && mask[i] !== 1) continue;
       const v = image.data[i * stride];
       if (!Number.isFinite(v)) continue;
-      const bx = Math.min(blocks - 1, Math.floor((x * blocks) / image.width));
-      const b = by * blocks + bx;
+      const b = row + columnOf[x];
       sums[b] += v;
       counts[b]++;
     }
@@ -432,17 +440,31 @@ export function fingerprint(
  * {@link ComplementPlan.minBlocks} exists — a plane finer than one block
  * averages to a flat half and stops being distinguishable from anything.
  *
- * ## Which blocks count
+ * ## Which blocks count, and why a bare `white > black` is not enough
  *
- * Only those where the white frame came out brighter than the black one. A
- * block the projector never reached carries no evidence about the pairing — its
- * two frames agree because nothing lit either of them — and including it would
- * dilute the residual by however much of the photograph is background, which is
- * a property of the framing rather than of the capture. This is the same
- * modulation floor `decode.ts` rejects on, applied a stage earlier.
+ * Only blocks carrying real modulation — at least {@link MODULATION_FLOOR} of
+ * the brightest block in the run. A block the projector never reached holds no
+ * evidence about the pairing, because its two frames agree for a reason that
+ * has nothing to do with whether they are complements.
+ *
+ * The first version of this admitted any block with `white > black`, and review
+ * showed that is not a filter but half of one: on an unsegmented frame the
+ * background blocks pass it whenever noise happens to land the right way up,
+ * and they then contribute the full size of their noise to the deviation while
+ * contributing only its positive half to the modulation. So a CORRECT pair's
+ * residual climbs with how much of the photograph is background — measured at
+ * 0.0400 with the sphere filling the frame, 0.0950 at a quarter, and 0.2432 at
+ * a twentieth, which is a false refusal. The bias is in the framing, which is
+ * exactly the thing this statistic is supposed to be independent of.
+ *
+ * The floor is relative to the run's own brightest block rather than absolute,
+ * unlike `decode.ts`'s `minModulation`, and it has to be: these are block means
+ * of whatever the ingest produced, so there is no scale here to state an
+ * absolute number in. Normalising by the brightest thing in the capture is what
+ * {@link classify} already does, for the same reason.
  *
  * Returns null when the question cannot be asked: grids that disagree, or no
- * block with any modulation in it at all.
+ * block clearing the floor.
  */
 export function complementResidual(
   a: FrameFingerprint,
@@ -452,13 +474,30 @@ export function complementResidual(
 ): number | null {
   const n = a.blocks;
   if (b.blocks !== n || white.blocks !== n || black.blocks !== n) return null;
+
+  const usable = (i: number): boolean =>
+    a.measured[i] === 1 &&
+    b.measured[i] === 1 &&
+    white.measured[i] === 1 &&
+    black.measured[i] === 1;
+
+  // The brightest block sets the scale, so the floor is a property of this run
+  // rather than a constant in units nothing here owns.
+  let peak = 0;
+  for (let i = 0; i < a.values.length; i++) {
+    if (!usable(i)) continue;
+    const m = white.values[i] - black.values[i];
+    if (m > peak) peak = m;
+  }
+  if (!(peak > 0)) return null;
+  const floor = MODULATION_FLOOR * peak;
+
   let deviation = 0;
   let modulation = 0;
   for (let i = 0; i < a.values.length; i++) {
-    if (a.measured[i] !== 1 || b.measured[i] !== 1) continue;
-    if (white.measured[i] !== 1 || black.measured[i] !== 1) continue;
+    if (!usable(i)) continue;
     const m = white.values[i] - black.values[i];
-    if (!(m > 0)) continue;
+    if (!(m >= floor)) continue;
     deviation += Math.abs(a.values[i] + b.values[i] - (white.values[i] + black.values[i]));
     modulation += m;
   }
@@ -466,14 +505,37 @@ export function complementResidual(
 }
 
 /**
+ * How much modulation a block needs before it is evidence, as a fraction of the
+ * brightest block in the run.
+ *
+ * A tenth is well above anything noise produces on a block mean — a block is an
+ * average over thousands of pixels, so its noise is smaller than a pixel's by
+ * the square root of that — and well below the limb of the sphere, where real
+ * modulation falls off with the cosine but stays a large fraction of the peak
+ * until the very edge. What it excludes is the background, which is the whole
+ * point.
+ */
+export const MODULATION_FLOOR = 0.1;
+
+/**
  * How far a pair may drift from the identity before the run is refused.
  *
- * Measured rather than picked, and `test/indexing.test.ts` holds the
- * measurement so it cannot drift: over every mismatch a single drop-and-
- * duplicate can produce in the page's own plan, at the grid
- * {@link ComplementPlan.minBlocks} requires, the SMALLEST residual a mismatched
- * pair returns is about 0.31, and a matched pair returns 0. This sits at half
- * the smaller of those, which is as far from both as one number can be.
+ * Measured rather than picked, and `packages/bench/test/complements.test.ts`
+ * holds the measurement so it cannot drift — that file rather than this
+ * package's own tests, because the sweep needs the real pattern plan and
+ * `packages/solver` may not import one. Over every pairing a single
+ * drop-and-duplicate can put in a pair slot of the page's own plan, at the grid
+ * {@link ComplementPlan.minBlocks} requires, the faintest a broken pair returns
+ * is 0.3961 on an offset grid and 0.5000 on an aligned one, while a matched
+ * pair returns 0. This sits below half of the smaller, so a broken pair has to
+ * lose more than half its signal before it reads as a good one.
+ *
+ * An earlier version of this comment pointed at `test/indexing.test.ts`, which
+ * only exercises a four-block toy plan, and quoted 0.31 — a figure from a
+ * scratch sweep over every PAIRING OF ANY TWO FRAMES, which is a superset of
+ * what a shift can actually produce and so understates the real margin. Review
+ * caught it, and caught that this PR fixes exactly that class of error in
+ * `patterns.ts` while introducing it here.
  *
  * **What is not measured is the other side of the gap.** A matched pair returns
  * exactly 0 only with exact photometry. On real photographs it returns whatever
@@ -826,12 +888,19 @@ export function indexByBookends(
  *
  * ## What it does not close, and it is one case rather than a margin
  *
- * **A cancelling pair that lands entirely inside the phase block.** The plan
- * pairs the Gray planes with their complements and pairs the phase steps with
- * nothing, so a drop and a duplicate that both fall among the phase frames
- * shift only frames this check does not look at. Every Gray pair is still a
- * pair, the residual is still zero, and the run is offered with a phase step
- * missing and another shot twice.
+ * **A cancelling pair that disturbs no complementary pair.** The plan pairs the
+ * Gray planes with their complements and pairs the phase steps with nothing, so
+ * a fault whose whole effect lands among the phase frames shifts only frames
+ * this check does not look at. Every Gray pair is still a pair, the residual is
+ * still zero, and the run is offered with a phase step missing and another shot
+ * twice.
+ *
+ * **Said that way rather than as "both faults inside the phase block", because
+ * that narrower wording is false and the sweep said so.** Of the 64 faults
+ * missed in the page's own plan, 8 duplicate a Gray frame — the last one, whose
+ * copy lands in the first phase slot — while dropping a phase frame. No Gray
+ * pair moves, so nothing fires. What decides it is whether the fault disturbs a
+ * pair, not where the operator's two mistakes fell.
  *
  * That is not a threshold that could be tightened. It is the shape of the plan:
  * `planFrames` emits `phaseSteps` frames per axis with no complement among
@@ -884,6 +953,22 @@ export function indexByFingerprint(
     );
     return refuse();
   }
+  // Both lists carry an ordinal and nothing used to read either, so a caller
+  // whose fingerprints came back out of order — a worker pool resolving as it
+  // pleases, a sort by filename applied to one list and not the other — passed
+  // the length check and then had every pair compared against the wrong frames.
+  // Correct pairs read as broken, broken ones can read as correct, and the
+  // refusal names frames that were never in the pair. One comparison closes it.
+  const disordered = fingerprints.findIndex((f, i) => f.ordinal !== observations[i]?.ordinal);
+  if (disordered >= 0) {
+    problems.push(
+      `Fingerprint ${disordered + 1} says it is photograph ${fingerprints[disordered].ordinal} ` +
+        `and the observation in that position says ${observations[disordered]?.ordinal}. The two ` +
+        'lists are matched by position, so one of them has been reordered and every comparison ' +
+        'below it would be against the wrong frame.',
+    );
+    return refuse();
+  }
 
   const runLength = expected.kinds.length;
   const grid = fingerprints[0]?.blocks;
@@ -916,6 +1001,25 @@ export function indexByFingerprint(
     return refuse();
   }
 
+  // Every pair has to name positions inside the run. These used to be skipped
+  // one at a time, which is a silent no-op rather than a lenient check: a plan
+  // whose pairs all fell outside the run checked NOTHING, found no fault, and
+  // returned `ok: true` with `mechanism: 'fingerprint'` on a run carrying a
+  // cancelling drop and duplicate — the exact "bookends wearing its name"
+  // outcome the empty-pairs branch above refuses. Reachable through a caller
+  // that truncates `kinds` while passing the full plan's pairs through.
+  const outside = plan.pairs.find(
+    ([a, b]) => a < 0 || b < 0 || a >= runLength || b >= runLength,
+  );
+  if (outside !== undefined) {
+    problems.push(
+      `This capture plan pairs frames ${outside[0] + 1} and ${outside[1] + 1} of a run, and a ` +
+        `run here holds ${runLength}. The pairs and the frame kinds describe different runs, so ` +
+        'one of the two did not come from the plan that was shot.',
+    );
+    return refuse();
+  }
+
   const whiteAt = expected.kinds.indexOf('white');
   const blackAt = expected.kinds.indexOf('black');
   if (whiteAt < 0 || blackAt < 0) {
@@ -942,7 +1046,6 @@ export function indexByFingerprint(
     let broken: { a: number; b: number; residual: number } | null = null;
     let unanswered = false;
     for (const [a, b] of plan.pairs) {
-      if (a < 0 || b < 0 || a >= runLength || b >= runLength) continue;
       const residual = complementResidual(
         fingerprints[start + a],
         fingerprints[start + b],
@@ -973,10 +1076,16 @@ export function indexByFingerprint(
       continue;
     }
     if (unanswered) {
+      // Deliberately does NOT name a cause. Two remain once the grid mismatch is
+      // ruled out above — no block clearing the modulation floor, and a frame
+      // whose fingerprint is entirely unmeasured — and this cannot tell them
+      // apart. Asserting either would be the confidently wrong diagnosis that
+      // the grid check was added to stop producing.
       problems.push(
-        `Projector ${p + 1}'s run could not be checked: its white and black frames are no ` +
-          'brighter than each other anywhere the pairs could be compared, so there is no ' +
-          'modulation to measure against. The run is dropped rather than passed untested.',
+        `Projector ${p + 1}'s run could not be checked: somewhere in it a pattern and its ` +
+          'complement had nothing to be compared over — either no part of the frame carries ' +
+          'enough modulation to measure against, or one of the photographs came back with no ' +
+          'readable pixels at all. The run is dropped rather than passed untested.',
       );
       continue;
     }

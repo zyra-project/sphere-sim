@@ -533,11 +533,22 @@ interface Experiment8 {
   }[];
 }
 
-/** The mechanisms in the order they were built, which is also worst to best. */
-const EXPERIMENT_8_MECHANISMS: [string, keyof Experiment8['arms'][number] & string][] = [
-  ['ordering', 'order'],
-  ['bookends', 'bookends'],
-  ['fingerprint', 'fingerprint'],
+/**
+ * The mechanisms in the order they were built, which is also worst to best.
+ *
+ * Accessors rather than key names, so the compiler checks them. A `keyof` over
+ * the arm type also admits `key`, `drops`, `dupes` and `story`, and the cast
+ * that made those compile would have rendered `NaN%` and `undefined` into the
+ * table — caught, if at all, by `check:docs` comparing against committed
+ * markdown rather than by the build. Review caught it instead.
+ */
+const EXPERIMENT_8_MECHANISMS: [
+  string,
+  (a: Experiment8['arms'][number]) => Experiment8Mechanism,
+][] = [
+  ['ordering', (a) => a.order],
+  ['bookends', (a) => a.bookends],
+  ['fingerprint', (a) => a.fingerprint],
 ];
 
 function experiment8Arms(result: Experiment8): string {
@@ -549,10 +560,10 @@ function experiment8Arms(result: Experiment8): string {
     '| --- | --- | --- | --- | --- | --- |',
   ];
   for (const a of result.arms) {
-    for (const [name, key] of EXPERIMENT_8_MECHANISMS) {
-      const m = a[key] as Experiment8Mechanism;
+    for (const [name, pick] of EXPERIMENT_8_MECHANISMS) {
+      const m = pick(a);
       out.push(
-        `| ${key === 'order' ? a.story : ''} | ${name} | ` +
+        `| ${name === 'ordering' ? a.story : ''} | ${name} | ` +
           `${share(m.silent, trials)} | ${m.runsOfferedTotal} | ` +
           `${m.badUsableRunsTotal} (${share(m.badUsableRunsTotal, m.runsOfferedTotal)}) | ` +
           `${m.usableRunsMean.toFixed(2)} / ${result.generatedFrom.projectors} |`,

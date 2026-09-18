@@ -130,10 +130,11 @@ export const FINGERPRINT_BLOCKS = complementPlan(PLAN).minBlocks;
  *
  * A trial is no longer free, and this comment used to say it cost microseconds.
  * The complement check is a pass over `FINGERPRINT_BLOCKS^2` numbers per pair
- * per run, so the sweep went from under a second to about 16, and raising the
+ * per run, so the sweep went from under a second to about 15, and raising the
  * trial count is now a decision with a price rather than a formality. That is a
- * property of running 18 000 trials, not of the mechanism: one real capture
- * costs one such check.
+ * property of six arms x 2 000 trials x three mechanisms — 12 000 trials and
+ * 36 000 scorings — not of the mechanism: one real capture costs one such
+ * check.
  */
 export const TRIALS = 2000;
 

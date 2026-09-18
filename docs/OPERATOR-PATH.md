@@ -341,8 +341,11 @@ Its own hole is one case and it is the shape of the plan rather than a threshold
 the plan pairs Gray planes with their complements and pairs the phase steps with
 nothing, so a fault that disturbs no pair is invisible. Swept exhaustively over
 every way a drop and a duplicate can cancel inside one run, it catches 928 of 992
-and the 64 it misses are exactly those that leave every Gray pair intact — the
-phase block rearranging within itself.
+and the 64 it misses are exactly those that leave every Gray pair intact. Mostly
+that is the phase block rearranging within itself (56 of them); the other 8
+duplicate the *last Gray frame*, whose copy lands in the first phase slot, so no
+pair moves either. What decides it is whether a pair is disturbed, not where the
+operator's two mistakes fell.
 
 **What it does not settle**, and what a real sphere is now needed for:
 

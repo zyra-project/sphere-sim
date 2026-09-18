@@ -6,12 +6,14 @@
  *
  * Writes `experiments/experiment-8.json`. Nothing is rendered and nothing is
  * solved, so there is no checkpoint machinery: re-running the sweep from scratch
- * is cheaper than resuming it. It takes about 16 seconds, nearly all of it in
+ * is cheaper than resuming it. It takes about 15 seconds, nearly all of it in
  * the complement fingerprint — 12 pairs compared over a 64x64 grid, for every
- * run of every trial. That is a property of running 18 000 trials rather than of
- * the mechanism: one real capture costs one such check, which is microseconds.
- * (It ran in under a second with two mechanisms, and this docblock said so until
- * the third one landed.)
+ * run of every trial. That is a property of running 12 000 trials across three
+ * mechanisms rather than of the mechanism itself: one real capture costs one
+ * such check, which is microseconds. (It ran in under a second with two
+ * mechanisms, and this docblock said so until the third one landed. It then
+ * said 18 000 trials, which is not a number this sweep produces — six arms of
+ * 2 000 is 12 000 trials and 36 000 mechanism scorings.)
  *
  * The verdict sentence at the end of the file is written HERE, from the counts,
  * rather than by a person reading them. `tools/experiment-tables.ts` exists
@@ -162,8 +164,9 @@ function main(): void {
         `silently wrong in ${pct(cancel.order.silent, trials)} of those, the bookends in ` +
         `${pct(cancel.bookends.silent, trials)} and the fingerprint in ` +
         `${pct(cancel.fingerprint.silent, trials)}. What the fingerprint has left is the part of ` +
-        `that case which disturbs no complementary pair, which is the phase block moving within ` +
-        `itself. `) +
+        `that case which disturbs no complementary pair — mostly the phase frames moving among ` +
+        `themselves, and partly a duplicated last Gray frame whose copy lands in the first phase ` +
+        `slot. `) +
     (drop1 === undefined
       ? ''
       : `With no cancelling pair the bookends were never silently wrong and never offered a bad ` +
