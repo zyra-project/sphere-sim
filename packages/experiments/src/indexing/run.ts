@@ -51,7 +51,6 @@ import {
 import {
   EXPERIMENT_ROOT_SEED,
   FINGERPRINT_BLOCKS,
-  FRAMES_PER_PROJECTOR,
   PLAN,
   PROJECTORS,
   type Arm,
@@ -60,15 +59,25 @@ import {
 const kindOf = (spec: FrameSpec): FrameKind =>
   spec.kind === 'white' ? 'white' : spec.kind === 'black' ? 'black' : 'patterned';
 
-/** The plan's shape: white, black, the patterned frames, and which of them pair. */
-export function expectedSequence(
-  projectors = PROJECTORS,
-  framesPerProjector = FRAMES_PER_PROJECTOR,
-): ExpectedSequence {
+/**
+ * The plan's shape: white, black, the patterned frames, and which of them pair.
+ *
+ * Derived from ONE frame list, which review had to point out. This used to take
+ * a `framesPerProjector` override while the complement pairs and the block
+ * grids still came from the whole plan, so the three could describe different
+ * runs: a shorter length left pair positions pointing past the end of `kinds`
+ * and the fingerprint indexer refused every run, and a longer one let
+ * {@link runTrial} index past `FRAME_GRIDS`. Nothing ever passed the override —
+ * `cli.ts` calls this with no arguments — so it was a trap with no user, and
+ * the plan is the one thing that decides a run's length.
+ */
+export function expectedSequence(projectors = PROJECTORS): ExpectedSequence {
   const specs = planFrames(PLAN);
-  const kinds: FrameKind[] = specs.slice(0, framesPerProjector).map(kindOf);
-  while (kinds.length < framesPerProjector) kinds.push('patterned');
-  return { kinds, projectors, complements: complementPlan(PLAN) };
+  return {
+    kinds: specs.map(kindOf),
+    projectors,
+    complements: complementPlan(PLAN),
+  };
 }
 
 /**
@@ -89,7 +98,7 @@ const RES_Y = 1200;
  * grid is the worst case; review measured it and the opposite is true AT THIS
  * RESOLUTION. `FINGERPRINT_BLOCKS` is `ComplementPlan.minBlocks`, where each
  * block resolves exactly one Gray cell, so alignment is the most FAVOURABLE
- * case: the faintest broken pair returns 0.5000 aligned against 0.3961 at this
+ * case: the faintest broken pair returns 0.5000 aligned against 0.3957 at this
  * offset. The flat-half resonance that makes alignment catastrophic belongs to
  * grids coarser than the floor, which is what `minBlocks` exists to exclude.
  *

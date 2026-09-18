@@ -235,6 +235,26 @@ export function complementPlan(
  * plane and averages it to a flat half. AT or above it, alignment is the BEST
  * case: each block resolves one Gray cell exactly. So an offset grid is the
  * conservative choice at the resolution the check actually runs at.
+ *
+ * ## Every sample stays inside the raster, and that had to be made explicit
+ *
+ * An offset grid pushes the last window past the end of the raster — at 64
+ * blocks and an offset of 0.37, twelve of that block's thirty-two samples sat
+ * beyond 1920. Out there the frame kinds stop agreeing with each other:
+ * {@link compileFrame} CLAMPS a Gray coordinate, so a Gray plane holds its edge
+ * value, while a phase frame is a cosine of the coordinate and simply keeps
+ * oscillating. Measured at 1931 px on a 1920 raster: the Gray plane read 0 and
+ * the phase step read 0.7034, neither of which the projector ever emitted.
+ *
+ * Review caught it, and caught why it mattered more than a rounding error: the
+ * sweep and the test that certifies `COMPLEMENT_LIMIT`'s margin both reduce
+ * frames through this function, so an edge artifact would have appeared on both
+ * sides of the comparison and they would have agreed with each other about a
+ * number neither had measured properly.
+ *
+ * So each window is CLIPPED to the raster and averaged over what is left. A
+ * block near the edge covers less of the frame than the others, which is true
+ * of a real grid over a real image too.
  */
 export function frameBlockGrid(
   spec: FrameSpec,
@@ -255,9 +275,18 @@ export function frameBlockGrid(
   const per = res / blocks;
   const line = new Float64Array(blocks);
   for (let b = 0; b < blocks; b++) {
+    // The window, clipped to the raster. `hi > lo` for every block while
+    // `offsetBlocks` is in [0, 1), because the last window then still starts
+    // before the end; the guard covers a caller who passes more than that.
+    const lo = Math.max(0, (b + offsetBlocks) * per);
+    const hi = Math.min(res, (b + offsetBlocks + 1) * per);
+    if (!(hi > lo)) {
+      line[b] = frame.at(Math.min(res, Math.max(0, lo)));
+      continue;
+    }
     let sum = 0;
     for (let k = 0; k < samplesPerBlock; k++) {
-      sum += frame.at((b + offsetBlocks + (k + 0.5) / samplesPerBlock) * per);
+      sum += frame.at(lo + ((k + 0.5) / samplesPerBlock) * (hi - lo));
     }
     line[b] = sum / samplesPerBlock;
   }

@@ -474,12 +474,27 @@ export function complementResidual(
 ): number | null {
   const n = a.blocks;
   if (b.blocks !== n || white.blocks !== n || black.blocks !== n) return null;
+  // The arrays have to be the size the grid claims. Review found that only the
+  // `blocks` fields were compared, so a fingerprint whose `values` were short of
+  // its own mask read `undefined` past the end, the arithmetic produced NaN, and
+  // NaN is neither null nor greater than COMPLEMENT_LIMIT — so the caller's two
+  // branches both missed and the run went out as clean. Reproduced before fixing.
+  const want = n * n;
+  for (const f of [a, b, white, black]) {
+    if (f.values.length !== want || f.measured.length !== want) return null;
+  }
 
   const usable = (i: number): boolean =>
     a.measured[i] === 1 &&
     b.measured[i] === 1 &&
     white.measured[i] === 1 &&
-    black.measured[i] === 1;
+    black.measured[i] === 1 &&
+    // Belt and braces against the same failure arriving as a NaN already stored
+    // in a fingerprint rather than as a short array.
+    Number.isFinite(a.values[i]) &&
+    Number.isFinite(b.values[i]) &&
+    Number.isFinite(white.values[i]) &&
+    Number.isFinite(black.values[i]);
 
   // The brightest block sets the scale, so the floor is a property of this run
   // rather than a constant in units nothing here owns.
@@ -526,7 +541,7 @@ export const MODULATION_FLOOR = 0.1;
  * `packages/solver` may not import one. Over every pairing a single
  * drop-and-duplicate can put in a pair slot of the page's own plan, at the grid
  * {@link ComplementPlan.minBlocks} requires, the faintest a broken pair returns
- * is 0.3961 on an offset grid and 0.5000 on an aligned one, while a matched
+ * is 0.3957 on an offset grid and 0.5000 on an aligned one, while a matched
  * pair returns 0. This sits below half of the smaller, so a broken pair has to
  * lose more than half its signal before it reads as a good one.
  *
@@ -971,6 +986,21 @@ export function indexByFingerprint(
   }
 
   const runLength = expected.kinds.length;
+  const misshapen = fingerprints.findIndex(
+    (f) => f.values.length !== f.blocks * f.blocks || f.measured.length !== f.blocks * f.blocks,
+  );
+  if (misshapen >= 0) {
+    // Named separately from the grid mismatch below so the refusal is the true
+    // one. A fingerprint that disagrees with its own `blocks` is a caller bug,
+    // not a capture that came out badly.
+    const f = fingerprints[misshapen];
+    problems.push(
+      `Fingerprint ${misshapen + 1} says it is ${f.blocks} blocks across, which needs ` +
+        `${f.blocks * f.blocks} values, and carries ${f.values.length} values and ` +
+        `${f.measured.length} measured flags. It does not describe the grid it claims.`,
+    );
+    return refuse();
+  }
   const grid = fingerprints[0]?.blocks;
   if (grid !== undefined && fingerprints.some((f) => f.blocks !== grid)) {
     // Ruled out here so that the only remaining reason `complementResidual` can

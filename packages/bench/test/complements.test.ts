@@ -28,6 +28,7 @@ import test from 'node:test';
 
 import {
   DEFAULT_PATTERN_PLAN,
+  compileFrame,
   complementPlan,
   frameBlockGrid,
   planFrames,
@@ -88,6 +89,75 @@ test('every pair the plan reports really is a Gray plane beside its own compleme
   const paired = new Set(pairs.flatMap(([a, b]) => [a, b]));
   for (let i = 0; i < specs.length; i++) {
     if (specs[i].kind === 'phase') assert.equal(paired.has(i), false);
+  }
+});
+
+test('an offset grid still only ever averages the raster the projector emits', () => {
+  // Review found the last window of an offset grid reaching past the end of the
+  // raster — at 64 blocks and 0.37, twelve of its thirty-two samples. Out there
+  // the frame kinds stop agreeing: `compileFrame` clamps a Gray coordinate but
+  // a phase frame is a cosine that keeps oscillating, so at 1931 px on a 1920
+  // raster the Gray plane read 0 and the phase step read 0.7034 — neither of
+  // them emitted by anything.
+  //
+  // It mattered because the sweep and the test below both reduce frames through
+  // this one function, so the artifact would have sat on both sides of the
+  // comparison and they would have agreed about a number neither had measured.
+  //
+  // The contract is now: each window is clipped to the raster. Pinned by
+  // recomputing it here at a much finer sampling than the function uses.
+  const plan = DEFAULT_PATTERN_PLAN;
+  const { minBlocks } = complementPlan(plan);
+  const specs = planFrames(plan);
+  const phase = specs.find((sp) => sp.kind === 'phase' && sp.axis === 'u');
+  assert.ok(phase !== undefined, 'the plan should hold a phase step on u');
+
+  const offset = 0.37;
+  const got = frameBlockGrid(phase, plan, minBlocks, RES_X, RES_Y, offset);
+  const frame = compileFrame(phase, plan, RES_X, RES_Y);
+  const per = RES_X / minBlocks;
+
+  const clippedMean = (b: number): number => {
+    const lo = Math.max(0, (b + offset) * per);
+    const hi = Math.min(RES_X, (b + offset + 1) * per);
+    let sum = 0;
+    const n = 4096;
+    for (let k = 0; k < n; k++) sum += frame.at(lo + ((k + 0.5) / n) * (hi - lo));
+    return sum / n;
+  };
+  for (const b of [0, 1, minBlocks - 2, minBlocks - 1]) {
+    assert.ok(
+      Math.abs(got[b] - clippedMean(b)) < 2e-3,
+      `block ${b}: ${got[b]} against the clipped mean ${clippedMean(b)}`,
+    );
+  }
+
+  // And the last block really did move, so this test has something to catch.
+  const unclipped = ((): number => {
+    let sum = 0;
+    const n = 4096;
+    const lo = (minBlocks - 1 + offset) * per;
+    for (let k = 0; k < n; k++) sum += frame.at(lo + ((k + 0.5) / n) * per);
+    return sum / n;
+  })();
+  assert.ok(
+    Math.abs(unclipped - clippedMean(minBlocks - 1)) > 1e-3,
+    'the unclipped window must differ, or this test proves nothing',
+  );
+});
+
+test('every complement pair the plan reports lands inside the run it describes', () => {
+  // The invariant `expectedSequence` used to be able to break: it took a
+  // `framesPerProjector` override while the pairs still came from the whole
+  // plan, so a shorter run left pair positions pointing past the end of `kinds`
+  // and the indexer refused everything. The override is gone; this pins the
+  // property it was violating, for any plan rather than just the default.
+  for (const grayBits of [1, 4, 6, 8]) {
+    const plan: PatternPlan = { grayBits, phaseSteps: 4, phasePeriodStrides: 2, includeWhiteBlack: true };
+    const frames = planFrames(plan).length;
+    for (const [a, b] of complementPlan(plan).pairs) {
+      assert.ok(a >= 0 && b < frames, `grayBits ${grayBits}: pair [${a},${b}] outside 0..${frames - 1}`);
+    }
   }
 });
 

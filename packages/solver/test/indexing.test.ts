@@ -362,10 +362,17 @@ test('a refusal does not promise the runs it still offers are sound', () => {
  * references, then Gray planes each followed by its own complement, then phase
  * steps paired with nothing.
  *
- * Four blocks per frame. `minBlocks` is 4 because the finest plane here flips
- * once per block — the same `2^grayBits` rule, at two bits instead of six.
+ * A 2x2 grid — four blocks per frame. `minBlocks` is 2 because the finest plane
+ * here flips once per block, the same `2^grayBits` rule at one bit instead of
+ * six.
+ *
+ * `BLOCKS` is blocks PER AXIS, so four values means two. It said four until
+ * review pointed out that these fixtures were claiming a 4x4 grid while
+ * carrying four values, and that they only worked because nothing validated
+ * the shape. Both ends of that are fixed: the grid is truthful here and
+ * `complementResidual` now checks it.
  */
-const BLOCKS = 4;
+const BLOCKS = 2;
 const TOY: Record<string, number[]> = {
   white: [1, 1, 1, 1],
   black: [0, 0, 0, 0],
@@ -397,6 +404,12 @@ const TOY_EXPECTED: ExpectedSequence = {
 };
 
 function fp(ordinal: number, values: readonly number[], blocks = BLOCKS): FrameFingerprint {
+  // The fixtures have to describe the grid they claim, because the code now
+  // refuses one that does not. Asserting here rather than in each test keeps a
+  // typo in a fixture from looking like a finding.
+  if (values.length !== blocks * blocks) {
+    throw new Error(`fixture: ${values.length} values cannot be a ${blocks}x${blocks} grid`);
+  }
   return {
     ordinal,
     blocks,
@@ -638,7 +651,10 @@ test('a fingerprint too coarse to resolve the finest plane is refused, not run',
   const refused = indexByFingerprint(observations, coarse, TOY_EXPECTED);
   assert.equal(refused.ok, false);
   assert.deepEqual(refused.usableProjectors, [], 'nothing is offered on an untrustworthy check');
-  assert.match(refused.problems[0] ?? '', /1 blocks across and this plan needs at least 4/);
+  assert.match(
+    refused.problems[0] ?? '',
+    new RegExp(`1 blocks across and this plan needs at least ${BLOCKS}`),
+  );
 
   // And the reason the refusal is not merely cautious: at that resolution the
   // broken pair really does satisfy the identity.
@@ -656,6 +672,38 @@ test('asked for a check the plan cannot support, it refuses rather than imperson
   assert.equal(r.ok, false);
   assert.deepEqual(r.usableProjectors, []);
   assert.match(r.problems[0] ?? '', /lists no complementary pairs/);
+});
+
+test('a fingerprint that disagrees with its own grid is refused, not silently NaN', () => {
+  // Review found `complementResidual` comparing only the four `blocks` fields.
+  // A fingerprint whose `values` were short of its own mask read `undefined`
+  // past the end, the arithmetic produced NaN, and NaN is neither null nor
+  // greater than COMPLEMENT_LIMIT — so both of the caller's branches missed and
+  // the run went out as clean. Reproduced before fixing.
+  const short: FrameFingerprint = {
+    ordinal: 0,
+    blocks: BLOCKS,
+    values: Float32Array.from([1, 1]),
+    measured: new Uint8Array(BLOCKS * BLOCKS).fill(1),
+  };
+  const whole = fp(1, TOY.grayInv0);
+  const r = complementResidual(whole, short, fp(2, TOY.white), fp(3, TOY.black));
+  assert.equal(r, null, 'unanswerable rather than NaN');
+
+  // And the mechanism refuses it by name rather than letting it reach the pairs.
+  const { observations, fingerprints } = toyCapture([TOY_ORDER, TOY_ORDER]);
+  const broken = fingerprints.map((f, i) => (i === 4 ? { ...short, ordinal: 4 } : f));
+  const result = indexByFingerprint(observations, broken, TOY_EXPECTED);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.usableProjectors, [], 'nothing offered on a malformed fingerprint');
+  assert.match(result.problems[0] ?? '', /does not describe the grid it claims/);
+});
+
+test('a non-finite value in a fingerprint cannot pass for agreement', () => {
+  // The same failure arriving already stored rather than as a short array.
+  const nan = fp(0, [1, 1, Number.NaN, 0]);
+  const r = complementResidual(nan, fp(1, TOY.grayInv0), fp(2, TOY.white), fp(3, TOY.black));
+  assert.ok(r === null || Number.isFinite(r), `residual must never be NaN, got ${String(r)}`);
 });
 
 test('fingerprints on different grids are refused with the reason that is true', () => {
@@ -712,26 +760,23 @@ test('background blocks cannot inflate a correct pair, however the shot is frame
   // noise can take. The assertion is that ADDING them changes nothing.
   const sphere = { white: 1, black: 0, gray: 1, grayInv: 0 };
   const bg = { white: 0.02, black: 0, gray: 0.02, grayInv: 0.02 };
-  const build = (backgroundBlocks: number): FrameFingerprint[] => {
-    const pick = (k: 'white' | 'black' | 'gray' | 'grayInv'): FrameFingerprint => {
-      const vals = [
-        ...Array.from({ length: 4 }, () => sphere[k]),
-        ...Array.from({ length: backgroundBlocks }, () => bg[k]),
-      ];
-      return fp(0, vals, 1);
-    };
-    return [pick('white'), pick('black'), pick('gray'), pick('grayInv')];
+  /** A `blocks` x `blocks` grid whose first four blocks are sphere, rest background. */
+  const residualAt = (blocks: number): number | null => {
+    const pick = (k: 'white' | 'black' | 'gray' | 'grayInv'): FrameFingerprint =>
+      fp(
+        0,
+        Array.from({ length: blocks * blocks }, (_, i) => (i < 4 ? sphere[k] : bg[k])),
+        blocks,
+      );
+    return complementResidual(pick('gray'), pick('grayInv'), pick('white'), pick('black'));
   };
-  const residualWith = (n: number): number | null => {
-    const [w, k, g, G] = build(n);
-    return complementResidual(g, G, w, k);
-  };
-  assert.equal(residualWith(0), 0, 'the sphere alone: a correct pair is exact');
-  for (const n of [4, 40, 400]) {
+  assert.equal(residualAt(2), 0, 'the sphere alone: a correct pair is exact');
+  for (const blocks of [3, 5, 10, 20]) {
+    const share = ((100 * 4) / (blocks * blocks)).toFixed(1);
     assert.equal(
-      residualWith(n),
+      residualAt(blocks),
       0,
-      `${n} background blocks must not move a correct pair's residual`,
+      `with the sphere at ${share}% of a ${blocks}x${blocks} grid the residual must not move`,
     );
   }
 });
