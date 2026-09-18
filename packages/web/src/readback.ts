@@ -100,6 +100,26 @@ export interface RunOutcome {
   worstClippedName: string;
 }
 
+/**
+ * What a capture was worth, with no decoded points attached.
+ *
+ * Separate from {@link ReadResult} because the points are the expensive half
+ * and most callers do not want them. Review measured what that costs: a
+ * correspondence is 168 bytes, so one run at 1920x1200 is 0.36 GiB and a
+ * four-projector position is **1.44 GiB** — retained, in the page's first
+ * version of this, while the next run's 1.17 GiB of pixels loaded. That put the
+ * peak near 2.6 GiB against the 2 GiB bound `captureTooLarge` believes it is
+ * enforcing, and it bought nothing: the page reports `worth` and the per-run
+ * counts, and never reads a single point.
+ *
+ * `worth` needs only {@link PairContribution}s, which are three numbers and a
+ * stats record per run. So the verdict and the points are now separable, and a
+ * caller that wants the verdict does not pay for the points.
+ */
+export type CaptureVerdict =
+  | { ok: true; runs: RunOutcome[]; worth: CaptureWorth }
+  | { ok: false; runs: RunOutcome[]; worth: null; refusal: string };
+
 export type ReadResult =
   | { ok: true; runs: RunOutcome[]; worth: CaptureWorth; correspondences: Correspondence[] }
   | { ok: false; runs: RunOutcome[]; worth: null; correspondences: []; refusal: string };
@@ -222,9 +242,8 @@ export function readRun(
 export function finishCapture(
   outcomes: RunOutcome[],
   pairs: PairContribution[],
-  correspondences: Correspondence[],
   runsAttempted: number,
-): ReadResult {
+): CaptureVerdict {
   if (pairs.length === 0) {
     // Every run refused before decoding. `captureWorth` reports on what the
     // decoder saw, and it saw nothing, so asking it would produce a report
@@ -233,14 +252,13 @@ export function finishCapture(
       ok: false,
       runs: outcomes,
       worth: null,
-      correspondences: [],
       refusal:
         `Not one of the ${runsAttempted} ${runsAttempted === 1 ? 'run' : 'runs'} could be ` +
         `assembled into a capture, so nothing reached the decoder. The problems listed against ` +
         `each run below are about the photographs themselves, not about the solve.`,
     };
   }
-  return { ok: true, runs: outcomes, worth: captureWorth(pairs), correspondences };
+  return { ok: true, runs: outcomes, worth: captureWorth(pairs) };
 }
 
 export function readCapture(
@@ -276,9 +294,14 @@ export function readCapture(
     // photograph above about 0.13 megapixels crossed it: every real camera.
     // The page caught the throw and reported "these photographs could not be
     // read", which is a confident wrong answer about the operator's files.
+    //
+    // This function keeps the points because its callers asked for them. A
+    // caller that only wants the verdict calls `finishCapture` directly and
+    // never builds this array — see `CaptureVerdict` for what that saves.
     for (const c of one.correspondences) correspondences.push(c);
   }
-  return finishCapture(outcomes, pairs, correspondences, runs.length);
+  const verdict = finishCapture(outcomes, pairs, runs.length);
+  return verdict.ok ? { ...verdict, correspondences } : { ...verdict, correspondences: [] };
 }
 
 /**

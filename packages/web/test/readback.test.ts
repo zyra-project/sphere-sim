@@ -47,8 +47,10 @@ import {
 } from '../src/manifest.ts';
 import {
   describeIndexing,
+  finishCapture,
   indexPhotographs,
   readCapture,
+  readRun,
   summarisePhoto,
   type CaptureRun,
 } from '../src/readback.ts';
@@ -632,5 +634,43 @@ test('a capture big enough to be a real photograph does not overflow the call st
   assert.ok(
     result.correspondences.length > 131072,
     `the capture has to clear the spread limit to test anything, got ${result.correspondences.length}`,
+  );
+});
+
+test('the verdict needs only the pairs, not the decoded points', () => {
+  // The property that lets the page throw the points away. Review measured what
+  // keeping them costs: a correspondence is 168 bytes, so one run at 1920x1200
+  // is 0.36 GiB and a four-projector position is 1.44 GiB — retained while the
+  // NEXT run's 1.17 GiB of pixels loads, putting the peak near 2.6 GiB against
+  // the 2 GiB bound `captureTooLarge` believes it is enforcing. The page never
+  // read a single one of them.
+  //
+  // So `finishCapture` takes the pairs and not the points. This asserts the two
+  // routes agree: whatever `readCapture` says a capture was worth, the same
+  // verdict comes out of the parts alone.
+  const specs = planFrames(SMALL);
+  const images = specs.map(photographOf);
+  const run: CaptureRun = {
+    camera: 0,
+    projector: 0,
+    images,
+    names: specs.map((_, i) => `f${i}.png`),
+  };
+
+  const whole = readCapture([run], SMALL_MANIFEST, { kind: 'linear' });
+  const one = readRun(run, manifestFrameRoles(SMALL_MANIFEST), SMALL_MANIFEST, { kind: 'linear' });
+  const verdict = finishCapture([one.outcome], one.pair === null ? [] : [one.pair], 1);
+
+  assert.equal(verdict.ok, whole.ok);
+  assert.ok(verdict.ok && whole.ok);
+  assert.deepEqual(verdict.worth, whole.worth, 'the same worth, from the pairs alone');
+  assert.deepEqual(verdict.runs, whole.runs, 'and the same per-run report');
+  assert.ok(
+    !Object.prototype.hasOwnProperty.call(verdict, 'correspondences'),
+    'the verdict must not carry the points, or a caller will retain them by accident',
+  );
+  assert.ok(
+    one.correspondences.length > 0,
+    'the run really did decode points — otherwise this proves nothing',
   );
 });

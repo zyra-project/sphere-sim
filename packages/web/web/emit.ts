@@ -94,7 +94,6 @@ import {
   type RunOutcome,
 } from '../src/readback.ts';
 import type { EncodedImage } from '../../solver/src/ingest.ts';
-import type { Correspondence } from '../../solver/src/decode.ts';
 import type { PairContribution } from '../../solver/src/worth.ts';
 import type { Transfer } from '../../solver/src/ingest.ts';
 
@@ -939,8 +938,15 @@ async function runReadback(): Promise<void> {
     // is paid only for runs that survived indexing.
     const roles = manifestFrameRoles(manifest);
     const outcomes: RunOutcome[] = [];
+    // The decoded POINTS are deliberately not kept. Review measured what they
+    // cost: 168 bytes each, so a four-projector position is 1.44 GiB held while
+    // the next run's 1.17 GiB of pixels loads — a peak near 2.6 GiB against the
+    // 2 GiB bound `captureTooLarge` thinks it is enforcing. And this page never
+    // reads them: it reports `worth`, which needs only the pairs below, and the
+    // per-run counts, which are in each `RunOutcome`. Accumulating them was a
+    // cost with no reader, and it defeated the one-run-at-a-time bound that the
+    // two-pass structure exists to preserve.
     const pairs: PairContribution[] = [];
-    const correspondences: Correspondence[] = [];
     for (const run of indexed.runs) {
       readoutEl.textContent = `Decoding projector ${run.projector + 1}…`;
       const images: EncodedImage[] = [];
@@ -980,13 +986,9 @@ async function runReadback(): Promise<void> {
       );
       outcomes.push(one.outcome);
       if (one.pair !== null) pairs.push(one.pair);
-      // A loop rather than a spread: see `readCapture`. One argument per
-      // correspondence overflows the call stack above about 0.13 megapixels of
-      // camera, which is every camera an operator owns.
-      for (const c of one.correspondences) correspondences.push(c);
     }
 
-    const result = finishCapture(outcomes, pairs, correspondences, indexed.runs.length);
+    const result = finishCapture(outcomes, pairs, indexed.runs.length);
     lines.push('');
     for (const run of result.runs) {
       lines.push(describeRun(run));
