@@ -289,4 +289,22 @@ test('every element the emitter page reaches for exists in its markup', () => {
   assert.ok(wanted.length > 10, `expected the page to reach for many ids, found ${wanted.length}`);
   const missing = [...new Set(wanted)].filter((id) => id !== undefined && !present.has(id));
   assert.deepEqual(missing, [], `emit.ts reaches for ids emit.html does not define`);
+
+  // And the other way round, which this check did not do until a control was
+  // removed from the module and very nearly left standing in the markup. That
+  // direction fails differently and worse than a missing id: nothing throws,
+  // the page loads, and the operator is shown an input that reads and affects
+  // nothing — a number they can set, and be wrong about, with no effect. The
+  // Projector index was exactly that once indexing derived it.
+  //
+  // An id that only styling uses is legitimate, so `#id` anywhere in the page's
+  // own CSS counts as a use.
+  const styled = new Set([...html.matchAll(/#([A-Za-z][\w-]*)/g)].map((m) => m[1]));
+  const reached = new Set(wanted);
+  const orphans = [...present].filter((id) => !reached.has(id) && !styled.has(id));
+  assert.deepEqual(
+    orphans,
+    [],
+    'emit.html defines ids nothing reads: a control the operator can set and that does nothing',
+  );
 });

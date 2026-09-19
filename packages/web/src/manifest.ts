@@ -34,8 +34,9 @@
  */
 
 import type { PatternPlan } from '../../bench/src/patterns.ts';
-import { planFrames } from '../../bench/src/patterns.ts';
+import { complementPlan, planFrames } from '../../bench/src/patterns.ts';
 import type { FrameRole } from '../../solver/src/assemble.ts';
+import type { ComplementPlan, ExpectedSequence, FrameKind } from '../../solver/src/indexing.ts';
 
 /** The file's own name, so the emitter and the reader cannot disagree about it. */
 export const MANIFEST_FILENAME = 'capture-plan.json';
@@ -278,4 +279,39 @@ export function manifestFrameRoles(m: CaptureManifest): FrameRole[] {
     axis: spec.axis,
     index: spec.index,
   }));
+}
+
+/**
+ * The shape an indexer should expect a folder of photographs to have.
+ *
+ * The second join this page exists to make, and the same one {@link
+ * manifestFrameRoles} makes for the decoder. `packages/solver` states what it
+ * expects as a list of KINDS and a list of complement POSITIONS precisely
+ * because it may not see a `PatternPlan`; `packages/bench` owns the plan and
+ * the capture order it implies. This page is under neither rule, so it is where
+ * the two are put side by side.
+ *
+ * `projectors` comes from the manifest rather than the plan, because the plan
+ * says what one run holds and the manifest says how many runs were shot.
+ *
+ * The return type says `complements` is always there, because it always is —
+ * every plan this page can parse has at least one Gray plane, so
+ * `complementPlan` always yields pairs. Narrowing it here rather than leaving
+ * the caller an optional to handle is what stops the page carrying a branch for
+ * a case it cannot reach; an unreachable branch reads like a guard and guards
+ * nothing.
+ *
+ * Deliberately a conversion and not a cast, for {@link manifestFrameRoles}'s
+ * reason: `FrameSpec.kind` has five values and `FrameKind` has three, and the
+ * collapse from one to the other is a statement about what a photograph can say
+ * about itself without being decoded. White and black are separable from every
+ * patterned frame; one Gray plane is not separable from another.
+ */
+export function manifestExpectedSequence(
+  m: CaptureManifest,
+): ExpectedSequence & { complements: ComplementPlan } {
+  const kinds: FrameKind[] = planFrames(m.plan).map((spec) =>
+    spec.kind === 'white' ? 'white' : spec.kind === 'black' ? 'black' : 'patterned',
+  );
+  return { kinds, projectors: m.projectors, complements: complementPlan(m.plan) };
 }
