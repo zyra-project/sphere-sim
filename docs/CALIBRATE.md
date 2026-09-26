@@ -95,12 +95,16 @@ Part that argues for it, so a rule you doubt can be checked rather than obeyed.
 - [ ] **Start the intervalometer first and let it run.** Then **press Play about
       half a dwell after you hear a shot** — one second after a shot, at a
       2-second dwell. You are aiming the next shutter at the middle of the white
-      frame. This one line is the cheapest thing on this card: it is the
-      difference between **one capture in three silently ruined and none.**
-      (Part 4, *Starting the run*)
-- [ ] **Then do not touch anything.** 136 frames, about 4½ minutes at a 2-second
-      dwell. The tone marks each step, so you can hear that the shutter is still
-      falling between steps rather than on them.
+      frame. This one line is the cheapest thing on this card. Without it,
+      **one capture in three has photographs taken mid-change** — usually a
+      whole camera position of them. The page refuses the larger smears when
+      you read the folder at your desk, which is a return trip, and lets the
+      smaller ones through at a cost nobody has measured. With it, none of 2000
+      simulated captures did. (Part 4, *Starting the run*)
+- [ ] **Then do not touch anything.** 34 frames per projector — 136 and about
+      4½ minutes on a four-projector rig at a 2-second dwell; the page shows the
+      count for yours. The tone marks each step, so you can hear that the shutter
+      is still falling between steps rather than on them.
 - [ ] **The screen goes black when the position is done.** That is the only
       end-of-sequence signal visible from where you are standing.
 - [ ] Stop the intervalometer, then **check on the camera before you move**
@@ -350,9 +354,14 @@ expensive part. Moving the tripod is.
 **The page and the camera never read each other.** The emitter advances on a
 timer; the camera fires on its own clock. So a shutter can open while the
 projector is *changing*, and the resulting photograph is not a photograph of the
-pattern it gets filed under. Every file is still present, every file is still
-the right size, and the software's run-length and complement checks all pass —
-`docs/EXPERIMENT-8.md`'s blind spot, reached without anybody deleting anything.
+pattern it gets filed under. Every file is still present and the right size, so
+the run-length check passes. The complement check does not always: a Gray plane
+smeared into the frame after it misses its own identity by the fraction smeared,
+so the page refuses that projector's run once a photograph is smeared by more
+than about a seventh of its exposure — about a third when the smeared frame is
+the complement, and more on the finest planes (`docs/EXPERIMENT-9.md`, pinned in
+`packages/solver/test/indexing.test.ts`). A smaller smear is let through, and
+the phase frames have no complement to be checked against at all.
 
 `docs/EXPERIMENT-9.md` swept it. Two findings decide what you do at the tripod:
 
@@ -362,8 +371,9 @@ side of a mid-dwell shot. You do not need a better camera clock and you do not
 need a tether for this.
 
 **Where your *first* shot lands is the whole problem, and you take the gamble
-three times** — the page plans 136 steps, stops, and you press start again at
-the next mark, drawing a fresh phase each time. A shot opening at phase `p`
+three times** — the page plans one camera position's frames (136 on a
+four-projector rig), stops, and you press start again at the next mark, drawing
+a fresh phase each time. A shot opening at phase `p`
 straddles exactly when `p > dwell − exposure`, so a start with no procedure
 behind it straddles at `exposure / dwell` — **12.5%** at a 2-second dwell and a
 1/4 s exposure — and compounds over three positions to **33%**:
@@ -381,10 +391,13 @@ clocks, same dwell, same exposure — **only where the first shot landed.**
 
 **And it fails in the shape that hurts most.** The phase is drawn once per
 position and drift cannot walk it back out, so a position that starts inside the
-zone stays there for all 136 of its frames: **four in five** touched captures
-lose at least one camera position end to end, while the other two look perfect.
-A night's shooting is not all-or-nothing — it is one sitting at the tripod
-silently thrown away.
+zone stays there for every one of its frames: in **four in five** touched
+captures a whole camera position is photographed mid-change end to end, while
+the other two look perfect. What that costs is **not yet measured**. Smeared far
+enough, the complement check refuses the runs when you read the folder — loud,
+but at your desk, so a return trip. Smeared less, they are let through, and what
+a slightly blended position does to a calibration nobody has measured. Either
+way it is one sitting at the tripod you cannot trust.
 
 So, three rules, in the order they pay:
 
@@ -417,11 +430,13 @@ So, three rules, in the order they pay:
    differently, in scattered frames rather than whole positions, and never loses
    a position end to end.
 
-**None of this is checked on the day, or afterwards.** A straddled frame is
-counted by that experiment as an event in time, not as a decoded error; what it
-costs a calibration has never been measured, because nothing has yet rendered a
-blend and pushed it through the decoder. The honest claim is the narrow one:
-this many photographs are not photographs of the pattern they are filed under.
+**Nothing checks this on the day, and afterwards only the larger smears are
+caught.** The table counts a straddle as an event in time, not as a decoded
+error. How often a straddle is smeared far enough to be refused, and what the
+ones let through do to a calibration, have never been measured — nothing has yet
+rendered a blend and pushed it through the decoder. The honest claim is the
+narrow one: this many photographs are not photographs of the pattern they are
+filed under.
 
 Then, in order:
 
@@ -484,7 +499,7 @@ for software that does not exist yet, and it should get shorter as the phases in
 | Re-shoot a whole projector's 34 if you spoil one | **survives for now.** Phase 2 made it cheap rather than unnecessary |
 | Make sure filenames sort in capture order | **Phase 2 softened it** — a run is found by its references, not by its filenames — but the order inside a run still comes from them |
 | One projector lit at a time | **Phase 1 deleted it as a task.** Still true of the physics; the emitter sequences it and the operator never arranges it |
-| Count 34 frames, 136 per position | **Phase 1 deleted it.** The page counts, and can tick so you need not watch it |
+| Count 34 frames per projector at each position | **Phase 1 deleted it.** The page counts, and can tick so you need not watch it |
 | Check on the camera what "good" looks like | **Phase 3 narrowed it.** The software reads the capture and says what survived — but only once you are home, so the on-camera checks are still what saves a second trip |
 | Aim the first shutter at mid-frame by timing `Play` | **Phase 5's done-when, and not met.** `docs/EXPERIMENT-9.md` measured it; nothing was built. The page neither stops you starting anywhere nor says what it costs, so on the day this rule is the whole defence |
 | Keep the dwell at 2 s or more | **same.** The emitter lets you set 0.2 s and says nothing about what that spends against your exposure |
