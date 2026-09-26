@@ -757,6 +757,15 @@ const BLOCKS: Record<string, Block> = {
     data: 'experiments/experiment-9.json',
     render: experiment9Phase as (r: never) => string,
   },
+  // And a third time, in the field card, because this table is the argument for
+  // the one instruction on it that an operator has no way to check: how to start
+  // the intervalometer. A copied table would go stale exactly where a stale
+  // number costs a camera position.
+  'experiment-9-phase-calibrate': {
+    doc: 'docs/CALIBRATE.md',
+    data: 'experiments/experiment-9.json',
+    render: experiment9Phase as (r: never) => string,
+  },
   'experiment-9-dwell': {
     doc: 'docs/EXPERIMENT-9.md',
     data: 'experiments/experiment-9.json',

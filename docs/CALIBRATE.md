@@ -5,23 +5,122 @@ calibration. Companion to `docs/VISIT.md`, which is a different errand: that car
 *measures an installation to check the model*, this one *photographs an
 installation to recover its geometry*.
 
-> **This procedure cannot be completed today.** Phases 1 to 3 of
-> `docs/OPERATOR-PATH.md` have landed far enough to matter: there is a supported
-> way to put the patterns on the sphere (Part 4), software can work out which
-> projector's run a photograph belongs to, and the arithmetic that turns encoded
-> photographs into the correspondences a solve needs exists and agrees with
-> itself end to end. Two things have **not** happened. None of it has met a real
-> room: every photograph the chain has ever read was synthesised. And none of it
-> is reachable — no code here reads a folder, the ingest modules are called only
-> by a test, and Phases 4 and 5, the before-and-after and the way to install a
-> result, are not built. So a capture made today is worth making, and turning it
-> into a calibration is still a thing nobody can do.
+> **What a capture is worth today, and what it still is not.** Phases 1 to 3 of
+> `docs/OPERATOR-PATH.md` have landed: there is a supported way to put the
+> patterns on the sphere (Part 4), the emitter writes the plan down beside your
+> photographs, and **the same page reads a folder of them back** — finding each
+> projector's run, checking every Gray plane against its own complement,
+> decoding the runs it can vouch for, and reporting what the capture was worth.
+> Earlier versions of this card said no code here read a folder. That stopped
+> being true and the card did not notice, which is the kind of drift Part 7
+> exists to prevent.
 >
-> It is written anyway, and first, for two reasons. It is the cheapest way to find
-> out what the procedure gets wrong — cheaper than building three phases and then
-> discovering the card is wrong. And the discipline items below are exactly what
-> decides whether a capture made now is still usable when Phase 3 lands, so a
-> careful capture today is not wasted.
+> **What still cannot happen is a pose.** The reader stops at *what the capture
+> was worth* — how many correspondences survived, from how many camera and
+> projector pairs, which cameras contributed nothing — and does not go on to a
+> projector position. That needs the intrinsics and rough poses Part 1 and
+> Part 2 tell you to bring, and the reader does not yet take them. Phase 4 —
+> the before-and-after, and a one-step way to undo an install — is not built
+> either.
+>
+> **And none of it has met a real room.** Every photograph this chain has ever
+> read was synthesised: flat albedo, constant ambient, no sensor noise, no limb,
+> nobody walking through. So the most valuable thing a capture made today
+> produces is not a calibration. It is the first evidence about whether any of
+> this survives a real sphere — and that is worth more than the calibration,
+> because every number on this card is currently a prediction.
+
+---
+
+## The day, in one page
+
+**Everything after this section is *why*. This is *what*.** Each line names the
+Part that argues for it, so a rule you doubt can be checked rather than obeyed.
+
+### Before you leave the desk
+
+- [ ] **Calibrate the camera.** Write down `fx`, `fy`, `cx`, `cy`, `k1`, `k2`,
+      `p1`, `p2`, at **the zoom and focus you will shoot with**. The solver takes
+      these as an input. Arrive without them and there is nothing to hand it.
+      (Part 1.1)
+
+### Setting up — the projectors
+
+- [ ] **Projectors on. Start a 20-minute timer** and do everything else while
+      they warm. This is a precondition, not advice (`AMENDMENTS.md` A-23).
+- [ ] **Darken the room.**
+- [ ] Open `/emit/` on the display machine **over `http://`** — a copied folder
+      opened by double-clicking will not run — and put it **full-screen on the
+      framebuffer that drives the projectors**. That window *is* the projectors:
+      SOS drives all of them as quadrants of one screen. (Part 4)
+- [ ] Enter the projector count and one projector's raster. **Confirm the page
+      says each quadrant came out exactly one raster.** If it did not, display
+      scaling is resampling every pattern on its way out. Fix it before shooting.
+- [ ] **Step to each projector's white frame and confirm the projector that
+      lights up is the one the page names.** A quadrant order that differs from
+      the config's gives you a confidently wrong calibration, not a failed one.
+- [ ] Set **auto-advance to 2 seconds or more** and tick **"Tick on each step"**.
+      (Part 4, *Starting the run*)
+- [ ] **Save the plan.** `capture-plan.json` travels with the photographs and the
+      reader refuses a folder without it.
+
+### Setting up — the three positions
+
+- [ ] Tape three marks roughly **120° apart**, about **1.5 m** off the floor,
+      far enough back for the whole silhouette with some room behind. Not lined
+      up with a projector or a seam. (Part 2)
+- [ ] **Label each mark with which side of the sphere it is** — "north, by the
+      door" is enough. That label is a solver input. You do **not** need to
+      measure the distance; it is recovered from the photographs.
+
+### Setting up — the camera, once
+
+- [ ] **Tripod.** Not a monopod, not your hands: 4.61 mm against 380–410 mm, and
+      handheld does not improve with a better camera. (Part 3)
+- [ ] **Full manual, nothing adaptive.** Exposure, focus, white balance, ISO by
+      hand; HDR, scene modes, per-frame noise reduction and content-dependent
+      lens correction all off. Each of these destroys a capture *silently*.
+- [ ] **Set exposure on the all-white frame** so nothing clips inside the lit
+      crescent. The black frame will then look nearly black. That is correct.
+- [ ] **Shoot JPEG**, and if you shoot raw as well, develop it to **sRGB**. The
+      page reads every file as sRGB whatever it held, so a raw developed to a
+      linear or wide-gamut file is silently misread. (Part 3.6)
+- [ ] **Intervalometer at the same interval as the dwell.** Not a hand-pressed
+      remote, which is the worst arrangement measured.
+
+### Each position, three times
+
+- [ ] **Arm** the page. The panel and the cursor disappear — everything drawn is
+      light on the ball, the controls included.
+- [ ] **Start the intervalometer first and let it run.** Then **press Play about
+      half a dwell after you hear a shot** — one second after a shot, at a
+      2-second dwell. You are aiming the next shutter at the middle of the white
+      frame. This one line is the cheapest thing on this card: it is the
+      difference between **one capture in three silently ruined and none.**
+      (Part 4, *Starting the run*)
+- [ ] **Then do not touch anything.** 136 frames, about 4½ minutes at a 2-second
+      dwell. The tone marks each step, so you can hear that the shutter is still
+      falling between steps rather than on them.
+- [ ] **The screen goes black when the position is done.** That is the only
+      end-of-sequence signal visible from where you are standing.
+- [ ] Stop the intervalometer, then **check on the camera before you move**
+      (Part 5): white frame not clipped inside the crescent, black frame nearly
+      black, finest stripes clearly separated rather than shimmering, whole
+      silhouette in frame.
+- [ ] Move the tripod to the next mark. Press **Home** to return the page to
+      frame 0, and repeat from *Arm*.
+
+### Before you leave the sphere
+
+- [ ] **Three folders, one per position**, each carrying `capture-plan.json` and
+      each labelled with the side of the sphere it was shot from.
+- [ ] **Filenames sort in capture order**, and when you hand them in, **select
+      them from a dialog sorted by name, ascending.** The page reads them in the
+      order your file picker gives it, not in an order it works out for itself.
+      Some cameras also restart numbering at 10000. (Part 4.4)
+- [ ] **If you spoiled a frame: re-shoot that projector's whole 34 and keep both
+      runs.** Delete if you must; never delete one and add another in the same
+      run. (Part 4.2)
 
 ---
 
@@ -108,8 +207,13 @@ capture silently**, leaving photographs that look perfectly good.
    4.61 mm. Past about 1280×960 you are buying nothing. Bring the camera you can
    *control*, not the one with the most pixels.
 3. **A tripod.** See above. Not optional, and not a monopod.
-4. **A remote release or self-timer.** Pressing the shutter by hand on a tripod
-   reintroduces some of what the tripod removes.
+4. **An intervalometer** — continuous timed shooting, not a remote you press.
+   Pressing by hand on a tripod reintroduces some of what the tripod removes,
+   and `docs/EXPERIMENT-9.md` measures a hand-pressed remote as the **worst**
+   arrangement of all: every capture touched at any dwell below 4 s. It fails
+   more gently than a mistimed intervalometer — scattered frames rather than a
+   whole position — but it fails every time. Part 4's *Starting the run* is what
+   this item exists for.
 5. **Floor tape and something to write with.** For marking the three positions,
    so a spoiled sequence can be re-shot from the same place — and for noting
    which side of the sphere each one is on, which Part 2 explains is a solver
@@ -168,19 +272,35 @@ except to move the tripod.
 4. **Everything adaptive off.** HDR, scene modes, per-frame noise reduction,
    lens-correction that varies with content.
 5. **The lowest ISO that still exposes** at your chosen aperture and shutter.
-6. **Raw, if the camera offers it — for the transfer, not for the bit depth.**
-   The decoder works in **linear light**, and the ingest will not run without
-   being told which curve your files are encoded with. Raw makes that knowable;
-   a JPEG has usually been through sRGB but may also carry a picture style or a
-   tone curve nobody wrote down, and a wrong curve biases the phase estimate.
+6. **Shoot JPEG.** This reverses what this card used to say, and the reason is
+   worth reading rather than taking on trust, because the old advice was a trap.
 
-   What raw is **not** needed for is precision. With the curve known, 8-bit sRGB
-   holds the decoded coordinate inside a hundredth of a projector pixel and
-   16-bit inside a thousandth — measured in a noiseless fixture where
-   quantisation is the only error, so a floor rather than a promise, but against
-   §7's 2 mm on a 1.7 m sphere the file format is not the term that matters.
-   **If the choice is between a JPEG you can identify and a raw workflow you
-   cannot complete, shoot the JPEG.**
+   The decoder works in **linear light**, so something has to know which curve
+   your files carry — and an earlier version of this item recommended raw on
+   the grounds that raw makes that knowable. It does, for a program you write
+   yourself. It does **not** help the reader you will actually use. A browser
+   gets at an image through `createImageBitmap` onto a canvas, and `drawImage`
+   converts its source into the canvas's colour space, so a Display P3 phone
+   file or an Adobe RGB camera file is **sRGB before the page sees a pixel**.
+   The reader therefore *states* sRGB rather than offering you the choice, and
+   a menu that can only be set to a wrong answer is worse than no menu.
+
+   So a raw file developed to anything but sRGB is read as though it were sRGB
+   anyway — which leaves every correspondence in place while moving it, and a
+   wrong curve biases the phase estimate rather than failing loudly. **Raw is
+   not safer here; it is one more place to be silently wrong.**
+
+   And precision was never the argument. With the curve known, 8-bit sRGB holds
+   the decoded coordinate inside a hundredth of a projector pixel and 16-bit
+   inside a thousandth — measured in a noiseless fixture where quantisation is
+   the only error, so a floor rather than a promise, but against §7's 2 mm on a
+   1.7 m sphere the file format is not the term that matters. **Shooting JPEG
+   does not give up the calibration.**
+
+   If you shoot raw anyway — for an archive, or because your camera's JPEG
+   engine applies a picture style you cannot switch off — develop it to
+   **8-bit or 16-bit sRGB** with a neutral curve and no tone mapping before the
+   page sees it.
 
 ## Part 4 · The sequence, at each position
 
@@ -225,6 +345,84 @@ rig that is **136 frames per position, 408 in total** — about two and a half
 minutes of shooting per position at one frame per second. The shooting is not the
 expensive part. Moving the tripod is.
 
+### Starting the run, which is the part most likely to cost you a position
+
+**The page and the camera never read each other.** The emitter advances on a
+timer; the camera fires on its own clock. So a shutter can open while the
+projector is *changing*, and the resulting photograph is not a photograph of the
+pattern it gets filed under. Every file is still present, every file is still
+the right size, and the software's run-length and complement checks all pass —
+`docs/EXPERIMENT-8.md`'s blind spot, reached without anybody deleting anything.
+
+`docs/EXPERIMENT-9.md` swept it. Two findings decide what you do at the tripod:
+
+**Clock drift is not the problem.** One camera position accumulates about 27 ms
+at the loosest consumer crystal, against margins of 750 ms and 1000 ms either
+side of a mid-dwell shot. You do not need a better camera clock and you do not
+need a tether for this.
+
+**Where your *first* shot lands is the whole problem, and you take the gamble
+three times** — the page plans 136 steps, stops, and you press start again at
+the next mark, drawing a fresh phase each time. A shot opening at phase `p`
+straddles exactly when `p > dwell − exposure`, so a start with no procedure
+behind it straddles at `exposure / dwell` — **12.5%** at a 2-second dwell and a
+1/4 s exposure — and compounds over three positions to **33%**:
+
+<!-- generated: experiment-9-phase-calibrate -->
+| first shutter | 0.2 s dwell | 0.5 s dwell | 1 s dwell | 2 s dwell | 4 s dwell |
+| --- | --- | --- | --- | --- | --- |
+| aimed | — | 1767 (88.3%) | 116 (5.8%) | 0 (0.0%) | 0 (0.0%) |
+| uniform | — | 1798 (89.9%) | 1198 (59.9%) | 728 (36.4%) | 468 (23.4%) |
+| on-tick | — | 1830 (91.5%) | 9 (0.5%) | 13 (0.7%) | 20 (1.0%) |
+<!-- /generated -->
+
+Captures touched out of 2000, at the loosest crystal and a 1/4 s exposure. Same
+clocks, same dwell, same exposure — **only where the first shot landed.**
+
+**And it fails in the shape that hurts most.** The phase is drawn once per
+position and drift cannot walk it back out, so a position that starts inside the
+zone stays there for all 136 of its frames: **four in five** touched captures
+lose at least one camera position end to end, while the other two look perfect.
+A night's shooting is not all-or-nothing — it is one sitting at the tripod
+silently thrown away.
+
+So, three rules, in the order they pay:
+
+1. **Aim the first shutter at the middle of the first frame, and do it by
+   controlling `Play` rather than the camera.** Start the intervalometer, let it
+   settle into its rhythm, and press `Play` about **half a dwell after you hear
+   a shot**. The next release then lands mid-frame with the whole safe window
+   either side of it. That is the `aimed` row: **0.0% at a 2-second dwell.**
+
+   **Do not instead wait for a tick and trip the shutter on it**, which is the
+   obvious reading of the `on-tick` row and is wrong for two reasons. The page
+   plays its tone *at* an advance and does not play one when the sequence
+   begins — `start()` shows frame 0 silently — so the first tone you hear is the
+   step onto frame 1, and a capture begun there is **missing its white frame**,
+   the reference every later frame is read against. And even where it applies,
+   `on-tick` only reaches 0.7%: it puts the shutter a reaction time above a
+   boundary, which is why that row gets slightly *worse* as the dwell lengthens
+   — drift scales with the dwell and a reaction time does not.
+
+   What the tone is genuinely for is the rest of the run. Once the shutter is
+   falling between steps, hearing the step and the shutter stay apart is the
+   only confirmation available to somebody standing in the dark with an armed
+   page showing nothing.
+2. **Keep the dwell at 2 seconds or more.** The safe window is `dwell − exposure`
+   wide. The page will let you take it to 0.2 s and says nothing about what that
+   spends; at 0.5 s a capture is touched about nine times in ten however you
+   start it.
+3. **Do not press a remote by hand for each frame.** It is the worst arrangement
+   measured — every capture touched at any dwell below 4 s — though it fails
+   differently, in scattered frames rather than whole positions, and never loses
+   a position end to end.
+
+**None of this is checked on the day, or afterwards.** A straddled frame is
+counted by that experiment as an event in time, not as a decoded error; what it
+costs a calibration has never been measured, because nothing has yet rendered a
+blend and pushed it through the decoder. The honest claim is the narrow one:
+this many photographs are not photographs of the pattern they are filed under.
+
 Then, in order:
 
 1. Shoot every frame **in strict capture order**. The order is still what the
@@ -242,6 +440,15 @@ Then, in order:
    delete, delete; do not also add.
 4. Make sure filenames **sort in capture order**. Most cameras do this; some
    restart numbering at 10000.
+
+   **And know what that rule actually protects.** The reader does not sort your
+   files — `readCapture`'s own docblock is explicit that it decodes what it was
+   handed, because a reader that quietly sorted would put `IMG_10` before
+   `IMG_2` and "produce a capture that decodes — wrong, and with nothing in the
+   output saying so". The page passes on the order your **file picker** hands
+   it. So a dialog sorted newest-first hands in a reversed position, and
+   well-named files do not save you. Select them from a dialog sorted by
+   **name, ascending**, and hand in one camera position at a time.
 5. Do not move the tripod within a position. Move it only between positions.
 
 ## Part 5 · What good looks like, before you leave
@@ -279,6 +486,8 @@ for software that does not exist yet, and it should get shorter as the phases in
 | One projector lit at a time | **Phase 1 deleted it as a task.** Still true of the physics; the emitter sequences it and the operator never arranges it |
 | Count 34 frames, 136 per position | **Phase 1 deleted it.** The page counts, and can tick so you need not watch it |
 | Check on the camera what "good" looks like | **Phase 3 narrowed it.** The software reads the capture and says what survived — but only once you are home, so the on-camera checks are still what saves a second trip |
+| Aim the first shutter at mid-frame by timing `Play` | **Phase 5's done-when, and not met.** `docs/EXPERIMENT-9.md` measured it; nothing was built. The page neither stops you starting anywhere nor says what it costs, so on the day this rule is the whole defence |
+| Keep the dwell at 2 s or more | **same.** The emitter lets you set 0.2 s and says nothing about what that spends against your exposure |
 | Press the shutter 408 times | **Phase 5 deletes it** |
 | Set exposure, focus and white balance by hand | **Phase 5 narrows it** to confirming what the software proposes |
 | Warm the projectors 20 minutes | **permanent.** Lamp physics |
@@ -318,16 +527,20 @@ sphere has wasted a trip:
   **Still true on the day:** none of this happens at the sphere. You hand the
   folder in when you are home, so the rules in Part 4 are what protect the trip.
   Nothing connects the emitter's own step count to the files on your card.
-- **Whether your capture decoded, on the day.** The arithmetic for this exists —
-  how many points survived, from how many camera and projector pairs, which
-  cameras contributed nothing, and a refusal rather than a pose when nothing
-  decoded or when a projector was seen by only one camera. What does not exist
-  is any way for you to run it. Nothing in the repository reads a folder of
-  photographs; the modules are reachable only from code somebody has yet to
-  write. So on the day you will know exactly what you know now, which is
-  nothing, and you will find out when you are back at a desk — and even then
-  only whether it holds on synthesised frames, because no real ones have been
-  through it.
+- **Whether your capture decoded — afterwards, yes; on the day, no.** The
+  emitter page now reads a folder: hand it `capture-plan.json` and one camera
+  position's photographs and it reports how many points survived, from how many
+  camera and projector pairs, which cameras contributed nothing, and a refusal
+  rather than a number when nothing decoded or when a projector was seen by only
+  one camera. Earlier versions of this card said no such thing existed. What is
+  still true is **where** you can run it: not at the sphere. The page that reads
+  photographs is the page that is full-screen across the projectors, and you
+  will be at a desk before you use it. So the on-camera checks in Part 5 remain
+  the only thing standing between you and a second trip.
+
+  And it stops before a pose. Correspondences are not a projector position —
+  that needs the intrinsics and the rough which-side pose this card tells you to
+  bring, which the reader does not yet accept.
 - **What to do when it fails, beyond the first sentence.** A refusal now names
   the rejection that dominated — the light never reached those pixels, the finest
   stripes were finer than the camera could resolve, the Gray address and the
@@ -340,10 +553,19 @@ sphere has wasted a trip:
 - **Whether a rig of more than four projectors can be written back.** It can be
   photographed and solved, and the **SOS config file format carries four**. See
   `docs/OPERATOR-PATH.md`.
-- **How to undo an install.** The archive now tells you which of the files it
-  writes it could put back, and it is currently one of them: your config, which
-  it patches and therefore holds a copy of. The warp meshes and alignment files
-  it generates, so it has never seen what is at those paths on your sphere and
-  cannot return them. `restore/MANIFEST.txt` names them. **Copy anything you are
-  about to overwrite somewhere safe yourself, before you copy a single file in.**
-  There is no one-step way back and this card will say so until there is.
+- **How to undo an install — the copies can be complete now; putting them back
+  is still by hand.** The archive holds your config, which it patches rather than
+  rewrites. The warp meshes and alignment files it *generates*, so it has never
+  seen what sits at those paths on your sphere — and for a long time that made a
+  complete restore impossible, which `restore/MANIFEST.txt` said in as many
+  words. The panel now has a second picker: hand it your current warp and
+  alignment files and copies of **all five** originals travel in the archive,
+  with a line saying installing is reversible. Until you do, the refusal still
+  names exactly which paths are uncovered.
+
+  What has **not** changed is that putting a file back is you copying it out of
+  `restore/`. A browser cannot write to the sphere's filesystem, so "one step"
+  has to mean a script the archive carries or an installer somebody runs, and
+  neither is built. **Copy anything you are about to overwrite somewhere safe
+  yourself, before you copy a single file in.** This card will say so until
+  there is an action rather than a folder.
