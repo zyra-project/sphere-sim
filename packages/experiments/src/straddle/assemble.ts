@@ -3568,7 +3568,7 @@ export function verdictStatement(doc: VerdictDoc): string {
           `gate after the refused positions are re-shot clean.`
         : '.') +
       ` ${c('silent')} pass silently: ${c('harmless')} ` +
-      `move the worst seam point no further than 95% of whole-capture re-shoots do ` +
+      `keep the gate and move the worst seam point no further than 95% of whole-capture re-shoots do ` +
       `(${across} across τ's 95% CI, and ${c('harmlessAtPosition')} against the one-position ` +
       `re-shoot), ${c('biased')} move it further without breaking the gate, and ` +
       `${c('gateSilent')} break it` +
@@ -3638,7 +3638,7 @@ export function verdictStatement(doc: VerdictDoc): string {
         lateSentence += `, the smallest lateness swept`;
       } else {
         cells.belowMs = below;
-        lateSentence += `, a crossing measured in (${c('belowMs')}, ${c('onePctMs')}] ms`;
+        lateSentence += `, a crossing the sweep finds in (${c('belowMs')}, ${c('onePctMs')}] ms`;
       }
       const on = doc.lateness.aimed.vsyncOn;
       if (on.onePercentMs !== null) {

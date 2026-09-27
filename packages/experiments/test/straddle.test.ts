@@ -2239,12 +2239,12 @@ test("T37 the verdict and the caveats say what the first full run's verification
     "Of EXPERIMENT-9's 728 touched captures at the page's defaults (2 s dwell, 1/4 s exposure), with an un-aimed (uniform) start, under its perfect-timer model and policy P (a refused position is re-shot whole, and the re-shoot is assumed clean), such a reader refuses 627 loudly: 295 run by run, with 'Re-shoot projector N' (295 blaming a dropped and a duplicated frame), a remedy that produces a folder the reader refuses whole",
     "and 332 only as a whole position ('Found N projector runs …'), whose remedy, re-shooting the position, it can read.",
     '31 of the loud captures also carry a silent position, and in 18 of those the seams still end past the 1 mm gate after the refused positions are re-shot clean.',
-    "98 pass silently: 38 move the worst seam point no further than 95% of whole-capture re-shoots do (32-44 across τ's 95% CI, and 24 against the one-position re-shoot), 17 move it further without breaking the gate, and 43 break it. In all, 61 of the 728 end past the gate under policy P, and 60 of the 98 silent captures judged move the seams further than τ.",
+    "98 pass silently: 38 keep the gate and move the worst seam point no further than 95% of whole-capture re-shoots do (32-44 across τ's 95% CI, and 24 against the one-position re-shoot), 17 move it further without breaking the gate, and 43 break it. In all, 61 of the 728 end past the gate under policy P, and 60 of the 98 silent captures judged move the seams further than τ.",
     '3 touched only runs that the counterfactual reader also refuses on the clean capture; 0 changed no photograph. With the card\'s aimed start and a perfect timer, 0 of 2000 captures are touched (R8).',
     "If the emitter runs 7.5 ms late per step, 1786 of 2000 captures started by the card's aimed rule are touched: 1358 loud, 349 of them also carrying a silent position; 324 silent, 23 of them solved and 17 of those past the seam gate; and 104 touching only runs that are refused anyway.",
     'armed with the tick on, the same setup ran about 9.3 ms late. This experiment did not re-measure it',
     'about 3.70 ms per step with matched clocks, and 3.50 ms for the half of captures whose camera clock runs 100 ppm fast.',
-    'On the swept grid the first aimed capture is touched at 3.5 ms, and 1% are touched from 3.6 ms, a crossing measured in (3.55, 3.6] ms; with a 60 Hz refresh wait, 3.45 and 3.5 ms.',
+    'On the swept grid the first aimed capture is touched at 3.5 ms, and 1% are touched from 3.6 ms, a crossing the sweep finds in (3.55, 3.6] ms; with a 60 Hz refresh wait, 3.45 and 3.5 ms.',
   ]) {
     assert.ok(v.includes(want), `the verdict does not say: ${want}\n\n${v}`);
   }
