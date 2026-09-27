@@ -5,15 +5,44 @@ calibration. Companion to `docs/VISIT.md`, which is a different errand: that car
 *measures an installation to check the model*, this one *photographs an
 installation to recover its geometry*.
 
-> **What a capture is worth today, and what it still is not.** Phases 1 to 3 of
+> **Read this first: today's page cannot read a realistic capture.** The first
+> thing it does with a folder is sort the photographs into white, black and
+> patterned by how much of each frame is lit, and find each projector's run by
+> its white and black frames. On the bench's own rendered captures — the
+> published scenario, all three camera positions, with and without sensor noise
+> — it refuses **every** camera position at that step, before it decodes a
+> single photograph. Two things break it, and both come from the geometry of a
+> sphere rather than from the bench:
+>
+> - **From any one position, some projectors are out of sight.** A projector
+>   lighting the far side of the ball leaves a run with no visible white frame,
+>   so the page finds fewer runs than there are projectors — and a position
+>   whose run count is wrong is refused whole (the run-count check in
+>   `packages/solver/src/indexing.ts`).
+> - **The coarse Gray planes do not light "about half" of what a camera sees.**
+>   The sorting assumes every patterned frame lights about half the crescent. A
+>   camera sees only part of a projector's raster, and the coarsest planes split
+>   the whole raster in two, so from where you stand they light all of the
+>   visible crescent or none of it — and read as white or black.
+>
+> The decode behind that step works on these same captures — it is what the
+> bench's own calibrations run on. The step in front of it does not, and nothing
+> here caught it because nothing had ever handed the page a rendered capture:
+> its tests used synthesised frames, and Experiment 8 exact fractions. It is
+> measured so far on one scenario. **So a capture made today is
+> evidence, not a calibration:** worth shooting if you are at a sphere anyway —
+> the plan file and the photographs are exactly what a fixed reader will be
+> handed — but the page will refuse it.
+>
+> **What the page does once that step is fixed.** Phases 1 to 3 of
 > `docs/OPERATOR-PATH.md` have landed: there is a supported way to put the
 > patterns on the sphere (Part 4), the emitter writes the plan down beside your
-> photographs, and **the same page reads a folder of them back** — finding each
+> photographs, and the same page reads a folder of them back — finding each
 > projector's run, checking every Gray plane against its own complement,
 > decoding the runs it can vouch for, and reporting what the capture was worth.
-> Earlier versions of this card said no code here read a folder. That stopped
-> being true and the card did not notice, which is the kind of drift Part 7
-> exists to prevent.
+> Earlier versions of this card said no code here read a folder, which stopped
+> being true; a later one said the folder could be read, which on a realistic
+> capture was not true either. Both are the drift Part 7 exists to prevent.
 >
 > **What still cannot happen is a pose.** The reader stops at *what the capture
 > was worth* — how many correspondences survived, from how many camera and
@@ -36,6 +65,10 @@ installation to recover its geometry*.
 
 **Everything after this section is *why*. This is *what*.** Each line names the
 Part that argues for it, so a rule you doubt can be checked rather than obeyed.
+
+**Before anything else: the page cannot yet read a realistic capture** (the top
+of this card). A capture made now is evidence for fixing that, not a
+calibration.
 
 ### Before you leave the desk
 
@@ -100,7 +133,8 @@ Part that argues for it, so a rule you doubt can be checked rather than obeyed.
       whole camera position of them. The page refuses the larger smears when
       you read the folder at your desk, which is a return trip, and lets the
       smaller ones through at a cost nobody has measured. With it, none of 2000
-      simulated captures did. (Part 4, *Starting the run*)
+      simulated captures did — a figure that assumes the page keeps time, which
+      it does not quite. (Part 4, *Starting the run*)
 - [ ] **Then do not touch anything.** 34 frames per projector — 136 and about
       4½ minutes on a four-projector rig at a 2-second dwell; the page shows the
       count for yours. The tone marks each step, so you can hear that the shutter
@@ -111,6 +145,10 @@ Part that argues for it, so a rule you doubt can be checked rather than obeyed.
       (Part 5): white frame not clipped inside the crescent, black frame nearly
       black, finest stripes clearly separated rather than shimmering, whole
       silhouette in frame.
+- [ ] **Before you hand the folder in, delete every photograph taken after the
+      screen went black.** The page counts the last projector's run to the end
+      of the folder, so a single trailing dark photograph drops that whole run.
+      Photographs from before you pressed Play can stay. (Part 4.6)
 - [ ] Move the tripod to the next mark. Press **Home** to return the page to
       frame 0, and repeat from *Arm*.
 
@@ -122,9 +160,11 @@ Part that argues for it, so a rule you doubt can be checked rather than obeyed.
       them from a dialog sorted by name, ascending.** The page reads them in the
       order your file picker gives it, not in an order it works out for itself.
       Some cameras also restart numbering at 10000. (Part 4.4)
-- [ ] **If you spoiled a frame: re-shoot that projector's whole 34 and keep both
-      runs.** Delete if you must; never delete one and add another in the same
-      run. (Part 4.2)
+- [ ] **If you spoiled a frame, re-shoot the whole camera position — every
+      projector — into a fresh folder**, and keep the spoiled one apart. The
+      page reads a position only as one run per projector, so a single re-shot
+      run cannot be read back, added to the folder or alone — including the one
+      the page itself tells you to re-shoot. (Part 4.2)
 
 ---
 
@@ -241,8 +281,14 @@ height — 1.5 m is an operator's eye whatever the ball is doing. On a much larg
 sphere a fixed 2.6 m would put you inside the rail photographing a fraction of
 the silhouette.
 
-**Do not line up with a projector or with a seam.** The three placements the
-experiments use are deliberately offset from both.
+**Keep clear of projector axes and seams where you can — which is not very
+far.** Three marks 120° apart, against an axis or a seam every 45° on a
+four-projector rig, fall 15° apart modulo 45°, so the best any placement can do
+is clear every one of them by 7.5°. An earlier version of this card said the
+experiments' placements were "deliberately offset from both". They are not: the
+bench puts its cameras at 55.7°, 175.7° and 295.7° nominally, and the second
+sits 4.3° from a projector's axis (`placeCameras`, `packages/bench/src/camera.ts`).
+Whether lining up costs anything has never been measured.
 
 > **You do not need to MEASURE where you stood — but you do have to know which
 > side you were on.** An earlier version of this card said camera poses are
@@ -430,6 +476,21 @@ So, three rules, in the order they pay:
    differently, in scattered frames rather than whole positions, and never loses
    a position end to end.
 
+**One caveat on the first rule, found by reading the page: it assumes the
+emitter keeps time, and the emitter runs slightly slow.** `emit.ts` draws each
+frame and only then re-arms its timer for the next dwell, so every step lasts
+the dwell *plus* however long the drawing took, and the lateness adds up across
+a position. The camera, on its own clock, then fires progressively earlier
+within each step. An `aimed` start sits at least a quarter of a dwell from the
+start of its step, so it survives a whole four-projector position only while
+the lateness stays under about **3.7 ms per step at a 2-second dwell** — half a
+second spread over 135 steps. A headless-browser probe, which is not your
+display machine, measured about 7.5 ms; the display machine's number is
+unmeasured.
+Two things follow from the arithmetic: a **4-second dwell doubles the margin**,
+and the real fix belongs in the page — timing every step from the moment `Play`
+was pressed rather than from the end of the step before.
+
 **Nothing checks this on the day, and afterwards only the larger smears are
 caught.** The table counts a straddle as an event in time, not as a decoded
 error. How often a straddle is smeared far enough to be refused, and what the
@@ -442,15 +503,21 @@ Then, in order:
 
 1. Shoot every frame **in strict capture order**. The order is still what the
    software counts from inside a run.
-2. **If you spoil a frame, do not try to patch the run — re-shoot that
-   projector's whole 34**, and keep both runs. This is the one rule that carries
-   real risk, and it is worth knowing exactly why. Software can now find each
-   projector's run by its white and black frames and check the count between
-   them, so a frame you simply *lose* costs that projector's run and nothing
-   else. What it cannot see is a frame lost and another added **in the same
-   run**: the count still adds up, every frame still looks like a patterned
-   frame, and the capture comes back wrong with nothing saying so.
-   `docs/EXPERIMENT-8.md` measures that at 22.7% of such sessions.
+2. **If you spoil a frame, do not try to patch the run — re-shoot the whole
+   camera position into a fresh folder**, and keep the spoiled one apart. An
+   earlier version of this card said to re-shoot just that projector's 34 and
+   keep both runs, and the page's own refusal says "Re-shoot projector N".
+   Neither can be read back: the page reads a position only when it holds
+   exactly one run per projector, so a folder with an extra run, or a re-shot
+   run on its own, is refused whole. Patching is still the worse error, and it
+   is worth knowing exactly why. Software can find each projector's run by its
+   white and black frames and check the count between them, so a frame you
+   simply *lose* costs that projector's run and nothing else. What the count
+   cannot see is a frame lost and another added **in the same run**: it still
+   adds up, and every frame still looks like a patterned frame.
+   `docs/EXPERIMENT-8.md` measures that coming back wrong in 22.7% of such
+   sessions against the bookends alone, and 1.1% once the complement check is
+   added.
 3. A deleted frame is therefore **survivable and a patched one is not.** If you
    delete, delete; do not also add.
 4. Make sure filenames **sort in capture order**. Most cameras do this; some
@@ -465,6 +532,13 @@ Then, in order:
    well-named files do not save you. Select them from a dialog sorted by
    **name, ascending**, and hand in one camera position at a time.
 5. Do not move the tripod within a position. Move it only between positions.
+6. **Delete the photographs taken after the screen went black before you hand a
+   folder in.** The page counts the last projector's run from its white frame to
+   the end of the folder, so trailing dark photographs lengthen it past 34 and
+   the whole run is dropped — at every position, because the intervalometer is
+   always still running when the screen goes black. Photographs taken before you
+   pressed `Play` are different: they sit before the first run and are ignored
+   with a note.
 
 ## Part 5 · What good looks like, before you leave
 
@@ -495,8 +569,9 @@ for software that does not exist yet, and it should get shorter as the phases in
 | rule on this card | survives? |
 | --- | --- |
 | Shoot in strict order | **Phase 2 softened it, and cannot yet delete it.** The run's own references re-synchronise the count, so a lost frame costs that projector's run instead of the capture — but the order is still what indexes frames inside a run |
-| Never delete, skip or re-shoot one frame | **Phase 2 narrowed it** to: do not delete one and add another in the same run, and the page now catches most of even that and tells you which projector to re-shoot. Still worth keeping — what it catches, it catches by refusing that run |
-| Re-shoot a whole projector's 34 if you spoil one | **survives for now.** Phase 2 made it cheap rather than unnecessary |
+| Never delete, skip or re-shoot one frame | **Phase 2 narrowed it** to: do not delete one and add another in the same run, and the page now catches most of even that. Still worth keeping — what it catches, it catches by refusing that run, and the projector it tells you to re-shoot cannot be read back on its own |
+| Re-shoot the whole position if you spoil a frame | **survives for now.** The page reads a position only as one run per projector, so a single re-shot run cannot be read back |
+| Delete the photographs after the screen goes black | **the page's to fix.** It counts the last run to the end of the folder |
 | Make sure filenames sort in capture order | **Phase 2 softened it** — a run is found by its references, not by its filenames — but the order inside a run still comes from them |
 | One projector lit at a time | **Phase 1 deleted it as a task.** Still true of the physics; the emitter sequences it and the operator never arranges it |
 | Count 34 frames per projector at each position | **Phase 1 deleted it.** The page counts, and can tick so you need not watch it |
@@ -534,7 +609,9 @@ sphere has wasted a trip:
   finds each projector's run, checks its length, and asks whether each pattern
   and its complement still add up to the run's own white and black. A frame
   deleted and another added inside one run satisfies the first two and is caught
-  by the third, and the page names the projector to re-shoot. **What it still
+  by the third, and the page names the projector to re-shoot — though a
+  re-shot projector cannot be read back on its own (Part 4.2), so re-shoot the
+  position. **What it still
   cannot see** is a fault that disturbs no complementary pair — in the plan this
   page writes, the phase frames rearranging among themselves. And it is a
   refusal, not a repair: a run it doubts is dropped, not fixed.
@@ -542,16 +619,19 @@ sphere has wasted a trip:
   **Still true on the day:** none of this happens at the sphere. You hand the
   folder in when you are home, so the rules in Part 4 are what protect the trip.
   Nothing connects the emitter's own step count to the files on your card.
-- **Whether your capture decoded — afterwards, yes; on the day, no.** The
-  emitter page now reads a folder: hand it `capture-plan.json` and one camera
-  position's photographs and it reports how many points survived, from how many
-  camera and projector pairs, which cameras contributed nothing, and a refusal
-  rather than a number when nothing decoded or when a projector was seen by only
-  one camera. Earlier versions of this card said no such thing existed. What is
-  still true is **where** you can run it: not at the sphere. The page that reads
-  photographs is the page that is full-screen across the projectors, and you
-  will be at a desk before you use it. So the on-camera checks in Part 5 remain
-  the only thing standing between you and a second trip.
+- **Whether your capture decoded — not yet, and never on the day.** The
+  emitter page reads a folder: hand it `capture-plan.json` and one camera
+  position's photographs. On a realistic capture it currently refuses at its
+  first step (the top of this card). When a position does get past that step,
+  two more things are worth knowing. Its report ends, every time, "Only 1
+  camera contributed … Shoot the sequence from a second position": the page
+  reads one position at a time, and the report needs two cameras before it will
+  vouch for a solve, so that line is a limit of the page and not a fault in your
+  photographs (`packages/solver/src/worth.ts`). And **where** you can run it is
+  not at the sphere: the page that reads photographs is the page full-screen
+  across the projectors, and you will be at a desk before you use it. So the
+  on-camera checks in Part 5 remain the only thing standing between you and a
+  second trip.
 
   And it stops before a pose. Correspondences are not a projector position —
   that needs the intrinsics and the rough which-side pose this card tells you to
