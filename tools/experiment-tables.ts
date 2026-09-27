@@ -1256,8 +1256,8 @@ const Q0_VARIANTS10: readonly (readonly ['main' | 'spill' | 'fine', string])[] =
 
 /**
  * Today's page on clean positions (Q0), what the counterfactual reader makes of
- * the same positions (the twins), and the folder shapes the card itself
- * produces (Q0b).
+ * the same positions (the twins), and the folder shapes an operator can
+ * produce (Q0b).
  */
 export function experiment10Precondition(result: Experiment10): string {
   const pre = has10(result.precondition, 'precondition');
@@ -1354,8 +1354,8 @@ export function experiment10Precondition(result: Experiment10): string {
   ];
   out.push('');
   out.push(
-    '| folder the card can produce | positions | runs placed (the plain folder’s) | refused whole | ' +
-      'the page’s reasons |',
+    '| folder shapes an operator can produce | positions | runs placed (the plain folder’s) | ' +
+      'refused whole | the page’s reasons |',
   );
   out.push('| --- | ---: | --- | ---: | --- |');
   for (const name of wanted) {

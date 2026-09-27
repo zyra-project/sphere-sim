@@ -408,9 +408,12 @@ the run-length check passes. The complement check does not always: a Gray plane
 smeared into the frame after it misses its own identity by the fraction smeared,
 so the page refuses that projector's run once a photograph is smeared by more
 than about a seventh of its exposure — about a third when the smeared frame is
-the complement, and more on the finest planes (`docs/EXPERIMENT-9.md`, pinned in
-`packages/solver/test/indexing.test.ts`). A smaller smear is let through, and
-the phase frames have no complement to be checked against at all.
+the complement, and more on the finest planes (`docs/EXPERIMENT-9.md`). The test
+in `packages/solver/test/indexing.test.ts` pins both sides on a toy plan, not
+the page's; on the page's own plan EXPERIMENT-10's T15 pins the pattern side
+(`packages/experiments/test/straddle.test.ts`), and the complement side's figure
+is pinned nowhere. A smaller smear is let through, and the phase frames have no
+complement to be checked against at all.
 Those are thresholds for one smeared photograph. When a whole position is
 smeared alike, each projector's run is refused at its own smear, somewhere
 between 7.0% and 16.5% of the exposure for a forward straddle, so the check
@@ -442,11 +445,16 @@ behind it straddles at `exposure / dwell` — **12.5%** at a 2-second dwell and 
 Captures touched out of 2000, at the loosest crystal and a 1/4 s exposure. Same
 clocks, same dwell, same exposure — **only where the first shot landed.**
 
-**And it fails in the shape that hurts most.** The phase is drawn once per
-position and drift cannot walk it back out, so a position that starts inside the
-zone stays there for every one of its frames: in **four in five** touched
-captures a whole camera position is photographed mid-change end to end, while
-the other two look perfect. It is one sitting at the tripod you cannot trust.
+**And it fails in the shape that hurts most.** With a perfect timer, which is
+what EXPERIMENT-9 modelled, the phase is drawn once per position and drift
+cannot walk it back out, so a position that starts inside the zone stays there
+for every one of its frames: in **four in five** touched captures a whole camera
+position is photographed mid-change end to end, while the other two look
+perfect. The emitter is not a perfect timer (the caveat under the rules).
+Replaying the same captures, EXPERIMENT-10 finds 712 of the 849 touched
+positions straddled end to end at a perfect timer, and none from 3 ms per step
+late: there a straddle begins part-way through a position and sweeps across it.
+Either way it is one sitting at the tripod you cannot trust.
 
 **What that costs is measured now, on the bench, against a reader the page does
 not have yet.** Until now this card said nobody had measured it.

@@ -151,7 +151,10 @@ before the first white frame cost a problem line and nothing else; a dark
 photograph after the last step lengthens the last run until it is refused; and a
 re-shot run, appended to the position or handed in alone, gets the whole folder
 refused, 192 of 192 such folders. That last one matters below, because it is the
-remedy the page's own refusal asks for.
+remedy the page's own refusal asks for. (The card has since changed: it now says to
+delete the photographs taken after the screen goes black, and to re-shoot the whole
+position rather than one projector, `docs/CALIBRATE.md`. The measurement stands: it
+is what the page does with such folders.)
 
 <!-- generated: experiment-10-precondition -->
 | clean positions | raster | positions | placed a run | refused at | classify margin (needs 0.15): median · max | runs a per-run classify would rescue |
@@ -169,7 +172,7 @@ _What the page’s worth report prints for a clean folder: “Only 1 camera cont
 | room spill on | 96 | 89 | 7 | 6 | 20 | 0 | 7 of 24 | 0.0067 · 0.0879 |
 | the finer preset | 48 | 38 | 10 | 10 | 3 | 0 | 10 of 12 | 0.0031 · 0.0568 |
 
-| folder the card can produce | positions | runs placed (the plain folder’s) | refused whole | the page’s reasons |
+| folder shapes an operator can produce | positions | runs placed (the plain folder’s) | refused whole | the page’s reasons |
 | --- | ---: | --- | ---: | --- |
 | leading 0, trailing 0 | 24 | 75 (75) | 0 | unanswered pair 21 |
 | leading 0, trailing 1 | 24 | 59 (75) | 0 | run length 24 · unanswered pair 13 |
