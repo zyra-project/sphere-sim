@@ -130,11 +130,14 @@ calibration.
       2-second dwell. You are aiming the next shutter at the middle of the white
       frame. This one line is the cheapest thing on this card. Without it,
       **one capture in three has photographs taken mid-change** — usually a
-      whole camera position of them. The page refuses the larger smears when
-      you read the folder at your desk, which is a return trip, and lets the
-      smaller ones through at a cost nobody has measured. With it, none of 2000
-      simulated captures did — a figure that assumes the page keeps time, which
-      it does not quite. (Part 4, *Starting the run*)
+      whole camera position of them. Given a reader that can place runs —
+      today's page cannot — most of those are refused at your desk, which is a
+      return trip, and most of what passes is not harmless: a small smear moves
+      the seams several times as far as a re-shoot does. With it, none of 2000
+      simulated captures did — but only while the page runs less than about
+      3.50 to 3.70 ms late per step, and the only figures for that lateness,
+      from a headless browser, are 7.5 and about 9.3 ms. **So aim: it is
+      necessary, not yet sufficient.** (Part 4, *Starting the run*)
 - [ ] **Then do not touch anything.** 34 frames per projector — 136 and about
       4½ minutes on a four-projector rig at a 2-second dwell; the page shows the
       count for yours. The tone marks each step, so you can hear that the shutter
@@ -408,6 +411,10 @@ than about a seventh of its exposure — about a third when the smeared frame is
 the complement, and more on the finest planes (`docs/EXPERIMENT-9.md`, pinned in
 `packages/solver/test/indexing.test.ts`). A smaller smear is let through, and
 the phase frames have no complement to be checked against at all.
+Those are thresholds for one smeared photograph. When a whole position is
+smeared alike, each projector's run is refused at its own smear, somewhere
+between 7.0% and 16.5% of the exposure for a forward straddle, so the check
+refuses such a position one run at a time (`docs/EXPERIMENT-10.md`).
 
 `docs/EXPERIMENT-9.md` swept it. Two findings decide what you do at the tripod:
 
@@ -439,11 +446,48 @@ clocks, same dwell, same exposure — **only where the first shot landed.**
 position and drift cannot walk it back out, so a position that starts inside the
 zone stays there for every one of its frames: in **four in five** touched
 captures a whole camera position is photographed mid-change end to end, while
-the other two look perfect. What that costs is **not yet measured**. Smeared far
-enough, the complement check refuses the runs when you read the folder — loud,
-but at your desk, so a return trip. Smeared less, they are let through, and what
-a slightly blended position does to a calibration nobody has measured. Either
-way it is one sitting at the tripod you cannot trust.
+the other two look perfect. It is one sitting at the tripod you cannot trust.
+
+**What that costs is measured now, on the bench, against a reader the page does
+not have yet.** Until now this card said nobody had measured it.
+`docs/EXPERIMENT-10.md` rendered these photographs and handed them to the page's
+own complement check and decoder. Today's page never gets that far: it refused
+all 108 clean positions rendered from this card's three marks before the check
+runs (the top of this card), so a straddled folder would be refused like any
+other, with nothing to say it straddled. Given a reader that sorts every
+photograph correctly — the table's *counterfactual reader* — EXPERIMENT-9's
+captures at the page's defaults come out like this, with a perfect timer and
+with the emitter running late:
+
+<!-- generated: experiment-10-rescore-calibrate -->
+| start, emitter | captures flagged or changed | refused loudly (share, 95% CI) | of those, run by run | pass silently | past the 1 mm seam gate |
+| --- | --- | --- | ---: | --- | --- |
+| aimed start, perfect timer (R8) | 0 of 2000 | 0 | 0 | 0 placed (not solved) | — |
+| aimed start, 2 ms late per step (L-aimed-2) | 0 of 2000 | 0 | 0 | 0 placed (not solved) | — |
+| aimed start, 7.5 ms late per step (L-aimed-7.5) | 1786 of 2000 (1786 newly touched) | 1358 (76.0%, 73.8–78.1%) | 1358 | 324: 4 harmless, 2 biased, 17 gate-breaking, 301 not solved | 28 under P; 40 of the 58 solved under A |
+| un-aimed (uniform) start, perfect timer (R1) | 728 of 2000 | 627 (86.1%, 83.7–88.5%) | 295 | 98: 38 harmless, 17 biased, 43 gate-breaking | 61 |
+| un-aimed (uniform) start, 2 ms late per step (L-uniform-2) | 1249 of 2000 (521 newly touched) | 912 (73.0%, 70.7–75.3%) | 637 | 240 placed (not solved) | — |
+| un-aimed (uniform) start, 7.5 ms late per step (L-uniform-7.5) | 1893 of 2000 (1165 newly touched) | 1693 (89.4%, 88.1–90.8%) | 1637 | 116 placed (not solved) | — |
+
+_Policy P, the counterfactual reader. The aimed start protects while the emitter runs less than about 3.50–3.70 ms late per step (derived); 1% of aimed captures are touched from 3.6 ms (swept). The emitter’s lateness has been measured only headless: a design-time 7.5 ms per step, and about 9.3 ms armed with the tick on._
+<!-- /generated -->
+
+*Loud* is a refusal when you read the folder; *silent*, a position that passes
+with no message. Policy P re-shoots each refused position whole and assumes the
+re-shoot is clean, which is optimistic; policy A keeps what a partly refused
+position placed, as the page would decode it. What it means for you:
+
+- **Most straddled captures are refused, and a run refused on its own is
+  mostly blamed on the wrong thing.** With no aimed start and a perfect timer,
+  627 of the 728 touched are refused. The 332 refused as whole positions —
+  "Found N projector runs" — can be re-shot and read. The 295 refused run by run
+  are each told that the photographs look like a dropped and a duplicated frame,
+  which is not what happened, and to "Re-shoot projector N", which gives a
+  folder the page refuses whole. **Re-shoot the whole position.**
+- **Most of what passes is not harmless.** A straddle the check lets through
+  still decodes, but shifted: smeared by 6% of the exposure, it moves the
+  worst seam point 6.8 times as far as re-shooting the position would, and 43 of
+  the 98 captures that passed silently put the seams past the 1 mm gate.
 
 So, three rules, in the order they pay:
 
@@ -477,27 +521,29 @@ So, three rules, in the order they pay:
    a position end to end.
 
 **One caveat on the first rule, found by reading the page: it assumes the
-emitter keeps time, and the emitter runs slightly slow.** `emit.ts` draws each
-frame and only then re-arms its timer for the next dwell, so every step lasts
-the dwell *plus* however long the drawing took, and the lateness adds up across
-a position. The camera, on its own clock, then fires progressively earlier
-within each step. An `aimed` start sits at least a quarter of a dwell from the
-start of its step, so it survives a whole four-projector position only while
-the lateness stays under about **3.7 ms per step at a 2-second dwell** — half a
-second spread over 135 steps. A headless-browser probe, which is not your
-display machine, measured about 7.5 ms; the display machine's number is
-unmeasured.
-Two things follow from the arithmetic: a **4-second dwell doubles the margin**,
-and the real fix belongs in the page — timing every step from the moment `Play`
-was pressed rather than from the end of the step before.
+emitter keeps time, and the emitter runs late.** In `emit.ts`, `advance()`
+draws each frame and only then re-arms its timer for the next dwell, so every
+step lasts the dwell *plus* however long the drawing took, and the lateness adds
+up across a position. The camera, on its own clock, then fires progressively
+earlier within each step. An `aimed` start sits at least a quarter of a dwell
+from the start of its step, so it protects fully only while the lateness stays
+under about **3.50 to 3.70 ms per step at a 2-second dwell** — half a second
+spread over 135 steps, the lower figure for a camera whose clock runs fast. The
+only figures for the lateness come from a headless browser, which is not your
+display machine: 7.5 ms per step with the page unarmed and the tick off, and
+about 9.3 ms armed with the tick on, which is how this card has you run it. At
+7.5 ms, 1786 of 2000 aimed captures are touched (EXPERIMENT-10's table, above),
+and the display machine's number is unmeasured. **So the aimed start is
+necessary, and not yet sufficient.** A **4-second dwell doubles the margin**,
+though by the same arithmetic not past either headless figure. The real fix
+belongs in the page — timing every step from the moment `Play` was pressed
+rather than re-arming after each paint.
 
-**Nothing checks this on the day, and afterwards only the larger smears are
-caught.** The table counts a straddle as an event in time, not as a decoded
-error. How often a straddle is smeared far enough to be refused, and what the
-ones let through do to a calibration, have never been measured — nothing has yet
-rendered a blend and pushed it through the decoder. The honest claim is the
-narrow one: this many photographs are not photographs of the pattern they are
-filed under.
+**Nothing checks this on the day, and afterwards, even given a reader that can
+place runs, only the larger smears are caught.** Everything in EXPERIMENT-10's
+table is found at your desk or not at all: a loud capture is a return trip, and
+a silent one is never reported. At the sphere, the rules above are the whole
+defence.
 
 Then, in order:
 
@@ -509,7 +555,10 @@ Then, in order:
    keep both runs, and the page's own refusal says "Re-shoot projector N".
    Neither can be read back: the page reads a position only when it holds
    exactly one run per projector, so a folder with an extra run, or a re-shot
-   run on its own, is refused whole. Patching is still the worse error, and it
+   run on its own, is refused whole — `docs/EXPERIMENT-10.md` built both, for
+   every projector, and the run count refused all 192 such folders whole. The
+   same goes when a refusal after a straddle names one projector (above):
+   re-shoot the position. Patching is still the worse error, and it
    is worth knowing exactly why. Software can find each projector's run by its
    white and black frames and check the count between them, so a frame you
    simply *lose* costs that projector's run and nothing else. What the count

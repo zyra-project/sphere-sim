@@ -487,7 +487,9 @@ duplicated one. That is not what happened, and the
 remedy is one the page cannot read back: a folder holding a re-shot run, appended or
 alone, is refused whole (192 of 192 in the first section's folder table), so the
 page's own advice, and the card's advice to keep both runs, produce a folder it
-cannot read.
+cannot read. (The card has since changed: it now says to re-shoot the whole
+position, `docs/CALIBRATE.md`. The page's refusal still says “Re-shoot
+projector N”.)
 
 A silent position gets no message at all. Under policy A, which keeps a MIXED
 position's placed runs because that is what the page decodes, 97 of R1's loud
@@ -608,7 +610,8 @@ wrong.** A run refused on its own is mostly blamed on a dropped and a duplicated
 frame, and the refusal asks for a remedy that produces a folder the page refuses
 whole. The only remedy the page reads back is re-shooting the whole position, and
 the refusal text and the card's “keep both runs” should say so. That is recorded
-here and not acted on.
+here and not acted on. (The card now says to re-shoot the position:
+`docs/CALIBRATE.md`. The refusal text still says “Re-shoot projector N”.)
 
 **Most of what passes is not harmless, and the check is not the protection.** A
 straddle the check lets through keeps its Gray words and shifts its phase, and at

@@ -2041,10 +2041,9 @@ export function experiment10Lateness(result: Experiment10): string {
  * emitter lateness, how many captures a straddle touches, how many the page
  * would refuse loudly, and how many pass silently.
  *
- * Registered for `docs/OPERATOR-PATH.md`. It is also the renderer for
- * `experiment-10-rescore-calibrate` in `docs/CALIBRATE.md`, which is left
- * unregistered here while that document is edited on another branch; the
- * registration is the one line that branch adds.
+ * Registered twice: `experiment-10-rescore-operator-path` in
+ * `docs/OPERATOR-PATH.md`, and `experiment-10-rescore-calibrate` in
+ * `docs/CALIBRATE.md`.
  */
 export function experiment10Operator(result: Experiment10): string {
   const rescore = has10(result.rescore?.cells, 'rescore.cells');
@@ -2143,10 +2142,19 @@ const BLOCKS: Record<string, Block> = {
   },
   // The operator's view of the same cells, in the plan whose Phase 5 it
   // prices. Registered here and not copied, for the reason the experiment-9
-  // entry below gives. `experiment-10-rescore-calibrate` (docs/CALIBRATE.md)
-  // renders with the same function and is registered with that document.
+  // entry below gives.
   'experiment-10-rescore-operator-path': {
     doc: 'docs/OPERATOR-PATH.md',
+    data: 'experiments/experiment-10.json',
+    render: experiment10Operator as (r: never) => string,
+  },
+  // And in the field card, beside EXPERIMENT-9's table, because it is the
+  // measurement under two of the card's instructions — re-shoot a refused
+  // position whole, and aim the start — and under the caveat on the second:
+  // how late the emitter may run before aiming stops protecting. A copied
+  // table would go stale exactly where a stale number costs a camera position.
+  'experiment-10-rescore-calibrate': {
+    doc: 'docs/CALIBRATE.md',
     data: 'experiments/experiment-10.json',
     render: experiment10Operator as (r: never) => string,
   },
