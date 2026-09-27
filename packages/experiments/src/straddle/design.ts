@@ -37,8 +37,15 @@
  *
  * Nothing here is measured. These are the inputs of a design, and several were
  * probed at design time (the crossings of 7-16%, the Gray onset at 3/7, the
- * headless emitter lateness of 7.5 ms per step). The experiment re-measures
- * every one of them and reports what it finds, including where it disagrees.
+ * headless emitter lateness of 7.5 ms per step). The experiment re-measures the
+ * crossings and the Gray onsets and reports what it finds, including where it
+ * disagrees. It does NOT re-measure the emitter's lateness. 7.5 ms per step is
+ * a design-time figure from a headless, software-rendered browser
+ * ({@link HEADLESS_LATENESS_MS} says where it came from). The lateness stage
+ * sweeps around it and renders at it; it never measures it. The spec's P0
+ * (`tools/emitter-timing.ts`), which would have measured it, was never built.
+ * An earlier version of this paragraph said the experiment re-measured every
+ * input, 7.5 ms included, and the first full run's verification caught it.
  */
 
 import { deriveSeed } from '../../../bench/src/random.ts';
@@ -333,21 +340,65 @@ export function exp9TrialSeed(arm: Arm, phase: StartPhase, dwellS: number, expos
 }
 
 /**
+ * The emitter's lateness per step, as far as anybody has measured it, ms. NOT
+ * measured by this experiment, and not on a display machine.
+ *
+ *   - `hudTickOff`: the mean of a design-time probe (`wf/design/lateness.mjs`)
+ *     in headless Chromium on SwiftShader's software GL, a 3840x2160 canvas,
+ *     the page in HUD mode with its tick off. Median 6.5-6.6, p90 8.3.
+ *   - `armedTickOn`: about what the same setup ran, armed with the tick on,
+ *     when the first full run's verification re-ran it. A verification figure,
+ *     not a design one, quoted beside the design figure because armed with the
+ *     tick on is the page as an operator runs it, and it runs later still.
+ *   - `pureJsLowerBound`: the script's own share at 1920x1080 quadrants, with
+ *     no paint (physics review `delta.ts`: 1.3-2.5 ms).
+ *
+ * The spec's P0 (`tools/emitter-timing.ts`, writing
+ * `experiments/emitter-timing.json`) would measure the first two on the
+ * machine it runs on, and was never built. So these are inputs the lateness
+ * stage sweeps around and renders at, and every sentence that quotes 7.5 ms
+ * says where it came from.
+ */
+export const HEADLESS_LATENESS_MS = { hudTickOff: 7.5, armedTickOn: 9.3, pureJsLowerBound: 2 } as const;
+
+/**
  * Emitter lateness swept on timing alone, ms per step.
  *
  * `advance()` re-arms its timer only after painting the next frame, so each
  * step runs late and the lateness accumulates. These bracket the derived
  * threshold at which the card's aimed start stops protecting (0.5 s over 135
- * steps, about 3.7 ms) and the design-time headless measurement (7.5 ms mean).
+ * steps, about 3.7 ms with matched clocks and 3.5 ms with the camera's clock
+ * 100 ppm fast) and the design-time headless figure.
+ *
+ * Every 0.05 ms from 3.40 to 4.00 as well. The first full run swept whole
+ * milliseconds and could only say that 1% of aimed captures were touched
+ * somewhere in (3, 4] ms: 0 of 2000 at 3, 235 at 4. A crossing the grid
+ * brackets by a whole millisecond is not measured, and the aimed rule's margin
+ * is the number the card would quote.
  */
-export const LATE_MS_TIMING: readonly number[] = [0, 1, 2, 3, 4, 5, 6, 7.5, 10, 15];
+export const LATE_MS_TIMING: readonly number[] = [
+  0,
+  1,
+  2,
+  3,
+  ...Array.from({ length: 12 }, (_, i) => Number((3.4 + 0.05 * i).toFixed(2))),
+  4,
+  5,
+  6,
+  HEADLESS_LATENESS_MS.hudTickOff,
+  10,
+  15,
+];
 
 /**
- * Lateness rendered: 2 ms, the pure-JS lower bound at 1920x1080 quadrants and
- * below the 3.7 ms threshold, and 7.5 ms, the headless mean. Neither is the
- * display machine's number; nobody has measured that.
+ * Lateness rendered: the pure-JS lower bound at 1920x1080 quadrants, below the
+ * aimed threshold, and the design-time headless figure. Neither is the display
+ * machine's number; nobody has measured that ({@link HEADLESS_LATENESS_MS}).
  */
-export const LATE_MS_RENDERED: readonly number[] = [2, 7.5];
+export const LATE_MS_RENDERED: readonly number[] = [
+  HEADLESS_LATENESS_MS.pureJsLowerBound,
+  HEADLESS_LATENESS_MS.hudTickOff,
+];
 
 /**
  * ASSUME: a 60 Hz display. A step's frame reaches the screen up to one refresh
@@ -517,6 +568,15 @@ function checkAtLoad(): void {
     fail(`the camera set repeats every ${CAMERA_SET_PERIOD_DEG} degrees, not the 30 this design was built on`);
   }
   if (SHORT_EXPOSURE_S !== 1 / 60) fail(`EXPERIMENT-9's shortest exposure is ${SHORT_EXPOSURE_S}, not 1/60 s`);
+  // The document reads the lateness grid as a bracket: the last value below a
+  // crossing and the first at or above it. Out of order or repeated, the
+  // bracket it names would not be the one swept.
+  if (LATE_MS_TIMING.some((x, i) => i > 0 && !(x > LATE_MS_TIMING[i - 1]))) {
+    fail(`the lateness grid ${LATE_MS_TIMING.join(', ')} is not strictly ascending`);
+  }
+  if (!LATE_MS_RENDERED.every((x) => LATE_MS_TIMING.includes(x))) {
+    fail('a rendered lateness is not on the timing grid, so its timing cell is missing');
+  }
   if (!EXP9_ARMS.some((a) => a.key === 'intervalometer-100ppm')) fail("EXPERIMENT-9's headline arm is gone");
 }
 checkAtLoad();

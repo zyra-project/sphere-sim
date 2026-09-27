@@ -680,8 +680,11 @@ export type HarmClass = 'HARMLESS' | 'BIASED' | 'GATE-BREAKING';
  *
  * The spec's HARMLESS (D_grid <= τ_null) and GATE-BREAKING overlap when a flip
  * happens within re-shoot noise. The flip is given precedence, because a gate
- * that changes its verdict is the thing an operator would see;
- * `withinReshootNoise` in {@link CaptureCategory} reports the overlap.
+ * that changes its verdict is the thing an operator would see.
+ * `withinReshootNoise` in {@link CaptureCategory} carries the overlap, and the
+ * document tallies it per cell (`classes.*.solved.withinReshootNoise`). The
+ * first full run's document did not: this comment said the overlap was
+ * reported while nothing read the field.
  */
 export function harmClass(h: Harm): HarmClass {
   if (!h.gTwinCensored && !h.gTreatedCensored && h.gTwinMm <= GRID_GATE_MM && h.gTreatedMm > GRID_GATE_MM) {
@@ -955,6 +958,16 @@ export function quarterMasses(fps: RunFingerprints): [number, number, number, nu
  *
  * Pair u0 only: every other pair has its own successor and its own crossing,
  * and a run's crossing is the least of them. Backward has other algebra.
+ *
+ * Exact only while no block crosses the check's floor. The masses are summed
+ * over the blocks that clear {@link MODULATION_FLOOR} of the CLEAN run's
+ * brightest block, and `complementResidual` re-derives its floor from the
+ * BLENDED references at every smear (`(1 - s) - s·g0` of a block's
+ * modulation). A block near the floor can leave the sums as the smear rises,
+ * which nothing here sees. The first full run measured the cost: at most
+ * 0.00018 on every run whose u0 crossing is 0.20 or less, and up to 0.015 on
+ * three runs that hold nearly all their modulation where pair u0 cannot
+ * deviate, and that the check refuses on another pair first.
  */
 export function u0Crossing(A: readonly [number, number, number, number]): number {
   const L = COMPLEMENT_LIMIT;

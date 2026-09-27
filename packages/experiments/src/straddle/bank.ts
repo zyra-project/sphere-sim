@@ -617,7 +617,42 @@ export function decodeRun(
   frames: readonly LinearImage[],
   decode: Partial<DecodeOptions> = {},
 ): DecodeResult {
-  const assembled = assembleCapture(frames, ROLES, assembleParams(camera, projector));
-  if (!assembled.ok) throw new Error(`decodeRun: ${assembled.problems.join(' ')}`);
-  return decodeCapture(assembled.capture, decode);
+  return decodeCapture(assembled(camera, projector, frames), decode);
+}
+
+function assembled(camera: number, projector: number, frames: readonly LinearImage[]): PatternCapture {
+  const got = assembleCapture(frames, ROLES, assembleParams(camera, projector));
+  if (!got.ok) throw new Error(`decodeRun: ${got.problems.join(' ')}`);
+  return got.capture;
+}
+
+/**
+ * Each pixel's Gray address as the decoder itself reads it: the same run,
+ * assembled the same way, decoded with its phase sequences withheld.
+ *
+ * With no phase to refine it, `decodeCapture` reports an axis at the centre of
+ * the Gray bin it read, `(index + 0.5)·stride` (`decode.ts`, `decodeAxis`), and
+ * it reads that index with the very test it uses on a full decode. So two such
+ * decodes of one pixel differ on an axis exactly when its Gray word does, and a
+ * Gray word is compared without a second statement of how a bit is read. The
+ * modulation gate and the bit-separation test are the full decode's, so every
+ * pixel a full decode accepts is here too; the phase-only rejections are not.
+ */
+export function decodeGrayOnly(camera: number, projector: number, frames: readonly LinearImage[]): DecodeResult {
+  return decodeCapture({ ...assembled(camera, projector, frames), phase: [] });
+}
+
+/**
+ * Pixels of camera `camera` that projector `projector` lights: its white clears
+ * its black by the decoder's own `minModulation`, the rule {@link RigBank.lit}
+ * counts by. One byte per pixel.
+ */
+export function litMask(bank: RigBank, camera: number, projector: number): Uint8Array {
+  held(bank, camera, projector);
+  const w = bank.frames[camera][projector][WHITE];
+  const b = bank.frames[camera][projector][BLACK];
+  const floor = DEFAULT_DECODE_OPTIONS.minModulation;
+  const out = new Uint8Array(w.length);
+  for (let i = 0; i < w.length; i++) if (w[i] - b[i] >= floor) out[i] = 1;
+  return out;
 }

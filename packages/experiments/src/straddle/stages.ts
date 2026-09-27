@@ -67,7 +67,12 @@ import { raySphereIntersect } from '../../../sim/src/geometry.ts';
 import { computeGridDisplacement } from '../../../sim/src/metrics/grid.ts';
 import { gateById } from '../../../sim/src/metrics/types.ts';
 import { pixelToRay, prepareRig, type PreparedRig } from '../../../sim/src/optics.ts';
-import type { Correspondence, DecodeStats, LinearImage } from '../../../solver/src/decode.ts';
+import type {
+  Correspondence,
+  DecodeStats,
+  LinearImage,
+  PatternCapture,
+} from '../../../solver/src/decode.ts';
 import {
   COMPLEMENT_LIMIT,
   classify,
@@ -111,6 +116,7 @@ import {
   GATE_SCAN,
   GROSS_PX,
   HANDHELD_TRIALS,
+  HEADLESS_LATENESS_MS,
   K_NULL,
   LATE_MS_RENDERED,
   LATE_MS_TIMING,
@@ -172,7 +178,9 @@ import {
 } from './run.ts';
 import {
   buildRig,
+  decodeGrayOnly,
   decodeRun,
+  litMask,
   noisyRun,
   photoFingerprint,
   photoFrame,
@@ -393,7 +401,7 @@ export const SMOKE_PLAN: Exp10Plan = {
   decodeNoiseless: [0.1],
   decodeNoisy: [0.1],
   singleFrameLevels: [0.2],
-  lateMsTiming: [0, 7.5],
+  lateMsTiming: [0, HEADLESS_LATENESS_MS.hudTickOff],
   pose: true,
   poseLevels: {
     forward: [0.06],
@@ -426,8 +434,8 @@ export const TEST_PLAN: Exp10Plan = {
   auditTrials: 10,
   rollingRatios: [0.3],
   rollingDecode: { ratios: [0.3], midRow: [0.1] },
-  lateMsTiming: [0, 7.5],
-  lateMsRendered: [7.5],
+  lateMsTiming: [0, HEADLESS_LATENESS_MS.hudTickOff],
+  lateMsRendered: [HEADLESS_LATENESS_MS.hudTickOff],
 };
 
 // ---------------------------------------------------------------------------
@@ -962,7 +970,10 @@ export function twinStatus(t: TwinCamera): TwinStatus[] {
  * for every run a straddle did not touch: those frames are the twin's, draw for
  * draw, so recomputing them per position would be the same numbers again.
  */
-function computeTwin(bank: RigBank, c: number): { twin: TwinCamera; prints: FrameFingerprint[] } {
+export function computeTwin(
+  bank: RigBank,
+  c: number,
+): { twin: TwinCamera; prints: FrameFingerprint[] } {
   const prints: FrameFingerprint[] = [];
   const reads: ReturnType<typeof readRun>[] = [];
   for (let p = 0; p < PROJECTORS; p++) {
@@ -1032,7 +1043,7 @@ function computeTwin(bank: RigBank, c: number): { twin: TwinCamera; prints: Fram
  * the bank, its twins from the BANK checkpoint, and the twins' noisy
  * fingerprints and page decodes as the stage asks for them.
  */
-interface RigContext {
+export interface RigContext {
   unit: string;
   bank: RigBank;
   twins: Map<number, TwinCamera>;
@@ -1142,22 +1153,31 @@ export interface Shift {
   /** Matched pixels whose projector coordinate moved at all. */
   moved: number;
   /**
-   * Matched pixels moved by at least a Gray stride, half a period, on either
-   * axis: a wrong fringe order, which is what a confidently flipped Gray bit
-   * produces. `gross` also counts phase errors between a quarter and half a
-   * period, which the unwrap tolerance lets through with the order right.
+   * Matched pixels whose decode moved half a period or more on either axis. A
+   * DISPLACEMENT bound, not a count of Gray flips. A correct Gray word with a
+   * phase error can move a decode by up to 0.65 of a period: the unwrap keeps
+   * it within 0.4 of a period of its Gray bin's centre (`decode.ts`,
+   * `unwrapToleranceFrac`), and the bin is half a period wide. So this can
+   * count a decode whose Gray word never changed. The first full run found
+   * exactly that at forward s = 0.45: a phase error of 0.50004 of a v period at
+   * a seam, both Gray words unchanged. This field was then named `wrongFringe`
+   * and read as flips. The flips themselves are counted from the Gray words
+   * ({@link GrayFlips}).
    */
-  wrongFringe: number;
+  movedHalfPeriod: number;
 }
 
-function shiftBetween(before: readonly Correspondence[], after: readonly Correspondence[]): Shift {
+export function shiftBetween(
+  before: readonly Correspondence[],
+  after: readonly Correspondence[],
+): Shift {
   const was = new Map(before.map((x) => [pixelOf(x), x]));
   const du: number[] = [];
   const dv: number[] = [];
   let gross = 0;
   let changed = 0;
   let moved = 0;
-  let wrongFringe = 0;
+  let movedHalfPeriod = 0;
   for (const y of after) {
     const x = was.get(pixelOf(y));
     if (x === undefined) continue;
@@ -1168,7 +1188,7 @@ function shiftBetween(before: readonly Correspondence[], after: readonly Corresp
     if (Math.abs(u) > GROSS_PX.u || Math.abs(v) > GROSS_PX.v) gross++;
     if (u !== 0 || v !== 0 || y.sigmaU !== x.sigmaU || y.sigmaV !== x.sigmaV) changed++;
     if (u !== 0 || v !== 0) moved++;
-    if (Math.abs(u) >= PERIOD_PX.u / 2 || Math.abs(v) >= PERIOD_PX.v / 2) wrongFringe++;
+    if (Math.abs(u) >= PERIOD_PX.u / 2 || Math.abs(v) >= PERIOD_PX.v / 2) movedHalfPeriod++;
   }
   const absU = ascending(du.map(Math.abs));
   const absV = ascending(dv.map(Math.abs));
@@ -1183,8 +1203,99 @@ function shiftBetween(before: readonly Correspondence[], after: readonly Corresp
     gross,
     changed,
     moved,
-    wrongFringe,
+    movedHalfPeriod,
   };
+}
+
+/**
+ * H7's flip clause, measured: Gray-word changes per axis on the pixels both
+ * decodes accept. A pixel's Gray word is read by {@link decodeGrayOnly}, the
+ * decoder's own Gray address, so this counts flips and nothing else; a phase
+ * error that moves a decode however far, with the Gray word right, is not one.
+ */
+export interface GrayFlips {
+  /** Pixels both full decodes accepted. */
+  matched: number;
+  u: number;
+  v: number;
+  /** Pixels whose Gray word changed on either axis. */
+  either: number;
+}
+
+/**
+ * The per-pixel signs of the decoded shift on one set of matched pixels. A
+ * mean can be one-signed while its pixels are not, and the first full run's
+ * verdict said "one-signed" of a bias whose v shift was positive on 3% of its
+ * pixels; a pixel that is neither positive nor negative did not move.
+ */
+export interface SignTally {
+  pixels: number;
+  uPos: number;
+  uNeg: number;
+  vPos: number;
+  vNeg: number;
+  maxAbsU: number;
+  maxAbsV: number;
+}
+
+function emptySigns(): SignTally {
+  return { pixels: 0, uPos: 0, uNeg: 0, vPos: 0, vNeg: 0, maxAbsU: 0, maxAbsV: 0 };
+}
+
+/**
+ * Over the pixels both full decodes accepted: which changed their Gray word, and
+ * the signs of their shift, split into the SEAM (pixels `seam` marks: the
+ * projector whose light the blend brings into the run also lights them) and
+ * the rest. Every matched pixel must have a Gray address on both sides, because
+ * a full decode accepts only pixels whose Gray words it could read; one that
+ * does not throws, since the two decodes would then disagree about a bit.
+ */
+export function pixelTallies(
+  before: readonly Correspondence[],
+  after: readonly Correspondence[],
+  grayBefore: readonly Correspondence[],
+  grayAfter: readonly Correspondence[],
+  seam: Uint8Array,
+  width: number,
+): { grayFlips: GrayFlips; signs: { seam: SignTally; rest: SignTally } } {
+  const was = new Map(before.map((x) => [pixelOf(x), x]));
+  const grayWas = new Map(grayBefore.map((x) => [pixelOf(x), x]));
+  const grayNow = new Map(grayAfter.map((x) => [pixelOf(x), x]));
+  const flips: GrayFlips = { matched: 0, u: 0, v: 0, either: 0 };
+  const signs = { seam: emptySigns(), rest: emptySigns() };
+  for (const y of after) {
+    const key = pixelOf(y);
+    const x = was.get(key);
+    if (x === undefined) continue;
+    const gx = grayWas.get(key);
+    const gy = grayNow.get(key);
+    if (gx === undefined || gy === undefined) {
+      throw new Error(
+        `experiment10: camera pixel (${y.camU}, ${y.camV}) decodes whole but has no Gray address`,
+      );
+    }
+    flips.matched++;
+    const fu = gx.projU !== gy.projU;
+    const fv = gx.projV !== gy.projV;
+    if (fu) flips.u++;
+    if (fv) flips.v++;
+    if (fu || fv) flips.either++;
+    const du = y.projU - x.projU;
+    const dv = y.projV - x.projV;
+    const t = seam[(y.camV - 0.5) * width + (y.camU - 0.5)] === 1 ? signs.seam : signs.rest;
+    t.pixels++;
+    if (du > 0) t.uPos++;
+    else if (du < 0) t.uNeg++;
+    if (dv > 0) t.vPos++;
+    else if (dv < 0) t.vNeg++;
+    t.maxAbsU = Math.max(t.maxAbsU, Math.abs(du));
+    t.maxAbsV = Math.max(t.maxAbsV, Math.abs(dv));
+  }
+  for (const t of [signs.seam, signs.rest]) {
+    t.maxAbsU = round(t.maxAbsU, 5) as number;
+    t.maxAbsV = round(t.maxAbsV, 5) as number;
+  }
+  return { grayFlips: flips, signs };
 }
 
 function statsDelta(before: DecodeStats, after: DecodeStats): Record<string, number> {
@@ -1313,7 +1424,7 @@ function roundShift(s: Shift): Record<string, number | null> {
     gross: s.gross,
     changed: s.changed,
     moved: s.moved,
-    wrongFringe: s.wrongFringe,
+    movedHalfPeriod: s.movedHalfPeriod,
   };
 }
 
@@ -1590,15 +1701,22 @@ export function stageBank(ctx: RunContext): StageFile<BankUnit> {
 
 /** What a solve was asked to photograph. Its canonical string is the solve's id. */
 export interface SolveSpec {
-  kind: 'twin' | 'designed' | 'null' | 'capture';
+  kind: 'twin' | 'designed' | 'null' | 'position-null' | 'capture';
   rig: number;
   variant: RigVariant;
   /** A description that determines the straddle rendered: `none`, or which positions and why. */
   straddle: string;
   /** Pairs withheld from the solve, as `camera.projector`, sorted. */
   exclude: string[];
-  /** The capture seed of a re-shoot, or null for the scenario's own. */
+  /**
+   * The capture seed of a re-shoot, or null for the scenario's own. A `null`
+   * solve photographs every camera under it; a `position-null` only
+   * {@link SolveSpec.reshotCamera}, and every other camera keeps the
+   * scenario's own capture.
+   */
   captureSeed: number | null;
+  /** A `position-null`'s one re-shot camera. Absent from every other kind. */
+  reshotCamera?: number;
 }
 
 export interface SolveRecord {
@@ -1634,7 +1752,11 @@ export interface SolveRecord {
 export function solveId(spec: SolveSpec): string {
   const seed = spec.captureSeed === null ? 'own' : String(spec.captureSeed);
   const exclude = spec.exclude.join(',');
-  return `${spec.kind}/${spec.variant}/k${spec.rig}/${spec.straddle}/x[${exclude}]/seed:${seed}`;
+  const reshot = spec.reshotCamera === undefined ? '' : `/camera:${spec.reshotCamera}`;
+  return (
+    `${spec.kind}/${spec.variant}/k${spec.rig}/${spec.straddle}/x[${exclude}]/seed:${seed}` +
+    reshot
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -2017,7 +2139,7 @@ function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord[] {
  * The smear at camera row `row` of a rolling readout: `s̄` at the middle row, sloping by
  * readout/exposure.
  */
-function rollingSmear(
+export function rollingSmear(
   midRow: number,
   readoutOverExposure: number,
   height: number,
@@ -2328,6 +2450,11 @@ if (!POSE_LEVELS.forward.includes(VERDICT_S))
  * itself doing the counting.
  */
 export interface HalfStats {
+  /**
+   * Pixels of the half in view at all: the bank's geometric truth puts them on
+   * this half of the raster. Most need not be lit.
+   */
+  inView: number;
   accepted: number;
   grayAmbiguous: number;
   lowModulation: number;
@@ -2355,6 +2482,17 @@ export interface DecodeLevel {
    * about.
    */
   halves: { dark: HalfStats; lit: HalfStats } | null;
+  /** Gray-word changes against the clean decode, on the pixels both accept (H7's flip clause). */
+  grayFlips: GrayFlips;
+  /**
+   * The shift's per-pixel signs on the same pixels, the SEAM apart: pixels the
+   * projector whose light this direction's blend brings into the run also
+   * lights. Forward that is the next projector, whose white follows the run's
+   * last frame; backward the previous one, whose last frame precedes the run's
+   * white. The run with no such neighbour (the dark follows the last run, step
+   * 0 precedes the first) has no seam.
+   */
+  signs: { seam: SignTally; rest: SignTally };
 }
 
 export interface PageLevel {
@@ -2417,7 +2555,11 @@ export interface DecodeRun {
       sigmaU: number | null;
       sigmaV: number | null;
     };
-    dark: {
+    /**
+     * A dimming control, not a successor ablation: every photograph blended
+     * with the dark (see `decodeRunArms`).
+     */
+    dimmed: {
       meanU: number | null;
       meanV: number | null;
       sigmaU: number | null;
@@ -2448,8 +2590,12 @@ export interface DecodeUnit {
   single: SingleFrameDecode[];
 }
 
-function halfMasks(rc: RigContext, c: number, p: number): { dark: Uint8Array; lit: Uint8Array } {
-  const u = rc.bank.truth[c][p].projU;
+export function halfMasks(
+  bank: RigBank,
+  c: number,
+  p: number,
+): { dark: Uint8Array; lit: Uint8Array } {
+  const u = bank.truth[c][p].projU;
   const dark = new Uint8Array(u.length);
   const lit = new Uint8Array(u.length);
   for (let i = 0; i < u.length; i++) {
@@ -2468,7 +2614,7 @@ function halfMasks(rc: RigContext, c: number, p: number): { dark: Uint8Array; li
  * off-image, so the half's own low-modulation count is its size less the ones
  * that cleared.
  */
-function halves(
+export function halves(
   c: number,
   p: number,
   frames: readonly LinearImage[],
@@ -2482,6 +2628,7 @@ function halves(
     for (let i = 0; i < mask.length; i++) size += mask[i];
     const cleared = d.considered - d.rejectedLowModulation - d.rejectedOffImage;
     return {
+      inView: size,
       accepted: d.accepted,
       grayAmbiguous: d.rejectedGrayAmbiguous,
       lowModulation: size - cleared,
@@ -2515,16 +2662,47 @@ function sigmaMedians(xs: readonly Correspondence[]): {
   };
 }
 
-function decodeRunArms(rc: RigContext, plan: Exp10Plan, c: number, p: number): DecodeRun {
+/**
+ * The projector whose light a whole-run blend in `direction` brings into run
+ * `p`: the other projector named by any part of the run's own photographs, read
+ * off the page's semantics ({@link designedPhotos}) rather than written as
+ * `p ± 1`. Forward, the next projector's white follows the run's last frame;
+ * backward, the previous projector's last frame precedes the run's white. Null
+ * where there is none: the dark follows the last run, and step 0, lit before
+ * Play, precedes the first.
+ */
+export function neighbourOf(p: number, direction: 'forward' | 'backward'): number | null {
+  const others = new Set<number>();
+  for (const photo of designedPhotos(direction, () => 0.5, 1).slice(
+    p * FRAMES_PER_RUN,
+    (p + 1) * FRAMES_PER_RUN,
+  )) {
+    for (const part of photo.rows[0]) {
+      if (part.state !== 'dark' && part.state.projector !== p) others.add(part.state.projector);
+    }
+  }
+  if (others.size > 1) {
+    throw new Error(`experiment10: run ${p + 1} ${direction} blends in ${others.size} projectors`);
+  }
+  return others.size === 0 ? null : [...others][0];
+}
+
+export function decodeRunArms(rc: RigContext, plan: Exp10Plan, c: number, p: number): DecodeRun {
   const { bank } = rc;
   const cleanFrames = cleanRun(bank, c, p, CLEAN);
   const clean = decodeRun(c, p, cleanFrames);
+  const cleanGray = decodeGrayOnly(c, p, cleanFrames).correspondences;
   const cleanSphere = decodedOnSphere(rc, p, clean.correspondences);
-  const masks = halfMasks(rc, c, p);
+  const masks = halfMasks(bank, c, p);
+  const seamOf = (direction: 'forward' | 'backward'): Uint8Array => {
+    const q = neighbourOf(p, direction);
+    return q === null ? new Uint8Array(bank.width * bank.height) : litMask(bank, c, q);
+  };
   const levels: DecodeLevel[] = [];
   for (const direction of ['forward', 'backward'] as const) {
     const grid = [...plan.decodeNoiseless];
     if (direction === 'forward' && !grid.includes(VERDICT_S)) grid.push(VERDICT_S);
+    const seam = seamOf(direction);
     for (const s of grid.sort((a, b) => a - b)) {
       const frames = cleanRun(
         bank,
@@ -2535,6 +2713,14 @@ function decodeRunArms(rc: RigContext, plan: Exp10Plan, c: number, p: number): D
       const treated = decodeRun(c, p, frames);
       const shift = shiftBetween(clean.correspondences, treated.correspondences);
       const ratio = biasRatio(shift, s);
+      const tallies = pixelTallies(
+        clean.correspondences,
+        treated.correspondences,
+        cleanGray,
+        decodeGrayOnly(c, p, frames).correspondences,
+        seam,
+        bank.width,
+      );
       levels.push({
         direction,
         s,
@@ -2548,6 +2734,8 @@ function decodeRunArms(rc: RigContext, plan: Exp10Plan, c: number, p: number): D
         // The Gray onsets (H7) sit at 3/7 and 1/2, so the halves are asked
         // about only around them.
         halves: s >= 0.3 ? halves(c, p, frames, masks) : null,
+        grayFlips: tallies.grayFlips,
+        signs: tallies.signs,
       });
     }
   }
@@ -2679,9 +2867,13 @@ function decodeRunArms(rc: RigContext, plan: Exp10Plan, c: number, p: number): D
     short.push(rec);
   }
 
-  // The successor ablation: the same forward smear, with the page's own next
-  // step and with its dark. A blend into black scales a fringe and moves no
-  // phase, so what separates the two is the successor's content.
+  // A dimming control beside the forward smear: every photograph of the run
+  // blended with the page's dark, which is this projector's own black, at the
+  // same weight. That dims every frame toward black alike, which moves no Gray
+  // bit and no phase, so the arm shows that a uniform dimming costs nothing.
+  // It is NOT the spec's successor ablation, and it was first described as
+  // one: it replaces every photograph's successor, not only the last frame's,
+  // so it cannot isolate what the next projector's white contributes.
   const s = 0.1;
   const toDark: Photo[] = STEPS.map((_, k) => ({
     filedStep: k,
@@ -2712,7 +2904,7 @@ function decodeRunArms(rc: RigContext, plan: Exp10Plan, c: number, p: number): D
     page,
     rolling,
     short,
-    ablation: { page: ablate(designedPhotos('forward', () => s, 1)), dark: ablate(toDark) },
+    ablation: { page: ablate(designedPhotos('forward', () => s, 1)), dimmed: ablate(toDark) },
   };
 }
 
@@ -2894,7 +3086,11 @@ export function latenessCells(plan: Exp10Plan): CellSpec[] {
         trials: plan.trials,
         mode: 'refine',
         decode: 'subsample',
-        solve: plan.pose && phase === 'aimed' && lateMs === 7.5 ? 'first-a' : 'none',
+        // The design-time headless figure is the lateness a capture is solved at.
+        solve:
+          plan.pose && phase === 'aimed' && lateMs === HEADLESS_LATENESS_MS.hudTickOff
+            ? 'first-a'
+            : 'none',
       });
     }
   }
@@ -3547,10 +3743,120 @@ function gridBetween(
 }
 
 /**
+ * Camera `camera`'s pairs as a re-shoot under capture seed `seed` photographs
+ * them: the whole rig rendered with `runScenario`'s own capture options under
+ * that seed, and that camera's captures kept, frames and all. So they are the
+ * very pairs a whole-capture re-shoot under `seed` decodes for that camera.
+ *
+ * The whole rig, not the one camera. A pair's noise stream is named by its
+ * camera's index among the cameras rendered (`pairNoiseSeed`), and rendered
+ * alone, camera 2 would draw camera 0's stream.
+ */
+export function reshotPairs(
+  bank: RigBank,
+  camera: number,
+  seed: number,
+): Map<number, PatternCapture> {
+  const kept = new Map<number, PatternCapture>();
+  const options = captureOptionsFor(
+    bank.world,
+    bank.scenario,
+    { ...runOptionsFor(bank), captureSeed: seed },
+    PLAN,
+  );
+  captureAndDecode(bank.world.truthRig, bank.world.cameras, {
+    ...options,
+    onCapture: (c, p, capture) => {
+      if (c === camera) kept.set(p, capture);
+    },
+  });
+  if (kept.size !== PROJECTORS) {
+    throw new Error(
+      `experiment10: re-shooting camera ${camera} rendered ${kept.size} of its pairs`,
+    );
+  }
+  return kept;
+}
+
+/** Everything about a capture but its frames: which pair, and the sequences' layout. */
+function captureShape(x: PatternCapture): string {
+  return JSON.stringify([
+    x.camera,
+    x.projector,
+    x.projectorRes,
+    x.white !== null,
+    x.black !== null,
+    x.gray.map((g) => [g.axis, g.bits, g.stridePx, g.patterns.length, g.inverses.length]),
+    x.phase.map((q) => [q.axis, q.steps, q.periodPx, q.frames.length]),
+  ]);
+}
+
+/**
+ * The `onCapture` of a one-position re-shoot: as each of camera `camera`'s pairs
+ * is rendered, its frames are replaced by the re-shoot's ({@link reshotPairs})
+ * before anything decodes them. Every other camera keeps the capture it was
+ * rendered with.
+ *
+ * `capture.ts` hands `onCapture` the capture about to be decoded and says that
+ * a callback changing it would change the decode (`CaptureOptions.onCapture`).
+ * That is used here on purpose. It is the one way to merge one position's
+ * re-shoot into a capture without editing the bench and without a second
+ * statement of `runScenario`'s solve. `straddle.test.ts` holds the merged
+ * capture to the two it merges, pair for pair.
+ */
+export function swapInReshoot(
+  camera: number,
+  reshot: ReadonlyMap<number, PatternCapture>,
+): (c: number, p: number, capture: PatternCapture) => void {
+  return (c, p, capture) => {
+    if (c !== camera) return;
+    const from = reshot.get(p);
+    if (from === undefined || captureShape(from) !== captureShape(capture)) {
+      throw new Error(
+        `experiment10: the re-shoot of camera ${camera} has no pair like (${c}, ${p})`,
+      );
+    }
+    capture.white = from.white;
+    capture.black = from.black;
+    capture.gray = from.gray;
+    capture.phase = from.phase;
+  };
+}
+
+/**
+ * The options `runScenario` is handed for one solve, less its `onCapture`: the
+ * bank's own, the pairs the spec withholds, and a whole-capture re-shoot's
+ * capture seed. A position re-shoot is handed NO capture seed: it photographs
+ * the scenario's own capture and swaps its one camera in as it is rendered
+ * ({@link swapInReshoot}). Handed its seed, it would re-shoot every camera and
+ * be a whole-capture null under another name.
+ *
+ * Throws on a spec that names a re-shot camera without being a position
+ * re-shoot, or the reverse, or a position re-shoot with no seed to re-shoot at.
+ */
+export function solveRunOptions(bank: RigBank, spec: SolveSpec): RunOptions {
+  const position = spec.kind === 'position-null';
+  if (position !== (spec.reshotCamera !== undefined) || (position && spec.captureSeed === null)) {
+    throw new Error(
+      `experiment10: ${solveId(spec)} names a re-shot camera without being a position ` +
+        're-shoot, or the reverse',
+    );
+  }
+  return {
+    ...runOptionsFor(bank),
+    excludePairs: excludePairs(spec.exclude),
+    ...(spec.captureSeed === null || position ? {} : { captureSeed: spec.captureSeed }),
+  };
+}
+
+/**
  * One solve through `runScenario`, or the record of it when it is already on
  * disk. The scenario is the bank's own — the rig the frames were rendered
  * from — with only `degradation.straddle` set, so there is no second statement
  * of how a rig is built for the solve to drift from.
+ *
+ * A `position-null` photographs the scenario's own capture and swaps its one
+ * re-shot camera's pairs in as they are rendered ({@link swapInReshoot}).
  */
 function solveOnce(
   ctx: RunContext,
@@ -3564,16 +3870,20 @@ function solveOnce(
   const cached = ctx.solves.get(id);
   if (cached !== undefined) return cached;
   const t0 = Date.now();
+  const options = solveRunOptions(bank, spec);
+  const swap =
+    spec.reshotCamera === undefined || spec.captureSeed === null
+      ? null
+      : swapInReshoot(spec.reshotCamera, reshotPairs(bank, spec.reshotCamera, spec.captureSeed));
   const scenario = { ...bank.scenario, degradation: { ...bank.scenario.degradation, straddle } };
   const rendered = new Map<string, FrameFingerprint[]>();
   const result = runScenario(scenario, {
-    ...runOptionsFor(bank),
-    excludePairs: excludePairs(spec.exclude),
-    ...(spec.captureSeed === null ? {} : { captureSeed: spec.captureSeed }),
+    ...options,
     onCapture:
-      audits.length === 0
+      audits.length === 0 && swap === null
         ? null
         : (c, p, capture) => {
+            swap?.(c, p, capture);
             if (audits.some((a) => a.camera === c))
               rendered.set(`${c}:${p}`, runPrints(planOrder(capture), p));
           },
@@ -3663,7 +3973,62 @@ export interface PoseUnit {
   camera: number;
   plain: string;
   levels: PoseLevel[];
+  /** Whole-capture re-shoots: every camera photographed again under `nullSeed(rig, i)`. */
   nulls: string[];
+  /**
+   * One-position re-shoots: only the straddled camera photographed again, under
+   * the same seeds, so its pairs are exactly the whole re-shoots' and the two
+   * yardsticks differ by the other cameras alone.
+   */
+  positionNulls: string[];
+}
+
+/**
+ * The re-shoots designed rig `k` is measured against, `kNull` of each: whole
+ * captures, every camera photographed again under `nullSeed(k, i)`; and the
+ * straddled position alone, the rig's straddled camera photographed again under
+ * the SAME seeds, so its pairs are exactly the whole re-shoots' and the two
+ * yardsticks differ by the other cameras alone. Both withhold what the clean
+ * capture refuses, as the plain twin they are measured against does.
+ */
+export function nullSpecs(
+  k: number,
+  variant: RigVariant,
+  refusedClean: readonly string[],
+  kNull: number,
+): { whole: SolveSpec[]; position: SolveSpec[] } {
+  const camera = straddledCamera(k);
+  const base = { rig: k, variant, straddle: 'none', exclude: [...refusedClean] };
+  return {
+    whole: Array.from({ length: kNull }, (_, i) => ({
+      ...base,
+      kind: 'null' as const,
+      captureSeed: nullSeed(k, i),
+    })),
+    position: Array.from({ length: kNull }, (_, i) => ({
+      ...base,
+      kind: 'position-null' as const,
+      captureSeed: nullSeed(k, i),
+      reshotCamera: camera,
+    })),
+  };
+}
+
+/**
+ * Every re-shoot of {@link nullSpecs}, solved against the rig's plain twin: the
+ * whole captures' ids, and the position re-shoots'. Exported so a test can hold
+ * which list is which with every solve already on record.
+ */
+export function solveNulls(
+  ctx: RunContext,
+  bank: RigBank,
+  specs: { whole: readonly SolveSpec[]; position: readonly SolveSpec[] },
+  plain: SolveRecord,
+): { nulls: string[]; positionNulls: string[] } {
+  return {
+    nulls: specs.whole.map((spec) => solveOnce(ctx, bank, spec, null, [], plain).id),
+    positionNulls: specs.position.map((spec) => solveOnce(ctx, bank, spec, null, [], plain).id),
+  };
 }
 
 export function stagePose(ctx: RunContext): StageFile<PoseUnit> | null {
@@ -3788,27 +4153,18 @@ export function stagePose(ctx: RunContext): StageFile<PoseUnit> | null {
         }
         levels.push(level);
       }
-      const nulls: string[] = [];
-      for (let i = 0; i < plan.kNull; i++) {
-        nulls.push(
-          solveOnce(
-            ctx,
-            bank,
-            {
-              kind: 'null',
-              rig: k,
-              variant,
-              straddle: 'none',
-              exclude: refusedClean,
-              captureSeed: nullSeed(k, i),
-            },
-            null,
-            [],
-            plain,
-          ).id,
-        );
-      }
-      return { rig: k, camera: c, plain: plain.id, levels, nulls };
+      // Two yardsticks. The whole-capture re-shoots renew every camera's
+      // photons. A straddled position is what an operator would re-shoot, so
+      // re-shooting that position alone is how far the seams move when the
+      // remedy is applied and nothing was wrong; the first full run's verdict
+      // set the straddle against the whole-capture re-shoots alone.
+      const { nulls, positionNulls } = solveNulls(
+        ctx,
+        bank,
+        nullSpecs(k, variant, refusedClean, plan.kNull),
+        plain,
+      );
+      return { rig: k, camera: c, plain: plain.id, levels, nulls, positionNulls };
     },
   );
 }

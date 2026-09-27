@@ -34,23 +34,36 @@
  */
 
 
-import { deriveSeed, makeBenchRng } from '../../../bench/src/random.ts';
+import { deriveSeed, makeBenchRng, type BenchRng } from '../../../bench/src/random.ts';
 import { COMPLEMENT_LIMIT, MIN_CLASSIFY_MARGIN } from '../../../solver/src/indexing.ts';
+import { startPhase } from '../tether/run.ts';
 import {
+  ARMS,
+  DWELL_S,
   ENCODE_BOUNDS,
   EXP10_ROOT_SEED,
   EXPECTED,
   EXPOSURE_S,
   GATE_SCAN,
   GRID_GATE_MM,
+  HEADLESS_LATENESS_MS,
   PERIOD_PX,
   PROJECTORS,
   PROJECTOR_RES,
   READOUT_S,
   REFINE_MARGIN,
   ROTATION_GATE_DEG,
+  STEPS,
 } from './design.ts';
-import { classifyCapture, classifyPosition, type CaptureClass, type Harm } from './run.ts';
+import {
+  classifyCapture,
+  classifyPosition,
+  harmClass,
+  type CaptureClass,
+  type Harm,
+  type HarmClass,
+  type RunOutcomeKind,
+} from './run.ts';
 import {
   FRAME_CLASSES,
   REFINE_CEILING,
@@ -73,25 +86,33 @@ import {
   readStage,
   reasonOf,
   rescoreCells,
+  rollingSmear,
   round,
   twinStatus,
   variantOf,
   type BankUnit,
   type CaptureScore,
   type CellSpec,
+  type DecodeLevel,
+  type DecodeRun,
   type DecodeUnit,
   type Exp10Plan,
+  type GateRun,
   type GateUnit,
   type HalfStats,
   type PoseUnit,
+  type Q0Position,
   type Q0Unit,
   type RescoreUnit,
   type RunContext,
   type RunScore,
+  type SignTally,
   type SolveRecord,
   type StageFile,
   type StageName,
+  type TimingCell,
   type TwinCamera,
+  type TwinRun,
   type Which,
 } from './stages.ts';
 
@@ -102,6 +123,21 @@ export const SCHEMA = 'sphere-sim/experiment-10@1';
  * least this share of R1's touched runs.
  */
 export const REFINE_AGREEMENT = 0.98;
+
+/**
+ * P2c's gap is reported for runs whose rendered pair-u0 crossing is at most
+ * this, and beyond it: 0.20 is above every run's whole-position crossing (the
+ * first full run's largest was 0.165), so the band holds every run on which
+ * pair u0 could decide anything.
+ */
+const U0_BAND = 0.2;
+
+/**
+ * The backward crossing below which the verdict names the runs a backward
+ * straddle refuses early, and says how little of the photograph they light: a
+ * round figure under every forward crossing the first full run measured.
+ */
+const LOW_CROSSING = 0.05;
 
 /** A pair's name in the page's plan: `u0` is the u axis's most significant Gray plane. */
 const PAIR_NAMES: readonly string[] = EXPECTED.complements.pairs.map(
@@ -198,6 +234,15 @@ function countBy<T>(xs: readonly T[], key: (x: T) => string): Record<string, num
   return out;
 }
 
+/**
+ * A capture's class as the document reports it: the library's classes, and one
+ * the assembly adds. SILENT-UNJUDGEABLE is a SILENT capture that was solved and
+ * whose harm cannot be read off the solve, because its D_grid is censored (a
+ * lower bound) or its twin misses the seam gate on its own (see {@link harmOf}).
+ * The first full run's document tallied three such solves as HARMLESS or BIASED.
+ */
+type ReportedClass = CaptureClass | 'SILENT-UNJUDGEABLE';
+
 interface Classes {
   captures: number;
   byClass: Record<string, number>;
@@ -218,7 +263,7 @@ interface Classes {
  */
 interface SolvedTally {
   captures: number;
-  loudSilentHarm: Record<'HARMLESS' | 'BIASED' | 'GATE-BREAKING', number>;
+  loudSilentHarm: Record<HarmClass, number>;
   rotationFlips: number;
   over025: number;
   over05: number;
@@ -229,18 +274,61 @@ interface SolvedTally {
    * alone is one of these.
    */
   sameSolveAsA: number;
+  /**
+   * Solved captures whose D_grid is within re-shoot noise (`withinReshootNoise`),
+   * and of those, the ones GATE-BREAKING anyway: the overlap `harmClass`
+   * resolves in favour of the flip. Tallied because run.ts says it is reported,
+   * and the first full run's document never read it.
+   */
+  withinReshootNoise: number;
+  gateBreakingWithinNoise: number;
+  /** Solves on record whose harm cannot be judged ({@link harmOf}); in no count above. */
+  unjudgeable: number;
 }
 
-const CLASS_ORDER: readonly (CaptureClass | 'LOUD+SILENT')[] = [
+const CLASS_ORDER: readonly (ReportedClass | 'LOUD+SILENT')[] = [
   'LOUD',
   'LOUD+SILENT',
   'SILENT-HARMLESS',
   'SILENT-BIASED',
   'SILENT-GATE-BREAKING',
+  'SILENT-UNJUDGEABLE',
   'SILENT-UNSOLVED',
   'INVISIBLE-ONLY',
   'UNCHANGED',
   'UNTOUCHED',
+];
+
+/** The SILENT classes: nothing refused, a PLACED position reached the calibration. */
+const SILENT_CLASSES: readonly ReportedClass[] = [
+  'SILENT-HARMLESS',
+  'SILENT-BIASED',
+  'SILENT-GATE-BREAKING',
+  'SILENT-UNJUDGEABLE',
+  'SILENT-UNSOLVED',
+];
+
+/**
+ * Refusals the page words run by run (`indexing.ts`), against the two it words
+ * for the whole position: a bookends count that is not the projector count,
+ * and a classification that cannot tell the references apart.
+ */
+const PER_RUN_REFUSALS: readonly RunOutcomeKind[] = [
+  'refused-complement',
+  'refused-unanswered',
+  'refused-bookends-length',
+  'refused-bookends-kind',
+];
+
+/**
+ * The per-run refusals whose words end "Re-shoot projector N." (`indexing.ts`:
+ * the length and kind refusals of `indexByBookends`, the complement refusal of
+ * `indexByFingerprint`). A run that "could not be checked" names no remedy.
+ */
+const RESHOOT_PROJECTOR_REFUSALS: readonly RunOutcomeKind[] = [
+  'refused-complement',
+  'refused-bookends-length',
+  'refused-bookends-kind',
 ];
 
 /** Everything the assembly reads, gathered once. */
@@ -268,7 +356,7 @@ function twinFor(ev: Evidence, which: Which, rig: number, camera: number): TwinC
   throw new Error(`experiment10: no twin for ${which} rig ${rig} camera ${camera}`);
 }
 
-function solveOf(ev: Evidence, id: string | null | undefined): SolveRecord | null {
+function solveOf(ev: Pick<Evidence, 'solves'>, id: string | null | undefined): SolveRecord | null {
   if (id === null || id === undefined) return null;
   const rec = ev.solves.get(id);
   if (rec === undefined)
@@ -278,27 +366,112 @@ function solveOf(ev: Evidence, id: string | null | undefined): SolveRecord | nul
   return rec;
 }
 
-/**
- * τ_null: the 95th percentile of D_grid between each designed rig's twin and its re-shoots, with a
- * rig-clustered interval.
- */
-function tauNull(ev: Evidence): {
+/** A null distribution of D_grid and what sets it. See {@link yardstick}. */
+export interface Yardstick {
+  /** The 95th percentile: τ, the line HARMLESS and BIASED are drawn at. */
   value: number | null;
+  /** Its 95% interval, resampling rigs. */
   lo: number | null;
   hi: number | null;
+  /** The median, which a straddle's median is set against, like for like. */
+  median: number | null;
   samples: number;
   byRig: Record<string, number[]>;
-} {
+  perRigRange: Record<string, [number, number]>;
+  /** Which rigs supply the largest tenth of the samples: τ is a 95th percentile, so they set it */
+  largest: { n: number; byRig: Record<string, number> };
+  /**
+   * How often a re-shoot alone takes the rotation gate from passing to failing
+   * against its plain twin, and where the twins sit: the rate every straddle's
+   * rotation-gate flips are read beside.
+   */
+  rotationFlips: { flips: number; of: number; twinDeg: [number, number] | null };
+  /**
+   * The same for the seam gate: how often a re-shoot alone takes the grid error
+   * past GRID_GATE_MM where its plain twin kept it inside. A censored grid is
+   * not read, as a pose case's is not. The first full run set a straddle's
+   * seam-gate flips beside the rotation gate's null rate alone.
+   */
+  gridFlips: { flips: number; of: number };
+}
+
+/**
+ * The re-shoots of each designed rig against that rig's plain twin: whole
+ * captures (`nulls`), or the straddled position alone (`positionNulls`).
+ *
+ * The first full run quoted a straddle's MEDIAN D_grid against this
+ * distribution's 95th percentile, which compares two different statistics.
+ * So the median is here beside the percentile, and so is what sets the
+ * percentile: each rig's range and the rigs its largest values come from.
+ */
+export function yardstick(
+  ev: Pick<Evidence, 'pose' | 'solves'>,
+  which: 'nulls' | 'positionNulls',
+  label: string,
+): Yardstick {
   const byRig: Record<string, number[]> = {};
+  let flips = 0;
+  let of = 0;
+  const gridFlips = { flips: 0, of: 0 };
+  const twinDeg: number[] = [];
   for (const u of Object.values(ev.pose?.units ?? {})) {
-    byRig[String(u.rig)] = u.nulls
+    const ids = u[which] ?? [];
+    const plain = solveOf(ev, u.plain);
+    byRig[String(u.rig)] = ids
       .map((id) => solveOf(ev, id)?.against?.dGridMm)
       .filter((x): x is number => x !== undefined && Number.isFinite(x));
+    if (plain?.rotationDeg !== null && plain?.rotationDeg !== undefined && ids.length > 0) {
+      twinDeg.push(plain.rotationDeg);
+      for (const id of ids) {
+        const rec = solveOf(ev, id);
+        if (rec === null || rec.rotationDeg === null) continue;
+        of++;
+        if (plain.rotationDeg <= ROTATION_GATE_DEG && rec.rotationDeg > ROTATION_GATE_DEG) flips++;
+      }
+    }
+    if (plain !== null && plain.gridMm !== null && plain.gridCensored === false) {
+      for (const id of ids) {
+        const rec = solveOf(ev, id);
+        if (rec === null || rec.gridMm === null || rec.gridCensored !== false) continue;
+        gridFlips.of++;
+        if (plain.gridMm <= GRID_GATE_MM && rec.gridMm > GRID_GATE_MM) gridFlips.flips++;
+      }
+    }
   }
   const all = Object.values(byRig).flat();
-  if (all.length === 0) return { value: null, lo: null, hi: null, samples: 0, byRig };
-  const rigs = Object.values(byRig);
-  const rng = makeBenchRng(deriveSeed(EXP10_ROOT_SEED, 'exp10/bootstrap/tau-null'));
+  const perRigRange: Record<string, [number, number]> = {};
+  for (const [k, xs] of Object.entries(byRig)) {
+    if (xs.length > 0)
+      perRigRange[k] = [round(Math.min(...xs), 5) as number, round(Math.max(...xs), 5) as number];
+  }
+  const n = Math.ceil(0.1 * all.length);
+  const largestByRig: Record<string, number> = {};
+  Object.entries(byRig)
+    .flatMap(([k, xs]) => xs.map((x) => ({ k, x })))
+    .sort((a, b) => b.x - a.x || Number(a.k) - Number(b.k))
+    .slice(0, n)
+    .forEach(({ k }) => {
+      largestByRig[k] = (largestByRig[k] ?? 0) + 1;
+    });
+  const rotationFlips = {
+    flips,
+    of,
+    twinDeg:
+      twinDeg.length === 0
+        ? null
+        : ([round(Math.min(...twinDeg), 5), round(Math.max(...twinDeg), 5)] as [number, number]),
+  };
+  const base = {
+    samples: all.length,
+    byRig,
+    perRigRange,
+    largest: { n, byRig: largestByRig },
+    rotationFlips,
+    gridFlips,
+  };
+  if (all.length === 0) return { value: null, lo: null, hi: null, median: null, ...base };
+  const rigs = Object.values(byRig).filter((xs) => xs.length > 0);
+  const rng = makeBenchRng(deriveSeed(EXP10_ROOT_SEED, `exp10/bootstrap/${label}`));
   const reps: number[] = [];
   for (let b = 0; b < 2000; b++) {
     const pool: number[] = [];
@@ -310,20 +483,32 @@ function tauNull(ev: Evidence): {
     value: round(quantile(ascending(all), 0.95), 5),
     lo: round(quantile(sorted, 0.025), 5),
     hi: round(quantile(sorted, 0.975), 5),
-    samples: all.length,
-    byRig,
+    median: round(quantile(ascending(all), 0.5), 5),
+    ...base,
   };
 }
 
+/**
+ * What a capture's solve says, against its twin.
+ *
+ * `unjudgeable` where the solve is on record and its harm cannot be read off
+ * it. A censored D_grid is a lower bound, so it cannot be set against τ, and a
+ * twin that misses the seam gate on its own is a failed solve, so the seams it
+ * places are no baseline to measure a straddle's movement from. Such a solve
+ * is reported as unjudgeable, never as HARMLESS or BIASED. GATE-BREAKING needs
+ * neither: it reads the two uncensored gate values against truth, not D_grid.
+ */
 function harmOf(
   ev: Evidence,
   pair: { treated: string; twin: string } | null,
   tau: number | null,
-): { harm: Harm | null; error: string | null } {
-  if (pair === null || tau === null) return { harm: null, error: null };
+): { harm: Harm | null; error: string | null; unjudgeable: string | null } {
+  if (pair === null || tau === null) return { harm: null, error: null, unjudgeable: null };
   const treated = solveOf(ev, pair.treated);
   const twin = solveOf(ev, pair.twin);
-  if (treated === null || twin === null) return { harm: null, error: 'missing solve' };
+  if (treated === null || twin === null) {
+    return { harm: null, error: 'missing solve', unjudgeable: null };
+  }
   if (
     treated.error !== null ||
     twin.error !== null ||
@@ -336,21 +521,29 @@ function harmOf(
     return {
       harm: null,
       error: treated.error ?? twin.error ?? 'a solve produced no aligned rig or metric',
+      unjudgeable: null,
     };
   }
-  return {
-    harm: {
-      dGridMm: treated.against.dGridMm,
-      tauNullMm: tau,
-      gTwinMm: twin.gridMm,
-      gTwinCensored: twin.gridCensored === true,
-      gTreatedMm: treated.gridMm,
-      gTreatedCensored: treated.gridCensored === true,
-      rotationTwinDeg: twin.rotationDeg,
-      rotationTreatedDeg: treated.rotationDeg,
-    },
-    error: null,
+  const harm: Harm = {
+    dGridMm: treated.against.dGridMm,
+    tauNullMm: tau,
+    gTwinMm: twin.gridMm,
+    gTwinCensored: twin.gridCensored === true,
+    gTreatedMm: treated.gridMm,
+    gTreatedCensored: treated.gridCensored === true,
+    rotationTwinDeg: twin.rotationDeg,
+    rotationTreatedDeg: treated.rotationDeg,
   };
+  if (harmClass(harm) !== 'GATE-BREAKING') {
+    const why = treated.against.censored
+      ? `D_grid is censored, a lower bound of ${round(harm.dGridMm, 3)} mm`
+      : harm.gTwinMm > GRID_GATE_MM
+        ? `the twin misses the ${GRID_GATE_MM} mm seam gate on its own ` +
+          `(G ${round(harm.gTwinMm, 3)} mm)`
+        : null;
+    if (why !== null) return { harm: null, error: null, unjudgeable: why };
+  }
+  return { harm, error: null, unjudgeable: null };
 }
 
 type TwinOf = (rig: number, camera: number) => TwinCamera;
@@ -408,6 +601,11 @@ export function summariseCell(
   cell: CellSpec,
   file: StageFile<RescoreUnit>,
   tau: number | null,
+  yardsticks: { tauLo: number | null; tauHi: number | null; positionTau: number | null } = {
+    tauLo: null,
+    tauHi: null,
+    positionTau: null,
+  },
 ) {
   const captures = Object.entries(file.units)
     .filter(([key]) => key.startsWith('A:'))
@@ -438,7 +636,13 @@ export function summariseCell(
     }
     return counts;
   };
-  type PolicyClasses = Classes & { solveErrors: string[]; solved: SolvedTally };
+  type PolicyClasses = Classes & {
+    solveErrors: string[];
+    unjudgeable: string[];
+    solved: SolvedTally;
+    /** The harms of the SILENT captures judged, for the yardstick sensitivity. */
+    silentHarms: Harm[];
+  };
   const classesFor = (
     policy: 'P' | 'A',
     keep: (cap: CaptureScore) => boolean = () => true,
@@ -449,6 +653,7 @@ export function summariseCell(
       loudAndSilent: 0,
       byRig: {},
       solveErrors: [],
+      unjudgeable: [],
       solved: {
         captures: 0,
         loudSilentHarm: { HARMLESS: 0, BIASED: 0, 'GATE-BREAKING': 0 },
@@ -457,7 +662,11 @@ export function summariseCell(
         over05: 0,
         dGridMm: [],
         sameSolveAsA: 0,
+        withinReshootNoise: 0,
+        gateBreakingWithinNoise: 0,
+        unjudgeable: 0,
       },
+      silentHarms: [],
     };
     for (const name of CLASS_ORDER) out.byClass[name] = 0;
     for (const cap of captures) {
@@ -466,15 +675,22 @@ export function summariseCell(
         categoryOf(pos, 'content', twinOf(cap.rig, pos.pos), false),
       );
       const solve = solves.find((x) => x.t === cap.t) ?? null;
-      const { harm, error } = harmOf(
+      const { harm, error, unjudgeable } = harmOf(
         ev,
         solve === null ? null : policy === 'A' ? solve.a : solve.p,
         tau,
       );
       if (error !== null) out.solveErrors.push(`trial ${cap.t}: ${error}`);
       const got = classifyCapture(cats, harm, policy);
+      let reported: ReportedClass = got.class;
+      if (unjudgeable !== null) {
+        out.unjudgeable.push(`trial ${cap.t}: ${unjudgeable}`);
+        out.solved.unjudgeable++;
+        // Solved, so not SILENT-UNSOLVED; and not judged. A LOUD capture stays LOUD.
+        if (reported === 'SILENT-UNSOLVED') reported = 'SILENT-UNJUDGEABLE';
+      }
       out.captures++;
-      out.byClass[got.class]++;
+      out.byClass[reported]++;
       if (got.loudAndSilent) {
         out.loudAndSilent++;
         out.byClass['LOUD+SILENT']++;
@@ -483,15 +699,20 @@ export function summariseCell(
         const s = out.solved;
         s.captures++;
         if (got.class === 'LOUD') s.loudSilentHarm[got.harm]++;
+        else out.silentHarms.push(harm);
         if (got.rotationGateFlipped === true) s.rotationFlips++;
         if (harm.dGridMm > 0.25) s.over025++;
         if (harm.dGridMm > 0.5) s.over05++;
         s.dGridMm.push(harm.dGridMm);
         if (policy === 'P' && solve?.pIsA === true) s.sameSolveAsA++;
+        if (got.withinReshootNoise === true) {
+          s.withinReshootNoise++;
+          if (got.harm === 'GATE-BREAKING') s.gateBreakingWithinNoise++;
+        }
       }
       const rig = String(cap.rig);
       out.byRig[rig] ??= {};
-      out.byRig[rig][got.class] = (out.byRig[rig][got.class] ?? 0) + 1;
+      out.byRig[rig][reported] = (out.byRig[rig][reported] ?? 0) + 1;
       out.byRig[rig].captures = (out.byRig[rig].captures ?? 0) + 1;
       if (got.loudAndSilent)
         out.byRig[rig]['LOUD+SILENT'] = (out.byRig[rig]['LOUD+SILENT'] ?? 0) + 1;
@@ -538,6 +759,84 @@ export function summariseCell(
     over05: s.over05,
     dGridMm: spread(s.dGridMm, 5),
     sameSolveAsA: s.sameSolveAsA,
+    withinReshootNoise: s.withinReshootNoise,
+    gateBreakingWithinNoise: s.gateBreakingWithinNoise,
+    unjudgeable: s.unjudgeable,
+  });
+  // The SILENT captures judged again at every yardstick the document reports:
+  // how many HARMLESS, BIASED and GATE-BREAKING, and how many exceed the
+  // yardstick at all. GATE-BREAKING reads the gate against truth and does not
+  // move; HARMLESS and BIASED trade places as the line moves. τ's interval
+  // bounds how far the count can be trusted, and the one-position re-shoot is
+  // the smaller null a re-shot position actually faces.
+  const silentAgainst = (harms: readonly Harm[]) => {
+    const at = (tauMm: number | null) => {
+      if (tauMm === null) return null;
+      const counts: Record<HarmClass, number> = { HARMLESS: 0, BIASED: 0, 'GATE-BREAKING': 0 };
+      let exceedTau = 0;
+      for (const h of harms) {
+        counts[harmClass({ ...h, tauNullMm: tauMm })]++;
+        if (h.dGridMm > tauMm) exceedTau++;
+      }
+      return { tauMm, judged: harms.length, ...counts, exceedTau };
+    };
+    return {
+      tau: at(tau),
+      tauLo: at(yardsticks.tauLo),
+      tauHi: at(yardsticks.tauHi),
+      positionTau: at(yardsticks.positionTau),
+    };
+  };
+  // What a LOUD capture's operator reads. A position refused whole says "Found
+  // N projector runs", and re-shooting the position is a remedy the page reads
+  // back. A run refused on its own says, for the three kinds in
+  // RESHOOT_PROJECTOR_REFUSALS, "Re-shoot projector N": a folder the page then
+  // refuses whole, because it holds one run too many (Q0b). Read on the runs
+  // that make the capture loud: the touched attributable runs of its REFUSED-ALL
+  // and MIXED positions, on their deciding evaluation.
+  const loud = (() => {
+    const out = {
+      captures: 0,
+      wholePositionOnly: 0,
+      runByRun: 0,
+      reshootNamed: 0,
+      // Told the cause is a dropped frame and a duplicated one: the complement
+      // refusal ("what a dropped frame and a duplicated one look like") and the
+      // kind refusal ("A drop and a duplicate in the same run").
+      dropAndDuplicate: 0,
+    };
+    for (const cap of captures) {
+      const kinds = new Set<RunOutcomeKind>();
+      let isLoud = false;
+      for (const pos of cap.positions) {
+        const twin = twinOf(cap.rig, pos.pos);
+        const cat = categoryOf(pos, 'content', twin, false);
+        if (cat !== 'REFUSED-ALL' && cat !== 'MIXED') continue;
+        isLoud = true;
+        for (const o of outcomesOf(pos, 'content', twin)) {
+          if (o.touched && o.attributable && o.outcome !== 'placed') kinds.add(o.outcome);
+        }
+      }
+      if (!isLoud) continue;
+      out.captures++;
+      if ([...kinds].some((k) => PER_RUN_REFUSALS.includes(k))) out.runByRun++;
+      else out.wholePositionOnly++;
+      if ([...kinds].some((k) => RESHOOT_PROJECTOR_REFUSALS.includes(k))) out.reshootNamed++;
+      if (kinds.has('refused-complement') || kinds.has('refused-bookends-kind'))
+        out.dropAndDuplicate++;
+    }
+    if (out.captures !== P.byClass.LOUD) {
+      throw new Error(
+        `experiment10: ${cell.id} has ${P.byClass.LOUD} LOUD captures and ${out.captures} ` +
+          'with a loud position',
+      );
+    }
+    return out;
+  })();
+  const pastGate = (c: PolicyClasses) => ({
+    silent: c.byClass['SILENT-GATE-BREAKING'],
+    loudSilent: c.solved.loudSilentHarm['GATE-BREAKING'],
+    total: c.byClass['SILENT-GATE-BREAKING'] + c.solved.loudSilentHarm['GATE-BREAKING'],
   });
 
   // Run-level tallies, content footing, on the deciding evaluation.
@@ -632,16 +931,25 @@ export function summariseCell(
         counts: P.byClass,
         shares: withIntervals(P),
         solveErrors: P.solveErrors,
+        unjudgeable: P.unjudgeable,
         solved: solvedOf(P.solved),
+        silentAgainst: silentAgainst(P.silentHarms),
+        pastGate: pastGate(P),
       },
       A: {
         counts: A.byClass,
         shares: withIntervals(A),
         solveErrors: A.solveErrors,
+        unjudgeable: A.unjudgeable,
         solved: solvedOf(A.solved),
+        silentAgainst: silentAgainst(A.silentHarms),
+        pastGate: pastGate(A),
       },
       byOrigin,
     },
+    // LOUD captures by what the page tells the operator; the same captures
+    // under either policy, since LOUD reads only the positions.
+    loud,
     solved: solves.length > 0,
     solves: solves.length,
     // Which evaluation decided this cell's runs, and for a refined cell how
@@ -746,6 +1054,480 @@ function refineDiagnostic(ev: Evidence): {
     ladder,
     smallestSound: ladder.find((x) => sound(x) === true)?.margin ?? null,
   };
+}
+
+/**
+ * Where the card's aimed start stops protecting, derived from the design
+ * rather than written down.
+ *
+ * The aimed rule's band is read off EXPERIMENT-9's own `startPhase`, by asking
+ * it for its two ends. An aimed start at the band's lower edge has that much
+ * margin before the step its photograph should catch begins, and lateness
+ * eats it one step at a time: the last photograph of a position is filed
+ * `STEPS.length - 1` steps after the first, so its step starts that many δ
+ * late. A camera clock running `ppm` fast releases each photograph
+ * `DWELL_S·(1 − 1/(1 + ppm/1e6))` earlier per step (`shotTimings` divides by
+ * the rate), which eats the same margin.
+ *
+ * The first full run's verdict wrote "about 3.7 ms" as a literal. That is the
+ * matched-clock figure, and it leaves out the drift of the very arm the
+ * sentence was quoting, whose camera runs fast in half its captures.
+ */
+export function aimedThreshold() {
+  const end = (pick: 'lo' | 'hi'): number => {
+    const refuse = (): never => {
+      throw new Error('experiment10: the aimed start draws something other than one uniform');
+    };
+    const rng: BenchRng = {
+      uniform: (lo, hi) => (pick === 'lo' ? lo : hi),
+      nextUint32: refuse,
+      nextFloat: refuse,
+      gaussian: refuse,
+      normal: refuse,
+      int: refuse,
+      fork: refuse,
+    };
+    return startPhase('aimed', DWELL_S, rng);
+  };
+  const arm = ARMS.find((a) => a.key === 'intervalometer-100ppm');
+  if (arm === undefined) throw new Error("experiment10: EXPERIMENT-9's headline arm is gone");
+  const band = { lo: end('lo'), hi: end('hi') };
+  const steps = STEPS.length - 1;
+  const ms = (ppm: number): number =>
+    1000 * (band.lo / steps - DWELL_S * (1 - 1 / (1 + ppm / 1e6)));
+  return {
+    aimBandS: [band.lo, band.hi],
+    steps,
+    driftPpm: arm.driftPpm,
+    matchedClocksMs: round(ms(0), 4),
+    fastCameraMs: round(ms(arm.driftPpm), 4),
+  };
+}
+
+/** One decode run as H7 reads it: which run, its clean halves, its levels. */
+export type H7Run = Pick<DecodeRun, 'camera' | 'projector' | 'cleanHalves' | 'levels'> & {
+  rig: number;
+};
+
+/**
+ * H7, clause by clause, from the decode stage's runs. A check that cannot test
+ * the identity is counted apart, as untestable, and never as a pass or a
+ * failure. An MSB-dark onset
+ * check on a run whose clean decode accepts no MSB-dark pixel has nothing to
+ * turn ambiguous: "none at or above 3/7" is then true of it by construction,
+ * and "none below" too. The first full run counted 48 such checks as
+ * failures and 32 as passes, and listed its failures cut at 40, which hid
+ * one rig's nine. Every failing and untestable run is listed here, one line
+ * each. The flip clause counts Gray words (`DecodeLevel.grayFlips`); the
+ * displacement the first run counted instead is reported beside it for what
+ * it is.
+ */
+export function evaluateH7(decodeRuns: readonly H7Run[], decodeNoiseless: readonly number[]) {
+  type R = H7Run;
+  interface Clause {
+    checks: number;
+    untestable: number;
+    failures: number;
+    failing: Map<string, string[]>;
+    untestableRuns: Map<string, { why: string; checks: number }>;
+  }
+  const clause = (): Clause => ({
+    checks: 0,
+    untestable: 0,
+    failures: 0,
+    failing: new Map(),
+    untestableRuns: new Map(),
+  });
+  const darkOnset = clause();
+  const flips = clause();
+  const litLoss = clause();
+  const name = (r: R): string => `rig ${r.rig} camera ${r.camera} run ${r.projector + 1}`;
+  const fail = (c: Clause, r: R, what: string): void => {
+    c.failures++;
+    c.failing.set(name(r), [...(c.failing.get(name(r)) ?? []), what]);
+  };
+  const skip = (c: Clause, r: R, why: string): void => {
+    c.untestable++;
+    const had = c.untestableRuns.get(name(r));
+    c.untestableRuns.set(name(r), { why, checks: (had?.checks ?? 0) + 1 });
+  };
+  const noPixels = (h: HalfStats, half: string): string | null =>
+    h.accepted > 0
+      ? null
+      : h.inView === undefined
+        ? `its clean decode accepts no ${half} pixel`
+        : h.inView === 0
+          ? `no ${half} pixel is in view`
+          : `its clean decode accepts none of the ${h.inView} ${half} pixels in view`;
+  const displacementCases: string[] = [];
+  let displaced = 0;
+  for (const r of decodeRuns) {
+    const darkWhy = noPixels(r.cleanHalves.dark, 'MSB-dark');
+    for (const direction of ['forward', 'backward'] as const) {
+      if (direction === 'backward' && r.projector !== 0) continue;
+      for (const l of r.levels.filter((x) => x.direction === direction && x.halves !== null)) {
+        darkOnset.checks++;
+        if (darkWhy !== null) {
+          skip(darkOnset, r, darkWhy);
+          continue;
+        }
+        const clean = r.cleanHalves.dark.grayAmbiguous;
+        const got = (l.halves as { dark: HalfStats }).dark.grayAmbiguous;
+        if (l.s < 3 / 7 && got !== clean)
+          fail(darkOnset, r, `${direction} ${l.s}: ${got - clean} more Gray-ambiguous below 3/7`);
+        if (l.s >= 3 / 7 && got <= clean)
+          fail(darkOnset, r, `${direction} ${l.s}: no more Gray-ambiguous at or above 3/7`);
+      }
+    }
+    for (const l of r.levels.filter((x) => x.s < 5 / 9)) {
+      flips.checks++;
+      if (l.grayFlips === undefined) {
+        skip(flips, r, 'its checkpoint predates the Gray-word count');
+        continue;
+      }
+      if (l.grayFlips.either > 0)
+        fail(
+          flips,
+          r,
+          `${l.direction} ${l.s}: ${l.grayFlips.either} Gray words changed ` +
+            `(u ${l.grayFlips.u}, v ${l.grayFlips.v})`,
+        );
+      const moved = (l.shift.movedHalfPeriod as number | null) ?? 0;
+      if (moved > 0) {
+        displaced += moved;
+        displacementCases.push(
+          `${name(r)} ${l.direction} ${l.s}: ${moved} moved half a period or more, ` +
+            `${l.grayFlips.either} Gray words changed`,
+        );
+      }
+    }
+    const litWhy = noPixels(r.cleanHalves.lit, 'MSB-lit');
+    for (const l of r.levels.filter(
+      (x) => x.direction === 'forward' && x.s === 0.5 && x.halves !== null,
+    )) {
+      litLoss.checks++;
+      if (litWhy !== null) {
+        skip(litLoss, r, litWhy);
+        continue;
+      }
+      const left = (l.halves as { lit: HalfStats }).lit.accepted;
+      if (left !== 0)
+        fail(litLoss, r, `${left} pixels still accepted on the MSB-lit half at s = 0.5`);
+    }
+  }
+  const report = (c: Clause) => ({
+    checks: c.checks,
+    testable: c.checks - c.untestable,
+    untestable: c.untestable,
+    failures: c.failures,
+    failingRuns: [...c.failing].map(([k, xs]) => `${k}: ${xs.join('; ')}`),
+    untestableRuns: [...c.untestableRuns].map(
+      ([k, x]) => `${k}: ${x.checks} check${x.checks === 1 ? '' : 's'}; ${x.why}`,
+    ),
+  });
+  const clauses = { darkOnset: report(darkOnset), flips: report(flips), litLoss: report(litLoss) };
+  const all = Object.values(clauses);
+  const top = Math.max(...decodeNoiseless);
+  return {
+    checks: all.reduce((a, c) => a + c.checks, 0),
+    testable: all.reduce((a, c) => a + c.testable, 0),
+    untestable: all.reduce((a, c) => a + c.untestable, 0),
+    failures: all.reduce((a, c) => a + c.failures, 0),
+    clauses,
+    everyClauseTested: all.every((c) => c.testable > 0),
+    // Flips are claimed only FROM 5/9, and no smear that high is decoded, so
+    // what is measured is their absence below it; the onset itself is not
+    // bracketed.
+    flipOnset: {
+      claimedFrom: round(5 / 9, 4),
+      highestDecoded: top,
+      bracketed: top >= 5 / 9,
+    },
+    displacements: {
+      what:
+        'decodes moved half a period or more — a displacement bound, not a Gray-flip count',
+      belowFiveNinths: displaced,
+      cases: displacementCases,
+    },
+  };
+}
+
+/**
+ * Where today's page stopped each clean position it placed nothing of: at
+ * classify (the references cannot be told from the patterns), at the run count
+ * (the bookends found the wrong number of runs), or elsewhere. The first full
+ * run's verdict quoted one "classify margin at most" over every position,
+ * 0.201, which is above the 0.15 classify needs: it belonged to a position that
+ * cleared classify and was refused at the run count.
+ */
+export function refusedAtOf(
+  positions: readonly Pick<Q0Position, 'runsPlaced' | 'reasons' | 'margin' | 'problems'>[],
+) {
+  const unplaced = positions.filter((p) => p.runsPlaced.length === 0);
+  const classify = unplaced.filter((p) => p.reasons.includes('margin'));
+  const count = unplaced.filter(
+    (p) => !p.reasons.includes('margin') && p.reasons.includes('count'),
+  );
+  const found = count.flatMap((p) =>
+    p.problems.flatMap((x) => {
+      const m = x.match(/^Found (\d+) projector runs and the capture should hold \d+\./);
+      return m === null ? [] : [Number(m[1])];
+    }),
+  );
+  return {
+    classify: {
+      positions: classify.length,
+      maxMargin:
+        classify.length === 0 ? null : round(Math.max(...classify.map((p) => p.margin)), 4),
+    },
+    count: {
+      positions: count.length,
+      margin: spread(count.map((p) => p.margin)),
+      runsFound: found.length === 0 ? null : { min: Math.min(...found), max: Math.max(...found) },
+    },
+    other: unplaced.length - classify.length - count.length,
+  };
+}
+
+/**
+ * Whether a refusal tells the operator to "Re-shoot projector N", in the page's
+ * own words (`indexing.ts`): the length, kind and complement refusals do; a run
+ * that could not be checked, and a whole position refused, do not.
+ */
+export function namesReshoot(problem: string): boolean {
+  return /Re-shoot projector \d+\./.test(problem);
+}
+
+/** Clean positions on which the counterfactual reader itself says "Re-shoot projector N". */
+export function reshootNamedOf(twins: readonly Pick<TwinCamera, 'problems'>[]): number {
+  return twins.filter((t) => t.problems.some(namesReshoot)).length;
+}
+
+/**
+ * Where the quarter-mass formula's gap lives (P2c). It is exact only while no
+ * block crosses the check's re-derived floor (`u0Crossing`), which matters least
+ * where pair u0 crosses early and binds, and most on runs whose u0 crossing is
+ * late because their modulation sits where pair u0 cannot deviate. So the gap
+ * is reported by the rendered u0 crossing, either side of {@link U0_BAND}, and
+ * on the runs pair u0 actually binds.
+ */
+export function u0Gaps(runs: readonly Pick<GateRun, 'u0' | 'forward'>[]) {
+  const gap = (keep: (r: Pick<GateRun, 'u0' | 'forward'>) => boolean) => {
+    const xs = runs
+      .filter((r) => r.u0 !== null && r.u0.analytic !== null && r.u0.rendered !== null)
+      .filter(keep)
+      .map((r) => Math.abs((r.u0?.analytic as number) - (r.u0?.rendered as number)));
+    return { runs: xs.length, maxError: xs.length === 0 ? null : round(Math.max(...xs), 6) };
+  };
+  return {
+    byRenderedCrossing: [
+      { upTo: U0_BAND, ...gap((r) => (r.u0?.rendered as number) <= U0_BAND) },
+      { above: U0_BAND, ...gap((r) => (r.u0?.rendered as number) > U0_BAND) },
+    ],
+    u0Bound: gap((r) => r.forward.pair === 0),
+  };
+}
+
+/**
+ * The runs a backward straddle refuses early, below {@link LOW_CROSSING}: how
+ * many, how much of the photograph the brightest of them lights, and the
+ * earliest crossing. Attributable runs only, as every crossing figure is: a run
+ * the clean capture already refuses has no straddle of its own to be refused.
+ */
+export function lowBackward(
+  runs: readonly Pick<GateRun, 'attributable' | 'backward' | 'litShare'>[],
+) {
+  const low = runs.filter(
+    (r) => r.attributable && r.backward.s !== null && (r.backward.s as number) < LOW_CROSSING,
+  );
+  return {
+    below: LOW_CROSSING,
+    runs: low.length,
+    maxLit: low.length === 0 ? null : round(Math.max(...low.map((r) => r.litShare)), 5),
+    lowest: low.length === 0 ? null : round(Math.min(...low.map((r) => r.backward.s as number)), 5),
+  };
+}
+
+/** One designed pose level's cases, as the pose table and the verdict read them. */
+export interface PoseCase {
+  allRefused: boolean;
+  dGridMm: number | null;
+  gridFlip: boolean | null;
+  rotationFlip: boolean | null;
+}
+
+/**
+ * A designed pose level, summarised against both yardsticks: how many cases
+ * move the seams further than each null's 95th percentile, beside the grid and
+ * rotation gate flips. Each gate's flips are read beside the rate at which a
+ * clean re-shoot alone flips it (`tauNull.gridFlips`, `tauNull.rotationFlips`).
+ */
+export function poseLevel(
+  label: string,
+  these: readonly PoseCase[],
+  tau: number | null,
+  tauPosition: number | null,
+) {
+  const solved = these.filter((x) => x.dGridMm !== null);
+  const over = (line: number | null): number | null =>
+    line === null ? null : solved.filter((x) => (x.dGridMm as number) > line).length;
+  return {
+    label,
+    cases: these.length,
+    allRefused: these.filter((x) => x.allRefused).length,
+    dGridMm: spread(solved.map((x) => x.dGridMm as number)),
+    overTau: over(tau),
+    overTauPosition: over(tauPosition),
+    over025: solved.filter((x) => (x.dGridMm as number) > 0.25).length,
+    over05: solved.filter((x) => (x.dGridMm as number) > 0.5).length,
+    gridFlips: these.filter((x) => x.gridFlip === true).length,
+    rotationFlips: these.filter((x) => x.rotationFlip === true).length,
+  };
+}
+
+/**
+ * The aimed rule's crossing on the swept lateness grid: the first lateness that
+ * touches any aimed capture, the first that touches 1%, and the swept values
+ * either side of that, so the document names the bracket it was measured in.
+ * The first full run swept whole milliseconds and could only say "somewhere in
+ * (3, 4]".
+ */
+export function aimedCrossing(
+  timing: readonly Pick<
+    TimingCell,
+    'arm' | 'phase' | 'vsync' | 'lateMs' | 'capturesTouched' | 'trials'
+  >[],
+  vsync: boolean,
+) {
+  const cells = timing
+    .filter((x) => x.arm === 'intervalometer-100ppm' && x.phase === 'aimed' && x.vsync === vsync)
+    .slice()
+    .sort((a, b) => a.lateMs - b.lateMs);
+  const any = cells.find((x) => x.capturesTouched > 0) ?? null;
+  const onePercent = cells.find((x) => x.capturesTouched / x.trials >= 0.01) ?? null;
+  const below =
+    onePercent === null
+      ? null
+      : ([...cells].reverse().find((x) => x.lateMs < onePercent.lateMs) ?? null);
+  return {
+    firstTouchedMs: any?.lateMs ?? null,
+    onePercentMs: onePercent?.lateMs ?? null,
+    // The 1% crossing lies in (below, at], on this grid.
+    bracketMs:
+      onePercent === null
+        ? null
+        : ([below?.lateMs ?? null, onePercent.lateMs] as [number | null, number]),
+    grid: cells.map((x) => ({ lateMs: x.lateMs, touched: x.capturesTouched, trials: x.trials })),
+  };
+}
+
+/**
+ * How P3's verdict turns on its yardstick, beside the verdict and never in its
+ * place. P3 falsifies when three or more cases at s = 0.03 sit within τ, so it
+ * holds for any τ below the third-smallest D_grid there; and a case that moves
+ * the seams further than every one of its own rig's re-shoots is beyond noise
+ * on any reading.
+ */
+export function p3Bookkeeping(
+  at003: readonly { rig: number; dGridMm: number | null }[],
+  tau: Pick<Yardstick, 'lo' | 'hi' | 'byRig' | 'largest'>,
+  positionTau: number | null,
+) {
+  const within = (line: number | null): number | null =>
+    line === null ? null : at003.filter((x) => (x.dGridMm as number) <= line).length;
+  const ds = ascending(at003.map((x) => x.dGridMm as number));
+  return {
+    withinTauAt: { lo: within(tau.lo), hi: within(tau.hi), positionTau: within(positionTau) },
+    holdsForTauBelowMm: ds.length < 3 ? null : round(ds[2], 5),
+    exceedOwnRigNulls: at003.filter((x) => {
+      const own = tau.byRig[String(x.rig)] ?? [];
+      return own.length > 0 && (x.dGridMm as number) > Math.max(...own);
+    }).length,
+    largestNulls: tau.largest,
+  };
+}
+
+/**
+ * P5a's rolling cases paired with the global ones, rig by rig. The rolling arm
+ * refuses its own runs, so its solve can withhold other pairs than the global
+ * one's; like for like is the pairs whose exclusions agree.
+ */
+export function p5aPairs(
+  rolling: readonly { rig: number; dGridMm: number | null; refused: number[] }[],
+  global: readonly { rig: number; dGridMm: number | null; refused: number[] }[],
+) {
+  const pairs = rolling.map((x) => {
+    const g = global.find((y) => y.rig === x.rig);
+    return {
+      rig: x.rig,
+      rolling: x.dGridMm,
+      global: g?.dGridMm ?? null,
+      ratio:
+        g === undefined || g.dGridMm === null || g.dGridMm === 0 || x.dGridMm === null
+          ? null
+          : round(x.dGridMm / g.dGridMm, 4),
+      sameExclusions:
+        g === undefined ? null : JSON.stringify(x.refused) === JSON.stringify(g.refused),
+    };
+  });
+  const like = pairs.filter((x) => x.sameExclusions === true && x.ratio !== null);
+  return {
+    pairs,
+    likeForLike: {
+      cases: like.length,
+      outside30: like.filter((x) => Math.abs((x.ratio as number) - 1) > 0.3).length,
+    },
+  };
+}
+
+/**
+ * The mean over camera rows of the rolling arm's designed smear: clamped at 0
+ * on the rows that would be negative, so above the mid-row smear. Part of the
+ * rolling arm's larger D_grid is a larger dose.
+ */
+export function meanRowSmear(midRow: number, readoutOverExposure: number, height: number): number {
+  const smear = rollingSmear(midRow, readoutOverExposure, height);
+  return round(mean(Array.from({ length: height }, (_, row) => smear(row))), 5) as number;
+}
+
+/**
+ * P9's encode records by the run they came from: the minor and the dim runs
+ * apart, and every record over the bound named.
+ */
+export function encodeBookkeeping(
+  records: readonly {
+    which: string;
+    rig: number;
+    camera: number;
+    projector: number;
+    s: number;
+    maxDelta: number | null;
+    twin: Pick<TwinRun, 'minor' | 'litShare'>;
+  }[],
+) {
+  const max = (xs: typeof records): number | null =>
+    xs.length === 0 ? null : round(Math.max(0, ...xs.map((r) => r.maxDelta ?? 0)), 6);
+  return {
+    encodeMaxDeltaNonMinor: max(records.filter((r) => !r.twin.minor)),
+    encodeMaxDeltaLitOnePercent: max(records.filter((r) => r.twin.litShare >= 0.01)),
+    recordsOverBound: records
+      .filter((r) => (r.maxDelta ?? 0) > ENCODE_BOUNDS.residual)
+      .map(
+        (r) =>
+          `${r.which} rig ${r.rig} camera ${r.camera} run ${r.projector + 1} s = ${r.s}: ` +
+          `${round(r.maxDelta, 6)} (lit ${round(100 * r.twin.litShare, 2)}%, ` +
+          `${r.twin.minor ? 'minor' : 'not minor'})`,
+      ),
+  };
+}
+
+/**
+ * H7's verdict: failed by any testable failure, passed only when every clause
+ * had a testable check and none failed, and otherwise not established. An
+ * untestable check never passes or fails it.
+ */
+export function h7Pass(h: { failures: number; everyClauseTested: boolean }): boolean | null {
+  return h.failures > 0 ? false : h.everyClauseTested ? true : null;
 }
 
 /** A missing cell stops the sentence rather than printing a hole in it. */
@@ -858,8 +1640,10 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
       .flatMap(([, u]) => u.twins);
   const twinSummary = (which: Which) => {
     const runs = twinsOf(which).flatMap((t) => t.runs);
+    const unit = Object.entries(bank.units).find(([key]) => parseUnit(key).which === which)?.[1];
     return {
       cameras: twinsOf(which).length,
+      raster: unit === undefined ? null : { width: unit.width, height: unit.height },
       runs: runs.length,
       attributable: runs.filter((r) => r.placed).length,
       refusedClean: runs.filter((r) => !r.placed).length,
@@ -871,8 +1655,15 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
       marginal: runs.filter((r) => r.marginal).length,
       noiseFloor: spread(runs.filter((r) => r.placed).map((r) => r.noiseFloor ?? Number.NaN)),
       worthUsable: twinsOf(which).filter((t) => t.worthUsable).length,
+      // Clean positions on which the counterfactual reader itself tells the
+      // operator "Re-shoot projector N", in the page's own words: mostly an
+      // invisible run, whose noise the check reads as a broken pair. So a
+      // straddled capture's refusal is loud only against its clean twin,
+      // which no operator sees.
+      reshootNamed: reshootNamedOf(twinsOf(which)),
     };
   };
+  const refusedAt = refusedAtOf(q0Positions);
   const precondition = {
     q0: {
       main: byWhich('main'),
@@ -881,6 +1672,8 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
       total: q0Positions.length,
       placedPositions: q0Positions.filter((p) => p.runsPlaced.length > 0).length,
       maxMargin: round(Math.max(...q0Positions.map((p) => p.margin)), 4),
+      minClassifyMargin: MIN_CLASSIFY_MARGIN,
+      refusedAt,
       positions: q0Positions.map((p) => ({
         which: p.which,
         rig: p.rig,
@@ -935,6 +1728,7 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
   const u0Errors = u0Runs.map((r) =>
     Math.abs((r.u0?.analytic as number) - (r.u0?.rendered as number)),
   );
+  const u0Detail = u0Gaps(u0Runs);
   const singles = gateUnits.flatMap(([key, u]) =>
     u.single.map((x) => ({ ...x, rig: parseUnit(key).k })),
   );
@@ -1089,8 +1883,10 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
         backward: attributable.filter((r) => r.backward.s === null).length,
       },
       refusedClean: attributable.filter((r) => r.forward.s === 0).length,
-      forward: spread(crossed('forward')),
-      backward: spread(crossed('backward')),
+      // Five places, as the runs carry them: a percentile quoted to 0.1% of the
+      // exposure is not then a rounding of a rounding.
+      forward: spread(crossed('forward'), 5),
+      backward: spread(crossed('backward'), 5),
       // Over every attributable run: one the scan never refused counts as a
       // crossing above the limit, not as a run that is not there.
       belowLimitShare:
@@ -1115,7 +1911,8 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
       },
       nonMonotone: attributable.filter((r) => r.forward.nonMonotone || r.backward.nonMonotone)
         .length,
-      u0: { runs: u0Runs.length, error: spread(u0Errors, 6) },
+      u0: { runs: u0Runs.length, error: spread(u0Errors, 6), ...u0Detail },
+      lowBackward: lowBackward(mainRuns),
       pairsForward: PAIR_NAMES.map((name, m) => ({
         pair: name,
         crossing: spread(
@@ -1209,6 +2006,54 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
   const levelKeys = [
     ...new Set(decodeRuns.flatMap((r) => r.levels.map((l) => `${l.direction}:${l.s}`))),
   ];
+  // Per-pixel signs, pooled over a set of run-levels: every pixel both decodes
+  // accept counts once, the seam (the neighbour projector lights it too) apart
+  // from the rest. Null where a checkpoint predates the tally.
+  const pooledSigns = (ls: readonly DecodeLevel[]) => {
+    if (ls.some((l) => l.signs === undefined)) return null;
+    const sum = (parts: readonly ('seam' | 'rest')[]) => {
+      const t: SignTally = {
+        pixels: 0,
+        uPos: 0,
+        uNeg: 0,
+        vPos: 0,
+        vNeg: 0,
+        maxAbsU: 0,
+        maxAbsV: 0,
+      };
+      for (const l of ls) {
+        for (const part of parts) {
+          const x = l.signs[part];
+          t.pixels += x.pixels;
+          t.uPos += x.uPos;
+          t.uNeg += x.uNeg;
+          t.vPos += x.vPos;
+          t.vNeg += x.vNeg;
+          t.maxAbsU = Math.max(t.maxAbsU, x.maxAbsU);
+          t.maxAbsV = Math.max(t.maxAbsV, x.maxAbsV);
+        }
+      }
+      const share = (n: number): number | null => (t.pixels === 0 ? null : round(n / t.pixels, 5));
+      return {
+        ...t,
+        uPosShare: share(t.uPos),
+        uNegShare: share(t.uNeg),
+        vPosShare: share(t.vPos),
+        vNegShare: share(t.vNeg),
+      };
+    };
+    return { seam: sum(['seam']), rest: sum(['rest']), all: sum(['seam', 'rest']) };
+  };
+  // Gray-word changes, summed over a set of run-levels (H7's flip clause).
+  const grayFlipsOf = (ls: readonly DecodeLevel[]) =>
+    ls.some((l) => l.grayFlips === undefined)
+      ? null
+      : {
+          matched: ls.reduce((a, l) => a + l.grayFlips.matched, 0),
+          u: ls.reduce((a, l) => a + l.grayFlips.u, 0),
+          v: ls.reduce((a, l) => a + l.grayFlips.v, 0),
+          either: ls.reduce((a, l) => a + l.grayFlips.either, 0),
+        };
   const curve = levelKeys
     .map((key) => {
       const [direction, sText] = key.split(':');
@@ -1231,13 +2076,16 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
         ),
         medianAbsU: spread(ls.map((l) => l.shift.medianAbsU as number).filter((x) => x !== null)),
         p95AbsU: spread(ls.map((l) => l.shift.p95AbsU as number).filter((x) => x !== null)),
+        p95AbsV: spread(ls.map((l) => l.shift.p95AbsV as number).filter((x) => x !== null)),
         truthMedianAbs: spread(
           ls.map((l) => l.truth.medianAbs as number).filter((x) => x !== null),
         ),
         mmError: spread(ls.map((l) => l.mm.errorMedian as number).filter((x) => x !== null)),
         mmShift: spread(ls.map((l) => l.mm.shiftMedian as number).filter((x) => x !== null)),
         gross: ls.reduce((a, l) => a + ((l.shift.gross as number) ?? 0), 0),
-        wrongFringe: ls.reduce((a, l) => a + ((l.shift.wrongFringe as number) ?? 0), 0),
+        movedHalfPeriod: ls.reduce((a, l) => a + ((l.shift.movedHalfPeriod as number) ?? 0), 0),
+        grayFlips: grayFlipsOf(ls),
+        signs: pooledSigns(ls),
         matched: ls.reduce((a, l) => a + ((l.shift.matched as number) ?? 0), 0),
         acceptedDelta: spread(ls.map((l) => l.statsDelta.accepted)),
         grayAmbiguousDelta: spread(ls.map((l) => l.statsDelta.rejectedGrayAmbiguous)),
@@ -1304,16 +2152,58 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
   const verdictLevel = decodeRuns.flatMap((r) =>
     r.levels.filter((l) => l.direction === 'forward' && l.s === VERDICT_S),
   );
+  // Whether the bias's MEAN is one-signed, run by run: forward run-levels whose
+  // mean shift is not negative, per axis. The sign of a mean says nothing about
+  // the pixels under it; `signs` does.
+  const forwardLevels = decodeRuns.flatMap((r) =>
+    r.levels.filter((l) => l.direction === 'forward'),
+  );
+  const nonNegative = (axis: 'meanU' | 'meanV'): number =>
+    forwardLevels.filter((l) => l.shift[axis] !== null && (l.shift[axis] as number) >= 0).length;
   const decodeDoc = {
     runs: decodeRuns.length,
+    // What three of the curve's fields count, because two of them were misread.
+    legend: {
+      grayFlips:
+        'Gray-word changes against the clean decode, per axis, on the pixels both decodes ' +
+        "accept: the decoder's own Gray address, read with the phase withheld. H7's flip clause.",
+      movedHalfPeriod:
+        'decodes moved half a period or more on either axis: a displacement bound, not a ' +
+        'Gray-flip count. A correct Gray word with a phase error can move a decode up to 0.65 of ' +
+        'a period. The first full run named this field wrongFringe and read it as flips.',
+      signs:
+        "per-pixel signs of Δu and Δv on the same pixels. 'seam': pixels the projector whose " +
+        "light the blend brings into the run also lights (the next projector forward, the " +
+        "previous one backward); 'rest': the others.",
+    },
     curve,
+    forwardMeans: {
+      runLevels: forwardLevels.length,
+      nonNegativeU: nonNegative('meanU'),
+      nonNegativeV: nonNegative('meanV'),
+    },
+    // Every Gray word changed below 5/9, over every run and level: H7's flip
+    // clause in one number, and the smear the decode stopped at.
+    grayFlipsBelowFiveNinths: grayFlipsOf(
+      decodeRuns.flatMap((r) => r.levels.filter((l) => l.s < 5 / 9)),
+    ),
+    highestDecoded: Math.max(...plan.decodeNoiseless, VERDICT_S),
     verdictLevel: {
       s: VERDICT_S,
       runs: verdictLevel.length,
       absMeanU: spread(verdictLevel.map((l) => Math.abs(l.shift.meanU as number))),
+      absMeanV: spread(verdictLevel.map((l) => Math.abs(l.shift.meanV as number))),
+      // The largest per-run 95th percentile is the `max` of these.
+      p95AbsU: spread(verdictLevel.map((l) => l.shift.p95AbsU as number).filter((x) => x !== null)),
+      p95AbsV: spread(verdictLevel.map((l) => l.shift.p95AbsV as number).filter((x) => x !== null)),
+      // Each run's MEDIAN movement on the sphere, both axes together, and this
+      // is their spread over runs: the verdict's millimetres are a median of
+      // per-run medians.
       mmShift: spread(
         verdictLevel.map((l) => l.mm.shiftMedian as number).filter((x) => x !== null),
       ),
+      grayFlips: grayFlipsOf(verdictLevel),
+      signs: pooledSigns(verdictLevel),
     },
     page: pageLevels,
     single: singleClasses,
@@ -1361,19 +2251,28 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
           decodeRuns.map((r) => r.ablation.page.sigmaU as number).filter((x) => x !== null),
         ),
       },
-      darkSuccessor: {
+      // Not the spec's successor ablation, and first reported as one. It blends
+      // EVERY photograph with the dark, which dims every frame toward this
+      // projector's black alike, so it shows that a uniform dimming moves
+      // nothing. It does not replace only the last frame's successor, so it
+      // cannot isolate what the next projector's white contributes.
+      dimmingControl: {
+        what:
+          'every photograph blended with the dark at s: a uniform dimming, not a successor ' +
+          'ablation',
         meanU: spread(
-          decodeRuns.map((r) => r.ablation.dark.meanU as number).filter((x) => x !== null),
+          decodeRuns.map((r) => r.ablation.dimmed.meanU as number).filter((x) => x !== null),
         ),
         sigmaU: spread(
-          decodeRuns.map((r) => r.ablation.dark.sigmaU as number).filter((x) => x !== null),
+          decodeRuns.map((r) => r.ablation.dimmed.sigmaU as number).filter((x) => x !== null),
         ),
       },
     },
   };
 
   // ----- pose
-  const tau = tauNull(ev);
+  const tau = yardstick(ev, 'nulls', 'tau-null');
+  const tauPosition = yardstick(ev, 'positionNulls', 'tau-position');
   const poseCases = Object.values(pose?.units ?? {}).flatMap((u) =>
     u.levels.map((l) => {
       const treated = solveOf(ev, l.treated);
@@ -1420,63 +2319,72 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
     }),
   );
   const poseLevelKeys = [...new Set(poseCases.map((x) => x.label))];
+  const yardstickDoc = (y: Yardstick, what: string) => ({
+    what,
+    value: y.value,
+    lo: y.lo,
+    hi: y.hi,
+    median: y.median,
+    samples: y.samples,
+    perRig: Object.fromEntries(
+      Object.entries(y.byRig).map(([k, xs]) => [k, xs.map((x) => round(x, 5))]),
+    ),
+    perRigRange: y.perRigRange,
+    largest: y.largest,
+    rotationFlips: y.rotationFlips,
+    gridFlips: y.gridFlips,
+  });
   const poseDoc = {
     solved: plan.pose,
-    tauNull: {
-      value: tau.value,
-      lo: tau.lo,
-      hi: tau.hi,
-      samples: tau.samples,
-      perRig: Object.fromEntries(
-        Object.entries(tau.byRig).map(([k, xs]) => [k, xs.map((x) => round(x, 5))]),
-      ),
-    },
-    levels: poseLevelKeys.map((label) => {
-      const these = poseCases.filter((x) => x.label === label);
-      const solved = these.filter((x) => x.dGridMm !== null);
-      return {
+    // τ: re-shooting the whole capture, every camera's photons renewed.
+    tauNull: yardstickDoc(
+      tau,
+      're-shooting the whole capture: every camera photographed again under a fresh capture ' +
+        'seed, against the rig\'s plain twin',
+    ),
+    // Re-shooting only the straddled position: the remedy an operator applies.
+    tauPosition: yardstickDoc(
+      tauPosition,
+      're-shooting only the straddled position: its camera photographed again under the same ' +
+        'seeds as the whole-capture re-shoots, every other camera kept, against the plain twin',
+    ),
+    levels: poseLevelKeys.map((label) =>
+      poseLevel(
         label,
-        cases: these.length,
-        allRefused: these.filter((x) => x.allRefused).length,
-        dGridMm: spread(solved.map((x) => x.dGridMm as number)),
-        overTau:
-          tau.value === null
-            ? null
-            : solved.filter((x) => (x.dGridMm as number) > (tau.value as number)).length,
-        over025: solved.filter((x) => (x.dGridMm as number) > 0.25).length,
-        over05: solved.filter((x) => (x.dGridMm as number) > 0.5).length,
-        gridFlips: these.filter((x) => x.gridFlip === true).length,
-        rotationFlips: these.filter((x) => x.rotationFlip === true).length,
-      };
-    }),
+        poseCases.filter((x) => x.label === label),
+        tau.value,
+        tauPosition.value,
+      ),
+    ),
     cases: poseCases,
     auditDisagreements: poseCases.flatMap((x) => x.audit?.disagreements ?? []),
   };
 
   // ----- rescore and lateness
   const tauValue = plan.pose ? tau.value : null;
+  const yardsticks = {
+    tauLo: plan.pose ? tau.lo : null,
+    tauHi: plan.pose ? tau.hi : null,
+    positionTau: plan.pose ? tauPosition.value : null,
+  };
   const rescoreDoc = {
     audit: (rescore.units.audit?.audit ?? []).map((a) => ({ ...a })),
     refine: refineDiagnostic(ev),
-    cells: rescoreCells(plan).map((cell) => summariseCell(ev, cell, rescore, tauValue)),
+    cells: rescoreCells(plan).map((cell) =>
+      summariseCell(ev, cell, rescore, tauValue, yardsticks),
+    ),
   };
   const timing = lateness.units.timing?.timing ?? [];
-  const firstTouched = (vsync: boolean): number | null => {
-    const hit = timing
-      .filter(
-        (x) =>
-          x.arm === 'intervalometer-100ppm' &&
-          x.phase === 'aimed' &&
-          x.vsync === vsync &&
-          x.capturesTouched / x.trials >= 0.01,
-      )
-      .map((x) => x.lateMs);
-    return hit.length === 0 ? null : Math.min(...hit);
-  };
   const latenessDoc = {
     timing,
-    aimedFirstTouchedMs: { vsyncOff: firstTouched(false), vsyncOn: firstTouched(true) },
-    cells: latenessCells(plan).map((cell) => summariseCell(ev, cell, lateness, tauValue)),
+    aimed: {
+      vsyncOff: aimedCrossing(timing, false),
+      vsyncOn: aimedCrossing(timing, true),
+      threshold: aimedThreshold(),
+    },
+    cells: latenessCells(plan).map((cell) =>
+      summariseCell(ev, cell, lateness, tauValue, yardsticks),
+    ),
   };
 
   // ----- harness identities (must hold on correct code; recorded, not predicted)
@@ -1488,56 +2396,7 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
     .flatMap(({ l }) => [l.ratioU, l.ratioV])
     .filter((x): x is number => x !== null);
   const h5Rows = singleDecodes.filter((x) => x.s <= 0.4);
-  const h7 = (() => {
-    const failures: string[] = [];
-    let checked = 0;
-    const below = plan.decodeNoiseless.filter((s) => s < 3 / 7);
-    const above = plan.decodeNoiseless.filter((s) => s >= 3 / 7);
-    for (const r of decodeRuns) {
-      for (const direction of ['forward', 'backward'] as const) {
-        if (direction === 'backward' && r.projector !== 0) continue;
-        for (const l of r.levels.filter((x) => x.direction === direction && x.halves !== null)) {
-          checked++;
-          const clean = r.cleanHalves.dark.grayAmbiguous;
-          const got = (l.halves as { dark: HalfStats }).dark.grayAmbiguous;
-          if (below.includes(l.s) && got !== clean)
-            failures.push(
-              `rig ${r.rig} camera ${r.camera} run ${r.projector + 1} ${direction} ${l.s}: ` +
-                `${got - clean} Gray-ambiguous pixels on the MSB-dark half below 3/7`,
-            );
-          if (above.includes(l.s) && got <= clean)
-            failures.push(
-              `rig ${r.rig} camera ${r.camera} run ${r.projector + 1} ${direction} ${l.s}: ` +
-                `no Gray-ambiguous pixels on the MSB-dark half at or above 3/7`,
-            );
-        }
-      }
-      // A confident flip is a Gray bit read wrong AND trusted: the decode lands
-      // in another fringe, a stride or more from where it was. Counted as
-      // such, not as `gross` (a quarter period), which also takes in phase
-      // errors the unwrap tolerance lets through with the fringe order right.
-      for (const l of r.levels.filter((x) => x.s < 5 / 9)) {
-        checked++;
-        if ((l.shift.wrongFringe as number) > 0)
-          failures.push(
-            `rig ${r.rig} camera ${r.camera} run ${r.projector + 1} ${l.direction} ${l.s}: ` +
-              `${l.shift.wrongFringe} wrong-fringe decodes below 5/9`,
-          );
-      }
-      for (const l of r.levels.filter(
-        (x) => x.direction === 'forward' && x.s === 0.5 && x.halves !== null,
-      )) {
-        checked++;
-        if ((l.halves as { lit: HalfStats }).lit.accepted !== 0)
-          failures.push(
-            `rig ${r.rig} camera ${r.camera} run ${r.projector + 1}: ` +
-              `${(l.halves as { lit: HalfStats }).lit.accepted} pixels still accepted on the ` +
-              `MSB-lit half at s = 0.5`,
-          );
-      }
-    }
-    return { checked, failures };
-  })();
+  const h7 = evaluateH7(decodeRuns, plan.decodeNoiseless);
   const harness = [
     {
       id: 'H1',
@@ -1612,20 +2471,19 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
       id: 'H7',
       claim:
         'Noiseless Gray onsets: Gray-ambiguous from s = 3/7 on the MSB-dark half (forward; ' +
-        'backward for run 0); no confident flip below 5/9, counted as a decode a Gray stride ' +
-        '(half a period) or more from the clean one; the MSB-lit half lost to low modulation ' +
-        'at s = 0.5.',
+        'backward for run 0); no Gray word flipped below 5/9, counted as Gray-word changes on ' +
+        'the pixels both decodes accept; the MSB-lit half lost to low modulation at s = 0.5. A ' +
+        'check on a run whose clean decode accepts no pixel of the half it asks about cannot ' +
+        'test the identity, and is counted apart as untestable.',
       measured: {
-        checked: h7.checked,
-        failures: h7.failures.slice(0, 40),
-        failureCount: h7.failures.length,
+        ...h7,
         // Beside it, the spec's own gross count (a quarter period), which below
         // 5/9 is phase error, not a flip: kept so the difference is on record.
         grossBelow59: decodeRuns
           .flatMap((r) => r.levels.filter((l) => l.s < 5 / 9))
           .reduce((a, l) => a + ((l.shift.gross as number) ?? 0), 0),
       },
-      pass: plan.decodeNoiseless.some((s) => s >= 0.3) ? h7.failures.length === 0 : null,
+      pass: h7Pass(h7),
     },
     {
       id: 'H8',
@@ -1649,7 +2507,8 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
 
   // ----- predictions (pre-registered; each can fail)
   const r1 = rescoreDoc.cells.find((c) => c.id === 'R1');
-  const aimed75 = latenessDoc.cells.find((c) => c.id === 'L-aimed-7.5') ?? null;
+  const aimed75 =
+    latenessDoc.cells.find((c) => c.id === `L-aimed-${HEADLESS_LATENESS_MS.hudTickOff}`) ?? null;
   const fwd = crossed('forward');
   const bwd = crossed('backward');
   const r1Positions = r1?.positions.content.all ?? null;
@@ -1680,6 +2539,29 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
     gateDoc.rolling.find(
       (x) => Math.abs((x.readoutOverExposure as number) - READOUT_S[1] / EXPOSURE_S) < 1e-9,
     ) ?? null;
+  // Bookkeeping beside the registered predictions. None of it changes a
+  // verdict; each item says how far a verdict turns on the yardstick, the
+  // population or the pairing it was read on, which the first full run's
+  // verification had to work out by hand.
+  const p3Book = p3Bookkeeping(poseAt('forward/0.03'), tau, tauPosition.value);
+  const p5a = p5aPairs(
+    poseAt(`rolling/${plan.poseLevels.rolling.readoutOverExposure}/0.06`),
+    poseAt('forward/0.06'),
+  );
+  const mainHeight = Object.entries(bank.units).find(
+    ([key]) => parseUnit(key).which === 'main',
+  )?.[1].height;
+  const encode = encodeBookkeeping(
+    gateUnits.flatMap(([key, u]) => {
+      const unit = parseUnit(key);
+      return u.encode.map((r) => ({
+        ...r,
+        which: unit.which,
+        rig: unit.k,
+        twin: twinFor(ev, unit.which, unit.k, r.camera).runs[r.projector],
+      }));
+    }),
+  );
   const predictions = [
     {
       id: 'P1',
@@ -1760,6 +2642,7 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
           cases: poseAt('forward/0.06').length,
           gridFlips: poseAt('forward/0.06').filter((x) => x.gridFlip === true).length,
         },
+        bookkeeping: p3Book,
       },
       falsified:
         !plan.pose || tau.value === null
@@ -1803,6 +2686,9 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
               biased: silent['SILENT-BIASED'],
               gateBreaking: silent['SILENT-GATE-BREAKING'],
               unsolved: silent['SILENT-UNSOLVED'],
+              // Solved and not judged, so in no count here (`harmOf`).
+              unjudgeable: silent['SILENT-UNJUDGEABLE'],
+              exceedTau: r1?.classes.P.silentAgainst.tau?.exceedTau ?? null,
             },
       falsified:
         silent === null || silentSolved === 0
@@ -1819,10 +2705,12 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
         'than 2 of 8 designed cases.',
       measured: {
         gate: rolling12,
-        pose: poseAt(`rolling/${plan.poseLevels.rolling.readoutOverExposure}/0.06`).map((x) => {
-          const g = poseAt('forward/0.06').find((y) => y.rig === x.rig);
-          return { rig: x.rig, rolling: x.dGridMm, global: g?.dGridMm ?? null };
-        }),
+        pose: p5a.pairs,
+        likeForLike: p5a.likeForLike,
+        meanRowSmear:
+          mainHeight === undefined
+            ? null
+            : meanRowSmear(0.06, plan.poseLevels.rolling.readoutOverExposure, mainHeight),
       },
       falsified: (() => {
         const gatePart =
@@ -1869,6 +2757,9 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
         positions: precondition.q0.total,
         placedPositions: precondition.q0.placedPositions,
         maxMargin: precondition.q0.maxMargin,
+        // Where the page stopped, apart: a margin over 0.15 belongs to a
+        // position that cleared classify and was refused at the run count.
+        refusedAt: precondition.q0.refusedAt,
         reasons: {
           main: precondition.q0.main.reasons,
           spill: precondition.q0.spill.reasons,
@@ -1952,6 +2843,9 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
         ),
         pageBiasMaxDelta: Math.max(0, ...pageLevels.map((x) => x.encodeBiasDelta.max ?? 0)),
         hook: harness.find((h) => h.id === 'H8')?.pass ?? null,
+        ...encode,
+        // Noiseless blends only: nobody compared the encode on noisy frames (followUps).
+        frames: 'noiseless',
       },
       falsified: null as boolean | null,
     },
@@ -1991,7 +2885,7 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
       refineBand: REFINE_CEILING,
       refineAgreement: REFINE_AGREEMENT,
       verdictSmear: VERDICT_S,
-      caveats: CAVEATS,
+      caveats: {} as Record<string, string>,
     },
     precondition,
     gate: gateDoc,
@@ -2001,232 +2895,761 @@ export function assemble(ctx: RunContext): Record<string, unknown> | null {
     lateness: latenessDoc,
     harness,
     predictions,
+    followUps: followUps(plan, precondition.q0.placedPositions),
     verdict: { statement: '' },
   };
+  doc.generatedFrom.caveats = caveats(doc as unknown as VerdictDoc);
   doc.verdict.statement = verdictStatement(doc as unknown as VerdictDoc);
   return doc;
 }
 
 /**
- * Said in the file, because a reader who takes these numbers into a room needs them beside the
- * numbers.
+ * What this experiment still has not measured, each a measurement somebody
+ * could make next. Kept in the document so a reader of the results reads the
+ * gaps beside them, and so a gap closed later has somewhere to be crossed out.
  */
-export const CAVEATS = {
-  reader:
-    "Every loud/silent split is the verdict of a COUNTERFACTUAL reader: the page's own " +
-    "complement check (indexByFingerprint) handed exact oracle lit fractions, because today's " +
-    'page refuses clean bench positions at classify before the check runs (precondition.q0). No ' +
-    'fix to the page is implied.',
-  footings:
-    'content footing (primary): a photograph observes as the kind of the part holding more than ' +
-    'half its exposure, the filed kind on a tie; filed footing (secondary): the kind of the ' +
-    'step it is filed as.',
-  timer:
-    "The emitter is EXPERIMENT-9's perfect timer except in the lateness stage and R7, whose " +
-    'lateness was measured headless (SwiftShader), not on a display machine.',
-  photometry:
-    'Bench photometry: flat albedo, constant ambient, Gaussian shot noise, point-sampled ' +
-    'patterns, one grey channel, no defocus, no JPEG. Q0 margins, clean residual floors and ' +
-    'invisible-run refusals are bench numbers.',
-  folder:
-    'F136: a position is exactly 136 photographs, the first the first release after Play. The ' +
-    "card's own extra end photographs are measured separately (precondition.q0b).",
-  fastPath:
-    "Noisy frames come from the fast path — a bank blend through the renderer's own sensor and " +
-    'noise stream — validated against hook renders in gate.hook (H8).',
-  reshoot: 'Policy P assumes the re-shoot after a refusal is clean, which is optimistic.',
-  refineBand:
-    'One evaluation decides every run, for every purpose: the fully noisy verdict in R1, and ' +
-    'in every other rescore and lateness cell the refine band at generatedFrom.refineBand ' +
-    '(runs whose noiseless worst pair lies within it of the limit are re-evaluated with ' +
-    'noise). The same band chose the decode subsamples and the solved captures and classifies ' +
-    'every position. rescore.refine is a diagnostic only: on R1 it holds the band, and the ' +
-    'narrower margins, to the fully noisy reader.',
-  solveExclusions:
-    'SPEC AMENDMENT (spec §6 R1 and L solves): a solve withholds every run of a straddled ' +
-    "position whose outcome is not 'placed', from the treated solve and its twin alike, " +
-    'together with every run the clean capture refuses. The spec withheld only a MIXED ' +
-    "position's refused runs. A collateral refusal inside a PLACED position (an untouched " +
-    "run the page refuses because a neighbour's slip moved the bookends) was therefore still " +
-    'handed to the treated solve, rendered clean, though the page decodes nothing of a run ' +
-    'it refuses. The twin withholds it too, so the pair still differs by the straddle alone.',
-  runTallies:
-    "A cell's runs.outcomes and runs.brokenPairs tally ATTRIBUTABLE touched runs only, the " +
-    'one group every cell evaluates alike, so they compare across cells. Runs the twin ' +
-    'refuses anyway are reported apart in runs.notAttributable and do not compare: R1 ' +
-    'evaluates them with noise, and the other cells leave them on their noiseless verdict.',
-  pose:
-    "Pose cost is the bench solver's. The page never solves, and its worth report cannot see a " +
-    'straddle (precondition.q0.worth).',
+export function followUps(plan: Exp10Plan, placedPositions: number): string[] {
+  const out = [
+    "P0, the emitter's lateness: tools/emitter-timing.ts was never built, so δ has been " +
+      'measured only by a design-time probe in a headless, software-rendered browser, and never ' +
+      'on a display machine. Every lateness this document renders at is an input, not a result.',
+    'P9 on noisy frames: the 8-bit sRGB page path is compared with linear frames on noiseless ' +
+      "blends only. The fast path's noisy frames through encodeSrgb8 and summarisePhoto against " +
+      'fingerprint were never compared, so P9 says nothing about noise and the encode together.',
+    'Clearance: the document carries no camera azimuth and no clearance from a projector axis ' +
+      'or seam, so nothing is reported by clearance bin and a site cannot place itself by one.',
+    "The successor ablation proper: only each run's last frame's successor replaced by the " +
+      "dark, to isolate what the next projector's white contributes. decode.ablation." +
+      'dimmingControl dims every photograph instead.',
+    'A re-shoot that straddles again: policy P assumes every re-shoot after a refusal is clean. ' +
+      'Nothing here draws a fresh start for it.',
+    "EXPERIMENT-9's timing model, inherited and not validated: its drift band, its per-shot " +
+      "jitter, its start procedures and the aimed rule's ±D/4 band were never measured against " +
+      'a camera beside a sphere.',
+  ];
+  const top = Math.max(...plan.decodeNoiseless);
+  if (top < 5 / 9) {
+    out.push(
+      `The Gray flip onset at 5/9: no smear above ${top} was decoded, so what is measured is ` +
+        'the absence of flips below 5/9, not the onset.',
+    );
+  }
+  const solving = latenessCells(plan).filter((x) => x.solve !== 'none');
+  out.push(
+    solving.length === 0 || plan.solveSubsample === 0
+      ? 'Lateness solves: this plan solves no lateness capture, so no lateness cell says how ' +
+          'far its silent captures move the seams.'
+      : `Lateness solves: only ${solving.map((x) => x.id).join(', ')} solves captures, the ` +
+          `first ${plan.solveSubsample} in trial order with a PLACED or MIXED position, under ` +
+          "policy A. Policy P borrows A's solve where its plan is A's, which it is wherever " +
+          'the capture has no MIXED position, so a LOUD+SILENT capture whose loud positions ' +
+          'are all REFUSED-ALL is solved under P; a capture with a MIXED position is not, and ' +
+          "at every other lateness nothing is: the lateness cells' past-gate counts cover the " +
+          'solved captures alone.',
+  );
+  if (placedPositions === 0) {
+    out.push(
+      "Today's page on a straddled position: it refuses every clean position before the " +
+        'complement check (P6), so no straddled capture was put through it. Once classify is ' +
+        "fixed, the rescoring's page column has to be run.",
+    );
+  }
+  return out;
+}
+
+/** The design constants the document carries, read back like any cell. */
+function constant(doc: VerdictDoc, name: string): unknown {
+  return at(doc.generatedFrom.design.constants as Record<string, unknown>, name);
+}
+
+/** Element `i` of an array the document carries, through {@link at}. */
+function nth(xs: readonly number[], i: number): number {
+  return at(Object.fromEntries(xs.map((x, j) => [String(j), x])), String(i));
+}
+
+/**
+ * Said in the file, because a reader who takes these numbers into a room needs
+ * them beside the numbers. Built from the document's own cells through
+ * {@link at}, like the verdict: the first full run's caveats were fixed strings,
+ * and two of them said less than its data did.
+ */
+export function caveats(doc: VerdictDoc): Record<string, string> {
+  const q0 = doc.precondition.q0;
+  const cells: Record<string, number> = {
+    total: q0.total,
+    placed: q0.placedPositions,
+    classify: q0.refusedAt.classify.positions,
+    count: q0.refusedAt.count.positions,
+    other: q0.refusedAt.other,
+    reshootNamed: doc.precondition.twins.main.reshootNamed,
+    twinPositions: doc.precondition.twins.main.cameras,
+  };
+  const c = (key: string): number => at(cells, key);
+  const plan = doc.generatedFrom.design.plan;
+  const raster = (which: 'main' | 'fine'): string => {
+    const r = doc.precondition.twins[which].raster;
+    if (r === null) return '';
+    const perBlock = (r.width * r.height) / (constant(doc, 'FINGERPRINT_BLOCKS') as number) ** 2;
+    return (
+      `${r.width}x${r.height}, where a fingerprint cell holds about ` +
+      `${Math.round(perBlock)} pixels`
+    );
+  };
+  const late = constant(doc, 'HEADLESS_LATENESS_MS') as Record<string, number>;
+  const grid = constant(doc, 'LATE_MS_TIMING') as number[];
+  const vsyncHz = Math.round(1 / (constant(doc, 'VSYNC_S') as number));
+  const stopped =
+    c('placed') === 0
+      ? "Today's page refuses every clean bench position before that check runs: " +
+        `${c('classify')} of ${c('total')} at classify and ${c('count')} at the run count` +
+        (c('other') > 0 ? `, ${c('other')} for other reasons` : '') +
+        ' (precondition.q0.refusedAt), so no straddled capture was put through the page.'
+      : `Today's page placed a run in ${c('placed')} of ${c('total')} clean bench positions and ` +
+        'refused the rest before that check runs (precondition.q0.refusedAt); the rescoring ran ' +
+        "the page's own reader on those rigs' straddled positions as well.";
+  return {
+    reader:
+      "Every loud/silent split is the verdict of a COUNTERFACTUAL reader: the page's own " +
+      'complement check (indexByFingerprint) handed exact oracle lit fractions. ' +
+      stopped +
+      ` The counterfactual reader itself tells the operator 'Re-shoot projector N' on ` +
+      `${c('reshootNamed')} of ${c('twinPositions')} clean positions ` +
+      '(precondition.twins.main.reshootNamed), mostly for a projector the camera cannot see, so ' +
+      "'loud' means loud against the clean twin, which the operator never sees. No fix to the " +
+      'page is implied.',
+    footings:
+      'content footing (primary): a photograph observes as the kind of the part holding more ' +
+      'than half its exposure, the filed kind on a tie; filed footing (secondary): the kind of ' +
+      'the step it is filed as.',
+    timer:
+      "The emitter is EXPERIMENT-9's perfect timer except in two places. The lateness stage " +
+      `sweeps δ from ${nth(grid, 0)} to ${nth(grid, grid.length - 1)} ms per step. Of ` +
+      `those values ${at(late, 'hudTickOff')} ms is the mean of a design-time probe in headless ` +
+      "Chromium on SwiftShader's software GL, in HUD mode with the tick off; armed with the tick " +
+      `on, the same setup ran about ${at(late, 'armedTickOn')} ms late when the first full ` +
+      `run's verification re-ran it. ${at(late, 'pureJsLowerBound')} ms is the pure-JS lower ` +
+      "bound. Neither is a display machine's number, and this experiment re-measured neither: " +
+      `the spec's P0 (tools/emitter-timing.ts) was never built. R7 adds an assumed ${vsyncHz} Hz ` +
+      'refresh wait with no lateness.',
+    inherited:
+      "EXPERIMENT-9's drift band, per-shot jitter and start procedures are inherited, not " +
+      "validated (EXPERIMENT-9.md), and the aimed rule's ±D/4 aim band is unmeasured. Hand-held " +
+      "release jitter is assumed symmetric. The intervalometer's own re-arm rule (an interval " +
+      'counted from one release, or from the end of an exposure) is not modelled.',
+    photometry:
+      'Bench photometry: flat albedo, constant ambient, Gaussian shot noise, point-sampled ' +
+      'patterns, one grey channel, no defocus, no JPEG. Q0 margins, clean residual floors and ' +
+      'invisible-run refusals are bench numbers. Gain repeatability (GAIN_JITTER) and the ' +
+      'mismatched tone curve (TONE_CURVE) are ASSUME-class sensitivities, not measurements.',
+    projection:
+      "Neither a DLP projector's sub-frames nor a display's scan-out is modelled, so the smear " +
+      'never varies with projector row. Sub-frames matter at E = 1/60 s, where P5b uses the ' +
+      'idealised model.',
+    placement:
+      `Placement: ${(at(plan as Record<string, unknown>, 'rigs') as number[]).length} azimuth ` +
+      'offsets of one camera set, one height and ' +
+      `distance draw per rig, the ${constant(doc, 'CAMERAS')} cameras exactly ` +
+      `${360 / (constant(doc, 'CAMERAS') as number)}° apart. Nothing is reported by clearance ` +
+      'bin; the document carries no camera azimuth or clearance (followUps).',
+    resolution:
+      `The main sweep renders at ${raster('main')}. ` +
+      (doc.precondition.twins.fine.raster === null
+        ? 'No finer preset was rendered.'
+        : `The check at ${raster('fine')} (gate.resolution) bounds only the gate side of that.`),
+    folder:
+      'F136: a position is exactly 136 photographs, the first the first release after Play. The ' +
+      "card's own extra end photographs are measured separately (precondition.q0b).",
+    fastPath:
+      'Noisy frames come from the fast path — a bank blend through the renderer\'s own sensor ' +
+      'and noise stream — validated against hook renders in gate.hook (H8).',
+    reshoot:
+      'Policy P assumes the re-shoot after a refusal is clean, which is optimistic: a fresh ' +
+      'start can straddle again (followUps).',
+    yardsticks:
+      `Two nulls of D_grid, each ${at(plan, 'kNull')} re-shoots of each of ` +
+      `${(at(plan as Record<string, unknown>, 'designedRigs') as number[]).length} designed rigs ` +
+      'against the plain twin: the ' +
+      'whole capture re-shot (pose.tauNull), and only the straddled position re-shot under the ' +
+      'same seeds (pose.tauPosition). HARMLESS and BIASED are drawn at τ, the whole-capture ' +
+      '95th percentile, set by the few rigs that supply its largest values ' +
+      '(pose.tauNull.largest). A ' +
+      "straddle's median is set against each null's median; a 95th percentile is quoted beside " +
+      'it, never instead of it.',
+    unjudgeable:
+      'A solve whose D_grid is censored (a lower bound) or whose twin misses the seam gate on ' +
+      'its own is reported as unjudgeable, never HARMLESS or BIASED: SILENT-UNJUDGEABLE when the ' +
+      'capture is silent, and in solved.unjudgeable when it is loud.',
+    refineBand:
+      'One evaluation decides every run, for every purpose: the fully noisy verdict in R1, and ' +
+      'in every other rescore and lateness cell the refine band at generatedFrom.refineBand ' +
+      '(runs whose noiseless worst pair lies within it of the limit are re-evaluated with ' +
+      'noise). The same band chose the decode subsamples and the solved captures and classifies ' +
+      'every position. rescore.refine is a diagnostic only: on R1 it holds the band, and the ' +
+      'narrower margins, to the fully noisy reader.',
+    solveExclusions:
+      'SPEC AMENDMENT (spec §6 R1 and L solves): a solve withholds every run of a straddled ' +
+      "position whose outcome is not 'placed', from the treated solve and its twin alike, " +
+      'together with every run the clean capture refuses. The spec withheld only a MIXED ' +
+      "position's refused runs. A collateral refusal inside a PLACED position (an untouched " +
+      "run the page refuses because a neighbour's slip moved the bookends) was therefore still " +
+      'handed to the treated solve, rendered clean, though the page decodes nothing of a run ' +
+      'it refuses. The twin withholds it too, so the pair still differs by the straddle alone.',
+    runTallies:
+      "A cell's runs.outcomes and runs.brokenPairs tally ATTRIBUTABLE touched runs only, the " +
+      'one group every cell evaluates alike, so they compare across cells. Runs the twin ' +
+      'refuses anyway are reported apart in runs.notAttributable and do not compare: R1 ' +
+      'evaluates them with noise, and the other cells leave them on their noiseless verdict.',
+    decodeControls:
+      'decode.ablation.dimmingControl blends every photograph with the dark: a uniform dimming, ' +
+      "which moves nothing. It is not the spec's successor ablation (followUps). " +
+      'decode.curve[].movedHalfPeriod bounds how far decodes moved and counts no Gray flip; ' +
+      'decode.curve[].grayFlips counts them.',
+    pose:
+      "Pose cost is the bench solver's. The page never solves, and its worth report cannot see a " +
+      'straddle (precondition.q0.worth).',
+  };
+}
+
+type Spread = {
+  n: number;
+  min: number | null;
+  p10: number | null;
+  median: number | null;
+  p90: number | null;
+  max: number | null;
+};
+type Signs = {
+  pixels: number;
+  uPos: number;
+  vPos: number;
+  uPosShare: number | null;
+  vPosShare: number | null;
+  maxAbsU: number;
+  maxAbsV: number;
 };
 
 export type VerdictDoc = {
   mode: string;
-  precondition: { q0: { total: number; placedPositions: number; maxMargin: number | null } };
+  generatedFrom: {
+    design: {
+      constants: Record<string, unknown>;
+      plan: { rigs: number[]; designedRigs: number[]; kNull: number };
+    };
+  };
+  precondition: {
+    q0: {
+      total: number;
+      placedPositions: number;
+      minClassifyMargin: number;
+      refusedAt: {
+        classify: { positions: number; maxMargin: number | null };
+        count: {
+          positions: number;
+          margin: Spread;
+          runsFound: { min: number; max: number } | null;
+        };
+        other: number;
+      };
+    };
+    q0b: { shape: string; positions: number; wholeRefused: number }[];
+    twins: {
+      main: {
+        cameras: number;
+        reshootNamed: number;
+        raster: { width: number; height: number } | null;
+      };
+      fine: { raster: { width: number; height: number } | null };
+    };
+  };
   gate: {
     crossings: {
-      forward: { p10: number | null; median: number | null; p90: number | null };
+      forward: Spread;
+      backward: Spread;
       attributableRuns: number;
       scannedTo: number;
-      neverRefused: { forward: number };
+      neverRefused: { forward: number; backward: number };
+      lowBackward: { below: number; runs: number; maxLit: number | null; lowest: number | null };
     };
   };
   decode: {
     curve: { direction: string; s: number; ratioU: { median: number | null } }[];
-    verdictLevel: { absMeanU: { median: number | null }; mmShift: { median: number | null } };
+    forwardMeans: { runLevels: number; nonNegativeU: number; nonNegativeV: number };
+    grayFlipsBelowFiveNinths: { either: number } | null;
+    highestDecoded: number;
+    verdictLevel: {
+      runs: number;
+      absMeanU: Spread;
+      absMeanV: Spread;
+      p95AbsV: Spread;
+      mmShift: Spread;
+      signs: { seam: Signs; rest: Signs; all: Signs } | null;
+    };
   };
   pose: {
     solved: boolean;
-    tauNull: { value: number | null };
-    levels: { label: string; dGridMm: { median: number | null } }[];
+    tauNull: {
+      value: number | null;
+      lo: number | null;
+      hi: number | null;
+      median: number | null;
+      samples: number;
+      rotationFlips: { flips: number; of: number };
+      gridFlips: { flips: number; of: number };
+    };
+    tauPosition: {
+      value: number | null;
+      lo: number | null;
+      hi: number | null;
+      median: number | null;
+      samples: number;
+    };
+    levels: {
+      label: string;
+      cases: number;
+      dGridMm: Spread;
+      gridFlips: number;
+      rotationFlips: number;
+    }[];
   };
   rescore: { cells: ReturnType<typeof summariseCell>[] };
   lateness: {
     cells: ReturnType<typeof summariseCell>[];
-    aimedFirstTouchedMs: { vsyncOff: number | null };
+    aimed: {
+      vsyncOff: {
+        firstTouchedMs: number | null;
+        onePercentMs: number | null;
+        bracketMs: [number | null, number] | null;
+      };
+      vsyncOn: { firstTouchedMs: number | null; onePercentMs: number | null };
+      threshold: {
+        aimBandS: number[];
+        steps: number;
+        driftPpm: number;
+        matchedClocksMs: number | null;
+        fastCameraMs: number | null;
+      };
+    };
   };
 };
 
 /**
- * The verdict, assembled from the document's own cells and nothing else. The
- * template is the spec's §7 with three changes, each so the sentence stays true
- * whatever the cells say. The first clause is chosen by whether any clean
- * position was placed. The crossing figures name the runs the scan never
- * refused, which they cannot include. The headline counts every class, so its
- * parts add up to its whole. Without solves (a quick run) the pose clauses say
- * so.
+ * The verdict, assembled from the document's own cells and nothing else: every
+ * number in it is read through {@link at}, so a document without one stops the
+ * sentence instead of printing it with a hole.
+ *
+ * The wording is the first full run's verification's, clause by clause, so the
+ * sentence says only what its cells hold. Where it clarifies the spec's §7
+ * template: the page's refusals are split by where they stopped; the crossings
+ * are named as forward percentiles from the noiseless predictor, with their
+ * range and the backward figures beside them; the bias is one-signed in its
+ * MEAN, with the per-pixel signs beside it; a straddle's median is set against
+ * each null's median, with the 95th percentile quoted beside it and never in
+ * its place; the headline names its start, timer and policy, splits the loud
+ * captures by what the operator reads, and counts every capture that ends past
+ * the gate; the lateness is labelled with where it came from, its parts add up
+ * to its whole, and the aimed threshold is derived and bracketed.
  */
 export function verdictStatement(doc: VerdictDoc): string {
   const pct = (x: number): string => `${(100 * x).toFixed(1)}`;
-  // The two cells whole sentences are built from are looked up through `at`
-  // like every number in them. Guarded by `=== undefined` instead, as they
-  // first were, a missing headline cell printed the verdict without its
-  // EXPERIMENT-9 sentence, and a missing lateness cell without its lateness
-  // one, with nothing to say so: the failure `at` exists to stop.
+  // A share that is small and not nothing keeps its figures: 0.014% is not 0.0%.
+  const pctSmall = (x: number): string =>
+    x === 0 ? '0' : x < 0.001 ? (100 * x).toFixed(3) : x < 0.01 ? (100 * x).toFixed(2) : pct(x);
   const byId = <T extends { id: string }>(xs: readonly T[]): Record<string, T> =>
     Object.fromEntries(xs.map((x) => [x.id, x]));
+  const byLabel = <T extends { label: string }>(xs: readonly T[]): Record<string, T> =>
+    Object.fromEntries(xs.map((x) => [x.label, x]));
   const r1 = at(byId(doc.rescore.cells), 'R1');
-  const aimed = at(byId(doc.lateness.cells), 'L-aimed-7.5');
-  const ratioCell = doc.decode.curve.find((c) => c.direction === 'forward' && c.s === 0.1);
-  const pose06 = doc.pose.levels.find((l) => l.label === 'forward/0.06');
+  const r8 = at(byId(doc.rescore.cells), 'R8');
+  const late = at(constant(doc, 'HEADLESS_LATENESS_MS') as Record<string, number>, 'hudTickOff');
+  const aimed = at(byId(doc.lateness.cells), `L-aimed-${late}`);
+  const q0 = doc.precondition.q0;
+  const crossings = doc.gate.crossings;
+  const vl = doc.decode.verdictLevel;
   const cells: Record<string, number | string> = {
-    'q0.total': doc.precondition.q0.total,
-    'q0.placed': doc.precondition.q0.placedPositions,
-    'q0.maxMargin': doc.precondition.q0.maxMargin ?? Number.NaN,
-    p10: doc.gate.crossings.forward.p10 ?? Number.NaN,
-    p50: doc.gate.crossings.forward.median ?? Number.NaN,
-    p90: doc.gate.crossings.forward.p90 ?? Number.NaN,
-    attributableRuns: doc.gate.crossings.attributableRuns ?? Number.NaN,
-    neverRefused: doc.gate.crossings.neverRefused?.forward ?? Number.NaN,
-    scannedTo: doc.gate.crossings.scannedTo ?? Number.NaN,
-    ratio: ratioCell?.ratioU.median ?? Number.NaN,
-    px: doc.decode.verdictLevel.absMeanU.median ?? Number.NaN,
-    mm: doc.decode.verdictLevel.mmShift.median ?? Number.NaN,
+    'q0.total': q0.total,
+    'q0.placed': q0.placedPositions,
+    minMargin: q0.minClassifyMargin,
+    classify: q0.refusedAt.classify.positions,
+    count: q0.refusedAt.count.positions,
+    other: q0.refusedAt.other,
+    projectors: constant(doc, 'PROJECTORS') as number,
+    attributableRuns: crossings.attributableRuns,
+    neverRefused: crossings.neverRefused?.forward ?? Number.NaN,
+    neverBackward: crossings.neverRefused?.backward ?? Number.NaN,
+    scannedTo: crossings.scannedTo,
+    forwardN: crossings.forward.n,
+    backwardN: crossings.backward.n,
+    lowRuns: crossings.lowBackward.runs,
+    ratio:
+      doc.decode.curve.find((x) => x.direction === 'forward' && x.s === 0.1)?.ratioU.median ??
+      Number.NaN,
+    runLevels: doc.decode.forwardMeans.runLevels,
+    nonNegU: doc.decode.forwardMeans.nonNegativeU,
+    nonNegV: doc.decode.forwardMeans.nonNegativeV,
+    grayFlips: doc.decode.grayFlipsBelowFiveNinths?.either ?? Number.NaN,
+    highestDecoded: doc.decode.highestDecoded,
+    runs06: vl.runs,
+    pxU: vl.absMeanU.median ?? Number.NaN,
+    pxV: vl.absMeanV.median ?? Number.NaN,
+    p95V: vl.p95AbsV.max ?? Number.NaN,
+    mm: vl.mmShift.median ?? Number.NaN,
+    mmN: vl.mmShift.n,
+    mmMin: vl.mmShift.min ?? Number.NaN,
+    mmMax: vl.mmShift.max ?? Number.NaN,
+    resX: PROJECTOR_RES.x,
+    resY: PROJECTOR_RES.y,
   };
-  {
-    const n = r1.classes.P.counts;
-    cells.touched = r1.capturesFlagged;
-    cells.recorded = r1.capturesRecorded;
-    cells.loud = n.LOUD;
-    cells.loudSilent = n['LOUD+SILENT'];
-    cells.silent =
-      n['SILENT-HARMLESS'] + n['SILENT-BIASED'] + n['SILENT-GATE-BREAKING'] + n['SILENT-UNSOLVED'];
-    cells.harmless = n['SILENT-HARMLESS'];
-    cells.biased = n['SILENT-BIASED'];
-    cells.gate = n['SILENT-GATE-BREAKING'];
-    cells.unsolved = n['SILENT-UNSOLVED'];
-    cells.invisible = n['INVISIBLE-ONLY'];
-    cells.unchanged = n.UNCHANGED;
-    cells.trials = r1.trials;
-  }
-  {
-    const n = aimed.classes.P.counts;
-    cells.aimedTouched = aimed.capturesRecorded;
-    cells.aimedTrials = aimed.trials;
-    cells.aimedLoud = n.LOUD;
-    cells.aimedSilent =
-      n['SILENT-HARMLESS'] + n['SILENT-BIASED'] + n['SILENT-GATE-BREAKING'] + n['SILENT-UNSOLVED'];
-  }
-  // Null is a measurement, not a hole: no lateness swept touched 1% of aimed
-  // captures. The sentence says so rather than ending early.
-  const aimedFirst = doc.lateness.aimedFirstTouchedMs.vsyncOff;
-  if (aimedFirst !== null) cells.aimedFirstMs = aimedFirst;
-  if (doc.pose.solved) {
-    cells.dgrid06 = pose06?.dGridMm.median ?? Number.NaN;
-    cells.tau = doc.pose.tauNull.value ?? Number.NaN;
-  }
   const c = (key: string): number | string => at(cells, key);
-  const n = (key: string, digits = 2): string => (c(key) as number).toFixed(digits);
-  const placed = c('q0.placed') as number;
-  const first =
+  const num = (key: string): number => c(key) as number;
+  const n = (key: string, digits = 2): string => num(key).toFixed(digits);
+  const orNaN = (x: number | null | undefined): number =>
+    x === null || x === undefined ? Number.NaN : x;
+
+  // ----- where today's page stopped the clean positions
+  const placed = num('q0.placed');
+  let first =
     placed === 0
       ? `Today's page placed none of the ${c('q0.total')} clean camera positions rendered ` +
-        `from the card's three marks (classify margin at most ${n('q0.maxMargin', 3)}, ` +
-        `against ${MIN_CLASSIFY_MARGIN}), so on the bench every capture is refused before ` +
-        `the complement check runs, straddled or not.`
+        `from the card's three marks.`
       : `Today's page placed a run in ${placed} of the ${c('q0.total')} clean camera ` +
-        `positions rendered from the card's three marks (classify margin at most ` +
-        `${n('q0.maxMargin', 3)}, against ${MIN_CLASSIFY_MARGIN}), and refused the rest ` +
-        `before the complement check runs, straddled or not.`;
-  const ratio = c('ratio') as number;
+        `positions rendered from the card's three marks.`;
+  if (num('classify') > 0) {
+    cells.classifyMax = orNaN(q0.refusedAt.classify.maxMargin);
+    first +=
+      ` ${c('classify')} were refused at classify (margin at most ${n('classifyMax', 3)}, ` +
+      `against ${c('minMargin')}).`;
+  }
+  if (num('count') > 0) {
+    const m = q0.refusedAt.count.margin;
+    const found = q0.refusedAt.count.runsFound;
+    cells.countMin = orNaN(m.min);
+    cells.countMax = orNaN(m.max);
+    cells.foundMin = orNaN(found?.min);
+    cells.foundMax = orNaN(found?.max);
+    const margins =
+      num('count') === 1
+        ? `margin ${n('countMax', 3)}`
+        : `margins ${n('countMin', 3)}-${n('countMax', 3)}`;
+    const runsFound =
+      num('foundMin') === num('foundMax')
+        ? `${c('foundMin')}`
+        : `${c('foundMin')}-${c('foundMax')}`;
+    first +=
+      ` ${num('classify') > 0 ? 'The other ' : ''}${c('count')} cleared classify (${margins}) ` +
+      `but were refused at the run count, having found ${runsFound} of ${c('projectors')} ` +
+      `projector runs.`;
+  }
+  if (num('other') > 0) first += ` ${c('other')} were refused for other reasons.`;
+  first +=
+    placed === 0
+      ? ` So on the bench every clean capture is refused before the complement check runs, ` +
+        `and no straddled capture was put through the page.`
+      : ` The rescoring put those rigs' straddled positions through the page as well.`;
+
+  // ----- where the complement check refuses a straddle
+  const never = num('neverRefused');
+  const runs = num('attributableRuns');
+  let crossing: string;
+  if (never > 0 && never === runs) {
+    crossing =
+      ` Given a reader whose bookends can place runs, the complement check refused none ` +
+      `of the ${runs} attributable runs of a whole-position straddle at any smear up to ` +
+      `s = ${c('scannedTo')}. `;
+  } else {
+    cells.p10 = orNaN(crossings.forward.p10);
+    cells.p50 = orNaN(crossings.forward.median);
+    cells.p90 = orNaN(crossings.forward.p90);
+    cells.fMin = orNaN(crossings.forward.min);
+    cells.fMax = orNaN(crossings.forward.max);
+    const over = num('forwardN') === runs ? `all ${runs}` : `${c('forwardN')} of the ${runs}`;
+    crossing =
+      ` Given a reader whose bookends can place runs, the complement check first refuses a ` +
+      `forward whole-position straddle at between ${pct(num('p10'))}% and ${pct(num('p90'))}% ` +
+      `of the exposure, depending on the run. These are the 10th and 90th percentiles over ` +
+      `${over} attributable runs, from ` +
+      `the noiseless linear predictor: median ${pct(num('p50'))}%, full range ` +
+      `${pct(num('fMin'))}-${pct(num('fMax'))}%` +
+      (never > 0
+        ? `; ${never} of the ${runs} attributable runs were never refused up to ` +
+          `s = ${c('scannedTo')}, and are not in those figures. `
+        : `. `);
+    if (num('backwardN') > 0) {
+      cells.b10 = orNaN(crossings.backward.p10);
+      cells.b50 = orNaN(crossings.backward.median);
+      cells.b90 = orNaN(crossings.backward.p90);
+      crossing +=
+        `A backward straddle is first refused at between ${pct(num('b10'))}% and ` +
+        `${pct(num('b90'))}% (median ${pct(num('b50'))}%)`;
+      if (num('neverBackward') > 0)
+        crossing += `, and ${c('neverBackward')} runs were never refused backward`;
+      if (num('lowRuns') > 0) {
+        cells.lowBelow = crossings.lowBackward.below;
+        cells.lowLit = orNaN(crossings.lowBackward.maxLit);
+        cells.lowest = orNaN(crossings.lowBackward.lowest);
+        crossing +=
+          `; ${c('lowRuns')} runs, each lighting at most ${pct(num('lowLit'))}% of the ` +
+          `photograph, are refused below ${pct(num('lowBelow'))}% backward, the lowest at ` +
+          `${(100 * num('lowest')).toFixed(2)}%`;
+      }
+      crossing += '. ';
+    }
+  }
+
+  // ----- what passes: Gray words, then the phase bias
+  const ratio = num('ratio');
   const toward = ratio < 0 ? 'lower' : 'higher';
-  // The crossing figures are percentiles over the runs the scan refused. A run
-  // it never refused has no crossing to put in them, so it would drop out of
-  // the sentence and the figures would read as every run's. The count is read
-  // through `at` every time, not only when it is not zero, so a document
-  // without it stops the sentence like any other missing cell. Where no run
-  // was refused at all there are no figures to quote, and the sentence says so.
-  const never = c('neverRefused') as number;
-  const runs = c('attributableRuns') as number;
-  const crossing =
-    never > 0 && never === runs
-      ? ` Given a reader whose bookends can place runs, the complement check refused none ` +
-        `of the ${runs} attributable runs of a whole-position straddle at any smear up to ` +
-        `s = ${c('scannedTo')}. `
-      : ` Given a reader whose bookends can place runs, the complement check refuses a ` +
-        `whole-position straddle run by run, from ${pct(c('p10') as number)}% to ` +
-        `${pct(c('p90') as number)}% of the exposure (median ${pct(c('p50') as number)}%)` +
-        (never > 0
-          ? `; ${never} of the ${runs} attributable runs were never refused up to ` +
-            `s = ${c('scannedTo')}, and are not in those figures. `
-          : `. `);
-  const second =
-    crossing +
-    `What it lets through decodes to the right fringe carrying a one-signed phase bias ` +
-    `of about ${Math.abs(ratio).toFixed(2)} of atan2(s, 1−s)·P/2π, toward ${toward} ` +
-    `projector coordinates for a forward straddle (${n('px')} px at the ` +
-    `${PROJECTOR_RES.x} raster, ${n('mm')} mm on the sphere at s = ${VERDICT_S})` +
-    (doc.pose.solved
-      ? `, which moves the seams by a median ${n('dgrid06', 3)} mm, against ` +
-        `${n('tau', 3)} mm for a re-shoot.`
-      : `; this run solved nothing, so what that does to the seams is not measured here.`);
+  const flips = num('grayFlips');
+  let bias =
+    flips === 0
+      ? `What it lets through keeps its Gray words: at every smear decoded, up to s = ` +
+        `${c('highestDecoded')}, no pixel both decodes accept changed its Gray address. `
+      : `What it lets through changes ${flips} Gray words below s = 5/9 on pixels both ` +
+        `decodes accept. `;
+  const oneSigned = num('nonNegU') + num('nonNegV') === 0;
+  bias +=
+    `It carries a phase bias whose mean is one-signed: about ${Math.abs(ratio).toFixed(2)} of ` +
+    `atan2(s, 1−s)·P/2π, toward ${toward} projector coordinates for a forward straddle` +
+    (oneSigned
+      ? `, and every run's mean Δu and mean Δv is negative at every forward smear decoded.`
+      : `; ${num('nonNegU') + num('nonNegV')} run-level means of the ${c('runLevels')} ` +
+        `per axis are not negative.`) +
+    ` At s = ${VERDICT_S} that is ${n('pxU')} px along u and ${n('pxV')} px along v at the ` +
+    `${c('resX')}×${c('resY')} raster, the medians over ${c('runs06')} runs of each run's mean.`;
+  if (vl.signs !== null) {
+    const { seam, rest, all } = vl.signs;
+    cells.uPos = all.uPos;
+    cells.uPosShare = orNaN(all.uPosShare);
+    cells.seamPixels = seam.pixels;
+    cells.seamVPos = orNaN(seam.vPosShare);
+    cells.restPixels = rest.pixels;
+    cells.restVPos = orNaN(rest.vPosShare);
+    cells.maxAbsV = all.maxAbsV;
+    bias +=
+      ` Per pixel, ` +
+      (num('uPos') === 0
+        ? `no pixel moves positive along u`
+        : `${pctSmall(num('uPosShare'))}% of pixels move positive along u`) +
+      (num('seamPixels') > 0
+        ? `; along v, ${pctSmall(num('seamVPos'))}% of the ${c('seamPixels')} pixels where the ` +
+          `next projector also lights move positive, against ${pctSmall(num('restVPos'))}% of ` +
+          `the ${c('restPixels')} others`
+        : `; along v, ${pctSmall(num('restVPos'))}% of pixels move positive`) +
+      `, and |Δv| reaches ${n('maxAbsV')} px against the ${n('pxV')} px mean (the largest ` +
+      `run's 95th percentile is ${n('p95V')} px).`;
+  }
+  bias +=
+    ` On the sphere, a median ${n('mm')} mm counting both axes: the median of ${c('mmN')} ` +
+    `per-run medians, which span ${n('mmMin')}-${n('mmMax')} mm.`;
+
+  // ----- what that does to a solve, against both re-shoots
+  let pose: string;
+  if (doc.pose.solved) {
+    const at06 = at(byLabel(doc.pose.levels), `forward/${VERDICT_S}`);
+    const whole = doc.pose.tauNull;
+    const position = doc.pose.tauPosition;
+    Object.assign(cells, {
+      d06: orNaN(at06.dGridMm.median),
+      n06: at06.dGridMm.n,
+      cases06: at06.cases,
+      min06: orNaN(at06.dGridMm.min),
+      max06: orNaN(at06.dGridMm.max),
+      flips06: at06.gridFlips,
+      rot06: at06.rotationFlips,
+      nullRot: whole.rotationFlips.flips,
+      nullRotOf: whole.rotationFlips.of,
+      nullGrid: whole.gridFlips.flips,
+      nullGridOf: whole.gridFlips.of,
+      wholeMedian: orNaN(whole.median),
+      tau: orNaN(whole.value),
+      tauLo: orNaN(whole.lo),
+      tauHi: orNaN(whole.hi),
+      posMedian: orNaN(position.median),
+      posTau: orNaN(position.value),
+      posLo: orNaN(position.lo),
+      posHi: orNaN(position.hi),
+    });
+    pose =
+      ` Solved through the bench, a forward straddle at s = ${VERDICT_S} moves the worst seam ` +
+      `point by a median ${n('d06')} mm over ${c('n06')} designed rigs (range ${n('min06')}-` +
+      `${n('max06')} mm). The ${GRID_GATE_MM} mm seam gate flips in ${c('flips06')} of ` +
+      `${c('cases06')} and the ${ROTATION_GATE_DEG}° rotation gate in ${c('rot06')}; clean ` +
+      `whole-capture re-shoots flip them in ${c('nullGrid')} of ${c('nullGridOf')} and ` +
+      `${c('nullRot')} of ${c('nullRotOf')}. That is ` +
+      `${(num('d06') / num('wholeMedian')).toFixed(1)} times the median ${n('wholeMedian')} mm ` +
+      `by which re-shooting the whole capture moves it (95th percentile ${n('tau')} mm, 95% CI ` +
+      `${n('tauLo')}-${n('tauHi')}), and ${(num('d06') / num('posMedian')).toFixed(1)} times ` +
+      `the median ${n('posMedian')} mm by which re-shooting only the straddled position moves ` +
+      `it (95th percentile ${n('posTau')} mm, 95% CI ${n('posLo')}-${n('posHi')}).`;
+  } else {
+    pose = ` This run solved nothing, so what that does to the seams is not measured here.`;
+  }
+
+  // ----- EXPERIMENT-9's headline, re-scored
+  {
+    const k = r1.classes.P.counts;
+    const silentOf = (x: Record<string, number>): number =>
+      SILENT_CLASSES.reduce((a, name) => a + (x[name] ?? 0), 0);
+    // The folders an operator following 'Re-shoot projector N' can end up with:
+    // the re-shot run kept beside the others (the card says keep both), or alone.
+    const reshot = doc.precondition.q0b.filter((x) =>
+      / re-shot (and appended|alone)$/.test(x.shape),
+    );
+    Object.assign(cells, {
+      touched: r1.capturesFlagged,
+      recorded: r1.capturesRecorded,
+      dwell: constant(doc, 'DWELL_S') as number,
+      exposureDen: Math.round(1 / r1.spec.exposureS),
+      loud: k.LOUD,
+      runByRun: r1.loud.runByRun,
+      reshootNamed: r1.loud.reshootNamed,
+      dropDup: r1.loud.dropAndDuplicate,
+      wholeOnly: r1.loud.wholePositionOnly,
+      reshotFolders: reshot.reduce((a, x) => a + x.positions, 0),
+      reshotRefused: reshot.reduce((a, x) => a + x.wholeRefused, 0),
+      loudSilent: k['LOUD+SILENT'],
+      silent: silentOf(k),
+      unsolved: k['SILENT-UNSOLVED'],
+      unjudgeable: k['SILENT-UNJUDGEABLE'],
+      invisible: k['INVISIBLE-ONLY'],
+      unchanged: k.UNCHANGED,
+      r8: r8.capturesRecorded,
+      r8Trials: r8.trials,
+    });
+  }
   const recordedNote =
     c('recorded') !== c('touched')
       ? ` (${c('recorded')} with any photograph changed or flagged)`
       : '';
-  const unsolvedNote =
-    (c('unsolved') as number) > 0 ? `, and ${c('unsolved')} could not be solved` : '';
-  const third =
-    ` Of EXPERIMENT-9's ${c('touched')} touched captures at the page's defaults under ` +
-    `its perfect-timer model${recordedNote}: ${c('loud')} are refused loudly (the page ` +
-    `blames a dropped and duplicated frame and asks for one projector to be re-shot, ` +
-    `which it cannot read back; ${c('loudSilent')} of them also carry a silent ` +
-    `position); ${c('silent')} pass silently` +
-    (doc.pose.solved
-      ? `, of which ${c('harmless')} move the seams within re-shoot noise, ` +
-        `${c('biased')} beyond it, and ${c('gate')} past the ${GRID_GATE_MM} mm seam ` +
-        `gate${unsolvedNote}`
-      : ` (not solved in this run)`) +
-    `; ${c('invisible')} touched only runs the page refuses anyway; ` +
-    `${c('unchanged')} changed no photograph.`;
-  const fourth =
-    ` If the emitter runs 7.5 ms late per step, as it did headless, ` +
-    `${c('aimedTouched')}/${c('aimedTrials')} captures started by the card's aimed rule ` +
-    `are touched (${c('aimedLoud')} loud, ${c('aimedSilent')} silent). The aimed rule ` +
-    `protects only while the emitter's lateness stays below about 3.7 ms per step` +
-    (aimedFirst === null
-      ? `; no lateness swept touched 1% of aimed captures.`
-      : `; the smallest lateness swept at which 1% of aimed captures were touched was ` +
-        `${c('aimedFirstMs')} ms.`);
-  return first + second + third + fourth;
+  let headline =
+    ` Of EXPERIMENT-9's ${c('touched')} touched captures at the page's defaults ` +
+    `(${c('dwell')} s dwell, 1/${c('exposureDen')} s exposure), with an un-aimed (uniform) ` +
+    `start, under its perfect-timer model and policy P (a refused position is re-shot whole, ` +
+    `and the re-shoot is assumed clean)${recordedNote}, such a reader refuses ${c('loud')} ` +
+    `loudly: ${c('runByRun')} run by run, ` +
+    (num('reshootNamed') === num('runByRun') ? '' : `${c('reshootNamed')} of them `) +
+    `with 'Re-shoot projector N'` +
+    (num('dropDup') > 0 ? ` (${c('dropDup')} blaming a dropped and a duplicated frame)` : '') +
+    `, a remedy that produces a folder the reader refuses whole` +
+    (num('reshotFolders') > 0
+      ? ` (${c('reshotRefused')} of ${c('reshotFolders')} such folders in Q0b, the re-shot run ` +
+        `kept beside the others or alone)`
+      : '') +
+    `; and ${c('wholeOnly')} only as a whole position ('Found N projector runs …'), whose ` +
+    `remedy, re-shooting the position, it can read.`;
+  if (doc.pose.solved) {
+    const against = r1.classes.P.silentAgainst;
+    const tauAt = against.tau;
+    if (tauAt === null) {
+      throw new Error(
+        "experiment10: the verdict needs cell 'silentAgainst.tau', and the document does not " +
+          'have it',
+      );
+    }
+    Object.assign(cells, {
+      lsGate: r1.classes.P.solved.loudSilentHarm['GATE-BREAKING'],
+      harmless: tauAt.HARMLESS,
+      biased: tauAt.BIASED,
+      gateSilent: tauAt['GATE-BREAKING'],
+      judged: tauAt.judged,
+      exceed: tauAt.exceedTau,
+      harmlessAtLo: against.tauLo?.HARMLESS ?? Number.NaN,
+      harmlessAtHi: against.tauHi?.HARMLESS ?? Number.NaN,
+      harmlessAtPosition: against.positionTau?.HARMLESS ?? Number.NaN,
+      pastGate: r1.classes.P.pastGate.total,
+    });
+    const across =
+      num('harmlessAtLo') === num('harmlessAtHi')
+        ? `${c('harmlessAtLo')}`
+        : `${c('harmlessAtLo')}-${c('harmlessAtHi')}`;
+    headline +=
+      ` ${c('loudSilent')} of the loud captures also carry a silent position` +
+      (num('loudSilent') > 0
+        ? `, and in ${c('lsGate')} of those the seams still end past the ${GRID_GATE_MM} mm ` +
+          `gate after the refused positions are re-shot clean.`
+        : '.') +
+      ` ${c('silent')} pass silently: ${c('harmless')} ` +
+      `move the worst seam point no further than 95% of whole-capture re-shoots do ` +
+      `(${across} across τ's 95% CI, and ${c('harmlessAtPosition')} against the one-position ` +
+      `re-shoot), ${c('biased')} move it further without breaking the gate, and ` +
+      `${c('gateSilent')} break it` +
+      (num('unjudgeable') > 0 ? `; ${c('unjudgeable')} cannot be judged from their solves` : '') +
+      (num('unsolved') > 0 ? `; ${c('unsolved')} were not solved` : '') +
+      `. In all, ${c('pastGate')} of the ${c('touched')} end past the gate under policy P, and ` +
+      `${c('exceed')} of the ${c('judged')} silent captures judged move the seams further than τ.`;
+  } else {
+    // A position count, not a solve: said whether or not anything was solved,
+    // as 379bb2f's verdict said it.
+    headline +=
+      ` ${c('loudSilent')} of the loud captures also carry a silent position. ` +
+      `${c('silent')} pass silently (not solved in this run).`;
+  }
+  headline +=
+    ` ${c('invisible')} touched only runs that the counterfactual reader also refuses on the ` +
+    `clean capture; ${c('unchanged')} changed no photograph. With the card's aimed start and a ` +
+    `perfect timer, ${c('r8')} of ${c('r8Trials')} captures are touched (R8).`;
+
+  // ----- a late emitter against the aimed rule
+  {
+    const k = aimed.classes.P.counts;
+    const silentOf = (x: Record<string, number>): number =>
+      SILENT_CLASSES.reduce((a, name) => a + (x[name] ?? 0), 0);
+    const threshold = doc.lateness.aimed.threshold;
+    const off = doc.lateness.aimed.vsyncOff;
+    Object.assign(cells, {
+      late: aimed.spec.lateMs,
+      armed: at(constant(doc, 'HEADLESS_LATENESS_MS') as Record<string, number>, 'armedTickOn'),
+      aimedTouched: aimed.capturesRecorded,
+      aimedTrials: aimed.trials,
+      aimedLoud: k.LOUD,
+      aimedLoudSilent: k['LOUD+SILENT'],
+      aimedSilent: silentOf(k),
+      aimedSolved: silentOf(k) - k['SILENT-UNSOLVED'],
+      aimedGate: k['SILENT-GATE-BREAKING'],
+      aimedInvisible: k['INVISIBLE-ONLY'],
+      bandLo: nth(threshold.aimBandS, 0),
+      steps: threshold.steps,
+      ppm: threshold.driftPpm,
+      thrMatched: orNaN(threshold.matchedClocksMs),
+      thrFast: orNaN(threshold.fastCameraMs),
+    });
+    let lateSentence =
+      ` If the emitter runs ${c('late')} ms late per step, ${c('aimedTouched')} of ` +
+      `${c('aimedTrials')} captures started by the card's aimed rule are touched: ` +
+      `${c('aimedLoud')} loud, ${c('aimedLoudSilent')} of them also carrying a silent ` +
+      `position; ${c('aimedSilent')} silent, ${c('aimedSolved')} of them solved and ` +
+      `${c('aimedGate')} of those past the seam gate; and ${c('aimedInvisible')} touching only ` +
+      `runs that are refused anyway. ${c('late')} ms is the mean of a design-time probe in a ` +
+      `headless, software-rendered (SwiftShader) browser in HUD mode with the tick off; armed ` +
+      `with the tick on, the same setup ran about ${c('armed')} ms late. This experiment did ` +
+      `not re-measure it, and the display machine's lateness is unmeasured. The aimed rule's ` +
+      `margin is the lower edge of its modelled aim band, ${c('bandLo')} s spread over ` +
+      `${c('steps')} steps: about ${n('thrMatched')} ms per step with matched clocks, and ` +
+      `${n('thrFast')} ms for the half of captures whose camera clock runs ${c('ppm')} ppm fast.`;
+    if (off.onePercentMs === null) {
+      lateSentence += ` No lateness swept touched 1% of aimed captures.`;
+    } else {
+      cells.firstMs = orNaN(off.firstTouchedMs);
+      cells.onePctMs = off.onePercentMs;
+      const below = off.bracketMs?.[0] ?? null;
+      lateSentence +=
+        ` On the swept grid the first aimed capture is touched at ${c('firstMs')} ms, and 1% ` +
+        `are touched from ${c('onePctMs')} ms`;
+      if (below === null) {
+        lateSentence += `, the smallest lateness swept`;
+      } else {
+        cells.belowMs = below;
+        lateSentence += `, a crossing measured in (${c('belowMs')}, ${c('onePctMs')}] ms`;
+      }
+      const on = doc.lateness.aimed.vsyncOn;
+      if (on.onePercentMs !== null) {
+        cells.firstMsV = orNaN(on.firstTouchedMs);
+        cells.onePctMsV = on.onePercentMs;
+        cells.vsyncHz = Math.round(1 / (constant(doc, 'VSYNC_S') as number));
+        lateSentence +=
+          `; with a ${c('vsyncHz')} Hz refresh wait, ${c('firstMsV')} and ${c('onePctMsV')} ms`;
+      }
+      lateSentence += '.';
+    }
+    return first + crossing + bias + pose + headline + lateSentence;
+  }
 }
