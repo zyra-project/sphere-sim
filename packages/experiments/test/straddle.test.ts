@@ -1071,13 +1071,15 @@ test('T24 deterministic: the reduced design run twice is one document, and it re
   // difference between two runs. Both on in-memory checkpoints, so neither
   // reads the other's.
   const { spawn } = await import('node:child_process');
-  const { TEST_PLAN, clusteredShare, memoryStore, runContext, runExperiment10, verdictStatement } = await import(
-    '../src/straddle/cli.ts'
-  );
+  const { runExperiment10 } = await import('../src/straddle/cli.ts');
+  const { TEST_PLAN, memoryStore, runContext } = await import('../src/straddle/stages.ts');
+  const { clusteredShare, verdictStatement } = await import('../src/straddle/assemble.ts');
   const cli = new URL('../src/straddle/cli.ts', import.meta.url).href;
+  const stages = new URL('../src/straddle/stages.ts', import.meta.url).href;
   const script =
-    `const m = await import(${JSON.stringify(cli)});` +
-    'const doc = m.runExperiment10(m.runContext(m.TEST_PLAN, m.memoryStore(), () => {}));' +
+    `const c = await import(${JSON.stringify(cli)});` +
+    `const s = await import(${JSON.stringify(stages)});` +
+    'const doc = c.runExperiment10(s.runContext(s.TEST_PLAN, s.memoryStore(), () => {}));' +
     'process.stdout.write(JSON.stringify(doc));';
   const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
   const out: Buffer[] = [];
@@ -1143,17 +1145,40 @@ test('T24 deterministic: the reduced design run twice is one document, and it re
     rescore: { cells: { id: string }[] };
     lateness: { cells: { id: string }[] };
     decode: { curve: { direction: string; s: number }[] };
+    gate: { crossings: { neverRefused: { forward?: number } } };
   };
   const cuts: [string, (d: Holed) => void][] = [
     ['the headline cell R1', (d) => { d.rescore.cells = d.rescore.cells.filter((c) => c.id !== 'R1'); }],
     ['the lateness cell L-aimed-7.5', (d) => { d.lateness.cells = d.lateness.cells.filter((c) => c.id !== 'L-aimed-7.5'); }],
     ['the forward s = 0.1 decode level', (d) => { d.decode.curve = d.decode.curve.filter((c) => !(c.direction === 'forward' && c.s === 0.1)); }],
+    ['the count of runs the scan never refused', (d) => { delete d.gate.crossings.neverRefused.forward; }],
   ];
   for (const [what, cut] of cuts) {
     const holed = JSON.parse(text);
     cut(holed);
     assert.throws(() => verdictStatement(holed), /the verdict needs cell/, `a document without ${what} still got a verdict`);
   }
+
+  // The crossing figures are percentiles over the runs the scan refused, so a
+  // run it never refused up to s = 0.5 has no place in them. The sentence
+  // left such runs out without a word, and read as if its figures covered
+  // every run. It names them now, and says so when there were none to quote.
+  const scanned = doc.gate.crossings.scannedTo as number;
+  assert.equal(scanned, 0.5);
+  const clause = (n: number, of: number) =>
+    `; ${n} of the ${of} attributable runs were never refused up to s = ${scanned}, and are not in those figures.`;
+  const own = doc.gate.crossings.neverRefused.forward as number;
+  const runs = doc.gate.crossings.attributableRuns as number;
+  assert.equal(doc.verdict.statement.includes(clause(own, runs)), own > 0, 'the written verdict does not match its own never-refused count');
+  const some = JSON.parse(text);
+  some.gate.crossings.attributableRuns = 5;
+  some.gate.crossings.neverRefused.forward = 2;
+  assert.ok(verdictStatement(some).includes(clause(2, 5)), `two runs never refused went unmentioned: ${verdictStatement(some)}`);
+  const none = JSON.parse(text);
+  none.gate.crossings.attributableRuns = 5;
+  none.gate.crossings.neverRefused.forward = 5;
+  none.gate.crossings.forward = { ...none.gate.crossings.forward, p10: null, median: null, p90: null };
+  assert.match(verdictStatement(none), /refused none of the 5 attributable runs of a whole-position straddle at any smear up to s = 0\.5\./);
 });
 
 test('T24b an accepted stale checkpoint stays stale', async () => {
@@ -1164,8 +1189,9 @@ test('T24b an accepted stale checkpoint stays stale', async () => {
   // measurements as its own and its document said no stale checkpoint was
   // used. The stage here has its one unit on disk, so resuming it computes
   // nothing and only rewrites the file, which is the step that re-stamped.
-  const { CHECKPOINT_SCHEMA, StaleCheckpoint, TEST_PLAN, memoryStore, runContext, runExperiment10 } = await import(
-    '../src/straddle/cli.ts'
+  const { runExperiment10 } = await import('../src/straddle/cli.ts');
+  const { CHECKPOINT_SCHEMA, StaleCheckpoint, TEST_PLAN, memoryStore, runContext } = await import(
+    '../src/straddle/stages.ts'
   );
   const store = memoryStore();
   const foreign = 'another build';
@@ -1187,4 +1213,365 @@ test('T24b an accepted stale checkpoint stays stale', async () => {
   assert.equal(after.complete, true, 'the resumed stage was not written back');
   assert.equal(after.fingerprint, foreign, 'resuming under the override re-stamped the checkpoint as this build\'s');
   assert.throws(() => runExperiment10(runContext(TEST_PLAN, store, () => {}), 'q0'), StaleCheckpoint);
+});
+
+// ---------------------------------------------------------------------------
+// T25-T28: what the full run is held to before it starts
+// ---------------------------------------------------------------------------
+
+test('T25 the checkpoint fingerprint covers every stage and none of the document', async () => {
+  // A checkpoint answers to the fingerprint of the code that measured it, and
+  // the full run is four hours of checkpoints. While the document's assembly
+  // was fingerprinted with the stages, an edit to a field or to the verdict's
+  // wording after the run had started made every checkpoint stale. So the
+  // assembly now lives outside the fingerprint (stages.ts's header). This holds
+  // both halves of that line: (a) an edit to the document's modules leaves the
+  // fingerprint as it was, (b) an edit to a stage changes it, and (c) the stage
+  // module reaches neither document module through any import, and everything
+  // it does reach is fingerprinted. (c) is the half that keeps unfingerprinted
+  // code out of a measurement. The fingerprint hashes bytes, not imports, so a
+  // stage calling into the assembly would be invisible to (a) and (b).
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const ts = (await import('typescript')).default;
+  const { DOCUMENT_SOURCES, TEST_PLAN, codeFingerprint, measurementFiles } = await import('../src/straddle/stages.ts');
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+  const editing = (suffix: string) => (file: string) =>
+    file.split(path.sep).join('/').endsWith(suffix) ? Buffer.concat([fs.readFileSync(file), Buffer.from('\n// an edit\n')]) : fs.readFileSync(file);
+
+  const base = codeFingerprint(TEST_PLAN);
+  assert.equal(codeFingerprint(TEST_PLAN, editing('straddle/assemble.ts')), base, 'an edit to the assembly made every checkpoint stale');
+  assert.equal(codeFingerprint(TEST_PLAN, editing('straddle/cli.ts')), base, 'an edit to the entry made every checkpoint stale');
+  assert.notEqual(codeFingerprint(TEST_PLAN, editing('straddle/stages.ts')), base, 'an edit to a stage left its checkpoints current');
+  assert.notEqual(codeFingerprint(TEST_PLAN, editing('straddle/run.ts')), base, 'an edit to the library left its checkpoints current');
+
+  // Everything the stages import, followed file by file from stages.ts:
+  // static, type-only and dynamic imports alike.
+  const closure = new Set<string>();
+  const visit = (abs: string): void => {
+    const rel = path.relative(root, abs).split(path.sep).join('/');
+    if (closure.has(rel)) return;
+    closure.add(rel);
+    for (const { fileName } of ts.preProcessFile(fs.readFileSync(abs, 'utf8'), true, true).importedFiles) {
+      if (fileName.startsWith('.')) visit(path.resolve(path.dirname(abs), fileName));
+    }
+  };
+  visit(path.join(root, 'packages/experiments/src/straddle/stages.ts'));
+  const fingerprinted = new Set(measurementFiles());
+  for (const doc of DOCUMENT_SOURCES) {
+    assert.ok(fs.existsSync(path.join(root, doc)), `${doc} is not there`);
+    assert.ok(!closure.has(doc), `the stages import ${doc}, so their measurements run unfingerprinted code`);
+    assert.ok(!fingerprinted.has(doc), `${doc} is fingerprinted`);
+  }
+  const outside = [...closure].filter((f) => !fingerprinted.has(f));
+  assert.deepEqual(outside, [], 'the stages run code the fingerprint does not cover');
+  // Not vacuous: the walk reached the library, EXPERIMENT-9's replay and the renderer.
+  for (const f of [
+    'packages/experiments/src/straddle/run.ts',
+    'packages/experiments/src/straddle/bank.ts',
+    'packages/experiments/src/straddle/design.ts',
+    'packages/experiments/src/tether/run.ts',
+    'packages/bench/src/capture.ts',
+    'packages/web/src/readback.ts',
+  ]) {
+    assert.ok(closure.has(f), `the import walk never reached ${f}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// A scored capture, written out by hand: the shapes the rescore stage stores
+// ---------------------------------------------------------------------------
+
+type Twin = import('../src/straddle/stages.ts').TwinCamera;
+type Score = import('../src/straddle/stages.ts').RunScore;
+type PosScore = import('../src/straddle/stages.ts').PositionScore;
+
+/** Runs 0-2 placed by the twin, run 3 refused anyway (an invisible projector), at every camera. */
+function handTwin(camera: number): Twin {
+  return {
+    camera,
+    placedContent: [0, 1, 2],
+    placedFiled: [0, 1, 2],
+    placedNoiseless: [0, 1, 2],
+    problems: [],
+    runs: RUNS.map((p) => ({
+      projector: p,
+      litShare: p === 3 ? 0 : 0.3,
+      placed: p !== 3,
+      placedNoiseless: p !== 3,
+      worstNoisy: p === 3 ? null : 0.05,
+      worstNoiseless: p === 3 ? null : 0.04,
+      noiseFloor: p === 3 ? null : 0.01,
+      accepted: p === 3 ? 0 : 5000,
+      sigmaU: null,
+      sigmaV: null,
+      marginal: false,
+      minor: p === 3,
+    })),
+    worthUsable: false,
+    worthRefusal: null,
+  };
+}
+
+/**
+ * One run's scores. `on` is the noisy verdict where the stage computed one;
+ * `w0` the noiseless worst pair it chose by. At a noise floor of 0.01 the
+ * widest band (0.05) is [0.09, 0.20] and a 0.01 margin [0.13, 0.16], so 0.19
+ * is inside the first and outside the second, 0.05 outside both.
+ */
+function handRun(o0: Score['o0'], on: Score['on'], w0: Score['w0'], collateral = false): Score {
+  const noisy = on !== null;
+  return { o0, on, pt0: false, ptn: noisy ? false : null, fa0: false, fan: noisy ? false : null, co0: collateral, con: noisy ? collateral : null, bp: null, w0 };
+}
+
+/** A touched position: `runs` gives every run's scores, content and filed footing alike. */
+function handPosition(pos: number, touched: number[], runs: Score[]): PosScore {
+  return { pos, flagged: true, changed: true, touched, content: runs, filed: runs.map((r) => ({ ...r })), assignment: null, page: null, decodes: [] };
+}
+
+const untouchedPosition = (pos: number): PosScore => ({
+  pos, flagged: false, changed: false, touched: [], content: [], filed: [], assignment: null, page: null, decodes: [],
+});
+
+const placedRun = (): Score => handRun('placed', null, 0.05);
+const invisibleRun = (o0: Score['o0'] = 'refused-unanswered'): Score => handRun(o0, null, null);
+
+test('T26 one refine band decides every run, and the cross-cell run tables hold attributable runs only', async () => {
+  // Two defects, one capture. First, the refined cells were classified at the
+  // margin R1 validated (0.01 in quick) while the stages had chosen their
+  // decodes and solves at the widest band (0.05). A run the widest band
+  // re-evaluated to placed was then reported refused, beside a solve that had
+  // straddled it as placed. Second, `runs.outcomes` tallied the runs the twin
+  // refuses anyway beside the attributable ones. R1 evaluates those runs with
+  // noise and the refined cells do not, so the tables did not compare across
+  // cells. Camera 0's run 1 is the first defect: noiseless refused, noisy
+  // placed, at 0.19, inside the widest band and outside 0.01. Camera 2's
+  // touched run is the second: refused, and not attributable.
+  const { REFINE_CEILING, capturePlan, categoryOf } = await import('../src/straddle/stages.ts');
+  const { summariseCell } = await import('../src/straddle/assemble.ts');
+  const { TEST_PLAN, latenessCells } = await import('../src/straddle/stages.ts');
+  const cell = latenessCells(TEST_PLAN).find((c) => c.id === 'L-aimed-7.5');
+  assert.ok(cell !== undefined && cell.mode === 'refine' && REFINE_CEILING === 0.05);
+  const cap = {
+    t: 0,
+    rig: 0,
+    positions: [
+      handPosition(0, [0], [handRun('refused-complement', 'placed', 0.19), placedRun(), placedRun(), invisibleRun()]),
+      untouchedPosition(1),
+      // Its refusal names a broken pair, as a complement refusal does, so the
+      // broken-pair table has something of its to leave out.
+      handPosition(2, [3], [placedRun(), placedRun(), placedRun(), { ...invisibleRun('refused-complement'), bp: 0 }]),
+    ],
+  };
+  const twins = [0, 1, 2].map(handTwin);
+  const ev = {
+    plan: { ...TEST_PLAN, rigs: [0] },
+    bank: { units: { 'main:0': { width: 0, height: 0, seed: 0, twins } } },
+    solves: new Map(),
+  } as unknown as Parameters<typeof summariseCell>[0];
+  const file = { units: { 'A:main:0': { score: { cells: { [cell.id]: [cap] } } } } } as unknown as Parameters<typeof summariseCell>[2];
+  const got = summariseCell(ev, cell, file, null);
+
+  // The document reports the position by the band the stage chose by...
+  assert.deepEqual(
+    { PLACED: got.positions.content.all.PLACED, 'REFUSED-ALL': got.positions.content.all['REFUSED-ALL'], 'INVISIBLE-ONLY': got.positions.content.all['INVISIBLE-ONLY'] },
+    { PLACED: 1, 'REFUSED-ALL': 0, 'INVISIBLE-ONLY': 1 },
+    'the document classified camera 0 at another band than the stages chose by',
+  );
+  assert.equal(got.classes.P.counts['SILENT-UNSOLVED'], 1);
+  assert.equal(got.classes.P.counts.LOUD, 0);
+  assert.deepEqual(got.refineBand, { margin: 0.05, evaluation: 'refine band', runsReEvaluated: 1 });
+  // ...which is the band a solve of this capture straddles by.
+  assert.equal(categoryOf(cap.positions[0], 'content', twins[0], false), 'PLACED');
+  assert.deepEqual(capturePlan(cap, (c) => twins[c], 'A', [])?.positions, [0]);
+
+  // The cross-cell table holds the one attributable touched run; the refused
+  // invisible run is counted apart, with how it was evaluated.
+  assert.deepEqual(got.runs.outcomes, { placed: 1 }, 'a run the twin refuses anyway is in the cross-cell outcome table');
+  assert.deepEqual(got.runs.brokenPairs, {}, 'a run the twin refuses anyway is in the cross-cell broken-pair table');
+  assert.deepEqual(got.runs.notAttributable, { touched: 1, evaluatedNoisy: 0, outcomes: { 'refused-complement': 1 } });
+  assert.equal(got.runs.touched, 2);
+  assert.equal(got.runs.attributableTouched, 1);
+
+  // A checkpoint scored at another band is refused, not re-described: run 1
+  // of camera 0 at 0.30 sits outside the widest band yet carries a noisy verdict.
+  const stale = structuredClone(cap);
+  stale.positions[0].content[0] = handRun('refused-complement', 'placed', 0.3);
+  const staleFile = { units: { 'A:main:0': { score: { cells: { [cell.id]: [stale] } } } } } as unknown as Parameters<typeof summariseCell>[2];
+  assert.throws(() => summariseCell(ev, cell, staleFile, null), /refine band at 0\.05 does not ask for/);
+});
+
+test('T27 a solve withholds every run the page would not decode, and P borrows A when the plans agree', async () => {
+  // Two defects in what a capture solve is handed. First, the spec withheld
+  // only a MIXED position's refused runs. A collateral refusal inside a PLACED
+  // position (an untouched run the page refuses because a neighbour's slip
+  // moved its bookends) was still handed to the treated solve, rendered clean,
+  // though the page decodes nothing of a run it refuses. Second, the lateness
+  // cell solves under policy A alone. Its SILENT captures, which hold no MIXED
+  // position, were reported unsolved under P, though P's plan for them is A's
+  // plan: the same positions and the same exclusions, so the same solve id.
+  const { capturePlan, solvePlan, solveId } = await import('../src/straddle/stages.ts');
+  const twins = [0, 1, 2].map(handTwin);
+  const twinOf = (c: number) => twins[c];
+  const refusedClean = ['0.3', '1.3', '2.3'];
+
+  // Camera 0 PLACED, its untouched run 2 refused by the bookends (collateral);
+  // camera 1 REFUSED-ALL; camera 2 untouched. No MIXED position.
+  const loudSilent = {
+    t: 7,
+    rig: 0,
+    positions: [
+      handPosition(0, [0], [placedRun(), placedRun(), handRun('refused-bookends-kind', null, 'x', true), invisibleRun()]),
+      handPosition(1, [1], [placedRun(), handRun('refused-complement', null, 0.4), placedRun(), invisibleRun()]),
+      untouchedPosition(2),
+    ],
+  };
+  const a = capturePlan(loudSilent, twinOf, 'A', refusedClean);
+  assert.deepEqual(a, { positions: [0], exclude: ['0.2', '0.3', '1.3', '2.3'] }, 'the collateral refusal inside the PLACED position was handed to the solve');
+  assert.deepEqual(capturePlan(loudSilent, twinOf, 'P', refusedClean), a);
+  const lateness = solvePlan(loudSilent, twinOf, refusedClean, ['A']);
+  assert.equal(lateness.pIsA, true, 'P was left unsolved where its plan is A\'s');
+  assert.equal(lateness.p, null, 'P was planned as a second solve of the same thing');
+  const spec = (plan: { positions: number[]; exclude: string[] }) => solveId({
+    kind: 'capture', rig: 0, variant: 'reduced', straddle: `L-aimed-7.5/t7/[${plan.positions.join(',')}]`, exclude: plan.exclude, captureSeed: null,
+  });
+  assert.equal(spec(capturePlan(loudSilent, twinOf, 'P', refusedClean) as NonNullable<typeof a>), spec(a as NonNullable<typeof a>));
+
+  // Camera 0 MIXED, camera 1 PLACED: A straddles both and withholds the
+  // MIXED position's refused run, P straddles camera 1 alone. The plans
+  // differ, so P borrows nothing: unsolved where only A was asked for,
+  // solved on its own where both were.
+  const mixed = {
+    t: 8,
+    rig: 0,
+    positions: [
+      handPosition(0, [0, 1], [placedRun(), handRun('refused-complement', null, 0.4), placedRun(), invisibleRun()]),
+      handPosition(1, [2], [placedRun(), placedRun(), placedRun(), invisibleRun()]),
+      untouchedPosition(2),
+    ],
+  };
+  assert.deepEqual(capturePlan(mixed, twinOf, 'A', refusedClean), { positions: [0, 1], exclude: ['0.1', '0.3', '1.3', '2.3'] });
+  assert.deepEqual(capturePlan(mixed, twinOf, 'P', refusedClean), { positions: [1], exclude: refusedClean });
+  assert.deepEqual(solvePlan(mixed, twinOf, refusedClean, ['A']), { a: capturePlan(mixed, twinOf, 'A', refusedClean), p: null, pIsA: false });
+  assert.deepEqual(solvePlan(mixed, twinOf, refusedClean, ['A', 'P']).p, capturePlan(mixed, twinOf, 'P', refusedClean));
+
+  // The borrow decided is the borrow applied. With `pIsA` right and the
+  // answers still solved plan by plan, P went back to unsolved and every
+  // assertion above still passed, because solveCapture's last lines sat below
+  // every test. A stub solve stands in for runScenario and counts its calls.
+  const { policyAnswers } = await import('../src/straddle/stages.ts');
+  const answering = (plans: Parameters<typeof policyAnswers>[0]) => {
+    const solved: string[] = [];
+    const got = policyAnswers(plans, (plan) => {
+      solved.push(plan.positions.join(','));
+      return { treated: `t${solved.length}`, twin: 'x' };
+    });
+    return { ...got, solved };
+  };
+  const borrowed = answering(lateness);
+  assert.deepEqual(borrowed.solved, ['0'], "A's plan was not solved exactly once");
+  assert.ok(borrowed.p !== null && borrowed.p === borrowed.a, "P was not answered by A's own solve where its plan is A's");
+  const own = answering(solvePlan(mixed, twinOf, refusedClean, ['A', 'P']));
+  assert.deepEqual(own.solved, ['0,1', '1']);
+  assert.deepEqual([own.a?.treated, own.p?.treated], ['t1', 't2'], 'P borrowed a plan that is not its own');
+  const unasked = answering(solvePlan(mixed, twinOf, refusedClean, ['A']));
+  assert.deepEqual([unasked.solved, unasked.p], [['0,1'], null], 'P was solved where it was not asked for and its plan is not A\'s');
+
+  // And solveCapture applies it, as the lateness cell calls it (policy A
+  // alone). Every solve it may ask for is already on record, so solveOnce
+  // answers from ctx.solves and nothing is rendered; a solve it was not
+  // expected to ask for would reach runScenario with a rig of nothing and fail.
+  const { TEST_PLAN, latenessCells, memoryStore, runContext, solveCapture } = await import('../src/straddle/stages.ts');
+  const cell = latenessCells(TEST_PLAN).find((c) => c.id === 'L-aimed-7.5');
+  assert.ok(cell !== undefined);
+  const ctx = runContext(TEST_PLAN, memoryStore(), () => {});
+  const planA = a as NonNullable<typeof a>;
+  const known = {
+    twin: solveId({ kind: 'twin', rig: 0, variant: 'reduced', straddle: 'none', exclude: refusedClean, captureSeed: null }),
+    withheld: solveId({ kind: 'twin', rig: 0, variant: 'reduced', straddle: 'none', exclude: planA.exclude, captureSeed: null }),
+    treated: solveId({ kind: 'capture', rig: 0, variant: 'reduced', straddle: `${cell.id}/t7/[0]`, exclude: planA.exclude, captureSeed: null }),
+  };
+  for (const id of Object.values(known)) ctx.solves.set(id, { id } as never);
+  const rc = { unit: 'main:0', bank: { cameras: [0, 1, 2], height: 1 }, twins: new Map(twins.map((t) => [t.camera, t])) };
+  const answered = solveCapture(ctx, rc as never, cell, loudSilent, ['A']);
+  const pair = { treated: known.treated, twin: known.withheld };
+  assert.deepEqual(answered, { cell: cell.id, t: 7, rig: 0, a: pair, p: pair, pIsA: true }, 'the lateness cell left P unsolved beside the solve that answers it');
+});
+
+test("T28 the R audit is EXPERIMENT-9's own count, and at its trial count its committed file", async () => {
+  // The audit is what holds this experiment's replay to the shots EXPERIMENT-9
+  // counted. It once restated runTrial's and summarise's accounting instead of
+  // calling them, and a restated reducer can drift from the one it copies.
+  // It calls runTrial now, on the seed the re-scoring draws its shots under,
+  // and keeps only the reduction over trials. Here that reduction is held to
+  // EXPERIMENT-9's own summarise on every audited cell at a short count, and
+  // the headline cell to the committed file at 2000 trials, exactly.
+  const fs = await import('node:fs');
+  const { TEST_PLAN, recountCell, stageAudit } = await import('../src/straddle/stages.ts');
+  const { TRIALS } = await import('../src/straddle/design.ts');
+  assert.ok(HEADLINE !== undefined);
+  const committed = JSON.parse(fs.readFileSync(new URL('../../../experiments/experiment-9.json', import.meta.url), 'utf8')) as {
+    cells: Record<string, unknown>[];
+  };
+  // Every audited cell at 60 trials: stageAudit throws unless each recount is
+  // summarise's own figures, and 60 is not EXPERIMENT-9's count, so no cell is
+  // compared with the file here.
+  const audit = stageAudit({ ...TEST_PLAN, auditTrials: 60 });
+  assert.equal(audit.length, 18);
+  for (const a of audit) assert.ok(a.summarised && a.committed === null && !a.equal, JSON.stringify(a));
+  assert.ok(audit.some((a) => a.recount.capturesTouched > 0), 'no audited cell touched a capture in 60 trials');
+
+  const cell = committed.cells.find(
+    (c) => c.key === HEADLINE.key && c.startPhase === 'uniform' && c.dwellS === DWELL_S && c.exposureS === EXPOSURE_S,
+  );
+  assert.ok(cell !== undefined && cell.trials === TRIALS);
+  const { recount } = recountCell(HEADLINE, 'uniform', EXPOSURE_S, TRIALS);
+  assert.deepEqual(recount, Object.fromEntries(Object.keys(recount).map((f) => [f, cell[f]])), 'the headline replay is not the committed cell');
+  assert.equal(recount.capturesTouched, 728);
+});
+
+test('T29 a stage that starts while another is appending reads only whole solve lines', async () => {
+  // Pose, rescore and lateness can run as three processes sharing
+  // solves.jsonl, one write per line. Lines never interleave, but a stage that
+  // starts while another is mid-append can read a line cut off at the end of
+  // the file. A stress test of three appending processes against a reading
+  // one saw it 2 times in 385,621 reads, and JSON.parse stopped the stage that
+  // was starting. The cut-off tail is left for the next read, and nothing
+  // else is: a whole line that does not parse is still an error.
+  const { CHECKPOINT_SCHEMA, TEST_PLAN, loadSolves, memoryStore, runContext } = await import('../src/straddle/stages.ts');
+  const store = memoryStore();
+  const ctx = runContext(TEST_PLAN, store, () => {});
+  const line = (id: string) => JSON.stringify({ schema: CHECKPOINT_SCHEMA, fingerprint: ctx.fingerprint, id, spec: null });
+  store.append('solves.jsonl', line('twin/one'));
+  store.append('solves.jsonl', line('twin/two'));
+  const third = line('capture/three');
+  store.write('solves.jsonl', `${store.read('solves.jsonl')}${third.slice(0, 40)}`);
+  loadSolves(ctx);
+  assert.deepEqual([...ctx.solves.keys()], ['twin/one', 'twin/two'], 'a line still being written was read');
+  store.write('solves.jsonl', `${store.read('solves.jsonl')}${third.slice(40)}\n`);
+  loadSolves(ctx);
+  assert.deepEqual([...ctx.solves.keys()], ['twin/one', 'twin/two', 'capture/three'], 'the finished line was not read');
+  store.append('solves.jsonl', third.slice(0, 40));
+  assert.throws(() => loadSolves(ctx), SyntaxError, 'a whole line that does not parse was passed over');
+});
+
+test('T30 asking for the document and not getting one is a failure', async () => {
+  // `--stage assemble` with a stage still missing said "not writing a results
+  // file" and exited 0, as a single measuring stage does. The full run's
+  // plan ends by assembling after three stages run side by side, so a script
+  // following it would carry on as if the document were new. The checkpoint
+  // root here is an empty directory, so nothing can be assembled from it and
+  // nothing may be written into it.
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { main } = await import('../src/straddle/cli.ts');
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'exp10-t30-'));
+  try {
+    assert.equal(main(['--quick', '--stage', 'assemble'], work), 1, 'an assembly that wrote nothing reported success');
+    assert.deepEqual(fs.readdirSync(work, { recursive: true }), [], 'an assembly with nothing to assemble wrote something');
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
 });
