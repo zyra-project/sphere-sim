@@ -56,7 +56,7 @@ import { DEFAULT_FREE_FLAGS } from '../../solver/src/bundle.ts';
 import { buildMeshIndex, meshSegmenter, type MeshIndex } from '../../solver/src/mesh.ts';
 import type { SimulatedCamera } from './camera.ts';
 import { placeCameras } from './camera.ts';
-import type { CaptureResult } from './capture.ts';
+import type { CaptureOptions, CaptureResult } from './capture.ts';
 import { captureAndDecode } from './capture.ts';
 import type { PatternPlan } from './patterns.ts';
 import { grayBitsForCamera, planFrames, previewFrameIndex } from './patterns.ts';
@@ -373,14 +373,63 @@ export interface RunOptions {
    * their edges". Undefined in the bench itself.
    */
   meshNormal?: 'facet' | 'smooth';
+  /**
+   * Photograph and solve with this pattern plan rather than the one
+   * `planPatternFor` derives from the geometry. Undefined everywhere in the
+   * bench.
+   *
+   * EXPERIMENT-10 forces the page's own plan, because what a straddle costs
+   * depends on the sequence the page actually shows, and `planPatternFor`
+   * picks a finer one for s01 than the page offers. `projPxPerCamPx` is still
+   * the derived plan's, because it describes the geometry and not the plan.
+   */
+  plan?: PatternPlan;
+  /**
+   * The seed of the capture alone: every pair's sensor noise and the handheld
+   * motion. Undefined — `scenario.seed` — everywhere in the bench.
+   *
+   * The world, the operator's camera guess, the floor references and the
+   * solver's own seed all still come from `scenario.seed`, so two runs that
+   * differ only here photograph one rig from one set of tripods with fresh
+   * photons, and solve from one start. That is a re-shoot, and EXPERIMENT-10
+   * needs one to know how far the seams move when nothing is wrong at all.
+   */
+  captureSeed?: number;
+  /**
+   * (camera, projector) pairs the SOLVE is not given. Undefined everywhere in
+   * the bench.
+   *
+   * They are still photographed and decoded, and `ScenarioResult.capture`
+   * still carries them, so what was withheld can be audited. EXPERIMENT-10
+   * withholds the runs the page's complement check would refuse, because the
+   * page decodes only the runs it placed. Not established: scoring reads
+   * `capture.cameraPoseAtEpoch`, which is still averaged over every decoded
+   * pair. On a tripod that is the static pose whichever pairs are kept; under
+   * handheld motion it is not the epoch of what the solve saw.
+   */
+  excludePairs?: readonly { camera: number; projector: number }[];
+  /** Handed to `captureAndDecode`; see `CaptureOptions.onCapture`. Undefined in the bench. */
+  onCapture?: CaptureOptions['onCapture'];
 }
 
-export function runScenario(scenario: Scenario, options: RunOptions): ScenarioResult {
-  const t0 = Date.now();
-  const world = buildWorld(scenario);
-  const { plan, projPxPerCamPx } = planPatternFor(world, scenario, options.preset);
-  const tBuild = Date.now();
-
+/**
+ * The capture options `runScenario` photographs a scenario with — conditions,
+ * body, seed, decode and preview — exactly.
+ *
+ * Its own function so that an experiment can photograph a scenario the way the
+ * bench does without solving it, and so that there is one statement of how the
+ * bench photographs a scenario rather than a copy in each experiment that
+ * nothing holds to this one. EXPERIMENT-10 renders its clean frames, its twins
+ * and its straddled captures through it. Every field an experiment can move is
+ * an optional `RunOptions` or `DegradationSettings` field the bench leaves
+ * unset, so the bench's own capture is the literal it always was.
+ */
+export function captureOptionsFor(
+  world: ScenarioWorld,
+  scenario: Scenario,
+  options: RunOptions,
+  plan: PatternPlan,
+): CaptureOptions {
   // One segmenter, named once, so the reassertion inside `decode` cannot drift
   // from the thing it reasserts.
   const geometricSegmentation =
@@ -397,7 +446,7 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
             marginFrac: options.segmentMarginFrac ?? DEFAULT_SEGMENTATION_MARGIN,
           });
 
-  const capture = captureAndDecode(world.truthRig, world.cameras, {
+  return {
     plan,
     conditions: {
       ambient: scenario.degradation.ambient,
@@ -416,11 +465,14 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
       // independent of the GEOMETRIC one below, which is a ray cast and now has
       // a mesh implementation.
       segmentImage: options.segmentImage === true && world.surface === null ? {} : null,
+      // Null unless an experiment set one; see `DegradationSettings.straddle`.
+      straddle: scenario.degradation.straddle ?? null,
     },
     // The body the cameras photograph. Null — the sphere — for every archetype
     // the twelve-scenario baseline was recorded with.
     surface: world.surface,
-    seed: scenario.seed,
+    // `scenario.seed` unless an experiment is re-shooting; see `RunOptions.captureSeed`.
+    seed: options.captureSeed ?? scenario.seed,
     decode: {
       pixelStride: 1,
       maxCorrespondences: options.preset.maxCorrespondencesPerPair,
@@ -456,7 +508,24 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
     // show the sphere's curvature bending it.
     previewPairs: [{ camera: 0, projector: 0 }],
     previewFrame: options.writeArtifacts ? previewFrameIndex(plan) : -1,
-  });
+    // Null unless an experiment is watching; see `CaptureOptions.onCapture`.
+    onCapture: options.onCapture ?? null,
+  };
+}
+
+export function runScenario(scenario: Scenario, options: RunOptions): ScenarioResult {
+  const t0 = Date.now();
+  const world = buildWorld(scenario);
+  const planned = planPatternFor(world, scenario, options.preset);
+  const plan = options.plan ?? planned.plan;
+  const projPxPerCamPx = planned.projPxPerCamPx;
+  const tBuild = Date.now();
+
+  const capture = captureAndDecode(
+    world.truthRig,
+    world.cameras,
+    captureOptionsFor(world, scenario, options, plan),
+  );
   const tCapture = Date.now();
 
   // The operator's guess at where each tripod stood. Right side of the sphere,
@@ -516,12 +585,23 @@ export function runScenario(scenario: Scenario, options: RunOptions): ScenarioRe
         }
       : world.solverNominal;
 
+  // Every decoded pair unless an experiment withheld some; see
+  // `RunOptions.excludePairs`. The bench's own solve is handed the capture's
+  // own array, not a copy of it.
+  const excluded = options.excludePairs ?? [];
+  const solveCorrespondences =
+    excluded.length === 0
+      ? capture.correspondences
+      : capture.correspondences.filter(
+          (c) => !excluded.some((q) => q.camera === c.camera && q.projector === c.projector),
+        );
+
   let error: string | null = null;
   try {
     solver = solve({
       nominal: solverNominal,
       cameras: cameraInputs,
-      correspondences: capture.correspondences,
+      correspondences: solveCorrespondences,
       floorReferences,
       options: {
         seed: scenario.seed,

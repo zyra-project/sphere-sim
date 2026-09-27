@@ -104,6 +104,120 @@ export function straddles(open: number, exposure: number, dwell: number): boolea
   return next < open + exposure;
 }
 
+/** One emitter step a photograph integrated, and for what share of its exposure. */
+export interface BlendPart {
+  /**
+   * The emitter step, numbered from the position's first. Negative before Play
+   * and `FRAMES_PER_POSITION` or more once the sequence has ended: what the
+   * page had lit at those instants is the caller's question, not this model's.
+   */
+  step: number;
+  /**
+   * The overlap with that step divided by the exposure. Positive, and one
+   * shot's parts sum to 1 within rounding.
+   */
+  weight: number;
+}
+
+/**
+ * What the shutter integrated, where {@link straddles} says only whether it saw a change.
+ *
+ * The overlap of `[open, open + exposureS)` with each emitter step
+ * `[T_m, T_{m+1})`, divided by `exposureS`, in step order. An overlap of no
+ * length is not a part, so a shot that straddles nothing is one part of weight
+ * 1, and a shot that closes as the projector switches is not two.
+ *
+ * `T_0 = 0` is Play. After it `T_m = m·(dwellS + lateS) + jitter(m)`, and before
+ * it, where nothing is refreshing, `T_m = m·(dwellS + lateS)`. The two terms are
+ * the two ways a real emitter departs from this experiment's perfect timer (see
+ * design.ts): `lateS` is how late every step runs, and it accumulates because
+ * `emit.ts` re-arms its `setTimeout` only after painting; `jitter` is a wait
+ * that delays one step alone, like a display refresh, and does not. `jitter`
+ * is called more than once for a step, so it must be a pure function of it.
+ *
+ * With `lateS = 0` and no jitter this is straddles() made continuous, and it is
+ * held to straddles()'s arithmetic rather than to the formula's: the step
+ * holding `open` is `Math.floor(open / dwellS)`, and its end is written
+ * `m·dwellS + dwellS`, which rounds differently from `(m + 1)·dwellS` at a
+ * dwell that is not a power of two. So `parts.length > 1` exactly when
+ * straddles() reports a straddle, and a re-scoring of EXPERIMENT-9 starts from
+ * the photographs EXPERIMENT-9 counted, not from a set that differs by rounding.
+ *
+ * "Exactly" is established at a dwell that is a power of two, where every one of
+ * those operations is exact: 2 s, the page's default and the dwell EXPERIMENT-10
+ * replays, and 0.5, 1 and 4 s. At 0.2 s it is not. There straddles() can put a
+ * boundary exactly ON the opening instant (a shot at 1.2 s is one), and so
+ * counts a shot that opened as the step changed. This function puts that shot
+ * wholly in the new step, because a part of no length is not a part.
+ */
+export function exposureBlend(
+  open: number,
+  exposureS: number,
+  dwellS: number,
+  lateS = 0,
+  jitter: ((m: number) => number) | null = null,
+): BlendPart[] {
+  const period = dwellS + lateS;
+  // Checked because none of these fails on its own: an exposure of zero comes
+  // back as a weight of NaN, a step of no length as a part on step Infinity,
+  // and a negative one never comes back at all.
+  if (
+    !Number.isFinite(open) ||
+    !Number.isFinite(exposureS) ||
+    !Number.isFinite(period) ||
+    exposureS <= 0 ||
+    period <= 0
+  ) {
+    throw new Error(
+      `exposureBlend: open ${open} s, exposure ${exposureS} s and step ${period} s ` +
+        'must be finite, the last two positive',
+    );
+  }
+  // T_{m+1}: the instant step m gives way to step m + 1.
+  const end = (m: number): number => {
+    const t = m * period + period;
+    if (jitter === null || m < 0) return t;
+    const wait = jitter(m + 1);
+    // A wait delays its step. It cannot bring the step forward, and one as long
+    // as a step would put two steps out of order; both are caller bugs, and both
+    // would otherwise come back as weights that look plausible.
+    if (!(wait >= 0 && wait < period)) {
+      throw new Error(`exposureBlend: step ${m + 1} waits ${wait} s, outside [0, ${period}) s`);
+    }
+    return t + wait;
+  };
+
+  let step = Math.floor(open / period);
+  // Only a wait can hold a step back past the opening instant, so without one
+  // the step is straddles()'s own `floor`, even where rounding put its start an
+  // ulp after `open`.
+  if (jitter !== null) while (end(step - 1) > open) step--;
+
+  const close = open + exposureS;
+  const parts: BlendPart[] = [];
+  let from = open;
+  let next = end(step);
+  // Strictly inside, as in straddles(): a boundary at the close starts nothing
+  // the shutter saw.
+  while (next < close) {
+    // A step that ends where the last part stopped, or before, is not a part.
+    // It was on screen for no time the arithmetic can represent. Two roundings
+    // make one. The docblock's 0.2 s case puts the opening step's end ON
+    // `open`, as any period that is not a power of two can, a late one
+    // included. And a wait just short of a whole step passes the range check
+    // above, yet can round its step's start onto the next step's start, or an
+    // ulp past it. Pushed, either would come back as a weight of 0 or of -1e-15.
+    if (next > from) {
+      parts.push({ step, weight: (next - from) / exposureS });
+      from = next;
+    }
+    step++;
+    next = end(step);
+  }
+  parts.push({ step, weight: (close - from) / exposureS });
+  return parts;
+}
+
 /**
  * Where the first shutter opens within the dwell, per {@link StartPhase}.
  *
@@ -123,8 +237,31 @@ export function startPhase(phase: StartPhase, dwellS: number, rng: BenchRng): nu
   return dwellS / 2 + rng.uniform(-dwellS / 4, dwellS / 4);
 }
 
+/** One release of the shutter: which photograph of the folder it is, and when it opened. */
+export interface ShotTiming {
+  /** The camera position, of {@link POSITIONS}. Each is a fresh start of the emitter. */
+  position: number;
+  /**
+   * The step the photograph is filed as: its place among the position's
+   * releases, 0 to `FRAMES_PER_POSITION - 1`. That is what the folder says it
+   * holds, which is not always what it integrated; see {@link exposureBlend}.
+   */
+  filedStep: number;
+  /** When the shutter opened, in seconds on the emitter's clock from this position's Play. */
+  open: number;
+}
+
 /**
- * One capture, frame by frame.
+ * Every release of one capture, on the emitter's clock: {@link runTrial}'s draw
+ * loop without its accounting.
+ *
+ * Extracted from runTrial, not copied beside it, so that an experiment asking
+ * what these photographs CONTAIN replays exactly the shots this one counted:
+ * the same seed and the same draws in the same order. That order is the sign
+ * once per capture, then for each position its start and
+ * `FRAMES_PER_POSITION` jitters. A copy would have to be kept in step by hand,
+ * and the first divergence would re-score captures EXPERIMENT-9 never drew
+ * while reporting them as its own.
  *
  * The camera's clock runs at `rate` times the emitter's, so an interval it
  * counts as `dwell` takes `dwell / rate` of EMITTER time — division, not
@@ -132,6 +269,52 @@ export function startPhase(phase: StartPhase, dwellS: number, rng: BenchRng): nu
  * drift direction; review caught it, and it is not cosmetic, because an
  * exposure extends forward from its opening instant and so the two directions
  * meet a boundary after different amounts of travel.
+ *
+ * Returned in draw order, which is position-major, so shot `k` is frame `k` of
+ * the capture. Empty for a tethered arm: there is one clock, so there is no
+ * second one to place a shutter on.
+ */
+export function shotTimings(arm: Arm, phase: StartPhase, dwellS: number, seed: number): ShotTiming[] {
+  if (arm.tethered) return [];
+
+  const rng = makeBenchRng(seed);
+  // Sign per capture: two crystals are equally likely to be fast or slow
+  // relative to each other, and the margins either side of a mid-dwell shot are
+  // not equal, so sampling one sign measured half the band.
+  //
+  // Drawn ONCE for the capture and not per position, because it is a property
+  // of the two crystals rather than of the sitting. Moving the tripod does not
+  // give the camera a different oscillator.
+  const signed = rng.nextFloat() < 0.5 ? -arm.driftPpm : arm.driftPpm;
+  const rate = 1 + signed / 1e6;
+
+  const shots: ShotTiming[] = [];
+  for (let pos = 0; pos < POSITIONS; pos++) {
+    // A fresh start of the emitter, so a fresh phase and no inherited drift:
+    // `advance()` stopped the sequence at the end of the last position and the
+    // operator pressed start again after moving the tripod. Both resets follow
+    // from the same fact and neither is a modelling convenience.
+    const start = startPhase(phase, dwellS, rng);
+
+    for (let j = 0; j < FRAMES_PER_POSITION; j++) {
+      // The camera's j-th release of THIS position, on the emitter's clock.
+      const nominal = (j * dwellS) / rate + start;
+      const open = nominal + (arm.jitterS > 0 ? rng.normal(0, arm.jitterS) : 0);
+      shots.push({ position: pos, filedStep: j, open });
+    }
+  }
+  return shots;
+}
+
+/**
+ * One capture, frame by frame: {@link shotTimings}'s releases, counted.
+ *
+ * Only the accounting is here. The draws moved into shotTimings so that
+ * EXPERIMENT-10 could replay them, and a move is safe only if nothing moved
+ * with it. `tether.test.ts` checks the draws against the loop as it stood
+ * before the move, and the headline cell against the committed
+ * `experiments/experiment-9.json`. Nothing in CI regenerates that file, so those
+ * two tests are the only automatic check that the move changed nothing.
  */
 export function runTrial(
   arm: Arm,
@@ -154,16 +337,7 @@ export function runTrial(
     };
   }
 
-  const rng = makeBenchRng(seed);
-  // Sign per capture: two crystals are equally likely to be fast or slow
-  // relative to each other, and the margins either side of a mid-dwell shot are
-  // not equal, so sampling one sign measured half the band.
-  //
-  // Drawn ONCE for the capture and not per position, because it is a property
-  // of the two crystals rather than of the sitting. Moving the tripod does not
-  // give the camera a different oscillator.
-  const signed = rng.nextFloat() < 0.5 ? -arm.driftPpm : arm.driftPpm;
-  const rate = 1 + signed / 1e6;
+  const shots = shotTimings(arm, phase, dwellS, seed);
 
   let straddled = 0;
   let longestBurst = 0;
@@ -173,20 +347,12 @@ export function runTrial(
   const touched = new Set<number>();
 
   for (let pos = 0; pos < POSITIONS; pos++) {
-    // A fresh start of the emitter, so a fresh phase and no inherited drift:
-    // `advance()` stopped the sequence at the end of the last position and the
-    // operator pressed start again after moving the tripod. Both resets follow
-    // from the same fact and neither is a modelling convenience.
-    const start = startPhase(phase, dwellS, rng);
     let burst = 0;
     let straddledHere = 0;
 
     for (let j = 0; j < FRAMES_PER_POSITION; j++) {
       const k = pos * FRAMES_PER_POSITION + j;
-      // The camera's j-th release of THIS position, on the emitter's clock.
-      const nominal = (j * dwellS) / rate + start;
-      const open = nominal + (arm.jitterS > 0 ? rng.normal(0, arm.jitterS) : 0);
-      if (straddles(open, exposureS, dwellS)) {
+      if (straddles(shots[k].open, exposureS, dwellS)) {
         straddled++;
         straddledHere++;
         burst++;

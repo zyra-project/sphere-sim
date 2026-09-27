@@ -248,6 +248,22 @@ export interface CameraPlacementOptions {
   rollJitterDeg: number;
   /** Peak-to-peak variation in height across the set, metres. */
   heightSpreadM: number;
+  /**
+   * Turns the whole set about the sphere's axis, degrees. Absent is 0, which is
+   * every archetype and every published number.
+   *
+   * It exists because where the cameras stand against the projectors is a
+   * variable for EXPERIMENT-10, not a constant: what a straddled photograph
+   * costs depends on which projectors a camera sees and how obliquely, and the
+   * placement below always puts three cameras at 55.7, 175.7 and 295.7 degrees
+   * before jitter — the second 4.3 degrees off the projector axis at 180. Three
+   * cameras 120 degrees apart against four projectors 90 apart repeat every 30
+   * degrees, so offsets in [0, 30) reach every arrangement.
+   *
+   * It joins the base azimuth and draws nothing, so an offset set is the same
+   * set turned: every jitter draw, height and distance is unchanged.
+   */
+  azimuthOffsetDeg?: number;
 }
 
 /**
@@ -280,7 +296,7 @@ export function placeCameras(
 ): SimulatedCamera[] {
   const out: SimulatedCamera[] = [];
   for (let i = 0; i < opts.count; i++) {
-    const baseAz = (360 * i) / opts.count + 25.714 + 90 / Math.max(1, opts.count);
+    const baseAz = (360 * i) / opts.count + 25.714 + 90 / Math.max(1, opts.count) + (opts.azimuthOffsetDeg ?? 0);
     const az = (baseAz + rng.normal(0, opts.aimJitterDeg)) * DEG2RAD;
     // Alternate above and below the nominal height so the set is never planar.
     const heightOffset =
