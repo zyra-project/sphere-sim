@@ -129,15 +129,18 @@ calibration.
       half a dwell after you hear a shot** — one second after a shot, at a
       2-second dwell. You are aiming the next shutter at the middle of the white
       frame. This one line is the cheapest thing on this card. Without it,
-      **one capture in three has photographs taken mid-change** — usually a
-      whole camera position of them. Given a reader that can place runs —
-      today's page cannot — most of those are refused at your desk, which is a
-      return trip, and most of what passes is not harmless: a small smear moves
-      the seams several times as far as a re-shoot does. With it, none of 2000
-      simulated captures did — but only while the page runs less than about
-      3.50 to 3.70 ms late per step, and the only figures for that lateness,
-      from a headless browser, are 7.5 and about 9.3 ms. **So aim: it is
-      necessary, not yet sufficient.** (Part 4, *Starting the run*)
+      and with a perfect timer, **one capture in three has photographs taken
+      mid-change** — usually a whole camera position of them; with the page
+      7.5 ms late per step, as in a headless browser, most do, and the straddle
+      sweeps across a position instead of covering it whole (Part 4). Given a
+      reader that can place runs — today's page cannot — most of those are
+      refused at your desk, which is a return trip, and most of what passes is
+      not harmless: a small smear moves the seams several times as far as a
+      re-shoot does. With it, none of 2000 simulated captures did — but only
+      while the page runs less than about 3.50 to 3.70 ms late per step, and
+      the only figures for that lateness, from a headless browser, are 7.5 and
+      about 9.3 ms. **So aim: it is necessary, not yet sufficient.**
+      (Part 4, *Starting the run*)
 - [ ] **Then do not touch anything.** 34 frames per projector — 136 and about
       4½ minutes on a four-projector rig at a 2-second dwell; the page shows the
       count for yours. The tone marks each step, so you can hear that the shutter
