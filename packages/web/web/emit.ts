@@ -920,9 +920,9 @@ function loadPlanFile(file: File): void {
         `raster, ${m.projectors} projectors` +
         (m.written === '' ? '.' : `, written ${m.written}.`) +
         ` Hand in the whole camera position — every projector's run, back to back, in the ` +
-        `order they were shot, with every photograph kept — and set its camera number before ` +
-        `you read it. Each position you read is kept until another plan file is loaded, and ` +
-        `the report covers them all.` +
+        `order they were shot — and never delete a photograph from it, a spoiled run included. ` +
+        `Set its camera number before you read it. Each position you read is kept until another ` +
+        `plan file is loaded, and the report covers them all.` +
         letGo();
       readNoteEl.dataset.smoke = 'plan-read';
       syncReadback();
