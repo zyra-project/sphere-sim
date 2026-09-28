@@ -625,6 +625,13 @@ test('projector numbers are never wrong: every unseen set, pre-roll, trailing da
             folders++;
             seenRuns += seen.length;
             placedRuns += r.usableProjectors.length;
+            // A refusal is always in words, and only a dark slot is out of view.
+            if (r.problems.some((x) => x.length === 0) || (!r.ok && r.problems.length === 0)) {
+              assert.fail(`unseen [${unseen.map((p) => p + 1)}], fault ${JSON.stringify(fault)}: refused without words`);
+            }
+            for (const q of r.unseenProjectors) {
+              if (!unseen.includes(q)) assert.fail(`unseen [${unseen.map((p) => p + 1)}]: projector ${q + 1} said out of view`);
+            }
             const wrong = misplaced(r.assignment, truth);
             if (wrong > 0) {
               assert.fail(
@@ -1015,6 +1022,66 @@ test('a re-shot run appended to its position replaces the original, and one that
     assert.deepEqual(r.usableProjectors, []);
     assert.match(r.problems[0] ?? '', /This looks like part of a position: a re-shoot of one projector handed in on its own/);
     assert.match(r.problems[0] ?? '', /added to the end of that camera position's folder/);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Where the count stops
+// ---------------------------------------------------------------------------
+
+test('a stretch between runs that is not whole runs ends the count there, and a run shot out of turn ends it everywhere', () => {
+  // Counting is how a run gets its projector number. Past a stretch that is
+  // not whole runs the count is lost: the runs before it keep their numbers,
+  // and the projectors after it are neither out of view nor broken — nothing
+  // is known of them, and that is said once. And a run shot again two
+  // projectors on is inside the position, so not a re-shoot, and not two
+  // neighbours a camera cannot tell apart either: nothing is filed.
+  const s = scene(PAGE, 64, { azimuth: 0 });
+  const R = s.specs.length;
+  const expected = expectedOf(PAGE);
+  const shoot = camera(s, 19);
+  // Two photographs before Play and none after the black, so the end's count
+  // is short by the stretch's four lost photographs and more: the count after
+  // the last numbered run is allowed the stretch's own excess.
+  const third = 2 + 2 * R;
+  const cases: [string, (shots: Shot[]) => void][] = [
+    ['four photographs of projector 3 lost', (shots) => void shots.splice(third + 8, 4)],
+    [
+      'six of projector 3 shot twice',
+      (shots) => void shots.splice(third + 10, 6, ...shots.slice(third + 10, third + 16).flatMap((x) => [x, x])),
+    ],
+  ];
+  for (const [label, edit] of cases) {
+    const shots = position(s, { leading: 2 });
+    edit(shots);
+    const { prints, truth } = shoot(shots);
+    const r = indexPosition(prints, expected);
+    assert.equal(misplaced(r.assignment, truth), 0, label);
+    assert.deepEqual(r.usableProjectors, [0, 1], label);
+    assert.deepEqual(r.unseenProjectors, [], `${label}: a projector whose run was found is not out of view`);
+    assert.deepEqual(r.barelySeenProjectors, [], label);
+    assert.doesNotMatch([...r.problems, ...r.notes].join(' | '), /not in this camera's view|Re-shoot projector/, label);
+    assert.equal(r.problems.length, 1, `${label}: ${r.problems.join(' | ')}`);
+    assert.match(r.problems[0], /^Photographs 71–\d+ lie between two runs/, label);
+    // Six photographs shot twice can put a run's start six photographs in,
+    // where a Gray pair stands in for its white and black: found, not numbered.
+    assert.match(r.problems[0], /: the (run|2 runs) found after it (is|are) not used, and projectors 3 and 4 are not decoded\./, label);
+    assert.match(r.problems[0], /Shoot the whole camera position again, into a folder of its own/, label);
+  }
+  // Projector 1's run again where projector 3's belongs.
+  {
+    const shots = position(s, { trailing: 1 });
+    shots.splice(2 * R, R, ...run(s, 0));
+    const { prints, truth } = shoot(shots);
+    const r = indexPosition(prints, expected);
+    assert.equal(misplaced(r.assignment, truth), 0);
+    assert.equal(r.ok, false);
+    assert.deepEqual(r.usableProjectors, []);
+    assert.ok(r.problems.length > 0 && r.problems.every((x) => x.length > 0), 'refused in words');
+    assert.match(
+      r.problems[0],
+      /^The run at photographs 69–102 shows the same white and black as the run at photographs 1–34, and no reading of the folder fits the two/,
+    );
   }
 });
 

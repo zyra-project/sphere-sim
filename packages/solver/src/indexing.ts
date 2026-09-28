@@ -1852,7 +1852,9 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * Between numbered runs, a stretch of `R` dark photographs is a projector the
  * camera could not see — a note, never a refusal — and one with light in it is
  * a run that could not be found, refused loudly with the projector it belongs
- * to.
+ * to. A stretch that is not within {@link SLOT_SLACK} of whole runs ends the
+ * count: the runs before it keep their numbers, and nothing after it is used
+ * or said to be out of view.
  *
  * ## Re-shoots
  *
@@ -1881,9 +1883,16 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * Everything the complement check cannot see, it cannot see either: a drop and
  * a duplicate cancelling inside the phase block at a fringe finer than the
  * fingerprint's blocks leave every identity intact (see
- * {@link indexByFingerprint}). And it trusts the photographs to be one camera's,
- * in shooting order: a camera that moved between runs is a different position,
- * and nothing here can tell.
+ * {@link indexByFingerprint}). Two more cancelling pairs pass because nothing
+ * that reads photographs could refuse them. A photograph that matches the one
+ * it displaced over the crescent — a black standing in for a Gray plane that
+ * lights none of it — is the same run to within what the complement check
+ * allows. And a black shot twice with the first Gray plane's complement
+ * dropped, where that plane lights the whole crescent, swaps the plane and its
+ * complement: photographically, the same run seen from the other half of the
+ * raster. `position.test.ts` pins how rare each is. And it trusts the
+ * photographs to be one camera's, in shooting order: a camera that moved
+ * between runs is a different position, and nothing here can tell.
  */
 export function indexPosition(
   fingerprints: readonly FrameFingerprint[],
@@ -2066,24 +2075,27 @@ export function indexPosition(
         /** Originals numbered; those after a gap that is not whole runs are not. */
         numberedCount: number;
         gapProblem: string | null;
-        /** Where the photographs after the last numbered original stop counting. */
+        /** Where the stretch after the last numbered original ends: at the next run found, the first re-shoot, or the end of the folder. */
         backLimit: number;
       };
   const numberOriginals = (originals: readonly RunWindow[], tailStart: number | null): Numbering => {
     const rel = [0];
     let numberedCount = originals.length;
     let gapProblem: string | null = null;
+    let gapExcess = 0;
     for (let j = 1; j < originals.length; j++) {
       const gap = originals[j].start - originals[j - 1].start;
       const k = Math.round(gap / runLength);
       if (Math.abs(gap - runLength * k) > SLOT_SLACK) {
+        gapExcess = Math.abs(gap - runLength * k);
         const from = originals[j - 1].start + runLength;
+        const stretch = photographs(from, originals[j].start);
+        // Finished where it is pushed, which knows the projectors it cost.
         gapProblem =
-          `${photographs(from, originals[j].start)} lie between two runs, and ` +
+          `${stretch[0].toUpperCase()}${stretch.slice(1)} lie between two runs, and ` +
           `${gap - runLength} photographs is not within ${SLOT_SLACK} of a whole number of runs ` +
           `of ${runLength}, so the projector numbers after ${photographs(from, from + 1)} ` +
-          `cannot be worked out. The ${originals.length - j === 1 ? 'run' : `${originals.length - j} runs`} ` +
-          'after it are not used.';
+          'cannot be worked out';
         numberedCount = j;
         break;
       }
@@ -2100,17 +2112,21 @@ export function indexPosition(
     const lastEnd = numbered[numberedCount - 1].start + runLength;
     const backLimit =
       numberedCount < originals.length ? originals[numberedCount].start : tailStart ?? n;
-    const after = backLimit - lastEnd;
+    // The position's photographs run to the first re-shoot or the end of the
+    // folder. Past a stretch that is not whole runs they are still the later
+    // projectors' — what is lost is where each one starts, by the stretch's
+    // excess, which the end's count is then allowed.
+    const after = (tailStart ?? n) - lastEnd;
     // Light after the last numbered run is a run that could not be found, which
     // the count after it cannot tell from projectors this camera does not see —
     // so then the end only bounds the numbering from below.
-    let backIsDark = backLimit === n;
+    let backIsDark = tailStart === null;
     for (let x = lastEnd; backIsDark && x < n; x++) if (isLit(x)) backIsDark = false;
     const fits = (extra: number, a: number): boolean => {
       const front = before - runLength * a;
       if (front < -SLOT_SLACK || front > extra) return false;
       const back = after - runLength * (projectors - 1 - (a + span));
-      if (back < -SLOT_SLACK) return false;
+      if (back < -SLOT_SLACK - gapExcess) return false;
       return !backIsDark || back <= extra;
     };
     // The page's allowance for photographs before Play and after the screen goes
@@ -2138,8 +2154,8 @@ export function indexPosition(
         (candidates.length > 1
           ? `The ${runs} found could be ${candidates.map(names).join(' or ')}: the photographs ` +
             'before the first run and after the last do not settle which'
-          : `The ${runs} found do not fit ${projectors} projectors with the photographs before ` +
-            'the first run and after the last') +
+          : `The ${runs} found ${numberedCount === 1 ? 'does' : 'do'} not fit ${projectors} ` +
+            'projectors with the photographs before the first run and after the last') +
         ', and a run filed under the wrong projector is worse than one not used, so none is. ' +
         "A camera position is every projector's run back to back, from the first: keep every " +
         'dark photograph, since they are how the projectors this camera cannot see are counted, ' +
@@ -2205,11 +2221,17 @@ export function indexPosition(
     }
     const lastSlot = a0 + rel[numberedCount - 1];
     const lastEnd = numbered[numberedCount - 1].start + runLength;
-    for (let q = lastSlot + 1; q < projectors; q++) {
-      range[q] = {
-        from: Math.min(backLimit, lastEnd + (q - lastSlot - 1) * runLength),
-        to: Math.min(backLimit, lastEnd + (q - lastSlot) * runLength),
-      };
+    // After a stretch that is not whole runs nothing says where the later
+    // slots are, so they are left without a place rather than given a wrong
+    // one: a slot laid out there would call a run that was found but not
+    // numbered out of view, or broken.
+    if (numberedCount === originals.length) {
+      for (let q = lastSlot + 1; q < projectors; q++) {
+        range[q] = {
+          from: Math.min(backLimit, lastEnd + (q - lastSlot - 1) * runLength),
+          to: Math.min(backLimit, lastEnd + (q - lastSlot) * runLength),
+        };
+      }
     }
     return { slotOf, range, positionEnd: lastEnd + (projectors - 1 - lastSlot) * runLength };
   };
@@ -2307,7 +2329,28 @@ export function indexPosition(
   const pool = whole.length > 0 ? whole : readings;
   if (pool.length === 0) {
     const all = numberOriginals(found, null);
-    problems.push(all.kind === 'refused' ? all.problem : (all.gapProblem ?? ''));
+    if (all.kind === 'refused') {
+      problems.push(all.problem);
+      return refuse();
+    }
+    // The runs number, so what no reading fits is a run that repeats another
+    // somewhere neither a re-shoot nor a neighbour can be.
+    const j = found.findIndex((_, k) => matchedBy[k].length > 0 || evidence[k].length > 0);
+    const w = found[Math.max(0, j)];
+    const what =
+      j < 0
+        ? 'repeats photographs elsewhere in the folder'
+        : matchedBy[j].length > 0
+          ? `shows the same white and black as the run at ` +
+            `${photographs(found[matchedBy[j][0]].start, found[matchedBy[j][0]].start + runLength)}`
+          : `is copied by ${photographs(evidence[j][0], evidence[j][0] + 1)}, where no run was found`;
+    problems.push(
+      `The run at ${photographs(w.start, w.start + runLength)} ${what}, and no reading of the ` +
+        'folder fits the two: a re-shoot belongs after the whole camera position, and two ' +
+        'projectors a camera cannot tell apart are neighbours in a folder with nothing else out ' +
+        'of place. That is what photographs out of the order they were shot look like, and a ' +
+        'run filed under the wrong projector is worse than one not used, so none is.',
+    );
     return refuse();
   }
   const statusOf = (r: Reading, w: RunWindow): string => {
@@ -2335,12 +2378,25 @@ export function indexPosition(
     );
     return refuse();
   }
-  if (reading.numbering.gapProblem !== null) problems.push(reading.numbering.gapProblem);
+  if (reading.numbering.gapProblem !== null) {
+    const later = reading.t - reading.numbering.numberedCount;
+    const lost = reading.range.flatMap((q, p) => (q === null ? [p + 1] : []));
+    problems.push(
+      `${reading.numbering.gapProblem}: the ${later === 1 ? 'run' : `${later} runs`} found ` +
+        `after it ${later === 1 ? 'is' : 'are'} not used` +
+        (lost.length === 0
+          ? ''
+          : `, and projector${lost.length === 1 ? '' : 's'} ${listed(lost)} ` +
+            `${lost.length === 1 ? 'is' : 'are'} not decoded`) +
+        '. Shoot the whole camera position again, into a folder of its own: a re-shoot added ' +
+        'to this folder is matched against the runs around it, and the runs after this ' +
+        'stretch have no projector number to match.',
+    );
+  }
   const { a0, numberedCount, backLimit } = reading.numbering;
   const originals = found.slice(0, reading.t);
   const numbered = originals.slice(0, numberedCount);
   const first = numbered[0];
-  const lastEnd = numbered[numberedCount - 1].start + runLength;
   const { slotOf, range } = reading;
   const tail = found.slice(reading.t);
   const tailProjector = new Map<RunWindow, number>();
@@ -2354,8 +2410,8 @@ export function indexPosition(
       `The run at ${photographs(w.start, w.start + runLength)}, after the end of this camera ` +
         `position, ${reading.tailWhy.get(w)}, so it cannot be told which projector it re-shoots. ` +
         "A re-shot run is matched by its white and black against the original's, and a " +
-        'mismatch usually means the camera moved between the two: re-shoot the whole position ' +
-        'rather than one projector.',
+        'mismatch usually means the camera moved between the two: shoot the whole camera ' +
+        'position again, into a folder of its own, rather than one projector.',
     );
   }
 
@@ -2371,7 +2427,10 @@ export function indexPosition(
     const runs = [...(original === null ? [] : [original]), ...reshot];
     const passing = runs.filter((w) => verdicts[found.indexOf(w)].kind === 'ok');
     const used = passing.length > 0 ? passing[passing.length - 1] : null;
-    const r = range[p] as { from: number; to: number };
+    // A slot after a stretch that is not whole runs has no place; its
+    // problem says so.
+    const r = range[p];
+    if (r === null) continue;
     if (used !== null) {
       for (let f = 0; f < runLength; f++) assignment[used.start + f] = p * runLength + f;
       usableProjectors.push(p);
@@ -2484,7 +2543,7 @@ export function indexPosition(
             `${leadEnd === 1 ? 'was' : 'were'} taken before Play or belong to no run; not used.`,
     );
   }
-  const trailFrom = range[projectors - 1]?.to ?? lastEnd;
+  const trailFrom = range[projectors - 1]?.to ?? backLimit;
   if (backLimit > trailFrom) {
     const k = backLimit - trailFrom;
     const dark = Array.from({ length: k }, (_, t) => trailFrom + t).every((x) => !isLit(x));
@@ -2494,7 +2553,7 @@ export function indexPosition(
     );
   }
   if (tail.length > 0) {
-    const extra = Array.from({ length: n - backLimit }, (_, t) => backLimit + t).filter(
+    const extra = Array.from({ length: n - tail[0].start }, (_, t) => tail[0].start + t).filter(
       (x) => !tail.some((w) => x >= w.start && x < w.start + runLength),
     ).length;
     if (extra > 0) {
