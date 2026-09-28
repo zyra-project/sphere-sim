@@ -222,6 +222,67 @@ export const DEFAULT_ROOM_SPILL: RoomSpill = {
   ceilingM: PARAMETER_TABLE.h_ceiling.nominal,
 };
 
+/** One lit state a photograph integrated, and for what fraction of its exposure. */
+export interface ExposurePart {
+  /** >= 0; the parts returned for one row sum to 1 within 1e-9. */
+  weight: number;
+  /** A frame of planFrames(plan) on one projector of the rig, or the page's end-of-sequence black. */
+  shown: { projector: number; frame: number } | 'dark';
+}
+
+/**
+ * What the photograph filed as (camera, projector, frame) integrated, per
+ * camera row.
+ *
+ * ## Why this exists
+ *
+ * Without it the renderer can only photograph exactly the frame a photograph
+ * is filed as, so a shutter held open across a pattern change could be counted
+ * but never shown to the decoder. EXPERIMENT-9 counted one in 728 of 2,000
+ * simulated captures at a 2 s dwell and a 1/4 s exposure; EXPERIMENT-10 asks
+ * what one costs, and this is the one place that question can enter the
+ * renderer: between "which frame does the folder say this is" and "what was
+ * on the sphere while the shutter was open".
+ *
+ * ## What the blend is, and why
+ *
+ * - **Before the sensor.** Both states' photons land in one exposure and the
+ *   sensor adds shot noise to their sum, once. Noising each part and mixing the
+ *   results would halve the variance of an even split, and a straddled frame
+ *   that came out QUIETER than a clean one would be the apparatus talking.
+ * - **Weighted by exposure, in linear radiance.** A part's `weight` is the
+ *   fraction of the exposure that state was on screen, and light adds.
+ * - **The neighbour is what the page lit.** The page shows one projector's
+ *   frame with every other quadrant black, and black after the last step. So a
+ *   part naming ANOTHER projector adds that projector's frame, traced through
+ *   its own geometry, to this projector's black floor; and `'dark'` is this
+ *   projector's black floor alone.
+ * - **The same noise as the unstraddled capture.** The sensor is called once
+ *   per pixel, in the same (frame, row, column) order, whatever the parts say.
+ *   A straddled capture therefore shares every noise draw with its clean twin,
+ *   and the difference between the two is the straddle's own.
+ *
+ * ## What it does not model
+ *
+ * The other projectors' black floors, which the clean render omits as well;
+ * the camera moving between the parts of one exposure (every part is traced at
+ * the pose the filed frame's row was read at); a DLP projector's sub-frame
+ * sequence; and a display that scans out, which would make the smear vary with
+ * projector row as well as camera row.
+ *
+ * Absent or null is the render every published number was produced by, byte
+ * for byte, and `test/capture.test.ts` asserts that rather than assuming it.
+ */
+export interface ShutterStraddle {
+  /**
+   * null = exactly the filed frame (today's render). `row` is 0 for the first row read out.
+   *
+   * Asked once per row. One array may be returned for many rows; it is
+   * validated once, by identity, so it must not be mutated afterwards.
+   */
+  parts(camera: number, projector: number, frame: number, row: number): readonly ExposurePart[] | null;
+}
+
 export interface CaptureConditions {
   /** `E_amb`, relative irradiance on the sphere. §5 nominal 0.04, range 0.01-0.15. */
   ambient: number;
@@ -257,6 +318,13 @@ export interface CaptureConditions {
    * nothing.
    */
   segmentImage: Partial<SilhouetteOptions> | null;
+  /**
+   * What each photograph integrated when the shutter was open across a pattern
+   * change. Absent or null — the default, and how every published number was
+   * produced — photographs exactly the frame each photograph is filed as. See
+   * {@link ShutterStraddle}.
+   */
+  straddle?: ShutterStraddle | null;
 }
 
 export interface CaptureOptions {
@@ -297,6 +365,36 @@ export interface CaptureOptions {
    * it did unconditionally — and the twelve-scenario baseline is what says so.
    */
   surface?: Surface | null;
+  /**
+   * Handed each (camera, projector) pair's frames as rendered, noise and all,
+   * the moment they exist and before the decoder reads them.
+   *
+   * It exists so an experiment can see what a capture actually photographed
+   * without rendering it a second time. A second render is a second statement
+   * of the capture, and the first thing to notice it had drifted from the
+   * first would be an experiment reporting a difference the solve never saw.
+   *
+   * Observational only: the capture passed is the one about to be decoded, so
+   * a callback that mutated it would change the decode. Absent or null calls
+   * nothing and changes nothing.
+   */
+  onCapture?: ((camera: number, projector: number, capture: PatternCapture) => void) | null;
+  /**
+   * The index each camera's noise stream is keyed by, one per camera passed, in
+   * order. Omitted or null, a camera is keyed by its position in `cameras`,
+   * which is right whenever `cameras` is the whole set.
+   *
+   * It exists for a caller that photographs part of a set. Passed alone, a
+   * set's second camera sits at position 0 and draws the first camera's noise,
+   * so a caller that pairs the photograph with frames noised as the second
+   * camera (`pairNoiseSeed(seed, 1, p)`) compares two different photographs.
+   * EXPERIMENT-10's Q0 did exactly that for its fine-raster units. Only the
+   * noise is re-keyed: handheld motion and a straddle's parts still follow the
+   * position in `cameras`.
+   *
+   * Omitting it is byte-identical to the code before this field existed.
+   */
+  noiseCameraIndices?: readonly number[] | null;
 }
 
 export interface PairStats {
@@ -627,8 +725,14 @@ function luminanceResponse(
  * a meaningless projector coordinate. Whether the robust loss absorbs those is
  * a genuine question about the solver, and it is one this bench should be able
  * to ask.
+ *
+ * Exported, with {@link pairNoiseSeed}, so an experiment can apply this sensor
+ * and this pair's own stream to frames it built itself and get exactly the
+ * draws the renderer would have made. EXPERIMENT-10 blends noiseless frames and
+ * noises the blend that way, which is only worth doing if it is the renderer's
+ * sensor and not a second one that agrees with it today.
  */
-function makeSensor(sensor: SensorModel | null, rng: BenchRng): (value: number) => number {
+export function makeSensor(sensor: SensorModel | null, rng: BenchRng): (value: number) => number {
   if (sensor === null) return (value: number): number => value;
   const invElectrons = 1 / sensor.electronsPerUnitRadiance;
   const readVar = sensor.readNoiseElectrons * invElectrons * (sensor.readNoiseElectrons * invElectrons);
@@ -647,6 +751,19 @@ function makeSensor(sensor: SensorModel | null, rng: BenchRng): (value: number) 
     if (step > 0) out = Math.round(out / step) * step;
     return out;
   };
+}
+
+/**
+ * The seed of the noise stream one (camera, projector) pair's frames draw from.
+ *
+ * `renderPair` says why each pair owns its stream. It is a function rather
+ * than an expression inside `renderPair` so that a caller walking
+ * {@link makeSensor} over its own frames asks for the SAME stream, not a copy
+ * of the expression that the next edit here would leave behind — a stream that
+ * has drifted still looks exactly like noise.
+ */
+export function pairNoiseSeed(seed: number, cameraIndex: number, projectorIndex: number): number {
+  return (seed ^ (cameraIndex * 0x9e3779b1) ^ (projectorIndex * 0x85ebca77)) >>> 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -700,9 +817,8 @@ function renderPair(
   // in a fixed (frame, pixel) order. Pairs are therefore independent of each
   // other and of how many pairs came first, so a scenario that changes its
   // camera count does not reshuffle the noise of the cameras it kept.
-  const rng = makeBenchRng(
-    (opts.seed ^ (cameraIndex * 0x9e3779b1) ^ (projectorIndex * 0x85ebca77)) >>> 0,
-  );
+  const noiseKey = opts.noiseCameraIndices?.[cameraIndex] ?? cameraIndex;
+  const rng = makeBenchRng(pairNoiseSeed(opts.seed, noiseKey, projectorIndex));
 
   const stateless = cond.handheld === null;
   let pixelsTraced = 0;
@@ -745,75 +861,346 @@ function renderPair(
   const emitOn = response.emit(1);
   const emitOff = response.emit(0);
 
-  for (let f = 0; f < specs.length; f++) {
-    if (!stateless || !geometryValid) {
-      pixelsTraced += traceGeometry(
-        geom,
-        canonical,
-        poseProviderFor(f),
-        proj,
-        prepared.radiusM,
-        cond.minIncidenceCos,
-        cond.roomSpill,
-        floorZ,
-      );
-      geometryValid = true;
-    }
-    const spec = specs[f];
-    const frame = compileFrame(spec, opts.plan, resX, resY);
-    const data = new Float32Array(width * height);
-    const n = data.length;
-
-    if (frame.axis === null) {
-      // White and black frames: one target across the whole raster, so the
-      // emitted luminance is a constant and the loop is a blit plus noise.
-      const emitted = frame.at(0) >= 0.5 ? emitOn : emitOff;
-      for (let i = 0; i < n; i++) {
-        const value =
-          geom.lit[i] === 1
-            ? ambientLum + emitted * geom.k[i]
-            : geom.onSphere[i] === 1
-              ? ambientLum
-              : geom.onRoom[i] === 1
-                ? background + emitted * geom.k[i] * roomAlbedo
-                : background;
-        data[i] = noisy(value);
+  // EXPERIMENT-10's shutter straddle; see ShutterStraddle. Absent or null runs
+  // the loop directly below, which is how every published number was made and
+  // is exactly the code it was before the straddle existed. The straddled path
+  // is a separate loop rather than a branch threaded through this one, so that
+  // adding it did not touch the code every published number came from.
+  const straddle = cond.straddle ?? null;
+  if (straddle === null) {
+    for (let f = 0; f < specs.length; f++) {
+      if (!stateless || !geometryValid) {
+        pixelsTraced += traceGeometry(
+          geom,
+          canonical,
+          poseProviderFor(f),
+          proj,
+          prepared.radiusM,
+          cond.minIncidenceCos,
+          cond.roomSpill,
+          floorZ,
+        );
+        geometryValid = true;
       }
-    } else {
-      const coord = frame.axis === 'u' ? geom.u : geom.v;
-      const binary = spec.kind === 'gray' || spec.kind === 'grayInverse';
-      for (let i = 0; i < n; i++) {
-        let value: number;
-        if (geom.lit[i] === 1) {
-          const target = frame.at(coord[i]);
-          // A Gray plane's target is exactly 0 or 1, so its emitted luminance
-          // is one of two hoisted constants. The phase frames genuinely vary.
-          const emitted = binary ? (target >= 0.5 ? emitOn : emitOff) : response.emit(target);
-          value = ambientLum + emitted * geom.k[i];
-        } else if (geom.onSphere[i] === 1) {
-          value = ambientLum;
-        } else if (geom.onRoom[i] === 1) {
-          // The wall, carrying the same pattern at its own projector coordinate.
-          // This is the whole point of `roomSpill`: the pixel is no longer
-          // frame-invariant, so `white - black` is a real modulation and the
-          // decoder has to decide about it rather than reject it for free.
-          const target = frame.at(coord[i]);
-          const emitted = binary ? (target >= 0.5 ? emitOn : emitOff) : response.emit(target);
-          value = background + emitted * geom.k[i] * roomAlbedo;
-        } else {
-          value = background;
+      const spec = specs[f];
+      const frame = compileFrame(spec, opts.plan, resX, resY);
+      const data = new Float32Array(width * height);
+      const n = data.length;
+
+      if (frame.axis === null) {
+        // White and black frames: one target across the whole raster, so the
+        // emitted luminance is a constant and the loop is a blit plus noise.
+        const emitted = frame.at(0) >= 0.5 ? emitOn : emitOff;
+        for (let i = 0; i < n; i++) {
+          const value =
+            geom.lit[i] === 1
+              ? ambientLum + emitted * geom.k[i]
+              : geom.onSphere[i] === 1
+                ? ambientLum
+                : geom.onRoom[i] === 1
+                  ? background + emitted * geom.k[i] * roomAlbedo
+                  : background;
+          data[i] = noisy(value);
         }
-        data[i] = noisy(value);
+      } else {
+        const coord = frame.axis === 'u' ? geom.u : geom.v;
+        const binary = spec.kind === 'gray' || spec.kind === 'grayInverse';
+        for (let i = 0; i < n; i++) {
+          let value: number;
+          if (geom.lit[i] === 1) {
+            const target = frame.at(coord[i]);
+            // A Gray plane's target is exactly 0 or 1, so its emitted luminance
+            // is one of two hoisted constants. The phase frames genuinely vary.
+            const emitted = binary ? (target >= 0.5 ? emitOn : emitOff) : response.emit(target);
+            value = ambientLum + emitted * geom.k[i];
+          } else if (geom.onSphere[i] === 1) {
+            value = ambientLum;
+          } else if (geom.onRoom[i] === 1) {
+            // The wall, carrying the same pattern at its own projector coordinate.
+            // This is the whole point of `roomSpill`: the pixel is no longer
+            // frame-invariant, so `white - black` is a real modulation and the
+            // decoder has to decide about it rather than reject it for free.
+            const target = frame.at(coord[i]);
+            const emitted = binary ? (target >= 0.5 ? emitOn : emitOff) : response.emit(target);
+            value = background + emitted * geom.k[i] * roomAlbedo;
+          } else {
+            value = background;
+          }
+          data[i] = noisy(value);
+        }
+      }
+
+      frames.push({ width, height, channels: 1, data });
+      if (wantPreview && f === opts.previewFrame) {
+        preview = createImage(width, height);
+        for (let i = 0; i < n; i++) {
+          preview.data[3 * i] = data[i];
+          preview.data[3 * i + 1] = data[i];
+          preview.data[3 * i + 2] = data[i];
+        }
       }
     }
+  } else {
+    // What this loop has to share with the one above is spelled out rather
+    // than hoped for, and `test/capture.test.ts` holds it to each: the pair's
+    // geometry is traced the same way; `idealInto` is the per-pixel arithmetic
+    // above, copied line for line; the double it writes is the double the
+    // sensor is handed, which a Float32 buffer would round first; and the
+    // sensor is called exactly once per pixel in the same (frame, row, column)
+    // order, so this pair's noise stream is walked exactly as above whatever
+    // the parts say.
+    const n = width * height;
+    const projectorCount = prepared.projectors.length;
+    const BLACK: FrameSpec = { kind: 'black', axis: null, index: 0 };
 
-    frames.push({ width, height, channels: 1, data });
-    if (wantPreview && f === opts.previewFrame) {
-      preview = createImage(width, height);
-      for (let i = 0; i < n; i++) {
-        preview.data[3 * i] = data[i];
-        preview.data[3 * i + 1] = data[i];
-        preview.data[3 * i + 2] = data[i];
+    // `ambientLum` and `background` are the pair's own and serve every state:
+    // neither depends on which projector is lit (`luminanceResponse`). The
+    // parameters shadow the pair's `emitOn` and `emitOff` so that the body
+    // reads as the copy it is.
+    const idealInto = (
+      out: Float64Array,
+      spec: FrameSpec,
+      g: Geometry,
+      resp: LuminanceResponse,
+      emitOn: number,
+      emitOff: number,
+      projResX: number,
+      projResY: number,
+    ): void => {
+      const frame = compileFrame(spec, opts.plan, projResX, projResY);
+      if (frame.axis === null) {
+        const emitted = frame.at(0) >= 0.5 ? emitOn : emitOff;
+        for (let i = 0; i < n; i++) {
+          const value =
+            g.lit[i] === 1
+              ? ambientLum + emitted * g.k[i]
+              : g.onSphere[i] === 1
+                ? ambientLum
+                : g.onRoom[i] === 1
+                  ? background + emitted * g.k[i] * roomAlbedo
+                  : background;
+          out[i] = value;
+        }
+      } else {
+        const coord = frame.axis === 'u' ? g.u : g.v;
+        const binary = spec.kind === 'gray' || spec.kind === 'grayInverse';
+        for (let i = 0; i < n; i++) {
+          let value: number;
+          if (g.lit[i] === 1) {
+            const target = frame.at(coord[i]);
+            const emitted = binary ? (target >= 0.5 ? emitOn : emitOff) : resp.emit(target);
+            value = ambientLum + emitted * g.k[i];
+          } else if (g.onSphere[i] === 1) {
+            value = ambientLum;
+          } else if (g.onRoom[i] === 1) {
+            const target = frame.at(coord[i]);
+            const emitted = binary ? (target >= 0.5 ? emitOn : emitOff) : resp.emit(target);
+            value = background + emitted * g.k[i] * roomAlbedo;
+          } else {
+            value = background;
+          }
+          out[i] = value;
+        }
+      }
+    };
+
+    // Another projector as this camera sees it, built on first use. Its
+    // geometry is traced once per pair for a still camera, as the pair's own
+    // is, and again for each frame that asks when the camera moves: always at
+    // the pose the FILED frame was photographed from.
+    type OtherProjector = {
+      geom: Geometry;
+      tracedFor: number;
+      response: LuminanceResponse;
+      emitOn: number;
+      emitOff: number;
+      resX: number;
+      resY: number;
+    };
+    const others = new Map<number, OtherProjector>();
+    const otherProjector = (q: number, f: number): OtherProjector => {
+      const projQ = prepared.projectors[q];
+      let o = others.get(q);
+      if (o === undefined) {
+        const responseQ = luminanceResponse(projQ.cal.transfer, cond.reflectance, cond.ambient);
+        o = {
+          geom: makeGeometry(width, height),
+          tracedFor: -1,
+          response: responseQ,
+          emitOn: responseQ.emit(1),
+          emitOff: responseQ.emit(0),
+          resX: projQ.cal.intrinsics.resX,
+          resY: projQ.cal.intrinsics.resY,
+        };
+        others.set(q, o);
+      }
+      if (o.tracedFor === -1 || (!stateless && o.tracedFor !== f)) {
+        pixelsTraced += traceGeometry(
+          o.geom,
+          canonical,
+          poseProviderFor(f),
+          projQ,
+          prepared.radiusM,
+          cond.minIncidenceCos,
+          cond.roomSpill,
+          floorZ,
+        );
+        o.tracedFor = f;
+      }
+      return o;
+    };
+
+    // One frame's noiseless radiance per lit state, rendered on first mention
+    // and kept for the rest of the frame. The buffers are reused across frames.
+    const pool: Float64Array[] = [];
+    let pooled = 0;
+    const states = new Map<string, Float64Array>();
+    const stateInto = (shown: ExposurePart['shown'], f: number): Float64Array => {
+      const key = shown === 'dark' ? 'dark' : `${shown.projector}:${shown.frame}`;
+      const done = states.get(key);
+      if (done !== undefined) return done;
+      // Another projector's step lit that projector's frame and left this one
+      // black, so its radiance is this projector's black plus that frame. Both
+      // carry the ambient term and the sum must carry it once, so it is taken
+      // back out: exact under the bench's additive light, the room included.
+      const black = shown !== 'dark' && shown.projector !== projectorIndex ? stateInto('dark', f) : null;
+      if (pooled === pool.length) pool.push(new Float64Array(n));
+      const out = pool[pooled++];
+      if (shown === 'dark') {
+        // The page's black after its last step: this projector at target 0.
+        idealInto(out, BLACK, geom, response, emitOn, emitOff, resX, resY);
+      } else if (black === null) {
+        idealInto(out, specs[shown.frame], geom, response, emitOn, emitOff, resX, resY);
+      } else {
+        const o = otherProjector(shown.projector, f);
+        idealInto(out, specs[shown.frame], o.geom, o.response, o.emitOn, o.emitOff, o.resX, o.resY);
+        for (let i = 0; i < n; i++) {
+          out[i] = black[i] + out[i] - (geom.onSphere[i] === 1 ? ambientLum : background);
+        }
+      }
+      states.set(key, out);
+      return out;
+    };
+
+    // A malformed part is refused, never rendered: a weight that is not a
+    // fraction of the exposure, or a state the rig or the plan does not have,
+    // would otherwise come out as a plausible frame with the wrong light in it.
+    const validated = new Set<readonly ExposurePart[]>();
+    const check = (parts: readonly ExposurePart[], f: number, row: number): void => {
+      const where = `camera ${cameraIndex}, projector ${projectorIndex}, frame ${f}, row ${row}`;
+      let sum = 0;
+      for (const part of parts) {
+        if (!Number.isFinite(part.weight) || part.weight < 0) {
+          throw new Error(
+            `capture: the straddle for ${where} gave a part weight of ${part.weight}; ` +
+              'a weight is a fraction of the exposure, finite and not negative.',
+          );
+        }
+        sum += part.weight;
+        const shown = part.shown;
+        if (shown === 'dark') continue;
+        if (typeof shown !== 'object' || shown === null) {
+          throw new Error(
+            `capture: the straddle for ${where} named ${String(shown)} as what was shown; ` +
+              "it is 'dark' or a projector and a frame.",
+          );
+        }
+        if (!Number.isInteger(shown.projector) || shown.projector < 0 || shown.projector >= projectorCount) {
+          throw new Error(
+            `capture: the straddle for ${where} named projector ${shown.projector}, which the ` +
+              `rig does not have (projectors 0-${projectorCount - 1}).`,
+          );
+        }
+        if (!Number.isInteger(shown.frame) || shown.frame < 0 || shown.frame >= specs.length) {
+          throw new Error(
+            `capture: the straddle for ${where} named frame ${shown.frame}, which the plan ` +
+              `does not have (frames 0-${specs.length - 1}).`,
+          );
+        }
+      }
+      if (!(Math.abs(sum - 1) <= 1e-9)) {
+        throw new Error(
+          `capture: the straddle for ${where} gave weights summing to ${sum}; the parts of ` +
+            'one exposure sum to 1 within 1e-9.',
+        );
+      }
+    };
+
+    type Terms = { weights: number[]; ideals: Float64Array[] };
+    for (let f = 0; f < specs.length; f++) {
+      if (!stateless || !geometryValid) {
+        pixelsTraced += traceGeometry(
+          geom,
+          canonical,
+          poseProviderFor(f),
+          proj,
+          prepared.radiusM,
+          cond.minIncidenceCos,
+          cond.roomSpill,
+          floorZ,
+        );
+        geometryValid = true;
+      }
+      pooled = 0;
+      states.clear();
+
+      // What each row integrated, asked once per row. A row the straddle leaves
+      // whole photographs exactly the filed frame, as one part of weight 1.
+      const rows: Terms[] = new Array(height);
+      const resolved = new Map<readonly ExposurePart[], Terms>();
+      let whole: Terms | null = null;
+      for (let y = 0; y < height; y++) {
+        const parts = straddle.parts(cameraIndex, projectorIndex, f, y);
+        if (parts === null) {
+          if (whole === null) {
+            whole = { weights: [1], ideals: [stateInto({ projector: projectorIndex, frame: f }, f)] };
+          }
+          rows[y] = whole;
+          continue;
+        }
+        let terms = resolved.get(parts);
+        if (terms === undefined) {
+          if (!validated.has(parts)) {
+            check(parts, f, y);
+            validated.add(parts);
+          }
+          terms = {
+            weights: parts.map((part) => part.weight),
+            ideals: parts.map((part) => stateInto(part.shown, f)),
+          };
+          resolved.set(parts, terms);
+        }
+        rows[y] = terms;
+      }
+
+      const data = new Float32Array(n);
+      for (let y = 0; y < height; y++) {
+        const { weights, ideals } = rows[y];
+        const start = y * width;
+        const end = start + width;
+        if (ideals.length === 1 && weights[0] === 1) {
+          // The ideal value itself, so a photograph kept whole hands the sensor
+          // the very double the loop above would have.
+          const only = ideals[0];
+          for (let i = start; i < end; i++) data[i] = noisy(only[i]);
+        } else {
+          const m = ideals.length;
+          for (let i = start; i < end; i++) {
+            let v = 0;
+            for (let k = 0; k < m; k++) v += weights[k] * ideals[k][i];
+            data[i] = noisy(v);
+          }
+        }
+      }
+
+      frames.push({ width, height, channels: 1, data });
+      if (wantPreview && f === opts.previewFrame) {
+        preview = createImage(width, height);
+        for (let i = 0; i < n; i++) {
+          preview.data[3 * i] = data[i];
+          preview.data[3 * i + 1] = data[i];
+          preview.data[3 * i + 2] = data[i];
+        }
       }
     }
   }
@@ -957,6 +1344,21 @@ export function captureAndDecode(
   cameras: readonly SimulatedCamera[],
   opts: CaptureOptions,
 ): CaptureResult {
+  const noiseKeys = opts.noiseCameraIndices ?? null;
+  if (
+    noiseKeys !== null &&
+    (noiseKeys.length !== cameras.length ||
+      noiseKeys.some((k) => !Number.isInteger(k) || k < 0) ||
+      new Set(noiseKeys).size !== noiseKeys.length)
+  ) {
+    // Two cameras on one key would share their noise, and a missing key would
+    // quietly fall back to the camera's position: both are the bug this field
+    // exists to prevent.
+    throw new Error(
+      `captureAndDecode: noiseCameraIndices [${noiseKeys.join(', ')}] must be ${cameras.length} distinct ` +
+        'non-negative integers, one per camera',
+    );
+  }
   const prepared = prepareRig(rig, opts.surface ?? undefined);
   const canonicals = cameras.map((c) => canonicalRayTable(c.intrinsics));
   const motionSeed = makeBenchRng((opts.seed ^ 0x5bf03635) >>> 0);
@@ -982,6 +1384,7 @@ export function captureAndDecode(
   };
 
   const imageMasking = opts.conditions.segmentImage !== null;
+  const onCapture = opts.onCapture ?? null;
   const pending: { projector: number; capture: PatternCapture }[] = [];
   const silhouettes: SilhouetteReport[] = [];
 
@@ -1029,6 +1432,9 @@ export function captureAndDecode(
         opts,
         wantPreview,
       );
+      // Before anything reads the frames, so what the callback is handed is
+      // exactly what gets decoded. See `CaptureOptions.onCapture`.
+      if (onCapture !== null) onCapture(c, p, rendered.capture);
       framesRendered += rendered.framesRendered;
       pixelsTraced += rendered.pixelsTraced;
       if (rendered.preview !== null) {

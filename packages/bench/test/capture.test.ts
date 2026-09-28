@@ -15,6 +15,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
 
 import { nominalRig } from '../../sim/src/scene.ts';
 import { prepareRig, worldToPixel } from '../../sim/src/optics.ts';
@@ -34,17 +35,44 @@ import {
 import type { SurfaceMesh } from '../../calibration/src/index.ts';
 import { meshSurface } from '../../sim/src/mesh/surface.ts';
 import type { Surface } from '../../sim/src/surface.ts';
-import type { RoomSpill } from '../src/capture.ts';
-import { DEFAULT_ROOM_SPILL, DEFAULT_SENSOR, captureAndDecode, roomHit } from '../src/capture.ts';
-import { DEFAULT_PATTERN_PLAN } from '../src/patterns.ts';
+import type { CameraPlacementOptions } from '../src/camera.ts';
+import type {
+  CaptureOptions,
+  CaptureResult,
+  ExposurePart,
+  RoomSpill,
+  SensorModel,
+  ShutterStraddle,
+} from '../src/capture.ts';
+import {
+  DEFAULT_ROOM_SPILL,
+  DEFAULT_SENSOR,
+  captureAndDecode,
+  makeSensor,
+  pairNoiseSeed,
+  roomHit,
+} from '../src/capture.ts';
+import type { PatternPlan } from '../src/patterns.ts';
+import { DEFAULT_PATTERN_PLAN, planFrames } from '../src/patterns.ts';
 import { makeBenchRng } from '../src/random.ts';
-import type { SilhouetteOptions } from '../../solver/src/index.ts';
-import { bundleStateFromCalibration, sphereSegmenter } from '../../solver/src/index.ts';
+import type { RunOptions } from '../src/run.ts';
+import { buildWorld, captureOptionsFor, planPatternFor, runScenario } from '../src/run.ts';
+import { PRESETS, makeScenario } from '../src/scenarios.ts';
+import type {
+  Correspondence,
+  DecodeStats,
+  LinearImage,
+  PatternCapture,
+  SilhouetteOptions,
+} from '../../solver/src/index.ts';
+import { bundleStateFromCalibration, decodeCapture, sphereSegmenter } from '../../solver/src/index.ts';
 import { DEFAULT_SEGMENTATION_MARGIN } from '../../solver/src/index.ts';
 import { buildMeshIndex, meshSegmenter } from '../../solver/src/mesh.ts';
 
 const RIG = nominalRig({ projectorCount: 4 });
 const PLAN = { ...DEFAULT_PATTERN_PLAN, grayBits: 5 };
+/** Every noise stream in `capture()` derives from this; see `pairNoiseSeed`. */
+const FIXTURE_SEED = 4242;
 
 function cameras(count = 1, resX = 160, resY = 120): SimulatedCamera[] {
   return placeCameras(
@@ -83,6 +111,13 @@ interface CaptureArgs {
   segmentImage?: Partial<SilhouetteOptions> | null;
   /** The shape photographed. Omitted is `RIG.sphere`, which every other test wants. */
   surface?: Surface | null;
+  /**
+   * EXPERIMENT-10's hook. Omitted leaves the field off the conditions
+   * altogether, so "absent" and "null" stay two different captures to compare.
+   */
+  straddle?: ShutterStraddle | null;
+  onCapture?: CaptureOptions['onCapture'];
+  noiseCameraIndices?: CaptureOptions['noiseCameraIndices'];
 }
 
 /**
@@ -116,8 +151,9 @@ function capture(cams: SimulatedCamera[], args: Partial<CaptureArgs> = {}) {
       minIncidenceCos: 0.2,
       roomSpill: args.roomSpill ?? null,
       segmentImage: args.segmentImage ?? null,
+      ...(args.straddle === undefined ? {} : { straddle: args.straddle }),
     },
-    seed: 4242,
+    seed: FIXTURE_SEED,
     decode: {
       pixelStride: 1,
       maxCorrespondences: 0,
@@ -126,6 +162,8 @@ function capture(cams: SimulatedCamera[], args: Partial<CaptureArgs> = {}) {
     previewPairs: [],
     previewFrame: -1,
     surface: args.surface ?? null,
+    ...(args.onCapture === undefined ? {} : { onCapture: args.onCapture }),
+    ...(args.noiseCameraIndices === undefined ? {} : { noiseCameraIndices: args.noiseCameraIndices }),
   });
 }
 
@@ -849,5 +887,646 @@ test('the geometric segmenter follows the body: a mesh one keeps what a sphere o
   const openKeys = new Set(open.correspondences.map(key));
   for (const c of byMesh.correspondences) {
     assert.ok(openKeys.has(key(c)), `the mesh segmenter produced a correspondence the open decode did not: ${key(c)}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// EXPERIMENT-10's hooks: the shutter straddle, onCapture, and the two moves it
+// reuses. The straddle is proven inert when it keeps every photograph whole,
+// and proven to be the blend it claims when it does not.
+// ---------------------------------------------------------------------------
+
+/**
+ * A capture's frames in `planFrames` order, which is the order they were
+ * rendered and noised in. Undoing `renderPair`'s reassembly here is a second
+ * statement of the frame order, so it checks itself against `planFrames`.
+ */
+function inPlanOrder(c: PatternCapture, plan: PatternPlan = PLAN): LinearImage[] {
+  const out: LinearImage[] = [];
+  if (c.white !== null) out.push(c.white);
+  if (c.black !== null) out.push(c.black);
+  for (const g of c.gray) {
+    for (let j = 0; j < g.bits; j++) {
+      out.push(g.patterns[j]);
+      out.push(g.inverses[j]);
+    }
+  }
+  for (const ph of c.phase) for (const frame of ph.frames) out.push(frame);
+  assert.equal(out.length, planFrames(plan).length, 'a capture is not the plan it was shot from');
+  return out;
+}
+
+interface Shot {
+  result: CaptureResult;
+  /** What `onCapture` was handed, in the order it was handed it. */
+  pairs: { camera: number; projector: number; capture: PatternCapture }[];
+}
+
+function shoot(cams: SimulatedCamera[], args: Partial<CaptureArgs> = {}): Shot {
+  const pairs: Shot['pairs'] = [];
+  const result = capture(cams, {
+    ...args,
+    onCapture: (camera, projector, c) => {
+      pairs.push({ camera, projector, capture: c });
+    },
+  });
+  return { result, pairs };
+}
+
+/** Every pair's frames as `[pair][frame]` pixel buffers, pairs in `onCapture` order. */
+function framesOf(shot: Shot): (Float32Array | Float64Array)[][] {
+  return shot.pairs.map((q) => inPlanOrder(q.capture).map((image) => image.data));
+}
+
+/**
+ * Bit-for-bit equality of two pixel buffers, reporting the first pixel that
+ * differs. `assert.deepEqual` checks the same thing, and when it fails it
+ * prints every pixel of both: for a whole capture that is millions of lines
+ * and minutes of formatting before the test even reports.
+ */
+function assertSamePixels(
+  a: Float32Array | Float64Array,
+  b: Float32Array | Float64Array,
+  label: string,
+): void {
+  assert.equal(a.constructor, b.constructor, `${label}: different buffer types`);
+  assert.equal(a.length, b.length, `${label}: different sizes`);
+  for (let i = 0; i < a.length; i++) {
+    if (!Object.is(a[i], b[i])) assert.fail(`${label}: pixel ${i} is ${a[i]} against ${b[i]}`);
+  }
+}
+
+/** Two captures of one plan: the same shape, and every frame the same bits. */
+function assertSameCapture(
+  a: PatternCapture,
+  b: PatternCapture,
+  label: string,
+  plan: PatternPlan = PLAN,
+): void {
+  const shape = (c: PatternCapture) => ({
+    camera: c.camera,
+    projector: c.projector,
+    projectorRes: c.projectorRes,
+    gray: c.gray.map((g) => ({ axis: g.axis, bits: g.bits, stridePx: g.stridePx })),
+    phase: c.phase.map((ph) => ({ axis: ph.axis, steps: ph.steps, periodPx: ph.periodPx })),
+  });
+  assert.deepEqual(shape(a), shape(b), `${label}: captures of different shapes`);
+  const fa = inPlanOrder(a, plan);
+  const fb = inPlanOrder(b, plan);
+  for (let f = 0; f < fa.length; f++) {
+    assert.deepEqual(
+      [fa[f].width, fa[f].height, fa[f].channels],
+      [fb[f].width, fb[f].height, fb[f].channels],
+      `${label}: frame ${f} has a different size`,
+    );
+    assertSamePixels(fa[f].data, fb[f].data, `${label}, frame ${f}`);
+  }
+}
+
+/** Two decodes, compared one correspondence at a time so a failure prints one. */
+function assertSameCorrespondences(a: Correspondence[], b: Correspondence[], label: string): void {
+  assert.equal(a.length, b.length, `${label}: ${a.length} correspondences against ${b.length}`);
+  for (let i = 0; i < a.length; i++) {
+    if (!isDeepStrictEqual(a[i], b[i])) assert.deepEqual(a[i], b[i], `${label}: correspondence ${i}`);
+  }
+}
+
+test('a straddle that keeps every photograph whole is byte-identical to no straddle', () => {
+  // The claim every published number rests on now that the hook exists. The
+  // straddled path is a separate loop from the one the bench runs, so "off" is
+  // worth exactly as much as that loop's copy of the arithmetic and its walk of
+  // the noise stream — and a copy that is merely CLOSE still moves the odd
+  // noisy pixel across a quantisation step, which can move a decode. So four
+  // ways of saying "whole", compared bit for bit: absent, null, every row null,
+  // and every row one part of weight 1 on the filed frame. The last two run the
+  // straddled loop; a real sensor is on, so a row that skips the sensor shows;
+  // and it runs again with room spill on, so the wall's term in the copied
+  // arithmetic is exercised.
+  //
+  // Two more conditions, for what those two leave to chance or never reach. A
+  // quantising sensor shows a double rounded to Float32 before the sensor only
+  // where the noisy value lands within that rounding of a step's edge: measured
+  // with every ideal rounded, 15 of the 4.6 million pixels of one two-camera
+  // capture, none of them on a white or black frame, so a rounding confined to
+  // those two frames passed both runs above unseen. Without the quantiser the
+  // Float32 each output is stored in keeps the difference on about one pixel in
+  // five. And a moving camera re-traces its geometry every frame, a branch of
+  // the copied loop a still camera never takes. One camera is enough for either.
+  const whole: { name: string; straddle: ShutterStraddle | null }[] = [
+    { name: 'null', straddle: null },
+    { name: 'every row null', straddle: { parts: () => null } },
+    {
+      name: 'the filed frame at weight 1',
+      straddle: { parts: (_c, p, f) => [{ weight: 1, shown: { projector: p, frame: f } }] },
+    },
+  ];
+  const unquantised: SensorModel = { ...DEFAULT_SENSOR, quantizationBits: null };
+  const runs: { name: string; cams: SimulatedCamera[]; args: Partial<CaptureArgs> }[] = [
+    { name: 'room spill off', cams: cameras(2), args: { sensor: DEFAULT_SENSOR, roomSpill: null } },
+    { name: 'room spill on', cams: cameras(2), args: { sensor: DEFAULT_SENSOR, roomSpill: DEFAULT_ROOM_SPILL } },
+    {
+      name: 'unquantised, room spill on',
+      cams: cameras(1),
+      args: { sensor: unquantised, roomSpill: DEFAULT_ROOM_SPILL },
+    },
+    { name: 'handheld', cams: cameras(1), args: { sensor: DEFAULT_SENSOR, handheld: DEFAULT_HANDHELD } },
+  ];
+  for (const run of runs) {
+    const cams = run.cams;
+    const absent = shoot(cams, run.args);
+    assert.ok(absent.result.correspondences.length > 1000, `${run.name}: the capture decoded almost nothing`);
+    assert.equal(absent.pairs.length, cams.length * RIG.projectors.length);
+    for (const { name, straddle } of whole) {
+      const kept = shoot(cams, { ...run.args, straddle });
+      const label = `${name}, ${run.name}`;
+      assert.equal(kept.pairs.length, absent.pairs.length);
+      for (let k = 0; k < absent.pairs.length; k++) {
+        assertSameCapture(kept.pairs[k].capture, absent.pairs[k].capture, `${label}, pair ${k}`);
+      }
+      assertSameCorrespondences(kept.result.correspondences, absent.result.correspondences, label);
+      assert.deepEqual(kept.result.stats, absent.result.stats, `${label}: the stats differ`);
+    }
+  }
+});
+
+test('the blend is exposure-weighted, pre-sensor, and the neighbour is what the page lit', () => {
+  // No sensor, so every number here is the renderer's arithmetic and nothing
+  // else, compared against the clean capture's own frames. Three defects this
+  // exists to catch, each of which renders a perfectly plausible frame: the
+  // weights applied to the wrong states; a part on ANOTHER projector traced
+  // through this projector's geometry, which lights this projector's footprint
+  // with the neighbour's frame; and the neighbour's radiance added without
+  // taking the shared ambient back out, which counts the room's light twice —
+  // or taking out the sphere's ambient off the sphere, where what is shared is
+  // the room's background.
+  const cams = cameras(1);
+  const clean = framesOf(shoot(cams, { sensor: null }));
+  const n = clean[0][0].length;
+  const last = planFrames(PLAN).length - 1;
+  // With no sensor a pixel this projector does not reach is the same number in
+  // its white and its black frame, and a pixel it does reach is not.
+  const lit = (p: number, i: number): boolean => clean[p][0][i] !== clean[p][1][i];
+
+  // The neighbour test needs pixels only this projector lights and pixels only
+  // the next one does, so take the adjacent pair with the most of the rarer.
+  let p = -1;
+  let fewest = 0;
+  for (let q = 0; q + 1 < clean.length; q++) {
+    let onlyThis = 0;
+    let onlyNext = 0;
+    for (let i = 0; i < n; i++) {
+      if (lit(q, i) && !lit(q + 1, i)) onlyThis++;
+      else if (!lit(q, i) && lit(q + 1, i)) onlyNext++;
+    }
+    if (Math.min(onlyThis, onlyNext) > fewest) {
+      fewest = Math.min(onlyThis, onlyNext);
+      p = q;
+    }
+  }
+  assert.ok(fewest >= 100, `no adjacent projectors light pixels the other does not (${fewest})`);
+
+  const gray = 2;
+  assert.equal(planFrames(PLAN)[gray].kind, 'gray');
+  assert.equal(planFrames(PLAN)[gray + 1].kind, 'grayInverse');
+  const straddle: ShutterStraddle = {
+    parts(_c, q, f) {
+      if (q !== p) return null;
+      // A Gray plane smeared into its own complement.
+      if (f === gray) {
+        return [
+          { weight: 0.7, shown: { projector: q, frame: gray } },
+          { weight: 0.3, shown: { projector: q, frame: gray + 1 } },
+        ];
+      }
+      // This projector's last frame smeared into the next projector's white,
+      // which is what the page shows next.
+      if (f === last) {
+        return [
+          { weight: 0.7, shown: { projector: q, frame: last } },
+          { weight: 0.3, shown: { projector: q + 1, frame: 0 } },
+        ];
+      }
+      if (f === 0) return [{ weight: 1, shown: 'dark' }];
+      return null;
+    },
+  };
+  const blended = framesOf(shoot(cams, { sensor: null, straddle }));
+
+  // Float32 storage of numbers below about 1.5 is good to a few 1e-8.
+  const tolerance = 1e-6;
+  let worst = 0;
+  let differing = 0;
+  for (let i = 0; i < n; i++) {
+    const want = 0.7 * clean[p][gray][i] + 0.3 * clean[p][gray + 1][i];
+    worst = Math.max(worst, Math.abs(blended[p][gray][i] - want));
+    if (clean[p][gray][i] !== clean[p][gray + 1][i]) differing++;
+  }
+  assert.ok(differing > 100, 'the plane and its complement agree everywhere, so no weight was tested');
+  assert.ok(worst <= tolerance, `0.7 of a Gray plane and 0.3 of its complement is off by ${worst}`);
+
+  let onlyNext = 0;
+  let onlyThis = 0;
+  let worstNext = 0;
+  let worstThis = 0;
+  // The radiances of the pixels neither projector reaches; see below.
+  const unlit = new Set<number>();
+  for (let i = 0; i < n; i++) {
+    if (lit(p + 1, i) && !lit(p, i)) {
+      // Here this projector's frames are all the ambient term, and the next
+      // projector's white is ambient plus its own light.
+      onlyNext++;
+      const want = 0.7 * clean[p][last][i] + 0.3 * clean[p + 1][0][i];
+      worstNext = Math.max(worstNext, Math.abs(blended[p][last][i] - want));
+    } else if (!lit(p + 1, i)) {
+      // Here the next projector adds nothing, and the page left this one black:
+      // where this one reaches, and where neither does, on the sphere or off it.
+      // Off it, the light the neighbour's part takes back out is the room's and
+      // not the sphere's ambient, and taking out the wrong one moves the blend
+      // by 0.3 of the difference where nothing was lit at all.
+      if (lit(p, i)) onlyThis++;
+      else unlit.add(clean[p][1][i]);
+      const want = 0.7 * clean[p][last][i] + 0.3 * clean[p][1][i];
+      worstThis = Math.max(worstThis, Math.abs(blended[p][last][i] - want));
+    }
+  }
+  assert.equal(Math.min(onlyNext, onlyThis), fewest);
+  // With no sensor, an unlit pixel is the sphere's ambient or the room's
+  // background, so both kinds of pixel were checked.
+  assert.equal(unlit.size, 2, `the pixels neither projector reaches are at ${unlit.size} radiances, not 2`);
+  assert.ok(worstNext <= tolerance, `where only projector ${p + 1} reaches, the blend is off by ${worstNext}`);
+  assert.ok(worstThis <= tolerance, `where projector ${p + 1} does not reach, the blend is off by ${worstThis}`);
+
+  // The page's black after its last step is this projector's black frame.
+  assertSamePixels(blended[p][0], clean[p][1], "'dark' against this projector's black");
+
+  // And nothing the straddle did not name moved at all.
+  for (let q = 0; q < clean.length; q++) {
+    for (let f = 0; f < clean[q].length; f++) {
+      if (q === p && (f === 0 || f === gray || f === last)) continue;
+      assertSamePixels(blended[q][f], clean[q][f], `projector ${q} frame ${f}, which nothing named`);
+    }
+  }
+});
+
+test('noise is drawn once, on the sum', () => {
+  // A straddled pixel's photons arrive in one exposure, and shot noise is
+  // Poisson on their SUM. Noising each part and mixing the results is the
+  // tempting implementation — both parts already exist as images — and at an
+  // even split it halves the variance, so a straddled photograph would come out
+  // quieter than a clean one. With no read noise, no quantisation and no clip,
+  // a pixel's variance is exactly its signal over the gain.
+  const sensor: SensorModel = {
+    electronsPerUnitRadiance: 50,
+    readNoiseElectrons: 0,
+    quantizationBits: null,
+    saturationRadiance: 1e9,
+  };
+  const cams = cameras(1);
+  const clean = framesOf(shoot(cams, { sensor: null }));
+  // White at 0.5, black at 0.5.
+  const straddle: ShutterStraddle = {
+    parts: (_c, p, f) =>
+      f === 0
+        ? [
+            { weight: 0.5, shown: { projector: p, frame: 0 } },
+            { weight: 0.5, shown: { projector: p, frame: 1 } },
+          ]
+        : null,
+  };
+  const noisy = framesOf(shoot(cams, { sensor, straddle }));
+  let count = 0;
+  let sum = 0;
+  let sumSq = 0;
+  let signal = 0;
+  for (let p = 0; p < clean.length; p++) {
+    const white = clean[p][0];
+    const black = clean[p][1];
+    const photo = noisy[p][0];
+    for (let i = 0; i < white.length; i++) {
+      if (white[i] === black[i]) continue;
+      const expected = 0.5 * white[i] + 0.5 * black[i];
+      const r = photo[i] - expected;
+      count++;
+      sum += r;
+      sumSq += r * r;
+      signal += expected;
+    }
+  }
+  assert.ok(count >= 2000, `only ${count} lit pixels`);
+  const mean = sum / count;
+  const variance = sumSq / count - mean * mean;
+  const predicted = signal / count / sensor.electronsPerUnitRadiance;
+  assert.ok(
+    Math.abs(variance / predicted - 1) <= 0.1,
+    `the straddled frame's variance is ${variance}, and one Poisson draw on the sum gives ${predicted}`,
+  );
+});
+
+test('malformed straddle parts throw, naming the photograph they came from', () => {
+  // A malformed part rendered anyway is a plausible frame with the wrong light
+  // in it: weights short of one dim it, a negative weight subtracts light, and a
+  // state the rig or the plan does not have reads past the end of an array.
+  // Each is refused, and the refusal names the camera, projector, frame and row
+  // it came from, which is what a caller needs to find the fault in its own
+  // timing model. The message is matched, not just the throw, because a state
+  // past the end of an array throws a TypeError anyway.
+  const cams = cameras(2);
+  const frames = planFrames(PLAN).length;
+  const cases: [string, ExposurePart[], RegExp][] = [
+    [
+      'weights summing to 0.9',
+      [
+        { weight: 0.5, shown: { projector: 2, frame: 3 } },
+        { weight: 0.4, shown: { projector: 2, frame: 4 } },
+      ],
+      /weights summing to 0\.9;/,
+    ],
+    [
+      'a negative weight',
+      [
+        { weight: 1.25, shown: { projector: 2, frame: 3 } },
+        { weight: -0.25, shown: { projector: 2, frame: 4 } },
+      ],
+      /weight of -0\.25;/,
+    ],
+    [
+      'a frame the plan does not have',
+      [{ weight: 1, shown: { projector: 2, frame: frames } }],
+      new RegExp(`named frame ${frames},`),
+    ],
+    [
+      'a projector the rig does not have',
+      [{ weight: 1, shown: { projector: RIG.projectors.length, frame: 3 } }],
+      new RegExp(`named projector ${RIG.projectors.length},`),
+    ],
+  ];
+  for (const [name, parts, what] of cases) {
+    const straddle: ShutterStraddle = {
+      parts: (c, p, f, row) => (c === 1 && p === 2 && f === 3 && row === 7 ? parts : null),
+    };
+    assert.throws(
+      () => capture(cams, { straddle }),
+      (e: unknown) =>
+        e instanceof Error &&
+        /camera 1, projector 2, frame 3, row 7/.test(e.message) &&
+        what.test(e.message),
+      name,
+    );
+  }
+});
+
+test('onCapture is observational and sees exactly the frames that were decoded', () => {
+  // The callback exists so an experiment can audit what a capture actually
+  // photographed. That is worth something only if watching changes nothing,
+  // and if what it is handed is what was decoded: a copy taken at any other
+  // moment — before the noise, say — would audit a capture that never happened.
+  const cams = cameras(2);
+  const unwatched = capture(cams, { sensor: DEFAULT_SENSOR });
+  const watched = shoot(cams, { sensor: DEFAULT_SENSOR });
+  assertSameCorrespondences(watched.result.correspondences, unwatched.correspondences, 'watching');
+  assert.deepEqual(watched.result.stats, unwatched.stats);
+
+  assert.deepEqual(
+    watched.pairs.map((q) => [q.camera, q.projector, q.capture.camera, q.capture.projector]),
+    [0, 1].flatMap((c) => [0, 1, 2, 3].map((p) => [c, p, c, p])),
+  );
+  const again: Correspondence[] = [];
+  const stats = { ...watched.result.stats };
+  for (const k of Object.keys(stats) as (keyof DecodeStats)[]) stats[k] = 0;
+  for (const q of watched.pairs) {
+    // The fixture's own decode options.
+    const decoded = decodeCapture(q.capture, { pixelStride: 1, maxCorrespondences: 0, segmentation: null });
+    for (const c of decoded.correspondences) again.push(c);
+    for (const k of Object.keys(stats) as (keyof DecodeStats)[]) stats[k] += decoded.stats[k];
+  }
+  assert.ok(again.length > 1000, 'the capture decoded almost nothing');
+  assertSameCorrespondences(again, watched.result.correspondences, 'the frames handed over, decoded again');
+  assert.deepEqual(stats, watched.result.stats);
+});
+
+test("the bench's own sensor and stream, applied to a noiseless frame, reproduce the renderer", () => {
+  // EXPERIMENT-10's fast path renders a pair once without noise, blends the
+  // frames itself, and noises the blend by walking `makeSensor` over
+  // `pairNoiseSeed`'s stream. It is a model of the renderer, worth exactly its
+  // agreement with the renderer: if the renderer's stream moved, the fast path
+  // would go on producing noise that looks right and belongs to nobody.
+  //
+  // Not bit-exact, and the reason is known. The noiseless frames are stored as
+  // Float32, so the walk noises a rounded value where the renderer noised the
+  // double, and now and then the two land either side of a quantisation step.
+  // Counted in steps rather than in radiance, because both sides are stored as
+  // Float32 too, and one step apart can be a step and an ulp apart in radiance.
+  const cams = cameras(2);
+  const clean = shoot(cams, { sensor: null });
+  const noisy = shoot(cams, { sensor: DEFAULT_SENSOR });
+  const bits = DEFAULT_SENSOR.quantizationBits;
+  assert.ok(bits !== null);
+  const step = DEFAULT_SENSOR.saturationRadiance / (2 ** bits - 1);
+  const level = (v: number): number => Math.round(v / step);
+  let total = 0;
+  let same = 0;
+  let worst = 0;
+  for (let k = 0; k < clean.pairs.length; k++) {
+    const { camera, projector } = clean.pairs[k];
+    const sensor = makeSensor(DEFAULT_SENSOR, makeBenchRng(pairNoiseSeed(FIXTURE_SEED, camera, projector)));
+    const a = inPlanOrder(clean.pairs[k].capture);
+    const b = inPlanOrder(noisy.pairs[k].capture);
+    for (let f = 0; f < a.length; f++) {
+      for (let i = 0; i < a[f].data.length; i++) {
+        const walked = Math.fround(sensor(a[f].data[i]));
+        const rendered = b[f].data[i];
+        total++;
+        if (walked === rendered) same++;
+        else worst = Math.max(worst, Math.abs(level(walked) - level(rendered)));
+      }
+    }
+  }
+  assert.ok(same >= 0.999 * total, `${total - same} of ${total} pixels differ from the renderer's`);
+  assert.ok(worst <= 1, `a pixel differs from the renderer's by ${worst} quantisation steps`);
+});
+
+test('noiseCameraIndices lets a camera photographed alone keep the noise it has in the set', () => {
+  // A caller photographing part of a set passes those cameras alone, and each
+  // then sits at a new position. Keyed by position, the set's second camera
+  // draws the first camera's noise. EXPERIMENT-10's Q0 did that for its
+  // fine-raster units, and set the photograph beside frames noised as the
+  // camera it was.
+  const cams = cameras(2);
+  const whole = shoot(cams, { sensor: DEFAULT_SENSOR });
+  const second = whole.pairs.filter((q) => q.camera === 1);
+  const alone = shoot([cams[1]], { sensor: DEFAULT_SENSOR, noiseCameraIndices: [1] });
+  assert.equal(alone.pairs.length, second.length);
+  alone.pairs.forEach((q, k) => {
+    const theirs = inPlanOrder(second[k].capture);
+    inPlanOrder(q.capture).forEach((image, f) => {
+      assertSamePixels(image.data, theirs[f].data, `camera 1 alone, projector ${k}, frame ${f}`);
+    });
+  });
+
+  // Keyed by its position, the same camera alone is another photograph.
+  const unkeyed = shoot([cams[1]], { sensor: DEFAULT_SENSOR });
+  const differs = unkeyed.pairs.some((q, k) => {
+    const theirs = inPlanOrder(second[k].capture);
+    return inPlanOrder(q.capture).some((image, f) => image.data.some((v, i) => !Object.is(v, theirs[f].data[i])));
+  });
+  assert.ok(differs, 'camera 1 alone drew its own noise unkeyed, so this test cannot see the key');
+
+  // Keying every camera by its own position is the capture with no key at all.
+  const identity = framesOf(shoot(cams, { sensor: DEFAULT_SENSOR, noiseCameraIndices: [0, 1] }));
+  const plain = framesOf(whole);
+  identity.forEach((pair, k) => pair.forEach((data, f) => assertSamePixels(data, plain[k][f], `pair ${k} frame ${f}`)));
+
+  // One key per camera, each a distinct non-negative integer.
+  assert.throws(() => capture(cams, { noiseCameraIndices: [0] }), /noiseCameraIndices/);
+  assert.throws(() => capture(cams, { noiseCameraIndices: [1, 1] }), /noiseCameraIndices/);
+  assert.throws(() => capture(cams, { noiseCameraIndices: [0, -1] }), /noiseCameraIndices/);
+  assert.throws(() => capture(cams, { noiseCameraIndices: [0, 0.5] }), /noiseCameraIndices/);
+});
+
+test('azimuthOffsetDeg absent is 0, and present it only rotates the set', () => {
+  // The bench never sets it, so absent has to be exactly the placement every
+  // published number was produced with. And present it has to turn the set and
+  // do nothing else: an offset that took a draw, or moved where the cameras
+  // look but not where they stand, would change which rig EXPERIMENT-10
+  // photographs rather than which way it faces. s01's own placement options,
+  // jitter and all, so the draws are real ones.
+  const opts = makeScenario(1234, 1, PRESETS.default).cameras;
+  assert.equal(opts.azimuthOffsetDeg, undefined, 'a scenario set the offset');
+  const place = (o: CameraPlacementOptions): SimulatedCamera[] =>
+    placeCameras(o, RIG.sphere.centerHeightM, makeBenchRng(17));
+  const without = place(opts);
+  assert.deepEqual(place({ ...opts, azimuthOffsetDeg: 0 }), without);
+
+  const turned = place({ ...opts, azimuthOffsetDeg: 30 });
+  const deg = (rad: number): number => (rad * 180) / Math.PI;
+  const wrap = (d: number): number => ((((d + 180) % 360) + 360) % 360) - 180;
+  const azimuth = (c: SimulatedCamera): number => deg(Math.atan2(c.pose.position.y, c.pose.position.x));
+  const range = (c: SimulatedCamera): number =>
+    Math.hypot(c.pose.position.x, c.pose.position.y, c.pose.position.z);
+  assert.equal(turned.length, without.length);
+  for (let i = 0; i < without.length; i++) {
+    const a = without[i];
+    const b = turned[i];
+    assert.ok(Math.abs(wrap(azimuth(b) - azimuth(a)) - 30) <= 1e-9, `camera ${i} did not turn by 30 degrees`);
+    assert.equal(b.heightM, a.heightM);
+    assert.equal(b.pose.position.z, a.pose.position.z);
+    assert.ok(Math.abs(range(b) - range(a)) <= 1e-12, `camera ${i} changed its distance`);
+    // Still aimed at the centre with the same jitter: the yaw turns with the
+    // set, and the pitch and roll do not move.
+    assert.ok(Math.abs(wrap(b.pose.yawDeg - a.pose.yawDeg) - 30) <= 1e-9, `camera ${i} did not turn its yaw`);
+    assert.ok(Math.abs(b.pose.pitchDeg - a.pose.pitchDeg) <= 1e-9);
+    assert.equal(b.pose.rollDeg, a.pose.rollDeg);
+  }
+});
+
+test('captureOptionsFor is the literal runScenario used', () => {
+  // EXPERIMENT-10 photographs scenarios through `captureOptionsFor` so that its
+  // captures ARE the bench's. It is a move of the literal `runScenario` built
+  // inline, and this pins the move: the expected values are written out rather
+  // than read back through the function, so a changed literal fails here
+  // instead of agreeing with itself. Then `runScenario` itself is caught at its
+  // first photograph, before anything solves, to show it photographs with
+  // exactly these options, the experiment's two overrides and a scenario's
+  // straddle included.
+  const scenario = makeScenario(1234, 1, PRESETS.default);
+  assert.equal(scenario.id, 's01-nominal');
+  const world = buildWorld(scenario);
+  const options: RunOptions = {
+    preset: PRESETS.default,
+    outDir: '',
+    repoRoot: '',
+    writeArtifacts: false,
+    baseline: false,
+  };
+  const plan = planPatternFor(world, scenario, PRESETS.default).plan;
+  const got = captureOptionsFor(world, scenario, options, plan);
+  assert.equal(got.plan, plan);
+  assert.deepEqual(got.conditions, {
+    ambient: 0.04,
+    reflectance: world.scene.reflectance,
+    roomAlbedo: world.scene.roomAlbedo,
+    sensor: DEFAULT_SENSOR,
+    handheld: null,
+    clock: DEFAULT_CLOCK,
+    minIncidenceCos: 0.2,
+    roomSpill: null,
+    segmentImage: null,
+    straddle: null,
+  });
+  assert.equal(got.surface, null);
+  assert.equal(got.seed, scenario.seed);
+  assert.deepEqual(got.decode, {
+    pixelStride: 1,
+    maxCorrespondences: PRESETS.default.maxCorrespondencesPerPair,
+    segmentation: null,
+  });
+  assert.deepEqual(got.previewPairs, [{ camera: 0, projector: 0 }]);
+  assert.equal(got.previewFrame, -1);
+  assert.equal(got.onCapture, null);
+
+  // Each override moves its own field and nothing else.
+  const reseeded = captureOptionsFor(world, scenario, { ...options, captureSeed: 99 }, plan);
+  assert.equal(reseeded.seed, 99);
+  assert.deepEqual({ ...reseeded, seed: scenario.seed }, got);
+  const pagePlan = { ...DEFAULT_PATTERN_PLAN };
+  assert.notDeepEqual(pagePlan, plan, 's01 already derives the page plan, so the override is untested');
+  const replanned = captureOptionsFor(world, scenario, options, pagePlan);
+  assert.equal(replanned.plan, pagePlan);
+  assert.deepEqual({ ...replanned, plan }, got);
+  // And the straddle a scenario carries reaches the conditions as it was given.
+  // It is the treatment the experiment applies, and a slip here would
+  // disconnect it silently: every treated capture photographed clean, and every
+  // straddle reported harmless. This one photographs the first pair's white as
+  // black.
+  const darkWhite: ShutterStraddle = {
+    parts: (c, p, f) => (c === 0 && p === 0 && f === 0 ? [{ weight: 1, shown: 'dark' }] : null),
+  };
+  const straddled = { ...scenario, degradation: { ...scenario.degradation, straddle: darkWhite } };
+  const restraddled = captureOptionsFor(world, straddled, options, plan);
+  assert.equal(restraddled.conditions.straddle, darkWhite);
+  assert.deepEqual({ ...restraddled, conditions: { ...restraddled.conditions, straddle: null } }, got);
+
+  class Enough extends Error {}
+  const firstPhotograph = (start: (watch: NonNullable<CaptureOptions['onCapture']>) => unknown): PatternCapture => {
+    const seen: { capture: PatternCapture | null } = { capture: null };
+    assert.throws(
+      () =>
+        start((_camera, _projector, c) => {
+          seen.capture = c;
+          throw new Enough();
+        }),
+      Enough,
+    );
+    assert.ok(seen.capture !== null, 'nothing was photographed');
+    return seen.capture;
+  };
+  const overridden: RunOptions = { ...options, plan: pagePlan, captureSeed: 99 };
+  const fromRun = firstPhotograph((watch) => runScenario(straddled, { ...overridden, onCapture: watch }));
+  const fromHere = firstPhotograph((watch) =>
+    captureAndDecode(world.truthRig, world.cameras, {
+      ...captureOptionsFor(world, straddled, overridden, pagePlan),
+      onCapture: watch,
+    }),
+  );
+  assert.equal(fromRun.gray[0].bits, pagePlan.grayBits, 'runScenario did not photograph the plan it was given');
+  assertSameCapture(fromRun, fromHere, "runScenario's first photograph", pagePlan);
+
+  // The straddle took, on the one frame it named and nowhere else: the white
+  // differs from the unstraddled photograph's wherever projector 0 reaches, and
+  // every other frame is the unstraddled one's bit for bit, because the noise is
+  // drawn in the same order either way.
+  const unstraddled = firstPhotograph((watch) =>
+    captureAndDecode(world.truthRig, world.cameras, {
+      ...captureOptionsFor(world, scenario, overridden, pagePlan),
+      onCapture: watch,
+    }),
+  );
+  const treated = inPlanOrder(fromRun, pagePlan);
+  const twin = inPlanOrder(unstraddled, pagePlan);
+  let changed = 0;
+  for (let i = 0; i < treated[0].data.length; i++) if (treated[0].data[i] !== twin[0].data[i]) changed++;
+  assert.ok(changed > 1000, `runScenario's straddled white differs from the clean one on ${changed} pixels`);
+  for (let f = 1; f < treated.length; f++) {
+    assertSamePixels(treated[f].data, twin[f].data, `frame ${f}, which the straddle did not name`);
   }
 });

@@ -46,7 +46,7 @@ import { DEFAULT_MISALIGNMENT, defaultSlotsFor } from '../../sim/src/scene.ts';
 import type { MaskInterpretation } from '../../sim/src/coverage.ts';
 import type { CameraPlacementOptions, FrameClock, HandheldMotion } from './camera.ts';
 import { DEFAULT_CLOCK, DEFAULT_HANDHELD } from './camera.ts';
-import type { RoomSpill, SensorModel } from './capture.ts';
+import type { RoomSpill, SensorModel, ShutterStraddle } from './capture.ts';
 import { DEFAULT_SENSOR } from './capture.ts';
 import type { PatternPlan } from './patterns.ts';
 import { DEFAULT_PATTERN_PLAN } from './patterns.ts';
@@ -150,6 +150,14 @@ export interface DegradationSettings {
    * exactly as ambient, the sensor and the motion are.
    */
   roomSpill: RoomSpill | null;
+  /**
+   * What each photograph integrated when the shutter was open across a pattern
+   * change. `makeScenario` never sets it, so every archetype photographs
+   * exactly the frame each photograph is filed as; EXPERIMENT-10 sets it. It
+   * never reaches `bench-results.json`, because `results.ts` writes
+   * `degradation` field by field. See `capture.ts`'s {@link ShutterStraddle}.
+   */
+  straddle?: ShutterStraddle | null;
 }
 
 export interface Scenario {

@@ -34,6 +34,14 @@ A straddle is worse than a drop for one specific reason:
   which is exactly the property `classify` uses to call a frame *patterned*. The
   bookends see a healthy capture.
 
+> **Corrected by EXPERIMENT-10: not every patterned frame lights about half the
+> crescent.** Within a run the coarse Gray planes light all of the visible crescent
+> or none of it (found when EXPERIMENT-10 was designed), so the property `classify`
+> relies on fails on clean frames, before any straddle. EXPERIMENT-10's Q0 shows the
+> result: on bench photographs of clean camera positions, today's page refused all
+> 108: 105 at classify and 3 at the run count. See
+> [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
+
 `docs/EXPERIMENT-8.md` measured Phase 2's blind spot to be a cancelling
 drop-and-duplicate inside one run. This is a second way into the same blind spot,
 reached without anybody deleting a file.
@@ -43,6 +51,17 @@ that followed them.** Experiment 8 has since added a complement fingerprint, and
 a straddle is not invisible to it — but the response depends on *which* frame of
 a pair the shutter smeared, and an earlier version of this paragraph claimed a
 single crossing point that does not exist.
+
+> **Corrected by EXPERIMENT-10: the bookends see a healthy capture under one footing
+> only.** EXPERIMENT-10's reader is handed each photograph's kind, since today's page
+> places no clean bench position, and what kind a blend is depends on the footing.
+> Read as the step it is filed under (the filed footing), every kind is kept and the
+> bookends see a healthy capture. Read as the step that holds more than half its
+> exposure (the content footing), a whole-position straddle past half the exposure
+> shifts the photographs' kinds by one step, and the bookends refuse the position by
+> count (“Found N projector runs”): 49.2% of the touched runs the clean capture
+> places, at EXPERIMENT-9's headline cell. See
+> [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
 
 A Gray plane is followed by its own complement, so a photograph that is a
 fraction `a` of the pattern and `1 - a` of the frame after it misses the
@@ -54,6 +73,15 @@ pattern side and 0.0750 on the complement side, and on the finest plane at the
 sweep's own grid offset the pattern side falls to 0.0938
 (`packages/solver/test/indexing.test.ts` pins both sides).
 
+> **Corrected by EXPERIMENT-10: that test pins both sides on its toy plan only.**
+> The page-plan figures in the paragraph above were pinned nowhere. EXPERIMENT-10's
+> tests (`packages/experiments/test/straddle.test.ts`) now pin the pattern side's
+> bound on rendered camera frames of the page's plan (T15: a lone straddled Gray
+> plane reads at most its smear, and the coarsest plane nearly all of it) and the
+> whole-run closed form in projector space (T16); the complement side's figure is
+> still pinned nowhere. The note two paragraphs down says why a lone straddled frame
+> is not the common case. See [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
+
 So at `COMPLEMENT_LIMIT` the crossing into a refusal is **not** one number: it is
 about a seventh of the exposure for a straddled pattern on a coarse plane, about
 a third for a straddled complement, and further still on the finest planes. A
@@ -63,6 +91,15 @@ What is **not** established is how often a straddle is large enough, because the
 sweep below was not re-run against the fingerprint. The numbers on this page are
 the bookends' exposure, and they are the right numbers for the mechanism they
 describe.
+
+> **Answered by EXPERIMENT-10, for a reader whose bookends can place runs** —
+> today's page places none of the clean bench positions it was given, so none of
+> this reaches it yet. The common straddle is not one frame: at the page's defaults,
+> with a perfect timer, 712 of the 849 touched positions straddle from their first
+> photograph to their last, and the check refuses such a position run by run, each
+> run of a forward straddle first refused somewhere between 7.0% and 16.5% of the
+> exposure. Of the 728 captures touched in that replay, the reader refuses 627 loudly
+> and lets 98 through silently. See [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
 
 ## The answer, and it is not the axis this experiment was opened on
 
@@ -230,6 +267,13 @@ actually comes in:
 What both share is the absence of a signal. Every file is present, every file is
 the right size, and the bookends say the run is sound.
 
+> **Corrected by EXPERIMENT-10, as under “What it argues for” below: the loss is
+> real, and most of it need not be silent.** A reader whose bookends can place runs
+> refuses 627 of the 728 crystal captures touched at the defaults loudly, and 482 of
+> the 495 hand-pressed ones; what the bookends themselves say depends on the footing
+> (the correction near the top of this page). Today's page refuses every clean bench
+> position before that check runs. See [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
+
 ## What this does not measure
 
 **What a straddled photograph costs a calibration.** A straddle is counted here
@@ -241,6 +285,15 @@ blends pushed through `decodeCapture`, and until somebody runs it the honest
 claim is the narrow one: **this many photographs of a 408-frame capture are not
 photographs of the pattern they are filed under.**
 
+> **Measured since, by EXPERIMENT-10.** It renders these photographs through the
+> bench's renderer and hands them to the page's own complement check and decoder,
+> so the narrow claim is no longer the only one. A straddle the complement check
+> lets through keeps its Gray words and shifts its phase by a bias one-signed in its
+> mean, about 0.75 of the cyclic shift, which at s = 0.06 moves decodes 0.46 px along
+> *u* (the median over runs of each run's mean). What that costs a solve, against
+> re-shooting, is in [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md), with its caveat:
+> today's page refuses every clean bench position before the check runs.
+
 **Whether these timing terms are real.** The drift band is engineering-typical
 for uncompensated consumer quartz and the jitter figures are plausible for an
 intervalometer and a human thumb. Neither has been measured against a camera
@@ -251,6 +304,15 @@ position takes. The rate is drawn once per capture and not once per position,
 since moving the tripod does not give the camera a different oscillator; the
 accumulated offset, which does reset, is what restarts. All three choices are stated here so a reader can discount them.
 
+> **And the emitter is not the perfect timer this model assumes** (what that costs,
+> EXPERIMENT-10 sweeps). The page's `advance()` re-arms its timer only after
+> painting the next frame, so each step runs late and the lateness accumulates over
+> a position. The aimed start stays untouched only while that lateness is under about
+> 3.50 to 3.70 ms per step; at the 7.5 ms per step a design-time headless probe
+> measured, 1786 of 2000 aimed captures are touched, where the aimed row above has
+> none. A display machine's lateness is unmeasured. See
+> [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
+
 ## What it argues for
 
 **This reversed under review, and the reversal is the useful part.** The first
@@ -260,6 +322,15 @@ with a capture modelled as the three separate emitter runs it actually is, an
 operator who starts the camera at no particular phase ruins **more than one
 capture in three** at the page's default settings — and cannot tell. Four in
 five of those lose a whole camera position, every frame of it.
+
+> **Corrected by EXPERIMENT-10: most of them could tell, given a reader the page
+> does not have yet.** Replaying these captures shot for shot, a reader whose
+> bookends can place runs refuses 627 of the 728 touched loudly and passes 98
+> silently, 43 of which break the 1 mm seam gate. But where it refuses a
+> run on its own, the message mostly blames a dropped and a duplicated frame; and
+> today's page refuses every clean bench position before that check runs, so on
+> today's page a straddled capture would be refused like any other, with nothing to
+> say why. See [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
 
 Both corrections came from review, and both were the same mistake: a number
 sitting in the model as a constant, describing a procedure nobody had checked it

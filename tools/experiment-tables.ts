@@ -746,7 +746,1418 @@ function experiment9Shape(result: Experiment9): string {
   return out.join('\n');
 }
 
+// ---------------------------------------------------------------------------
+// Experiment 10
+// ---------------------------------------------------------------------------
+
+/**
+ * A distribution as experiment 10 writes one: every figure null when the
+ * distribution is empty, which is the one place a dash is allowed.
+ */
+interface Spread10 {
+  n: number;
+  min: number | null;
+  p10: number | null;
+  median: number | null;
+  p90: number | null;
+  max: number | null;
+}
+
+/** A share of one cell's captures, with its 95% interval resampling rigs. */
+interface Share10 {
+  num: number;
+  den: number;
+  share: number | null;
+  lo: number | null;
+  hi: number | null;
+}
+
+/** A cell's SILENT captures judged at one yardstick. */
+interface HarmAt10 {
+  tauMm: number;
+  judged: number;
+  HARMLESS: number;
+  BIASED: number;
+  'GATE-BREAKING': number;
+  exceedTau: number;
+}
+
+/** One operator policy's reading of a cell: P re-shoots a refused position whole, A keeps placed runs. */
+interface Policy10 {
+  counts: Record<string, number>;
+  shares: Record<string, Share10>;
+  solved: {
+    captures: number;
+    rotationFlips: number;
+    over025: number;
+    over05: number;
+    withinReshootNoise: number;
+    gateBreakingWithinNoise: number;
+  };
+  silentAgainst: {
+    tau: HarmAt10 | null;
+    tauLo: HarmAt10 | null;
+    tauHi: HarmAt10 | null;
+    positionTau: HarmAt10 | null;
+  };
+  pastGate: { silent: number; loudSilent: number; total: number };
+}
+
+/** One re-scored cell: EXPERIMENT-9's photographs at one arm, start, exposure and emitter lateness. */
+interface Cell10 {
+  id: string;
+  spec: {
+    arm: string;
+    phase: string;
+    exposureS: number;
+    lateMs: number;
+    vsync: boolean;
+    readoutS: number;
+    which: string;
+    /**
+     * `policies`: solved under P and A. `first-a`: a subsample solved under A,
+     * which P borrows where its plan is A's.
+     */
+    solve: string;
+  };
+  trials: number;
+  capturesFlagged: number;
+  capturesRecorded: number;
+  newlyTouched: number;
+  touchedPositions: number;
+  positions: {
+    content: { all: Record<string, number>; excludingMinorMarginal: Record<string, number> };
+    filed: { all: Record<string, number> };
+  };
+  classes: { P: Policy10; A: Policy10 };
+  loud: {
+    captures: number;
+    wholePositionOnly: number;
+    runByRun: number;
+    reshootNamed: number;
+    dropAndDuplicate: number;
+  };
+  solved: boolean;
+}
+
+/** A null distribution of D_grid: re-shoots of a designed rig against its plain twin. */
+interface Yardstick10 {
+  value: number | null;
+  lo: number | null;
+  hi: number | null;
+  median: number | null;
+  samples: number;
+  largest: { n: number; byRig: Record<string, number> };
+  rotationFlips: { flips: number; of: number };
+  gridFlips: { flips: number; of: number };
+}
+
+interface Q0Variant10 {
+  positions: number;
+  placedPositions: number;
+  margin: Spread10;
+  reasons: Record<string, number>;
+  perRunAlone: { runs: number; rescued: number };
+}
+
+/** The counterfactual reader on the clean capture: each camera's twin. */
+interface Twins10 {
+  cameras: number;
+  raster: { width: number; height: number } | null;
+  runs: number;
+  attributable: number;
+  refusedClean: number;
+  invisibleRefused: number;
+  minor: number;
+  marginal: number;
+  noiseFloor: Spread10;
+  reshootNamed: number;
+}
+
+interface DecodeLevel10 {
+  direction: string;
+  s: number;
+  runs: number;
+  meanU: Spread10;
+  meanV: Spread10;
+  ratioU: Spread10;
+  ratioV: Spread10;
+  mmShift: Spread10;
+  movedHalfPeriod: number;
+  grayFlips: { matched: number; u: number; v: number } | null;
+}
+
+interface SignTally10 {
+  pixels: number;
+  uPos: number;
+  vPos: number;
+  uPosShare: number | null;
+  vPosShare: number | null;
+  maxAbsU: number;
+  maxAbsV: number;
+}
+
+interface TimingCell10 {
+  arm: string;
+  phase: string;
+  lateMs: number;
+  vsync: boolean;
+  trials: number;
+  capturesTouched: number;
+  positionsTouched: number;
+  wholePositions: number;
+}
+
+interface AimedCrossing10 {
+  firstTouchedMs: number | null;
+  onePercentMs: number | null;
+  bracketMs: [number | null, number] | null;
+}
+
+interface H7Clause10 {
+  checks: number;
+  testable: number;
+  untestable: number;
+  failures: number;
+}
+
+/** Only the fields a table below reads. The file carries far more. */
+interface Experiment10 {
+  mode: string;
+  generatedFrom: {
+    verdictSmear: number;
+    design: {
+      constants: {
+        PROJECTORS: number;
+        MARGINAL_RESIDUAL: number;
+        MARGINAL_BAND: number;
+        GRID_GATE_MM: number;
+        ROTATION_GATE_DEG: number;
+        VSYNC_S: number;
+        HEADLESS_LATENESS_MS: { hudTickOff: number; armedTickOn: number };
+        EXPECTED: { complements: { pairs: number[][] } };
+      };
+      plan: {
+        pose: boolean;
+        decodeNoiseless: number[];
+        lateMsTiming: number[];
+        lateMsRendered: number[];
+        poseLevels: {
+          forward: number[];
+          backward: number[];
+          rolling: { readoutOverExposure: number; midRow: number[] };
+        };
+      };
+    };
+  };
+  precondition: {
+    q0: {
+      main: Q0Variant10;
+      spill: Q0Variant10;
+      fine: Q0Variant10;
+      total: number;
+      placedPositions: number;
+      minClassifyMargin: number;
+      refusedAt: {
+        classify: { positions: number; maxMargin: number | null };
+        count: { positions: number; margin: Spread10; runsFound: { min: number; max: number } | null };
+        other: number;
+      };
+      worth: { refusal: string | null } | null;
+    };
+    q0b: {
+      shape: string;
+      positions: number;
+      runsPlaced: number;
+      runsPlacedClean: number;
+      wholeRefused: number;
+      reasons: Record<string, number>;
+    }[];
+    twins: { main: Twins10; spill: Twins10; fine: Twins10 };
+  };
+  gate: {
+    crossings: {
+      attributableRuns: number;
+      scannedTo: number;
+      neverRefused: { forward: number; backward: number };
+      forward: Spread10;
+      backward: Spread10;
+      belowLimitShare: number | null;
+      bindingPairForward: Record<string, number>;
+      bindingU0Share: number | null;
+      withinPositionSpread: { positions: number; spread: Spread10; atLeast002: number };
+      u0: {
+        runs: number;
+        byRenderedCrossing: { upTo?: number; above?: number; runs: number; maxError: number | null }[];
+        u0Bound: { runs: number; maxError: number | null };
+      };
+      lowBackward: { below: number; runs: number; maxLit: number | null; lowest: number | null };
+      pairsForward: { pair: string; crossing: Spread10 }[];
+    };
+    noisy: { agreement: { runs: number; agree: number; share: number | null } };
+    spill: { attributable: number; forward: Spread10 };
+  };
+  decode: {
+    curve: DecodeLevel10[];
+    forwardMeans: { runLevels: number; nonNegativeU: number; nonNegativeV: number };
+    grayFlipsBelowFiveNinths: { matched: number; either: number } | null;
+    highestDecoded: number;
+    verdictLevel: {
+      runs: number;
+      absMeanU: Spread10;
+      absMeanV: Spread10;
+      p95AbsV: Spread10;
+      mmShift: Spread10;
+      signs: { seam: SignTally10; rest: SignTally10; all: SignTally10 } | null;
+    };
+  };
+  pose: {
+    solved: boolean;
+    tauNull: Yardstick10;
+    tauPosition: Yardstick10;
+    levels: {
+      label: string;
+      cases: number;
+      allRefused: number;
+      dGridMm: Spread10;
+      overTau: number | null;
+      overTauPosition: number | null;
+      gridFlips: number;
+      rotationFlips: number;
+    }[];
+  };
+  rescore: { cells: Cell10[] };
+  lateness: {
+    timing: TimingCell10[];
+    aimed: {
+      vsyncOff: AimedCrossing10;
+      vsyncOn: AimedCrossing10;
+      threshold: {
+        aimBandS: number[];
+        steps: number;
+        driftPpm: number;
+        matchedClocksMs: number | null;
+        fastCameraMs: number | null;
+      };
+    };
+    cells: Cell10[];
+  };
+  harness: { id: string; pass: boolean | null; measured: unknown }[];
+}
+
+/**
+ * A cell a table reads. Absent is a fault and never a blank, for the reason
+ * `cell9` gives: a missing cell rendered as a dash is a plausible-looking entry
+ * with a bug behind it. The file holds a null on purpose in a few places (an
+ * empty distribution, a yardstick nothing was solved for), and only a reader
+ * that asks for a nullable value may render one, as a dash.
+ */
+function has10<T>(value: T | undefined, what: string): T {
+  if (value === undefined) {
+    throw new Error(
+      `experiment-10: the results file has no ${what}; a cell a table reads is missing, which is a ` +
+        'fault and not a blank',
+    );
+  }
+  return value;
+}
+
+/** A finite number, and nothing else. */
+function n10(value: number | null | undefined, what: string): number {
+  const v = has10(value, what);
+  if (typeof v !== 'number' || !Number.isFinite(v)) {
+    throw new Error(`experiment-10: ${what} is ${JSON.stringify(v)}, and the table needs a number there`);
+  }
+  return v;
+}
+
+/** A number the file may hold as null on purpose. Absent still throws. */
+function nOrNull10(value: number | null | undefined, what: string): number | null {
+  const v = has10(value, what);
+  return v === null ? null : n10(v, what);
+}
+
+const DASH10 = '—';
+const fixed10 =
+  (digits: number) =>
+  (x: number): string =>
+    x.toFixed(digits);
+const pct10 = (x: number, digits = 1): string => `${(100 * x).toFixed(digits)}%`;
+/** A share that is small and not nothing keeps its figures, as the verdict prints one. */
+function pctSmall10(x: number): string {
+  if (x === 0) return '0%';
+  if (x < 0.001) return `${(100 * x).toFixed(3)}%`;
+  if (x < 0.01) return `${(100 * x).toFixed(2)}%`;
+  return pct10(x);
+}
+const orDash10 = (x: number | null, f: (v: number) => string): string => (x === null ? DASH10 : f(x));
+/** An interval, or one dash when the file has none. */
+const ci10 = (lo: number | null, hi: number | null, f: (v: number) => string): string =>
+  lo === null && hi === null ? DASH10 : `${orDash10(lo, f)}–${orDash10(hi, f)}`;
+/** A smear, as a share of the exposure: how the crossings are quoted. */
+const smear10 = (s: number): string => pct10(s);
+/** A smear as the designed arms name it, s itself. */
+const s10 = (s: number): string => String(s);
+
+/** One re-scored cell by id: a cell the design runs and the file lacks is a fault, like `cell9`'s. */
+function cell10(cells: readonly Cell10[] | undefined, id: string, where: string): Cell10 {
+  const found = has10(cells, where).find((c) => c.id === id);
+  if (found === undefined) {
+    throw new Error(`experiment-10: ${where} has no cell ${id}, which the design runs`);
+  }
+  return found;
+}
+
+/** EXPERIMENT-9's cells as the spec's §6 R table lists them, R1 first. */
+const RESCORE_IDS10: readonly string[] = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8'];
+
+/** The lateness cells the design renders: each rendered lateness, aimed and uniform. */
+function latenessIds10(result: Experiment10): string[] {
+  const plan = has10(result.generatedFrom?.design?.plan, 'generatedFrom.design.plan');
+  return has10(plan.lateMsRendered, 'generatedFrom.design.plan.lateMsRendered').flatMap((ms) =>
+    ['aimed', 'uniform'].map((phase) => `L-${phase}-${n10(ms, 'a rendered lateness')}`),
+  );
+}
+
+/** The refresh rate the vsync arm assumes, from the file. */
+function hz10(result: Experiment10): number {
+  return Math.round(1 / n10(result.generatedFrom?.design?.constants?.VSYNC_S, 'constants.VSYNC_S'));
+}
+
+/** A cell's setting in words, every field it is keyed on. */
+function setting10(result: Experiment10, cell: Cell10): string {
+  const s = has10(cell.spec, `${cell.id}.spec`);
+  const exposure = n10(s.exposureS, `${cell.id}.spec.exposureS`);
+  const late = n10(s.lateMs, `${cell.id}.spec.lateMs`);
+  const readout = n10(s.readoutS, `${cell.id}.spec.readoutS`);
+  const parts = [
+    has10(s.arm, `${cell.id}.spec.arm`),
+    `${has10(s.phase, `${cell.id}.spec.phase`)} start`,
+    `1/${Math.round(1 / exposure)} s`,
+    late === 0 ? 'perfect timer' : `emitter ${late} ms late per step`,
+  ];
+  if (has10(s.vsync, `${cell.id}.spec.vsync`)) parts.push(`${hz10(result)} Hz refresh wait`);
+  if (readout > 0) parts.push(`${Math.round(1000 * readout)} ms rolling readout`);
+  if (has10(s.which, `${cell.id}.spec.which`) === 'spill') parts.push('room spill on');
+  return parts.join(', ');
+}
+
+/** What a cell changes from the headline cell, in words; the headline cell itself in full. */
+function differs10(result: Experiment10, cell: Cell10, base: Cell10): string {
+  if (cell.id === base.id) return setting10(result, cell);
+  const mine = setting10(result, cell).split(', ');
+  const theirs = new Set(setting10(result, base).split(', '));
+  const changed = mine.filter((part) => !theirs.has(part));
+  return changed.length === 0 ? DASH10 : changed.join(', ');
+}
+
+/** Captures a cell recorded, of its trials, naming any that EXPERIMENT-9's own timer did not flag. */
+function touched10(cell: Cell10): string {
+  const recorded = n10(cell.capturesRecorded, `${cell.id}.capturesRecorded`);
+  const trials = n10(cell.trials, `${cell.id}.trials`);
+  const newly = n10(cell.newlyTouched, `${cell.id}.newlyTouched`);
+  return `${recorded} of ${trials}${newly > 0 ? ` (${newly} newly touched)` : ''}`;
+}
+
+/** A class count with its share of the cell's captures and the share's 95% interval. */
+function classShare10(policy: Policy10, name: string, where: string): string {
+  const s = has10(has10(policy.shares, `${where}.shares`)[name], `${where}.shares.${name}`);
+  const num = n10(s.num, `${where}.shares.${name}.num`);
+  const share = nOrNull10(s.share, `${where}.shares.${name}.share`);
+  if (share === null) return String(num);
+  const lo = n10(s.lo, `${where}.shares.${name}.lo`);
+  const hi = n10(s.hi, `${where}.shares.${name}.hi`);
+  return `${num} (${pct10(share)}, ${(100 * lo).toFixed(1)}–${pct10(hi)})`;
+}
+
+/** The SILENT classes, as the assembly tallies them. */
+const SILENT_CLASSES10: readonly string[] = [
+  'SILENT-HARMLESS',
+  'SILENT-BIASED',
+  'SILENT-GATE-BREAKING',
+  'SILENT-UNJUDGEABLE',
+  'SILENT-UNSOLVED',
+];
+
+function count10(policy: Policy10, name: string, where: string): number {
+  return n10(has10(policy.counts, `${where}.counts`)[name], `${where}.counts.${name}`);
+}
+
+function silent10(policy: Policy10, where: string): number {
+  return SILENT_CLASSES10.reduce((a, name) => a + count10(policy, name, where), 0);
+}
+
+/**
+ * A cell's SILENT captures in one line: "n placed (not solved)" where nothing
+ * was solved, as the spec's §7 asks, and the harm classes where it was.
+ */
+function silentSummary10(cell: Cell10, policy: Policy10, where: string): string {
+  const silent = silent10(policy, where);
+  const unsolved = count10(policy, 'SILENT-UNSOLVED', where);
+  if (!has10(cell.solved, `${cell.id}.solved`) || unsolved === silent) {
+    return `${silent} placed (not solved)`;
+  }
+  const parts = [
+    `${count10(policy, 'SILENT-HARMLESS', where)} harmless`,
+    `${count10(policy, 'SILENT-BIASED', where)} biased`,
+    `${count10(policy, 'SILENT-GATE-BREAKING', where)} gate-breaking`,
+  ];
+  const unjudgeable = count10(policy, 'SILENT-UNJUDGEABLE', where);
+  if (unjudgeable > 0) parts.push(`${unjudgeable} unjudgeable`);
+  if (unsolved > 0) parts.push(`${unsolved} not solved`);
+  return `${silent}: ${parts.join(', ')}`;
+}
+
+/**
+ * How many of a cell's captures end past the seam gate, SILENT and LOUD+SILENT
+ * together. A cell solved under both policies reads P's count. A cell whose
+ * solves are a policy-A subsample reads A's beside P's, because P can borrow an
+ * A solve only where the capture has no MIXED position, and P's count alone
+ * would hide the rest.
+ */
+function pastGate10(cell: Cell10): string {
+  if (!has10(cell.solved, `${cell.id}.solved`)) return DASH10;
+  const P = has10(cell.classes?.P, `${cell.id}.classes.P`);
+  const p = n10(P.pastGate?.total, `${cell.id}.classes.P.pastGate.total`);
+  const solve = has10(cell.spec?.solve, `${cell.id}.spec.solve`);
+  if (solve !== 'first-a') return String(p);
+  const A = has10(cell.classes?.A, `${cell.id}.classes.A`);
+  return (
+    `${p} under P; ${n10(A.pastGate?.total, `${cell.id}.classes.A.pastGate.total`)} of the ` +
+    `${n10(A.solved?.captures, `${cell.id}.classes.A.solved.captures`)} solved under A`
+  );
+}
+
+/** Where today's page stops a clean position, in its own terms. */
+const REASON_WORDS10: Record<string, string> = {
+  margin: 'classify',
+  count: 'run count',
+  length: 'run length',
+  kind: 'frame kind',
+  broken: 'broken pair',
+  unanswered: 'unanswered pair',
+  leading: 'photographs before the first white',
+  clipping: 'clipping',
+};
+
+function reasons10(reasons: Record<string, number> | undefined, where: string): string {
+  const entries = Object.entries(has10(reasons, where));
+  if (entries.length === 0) return DASH10;
+  return entries
+    .map(([key, n]) => `${REASON_WORDS10[key] ?? key} ${n10(n, `${where}.${key}`)}`)
+    .join(' · ');
+}
+
+const Q0_VARIANTS10: readonly (readonly ['main' | 'spill' | 'fine', string])[] = [
+  ['main', 'the sweep'],
+  ['spill', 'room spill on'],
+  ['fine', 'the finer preset'],
+];
+
+/**
+ * Today's page on clean positions (Q0), what the counterfactual reader makes of
+ * the same positions (the twins), and the folder shapes an operator can
+ * produce (Q0b).
+ */
+export function experiment10Precondition(result: Experiment10): string {
+  const pre = has10(result.precondition, 'precondition');
+  const q0 = has10(pre.q0, 'precondition.q0');
+  const twins = has10(pre.twins, 'precondition.twins');
+  const minMargin = n10(q0.minClassifyMargin, 'precondition.q0.minClassifyMargin');
+  const raster = (t: Twins10, where: string): string => {
+    const r = has10(t.raster, `${where}.raster`);
+    return r === null ? DASH10 : `${n10(r.width, `${where}.raster.width`)}×${n10(r.height, `${where}.raster.height`)}`;
+  };
+  const out = [
+    '| clean positions | raster | positions | placed a run | refused at | ' +
+      `classify margin (needs ${minMargin}): median · max | runs a per-run classify would rescue |`,
+    '| --- | --- | ---: | ---: | --- | --- | ---: |',
+  ];
+  for (const [which, label] of Q0_VARIANTS10) {
+    const v = has10(q0[which], `precondition.q0.${which}`);
+    const t = has10(twins[which], `precondition.twins.${which}`);
+    const where = `precondition.q0.${which}`;
+    const margin = has10(v.margin, `${where}.margin`);
+    const perRun = has10(v.perRunAlone, `${where}.perRunAlone`);
+    out.push(
+      `| ${label} | ${raster(t, `precondition.twins.${which}`)} | ${n10(v.positions, `${where}.positions`)} | ` +
+        `${n10(v.placedPositions, `${where}.placedPositions`)} | ${reasons10(v.reasons, `${where}.reasons`)} | ` +
+        `${orDash10(nOrNull10(margin.median, `${where}.margin.median`), fixed10(3))} · ` +
+        `${orDash10(nOrNull10(margin.max, `${where}.margin.max`), fixed10(3))} | ` +
+        `${n10(perRun.rescued, `${where}.perRunAlone.rescued`)} of ${n10(perRun.runs, `${where}.perRunAlone.runs`)} |`,
+    );
+  }
+  const at = has10(q0.refusedAt, 'precondition.q0.refusedAt');
+  const classify = has10(at.classify, 'precondition.q0.refusedAt.classify');
+  const count = has10(at.count, 'precondition.q0.refusedAt.count');
+  const found = has10(count.runsFound, 'precondition.q0.refusedAt.count.runsFound');
+  const countMargin = has10(count.margin, 'precondition.q0.refusedAt.count.margin');
+  const nCount = n10(count.positions, 'precondition.q0.refusedAt.count.positions');
+  const countWords =
+    nCount === 0
+      ? '0 at the run count'
+      : `${nCount} at the run count, having cleared classify ` +
+        `(margin ${orDash10(nOrNull10(countMargin.min, 'refusedAt.count.margin.min'), fixed10(3))}–` +
+        `${orDash10(nOrNull10(countMargin.max, 'refusedAt.count.margin.max'), fixed10(3))}) and found ` +
+        (found === null
+          ? DASH10
+          : n10(found.min, 'refusedAt.count.runsFound.min') === n10(found.max, 'refusedAt.count.runsFound.max')
+            ? `${found.min}`
+            : `${found.min}–${found.max}`) +
+        ` of ${n10(result.generatedFrom?.design?.constants?.PROJECTORS, 'constants.PROJECTORS')} runs`;
+  out.push(
+    `| **all** | | **${n10(q0.total, 'precondition.q0.total')}** | ` +
+      `**${n10(q0.placedPositions, 'precondition.q0.placedPositions')}** | ` +
+      `**${n10(classify.positions, 'refusedAt.classify.positions')} at classify** ` +
+      `(margin at most ${orDash10(nOrNull10(classify.maxMargin, 'refusedAt.classify.maxMargin'), fixed10(3))}), ` +
+      `${countWords}, ${n10(at.other, 'refusedAt.other')} elsewhere | | |`,
+  );
+  const worth = has10(q0.worth, 'precondition.q0.worth');
+  const refusal = worth === null ? null : has10(worth.refusal, 'precondition.q0.worth.refusal');
+  out.push('');
+  out.push(
+    refusal === null
+      ? '_The page’s worth report printed nothing for a clean folder._'
+      : `_What the page’s worth report prints for a clean folder: “${refusal.split('. ')[0]}.”_`,
+  );
+
+  out.push('');
+  out.push(
+    '| the counterfactual reader, clean | runs | placed | refused anyway | of those, invisible | ' +
+      'minor | marginal | positions told “Re-shoot projector N” | clean noise floor: median · max |',
+  );
+  out.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |');
+  for (const [which, label] of Q0_VARIANTS10) {
+    const t = has10(twins[which], `precondition.twins.${which}`);
+    const where = `precondition.twins.${which}`;
+    const floor = has10(t.noiseFloor, `${where}.noiseFloor`);
+    out.push(
+      `| ${label} | ${n10(t.runs, `${where}.runs`)} | ${n10(t.attributable, `${where}.attributable`)} | ` +
+        `${n10(t.refusedClean, `${where}.refusedClean`)} | ${n10(t.invisibleRefused, `${where}.invisibleRefused`)} | ` +
+        `${n10(t.minor, `${where}.minor`)} | ${n10(t.marginal, `${where}.marginal`)} | ` +
+        `${n10(t.reshootNamed, `${where}.reshootNamed`)} of ${n10(t.cameras, `${where}.cameras`)} | ` +
+        `${orDash10(nOrNull10(floor.median, `${where}.noiseFloor.median`), fixed10(4))} · ` +
+        `${orDash10(nOrNull10(floor.max, `${where}.noiseFloor.max`), fixed10(4))} |`,
+    );
+  }
+
+  // Q0b: every shape the stage builds, in its order, so a shape missing from
+  // the file is a fault rather than a row that quietly is not there.
+  const shapes = has10(pre.q0b, 'precondition.q0b');
+  const projectors = n10(result.generatedFrom?.design?.constants?.PROJECTORS, 'constants.PROJECTORS');
+  const wanted = [
+    ...[0, 1, 3].flatMap((lead) => [0, 1, 2].map((trail) => `leading ${lead}, trailing ${trail}`)),
+    ...Array.from({ length: projectors }, (_, p) => [
+      `projector ${p + 1} re-shot and appended`,
+      `projector ${p + 1} re-shot alone`,
+    ]).flat(),
+  ];
+  out.push('');
+  out.push(
+    '| folder shapes an operator can produce | positions | runs placed (the plain folder’s) | ' +
+      'refused whole | the page’s reasons |',
+  );
+  out.push('| --- | ---: | --- | ---: | --- |');
+  for (const name of wanted) {
+    const x = shapes.find((s) => s.shape === name);
+    if (x === undefined) throw new Error(`experiment-10: precondition.q0b has no folder '${name}'`);
+    const where = `precondition.q0b['${name}']`;
+    out.push(
+      `| ${name} | ${n10(x.positions, `${where}.positions`)} | ${n10(x.runsPlaced, `${where}.runsPlaced`)} ` +
+        `(${n10(x.runsPlacedClean, `${where}.runsPlacedClean`)}) | ${n10(x.wholeRefused, `${where}.wholeRefused`)} | ` +
+        `${reasons10(x.reasons, `${where}.reasons`)} |`,
+    );
+  }
+  return out.join('\n');
+}
+
+/**
+ * Where the complement check first refuses a straddled run, and why a position
+ * is refused run by run: each run crosses at its own smear, set by its own
+ * binding pair.
+ */
+export function experiment10Crossings(result: Experiment10): string {
+  const c = has10(result.gate?.crossings, 'gate.crossings');
+  const constants = has10(result.generatedFrom?.design?.constants, 'generatedFrom.design.constants');
+  const limit =
+    n10(constants.MARGINAL_RESIDUAL, 'constants.MARGINAL_RESIDUAL') +
+    n10(constants.MARGINAL_BAND, 'constants.MARGINAL_BAND');
+  const scannedTo = n10(c.scannedTo, 'gate.crossings.scannedTo');
+  const never = has10(c.neverRefused, 'gate.crossings.neverRefused');
+  const spill = has10(result.gate?.spill, 'gate.spill');
+  const row = (
+    label: string,
+    runs: string,
+    neverRefused: string,
+    s: Spread10,
+    where: string,
+    f: (x: number) => string,
+  ): string =>
+    `| ${label} | ${runs} | ${neverRefused} | ` +
+    (['min', 'p10', 'median', 'p90', 'max'] as const)
+      .map((k) => orDash10(nOrNull10(has10(s, where)[k], `${where}.${k}`), f))
+      .join(' | ') +
+    ' |';
+  const attributable = n10(c.attributableRuns, 'gate.crossings.attributableRuns');
+  const spillForward = has10(spill.forward, 'gate.spill.forward');
+  const spillAttributable = n10(spill.attributable, 'gate.spill.attributable');
+  const wps = has10(c.withinPositionSpread, 'gate.crossings.withinPositionSpread');
+  const points = (x: number): string => `${(100 * x).toFixed(1)} pts`;
+  const out = [
+    `| where the check first refuses a run | runs | never refused up to ${smear10(scannedTo)} | ` +
+      'min | p10 | median | p90 | max |',
+    '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+    row(
+      'forward, whole position',
+      String(attributable),
+      String(n10(never.forward, 'neverRefused.forward')),
+      c.forward,
+      'gate.crossings.forward',
+      smear10,
+    ),
+    row(
+      'backward, whole position',
+      String(attributable),
+      String(n10(never.backward, 'neverRefused.backward')),
+      c.backward,
+      'gate.crossings.backward',
+      smear10,
+    ),
+    row(
+      'forward, room spill on',
+      String(spillAttributable),
+      String(spillAttributable - n10(spillForward.n, 'gate.spill.forward.n')),
+      spillForward,
+      'gate.spill.forward',
+      smear10,
+    ),
+    row(
+      'spread of one position’s forward crossings',
+      `${n10(wps.positions, 'withinPositionSpread.positions')} positions`,
+      DASH10,
+      has10(wps.spread, 'withinPositionSpread.spread'),
+      'gate.crossings.withinPositionSpread.spread',
+      points,
+    ),
+  ];
+  const below = nOrNull10(c.belowLimitShare, 'gate.crossings.belowLimitShare');
+  const low = has10(c.lowBackward, 'gate.crossings.lowBackward');
+  const lowRuns = n10(low.runs, 'lowBackward.runs');
+  const agreement = has10(result.gate?.noisy?.agreement, 'gate.noisy.agreement');
+  const agreeShare = nOrNull10(agreement.share, 'gate.noisy.agreement.share');
+  out.push('');
+  out.push(
+    `_Forward, ${orDash10(below, pct10)} of the ${attributable} attributable runs are refused below the ` +
+      `${limit.toFixed(2)} limit itself; ${n10(wps.atLeast002, 'withinPositionSpread.atLeast002')} of ` +
+      `${n10(wps.positions, 'withinPositionSpread.positions')} positions have runs crossing at least 2 points ` +
+      'apart. Backward, ' +
+      (lowRuns === 0
+        ? `no run is refused below ${smear10(n10(low.below, 'lowBackward.below'))}`
+        : `${lowRuns} runs are refused below ${smear10(n10(low.below, 'lowBackward.below'))}, each lighting at most ` +
+          `${orDash10(nOrNull10(low.maxLit, 'lowBackward.maxLit'), pct10)} of the photograph, the lowest at ` +
+          `${orDash10(nOrNull10(low.lowest, 'lowBackward.lowest'), (x) => pct10(x, 2))}`) +
+      `. With noise on, the verdict agrees with the noiseless predictor on ` +
+      `${n10(agreement.agree, 'agreement.agree')} of ${n10(agreement.runs, 'agreement.runs')} run-levels ` +
+      `(${orDash10(agreeShare, pct10)})._`,
+  );
+
+  // Every pair of the plan, in the plan's order: a pair missing from the file
+  // is a fault, and a pair that binds no run is a zero the count leaves out.
+  const pairs = has10(c.pairsForward, 'gate.crossings.pairsForward');
+  const planned = has10(constants.EXPECTED?.complements?.pairs, 'constants.EXPECTED.complements.pairs');
+  if (pairs.length !== planned.length) {
+    throw new Error(
+      `experiment-10: gate.crossings.pairsForward has ${pairs.length} pairs and the plan pairs ${planned.length}`,
+    );
+  }
+  const binding = has10(c.bindingPairForward, 'gate.crossings.bindingPairForward');
+  const bound = Object.values(binding).reduce((a, x) => a + n10(x, 'a binding count'), 0);
+  out.push('');
+  out.push('| pair | binds a run’s forward crossing | the pair’s own forward crossing: p10 · median · p90 |');
+  out.push('| --- | ---: | --- |');
+  for (const p of pairs) {
+    const name = has10(p.pair, 'a pair name');
+    const s = has10(p.crossing, `pairsForward.${name}.crossing`);
+    const binds = binding[name] === undefined ? 0 : n10(binding[name], `bindingPairForward.${name}`);
+    out.push(
+      `| ${name} | ${binds}${bound > 0 ? ` (${pct10(binds / bound)})` : ''} | ` +
+        `${orDash10(nOrNull10(s.p10, `${name}.p10`), smear10)} · ` +
+        `${orDash10(nOrNull10(s.median, `${name}.median`), smear10)} · ` +
+        `${orDash10(nOrNull10(s.p90, `${name}.p90`), smear10)} |`,
+    );
+  }
+  const u0 = has10(c.u0, 'gate.crossings.u0');
+  const byCrossing = has10(u0.byRenderedCrossing, 'gate.crossings.u0.byRenderedCrossing');
+  const upTo = byCrossing.find((x) => x.upTo !== undefined);
+  const above = byCrossing.find((x) => x.above !== undefined);
+  if (upTo === undefined || above === undefined) {
+    throw new Error('experiment-10: gate.crossings.u0.byRenderedCrossing lacks a side of its band');
+  }
+  const bindsU0 = has10(u0.u0Bound, 'gate.crossings.u0.u0Bound');
+  const gap = (x: number | null): string => orDash10(x, fixed10(4));
+  out.push('');
+  out.push(
+    `_Pair u0’s quarter-mass closed form against its rendered crossing: largest gap ` +
+      `${gap(nOrNull10(bindsU0.maxError, 'u0Bound.maxError'))} on the ${n10(bindsU0.runs, 'u0Bound.runs')} runs ` +
+      `u0 binds, ${gap(nOrNull10(upTo.maxError, 'byRenderedCrossing.upTo.maxError'))} on the ` +
+      `${n10(upTo.runs, 'byRenderedCrossing.upTo.runs')} runs whose u0 crossing is at most ` +
+      `${smear10(n10(upTo.upTo, 'byRenderedCrossing.upTo'))}, and ` +
+      `${gap(nOrNull10(above.maxError, 'byRenderedCrossing.above.maxError'))} ` +
+      `on the ${n10(above.runs, 'byRenderedCrossing.above.runs')} above it._`,
+  );
+  return out.join('\n');
+}
+
+/**
+ * What a blend the check lets through does to a decode: the phase bias per
+ * axis, the Gray words it leaves alone, the per-pixel signs with the seam
+ * apart, and H7 clause by clause.
+ */
+export function experiment10Decode(result: Experiment10): string {
+  const d = has10(result.decode, 'decode');
+  const plan = has10(result.generatedFrom?.design?.plan, 'generatedFrom.design.plan');
+  const verdictS = n10(result.generatedFrom?.verdictSmear, 'generatedFrom.verdictSmear');
+  const noiseless = has10(plan.decodeNoiseless, 'plan.decodeNoiseless').map((s) => n10(s, 'a decoded smear'));
+  const levels: [string, number][] = [
+    ...[...new Set([...noiseless, verdictS])].sort((a, b) => a - b).map((s): [string, number] => ['forward', s]),
+    ...[...noiseless].sort((a, b) => a - b).map((s): [string, number] => ['backward', s]),
+  ];
+  const curve = has10(d.curve, 'decode.curve');
+  const med = (s: Spread10 | undefined, where: string, f: (x: number) => string): string =>
+    orDash10(nOrNull10(has10(s, where).median, `${where}.median`), f);
+  const out = [
+    '| straddle | s | runs | mean Δu, px | mean Δv, px | Δ ÷ cyclic shift: u · v | ' +
+      'Gray words changed: u · v, of pixels compared | moved ½ period or more | on the sphere, mm |',
+    '| --- | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: |',
+  ];
+  for (const [direction, s] of levels) {
+    const l = curve.find((x) => x.direction === direction && x.s === s);
+    if (l === undefined) throw new Error(`experiment-10: decode.curve has no ${direction} level at s = ${s}`);
+    const where = `decode.curve[${direction} ${s}]`;
+    const flips = has10(l.grayFlips, `${where}.grayFlips`);
+    const emphasise = direction === 'forward' && s === verdictS;
+    const bold = (x: string): string => (emphasise ? `**${x}**` : x);
+    out.push(
+      `| ${direction} | ${bold(s10(s))} | ${n10(l.runs, `${where}.runs`)} | ` +
+        `${bold(med(l.meanU, `${where}.meanU`, fixed10(2)))} | ${bold(med(l.meanV, `${where}.meanV`, fixed10(2)))} | ` +
+        `${med(l.ratioU, `${where}.ratioU`, fixed10(3))} · ${med(l.ratioV, `${where}.ratioV`, fixed10(3))} | ` +
+        (flips === null
+          ? `${DASH10} |`
+          : `${n10(flips.u, `${where}.grayFlips.u`)} · ${n10(flips.v, `${where}.grayFlips.v`)}, of ` +
+            `${n10(flips.matched, `${where}.grayFlips.matched`)} |`) +
+        ` ${n10(l.movedHalfPeriod, `${where}.movedHalfPeriod`)} | ${bold(med(l.mmShift, `${where}.mmShift`, fixed10(2)))} |`,
+    );
+  }
+  const vl = has10(d.verdictLevel, 'decode.verdictLevel');
+  const signs = has10(vl.signs, 'decode.verdictLevel.signs');
+  out.push('');
+  const fm = has10(d.forwardMeans, 'decode.forwardMeans');
+  const below = has10(d.grayFlipsBelowFiveNinths, 'decode.grayFlipsBelowFiveNinths');
+  out.push(
+    `_Mean Δ is the median over runs of each run’s mean; the ratio divides it by \`atan2(s, 1−s)·P/2π\`; ` +
+      `millimetres are the median of per-run medians, both axes together. Forward run-levels whose mean is not ` +
+      `negative: ${n10(fm.nonNegativeU, 'forwardMeans.nonNegativeU')} along u and ` +
+      `${n10(fm.nonNegativeV, 'forwardMeans.nonNegativeV')} along v, of ${n10(fm.runLevels, 'forwardMeans.runLevels')}. ` +
+      (below === null
+        ? 'Gray words were not counted in this run._'
+        : `Gray words changed below 5/9, every run and level: ${n10(below.either, 'grayFlipsBelowFiveNinths.either')} ` +
+          `of ${n10(below.matched, 'grayFlipsBelowFiveNinths.matched')} pixels compared._`),
+  );
+  if (signs !== null) {
+    out.push('');
+    out.push(
+      `| per pixel, forward s = ${s10(verdictS)} | pixels | Δu > 0 | Δv > 0 | largest Δu, px | largest Δv, px |`,
+    );
+    out.push('| --- | ---: | ---: | ---: | ---: | ---: |');
+    const parts: [string, 'seam' | 'rest' | 'all'][] = [
+      ['where the next projector also lights (the seam)', 'seam'],
+      ['everywhere else', 'rest'],
+      ['all', 'all'],
+    ];
+    for (const [label, key] of parts) {
+      const t = has10(signs[key], `decode.verdictLevel.signs.${key}`);
+      const where = `decode.verdictLevel.signs.${key}`;
+      out.push(
+        `| ${label} | ${n10(t.pixels, `${where}.pixels`)} | ${n10(t.uPos, `${where}.uPos`)} ` +
+          `(${orDash10(nOrNull10(t.uPosShare, `${where}.uPosShare`), pctSmall10)}) | ${n10(t.vPos, `${where}.vPos`)} ` +
+          `(${orDash10(nOrNull10(t.vPosShare, `${where}.vPosShare`), pctSmall10)}) | ` +
+          `${n10(t.maxAbsU, `${where}.maxAbsU`).toFixed(2)} | ${n10(t.maxAbsV, `${where}.maxAbsV`).toFixed(2)} |`,
+      );
+    }
+  }
+  const p95 = has10(vl.p95AbsV, 'decode.verdictLevel.p95AbsV');
+  const mm = has10(vl.mmShift, 'decode.verdictLevel.mmShift');
+  out.push('');
+  out.push(
+    `_At s = ${s10(verdictS)}, over ${n10(vl.runs, 'verdictLevel.runs')} runs: |mean Δu| ` +
+      `${med(vl.absMeanU, 'verdictLevel.absMeanU', fixed10(2))} px and |mean Δv| ` +
+      `${med(vl.absMeanV, 'verdictLevel.absMeanV', fixed10(2))} px (medians); the largest run’s 95th percentile ` +
+      `of |Δv| ${orDash10(nOrNull10(p95.max, 'verdictLevel.p95AbsV.max'), fixed10(2))} px; on the sphere ` +
+      `${med(mm, 'verdictLevel.mmShift', fixed10(2))} mm, per-run medians spanning ` +
+      `${orDash10(nOrNull10(mm.min, 'verdictLevel.mmShift.min'), fixed10(2))}–` +
+      `${orDash10(nOrNull10(mm.max, 'verdictLevel.mmShift.max'), fixed10(2))} mm._`,
+  );
+
+  // H7, clause by clause: an untestable check is neither a pass nor a failure.
+  const h7 = has10(has10(result.harness, 'harness').find((h) => h.id === 'H7'), 'harness H7');
+  const measured = has10(h7.measured, 'harness H7.measured') as {
+    clauses?: Record<string, H7Clause10>;
+    flipOnset?: { claimedFrom: number; highestDecoded: number; bracketed: boolean };
+    displacements?: { belowFiveNinths: number };
+  };
+  const clauses = has10(measured.clauses, 'harness H7.measured.clauses');
+  const onset = has10(measured.flipOnset, 'harness H7.measured.flipOnset');
+  const displaced = has10(measured.displacements, 'harness H7.measured.displacements');
+  const clauseRows: [string, string][] = [
+    ['darkOnset', 'Gray-ambiguous from 3/7 on the MSB-dark half'],
+    ['flips', 'no Gray word changed below 5/9'],
+    ['litLoss', 'the MSB-lit half lost to low modulation at s = 0.5'],
+  ];
+  out.push('');
+  out.push('| H7, noiseless | checks | testable | untestable | failures |');
+  out.push('| --- | ---: | ---: | ---: | ---: |');
+  for (const [key, label] of clauseRows) {
+    const x = has10(clauses[key], `harness H7.measured.clauses.${key}`);
+    const where = `H7.${key}`;
+    out.push(
+      `| ${label} | ${n10(x.checks, `${where}.checks`)} | ${n10(x.testable, `${where}.testable`)} | ` +
+        `${n10(x.untestable, `${where}.untestable`)} | ${n10(x.failures, `${where}.failures`)} |`,
+    );
+  }
+  const pass = has10(h7.pass, 'harness H7.pass');
+  out.push('');
+  out.push(
+    `_H7 ${pass === true ? 'holds' : pass === false ? 'fails' : 'is not established'}. The 5/9 flip onset is ` +
+      `${has10(onset.bracketed, 'H7.flipOnset.bracketed') ? '' : 'not '}bracketed: the highest smear decoded is ` +
+      `s = ${s10(n10(onset.highestDecoded, 'H7.flipOnset.highestDecoded'))}. Decodes moved half a period or more ` +
+      'below 5/9, a displacement bound and not a flip count: ' +
+      `${n10(displaced.belowFiveNinths, 'H7.displacements.belowFiveNinths')}._`,
+  );
+  return out.join('\n');
+}
+
+/**
+ * Designed straddles solved through the bench, against both yardsticks: the
+ * whole capture re-shot and only the straddled position re-shot. A straddle's
+ * median is set against each null's median, the 95th percentile beside it and
+ * never in its place, and each gate's flips beside the rate a clean re-shoot
+ * alone flips it at.
+ */
+export function experiment10Pose(result: Experiment10): string {
+  const pose = has10(result.pose, 'pose');
+  const solved = has10(pose.solved, 'pose.solved');
+  const constants = has10(result.generatedFrom?.design?.constants, 'generatedFrom.design.constants');
+  const gridGate = n10(constants.GRID_GATE_MM, 'constants.GRID_GATE_MM');
+  const rotationGate = n10(constants.ROTATION_GATE_DEG, 'constants.ROTATION_GATE_DEG');
+  const mm2 = fixed10(2);
+  const yard = (y: Yardstick10 | undefined, label: string, where: string): string => {
+    const v = has10(y, where);
+    const grid = has10(v.gridFlips, `${where}.gridFlips`);
+    const rot = has10(v.rotationFlips, `${where}.rotationFlips`);
+    return (
+      `| ${label} | ${n10(v.samples, `${where}.samples`)} | ` +
+      `${orDash10(nOrNull10(v.median, `${where}.median`), mm2)} | ` +
+      `${orDash10(nOrNull10(v.value, `${where}.value`), mm2)} | ` +
+      `${ci10(nOrNull10(v.lo, `${where}.lo`), nOrNull10(v.hi, `${where}.hi`), mm2)} | ` +
+      `${n10(grid.flips, `${where}.gridFlips.flips`)} of ${n10(grid.of, `${where}.gridFlips.of`)} | ` +
+      `${n10(rot.flips, `${where}.rotationFlips.flips`)} of ${n10(rot.of, `${where}.rotationFlips.of`)} |`
+    );
+  };
+  const out = [
+    '| re-shot against the plain twin | re-shoots | median D_grid, mm | 95th percentile (τ), mm | ' +
+      `τ's 95% CI | seam gate (${gridGate} mm) flipped | rotation gate (${rotationGate}°) flipped |`,
+    '| --- | ---: | ---: | ---: | --- | ---: | ---: |',
+    yard(pose.tauNull, 'the whole capture (τ_null)', 'pose.tauNull'),
+    yard(pose.tauPosition, 'only the straddled position', 'pose.tauPosition'),
+  ];
+  const whole = has10(pose.tauNull, 'pose.tauNull');
+  const position = has10(pose.tauPosition, 'pose.tauPosition');
+  const largest = has10(whole.largest, 'pose.tauNull.largest');
+  const byRig = Object.entries(has10(largest.byRig, 'pose.tauNull.largest.byRig')).sort(
+    (a, b) => n10(b[1], 'a rig count') - n10(a[1], 'a rig count') || Number(a[0]) - Number(b[0]),
+  );
+  out.push('');
+  out.push(
+    byRig.length === 0
+      ? '_No re-shoot was solved, so there is no null to set a straddle against._'
+      : `_τ_null is set by the rigs supplying its largest ${n10(largest.n, 'pose.tauNull.largest.n')} values: ` +
+          `${byRig.map(([rig, n]) => `rig ${rig} (${n})`).join(', ')}._`,
+  );
+  const plan = has10(result.generatedFrom?.design?.plan, 'generatedFrom.design.plan');
+  const levels = has10(pose.levels, 'pose.levels');
+  if (!solved) {
+    if (levels.length > 0) throw new Error('experiment-10: pose.levels has solves but pose.solved is false');
+    out.push('');
+    out.push('_This run solved nothing (`pose.solved` is false): no designed straddle has a D_grid._');
+    return out.join('\n');
+  }
+  const pl = has10(plan.poseLevels, 'plan.poseLevels');
+  const rolling = has10(pl.rolling, 'plan.poseLevels.rolling');
+  const labels = [
+    ...has10(pl.forward, 'plan.poseLevels.forward').map((s) => `forward/${s}`),
+    ...has10(pl.backward, 'plan.poseLevels.backward').map((s) => `backward/${s}`),
+    ...has10(rolling.midRow, 'plan.poseLevels.rolling.midRow').map(
+      (s) => `rolling/${n10(rolling.readoutOverExposure, 'rolling.readoutOverExposure')}/${s}`,
+    ),
+  ];
+  const wholeMedian = nOrNull10(whole.median, 'pose.tauNull.median');
+  const positionMedian = nOrNull10(position.median, 'pose.tauPosition.median');
+  const times = (x: number | null, by: number | null): string =>
+    x === null || by === null || by === 0 ? DASH10 : `${(x / by).toFixed(1)}×`;
+  out.push('');
+  out.push(
+    '| designed straddle | solved, of cases | D_grid, mm: median [range] | ' +
+      '× the re-shoot medians: whole · position | beyond τ: whole · position | seam gate flipped | ' +
+      'rotation gate flipped |',
+  );
+  out.push('| --- | --- | --- | --- | --- | ---: | ---: |');
+  for (const label of labels) {
+    const l = levels.find((x) => x.label === label);
+    if (l === undefined) throw new Error(`experiment-10: pose.levels has no ${label}, which the design solves`);
+    const where = `pose.levels[${label}]`;
+    const g = has10(l.dGridMm, `${where}.dGridMm`);
+    const medianMm = nOrNull10(g.median, `${where}.dGridMm.median`);
+    const cases = n10(l.cases, `${where}.cases`);
+    const refused = n10(l.allRefused, `${where}.allRefused`);
+    const [direction, ...rest] = label.split('/');
+    const name =
+      direction === 'rolling'
+        ? `rolling, ρ/E = ${rest[0]}, s̄ = ${rest[1]}`
+        : `${direction}, s = ${rest[0]}`;
+    out.push(
+      `| ${name} | ${n10(g.n, `${where}.dGridMm.n`)} of ${cases}${refused > 0 ? ` (${refused} all refused)` : ''} | ` +
+        `${orDash10(medianMm, mm2)} [${orDash10(nOrNull10(g.min, `${where}.dGridMm.min`), mm2)}–` +
+        `${orDash10(nOrNull10(g.max, `${where}.dGridMm.max`), mm2)}] | ` +
+        `${times(medianMm, wholeMedian)} · ${times(medianMm, positionMedian)} | ` +
+        `${orDash10(nOrNull10(l.overTau, `${where}.overTau`), String)} · ` +
+        `${orDash10(nOrNull10(l.overTauPosition, `${where}.overTauPosition`), String)} | ` +
+        `${n10(l.gridFlips, `${where}.gridFlips`)} of ${cases} | ` +
+        `${n10(l.rotationFlips, `${where}.rotationFlips`)} of ${cases} |`,
+    );
+  }
+  return out.join('\n');
+}
+
+/**
+ * EXPERIMENT-9's touched captures re-scored, cell by cell (spec §7), and for a
+ * cell that was solved, its SILENT captures judged against every yardstick the
+ * verdict names.
+ */
+export function experiment10Rescore(result: Experiment10): string {
+  const cells = has10(result.rescore?.cells, 'rescore.cells');
+  const base = cell10(cells, 'R1', 'rescore.cells');
+  const out = [
+    '| cell | setting (R1 in full; the rest, what differs) | captures touched | LOUD (share, 95% CI) | ' +
+      'LOUD+SILENT | SILENT | INVISIBLE-ONLY | UNCHANGED |',
+    '| --- | --- | --- | --- | ---: | --- | ---: | ---: |',
+  ];
+  const solvedCells: Cell10[] = [];
+  for (const id of RESCORE_IDS10) {
+    const cell = cell10(cells, id, 'rescore.cells');
+    const P = has10(cell.classes?.P, `${id}.classes.P`);
+    const where = `${id}.classes.P`;
+    if (has10(cell.solved, `${id}.solved`)) solvedCells.push(cell);
+    out.push(
+      `| ${id} | ${differs10(result, cell, base)} | ${touched10(cell)} | ${classShare10(P, 'LOUD', where)} | ` +
+        `${count10(P, 'LOUD+SILENT', where)} | ${silentSummary10(cell, P, where)} | ` +
+        `${count10(P, 'INVISIBLE-ONLY', where)} | ${count10(P, 'UNCHANGED', where)} |`,
+    );
+  }
+  out.push('');
+  out.push(
+    '_Policy P: a refused position is re-shot whole and the re-shoot assumed clean. A LOUD+SILENT capture is ' +
+      'LOUD and is not counted again under SILENT._',
+  );
+  if (solvedCells.length === 0) {
+    out.push('');
+    out.push('_No re-scored cell was solved in this run, so no SILENT capture is split by harm._');
+    return out.join('\n');
+  }
+  // Transposed: a row per measure, a column per solved cell and policy.
+  const columns = solvedCells.flatMap((cell) =>
+    (['P', 'A'] as const).map((p) => ({
+      label: `${cell.id}, policy ${p}`,
+      cell,
+      policy: has10(cell.classes?.[p], `${cell.id}.classes.${p}`),
+      where: `${cell.id}.classes.${p}`,
+    })),
+  );
+  const gridGate = n10(result.generatedFrom?.design?.constants?.GRID_GATE_MM, 'constants.GRID_GATE_MM');
+  const at = (
+    x: HarmAt10 | null,
+    key: 'HARMLESS' | 'BIASED' | 'GATE-BREAKING' | 'exceedTau' | 'judged',
+    where: string,
+  ): string =>
+    x === null ? DASH10 : String(n10(x[key], `${where}.${key}`));
+  const rows: [string, (c: (typeof columns)[number]) => string][] = [
+    ['SILENT', (c) => String(silent10(c.policy, c.where))],
+    // The share is of the cell's touched captures, as LOUD's is, not of its SILENT ones.
+    [
+      'HARMLESS: within τ_null, gate kept (share of touched captures, 95% CI)',
+      (c) => classShare10(c.policy, 'SILENT-HARMLESS', c.where),
+    ],
+    [
+      'BIASED: beyond τ_null, gate kept (share of touched captures, 95% CI)',
+      (c) => classShare10(c.policy, 'SILENT-BIASED', c.where),
+    ],
+    [
+      `GATE-BREAKING: seams pushed past ${gridGate} mm (share of touched captures, 95% CI)`,
+      (c) => classShare10(c.policy, 'SILENT-GATE-BREAKING', c.where),
+    ],
+    [
+      'unjudgeable (D_grid censored, or the twin misses the gate)',
+      (c) => String(count10(c.policy, 'SILENT-UNJUDGEABLE', c.where)),
+    ],
+    ['not solved', (c) => String(count10(c.policy, 'SILENT-UNSOLVED', c.where))],
+    [
+      'judged, and of those beyond τ_null',
+      (c) => {
+        const a = has10(c.policy.silentAgainst, `${c.where}.silentAgainst`);
+        const tau = has10(a.tau, `${c.where}.silentAgainst.tau`);
+        const where = `${c.where}.silentAgainst.tau`;
+        return `${at(tau, 'judged', where)}, ${at(tau, 'exceedTau', where)}`;
+      },
+    ],
+    [
+      'HARMLESS if τ_null were its CI’s lower · upper end',
+      (c) => {
+        const a = has10(c.policy.silentAgainst, `${c.where}.silentAgainst`);
+        return (
+          `${at(has10(a.tauLo, `${c.where}.silentAgainst.tauLo`), 'HARMLESS', `${c.where}.silentAgainst.tauLo`)} · ` +
+          `${at(has10(a.tauHi, `${c.where}.silentAgainst.tauHi`), 'HARMLESS', `${c.where}.silentAgainst.tauHi`)}`
+        );
+      },
+    ],
+    [
+      'HARMLESS against the one-position τ',
+      (c) => {
+        const a = has10(c.policy.silentAgainst, `${c.where}.silentAgainst`);
+        const where = `${c.where}.silentAgainst.positionTau`;
+        return at(has10(a.positionTau, where), 'HARMLESS', where);
+      },
+    ],
+    [
+      'past the seam gate: SILENT · LOUD+SILENT · all',
+      (c) => {
+        const g = has10(c.policy.pastGate, `${c.where}.pastGate`);
+        return (
+          `${n10(g.silent, `${c.where}.pastGate.silent`)} · ${n10(g.loudSilent, `${c.where}.pastGate.loudSilent`)} · ` +
+          `**${n10(g.total, `${c.where}.pastGate.total`)}**`
+        );
+      },
+    ],
+    [
+      'solved captures: rotation gate flipped · D_grid > 0.25 mm · > 0.5 mm',
+      (c) => {
+        const s = has10(c.policy.solved, `${c.where}.solved`);
+        return (
+          `${n10(s.captures, `${c.where}.solved.captures`)}: ${n10(s.rotationFlips, `${c.where}.solved.rotationFlips`)} · ` +
+          `${n10(s.over025, `${c.where}.solved.over025`)} · ${n10(s.over05, `${c.where}.solved.over05`)}`
+        );
+      },
+    ],
+    [
+      'within re-shoot noise, and of those gate-breaking anyway',
+      (c) => {
+        const s = has10(c.policy.solved, `${c.where}.solved`);
+        return (
+          `${n10(s.withinReshootNoise, `${c.where}.solved.withinReshootNoise`)}, ` +
+          `${n10(s.gateBreakingWithinNoise, `${c.where}.solved.gateBreakingWithinNoise`)}`
+        );
+      },
+    ],
+  ];
+  out.push('');
+  out.push(`| the solved cell’s captures | ${columns.map((c) => c.label).join(' | ')} |`);
+  out.push(`| --- | ${columns.map(() => '---').join(' | ')} |`);
+  for (const [label, value] of rows) out.push(`| ${label} | ${columns.map(value).join(' | ')} |`);
+  return out.join('\n');
+}
+
+/** Every re-scored and lateness cell, in the order the two tables above list them. */
+function allCellIds10(result: Experiment10): { id: string; from: 'rescore' | 'lateness' }[] {
+  return [
+    ...RESCORE_IDS10.map((id) => ({ id, from: 'rescore' as const })),
+    ...latenessIds10(result).map((id) => ({ id, from: 'lateness' as const })),
+  ];
+}
+
+const POSITION_CATEGORIES10: readonly string[] = ['REFUSED-ALL', 'MIXED', 'PLACED', 'INVISIBLE-ONLY', 'UNCHANGED'];
+
+/**
+ * Position categories side by side, never ranked (spec §3.6): both footings,
+ * and the primary one again with minor and marginal runs left out. Then what
+ * the LOUD captures are told, which is what the operator reads.
+ */
+export function experiment10Positions(result: Experiment10): string {
+  const out = [
+    `| cell | footing, runs counted | touched positions | ${POSITION_CATEGORIES10.join(' | ')} |`,
+    `| --- | --- | ---: | ${POSITION_CATEGORIES10.map(() => '---:').join(' | ')} |`,
+  ];
+  const loudRows: string[] = [];
+  for (const { id, from } of allCellIds10(result)) {
+    const cell = cell10(from === 'rescore' ? result.rescore?.cells : result.lateness?.cells, id, `${from}.cells`);
+    const pos = has10(cell.positions, `${id}.positions`);
+    const touched = n10(cell.touchedPositions, `${id}.touchedPositions`);
+    const variants: [string, Record<string, number> | undefined, string][] = [
+      ['content, all', pos.content?.all, `${id}.positions.content.all`],
+      [
+        'content, minor & marginal left out',
+        pos.content?.excludingMinorMarginal,
+        `${id}.positions.content.excludingMinorMarginal`,
+      ],
+      ['filed, all', pos.filed?.all, `${id}.positions.filed.all`],
+    ];
+    variants.forEach(([label, table, where], i) => {
+      const t = has10(table, where);
+      out.push(
+        `| ${i === 0 ? `${id}` : ''} | ${label} | ${touched} | ` +
+          `${POSITION_CATEGORIES10.map((k) => n10(t[k], `${where}.${k}`)).join(' | ')} |`,
+      );
+    });
+    const loud = has10(cell.loud, `${id}.loud`);
+    loudRows.push(
+      `| ${id} | ${n10(loud.captures, `${id}.loud.captures`)} | ` +
+        `${n10(loud.wholePositionOnly, `${id}.loud.wholePositionOnly`)} | ` +
+        `${n10(loud.runByRun, `${id}.loud.runByRun`)} | ${n10(loud.reshootNamed, `${id}.loud.reshootNamed`)} | ` +
+        `${n10(loud.dropAndDuplicate, `${id}.loud.dropAndDuplicate`)} |`,
+    );
+  }
+  out.push('');
+  out.push(
+    '_Content footing (primary): a photograph observes as the kind of the part holding more than half its ' +
+      'exposure. Filed footing: as the kind of the step it is filed as. Rows are the cells of the two tables ' +
+      'above: R1–R8 as re-scored, then each rendered lateness._',
+  );
+  out.push('');
+  out.push(
+    '| cell | LOUD | refused only as whole positions: “Found N projector runs” | refused run by run | ' +
+      'of those, told “Re-shoot projector N” | told it looks like a dropped and a duplicated frame |',
+  );
+  out.push('| --- | ---: | ---: | ---: | ---: | ---: |');
+  out.push(...loudRows);
+  return out.join('\n');
+}
+
+/**
+ * How late the emitter may run before the card's aimed start stops protecting:
+ * every lateness swept on timing alone, the fine grid around the derived
+ * threshold included, then the rendered cells.
+ */
+export function experiment10Lateness(result: Experiment10): string {
+  const late = has10(result.lateness, 'lateness');
+  const timing = has10(late.timing, 'lateness.timing');
+  const plan = has10(result.generatedFrom?.design?.plan, 'generatedFrom.design.plan');
+  const grid = has10(plan.lateMsTiming, 'plan.lateMsTiming').map((x) => n10(x, 'a swept lateness'));
+  const hz = hz10(result);
+  const series: [string, string, string, boolean][] = [
+    ['aimed', 'intervalometer-100ppm', 'aimed', false],
+    [`aimed, ${hz} Hz wait`, 'intervalometer-100ppm', 'aimed', true],
+    ['uniform', 'intervalometer-100ppm', 'uniform', false],
+    [`uniform, ${hz} Hz wait`, 'intervalometer-100ppm', 'uniform', true],
+    ['handheld-remote, uniform', 'handheld-remote', 'uniform', false],
+  ];
+  const find = (arm: string, phase: string, vsync: boolean, ms: number): TimingCell10 => {
+    const t = timing.find((x) => x.arm === arm && x.phase === phase && x.vsync === vsync && x.lateMs === ms);
+    if (t === undefined) {
+      throw new Error(`experiment-10: lateness.timing has no ${arm} / ${phase} at ${ms} ms, vsync ${vsync}`);
+    }
+    return t;
+  };
+  // A column's trials once, in its header; a column whose trials vary is a fault.
+  const trialsOf = (arm: string, phase: string, vsync: boolean): number => {
+    const ns = new Set(grid.map((ms) => n10(find(arm, phase, vsync, ms).trials, `timing ${arm} ${phase} trials`)));
+    if (ns.size !== 1) throw new Error(`experiment-10: lateness.timing ${arm} / ${phase} changes its trial count`);
+    return [...ns][0];
+  };
+  const off = has10(late.aimed?.vsyncOff, 'lateness.aimed.vsyncOff');
+  const onePercent = nOrNull10(off.onePercentMs, 'lateness.aimed.vsyncOff.onePercentMs');
+  const out = [
+    `| δ, ms per step | ` +
+      `${series.map(([label, arm, phase, v]) => `${label} (of ${trialsOf(arm, phase, v)})`).join(' | ')} | ` +
+      'uniform: positions touched · whole |',
+    `| ---: | ${series.map(() => '---:').join(' | ')} | ---: |`,
+  ];
+  for (const ms of grid) {
+    const cells = series.map(([, arm, phase, v]) => {
+      const t = find(arm, phase, v, ms);
+      const n = n10(t.capturesTouched, `timing ${arm} ${phase} ${ms} capturesTouched`);
+      return `${n} (${pct10(n / n10(t.trials, `timing ${arm} ${phase} ${ms} trials`))})`;
+    });
+    const u = find('intervalometer-100ppm', 'uniform', false, ms);
+    out.push(
+      `| ${ms === onePercent ? `**${ms}**` : ms} | ${cells.join(' | ')} | ` +
+        `${n10(u.positionsTouched, `timing uniform ${ms} positionsTouched`)} · ` +
+        `${n10(u.wholePositions, `timing uniform ${ms} wholePositions`)} |`,
+    );
+  }
+  const threshold = has10(late.aimed?.threshold, 'lateness.aimed.threshold');
+  const band = has10(threshold.aimBandS, 'lateness.aimed.threshold.aimBandS');
+  const bracket = (x: AimedCrossing10, where: string): string => {
+    const first = nOrNull10(x.firstTouchedMs, `${where}.firstTouchedMs`);
+    const one = nOrNull10(x.onePercentMs, `${where}.onePercentMs`);
+    const b = has10(x.bracketMs, `${where}.bracketMs`);
+    if (one === null || b === null) return 'no lateness swept touches 1% of aimed captures';
+    const lo = b[0] === null ? null : n10(b[0], `${where}.bracketMs[0]`);
+    return (
+      `the first aimed capture is touched at ${orDash10(first, String)} ms and 1% from ${one} ms, ` +
+      (lo === null ? 'the smallest lateness swept' : `a crossing in (${lo}, ${n10(b[1], `${where}.bracketMs[1]`)}] ms`)
+    );
+  };
+  out.push('');
+  out.push(
+    `_Derived from the design: the aim band’s lower edge, ${n10(band[0], 'aimBandS[0]')} s, spread over ` +
+      `${n10(threshold.steps, 'threshold.steps')} steps is ` +
+      `${orDash10(nOrNull10(threshold.matchedClocksMs, 'threshold.matchedClocksMs'), fixed10(2))} ms per step with ` +
+      `matched clocks, and ${orDash10(nOrNull10(threshold.fastCameraMs, 'threshold.fastCameraMs'), fixed10(2))} ms ` +
+      `with the camera’s clock ${n10(threshold.driftPpm, 'threshold.driftPpm')} ppm fast. Swept on this grid, on timing alone: ` +
+      `${bracket(off, 'lateness.aimed.vsyncOff')}; with a ${hz} Hz refresh wait, ` +
+      `${bracket(has10(late.aimed?.vsyncOn, 'lateness.aimed.vsyncOn'), 'lateness.aimed.vsyncOn')}._`,
+  );
+
+  const cells = has10(late.cells, 'lateness.cells');
+  out.push('');
+  out.push(
+    '| rendered | setting | captures flagged or changed | LOUD (share, 95% CI) | of which run by run | LOUD+SILENT | ' +
+      'SILENT | INVISIBLE-ONLY | UNCHANGED | past the seam gate |',
+  );
+  out.push('| --- | --- | --- | --- | ---: | ---: | --- | ---: | ---: | --- |');
+  for (const id of latenessIds10(result)) {
+    const cell = cell10(cells, id, 'lateness.cells');
+    const P = has10(cell.classes?.P, `${id}.classes.P`);
+    const where = `${id}.classes.P`;
+    out.push(
+      `| ${id} | ${setting10(result, cell)} | ${touched10(cell)} | ${classShare10(P, 'LOUD', where)} | ` +
+        `${n10(cell.loud?.runByRun, `${id}.loud.runByRun`)} | ${count10(P, 'LOUD+SILENT', where)} | ` +
+        `${silentSummary10(cell, P, where)} | ${count10(P, 'INVISIBLE-ONLY', where)} | ${count10(P, 'UNCHANGED', where)} | ` +
+        `${pastGate10(cell)} |`,
+    );
+  }
+  return out.join('\n');
+}
+
+/**
+ * The operator's view, for the plan and the field card: by start rule and
+ * emitter lateness, how many captures a straddle touches, how many the page
+ * would refuse loudly, and how many pass silently.
+ *
+ * Registered twice: `experiment-10-rescore-operator-path` in
+ * `docs/OPERATOR-PATH.md`, and `experiment-10-rescore-calibrate` in
+ * `docs/CALIBRATE.md`.
+ */
+export function experiment10Operator(result: Experiment10): string {
+  const rescore = has10(result.rescore?.cells, 'rescore.cells');
+  const lateness = has10(result.lateness?.cells, 'lateness.cells');
+  // The card's aimed start first, then no procedure; each at a perfect timer
+  // (EXPERIMENT-9's model) and then at every lateness rendered.
+  const plan = has10(result.generatedFrom?.design?.plan, 'generatedFrom.design.plan');
+  const rendered = has10(plan.lateMsRendered, 'plan.lateMsRendered').map((x) => n10(x, 'a rendered lateness'));
+  const rows: Cell10[] = [
+    cell10(rescore, 'R8', 'rescore.cells'),
+    ...rendered.map((ms) => cell10(lateness, `L-aimed-${ms}`, 'lateness.cells')),
+    cell10(rescore, 'R1', 'rescore.cells'),
+    ...rendered.map((ms) => cell10(lateness, `L-uniform-${ms}`, 'lateness.cells')),
+  ];
+  const gridGate = n10(result.generatedFrom?.design?.constants?.GRID_GATE_MM, 'constants.GRID_GATE_MM');
+  const out = [
+    '| start, emitter | captures flagged or changed | refused loudly (share, 95% CI) | of those, run by run | ' +
+      `pass silently | past the ${gridGate} mm seam gate |`,
+    '| --- | --- | --- | ---: | --- | --- |',
+  ];
+  for (const cell of rows) {
+    const P = has10(cell.classes?.P, `${cell.id}.classes.P`);
+    const where = `${cell.id}.classes.P`;
+    const spec = has10(cell.spec, `${cell.id}.spec`);
+    const late = n10(spec.lateMs, `${cell.id}.spec.lateMs`);
+    const label =
+      `${has10(spec.phase, `${cell.id}.spec.phase`) === 'aimed' ? 'aimed' : 'un-aimed (uniform)'} start, ` +
+      (late === 0 ? 'perfect timer' : `${late} ms late per step`) + ` (${cell.id})`;
+    out.push(
+      `| ${label} | ${touched10(cell)} | ${classShare10(P, 'LOUD', where)} | ` +
+        `${n10(cell.loud?.runByRun, `${cell.id}.loud.runByRun`)} | ` +
+        `${silentSummary10(cell, P, where)} | ${pastGate10(cell)} |`,
+    );
+  }
+  const threshold = has10(result.lateness?.aimed?.threshold, 'lateness.aimed.threshold');
+  const off = has10(result.lateness?.aimed?.vsyncOff, 'lateness.aimed.vsyncOff');
+  const onePercent = nOrNull10(off.onePercentMs, 'lateness.aimed.vsyncOff.onePercentMs');
+  out.push('');
+  out.push(
+    `_Policy P, the counterfactual reader. The aimed start protects while the emitter runs less than about ` +
+      `${orDash10(nOrNull10(threshold.fastCameraMs, 'threshold.fastCameraMs'), fixed10(2))}–` +
+      `${orDash10(nOrNull10(threshold.matchedClocksMs, 'threshold.matchedClocksMs'), fixed10(2))} ms late per step ` +
+      '(derived); ' +
+      (onePercent === null
+        ? 'no lateness swept touched 1% of aimed captures'
+        : `1% of aimed captures are touched from ${onePercent} ms (swept)`) +
+      '. ' +
+      `The emitter’s lateness has been measured only headless: a design-time ` +
+      `${n10(
+        result.generatedFrom?.design?.constants?.HEADLESS_LATENESS_MS?.hudTickOff,
+        'constants.HEADLESS_LATENESS_MS.hudTickOff',
+      )} ms per step, and about ` +
+      `${n10(
+        result.generatedFrom?.design?.constants?.HEADLESS_LATENESS_MS?.armedTickOn,
+        'constants.HEADLESS_LATENESS_MS.armedTickOn',
+      )} ms armed with the tick on._`,
+  );
+  return out.join('\n');
+}
+
 const BLOCKS: Record<string, Block> = {
+  'experiment-10-precondition': {
+    doc: 'docs/EXPERIMENT-10.md',
+    data: 'experiments/experiment-10.json',
+    render: experiment10Precondition as (r: never) => string,
+  },
+  'experiment-10-crossings': {
+    doc: 'docs/EXPERIMENT-10.md',
+    data: 'experiments/experiment-10.json',
+    render: experiment10Crossings as (r: never) => string,
+  },
+  'experiment-10-decode': {
+    doc: 'docs/EXPERIMENT-10.md',
+    data: 'experiments/experiment-10.json',
+    render: experiment10Decode as (r: never) => string,
+  },
+  'experiment-10-pose': {
+    doc: 'docs/EXPERIMENT-10.md',
+    data: 'experiments/experiment-10.json',
+    render: experiment10Pose as (r: never) => string,
+  },
+  'experiment-10-rescore': {
+    doc: 'docs/EXPERIMENT-10.md',
+    data: 'experiments/experiment-10.json',
+    render: experiment10Rescore as (r: never) => string,
+  },
+  'experiment-10-positions': {
+    doc: 'docs/EXPERIMENT-10.md',
+    data: 'experiments/experiment-10.json',
+    render: experiment10Positions as (r: never) => string,
+  },
+  'experiment-10-lateness': {
+    doc: 'docs/EXPERIMENT-10.md',
+    data: 'experiments/experiment-10.json',
+    render: experiment10Lateness as (r: never) => string,
+  },
+  // The operator's view of the same cells, in the plan whose Phase 5 it
+  // prices. Registered here and not copied, for the reason the experiment-9
+  // entry below gives.
+  'experiment-10-rescore-operator-path': {
+    doc: 'docs/OPERATOR-PATH.md',
+    data: 'experiments/experiment-10.json',
+    render: experiment10Operator as (r: never) => string,
+  },
+  // And in the field card, beside EXPERIMENT-9's table, because it is the
+  // measurement under two of the card's instructions — re-shoot a refused
+  // position whole, and aim the start — and under the caveat on the second:
+  // how late the emitter may run before aiming stops protecting. A copied
+  // table would go stale exactly where a stale number costs a camera position.
+  'experiment-10-rescore-calibrate': {
+    doc: 'docs/CALIBRATE.md',
+    data: 'experiments/experiment-10.json',
+    render: experiment10Operator as (r: never) => string,
+  },
   'experiment-9-phase': {
     doc: 'docs/EXPERIMENT-9.md',
     data: 'experiments/experiment-9.json',

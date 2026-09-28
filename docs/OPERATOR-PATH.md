@@ -397,6 +397,15 @@ wrong. What the page still asks for is the **camera** index, and that is not an
 oversight — `docs/CALIBRATE.md` is explicit that Phase 2 removes the need to know
 which frame a photograph is and not the need to know which camera took it.
 
+> **Corrected by EXPERIMENT-10: before the room, what remains is the page's
+> reader.** On bench photographs of clean camera positions, today's page refuses
+> every one before the complement check or the room can matter: all 108, 105 at
+> classify (margin at most 0.148, against the 0.15 it needs) and 3 at the run count,
+> with the room off as well as on. On the bench it vouches for no run. No fix to the
+> reader has landed, and until one does, what
+> [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md) measures of the complement check is a
+> counterfactual reader's.
+
 ## Phase 3 — Let the solver see a real photograph. **REACHABLE; STILL NO REAL PHOTOGRAPH**
 
 Every image the bundle adjustment has ever been given was rendered by this
@@ -637,6 +646,15 @@ still right and every frame is still present, so Phase 2's bookends see a
 healthy capture — a second way into the blind spot EXPERIMENT-8 measured,
 reached without anybody deleting a file.
 
+> **Corrected by EXPERIMENT-10: under one footing only.** Its reader is handed each
+> photograph's kind, since today's page places no clean bench position. Read as the
+> step each photograph is filed under, every kind is kept and the bookends see a
+> healthy capture; read as the step holding more than half its exposure, a
+> whole-position straddle past half the exposure shifts the kinds by one step and
+> the bookends refuse the position by count: 49.2% of the touched runs a clean
+> capture places, at EXPERIMENT-9's headline cell. See
+> [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
+
 **The first version of that experiment got the answer wrong, and the correction
 is the finding.** It swept clock drift, found almost nothing, and concluded that
 tethering was unjustified. Review found that the start phase — where in a dwell
@@ -680,6 +698,34 @@ two positions may be perfect.
 step, so a shutter tripped on it opens a reaction time later, in the roomiest
 part of the dwell. That was never documented as load-bearing and the field card
 does not mention it.
+
+**What a straddle costs is now measured, against a reader the page does not have
+yet.** EXPERIMENT-10 (`docs/EXPERIMENT-10.md`) renders EXPERIMENT-9's photographs
+through the bench and hands them to the page's own complement check and decoder.
+Today's page refuses every clean bench position before its complement check runs,
+so what follows is that check's verdict given bookends that can place runs. With a
+perfect timer and an un-aimed start, 728 of 2000 captures are touched and 627 of them
+refused loudly: 295 run by run, most of them told that a frame was dropped and
+another duplicated and asked to re-shoot one projector — a folder the page then
+refuses whole — and 332 as whole positions, whose re-shoot it can read. 98 pass
+silently, and 61 of the touched captures end past the seam gate. The
+aimed start touches none at a perfect timer, but it protects only while the emitter
+runs less than about 3.50 to 3.70 ms late per step, and the only figures for that
+lateness come from a headless browser — 7.5 ms per step at design time, and about
+9.3 ms armed with the tick on. At 7.5 ms, 1786 of 2000 aimed captures are touched:
+
+<!-- generated: experiment-10-rescore-operator-path -->
+| start, emitter | captures flagged or changed | refused loudly (share, 95% CI) | of those, run by run | pass silently | past the 1 mm seam gate |
+| --- | --- | --- | ---: | --- | --- |
+| aimed start, perfect timer (R8) | 0 of 2000 | 0 | 0 | 0 placed (not solved) | — |
+| aimed start, 2 ms late per step (L-aimed-2) | 0 of 2000 | 0 | 0 | 0 placed (not solved) | — |
+| aimed start, 7.5 ms late per step (L-aimed-7.5) | 1786 of 2000 (1786 newly touched) | 1358 (76.0%, 73.8–78.1%) | 1358 | 324: 4 harmless, 2 biased, 17 gate-breaking, 301 not solved | 28 under P; 40 of the 58 solved under A |
+| un-aimed (uniform) start, perfect timer (R1) | 728 of 2000 | 627 (86.1%, 83.7–88.5%) | 295 | 98: 38 harmless, 17 biased, 43 gate-breaking | 61 |
+| un-aimed (uniform) start, 2 ms late per step (L-uniform-2) | 1249 of 2000 (521 newly touched) | 912 (73.0%, 70.7–75.3%) | 637 | 240 placed (not solved) | — |
+| un-aimed (uniform) start, 7.5 ms late per step (L-uniform-7.5) | 1893 of 2000 (1165 newly touched) | 1693 (89.4%, 88.1–90.8%) | 1637 | 116 placed (not solved) | — |
+
+_Policy P, the counterfactual reader. The aimed start protects while the emitter runs less than about 3.50–3.70 ms late per step (derived); 1% of aimed captures are touched from 3.6 ms (swept). The emitter’s lateness has been measured only headless: a design-time 7.5 ms per step, and about 9.3 ms armed with the tick on._
+<!-- /generated -->
 
 ### What that does to this phase
 
