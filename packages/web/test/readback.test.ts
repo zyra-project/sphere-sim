@@ -47,12 +47,14 @@ import {
 } from '../src/manifest.ts';
 import {
   describeIndexing,
+  describeRun,
   finishCapture,
   indexPhotographs,
   readCapture,
   readRun,
   summarisePhoto,
   type CaptureRun,
+  type RunOutcome,
 } from '../src/readback.ts';
 
 const RES = 256;
@@ -725,4 +727,47 @@ test('the verdict needs only the pairs, not the decoded points', () => {
     one.correspondences.length > 0,
     'the run really did decode points — otherwise this proves nothing',
   );
+});
+
+test('a run is named counted from one, the way the worth report names its camera', () => {
+  // `describeRun` printed the indices it was handed, from zero. That echoed the
+  // page's Camera and Projector boxes while both counted from zero. Once the
+  // projector was derived, the line said "projector 0" beneath an account of
+  // projectors 1 and 2. And `captureWorth` names camera index 1 "Camera 2", so
+  // a report on two cameras would have named one camera two ways.
+  const stats = {
+    considered: 1000,
+    accepted: 400,
+    rejectedLowModulation: 600,
+    rejectedGrayAmbiguous: 0,
+    rejectedPhaseWeak: 0,
+    rejectedDisagreement: 0,
+    rejectedOutOfRange: 0,
+    rejectedMissingAxis: 0,
+    rejectedOffSphere: 0,
+    rejectedOffImage: 0,
+  };
+  const outcome = (camera: number, accepted: number): RunOutcome => ({
+    camera,
+    projector: 0,
+    frames: 34,
+    stats: { ...stats, accepted },
+    correspondences: accepted,
+    problems: [],
+    worstClippedHigh: 0,
+    worstClippedName: '',
+  });
+  const first = outcome(0, 400);
+  const second = outcome(1, 0);
+  assert.match(describeRun(first), /^Camera 1, projector 1: 400 correspondences from 1,000 camera pixels/);
+  assert.match(describeRun({ ...second, stats: null }), /^Camera 2, projector 1: 34 photographs, none decoded/);
+
+  const verdict = finishCapture(
+    [first, second],
+    [first, second].map((o) => ({ camera: o.camera, projector: o.projector, stats: o.stats ?? stats })),
+    2,
+  );
+  assert.ok(verdict.ok);
+  assert.match(describeRun(second), /^Camera 2,/);
+  assert.match(verdict.worth.refusal ?? '', /Camera 2 decoded nothing/, 'the same camera, named the same way');
 });

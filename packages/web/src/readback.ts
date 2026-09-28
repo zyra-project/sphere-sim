@@ -70,7 +70,9 @@ import { manifestExpectedSequence, manifestFrameRoles } from './manifest.ts';
 
 /** One projector's run of photographs, as they came off the camera. */
 export interface CaptureRun {
+  /** Zero-based, as `worth.ts` counts cameras. An operator reads it counted from one. */
   camera: number;
+  /** Zero-based. An operator reads it counted from one. */
   projector: number;
   /**
    * The photographs, in the order they were shot.
@@ -86,7 +88,9 @@ export interface CaptureRun {
 
 /** What one run's photographs turned into. */
 export interface RunOutcome {
+  /** Zero-based; {@link describeRun} counts from one. */
   camera: number;
+  /** Zero-based; {@link describeRun} counts from one. */
   projector: number;
   frames: number;
   /** Null when the run refused before decoding. */
@@ -316,9 +320,21 @@ export function readCapture(
  */
 export const CLIPPING_WORTH_SAYING = 0.01;
 
-/** One line per run, for a report an operator reads rather than parses. */
+/**
+ * One line per run, for a report an operator reads rather than parses.
+ *
+ * Cameras and projectors are counted from one, as everything else an operator
+ * reads names them: the emitter's steps and projectors, {@link describeIndexing},
+ * and `captureWorth`, which calls camera index 2 "Camera 3". This line printed
+ * both indices as they are held, from zero. That was right while the page had a
+ * Projector box and a Camera box, both counted from zero, and this line echoed
+ * what was typed into them. Once indexing derived the projector, the line said
+ * "projector 0" beneath an account of "projectors 1 and 2". And once the page
+ * reports on more than one camera, the worth report's "Camera 2 decoded nothing"
+ * would have pointed at the camera this line called "Camera 1".
+ */
 export function describeRun(o: RunOutcome): string {
-  const who = `Camera ${o.camera}, projector ${o.projector}`;
+  const who = `Camera ${o.camera + 1}, projector ${o.projector + 1}`;
   if (o.stats === null) {
     return `${who}: ${o.frames} photographs, none decoded — see the problems below.`;
   }

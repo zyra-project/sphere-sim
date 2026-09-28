@@ -893,9 +893,26 @@ function loadPlanFile(file: File): void {
 async function runReadback(): Promise<void> {
   const files = Array.from(photosEl.files ?? []);
   const manifest = heldManifest;
-  const camera = Math.max(0, Math.trunc(Number(camIdxEl.value) || 0));
+  // Counted from one in the box, as the report names cameras (`captureWorth`
+  // calls camera index 2 "Camera 3"), and held from zero, as `PairContribution`
+  // counts them. A box that does not hold a whole number from 1 is refused, not
+  // clamped as it was: the clamp turned an empty box or a negative number into
+  // camera 0 without a word, and would now turn a 0 typed from habit, from when
+  // the box counted from zero, into camera 1. A camera number this page made up
+  // is one the operator is wrong about with nothing on the page saying so.
+  const typed = Number(camIdxEl.value);
   const transfer = canvasTransfer();
   if (manifest === null || files.length === 0 || reading) return;
+  if (!Number.isInteger(typed) || typed < 1) {
+    readoutEl.hidden = false;
+    readoutEl.textContent =
+      'Set the camera number to a whole number from 1: 1 for the first camera position, 2 for ' +
+      'the next, and so on. Nothing in a photograph says which camera took it, so this page ' +
+      'does not guess.';
+    readoutEl.dataset.smoke = 'read-no-camera';
+    return;
+  }
+  const camera = typed - 1;
 
   reading = true;
   syncReadback();
