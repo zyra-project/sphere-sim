@@ -214,6 +214,28 @@ export function complementPlan(
 }
 
 /**
+ * Which frames of a run are phase steps: one list per axis, each in step order.
+ *
+ * Beside {@link complementPlan} and for its reason: the positions are DEFINED
+ * by {@link planFrames}, and `ExpectedSequence.phases` in
+ * `packages/solver/src/indexing.ts` carries them as positions because the
+ * solver may not see a `PatternPlan`. `indexPosition` reads them to tell a
+ * run's phase frames apart — the steps of one axis are samples of one cosine,
+ * and with an even count each step and the one half a cycle on are
+ * complements — which "patterned" alone does not say.
+ */
+export function phaseSets(plan: PatternPlan, axes: PatternAxis[] = ['u', 'v']): number[][] {
+  const specs = planFrames(plan, axes);
+  return axes.map((axis) =>
+    specs
+      .map((spec, i) => ({ spec, i }))
+      .filter(({ spec }) => spec.kind === 'phase' && spec.axis === axis)
+      .sort((a, b) => a.spec.index - b.spec.index)
+      .map(({ i }) => i),
+  );
+}
+
+/**
  * One frame reduced to the block grid a complement fingerprint compares, in
  * PROJECTOR space.
  *

@@ -34,7 +34,7 @@
  */
 
 import type { PatternPlan } from '../../bench/src/patterns.ts';
-import { complementPlan, planFrames } from '../../bench/src/patterns.ts';
+import { complementPlan, phaseSets, planFrames } from '../../bench/src/patterns.ts';
 import type { FrameRole } from '../../solver/src/assemble.ts';
 import type { ComplementPlan, ExpectedSequence, FrameKind } from '../../solver/src/indexing.ts';
 
@@ -306,12 +306,22 @@ export function manifestFrameRoles(m: CaptureManifest): FrameRole[] {
  * collapse from one to the other is a statement about what a photograph can say
  * about itself without being decoded. White and black are separable from every
  * patterned frame; one Gray plane is not separable from another.
+ *
+ * `phases` is the phase steps' positions, for the reader that finds each run
+ * by what its phase frames show (`indexPosition`); the older mechanisms never
+ * read it. Always present for the same reason `complements` is: every plan
+ * this page can parse has at least four phase steps per axis.
  */
 export function manifestExpectedSequence(
   m: CaptureManifest,
-): ExpectedSequence & { complements: ComplementPlan } {
+): ExpectedSequence & { complements: ComplementPlan; phases: number[][] } {
   const kinds: FrameKind[] = planFrames(m.plan).map((spec) =>
     spec.kind === 'white' ? 'white' : spec.kind === 'black' ? 'black' : 'patterned',
   );
-  return { kinds, projectors: m.projectors, complements: complementPlan(m.plan) };
+  return {
+    kinds,
+    projectors: m.projectors,
+    complements: complementPlan(m.plan),
+    phases: phaseSets(m.plan),
+  };
 }
