@@ -48,6 +48,11 @@
  * whole camera position into projector runs, or refuses. The two are kept
  * separate on purpose, because a bad decode should stay attributable to one
  * stage or the other.
+ *
+ * {@link holdPosition}, below that, keeps every camera position read against
+ * one plan, so that what the capture was worth is said over all of them. Taken
+ * one position at a time, `captureWorth` could only ever refuse it: one camera
+ * is degenerate.
  */
 
 import type { EncodedImage, Transfer } from '../../solver/src/ingest.ts';
@@ -645,4 +650,281 @@ export function describeIndexing(indexed: IndexedCapture, projectors: number): s
   const covered = /^Projector \d+ (was not in this camera's view|lit only)|was replaced by its re-shoot/;
   for (const note of indexed.notes) if (!covered.test(note)) lines.push(note);
   return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// The session — every camera position read since the plan was loaded
+// ---------------------------------------------------------------------------
+
+/**
+ * What one decoded run contributed, without a camera. The position it is held
+ * under says which camera, and saying it in two places is how the two could
+ * come to disagree.
+ */
+export interface HeldRun {
+  /** Zero-based. */
+  projector: number;
+  stats: DecodeStats;
+}
+
+/**
+ * One camera position the page has read, as the session holds it.
+ *
+ * Only what the worth report and the account need. The decoded points are not
+ * among them, for the reason {@link CaptureVerdict} gives: they are 168 bytes
+ * each, and nothing on the page reads one.
+ */
+export interface HeldPosition {
+  /** Zero-based, as `worth.ts` counts cameras. An operator reads it counted from one. */
+  camera: number;
+  /**
+   * One signature per photograph, opaque here. The page builds each from the
+   * file's name, size and last-modified time; this module only asks whether two
+   * positions share one.
+   */
+  photographs: readonly string[];
+  /** The folder's first and last file names, in the order handed in, to name it by later. */
+  first: string;
+  last: string;
+  /** What its decoded runs contributed. Empty when none decoded. */
+  decoded: readonly HeldRun[];
+}
+
+/** Every camera position read against one plan: at most one per camera. */
+export interface CaptureSession {
+  /**
+   * The plan every position here was read against, compared by identity: the
+   * object parsed from the file, so one file loaded twice is two plans. Null
+   * while no plan is held.
+   */
+  plan: CaptureManifest | null;
+  /** Ascending by camera. No two share a camera, and no two share a photograph. */
+  positions: readonly HeldPosition[];
+}
+
+/** The session before any plan has been read. */
+export const EMPTY_SESSION: CaptureSession = { plan: null, positions: [] };
+
+/** What filing one position did to the session. */
+export type SessionChange =
+  /** The camera held nothing, and no other camera held any of these photographs. */
+  | { kind: 'added'; camera: number }
+  /** The camera held another reading, and this one replaced it. */
+  | { kind: 'replaced'; camera: number; earlier: HeldPosition }
+  /**
+   * Another camera held `shared` of these photographs. That position is no
+   * longer held, and the photographs count under this camera.
+   */
+  | { kind: 'moved'; camera: number; from: HeldPosition; shared: number }
+  /** Read against a plan this session is not for, so not kept. */
+  | { kind: 'otherPlan'; camera: number };
+
+/**
+ * File a camera position under its camera number.
+ *
+ * `docs/EXPERIMENT-10.md` records the page's worth report printing "Only 1
+ * camera contributed." for a folder, whatever the folder held, because the page
+ * read one camera position at a time and reported on that position alone. One
+ * camera cannot separate a projector's distance from its field of view —
+ * `worth.ts` says so with EXPERIMENT-1's numbers — so a report on one position
+ * could never be anything but that refusal. The page now keeps every position
+ * it reads, and the worth ({@link sessionWorth}) is over all of them.
+ *
+ * Three rules, each for a mistake an operator can make at a desk with three
+ * folders and one camera box:
+ *
+ * - **A camera read again is replaced, never added to.** Two readings of one
+ *   camera are one camera's position read twice — a re-shoot added to its
+ *   folder, a folder corrected — and adding them would count that position
+ *   twice. The change names the folder replaced, so a camera number left
+ *   unchanged between two positions is seen rather than silently absorbed.
+ * - **A photograph counts under one camera, the one given last.** The same
+ *   photographs under two camera numbers are one position posing as two, and
+ *   two cameras are exactly what `captureWorth` asks for before it will vouch
+ *   for a solve: it would vouch for one no data supports. So a position that
+ *   shares any photograph with another camera's position replaces that one
+ *   too. Any photograph, not only the whole folder: a folder read again with a
+ *   re-shoot added is the same position with more photographs in it.
+ * - **A position read against another plan is not kept.** Positions decoded
+ *   against different plans are not one capture, and a plan file loaded while a
+ *   position was being read leaves that reading out.
+ *
+ * Pure: the session handed in is not changed, and nothing here touches a page.
+ */
+export function holdPosition(
+  session: CaptureSession,
+  plan: CaptureManifest,
+  position: HeldPosition,
+): { session: CaptureSession; changes: SessionChange[] } {
+  if (plan !== session.plan) {
+    return { session, changes: [{ kind: 'otherPlan', camera: position.camera }] };
+  }
+  const mine = new Set(position.photographs);
+  const changes: SessionChange[] = [];
+  const kept: HeldPosition[] = [];
+  for (const held of session.positions) {
+    if (held.camera === position.camera) {
+      changes.push({ kind: 'replaced', camera: position.camera, earlier: held });
+      continue;
+    }
+    const shared = held.photographs.filter((p) => mine.has(p)).length;
+    if (shared > 0) {
+      changes.push({ kind: 'moved', camera: position.camera, from: held, shared });
+      continue;
+    }
+    kept.push(held);
+  }
+  if (changes.length === 0) changes.push({ kind: 'added', camera: position.camera });
+  kept.push(position);
+  kept.sort((a, b) => a.camera - b.camera);
+  return { session: { plan, positions: kept }, changes };
+}
+
+/**
+ * The session a newly loaded plan starts, and what the old one held.
+ *
+ * Loading a plan file clears the session whatever the file says, the same file
+ * loaded again included. The page stops trusting the old plan the instant a new
+ * one is chosen (`loadPlanFile` says why), and every position held was decoded
+ * against the plan being replaced. `letGo` is what the page tells the operator
+ * it let go; {@link describeLetGo} says it.
+ */
+export function sessionForPlan(
+  previous: CaptureSession,
+  plan: CaptureManifest | null,
+): { session: CaptureSession; letGo: readonly HeldPosition[] } {
+  return { session: { plan, positions: [] }, letGo: previous.positions };
+}
+
+/**
+ * What every position held was worth together: `captureWorth` over all their
+ * runs, each counted under the camera its position is held as.
+ *
+ * Null when no run of any held position decoded, for {@link finishCapture}'s
+ * reason: `captureWorth` would report on an empty capture rather than on these
+ * photographs.
+ */
+export function sessionWorth(session: CaptureSession): CaptureWorth | null {
+  const pairs: PairContribution[] = [];
+  for (const held of session.positions) {
+    for (const run of held.decoded) {
+      pairs.push({ camera: held.camera, projector: run.projector, stats: run.stats });
+    }
+  }
+  return pairs.length === 0 ? null : captureWorth(pairs);
+}
+
+/** "IMG_0001.jpg to IMG_0136.jpg", or the one name. */
+function folderOf(p: HeldPosition): string {
+  return p.first === p.last ? p.first : `${p.first} to ${p.last}`;
+}
+
+/** Whether every photograph of `part` is in `whole`. */
+function within(part: readonly string[], whole: readonly string[]): boolean {
+  const inWhole = new Set(whole);
+  return part.every((s) => inWhole.has(s));
+}
+
+function samePhotographs(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && within(a, b);
+}
+
+function describeChange(session: CaptureSession, change: SessionChange): string {
+  const n = change.camera + 1;
+  const now = session.positions.find((p) => p.camera === change.camera);
+  switch (change.kind) {
+    case 'added':
+      return `This position is now held as camera ${n}.`;
+    case 'replaced': {
+      const earlier = folderOf(change.earlier);
+      // The same folder again, or the same folder grown — which is what a
+      // re-shoot added to its end looks like — is this camera's own position
+      // read again, and saying "in place of" would send the operator looking
+      // for a mistake that was not made. The folder is named either way.
+      if (now !== undefined && within(change.earlier.photographs, now.photographs)) {
+        const more = now.photographs.length - change.earlier.photographs.length;
+        return more === 0
+          ? `Camera ${n}'s photographs (${earlier}) were read again, and this reading replaces the last.`
+          : `Camera ${n}'s position (${earlier}) was read again with ${more} more ` +
+              `photograph${more === 1 ? '' : 's'}, and this reading replaces the last.`;
+      }
+      return (
+        `This position is now held as camera ${n}, in place of the one read as camera ${n} ` +
+        `before (${earlier}). Reading a camera number again replaces what it held, so if that ` +
+        `was another camera's position, give this one its own number and read both again.`
+      );
+    }
+    case 'moved': {
+      const m = change.from.camera + 1;
+      if (now !== undefined && samePhotographs(now.photographs, change.from.photographs)) {
+        return (
+          `These photographs were held as camera ${m}. They count as camera ${n} now, the number ` +
+          `given last, and camera ${m} is no longer held: one position under two numbers would ` +
+          `pass for two cameras.`
+        );
+      }
+      return (
+        `Camera ${m}'s position (${folderOf(change.from)}) shares ${change.shared} of its ` +
+        `${change.from.photographs.length} photographs with this one, so it is no longer held: a ` +
+        `photograph counts under one camera, the number given last.`
+      );
+    }
+    case 'otherPlan':
+      return (
+        'A plan file was loaded while this position was being read, so it is not held: it was ' +
+        'read against the plan before. Read it again to add it.'
+      );
+  }
+}
+
+/** One held position, for the account. */
+function describeHeld(p: HeldPosition): string {
+  const photos = p.photographs.length;
+  const runs = p.decoded.length;
+  const points = p.decoded.reduce((a, r) => a + r.stats.accepted, 0);
+  return (
+    `Camera ${p.camera + 1}: ${folderOf(p)}, ${photos} photograph${photos === 1 ? '' : 's'}; ` +
+    (runs === 0
+      ? 'no run decoded.'
+      : `${runs} run${runs === 1 ? '' : 's'} decoded, ${points.toLocaleString()} correspondences.`)
+  );
+}
+
+/**
+ * The session, for an operator: what filing the last position did, every
+ * position held, and what they were worth together — `captureWorth`'s summary,
+ * and its refusal if it makes one.
+ *
+ * Cameras are counted from one, as `captureWorth` names them, so "Camera 2
+ * decoded nothing" in its refusal is the "Camera 2" listed above it.
+ */
+export function describeSession(session: CaptureSession, changes: readonly SessionChange[]): string {
+  const lines = changes.map((c) => describeChange(session, c));
+  if (session.positions.length === 0) {
+    lines.push('No camera position is held, so there is no worth to report.');
+    return lines.join('\n');
+  }
+  lines.push('Camera positions held until a plan file is loaded; the worth below covers every one:');
+  for (const p of session.positions) lines.push(`  ${describeHeld(p)}`);
+  const worth = sessionWorth(session);
+  if (worth === null) {
+    lines.push('None of them decoded a run, so there is no worth to report.');
+  } else {
+    lines.push(worth.summary);
+    if (worth.refusal !== null) lines.push(worth.refusal);
+  }
+  return lines.join('\n');
+}
+
+/** What loading a plan file let go, for an operator. Empty when it held nothing. */
+export function describeLetGo(letGo: readonly HeldPosition[]): string {
+  if (letGo.length === 0) return '';
+  const one = letGo.length === 1;
+  const cameras = listed(letGo.map((p) => p.camera + 1));
+  return (
+    `The position${one ? '' : 's'} read as camera${one ? '' : 's'} ${cameras} ` +
+    `${one ? 'is' : 'are'} no longer held: loading a plan file starts the report over, since ` +
+    `every position is decoded against the plan it was read with. Read ` +
+    `${one ? 'it' : 'them'} again to include ${one ? 'it' : 'them'}.`
+  );
 }
