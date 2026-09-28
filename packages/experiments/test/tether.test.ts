@@ -493,6 +493,9 @@ test('exposureBlend agrees with straddles: more than one part exactly when a bou
   assert.throws(() => exposureBlend(1, E, D, -D), /exposureBlend/);
   assert.throws(() => exposureBlend(1.9, E, D, 0, () => -0.01), /waits/);
   assert.throws(() => exposureBlend(1.9, E, D, 0, () => D), /waits/);
+  // Each finite and their sum not: the close would be Infinity, and the walk
+  // over finite step ends toward it would never stop.
+  assert.throws(() => exposureBlend(Number.MAX_VALUE, Number.MAX_VALUE, D), /not finite/);
 });
 
 test('the headline cell replays exactly from the committed experiment-9.json', () => {

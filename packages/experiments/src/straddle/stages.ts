@@ -56,6 +56,7 @@ import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_SENSOR,
   captureAndDecode,
+  type CaptureOptions,
   type ShutterStraddle,
 } from '../../../bench/src/capture.ts';
 import { frameBlockGrid, planFrames } from '../../../bench/src/patterns.ts';
@@ -1593,16 +1594,31 @@ function q0bShapes(bank: RigBank, k: number, c: number): Q0bShape[] {
   });
 }
 
+/**
+ * The options Q0 photographs `cameras` of a rig with: the rig's own capture,
+ * DEFAULT_SENSOR, and each camera's noise keyed by its index in the rig. A fine
+ * unit photographs one camera, which rendered alone sits at position 0; keyed
+ * by position it would draw camera 0's noise, while its twin is noised as the
+ * camera it is (`noisyRun`), and the two would be different photographs.
+ */
+export function q0CaptureOptions(
+  bank: RigBank,
+  cameras: readonly number[],
+  onCapture: CaptureOptions['onCapture'],
+): CaptureOptions {
+  const base = captureOptionsFor(bank.world, bank.scenario, runOptionsFor(bank), PLAN);
+  if (JSON.stringify(base.conditions.sensor) !== JSON.stringify(DEFAULT_SENSOR)) {
+    throw new Error(`experiment10: rig ${bank.k} (${bank.variant}) does not photograph with DEFAULT_SENSOR`);
+  }
+  return { ...base, noiseCameraIndices: [...cameras], onCapture };
+}
+
 export function stageQ0(ctx: RunContext): StageFile<Q0Unit> {
   const { plan } = ctx;
   return runUnits<Q0Unit>(ctx, 'q0', rigUnits(plan, ['main', 'spill', 'fine']), (unit) => {
     const { which, k, camera } = parseUnit(unit);
     const bank = bankOf(ctx, unit);
     const cameras = camera === null ? [...bank.cameras] : [camera];
-    const base = captureOptionsFor(bank.world, bank.scenario, runOptionsFor(bank), PLAN);
-    if (JSON.stringify(base.conditions.sensor) !== JSON.stringify(DEFAULT_SENSOR)) {
-      throw new Error(`experiment10: ${unit} does not photograph with DEFAULT_SENSOR`);
-    }
     const summaries = new Map<number, PhotoSummary[]>(cameras.map((c) => [c, []]));
     const keepFor = which === 'main' && k === plan.rigs[0] ? 0 : -1;
     const kept: LinearImage[][] = [];
@@ -1612,24 +1628,21 @@ export function stageQ0(ctx: RunContext): StageFile<Q0Unit> {
     captureAndDecode(
       bank.world.truthRig,
       cameras.map((c) => bank.world.cameras[c]),
-      {
-        ...base,
-        onCapture: (i, p, capture) => {
-          const c = cameras[i];
-          const frames = planOrder(capture);
-          frames.forEach((img, f) => {
-            const j = p * FRAMES_PER_RUN + f;
-            (summaries.get(c) as PhotoSummary[])[j] = summarisePhoto(
-              encodeSrgb8(img, ENCODE_FULL_SCALE),
-              j,
-              photoName(j),
-              TRANSFER,
-              FINGERPRINT_BLOCKS,
-            );
-          });
-          if (c === keepFor) kept[p] = frames;
-        },
-      },
+      q0CaptureOptions(bank, cameras, (i, p, capture) => {
+        const c = cameras[i];
+        const frames = planOrder(capture);
+        frames.forEach((img, f) => {
+          const j = p * FRAMES_PER_RUN + f;
+          (summaries.get(c) as PhotoSummary[])[j] = summarisePhoto(
+            encodeSrgb8(img, ENCODE_FULL_SCALE),
+            j,
+            photoName(j),
+            TRANSFER,
+            FINGERPRINT_BLOCKS,
+          );
+        });
+        if (c === keepFor) kept[p] = frames;
+      }),
     );
     const positions = cameras.map((c) =>
       q0Position(which, k, c, summaries.get(c) as PhotoSummary[]),

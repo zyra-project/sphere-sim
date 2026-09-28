@@ -2362,3 +2362,55 @@ test('T39 the pose stage keeps both re-shoots of each designed rig: the same see
   assert.deepEqual(unit.positionNulls, specs.position.map(solveId));
   assert.ok([...unit.nulls, ...unit.positionNulls].every((id) => asked.includes(id)), 'a re-shoot was recorded without being asked for');
 });
+
+test('T40 Q0 photographs a camera alone with the noise its twin is built from', async () => {
+  // A fine unit photographs one camera of its rig. Rendered alone that camera
+  // sits at position 0, and keyed by position it drew camera 0's noise, while
+  // its twin is noised as the camera it is (`noisyRun`): the page's verdict and
+  // the twin's were on two different photographs. T21 checks the renderer
+  // against `noisyRun` on camera 0, the one camera whose position and index
+  // agree, which is how this went unseen.
+  const { q0CaptureOptions } = await import('../src/straddle/stages.ts');
+  const b = rig();
+  const c = 1;
+  assert.ok(b.cameras.includes(c), 'the reduced rig has no second camera to photograph alone');
+  const photographAlone = (key: 'rig' | 'position'): PatternCapture[] => {
+    const out: PatternCapture[] = [];
+    const options = q0CaptureOptions(b, [c], (_i, _p, capture) => {
+      out.push(capture);
+    });
+    captureAndDecode(
+      b.world.truthRig,
+      [b.world.cameras[c]],
+      key === 'rig' ? options : { ...options, noiseCameraIndices: null },
+    );
+    return out;
+  };
+  const bits = DEFAULT_SENSOR.quantizationBits;
+  assert.ok(bits !== null);
+  const step = DEFAULT_SENSOR.saturationRadiance / (2 ** bits - 1);
+  const agreement = (rendered: PatternCapture[]): { share: number; worstSteps: number } => {
+    let total = 0;
+    let same = 0;
+    let worstSteps = 0;
+    for (let p = 0; p < PROJECTORS; p++) {
+      const twin = noisyRun(b, c, p, (f) => b.frames[c][p][f], DEFAULT_SENSOR, b.seed);
+      const theirs = planOrder(rendered[p]);
+      for (let f = 0; f < FRAMES_PER_RUN; f++) {
+        for (let i = 0; i < twin[f].data.length; i++) {
+          total++;
+          if (twin[f].data[i] === theirs[f].data[i]) same++;
+          else worstSteps = Math.max(worstSteps, Math.abs(Math.round(twin[f].data[i] / step) - Math.round(theirs[f].data[i] / step)));
+        }
+      }
+    }
+    return { share: same / total, worstSteps };
+  };
+  // The same tolerance as T21's, for the same reason: the twin noises a Float32
+  // frame where the renderer noised the double.
+  const keyed = agreement(photographAlone('rig'));
+  assert.ok(keyed.share >= 0.999, `camera ${c} alone matches its twin on only ${(100 * keyed.share).toFixed(2)}% of pixels`);
+  assert.ok(keyed.worstSteps <= 1, `camera ${c} alone differs from its twin by ${keyed.worstSteps} quantisation steps`);
+  const unkeyed = agreement(photographAlone('position'));
+  assert.ok(unkeyed.share < 0.5, `keyed by position, camera ${c} still matched its twin on ${(100 * unkeyed.share).toFixed(2)}%: this test cannot see the key`);
+});

@@ -379,6 +379,22 @@ export interface CaptureOptions {
    * nothing and changes nothing.
    */
   onCapture?: ((camera: number, projector: number, capture: PatternCapture) => void) | null;
+  /**
+   * The index each camera's noise stream is keyed by, one per camera passed, in
+   * order. Omitted or null, a camera is keyed by its position in `cameras`,
+   * which is right whenever `cameras` is the whole set.
+   *
+   * It exists for a caller that photographs part of a set. Passed alone, a
+   * set's second camera sits at position 0 and draws the first camera's noise,
+   * so a caller that pairs the photograph with frames noised as the second
+   * camera (`pairNoiseSeed(seed, 1, p)`) compares two different photographs.
+   * EXPERIMENT-10's Q0 did exactly that for its fine-raster units. Only the
+   * noise is re-keyed: handheld motion and a straddle's parts still follow the
+   * position in `cameras`.
+   *
+   * Omitting it is byte-identical to the code before this field existed.
+   */
+  noiseCameraIndices?: readonly number[] | null;
 }
 
 export interface PairStats {
@@ -801,7 +817,8 @@ function renderPair(
   // in a fixed (frame, pixel) order. Pairs are therefore independent of each
   // other and of how many pairs came first, so a scenario that changes its
   // camera count does not reshuffle the noise of the cameras it kept.
-  const rng = makeBenchRng(pairNoiseSeed(opts.seed, cameraIndex, projectorIndex));
+  const noiseKey = opts.noiseCameraIndices?.[cameraIndex] ?? cameraIndex;
+  const rng = makeBenchRng(pairNoiseSeed(opts.seed, noiseKey, projectorIndex));
 
   const stateless = cond.handheld === null;
   let pixelsTraced = 0;
@@ -1327,6 +1344,21 @@ export function captureAndDecode(
   cameras: readonly SimulatedCamera[],
   opts: CaptureOptions,
 ): CaptureResult {
+  const noiseKeys = opts.noiseCameraIndices ?? null;
+  if (
+    noiseKeys !== null &&
+    (noiseKeys.length !== cameras.length ||
+      noiseKeys.some((k) => !Number.isInteger(k) || k < 0) ||
+      new Set(noiseKeys).size !== noiseKeys.length)
+  ) {
+    // Two cameras on one key would share their noise, and a missing key would
+    // quietly fall back to the camera's position: both are the bug this field
+    // exists to prevent.
+    throw new Error(
+      `captureAndDecode: noiseCameraIndices [${noiseKeys.join(', ')}] must be ${cameras.length} distinct ` +
+        'non-negative integers, one per camera',
+    );
+  }
   const prepared = prepareRig(rig, opts.surface ?? undefined);
   const canonicals = cameras.map((c) => canonicalRayTable(c.intrinsics));
   const motionSeed = makeBenchRng((opts.seed ^ 0x5bf03635) >>> 0);

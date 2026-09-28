@@ -173,6 +173,11 @@ export function exposureBlend(
         'must be finite, the last two positive',
     );
   }
+  // Each finite, their sum need not be: a close at Infinity would keep the
+  // loop below walking finite step ends forever.
+  if (!Number.isFinite(open + exposureS)) {
+    throw new Error(`exposureBlend: open ${open} s plus exposure ${exposureS} s is not finite`);
+  }
   // T_{m+1}: the instant step m gives way to step m + 1.
   const end = (m: number): number => {
     const t = m * period + period;

@@ -117,6 +117,7 @@ interface CaptureArgs {
    */
   straddle?: ShutterStraddle | null;
   onCapture?: CaptureOptions['onCapture'];
+  noiseCameraIndices?: CaptureOptions['noiseCameraIndices'];
 }
 
 /**
@@ -162,6 +163,7 @@ function capture(cams: SimulatedCamera[], args: Partial<CaptureArgs> = {}) {
     previewFrame: -1,
     surface: args.surface ?? null,
     ...(args.onCapture === undefined ? {} : { onCapture: args.onCapture }),
+    ...(args.noiseCameraIndices === undefined ? {} : { noiseCameraIndices: args.noiseCameraIndices }),
   });
 }
 
@@ -1341,6 +1343,44 @@ test("the bench's own sensor and stream, applied to a noiseless frame, reproduce
   }
   assert.ok(same >= 0.999 * total, `${total - same} of ${total} pixels differ from the renderer's`);
   assert.ok(worst <= 1, `a pixel differs from the renderer's by ${worst} quantisation steps`);
+});
+
+test('noiseCameraIndices lets a camera photographed alone keep the noise it has in the set', () => {
+  // A caller photographing part of a set passes those cameras alone, and each
+  // then sits at a new position. Keyed by position, the set's second camera
+  // draws the first camera's noise. EXPERIMENT-10's Q0 did that for its
+  // fine-raster units, and set the photograph beside frames noised as the
+  // camera it was.
+  const cams = cameras(2);
+  const whole = shoot(cams, { sensor: DEFAULT_SENSOR });
+  const second = whole.pairs.filter((q) => q.camera === 1);
+  const alone = shoot([cams[1]], { sensor: DEFAULT_SENSOR, noiseCameraIndices: [1] });
+  assert.equal(alone.pairs.length, second.length);
+  alone.pairs.forEach((q, k) => {
+    const theirs = inPlanOrder(second[k].capture);
+    inPlanOrder(q.capture).forEach((image, f) => {
+      assertSamePixels(image.data, theirs[f].data, `camera 1 alone, projector ${k}, frame ${f}`);
+    });
+  });
+
+  // Keyed by its position, the same camera alone is another photograph.
+  const unkeyed = shoot([cams[1]], { sensor: DEFAULT_SENSOR });
+  const differs = unkeyed.pairs.some((q, k) => {
+    const theirs = inPlanOrder(second[k].capture);
+    return inPlanOrder(q.capture).some((image, f) => image.data.some((v, i) => !Object.is(v, theirs[f].data[i])));
+  });
+  assert.ok(differs, 'camera 1 alone drew its own noise unkeyed, so this test cannot see the key');
+
+  // Keying every camera by its own position is the capture with no key at all.
+  const identity = framesOf(shoot(cams, { sensor: DEFAULT_SENSOR, noiseCameraIndices: [0, 1] }));
+  const plain = framesOf(whole);
+  identity.forEach((pair, k) => pair.forEach((data, f) => assertSamePixels(data, plain[k][f], `pair ${k} frame ${f}`)));
+
+  // One key per camera, each a distinct non-negative integer.
+  assert.throws(() => capture(cams, { noiseCameraIndices: [0] }), /noiseCameraIndices/);
+  assert.throws(() => capture(cams, { noiseCameraIndices: [1, 1] }), /noiseCameraIndices/);
+  assert.throws(() => capture(cams, { noiseCameraIndices: [0, -1] }), /noiseCameraIndices/);
+  assert.throws(() => capture(cams, { noiseCameraIndices: [0, 0.5] }), /noiseCameraIndices/);
 });
 
 test('azimuthOffsetDeg absent is 0, and present it only rotates the set', () => {
