@@ -3,7 +3,7 @@
   "mode": "full",
   "notice": null,
   "generatedFrom": {
-    "codeFingerprint": "b1e21ac73f3cc543",
+    "codeFingerprint": "f2af6e518bd78e23",
     "assemblyFingerprint": "3274bd7a0e7e3ddd",
     "staleCheckpointsAccepted": [],
     "design": {
@@ -1391,11 +1391,11 @@
         "margin": {
           "n": 12,
           "min": 0.002,
-          "p10": 0.0095,
-          "median": 0.0464,
+          "p10": 0.0091,
+          "median": 0.0466,
           "p90": 0.0994,
-          "max": 0.148,
-          "mean": 0.0515
+          "max": 0.1475,
+          "mean": 0.0512
         },
         "reasons": {
           "margin": 12
@@ -1406,10 +1406,10 @@
             "n": 48,
             "min": 0,
             "p10": 0,
-            "median": 0.0584,
-            "p90": 0.1504,
-            "max": 0.2543,
-            "mean": 0.0706
+            "median": 0.0548,
+            "p90": 0.15,
+            "max": 0.255,
+            "mean": 0.0691
           },
           "wrongKinds": {
             "n": 48,
@@ -1418,7 +1418,7 @@
             "median": 8,
             "p90": 33,
             "max": 33,
-            "mean": 13
+            "mean": 12.9167
           },
           "rescued": 0
         }
@@ -1430,7 +1430,7 @@
       "refusedAt": {
         "classify": {
           "positions": 105,
-          "maxMargin": 0.148
+          "maxMargin": 0.1477
         },
         "count": {
           "positions": 3,
@@ -4562,7 +4562,7 @@
           "placed": 0,
           "total": 136,
           "runsPlaced": [],
-          "margin": 0.0587,
+          "margin": 0.0552,
           "wrongKinds": 103,
           "perRun": [
             {
@@ -4570,20 +4570,20 @@
               "wrongKinds": 33
             },
             {
-              "margin": 0.0818,
+              "margin": 0.0842,
               "wrongKinds": 8
             },
             {
-              "margin": 0.0585,
+              "margin": 0.055,
               "wrongKinds": 4
             },
             {
-              "margin": 0.1569,
+              "margin": 0.1621,
               "wrongKinds": 8
             }
           ],
           "problems": [
-            "The white and black frames cannot be reliably told from the patterned ones: the closest two groups are 0.059 apart, under the 0.15 this needs. That usually means the sphere fills too little of the frame, the room is bright enough to lift the black frames, or the exposure is clipping the white ones. Nothing below this line would be a measurement; it would be a segmentation of noise."
+            "The white and black frames cannot be reliably told from the patterned ones: the closest two groups are 0.055 apart, under the 0.15 this needs. That usually means the sphere fills too little of the frame, the room is bright enough to lift the black frames, or the exposure is clipping the white ones. Nothing below this line would be a measurement; it would be a segmentation of noise."
           ],
           "description": "136 photographs handed in, and none of them could be placed. Nothing was decoded — the problems below are about the folder, not about the solve."
         },
@@ -4594,28 +4594,28 @@
           "placed": 0,
           "total": 136,
           "runsPlaced": [],
-          "margin": 0.0106,
+          "margin": 0.0123,
           "wrongKinds": 101,
           "perRun": [
             {
-              "margin": 0.0099,
-              "wrongKinds": 8
+              "margin": 0.0391,
+              "wrongKinds": 6
             },
             {
               "margin": 0,
               "wrongKinds": 33
             },
             {
-              "margin": 0.0269,
+              "margin": 0.0391,
               "wrongKinds": 11
             },
             {
-              "margin": 0.0106,
+              "margin": 0.012,
               "wrongKinds": 4
             }
           ],
           "problems": [
-            "The white and black frames cannot be reliably told from the patterned ones: the closest two groups are 0.011 apart, under the 0.15 this needs. That usually means the sphere fills too little of the frame, the room is bright enough to lift the black frames, or the exposure is clipping the white ones. Nothing below this line would be a measurement; it would be a segmentation of noise."
+            "The white and black frames cannot be reliably told from the patterned ones: the closest two groups are 0.012 apart, under the 0.15 this needs. That usually means the sphere fills too little of the frame, the room is bright enough to lift the black frames, or the exposure is clipping the white ones. Nothing below this line would be a measurement; it would be a segmentation of noise."
           ],
           "description": "136 photographs handed in, and none of them could be placed. Nothing was decoded — the problems below are about the folder, not about the solve."
         },
@@ -4658,7 +4658,7 @@
           "placed": 0,
           "total": 136,
           "runsPlaced": [],
-          "margin": 0.0405,
+          "margin": 0.0402,
           "wrongKinds": 103,
           "perRun": [
             {
@@ -4666,15 +4666,15 @@
               "wrongKinds": 33
             },
             {
-              "margin": 0.029,
-              "wrongKinds": 10
+              "margin": 0.0331,
+              "wrongKinds": 9
             },
             {
-              "margin": 0.0405,
+              "margin": 0.0404,
               "wrongKinds": 4
             },
             {
-              "margin": 0.1335,
+              "margin": 0.145,
               "wrongKinds": 8
             }
           ],
@@ -4690,11 +4690,11 @@
           "placed": 0,
           "total": 136,
           "runsPlaced": [],
-          "margin": 0.0093,
+          "margin": 0.0087,
           "wrongKinds": 96,
           "perRun": [
             {
-              "margin": 0.1289,
+              "margin": 0.1244,
               "wrongKinds": 6
             },
             {
@@ -4702,11 +4702,11 @@
               "wrongKinds": 33
             },
             {
-              "margin": 0.0361,
+              "margin": 0.0185,
               "wrongKinds": 14
             },
             {
-              "margin": 0.1378,
+              "margin": 0.137,
               "wrongKinds": 6
             }
           ],
@@ -4754,24 +4754,24 @@
           "placed": 0,
           "total": 136,
           "runsPlaced": [],
-          "margin": 0.031,
-          "wrongKinds": 103,
+          "margin": 0.0306,
+          "wrongKinds": 102,
           "perRun": [
             {
               "margin": 0,
               "wrongKinds": 33
             },
             {
-              "margin": 0.0983,
-              "wrongKinds": 8
+              "margin": 0.0109,
+              "wrongKinds": 9
             },
             {
-              "margin": 0.031,
-              "wrongKinds": 4
+              "margin": 0.0306,
+              "wrongKinds": 3
             },
             {
-              "margin": 0.0394,
-              "wrongKinds": 8
+              "margin": 0.0052,
+              "wrongKinds": 7
             }
           ],
           "problems": [
@@ -4786,15 +4786,15 @@
           "placed": 0,
           "total": 136,
           "runsPlaced": [],
-          "margin": 0.148,
+          "margin": 0.1475,
           "wrongKinds": 78,
           "perRun": [
             {
-              "margin": 0.1486,
+              "margin": 0.148,
               "wrongKinds": 6
             },
             {
-              "margin": 0.1398,
+              "margin": 0.1466,
               "wrongKinds": 12
             },
             {
@@ -4802,12 +4802,12 @@
               "wrongKinds": 12
             },
             {
-              "margin": 0.1588,
+              "margin": 0.1557,
               "wrongKinds": 6
             }
           ],
           "problems": [
-            "The white and black frames cannot be reliably told from the patterned ones: the closest two groups are 0.148 apart, under the 0.15 this needs. That usually means the sphere fills too little of the frame, the room is bright enough to lift the black frames, or the exposure is clipping the white ones. Nothing below this line would be a measurement; it would be a segmentation of noise."
+            "The white and black frames cannot be reliably told from the patterned ones: the closest two groups are 0.147 apart, under the 0.15 this needs. That usually means the sphere fills too little of the frame, the room is bright enough to lift the black frames, or the exposure is clipping the white ones. Nothing below this line would be a measurement; it would be a segmentation of noise."
           ],
           "description": "136 photographs handed in, and none of them could be placed. Nothing was decoded — the problems below are about the folder, not about the solve."
         },
@@ -4850,7 +4850,7 @@
           "placed": 0,
           "total": 136,
           "runsPlaced": [],
-          "margin": 0.0523,
+          "margin": 0.0529,
           "wrongKinds": 101,
           "perRun": [
             {
@@ -4858,20 +4858,20 @@
               "wrongKinds": 33
             },
             {
-              "margin": 0.0165,
+              "margin": 0.0262,
               "wrongKinds": 12
             },
             {
-              "margin": 0.2543,
+              "margin": 0.255,
               "wrongKinds": 2
             },
             {
-              "margin": 0.1405,
+              "margin": 0.1401,
               "wrongKinds": 6
             }
           ],
           "problems": [
-            "The white and black frames cannot be reliably told from the patterned ones: the closest two groups are 0.052 apart, under the 0.15 this needs. That usually means the sphere fills too little of the frame, the room is bright enough to lift the black frames, or the exposure is clipping the white ones. Nothing below this line would be a measurement; it would be a segmentation of noise."
+            "The white and black frames cannot be reliably told from the patterned ones: the closest two groups are 0.053 apart, under the 0.15 this needs. That usually means the sphere fills too little of the frame, the room is bright enough to lift the black frames, or the exposure is clipping the white ones. Nothing below this line would be a measurement; it would be a segmentation of noise."
           ],
           "description": "136 photographs handed in, and none of them could be placed. Nothing was decoded — the problems below are about the folder, not about the solve."
         },
@@ -4886,11 +4886,11 @@
           "wrongKinds": 78,
           "perRun": [
             {
-              "margin": 0.1294,
+              "margin": 0.1264,
               "wrongKinds": 6
             },
             {
-              "margin": 0.0515,
+              "margin": 0.0545,
               "wrongKinds": 13
             },
             {
@@ -4898,7 +4898,7 @@
               "wrongKinds": 12
             },
             {
-              "margin": 0.1612,
+              "margin": 0.1593,
               "wrongKinds": 6
             }
           ],
@@ -34757,7 +34757,7 @@
         "refusedAt": {
           "classify": {
             "positions": 105,
-            "maxMargin": 0.148
+            "maxMargin": 0.1477
           },
           "count": {
             "positions": 3,

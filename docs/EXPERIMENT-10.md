@@ -1,7 +1,8 @@
 # Experiment 10 — what a photograph taken across a pattern change costs a calibration
 
 **Status: measured on the bench, against a reader the page does not have yet — and
-this is the second full run, because the first said more than it had measured.**
+this is the third full run, because the first said more than it had measured and
+the second photographed some clean positions with another camera's noise.**
 The first full run's results file (379bb2f) was committed **unverified**, so that
 the measurement would not be lost with the container that made it. Adversarial
 verification then upheld its measurements but not all of its sentences. Its H7
@@ -13,9 +14,13 @@ reasons, and inferred what it could have measured: whether a Gray word changes,
 what re-shooting only the straddled position costs, and where the card's aimed
 start stops protecting. c691f07 corrected those sentences, made the stages measure
 those things, and lists the rest in its message. A container restart had already
-lost every checkpoint, so the whole run was repeated on the corrected code. **This
-document reports that re-run**: its tables are generated from the results file,
-and its prose quotes the same cells.
+lost every checkpoint, so the whole run was repeated on the corrected code. Review
+of that run found that Q0's fine-raster units, which photograph one camera at a
+time, had given the second and third cameras the first camera's sensor noise while
+their twins were noised as themselves. 070d7df keys each camera's noise by its
+index in the rig, and the run was repeated once more: only those positions
+changed, and no figure quoted below moved. **This document reports the last run**:
+its tables are generated from the results file, and its prose quotes the same cells.
 
 - **Data** — [`experiments/experiment-10.json`](../experiments/experiment-10.json)
   (`sphere-sim/experiment-10@1`). Every table below is generated from it and checked
@@ -27,8 +32,8 @@ and its prose quotes the same cells.
   process. `--stage <name>` runs or resumes one stage, so once `q0` and `bank` are
   on disk the other five can run side by side — `pose`, `rescore` and `lateness`
   share a solve file, so start those three together — and `--stage assemble` writes
-  the file from finished checkpoints alone. Run as four lanes on 4 CPUs, this re-run
-  took 2 h 30 min, `rescore` alone 2 h 20 min. `--quick` and `--smoke` check the
+  the file from finished checkpoints alone. Run as four lanes on 4 CPUs, the last run
+  took 2 h 26 min, `rescore` alone 2 h 17 min. `--quick` and `--smoke` check the
   plumbing and never write the committed file.
 - **Code** — [`packages/experiments/src/straddle/`](../packages/experiments/src/straddle/)
   (`stages.ts` measures and is fingerprinted; `assemble.ts` writes the document and
@@ -153,7 +158,7 @@ remedy the page's own refusal asks for.
 | --- | --- | ---: | ---: | --- | --- | ---: |
 | the sweep | 320×240 | 72 | 0 | classify 70 · run count 2 | 0.048 · 0.201 | 0 of 288 |
 | room spill on | 320×240 | 24 | 0 | classify 23 · run count 1 | 0.052 · 0.201 | 0 of 96 |
-| the finer preset | 640×480 | 12 | 0 | classify 12 | 0.046 · 0.148 | 0 of 48 |
+| the finer preset | 640×480 | 12 | 0 | classify 12 | 0.047 · 0.147 | 0 of 48 |
 | **all** | | **108** | **0** | **105 at classify** (margin at most 0.148), 3 at the run count, having cleared classify (margin 0.172–0.201) and found 2 of 4 runs, 0 elsewhere | | |
 
 _What the page’s worth report prints for a clean folder: “Only 1 camera contributed.”_
