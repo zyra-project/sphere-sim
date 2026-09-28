@@ -646,6 +646,11 @@ test('projector numbers are never wrong: every unseen set, pre-roll, trailing da
     }
   }
   // Not vacuous: a reader that refused everything would pass the loop above.
+  // Measured: 11 824 of 19 680 seen runs placed, 60.1%. The rest are refused
+  // on purpose — the run a black-frame fault broke, and folders whose extras
+  // overrun the page's allowances or whose runs read two ways — so the floor
+  // sits just under the measured figure: a change that refuses more fails
+  // here, and has to say why.
   assert.ok(folders > 5000, `${folders} folders`);
   assert.ok(placedRuns > 0.6 * seenRuns, `placed ${placedRuns} of ${seenRuns} seen runs`);
 });
