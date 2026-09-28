@@ -54,11 +54,11 @@ import type { EncodedImage, Transfer } from '../../solver/src/ingest.ts';
 import { linearise } from '../../solver/src/ingest.ts';
 import type {
   FrameFingerprint,
-  FrameObservation,
   FrameStats,
-  IndexingResult,
+  PositionIndexing,
+  ReshootProvenance,
 } from '../../solver/src/indexing.ts';
-import { fingerprint, indexByFingerprint, litFractions, observe } from '../../solver/src/indexing.ts';
+import { fingerprint, indexPosition, observe } from '../../solver/src/indexing.ts';
 import type { AssembleParams, FrameRole } from '../../solver/src/assemble.ts';
 import { assembleCapture } from '../../solver/src/assemble.ts';
 import type { Correspondence, DecodeStats } from '../../solver/src/decode.ts';
@@ -395,13 +395,30 @@ export interface IndexedRun {
 }
 
 export interface IndexedCapture {
-  /** True when every photograph the plan asks for was placed. */
+  /**
+   * True when every run this camera could see was placed and nothing was
+   * refused. A projector out of view does not make it false: there is nothing
+   * of it to place.
+   */
   ok: boolean;
   /** The runs the indexer will vouch for. Empty when it vouches for none. */
   runs: IndexedRun[];
   /** What disagreed, in an operator's terms. Empty when all was well. */
   problems: string[];
-  mechanism: IndexingResult['mechanism'];
+  /**
+   * What was noticed and stopped nothing, in an operator's terms: photographs
+   * before Play or after the screen went black, projectors out of view or
+   * barely seen, runs replaced by their re-shoots. Never a refusal — those are
+   * {@link problems}.
+   */
+  notes: string[];
+  /** Projectors this camera could not see, zero-based: every photograph of their slot dark. */
+  unseen: number[];
+  /** Projectors that lit too little from here to check or decode, zero-based. */
+  barelySeen: number[];
+  /** Runs placed from a re-shoot appended to the position, and which run each replaced. */
+  reshoots: ReshootProvenance[];
+  mechanism: PositionIndexing['mechanism'];
   /** Photographs the folder held, and how many were placed. */
   total: number;
   placed: number;
@@ -416,14 +433,23 @@ export interface IndexedCapture {
  * projector's run at a time, in the order it was shot**, and that instruction
  * was the indexing — performed by a person, unchecked.
  *
- * It uses {@link indexByFingerprint}, which is the bookends plus the complement
- * check, because that is the mechanism Experiment 8 settled on: over 10 000
- * faulty captures it took the runs handed back from 5.8% mis-indexed to 0.4%,
- * and on every arm that cannot contain a cancelling pair it offered exactly the
- * runs the bookends offered and got none of them wrong. Ordering alone is not
- * offered here at all — it is the baseline the measurement exists to beat, and
- * the page should not hand an operator the mechanism that is silently wrong
- * 40% of the time.
+ * It uses `indexPosition`, which finds each run by what its own white, black
+ * and phase frames show and checks it with the complement check that
+ * Experiment 8 settled on. Until this changed it used `indexByFingerprint` —
+ * the bookends plus that check — which rests on classifying the whole capture
+ * into white, black and patterned, and `docs/EXPERIMENT-10.md` measured that
+ * refusing every clean bench position: seen from one place, the coarse Gray
+ * planes light all of a crescent or none of it, and some projectors are out of
+ * sight altogether. The complement check is unchanged and asked the same
+ * questions in the same words, so what Experiment 8 established about it still
+ * holds; what changed is how a run is found and how it gets its projector
+ * number. Ordering alone is still not offered here at all — it is the baseline
+ * the measurement exists to beat, and the page should not hand an operator the
+ * mechanism that is silently wrong 40% of the time.
+ *
+ * A projector the camera cannot see is a note, not a problem: its slot is dark
+ * photographs, and there is nothing to decode and nothing to re-shoot. A re-shot
+ * run added after the position replaces its original, and says so.
  *
  * ## What it still does not do
  *
@@ -455,15 +481,20 @@ export function indexPhotographs(
           `every projector's run shot back to back — ${expected.projectors} of them, ` +
           `${runLength} frames each.`,
       ],
-      mechanism: 'fingerprint',
+      notes: [],
+      unseen: [],
+      barelySeen: [],
+      reshoots: [],
+      mechanism: 'position',
       total,
       placed: 0,
     };
   }
 
-  const observations: FrameObservation[] = litFractions(summaries.map((s) => s.stats));
-  const fingerprints = summaries.map((s) => s.fingerprint);
-  const result = indexByFingerprint(observations, fingerprints, expected);
+  const result = indexPosition(
+    summaries.map((s) => s.fingerprint),
+    expected,
+  );
 
   // The assignment is a global frame number per photograph. Turning it back
   // into runs is the inverse of `p * runLength + f`, and it is done from the
@@ -474,11 +505,11 @@ export function indexPhotographs(
   for (let i = 0; i < result.assignment.length; i++) {
     const frame = result.assignment[i];
     // The assignment is the whole answer. A run the mechanism will not vouch
-    // for already has every one of its entries nulled — `indexByFingerprint`
-    // clears them before returning, and `packages/solver/test/indexing.test.ts`
-    // pins that — so filtering on `usableProjectors` here as well was a check
-    // that could not fail. Mutation testing said so: removing it changed
-    // nothing, which is the definition of a guard that is not guarding.
+    // for has no entry in it — `indexPosition` places only the run it uses for
+    // each projector, and `packages/solver/test/position.test.ts` scores every
+    // placed photograph against the truth — so filtering on `usableProjectors`
+    // here as well would be a check that could not fail. (Mutation testing said
+    // so of the same filter over the fingerprint mechanism's assignment.)
     if (frame === null) continue;
     placed++;
     const projector = Math.floor(frame / runLength);
@@ -491,7 +522,7 @@ export function indexPhotographs(
     .sort((a, b) => a[0] - b[0])
     .map(([projector, entries]) => ({
       projector,
-      // By plan position, not by folder position. Both mechanisms here assign a
+      // By plan position, not by folder position. The mechanism assigns a
       // contiguous ascending block per run, so today these are the same order
       // and this sort is a no-op — removing it breaks no test. It stays because
       // what it protects against is SILENT: a mechanism that placed frames out
@@ -503,10 +534,11 @@ export function indexPhotographs(
 
   const problems = [...result.problems];
   // Clipping is mentioned HERE only when nothing decoded, because it is a
-  // plausible cause of the refusal rather than a separate complaint: `classify`
-  // loses its margin when the white frames clip, and an operator told only that
-  // the references could not be told apart has not been told why. For runs that
-  // do decode, `readCapture` reports clipping against the run it belongs to.
+  // plausible cause of the refusal rather than a separate complaint: a clipped
+  // white is flat where a projector's light varies, which can hide the
+  // crescent a run is found by, and an operator told only that no run could be
+  // read has not been told why. For runs that do decode, `readCapture` reports
+  // clipping against the run it belongs to.
   if (runs.length === 0) {
     let worst = 0;
     let worstName = '';
@@ -525,23 +557,76 @@ export function indexPhotographs(
     }
   }
 
-  return { ok: result.ok, runs, problems, mechanism: result.mechanism, total, placed };
+  return {
+    ok: result.ok,
+    runs,
+    problems,
+    notes: [...result.notes],
+    unseen: [...result.unseenProjectors],
+    barelySeen: [...result.barelySeenProjectors],
+    reshoots: result.reshoots.map((r) => ({ ...r })),
+    mechanism: result.mechanism,
+    total,
+    placed,
+  };
 }
 
-/** One line saying what the indexer made of the folder. */
+/** "1, 2 and 4". */
+function listed(xs: readonly number[]): string {
+  if (xs.length <= 1) return xs.join('');
+  return `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
+}
+
+/**
+ * What the indexer made of the folder, for an operator: one line on what was
+ * placed, one on each projector the camera could not see or barely saw, one on
+ * each run read from a re-shoot, and then the indexer's other notes.
+ *
+ * The notes the indexer writes about unseen, barely seen and replaced runs are
+ * not repeated here — these lines say the same from the structured fields, so a
+ * reader of the lines and a reader of the fields see one account.
+ */
 export function describeIndexing(indexed: IndexedCapture, projectors: number): string {
+  const lines: string[] = [];
   if (indexed.runs.length === 0) {
-    return (
+    lines.push(
       `${indexed.total} photographs handed in, and none of them could be placed. Nothing was ` +
-      `decoded — the problems below are about the folder, not about the solve.`
+        `decoded — the problems below are about the folder, not about the solve.`,
+    );
+  } else {
+    const kept = indexed.runs.map((r) => r.projector + 1).join(', ');
+    const allSeen = indexed.unseen.length === 0 && indexed.barelySeen.length === 0;
+    lines.push(
+      `${indexed.total} photographs handed in; ${indexed.placed} placed into ` +
+        `${indexed.runs.length} of ${projectors} projector runs (${kept}). ` +
+        (indexed.ok
+          ? allSeen
+            ? 'Every frame the plan asks for was found.'
+            : 'Every run this camera could see was found.'
+          : 'The rest are listed below and were not decoded.'),
     );
   }
-  const kept = indexed.runs.map((r) => r.projector + 1).join(', ');
-  return (
-    `${indexed.total} photographs handed in; ${indexed.placed} placed into ` +
-    `${indexed.runs.length} of ${projectors} projector runs (${kept}). ` +
-    (indexed.ok
-      ? 'Every frame the plan asks for was found.'
-      : 'The rest are listed below and were not decoded.')
-  );
+  if (indexed.unseen.length > 0) {
+    const who = indexed.unseen.map((p) => p + 1);
+    lines.push(
+      `Not in this camera's view: projector${who.length === 1 ? '' : 's'} ${listed(who)} — ` +
+        'every photograph of the run is dark, so there is nothing to decode and nothing to re-shoot.',
+    );
+  }
+  if (indexed.barelySeen.length > 0) {
+    const who = indexed.barelySeen.map((p) => p + 1);
+    lines.push(
+      `Barely seen from here: projector${who.length === 1 ? '' : 's'} ${listed(who)} — too ` +
+        'little to check, so not decoded.',
+    );
+  }
+  for (const r of indexed.reshoots) {
+    lines.push(
+      `Projector ${r.projector + 1} was read from its re-shoot, photographs ${r.used + 1} on, ` +
+        `which replaced the run from photograph ${r.replaced + 1}.`,
+    );
+  }
+  const covered = /^Projector \d+ (was not in this camera's view|lit only)|was replaced by its re-shoot/;
+  for (const note of indexed.notes) if (!covered.test(note)) lines.push(note);
+  return lines.join('\n');
 }

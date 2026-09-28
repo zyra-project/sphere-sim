@@ -515,7 +515,7 @@ test('a clean camera position is split into its projector runs, in plan order', 
     Array.from({ length: perRun }, (_, i) => perRun + i),
   );
   assert.deepEqual(indexed.problems, []);
-  assert.equal(indexed.mechanism, 'fingerprint');
+  assert.equal(indexed.mechanism, 'position');
 });
 
 test('a cancelling drop and duplicate costs its own run and leaves the other decodable', () => {
@@ -542,6 +542,69 @@ test('a cancelling drop and duplicate costs its own run and leaves the other dec
 
   const line = describeIndexing(indexed, SMALL_PROJECTORS);
   assert.match(line, /1 of 2 projector runs/);
+});
+
+test('a projector the camera cannot see is said to be out of view, not refused', () => {
+  // EXPERIMENT-10's finding F1b, at the page's own join: a camera position
+  // where projector 2 lit nothing the camera saw, so its whole run is dark
+  // photographs. The reader used to find one run of two and refuse the
+  // position; now the run it can see is placed, and the other is a line that
+  // says there is nothing to re-shoot.
+  const perRun = planFrames(SMALL).length;
+  const order = [...Array.from({ length: perRun }, (_, f) => f), ...Array.from({ length: perRun }, () => 1)];
+  const indexed = indexPhotographs(position(order), SMALL_MANIFEST);
+  assert.equal(indexed.ok, true, indexed.problems.join(' '));
+  assert.deepEqual(indexed.problems, []);
+  assert.deepEqual(indexed.unseen, [1]);
+  assert.deepEqual(
+    indexed.runs.map((r) => r.projector),
+    [0],
+  );
+  const line = describeIndexing(indexed, SMALL_PROJECTORS);
+  assert.match(line, /placed into 1 of 2 projector runs \(1\)\. Every run this camera could see was found\./);
+  assert.match(line, /Not in this camera's view: projector 2 — every photograph of the run is dark/);
+  assert.doesNotMatch(line, /Re-shoot/);
+});
+
+test('a re-shot run added to the end of the folder is read in place of the original, and says so', () => {
+  // F7: the page asks for a projector to be re-shot, and the re-shoot goes on
+  // the end of the same folder. It is matched to its projector by its white and
+  // black, placed instead of the original, and the account says where it came
+  // from — so a reader of the result can tell which photographs decoded.
+  //
+  // Not the fixture above: there every projector photographs the same raster,
+  // so a re-shoot matches both and is refused as ambiguous. Here each projector
+  // lights its own half of the picture, as two projectors on a sphere light
+  // their own parts of it.
+  const specs = planFrames(SMALL);
+  const perRun = specs.length;
+  const blocks = complementPlan(SMALL).minBlocks;
+  const half = (spec: FrameSpec, projector: number): EncodedImage => {
+    const frame = compileFrame(spec, SMALL, SMALL_RES.x, SMALL_RES.y);
+    const data = new Uint8Array(SMALL_RES.x * SMALL_RES.y);
+    for (let y = 0; y < SMALL_RES.y; y++) {
+      for (let x = 0; x < SMALL_RES.x; x++) {
+        if (Math.floor(x / 8) !== projector) continue;
+        const coord = frame.axis === null ? 0 : frame.axis === 'u' ? (x % 8) * 2 + 1 : y + 0.5;
+        data[y * SMALL_RES.x + x] = Math.round(255 * Math.min(1, Math.max(0, frame.at(coord))));
+      }
+    }
+    return { width: SMALL_RES.x, height: SMALL_RES.y, channels: 1, data, maxValue: 255 };
+  };
+  const shots = [0, 1, 1].flatMap((projector) => specs.map((spec) => half(spec, projector)));
+  const summaries = shots.map((image, i) => summarisePhoto(image, i, `IMG_${i}.jpg`, { kind: 'linear' }, blocks));
+  const indexed = indexPhotographs(summaries, SMALL_MANIFEST);
+  assert.equal(indexed.ok, true, indexed.problems.join(' '));
+  assert.deepEqual(indexed.reshoots, [{ projector: 1, used: 2 * perRun, replaced: perRun }]);
+  assert.deepEqual(
+    indexed.runs.map((r) => [r.projector, r.ordinals[0]]),
+    [
+      [0, 0],
+      [1, 2 * perRun],
+    ],
+  );
+  const line = describeIndexing(indexed, SMALL_PROJECTORS);
+  assert.match(line, /Projector 2 was read from its re-shoot, photographs 37 on, which replaced the run from photograph 19\./);
 });
 
 test('what the indexer vouches for is what the decoder can read', () => {
