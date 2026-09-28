@@ -1031,6 +1031,215 @@ test('a re-shot run appended to its position replaces the original, and one that
 });
 
 // ---------------------------------------------------------------------------
+// Test 8b — the re-shoot the page's own remedy produces
+// ---------------------------------------------------------------------------
+
+/**
+ * What an operator adds to a position's folder by following a refusal's remedy
+ * for projector `q` (`handIn` in `indexing.ts`): step the page to q's white and
+ * press Play. Photographs taken before Play show that white. Play does not stop
+ * after q's run — `advance()` in `packages/web/web/emit.ts` plays every later
+ * projector's run and then paints black — so a camera left running appends runs
+ * q to P and then dark photographs. A camera stopped once q's run is done has
+ * caught what the page went on to show: the next projector's white, then its
+ * black. A projector this camera cannot see is dark photographs in the re-shoot,
+ * as in the position.
+ */
+function reshootFrom(
+  s: Scene,
+  q: number,
+  options: { unseen: readonly number[]; before: number; after: number; playedOn: boolean },
+): Shot[] {
+  const R = s.specs.length;
+  const last = options.playedOn ? PROJECTOR_AZIMUTHS.length - 1 : q;
+  const shot = (p: number, f: number): Shot => (options.unseen.includes(p) ? null : { projector: p, frame: f });
+  const shots: Shot[] = [];
+  for (let i = 0; i < options.before; i++) shots.push(shot(q, 0));
+  for (let p = q; p <= last; p++) for (let f = 0; f < R; f++) shots.push(shot(p, f));
+  for (let i = 0; i < options.after; i++) shots.push(last === PROJECTOR_AZIMUTHS.length - 1 ? null : shot(last + 1, i));
+  return shots;
+}
+
+/**
+ * Why projector `q` was re-shot: its original clean, lost to a Gray frame
+ * dropped or doubled (no run is found there), or refused by a straddled pair.
+ */
+type Original = 'clean' | 'dropped' | 'doubled' | 'straddled';
+
+function spoiled(shots: readonly Shot[], q: number, R: number, original: Original): Shot[] {
+  const out = shots.slice();
+  const gray = q * R + 6;
+  if (original === 'dropped') out.splice(gray, 1);
+  if (original === 'doubled') out.splice(gray, 0, out[gray]);
+  if (original === 'straddled') out[q * R + 2] = { projector: q, frame: 2, blend: { projector: q, frame: 3, weight: 0.5 } };
+  return out;
+}
+
+test('a re-shoot played on to the end replaces every run it shoots again, and one stopped after its own run replaces that run', () => {
+  // F7 as the remedy plays out: what reaches the folder is runs q to P and the
+  // black after them, unless the camera is stopped. Every shape that makes, on
+  // the cheap plan: every set of projectors out of view, each projector re-shot,
+  // q's original clean, lost or refused, 0, 1 or 2 dark photographs kept after
+  // the position, 0, 1 or 3 of q's white before Play, and 0, 1 or 2 after the
+  // re-shoot. The re-shoot itself is clean, so every projector in it that the
+  // camera sees is read from it — the latest run that passes — and nothing is
+  // refused. With one exception the reader cannot count past: a camera that sees
+  // only q, whose original was lost, leaves the position no run to number
+  // anything from, and that is refused in words.
+  //
+  // Two things only this shape showed, both fixed with it. With projector 1 out
+  // of view, a run of projector 4 re-shot within three photographs of the
+  // position's end also read as projectors 1 to 4 — the dark slot as photographs
+  // before Play, the original and its re-shoot as two neighbours a camera cannot
+  // tell apart — and the two readings refused each other. And an original lost
+  // to a doubled frame puts its spare photograph in the next slot, or past the
+  // last, so the photographs its re-shoot copies named two projectors.
+  const s = scene(CHEAP, 16, { azimuth: 0, elevation: 70, distance: 3 });
+  const R = s.specs.length;
+  const P = PROJECTOR_AZIMUTHS.length;
+  const expected = expectedOf(CHEAP);
+  const shoot = camera(s, 20);
+  const same = (a: readonly number[], b: readonly number[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
+  let folders = 0;
+  let alone = 0;
+  for (let mask = 0; mask < 16; mask++) {
+    const unseen = [0, 1, 2, 3].filter((p) => ((mask >> p) & 1) === 1);
+    const seen = [0, 1, 2, 3].filter((p) => !unseen.includes(p));
+    for (const q of seen) {
+      // Stopped differs from played on only after q's run, and not at all for
+      // the last projector, so it is asked of the clean original alone.
+      const shapes: [Original, boolean][] = [
+        ...(['clean', 'dropped', 'doubled', 'straddled'] as const).map((o): [Original, boolean] => [o, true]),
+        ...(q < P - 1 ? [['clean', false] as [Original, boolean]] : []),
+      ];
+      for (const [original, playedOn] of shapes) {
+        for (const trailing of [0, 1, 2]) {
+          for (const before of [0, 1, 3]) {
+            for (const after of [0, 1, 2]) {
+              const own = spoiled(position(s, { unseen, trailing }), q, R, original);
+              const shots = [...own, ...reshootFrom(s, q, { unseen, before, after, playedOn })];
+              const { prints, truth } = shoot(shots);
+              const r = indexPosition(prints, expected);
+              folders++;
+              const label = (): string =>
+                `unseen [${unseen.map((p) => p + 1)}], projector ${q + 1} re-shot and ${playedOn ? 'played on' : 'stopped'}, ` +
+                `original ${original}, ${trailing} dark after the position, ${before} before Play, ${after} after: ` +
+                `placed [${r.usableProjectors.map((p) => p + 1)}], re-shot [${r.reshoots.map((x) => x.projector + 1)}]; ` +
+                r.problems.join(' | ');
+              if (misplaced(r.assignment, truth) > 0) assert.fail(`${label()}: photographs filed wrong`);
+              if (seen.length === 1 && (original === 'dropped' || original === 'doubled')) {
+                alone++;
+                const why = r.problems[0] ?? '';
+                if (
+                  r.usableProjectors.length > 0 ||
+                  !why.startsWith('No run of this camera position could be read') ||
+                  !why.includes('Shoot the whole camera position again, into a folder of its own.')
+                ) {
+                  assert.fail(label());
+                }
+                continue;
+              }
+              const reshot = seen.filter((p) => p === q || (playedOn && p > q));
+              if (
+                r.problems.length > 0 ||
+                !same(r.usableProjectors, seen) ||
+                !same(r.unseenProjectors, unseen) ||
+                !same(
+                  r.reshoots.map((x) => x.projector),
+                  reshot,
+                ) ||
+                r.reshoots.some((x) => x.used < own.length)
+              ) {
+                assert.fail(label());
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  assert.equal(folders, 4104);
+  assert.equal(alone, 216);
+
+  // The page's own plan, where test 8 reads its re-shoots: each projector re-shot
+  // and played on, its original clean or lost to a doubled frame, at the
+  // smallest and the largest extras above; and the shape that read two ways.
+  const page = scene(PAGE, 64, { azimuth: 0 });
+  const pageExpected = expectedOf(PAGE);
+  const pageShoot = camera(page, 21);
+  const pageShapes: [number[], number, Original, number, number, number][] = [
+    ...[0, 1, 2, 3].flatMap((q) =>
+      (['clean', 'doubled'] as const).flatMap((o) => [
+        [[], q, o, 0, 0, 0] as [number[], number, Original, number, number, number],
+        [[], q, o, 2, 3, 2] as [number[], number, Original, number, number, number],
+      ]),
+    ),
+    [[0], 3, 'clean', 0, 0, 0],
+    [[2], 1, 'doubled', 1, 1, 1],
+  ];
+  for (const [unseen, q, original, trailing, before, after] of pageShapes) {
+    const own = spoiled(position(page, { unseen, trailing }), q, page.specs.length, original);
+    const { prints, truth } = pageShoot([...own, ...reshootFrom(page, q, { unseen, before, after, playedOn: true })]);
+    const r = indexPosition(prints, pageExpected);
+    const label = `page plan, unseen [${unseen.map((p) => p + 1)}], projector ${q + 1} re-shot, original ${original}, ${trailing}/${before}/${after}`;
+    const seen = [0, 1, 2, 3].filter((p) => !unseen.includes(p));
+    assert.equal(misplaced(r.assignment, truth), 0, label);
+    assert.deepEqual(r.problems, [], label);
+    assert.deepEqual(r.usableProjectors, seen, label);
+    assert.deepEqual(
+      r.reshoots.map((x) => x.projector),
+      seen.filter((p) => p >= q),
+      label,
+    );
+    assert.ok(r.reshoots.every((x) => x.used >= own.length), label);
+  }
+
+  // Played on, the later projectors are shot again whether or not anything was
+  // wrong with them. One of those runs straddling costs nothing: that
+  // projector's own run passed and is used, and the failed re-shoot is a note —
+  // asking for it to be re-shot would be asking for a run the position has.
+  {
+    const own = spoiled(position(page, { trailing: 1 }), 1, page.specs.length, 'straddled');
+    const again = reshootFrom(page, 1, { unseen: [], before: 1, after: 2, playedOn: true });
+    const third = 1 + page.specs.length;
+    again[third + 4] = { projector: 2, frame: 4, blend: { projector: 2, frame: 5, weight: 0.5 } };
+    const { prints, truth } = pageShoot([...own, ...again]);
+    const r = indexPosition(prints, pageExpected);
+    assert.equal(misplaced(r.assignment, truth), 0);
+    assert.deepEqual(r.problems, []);
+    assert.deepEqual(r.usableProjectors, [0, 1, 2, 3]);
+    assert.deepEqual(
+      r.reshoots.map((x) => x.projector),
+      [1, 3],
+    );
+    assert.ok(r.assignment[2 * page.specs.length] === 2 * page.specs.length, "projector 3's own run is the one used");
+    assert.ok(
+      r.notes.some((n) => /^Projector 3's re-shoot at photographs \d+–\d+ did not pass, so its earlier run, which did, is used: its frames 5 and 6/.test(n)),
+      r.notes.join(' | '),
+    );
+  }
+
+  // Why the remedy says to stop the camera and not the page: a page paused on
+  // q's last frame is photographed again, and a run followed by more of its own
+  // last frame is what a frame doubled inside it looks like. So that re-shoot
+  // is refused too, loudly, and projector 2 — whose original was refused, which
+  // is why it was re-shot — has no run.
+  {
+    const own = spoiled(position(page, { trailing: 1 }), 1, page.specs.length, 'straddled');
+    const last = { projector: 1, frame: page.specs.length - 1 };
+    const { prints, truth } = pageShoot([...own, ...run(page, 1), last, last]);
+    const r = indexPosition(prints, pageExpected);
+    assert.equal(misplaced(r.assignment, truth), 0);
+    assert.deepEqual(r.usableProjectors, [0, 2, 3]);
+    assert.deepEqual(r.reshoots, []);
+    assert.ok(
+      r.problems.some((x) => x.startsWith("Projector 2's re-shot run holds 35 photographs and should hold 34")),
+      r.problems.join(' | '),
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Where the count stops
 // ---------------------------------------------------------------------------
 

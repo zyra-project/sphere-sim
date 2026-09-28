@@ -1355,7 +1355,10 @@ export interface PositionIndexing {
   reshoots: ReshootProvenance[];
   /** Refusals, in an operator's terms. Empty when `ok`. */
   problems: string[];
-  /** What was noticed and stopped nothing: pre-roll, trailing, unseen, barely seen, replaced. */
+  /**
+   * What was noticed and stopped nothing: pre-roll, trailing, unseen, barely
+   * seen, replaced, and a re-shoot that did not pass after a run that did.
+   */
   notes: string[];
   mechanism: 'position';
 }
@@ -1757,14 +1760,47 @@ function listed(xs: readonly number[]): string {
   return `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
 }
 
-/** How to hand in a re-shoot, said with every refusal that asks for one. */
+/**
+ * How to hand in a re-shoot, said with every refusal that asks for one.
+ *
+ * Play does not stop after the projector asked for: the page plays every later
+ * projector's run and then goes black. So what an operator following this adds
+ * to the folder is, unless they stop the camera, runs N to P and the dark
+ * photographs after them — and that is read: each later run is matched to its
+ * projector the same way, and each projector's latest run that passes is used.
+ * `position.test.ts` enumerates both shapes. Pausing the page instead of
+ * stopping the camera is not the same: the camera photographs the run's last
+ * frame again, which is what a frame doubled inside the run looks like.
+ */
 function handIn(projector: number): string {
   return (
     `To hand the re-shoot in, step the emitter to projector ${projector}'s white (Home goes to ` +
     "the first projector's white and ] to the next projector's), press Play, and add the new " +
     "photographs to the end of this camera position's folder: a re-shot run is matched to its " +
-    'projector by comparing it with the photographs already there.'
+    'projector by comparing it with the photographs already there. The page can be left to play ' +
+    "to the end — every later projector's run it shoots again is matched the same way, and each " +
+    "projector's latest run that passes is the one used — or the camera stopped once projector " +
+    `${projector}'s run is done. Stop the camera, not the page: a paused page is photographed ` +
+    "again on the run's last frame, and that reads as one photograph too many."
   );
+}
+
+/** Why a run that was found did not pass, without a remedy: for a note, where none is needed. */
+function verdictReason(v: RunVerdict, runLength: number): string {
+  if (v.kind === 'broken') {
+    return (
+      `its frames ${v.a + 1} and ${v.b + 1}, a pattern and its complement, miss its own white and ` +
+      `black by ${(100 * v.residual).toFixed(0)}% of its modulation, against the ` +
+      `${(100 * COMPLEMENT_LIMIT).toFixed(0)}% allowed`
+    );
+  }
+  if (v.kind === 'extra') {
+    return (
+      `${photographs(v.at, v.at + 1)}, after its last frame, lights only what this projector ` +
+      `lights, so it holds ${runLength + 1} photographs where it should hold ${runLength}`
+    );
+  }
+  return 'somewhere in it a pattern and its complement had nothing to be compared over';
 }
 
 /** The refusal for a run that was found and did not pass, in the words the older mechanisms use. */
@@ -1860,12 +1896,23 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  *
  * A run after the end of the position is a re-shoot, matched to its original by
  * references ({@link sameReferences}, one match only), or — when the original
- * was too broken to be found — by a photograph of the original's stretch that
- * copies one of its frames. The latest run of a projector that passes is used,
- * and a replaced original is noted. A run that matches nothing, or more than one
- * projector, is refused: the usual reason is that the camera moved between the
- * two. A folder too short to be a camera position — a re-shoot handed in on its
- * own — is refused with how to hand it in.
+ * was too broken to be found — by the photographs of the original's stretch
+ * that copy its frames, each placed to within {@link SLOT_SLACK} of a slot's
+ * edge. The latest run of a projector that passes is used, and a replaced
+ * original is noted; a re-shoot after the run used that did not pass is noted
+ * too, since the run used passed and there is nothing to re-shoot. A run that
+ * matches nothing, or more than one projector, is refused: the usual reason is
+ * that the camera moved between the two. A folder too short to be a camera
+ * position — a re-shoot handed in on its own — is refused with how to hand it
+ * in, and one whose every run found repeats a run that could not be read has
+ * nothing to number a re-shoot by, and is refused too.
+ *
+ * The page does not stop after the projector a refusal asks for: Play runs on
+ * through every later projector and then goes black. So what a re-shoot adds is
+ * usually runs N to P, the later projectors dark where this camera cannot see
+ * them, with photographs of N's white before them and dark ones after — and
+ * every run of it is matched the same way. `position.test.ts` enumerates that
+ * shape, and the one where the camera was stopped after N's run.
  *
  * Which runs are re-shoots is decided by trying every reading — the last `t`
  * runs found as re-shoots, for every `t` — and keeping those that fit: the
@@ -1876,7 +1923,7 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * run, none is used. One reading is allowed that a sphere never needs: two
  * neighbouring projectors a camera cannot tell apart, which any test on a flat
  * raster photographs — taken only when nothing else in the folder is out of
- * place.
+ * place, and only when no reading without it fits.
  *
  * ## What it still refuses, and what it cannot see
  *
@@ -2186,6 +2233,8 @@ export function indexPosition(
     /** Each re-shot run's projector, or null where it matches none or several. */
     tailProjector: Map<RunWindow, number | null>;
     tailWhy: Map<RunWindow, string>;
+    /** Whether two of the position's own runs are read as neighbours a camera cannot tell apart. */
+    stacked: boolean;
   }
   const layout = (
     nb: Numbering & { kind: 'numbered' },
@@ -2275,14 +2324,27 @@ export function indexPosition(
       let why = 'matches no projector';
       if (byRef.length === 1) projector = byRef[0];
       else if (byRef.length > 1) why = 'matches more than one projector';
-      else {
-        const slots = [...new Set(evidence[j].map((x) => slotIn(where.range, x)))];
-        if (slots.length === 1 && slots[0] !== null) {
-          const q = slots[0];
+      else if (evidence[j].length > 0) {
+        // The original is where the photographs that copy this run lie. One
+        // within SLOT_SLACK of a slot's edge could be either side's: a broken
+        // run is that many photographs longer or shorter than a slot, and the
+        // layout gives a stretch's excess to its last slot. So each photograph
+        // names the slots near it, and the original is the one they all name.
+        const near = evidence[j].map((x) => {
+          const slots = new Set<number>();
+          for (let d = -SLOT_SLACK; d <= SLOT_SLACK; d++) {
+            const q = slotIn(where.range, x + d);
+            if (q !== null) slots.add(q);
+          }
+          return slots;
+        });
+        const shared = [...near[0]].filter((q) => near.every((slots) => slots.has(q)));
+        if (shared.length === 1) {
+          const q = shared[0];
           if ([...where.slotOf.values()].includes(q)) {
             why = 'copies photographs of a projector whose own run it does not match';
           } else projector = q;
-        } else if (slots.length > 1) why = 'copies photographs of more than one projector';
+        } else if (near.some((slots) => slots.size > 0)) why = 'copies photographs of more than one projector';
       }
       // A run that cannot be matched is a re-shoot only where a re-shoot can be.
       if (projector === null && w.start < where.positionEnd - SLOT_SLACK) return null;
@@ -2316,7 +2378,7 @@ export function indexPosition(
       (w) => tailProjector.get(w) === null && tailWhy.get(w) === 'matches no projector',
     );
     if (stacked && (numbering?.gapProblem != null || unmatched)) return null;
-    return { t, numbering, ...where, tailProjector, tailWhy };
+    return { t, numbering, ...where, tailProjector, tailWhy, stacked };
   };
   const readings: Reading[] = [];
   for (let t = found.length; t >= 0; t--) {
@@ -2326,7 +2388,16 @@ export function indexPosition(
   // A gap between two of the position's runs that is not whole runs is a
   // reading's own admission that something else is going on.
   const whole = readings.filter((r) => r.numbering === null || r.numbering.gapProblem === null);
-  const pool = whole.length > 0 ? whole : readings;
+  const fitting = whole.length > 0 ? whole : readings;
+  // So is a camera that cannot tell two projectors apart: the reading of last
+  // resort, taken only where no reading without it fits. Taken alongside the
+  // others it made a re-shoot of the last projector, added within a few
+  // photographs of the position's end, read also as that projector and the
+  // one before it alike — the slot of a projector out of view before them
+  // counted as photographs taken before Play — and the two readings refused
+  // each other.
+  const distinct = fitting.filter((r) => !r.stacked);
+  const pool = distinct.length > 0 ? distinct : fitting;
   if (pool.length === 0) {
     const all = numberOriginals(found, null);
     if (all.kind === 'refused') {
@@ -2373,8 +2444,9 @@ export function indexPosition(
   if (reading.numbering === null) {
     problems.push(
       'No run of this camera position could be read — every run found repeats photographs of ' +
-        "a run that could not be — so there is nothing to count projectors from. A re-shoot " +
-        "is added after the position's own runs, not in their place.",
+        'a run that could not be — so there is nothing to count projectors from: a re-shoot is ' +
+        "numbered by the position's own runs, and it has none. Shoot the whole camera position " +
+        'again, into a folder of its own.',
     );
     return refuse();
   }
@@ -2441,16 +2513,17 @@ export function indexPosition(
             `was replaced by its re-shoot at ${photographs(used.start, used.start + runLength)}.`,
         );
       }
-      // A re-shoot after the one used that did not pass is the operator's
-      // latest attempt at this projector, and it failed: say so.
+      // A re-shoot after the one used that did not pass is said, but as a
+      // note: the run used passed, so there is nothing to re-shoot. A page
+      // played on past the projector it was asked for shoots every later one
+      // again, and one of those runs straddling is no reason to ask for it.
       for (const w of reshot) {
         if (w.start <= used.start) continue;
         const v = verdicts[found.indexOf(w)];
         if (v.kind === 'barely') continue;
-        problems.push(
-          `${verdictProblem(v, p + 1, runLength, true)} (That re-shoot is at ` +
-            `${photographs(w.start, w.start + runLength)}; the earlier run of projector ${p + 1} ` +
-            'that passed is used instead.)',
+        notes.push(
+          `Projector ${p + 1}'s re-shoot at ${photographs(w.start, w.start + runLength)} did not ` +
+            `pass, so its earlier run, which did, is used: ${verdictReason(v, runLength)}.`,
         );
       }
       continue;
