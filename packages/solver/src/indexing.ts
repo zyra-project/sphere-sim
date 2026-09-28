@@ -1865,6 +1865,17 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * two. A folder too short to be a camera position — a re-shoot handed in on its
  * own — is refused with how to hand it in.
  *
+ * Which runs are re-shoots is decided by trying every reading — the last `t`
+ * runs found as re-shoots, for every `t` — and keeping those that fit: the
+ * position's own runs numbered, each re-shoot matched or past the position's
+ * end. Content alone would do on a sphere, where no two projectors photograph
+ * alike; counting alone would file a re-shoot whose projectors in between were
+ * out of view under one of them. When the readings that fit disagree about a
+ * run, none is used. One reading is allowed that a sphere never needs: two
+ * neighbouring projectors a camera cannot tell apart, which any test on a flat
+ * raster photographs — taken only when nothing else in the folder is out of
+ * place.
+ *
  * ## What it still refuses, and what it cannot see
  *
  * Everything the complement check cannot see, it cannot see either: a drop and
@@ -2043,29 +2054,6 @@ export function indexPosition(
     }
     return out;
   });
-  const repeats = found.map((_, j) => matchedBy[j].length > 0 || evidence[j].length > 0);
-  let tailFrom = found.length;
-  while (tailFrom > 0 && repeats[tailFrom - 1]) tailFrom--;
-  if (tailFrom === 0) {
-    problems.push(
-      `Every run found repeats photographs that come before it, so there is no run to count ` +
-        'projectors from. A camera position is read from its own runs; a re-shoot is added ' +
-        'after them, not in their place.',
-    );
-    return refuse();
-  }
-  const middleRepeat = repeats.findIndex((r, j) => r && j < tailFrom);
-  if (middleRepeat >= 0) {
-    const w = found[middleRepeat];
-    problems.push(
-      `The run at ${photographs(w.start, w.start + runLength)} repeats photographs that come ` +
-        'before it — the same projector again — but it is not at the end of the folder, where ' +
-        'a re-shoot belongs. Which projector each run is cannot be worked out from a folder ' +
-        'whose runs do not follow the projectors in order, so none is used.',
-    );
-    return refuse();
-  }
-
   // ---- projector numbers for the originals, from the gaps and both ends
   type Numbering =
     | { kind: 'refused'; problem: string }
@@ -2158,112 +2146,217 @@ export function indexPosition(
         'and keep the photographs taken before Play and after the screen goes black to a few.',
     };
   };
-  let numbering = numberOriginals(found.slice(0, tailFrom), tailFrom < found.length ? found[tailFrom].start : null);
-  // A run that matches nothing before it but has no room among the projectors
-  // is a re-shoot that failed to match — the camera moved, usually — and it is
-  // refused on its own rather than taking the position's numbering with it. So
-  // when the runs found cannot all be numbered, the last ones are tried as
-  // re-shoots, provided they start after the position's own photographs end.
-  for (let t = tailFrom - 1; numbering.kind === 'refused' && t >= 1; t--) {
-    const trial = numberOriginals(found.slice(0, t), found[t].start);
-    if (trial.kind !== 'numbered' || trial.numberedCount !== t) continue;
-    const lastSlot = trial.a0 + trial.rel[t - 1];
-    const positionEnd = found[t - 1].start + runLength * (1 + projectors - 1 - lastSlot);
-    if (found[t].start < positionEnd - SLOT_SLACK) continue;
-    numbering = trial;
-    tailFrom = t;
+  // ---- readings: which runs are the position's own and which are re-shoots
+  //
+  // On a sphere two projectors never photograph alike, so a run whose white and
+  // black match an earlier run's, or whose frames are copied by photographs of
+  // a stretch no run was found in, is the same projector again — a re-shoot.
+  // But where it falls in the count can say otherwise, and a camera that could
+  // not tell two projectors apart (every test that photographs a flat raster
+  // is one) would read them as one. So every reading is tried — the last t runs
+  // as re-shoots, for every t — and kept where it fits: the position's own runs
+  // numbered as above, each re-shoot matched to one projector or starting after
+  // the position's photographs end. If the readings that fit disagree about any
+  // run, none is used.
+  interface Reading {
+    /** Runs found before this index are the position's own; the rest re-shoots. */
+    t: number;
+    numbering: (Numbering & { kind: 'numbered' }) | null;
+    slotOf: Map<RunWindow, number>;
+    /** Where each projector's photographs are, by the runs either side. */
+    range: ({ from: number; to: number } | null)[];
+    /** Where the position's photographs end and a re-shoot's may begin. */
+    positionEnd: number;
+    /** Each re-shot run's projector, or null where it matches none or several. */
+    tailProjector: Map<RunWindow, number | null>;
+    tailWhy: Map<RunWindow, string>;
   }
-  if (numbering.kind === 'refused') {
-    problems.push(numbering.problem);
-    return refuse();
-  }
-  if (numbering.gapProblem !== null) problems.push(numbering.gapProblem);
-  const { a0, rel, numberedCount, backLimit } = numbering;
-  const originals = found.slice(0, tailFrom);
-  const numbered = originals.slice(0, numberedCount);
-  const span = rel[numberedCount - 1];
-  const first = numbered[0];
-  const lastEnd = numbered[numberedCount - 1].start + runLength;
-  const slotOf = new Map<RunWindow, number>();
-  numbered.forEach((w, j) => slotOf.set(w, a0 + rel[j]));
-
-  // Where each projector's photographs are, for the ones no run was found for.
-  // Anchored to the runs either side; before the first run the slots are laid
-  // back from it, after the last forward from it.
-  const range: ({ from: number; to: number } | null)[] = Array.from({ length: projectors }, () => null);
-  numbered.forEach((w) => {
-    const p = slotOf.get(w) as number;
-    range[p] = { from: w.start, to: w.start + runLength };
-  });
-  for (let q = 0; q < a0; q++) {
-    range[q] = {
-      from: Math.max(0, first.start - (a0 - q) * runLength),
-      to: Math.max(0, first.start - (a0 - q - 1) * runLength),
-    };
-  }
-  for (let j = 0; j + 1 < numberedCount; j++) {
-    const from = numbered[j].start + runLength;
-    const to = numbered[j + 1].start;
-    const p0 = a0 + rel[j];
-    const missing = rel[j + 1] - rel[j] - 1;
-    for (let t = 0; t < missing; t++) {
-      range[p0 + 1 + t] = {
-        from: from + t * runLength,
-        to: t === missing - 1 ? to : from + (t + 1) * runLength,
+  const layout = (
+    nb: Numbering & { kind: 'numbered' },
+    originals: readonly RunWindow[],
+  ): Pick<Reading, 'slotOf' | 'range' | 'positionEnd'> => {
+    const { a0, rel, numberedCount, backLimit } = nb;
+    const numbered = originals.slice(0, numberedCount);
+    const slotOf = new Map<RunWindow, number>();
+    numbered.forEach((w, j) => slotOf.set(w, a0 + rel[j]));
+    // Anchored to the runs either side; before the first run the slots are
+    // laid back from it, after the last forward from it.
+    const range: ({ from: number; to: number } | null)[] = Array.from({ length: projectors }, () => null);
+    numbered.forEach((w) => {
+      range[slotOf.get(w) as number] = { from: w.start, to: w.start + runLength };
+    });
+    const first = numbered[0];
+    for (let q = 0; q < a0; q++) {
+      range[q] = {
+        from: Math.max(0, first.start - (a0 - q) * runLength),
+        to: Math.max(0, first.start - (a0 - q - 1) * runLength),
       };
     }
-  }
-  const lastSlot = a0 + span;
-  for (let q = lastSlot + 1; q < projectors; q++) {
-    range[q] = {
-      from: Math.min(backLimit, lastEnd + (q - lastSlot - 1) * runLength),
-      to: Math.min(backLimit, lastEnd + (q - lastSlot) * runLength),
-    };
-  }
-  const slotAt = (x: number): number | null => {
+    for (let j = 0; j + 1 < numberedCount; j++) {
+      const from = numbered[j].start + runLength;
+      const to = numbered[j + 1].start;
+      const missing = rel[j + 1] - rel[j] - 1;
+      for (let t = 0; t < missing; t++) {
+        range[a0 + rel[j] + 1 + t] = {
+          from: from + t * runLength,
+          to: t === missing - 1 ? to : from + (t + 1) * runLength,
+        };
+      }
+    }
+    const lastSlot = a0 + rel[numberedCount - 1];
+    const lastEnd = numbered[numberedCount - 1].start + runLength;
+    for (let q = lastSlot + 1; q < projectors; q++) {
+      range[q] = {
+        from: Math.min(backLimit, lastEnd + (q - lastSlot - 1) * runLength),
+        to: Math.min(backLimit, lastEnd + (q - lastSlot) * runLength),
+      };
+    }
+    return { slotOf, range, positionEnd: lastEnd + (projectors - 1 - lastSlot) * runLength };
+  };
+  const slotIn = (range: Reading['range'], x: number): number | null => {
     for (let q = 0; q < projectors; q++) {
       const r = range[q];
       if (r !== null && x >= r.from && x < r.to) return q;
     }
     // Before the first slot is the pre-roll, which shows projector 1's white.
-    return x < (range[0]?.from ?? 0) ? 0 : null;
+    return range[0] !== null && x < range[0].from ? 0 : null;
   };
-
-  // ---- the re-shoot tail: each run's projector, from its original
-  const tail = found.slice(tailFrom);
-  const tailProjector = new Map<RunWindow, number>();
-  for (const w of tail) {
-    const j = found.indexOf(w);
-    const byReference = [...new Set(matchedBy[j].map((i) => found[i]))];
-    let projector: number | null = null;
-    let why = 'matches no projector';
-    const fromOriginals = byReference.filter((q) => slotOf.has(q)).map((q) => slotOf.get(q) as number);
-    const fromTail = byReference.filter((q) => tailProjector.has(q)).map((q) => tailProjector.get(q) as number);
-    const byRef = [...new Set([...fromOriginals, ...fromTail])];
-    if (byRef.length === 1) projector = byRef[0];
-    else if (byRef.length > 1) why = 'matches more than one projector';
-    else {
-      const slots = [...new Set(evidence[j].map(slotAt))];
-      if (slots.length === 1 && slots[0] !== null) {
-        const q = slots[0];
-        const hasRun = numbered.some((o) => slotOf.get(o) === q);
-        if (!hasRun) projector = q;
-        else why = "copies photographs of a projector whose own run it does not match";
-      } else if (slots.length > 1) {
-        why = 'copies photographs of more than one projector';
+  const readAs = (t: number): Reading | null => {
+    const originals = found.slice(0, t);
+    const tail = found.slice(t);
+    let numbering: (Numbering & { kind: 'numbered' }) | null = null;
+    let where: Pick<Reading, 'slotOf' | 'range' | 'positionEnd'>;
+    if (t === 0) {
+      // No run of the position was found: it is everything before the first
+      // run, which has to be long enough to have been one.
+      if (found[0].start < runLength * projectors - SLOT_SLACK) return null;
+      where = { slotOf: new Map(), range: Array.from({ length: projectors }, () => null), positionEnd: found[0].start };
+    } else {
+      const nb = numberOriginals(originals, tail.length > 0 ? tail[0].start : null);
+      if (nb.kind !== 'numbered') return null;
+      numbering = nb;
+      where = layout(nb, originals);
+    }
+    const tailProjector = new Map<RunWindow, number | null>();
+    const tailWhy = new Map<RunWindow, string>();
+    for (const w of tail) {
+      const j = found.indexOf(w);
+      const byRef = [
+        ...new Set(
+          matchedBy[j]
+            .map((i) => found[i])
+            .map((q) => (where.slotOf.has(q) ? where.slotOf.get(q) : tailProjector.get(q)))
+            .filter((q): q is number => q !== undefined && q !== null),
+        ),
+      ];
+      let projector: number | null = null;
+      let why = 'matches no projector';
+      if (byRef.length === 1) projector = byRef[0];
+      else if (byRef.length > 1) why = 'matches more than one projector';
+      else {
+        const slots = [...new Set(evidence[j].map((x) => slotIn(where.range, x)))];
+        if (slots.length === 1 && slots[0] !== null) {
+          const q = slots[0];
+          if ([...where.slotOf.values()].includes(q)) {
+            why = 'copies photographs of a projector whose own run it does not match';
+          } else projector = q;
+        } else if (slots.length > 1) why = 'copies photographs of more than one projector';
+      }
+      // A run that cannot be matched is a re-shoot only where a re-shoot can be.
+      if (projector === null && w.start < where.positionEnd - SLOT_SLACK) return null;
+      tailProjector.set(w, projector);
+      tailWhy.set(w, why);
+    }
+    // The same projector twice among the position's own runs is a camera that
+    // could not tell two neighbouring projectors apart. That reading is taken
+    // only for neighbours, and only where nothing else in the folder is out of
+    // place; the same frames two or more projectors apart are a re-shoot or a
+    // folder out of order, never two projectors.
+    let stacked = false;
+    for (const w of originals) {
+      const q = where.slotOf.get(w);
+      if (q === undefined) continue;
+      const j = found.indexOf(w);
+      const alike = [
+        ...matchedBy[j].filter((i) => i < t).map((i) => where.slotOf.get(found[i]) ?? null),
+        ...evidence[j].map((x) => slotIn(where.range, x)),
+      ];
+      for (const o of alike) {
+        if (o === null || o === q) continue;
+        if (o !== q - 1) return null;
+        stacked = true;
       }
     }
-    if (projector === null) {
-      problems.push(
-        `The run at ${photographs(w.start, w.start + runLength)}, after the end of this camera ` +
-          `position, ${why}, so it cannot be told which projector it re-shoots. A re-shot run ` +
-          "is matched by its white and black against the original's, and a mismatch usually " +
-          'means the camera moved between the two: re-shoot the whole position rather than one ' +
-          'projector.',
-      );
+    // A re-shoot that matches the two alike is what such a camera would make
+    // of one; a re-shoot that matches nothing at all is not, and neither is a
+    // gap that is not whole runs.
+    const unmatched = tail.some(
+      (w) => tailProjector.get(w) === null && tailWhy.get(w) === 'matches no projector',
+    );
+    if (stacked && (numbering?.gapProblem != null || unmatched)) return null;
+    return { t, numbering, ...where, tailProjector, tailWhy };
+  };
+  const readings: Reading[] = [];
+  for (let t = found.length; t >= 0; t--) {
+    const r = readAs(t);
+    if (r !== null) readings.push(r);
+  }
+  // A gap between two of the position's runs that is not whole runs is a
+  // reading's own admission that something else is going on.
+  const whole = readings.filter((r) => r.numbering === null || r.numbering.gapProblem === null);
+  const pool = whole.length > 0 ? whole : readings;
+  if (pool.length === 0) {
+    const all = numberOriginals(found, null);
+    problems.push(all.kind === 'refused' ? all.problem : (all.gapProblem ?? ''));
+    return refuse();
+  }
+  const statusOf = (r: Reading, w: RunWindow): string => {
+    if (r.slotOf.has(w)) return `projector ${(r.slotOf.get(w) as number) + 1}`;
+    const q = r.tailProjector.get(w);
+    return q === undefined || q === null ? 'no projector' : `a re-shoot of projector ${q + 1}`;
+  };
+  const contested = found.find((w) => pool.some((r) => statusOf(r, w) !== statusOf(pool[0], w)));
+  if (contested !== undefined) {
+    const readsAs = [...new Set(pool.map((r) => statusOf(r, contested)))];
+    problems.push(
+      `The run at ${photographs(contested.start, contested.start + runLength)} could be ` +
+        `${readsAs.join(' or ')}: the photographs around it fit either reading, and a run ` +
+        'filed under the wrong projector is worse than one not used, so none is. A re-shoot ' +
+        "belongs after the whole camera position, dark photographs and all.",
+    );
+    return refuse();
+  }
+  const reading = pool[0];
+  if (reading.numbering === null) {
+    problems.push(
+      'No run of this camera position could be read — every run found repeats photographs of ' +
+        "a run that could not be — so there is nothing to count projectors from. A re-shoot " +
+        "is added after the position's own runs, not in their place.",
+    );
+    return refuse();
+  }
+  if (reading.numbering.gapProblem !== null) problems.push(reading.numbering.gapProblem);
+  const { a0, numberedCount, backLimit } = reading.numbering;
+  const originals = found.slice(0, reading.t);
+  const numbered = originals.slice(0, numberedCount);
+  const first = numbered[0];
+  const lastEnd = numbered[numberedCount - 1].start + runLength;
+  const { slotOf, range } = reading;
+  const tail = found.slice(reading.t);
+  const tailProjector = new Map<RunWindow, number>();
+  for (const w of tail) {
+    const q = reading.tailProjector.get(w);
+    if (q !== undefined && q !== null) {
+      tailProjector.set(w, q);
       continue;
     }
-    tailProjector.set(w, projector);
+    problems.push(
+      `The run at ${photographs(w.start, w.start + runLength)}, after the end of this camera ` +
+        `position, ${reading.tailWhy.get(w)}, so it cannot be told which projector it re-shoots. ` +
+        "A re-shot run is matched by its white and black against the original's, and a " +
+        'mismatch usually means the camera moved between the two: re-shoot the whole position ' +
+        'rather than one projector.',
+    );
   }
 
   // ---- each projector: its run, the latest one that passes, or why not

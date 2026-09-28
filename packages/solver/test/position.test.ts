@@ -414,6 +414,19 @@ function scene(plan: Plan, blocks: number, where: Placement): Scene {
   return got;
 }
 
+/** The page plan at azimuth 0, with the projectors moved or re-balanced. */
+function sceneWith(rig: { azimuths: number[]; gains: number[] }): Scene {
+  const saved = [PROJECTOR_AZIMUTHS.slice(), PROJECTOR_GAINS.slice()];
+  PROJECTOR_AZIMUTHS.splice(0, 4, ...rig.azimuths);
+  PROJECTOR_GAINS.splice(0, 4, ...rig.gains);
+  try {
+    return sceneOf(PAGE, 64, { azimuth: 0 });
+  } finally {
+    PROJECTOR_AZIMUTHS.splice(0, 4, ...saved[0]);
+    PROJECTOR_GAINS.splice(0, 4, ...saved[1]);
+  }
+}
+
 /** How far up from its black to its white `values` stand over a run's crescent. */
 function levelOver(scene: Scene, p: number, values: Float32Array): number {
   const W = scene.clean[p][0];
@@ -981,16 +994,17 @@ test('a re-shot run appended to its position replaces the original, and one that
     assert.match(r.problems.join(' '), /the camera moved between the two/);
   }
 
-  // A run that repeats one before it, in the middle of the folder, is not a
-  // re-shoot's place; which projector every run is cannot be told, so none is used.
+  // A re-shoot that matches more than one projector cannot say which it
+  // re-shoots. On a sphere no two projectors photograph alike, so it takes two
+  // projectors stacked on one mount — projector 2 placed where projector 1 is,
+  // at its brightness — for the position to hold two runs a re-shoot matches.
   {
-    const shots = position(s);
-    shots.splice(2 * R, R, ...run(s, 1));
-    const { prints } = shoot(shots);
-    const r = indexPosition(prints, expected);
-    assert.equal(r.ok, false);
-    assert.deepEqual(r.usableProjectors, []);
-    assert.match(r.problems.join(' '), /repeats photographs that come before it/);
+    const stackedRig = sceneWith({ azimuths: [45, 45, 225, 315], gains: [1, 1, 1.06, 0.97] });
+    const photos = camera(stackedRig, 18)([...position(stackedRig, { trailing: 1 }), ...run(stackedRig, 0)]);
+    const r = indexPosition(photos.prints, expected);
+    assert.equal(misplaced(r.assignment, photos.truth), 0);
+    assert.deepEqual(r.reshoots, []);
+    assert.match(r.problems.join(' '), /after the end of this camera position, matches more than one projector/);
   }
 
   // A re-shoot handed in on its own is refused, with how to hand it in.
@@ -1130,4 +1144,29 @@ test('what only this reader needs is refused by name: the phase steps, the folde
   assert.equal(wrongPlan.ok, false);
   assert.match(wrongPlan.problems[0] ?? '', /^No projector run could be found in the 136 photographs/);
   assert.equal(indexPosition([], expected).problems[0]?.startsWith('The folder holds no photographs'), true);
+});
+
+test('phase slots holding a white, a black, a plane lit nowhere and one lit everywhere are not a run', () => {
+  // What PHASE_CONTRAST_LIMIT is for. Those four photographs pair up the way
+  // a step and the step half a cycle on do — white with the plane lit nowhere,
+  // black with the plane lit everywhere, each pair summing to white plus black —
+  // so the phase steps' own identities pass them. It is the configuration a
+  // window that is not a run meets when the next projector covers this one's
+  // crescent at its own brightness: that run's white and black, then its first
+  // Gray pair, fall in the phase slots. What gives it away is contrast: those
+  // four read 1, 0, 0 and 1 of the run's range, which no cosine does.
+  const s = scene(PAGE, 64, { azimuth: 0 });
+  const expected = expectedOf(PAGE);
+  const v = expected.phases?.[1] ?? [];
+  const shots = position(s);
+  // Projector 1's v steps photographed as white, black, black, white.
+  [0, 1, 1, 0].forEach((f, k) => {
+    shots[v[k]] = { projector: 0, frame: f };
+  });
+  const { prints, truth } = camera(s, 17)(shots);
+  const r = indexPosition(prints, expected);
+  assert.equal(misplaced(r.assignment, truth), 0);
+  assert.ok(!r.usableProjectors.includes(0), 'the run was taken for one');
+  assert.match(r.problems.join(' '), /Re-shoot projector 1\./);
+  assert.deepEqual(r.usableProjectors, [1, 2, 3]);
 });
