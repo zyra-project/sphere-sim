@@ -190,6 +190,29 @@ export function captureWorth(pairs: readonly PairContribution[]): CaptureWorth {
   }
 
   if (contributingCameras.length < 2) {
+    /**
+     * The remedy, which may not presume that nothing else was shot.
+     *
+     * It read "Shoot the sequence from a second position." `docs/EXPERIMENT-10.md`'s
+     * Q0 recorded this refusal, ending that way, for a clean folder of the bench's
+     * own three-camera capture, and says the emitter page printed it "for a folder,
+     * whatever the folder holds": the page read one camera position at a time and
+     * handed this function only that position's pairs. A caller in that state may
+     * already hold the second position's photographs, and then the remedy is to
+     * hand them in, not to go back to the sphere. Which is true is the caller's to
+     * know, so the sentence offers both.
+     *
+     * The other arm is reached only when a camera was handed in and decoded
+     * nothing, which a one-position-at-a-time caller could never do: its one
+     * camera either contributed or left nothing decoded at all, which is refused
+     * above. It said "Cameras 2" for a single camera, unnoticed while nothing
+     * reached it; it is singular for one now.
+     */
+    const remedy =
+      silentCameras.length > 0
+        ? `Camera${silentCameras.length === 1 ? '' : 's'} ` +
+          `${silentCameras.map((c) => c + 1).join(', ')} decoded nothing — start there.`
+        : `A second camera position is needed: hand in its photographs, or shoot one.`;
     return {
       accepted,
       considered,
@@ -205,9 +228,7 @@ export function captureWorth(pairs: readonly PairContribution[]): CaptureWorth {
         `separate a projector's distance from its field of view, so this is not a poor ` +
         `calibration but a degenerate one: docs/EXPERIMENT-1.md measures one camera at ` +
         `17 489.84 mm against 41.82 mm for two, and the second camera is worth 418x. ` +
-        (silentCameras.length > 0
-          ? `Cameras ${silentCameras.map((c) => c + 1).join(', ')} decoded nothing — start there.`
-          : `Shoot the sequence from a second position.`),
+        remedy,
     };
   }
 

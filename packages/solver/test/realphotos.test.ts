@@ -270,6 +270,49 @@ test('what the capture was worth is said before any pose is', () => {
   assert.equal(worth.refusal, null);
 });
 
+test('the one-camera refusal asks for a second position without presuming none was shot', () => {
+  // It ended "Shoot the sequence from a second position." EXPERIMENT-10's Q0
+  // recorded that for a clean folder of a three-camera bench capture: the emitter
+  // page read one camera position at a time, so it reported one camera however
+  // many had been shot. A caller holding one position of several has the second
+  // already, and it needs handing in, not shooting.
+  const stats = {
+    considered: 1000,
+    accepted: 5000,
+    rejectedLowModulation: 0,
+    rejectedGrayAmbiguous: 0,
+    rejectedPhaseWeak: 0,
+    rejectedDisagreement: 0,
+    rejectedOutOfRange: 0,
+    rejectedMissingAxis: 0,
+    rejectedOffSphere: 0,
+    rejectedOffImage: 0,
+  };
+  const lonely = captureWorth([{ camera: 0, projector: 0, stats }]).refusal ?? '';
+  // The pinned parts stay word for word: the count, and the measurement that
+  // makes one camera degenerate rather than poor.
+  assert.match(lonely, /^Only 1 camera contributed\. /);
+  assert.ok(
+    lonely.includes(
+      'docs/EXPERIMENT-1.md measures one camera at 17 489.84 mm against 41.82 mm for two, and ' +
+        'the second camera is worth 418x.',
+    ),
+    lonely,
+  );
+  assert.match(lonely, /A second camera position is needed: hand in its photographs, or shoot one\.$/);
+  assert.doesNotMatch(lonely, /Shoot the sequence/, 'the remedy that presumed nothing else was shot');
+
+  // The other arm names a camera that was handed in and decoded nothing,
+  // counted from one as the summary names it, and in the singular for one.
+  const silent =
+    captureWorth([
+      { camera: 0, projector: 0, stats },
+      { camera: 1, projector: 0, stats: { ...stats, accepted: 0 } },
+    ]).refusal ?? '';
+  assert.match(silent, /^Only 1 camera contributed\. /);
+  assert.match(silent, /Camera 2 decoded nothing — start there\.$/);
+});
+
 test('8-bit sRGB is not what limits the phase, and the test says by how much', () => {
   // The question an operator asks first — "will a JPEG do, or do I need raw?" —
   // and the one case where this fixture can answer it, because quantisation is
