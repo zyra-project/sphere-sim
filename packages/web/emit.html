@@ -189,12 +189,28 @@ button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); 
     </p>
     <p class="note">
       Hand in the <strong>whole camera position</strong> — every projector’s run, back to back,
-      in the order they were shot. This page finds where each run starts, from the white and black
-      frames that open it, and then checks that each Gray plane still sits beside its own
+      in the order they were shot — and keep every photograph. The few taken before you pressed
+      Play, and the dark ones taken after the screen went black and before you stopped the camera,
+      are recognised and set aside, and a projector this camera could not see is noted rather than
+      refused: there is nothing of it to decode. This page finds each run by what its own white,
+      black and phase frames show, then checks that each Gray plane still sits beside its own
       complement. A frame deleted or shot twice inside one run is usually caught, and costs that
-      projector’s run rather than the capture. You still have to say which <em>camera</em> took
-      them: each camera is a separate solver input with its own pose, and nothing in a photograph
-      says which one held the shutter.
+      projector’s run rather than the capture.
+    </p>
+    <p class="note">
+      Set the <em>camera</em> number before you read each position — 1 for the first, 2 for the
+      next. Each camera is a separate solver input with its own pose, and nothing in a photograph
+      says which one held the shutter. Every position you read is kept under its number until you
+      load a plan file, and the report covers all of them, because one camera cannot separate a
+      projector’s distance from its field of view: it takes a second position before the report
+      will vouch for a solve. Reading a camera number again replaces what it held, and photographs
+      read again under another number move to it.
+    </p>
+    <p class="note">
+      If a report asks you to re-shoot a projector, add the new photographs to the end of that
+      camera position’s own folder and read the folder again, under the same camera number. Each
+      re-shot run is matched to its projector by comparing it with the photographs already there,
+      and is read in place of the original if it passes its checks.
     </p>
     <div class="row">
       <label class="field"><span>The plan file</span>
@@ -204,7 +220,7 @@ button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); 
 
     </div>
     <div class="hudrow">
-      <label class="field"><span>Camera</span>
+      <label class="field"><span>Camera number</span>
         <input id="camidx" type="number" min="1" step="1" value="1"/></label>
       <span class="spacer"></span>
       <button id="readback" type="button" disabled>Index and decode these photographs</button>
