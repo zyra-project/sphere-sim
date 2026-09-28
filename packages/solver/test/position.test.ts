@@ -646,13 +646,19 @@ test('projector numbers are never wrong: every unseen set, pre-roll, trailing da
     }
   }
   // Not vacuous: a reader that refused everything would pass the loop above.
-  // Measured: 11 824 of 19 680 seen runs placed, 60.1%. The rest are refused
-  // on purpose — the run a black-frame fault broke, and folders whose extras
-  // overrun the page's allowances or whose runs read two ways — so the floor
+  // Measured: 11 548 of 19 680 seen runs placed, 58.7%. The rest are refused
+  // on purpose — the run a black-frame fault broke, and folders whose ends
+  // allow more than one numbering or whose runs read two ways — so the floor
   // sits just under the measured figure: a change that refuses more fails
-  // here, and has to say why.
+  // here, and has to say why. The ends are held to lower bounds only, so a
+  // folder that two numberings fit is refused rather than one of them
+  // excluded by an upper bound and the other used — which filed runs a
+  // projector over once the extras passed the allowance (the overrun test
+  // below). That costs this enumeration 60.1% -> 58.7%, all of it in folders
+  // with 20 or more extras at one end and an end at the other that cannot say
+  // how many of them are extras: 33 or 40 dark photographs, or a broken run.
   assert.ok(folders > 5000, `${folders} folders`);
-  assert.ok(placedRuns > 0.6 * seenRuns, `placed ${placedRuns} of ${seenRuns} seen runs`);
+  assert.ok(placedRuns > 0.58 * seenRuns, `placed ${placedRuns} of ${seenRuns} seen runs`);
 });
 
 // ---------------------------------------------------------------------------
@@ -1006,17 +1012,22 @@ test('a re-shot run appended to its position replaces the original, and one that
     assert.match(r.problems.join(' '), /the camera moved between the two/);
   }
 
-  // A re-shoot that matches more than one projector cannot say which it
-  // re-shoots. On a sphere no two projectors photograph alike, so it takes two
-  // projectors stacked on one mount — projector 2 placed where projector 1 is,
-  // at its brightness — for the position to hold two runs a re-shoot matches.
+  // Two projectors that photograph alike are outside what this reads: on a
+  // sphere no two do, so a run that repeats another's white and black is read
+  // as that projector shot again. It takes two projectors stacked on one
+  // mount — projector 2 placed where projector 1 is, at its brightness — to
+  // make one, and then the second is a repeat of the first in the middle of
+  // the position, which no reading of the folder fits. Refused, in words, and
+  // nothing filed.
   {
     const stackedRig = sceneWith({ azimuths: [45, 45, 225, 315], gains: [1, 1, 1.06, 0.97] });
     const photos = camera(stackedRig, 18)([...position(stackedRig, { trailing: 1 }), ...run(stackedRig, 0)]);
     const r = indexPosition(photos.prints, expected);
     assert.equal(misplaced(r.assignment, photos.truth), 0);
+    assert.equal(r.ok, false);
+    assert.deepEqual(r.usableProjectors, []);
     assert.deepEqual(r.reshoots, []);
-    assert.match(r.problems.join(' '), /after the end of this camera position, matches more than one projector/);
+    assert.match(r.problems.join(' '), /^The run at photographs 35–68 shows the same white and black as the run at photographs 1–34, and no reading of the folder fits the two/);
   }
 
   // A re-shoot handed in on its own is refused, with how to hand it in.
@@ -1240,6 +1251,419 @@ test('a re-shoot played on to the end replaces every run it shoots again, and on
 });
 
 // ---------------------------------------------------------------------------
+// Test 8c — a projector re-shot in line
+// ---------------------------------------------------------------------------
+
+test('a projector re-shot in line — paused, stepped back, played again — replaces its run, and the count goes on from it', () => {
+  // An operator who sees a run go wrong can pause the page, step back to that
+  // projector with [ and play again before the position ends. The folder then
+  // holds the run, a photograph of what the paused page showed, the run again,
+  // and the rest of the position. The same white and black twice is one
+  // projector twice, never two — on a sphere no two projectors photograph
+  // alike — so the count goes on from the projector it repeats. Read as the next
+  // projector instead, every run after it was filed one over: 68 photographs
+  // with projector 4 out of view, 34 with projector 1, with the page saying ok.
+  const expected = expectedOf(PAGE);
+  for (const [azimuth, seen] of [
+    [250, [1, 2, 3]],
+    [110, [0, 1, 2]],
+    [0, [0, 1, 2, 3]],
+  ] as const) {
+    const s = scene(PAGE, 64, { azimuth });
+    const view = (shot: Shot): Shot => (shot !== null && seen.includes(shot.projector as never) ? shot : null);
+    for (const original of ['fine', 'straddled'] as const) {
+      const shots: Shot[] = [view({ projector: 0, frame: 0 }), view({ projector: 0, frame: 0 })];
+      for (let p = 0; p < 4; p++) {
+        const own = run(s, p).map(view);
+        if (p === 1 && original === 'straddled') own[6] = { projector: 1, frame: 6, blend: { projector: 1, frame: 7, weight: 0.5 } };
+        shots.push(...own);
+        // Paused on projector 3's white, [ back to projector 2's, Play.
+        if (p === 1) shots.push(view({ projector: 2, frame: 0 }), ...run(s, 1).map(view));
+      }
+      shots.push(null, null, null);
+      const { prints, truth } = camera(s, 30)(shots);
+      const r = indexPosition(prints, expected);
+      const label = `azimuth ${azimuth}, projector 2's first run ${original}`;
+      assert.equal(misplaced(r.assignment, truth), 0, label);
+      assert.deepEqual(r.problems, [], label);
+      assert.deepEqual(r.usableProjectors, [...seen], label);
+      assert.deepEqual(r.reshoots, [{ projector: 1, used: 2 + 2 * 34 + 1, replaced: 2 + 34 }], label);
+      assert.ok(r.notes.some((n) => n.startsWith('The page was stepped back to projector 2 and played again')), label);
+    }
+  }
+
+  // Every in-line re-shoot the page's keys make, on the cheap plan: every set of
+  // projectors out of view, each projector re-shot straight after its run, with
+  // 0 to 3 photographs between — the next projector's white the page paused
+  // on, then the re-shot projector's white before Play — its first run fine or
+  // straddled, and a couple of photographs before Play and after the black or
+  // none. The review that found the defect counted 96 of these 512 folders
+  // filed wrong with ok true, and 72 more beside a problem.
+  const c = scene(CHEAP, 16, { azimuth: 0, elevation: 70, distance: 3 });
+  const R = c.specs.length;
+  const shoot = camera(c, 31);
+  const e = expectedOf(CHEAP);
+  let folders = 0;
+  let placed = 0;
+  for (let mask = 0; mask < 15; mask++) {
+    const unseen = [0, 1, 2, 3].filter((p) => ((mask >> p) & 1) === 1);
+    const white = (p: number): Shot => (p > 3 || unseen.includes(p) ? null : { projector: p, frame: 0 });
+    for (const q of [0, 1, 2, 3].filter((p) => !unseen.includes(p))) {
+      for (const between of [0, 1, 2, 3]) {
+        for (const original of ['fine', 'straddled'] as const) {
+          for (const [before, after] of [
+            [0, 0],
+            [2, 3],
+          ]) {
+            const shots: Shot[] = Array.from({ length: before }, () => white(0));
+            for (let p = 0; p < 4; p++) {
+              const own = unseen.includes(p) ? run(c, p).map((): Shot => null) : run(c, p);
+              if (p === q && original === 'straddled') own[4] = { projector: q, frame: 4, blend: { projector: q, frame: 5, weight: 0.5 } };
+              shots.push(...own);
+              if (p === q) shots.push(...[white(q + 1), white(q), white(q)].slice(0, between), ...run(c, q));
+            }
+            for (let i = 0; i < after; i++) shots.push(null);
+            const { prints, truth } = shoot(shots);
+            const r = indexPosition(prints, e);
+            folders++;
+            if (misplaced(r.assignment, truth) > 0) {
+              assert.fail(
+                `unseen [${unseen.map((p) => p + 1)}], projector ${q + 1} re-shot in line with ${between} between, ` +
+                  `first run ${original}, ${before}/${after}: filed wrong; placed [${r.usableProjectors.map((p) => p + 1)}]`,
+              );
+            }
+            if (r.ok && r.usableProjectors.length === 4 - unseen.length) placed++;
+          }
+        }
+      }
+    }
+  }
+  assert.equal(folders, 512);
+  // Measured: 464 read whole. The rest are refused, in words.
+  assert.ok(placed >= 460, `${placed} of ${folders} read whole`);
+
+  // A run that repeats nothing cannot be a projector the first pass already
+  // holds a run of. Here a re-shoot played on from projector 2 has its
+  // projector 3 run from a camera nudged ten degrees: it matches nothing, so it
+  // is refused on its own, and the position with the other two re-shot runs is
+  // read — rather than a reading that numbers it projector 3 disagreeing with
+  // that one, and the whole folder refused.
+  {
+    const s = scene(PAGE, 64, { azimuth: 0 });
+    const nudged = scene(PAGE, 64, { azimuth: -10 });
+    const photos = [
+      camera(s, 32)([...position(s, { trailing: 3 }), ...run(s, 1)]),
+      camera(nudged, 33)(run(nudged, 2)),
+      camera(s, 34)(run(s, 3)),
+    ].reduce(joined);
+    const r = indexPosition(photos.prints, expected);
+    assert.equal(misplaced(r.assignment, photos.truth), 0);
+    assert.deepEqual(r.usableProjectors, [0, 1, 2, 3]);
+    assert.deepEqual(
+      r.reshoots.map((x) => x.projector),
+      [1, 3],
+    );
+    assert.equal(r.problems.length, 1, r.problems.join(' | '));
+    assert.match(r.problems[0], /^The run at photographs 174–207, after the end of this camera position, /);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test 8d — the ends of the folder, past the page's allowance
+// ---------------------------------------------------------------------------
+
+test('the ends are held to lower bounds only: photographs past the allowance refuse a folder, and never move its projector numbers', () => {
+  // A cap on the photographs before the first run and after the last excluded
+  // the true numbering once an end passed it, and left the numbering a
+  // projector over alone to be used: with projector 1 out of view and 42 dark
+  // photographs after the black, every run was filed one projector early and
+  // the page said ok. Held to lower bounds only, both numberings are readings;
+  // they disagree, and the folder is refused. One that counts only with more
+  // extras than the allowance is refused too.
+  const expected = expectedOf(PAGE);
+  const R = 34;
+  const dark = (k: number): Shot[] => Array.from({ length: k }, (): Shot => null);
+  const refusedWhole = (label: string, shots: Shot[], s: Scene, seed: number): string[] => {
+    const { prints, truth } = camera(s, seed)(shots);
+    const r = indexPosition(prints, expected);
+    assert.equal(misplaced(r.assignment, truth), 0, `${label}: filed wrong`);
+    assert.equal(r.ok, false, `${label}: read`);
+    assert.deepEqual(r.usableProjectors, [], label);
+    return r.problems;
+  };
+  // Projector 1 out of view, 42 to 60 dark photographs after the black.
+  const p1Out = scene(PAGE, 64, { azimuth: 250 });
+  for (const trailing of [42, 60]) {
+    refusedWhole(`projector 1 out of view, ${trailing} after the black`, position(p1Out, { unseen: [0], trailing }), p1Out, 32);
+  }
+  // Projector 4 out of view, 42 or 50 dark photographs before Play (the page
+  // left on black while the camera ran).
+  const p4Out = scene(PAGE, 64, { azimuth: 110 });
+  for (const before of [42, 50]) {
+    const shots = [...dark(before), ...run(p4Out, 0), ...run(p4Out, 1), ...run(p4Out, 2), ...dark(R + 3)];
+    refusedWhole(`projector 4 out of view, ${before} dark before Play`, shots, p4Out, 33);
+  }
+  // All four in view, projector 1's black shot twice (its run is then not
+  // found) and 42 photographs after the black.
+  const all = scene(PAGE, 64, { azimuth: 0 });
+  {
+    const shots = position(all, { leading: 2, trailing: 42 });
+    shots.splice(3, 0, shots[3]);
+    refusedWhole("projector 1's black shot twice, 42 after the black", shots, all, 34);
+  }
+  // All four in view, the page left on black before Home: 42 dark photographs
+  // and two of projector 1's white before Play. The reading that makes projector
+  // 4's run a re-shoot matching nothing numbers the first three one over, and
+  // disagrees with the reading of all four: refused, in words about the count,
+  // not about re-shoots.
+  {
+    const problems = refusedWhole(
+      '42 dark and 2 whites before Play',
+      [...dark(42), { projector: 0, frame: 0 }, { projector: 0, frame: 0 }, ...position(all, { trailing: 3 })],
+      all,
+      35,
+    );
+    assert.match(problems[0] ?? '', /^The run at photographs 45–78 could be projector 1 or projector 2: /);
+    assert.match(problems[0] ?? '', /keep the photographs taken before Play and after the screen goes black to a few\.$/);
+    assert.doesNotMatch(problems.join(' '), /re-shoot/i);
+  }
+  // A clean position, every projector in view, 50 dark photographs after the
+  // black: one numbering, but only with more extras than the page leaves room
+  // for — which is also what a run lost from the folder looks like.
+  {
+    const problems = refusedWhole('50 after the black', position(all, { trailing: 50 }), all, 36);
+    assert.match(problems[0] ?? '', /^The 4 runs found could be projectors 1, 2, 3 and 4 only with 50 taken after the screen went black/);
+  }
+
+  // Every set of projectors out of view, on the cheap plan, with the ends taken
+  // past the allowance: dark photographs or copies of projector 1's white
+  // before, dark after. The review that found the defect counted 216 of 4032
+  // such folders filed wrong with ok true, and 432 more beside a problem.
+  const c = scene(CHEAP, 16, { azimuth: 0, elevation: 70, distance: 3 });
+  const e = expectedOf(CHEAP);
+  const shoot = camera(c, 37);
+  let folders = 0;
+  for (let mask = 1; mask < 15; mask++) {
+    const unseen = [0, 1, 2, 3].filter((p) => ((mask >> p) & 1) === 1);
+    for (const darkBefore of [true, false]) {
+      for (const before of [0, 7, 40, 42, 60]) {
+        for (const trailing of [0, 7, 40, 42, 60]) {
+          const pre = Array.from({ length: before }, (): Shot => (darkBefore || unseen.includes(0) ? null : { projector: 0, frame: 0 }));
+          const { prints, truth } = shoot([...pre, ...position(c, { unseen, trailing })]);
+          const r = indexPosition(prints, e);
+          folders++;
+          if (misplaced(r.assignment, truth) > 0) {
+            assert.fail(`unseen [${unseen.map((p) => p + 1)}], ${before} ${darkBefore ? 'dark' : 'whites'} before, ${trailing} after: filed wrong`);
+          }
+        }
+      }
+    }
+  }
+  assert.equal(folders, 700);
+});
+
+// ---------------------------------------------------------------------------
+// Test 8e — dark, judged where it is looked at
+// ---------------------------------------------------------------------------
+
+/** The same photographs with `change(values, i)` applied to each fingerprint. */
+function relit(photos: Photos, change: (values: Float32Array, i: number) => void): Photos {
+  return {
+    ...photos,
+    prints: photos.prints.map((f, i) => {
+      const values = f.values.slice();
+      change(values, i);
+      return { ...f, values };
+    }),
+  };
+}
+
+test('dark is judged where it is looked at: room light elsewhere in the folder neither lights a slot the camera cannot see nor hides a run it can', () => {
+  // Against the folder's own floor, a door opening in the background or the
+  // ambient drifting up made an out-of-view projector "lit, but no run... Re-
+  // shoot projector 4", and hundreds of room-lit photographs after the black
+  // raised the floor until two seen projectors were called out of view. A slot
+  // with no run is now judged against its own photographs, the folder's end
+  // against the last run's black, and runs are found by their own white and
+  // black.
+  const expected = expectedOf(PAGE);
+  const p4Out = scene(PAGE, 64, { azimuth: 110 });
+  const base = camera(p4Out, 38)(position(p4Out, { leading: 2, trailing: 3 }));
+  const n = base.prints.length;
+  const outOfView = (label: string, photos: Photos): void => {
+    const r = indexPosition(photos.prints, expected);
+    assert.equal(misplaced(r.assignment, photos.truth), 0, label);
+    assert.deepEqual(r.problems, [], label);
+    assert.deepEqual(r.usableProjectors, [0, 1, 2], label);
+    assert.deepEqual(r.unseenProjectors, [3], label);
+  };
+  // A door opens during projector 4's slot: a 6x6 patch of background the sphere
+  // never covers brightens and stays bright.
+  for (const step of [0.025, 0.05]) {
+    outOfView(
+      `a door opening, +${step}`,
+      relit(base, (v, i) => {
+        if (i < 110) return;
+        for (let y = 0; y < 6; y++) for (let x = 0; x < 6; x++) v[y * 64 + x] += step;
+      }),
+    );
+  }
+  // The ambient creeping up by 0.03 across the whole folder.
+  outOfView('an ambient ramp of 0.03', relit(base, (v, i) => v.forEach((_, k) => (v[k] += (0.03 * i) / (n - 1)))));
+
+  // Projector 1 out of view, and the room light still on for the first ten
+  // photographs: its slot is lit, the same way everywhere, and the refusal
+  // names the room before the re-shoot.
+  {
+    const p1Out = scene(PAGE, 64, { azimuth: 250 });
+    const photos = relit(camera(p1Out, 39)(position(p1Out, { unseen: [0], leading: 2, trailing: 3 })), (v, i) => {
+      if (i < 10) v.forEach((_, k) => (v[k] += 0.03));
+    });
+    const r = indexPosition(photos.prints, expected);
+    assert.equal(misplaced(r.assignment, photos.truth), 0);
+    assert.deepEqual(r.usableProjectors, [1, 2, 3]);
+    assert.equal(r.problems.length, 1, r.problems.join(' | '));
+    assert.match(r.problems[0], /^Projector 1's photographs are lit, but no run of 34 could be found among them, and the light in them changes the way a room changes/);
+    assert.match(r.problems[0], /Most likely the room's light changed while they were shot/);
+    assert.match(r.problems[0], /Re-shoot projector 1\./);
+  }
+
+  // Four hundred and fifty room-lit photographs after a clean position: every
+  // run still found and placed, and the photographs after it said to belong to
+  // no run, not taken for dark ones past the allowance.
+  {
+    const all = scene(PAGE, 64, { azimuth: 0 });
+    const clean = camera(all, 40)(position(all, { trailing: 3 }));
+    const g = stream(41);
+    const room = Array.from({ length: 450 }, (_, k): FrameFingerprint => ({
+      ordinal: clean.prints.length + k,
+      blocks: 64,
+      values: Float32Array.from({ length: 4096 }, () => 0.2 + 0.002 * g()),
+      measured: new Uint8Array(4096).fill(1),
+    }));
+    const r = indexPosition([...clean.prints, ...room], expected);
+    assert.equal(misplaced(r.assignment, [...clean.truth, ...room.map(() => -1)]), 0);
+    assert.deepEqual(r.problems, []);
+    assert.deepEqual(r.usableProjectors, [0, 1, 2, 3]);
+    assert.ok(r.notes.includes("453 photographs after the last projector's run belong to no run; not used."), r.notes.join(' | '));
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test 8f — photographs of a white that are not a run's
+// ---------------------------------------------------------------------------
+
+test('test shots of a white before the position, and a white shot twice before its run, cost nothing', () => {
+  // An operator setting the exposure steps through the projectors' whites and
+  // photographs them before pressing Home. A test shot of a later projector's
+  // white is a copy of that run's frame outside every run — which is also what
+  // the photographs of a run broken too badly to be found are — and the folder
+  // was refused as out of order. Before the first run it is a test shot: set
+  // aside, and said.
+  const expected = expectedOf(PAGE);
+  for (const [azimuth, seen] of [
+    [0, [0, 1, 2, 3]],
+    [250, [1, 2, 3]],
+  ] as const) {
+    const s = scene(PAGE, 64, { azimuth });
+    const unseen = [0, 1, 2, 3].filter((p) => !seen.includes(p as never));
+    for (const tests of [[2], [3], [0, 1, 2, 3]]) {
+      const white = (p: number): Shot => (seen.includes(p as never) ? { projector: p, frame: 0 } : null);
+      const shots = [...tests.map(white), white(0), white(0), ...position(s, { unseen, trailing: 3 })];
+      const { prints, truth } = camera(s, 42)(shots);
+      const r = indexPosition(prints, expected);
+      const label = `azimuth ${azimuth}, test shots of ${tests.map((p) => p + 1)}`;
+      assert.equal(misplaced(r.assignment, truth), 0, label);
+      assert.deepEqual(r.problems, [], label);
+      assert.deepEqual(r.usableProjectors, [...seen], label);
+      assert.ok(r.notes.some((x) => /before the first run cop(y|ies) a later projector's white — a test shot/.test(x)), `${label}: ${r.notes.join(' | ')}`);
+    }
+  }
+
+  // A white shot twice is the next run's white, not more of the run before it,
+  // however much of that run's light it falls inside: projectors 60 degrees
+  // apart, where projector 2's white lies inside projector 1's light.
+  const squeezed = sceneWith({ azimuths: [0, 60, 180, 300], gains: [1, 0.92, 1.06, 0.97] });
+  const R = squeezed.specs.length;
+  const shots = withFault(position(squeezed, { leading: 1, trailing: 2 }), { at: 1 + R, twice: true });
+  const { prints, truth } = camera(squeezed, 43)(shots);
+  const r = indexPosition(prints, expected);
+  assert.equal(misplaced(r.assignment, truth), 0);
+  assert.deepEqual(r.problems, []);
+  assert.ok(r.usableProjectors.includes(0) && r.usableProjectors.includes(1), `placed ${r.usableProjectors}`);
+});
+
+// ---------------------------------------------------------------------------
+// Test 8g — what a refusal says
+// ---------------------------------------------------------------------------
+
+test('a refusal says what the folder holds: one unchanging picture, a whole card, a re-shoot that did not match', () => {
+  const expected = expectedOf(PAGE);
+  const all = scene(PAGE, 64, { azimuth: 0 });
+  const R = all.specs.length;
+
+  // The page never played: every photograph is its white. Not a lens cap.
+  {
+    const { prints } = camera(all, 44)(Array.from({ length: 4 * R }, (): Shot => ({ projector: 0, frame: 0 })));
+    const r = indexPosition(prints, expected);
+    assert.match(r.problems[0] ?? '', /^Every one of the 136 photographs is the same picture/);
+    assert.match(r.problems[0] ?? '', /the page was not playing while the camera ran/);
+  }
+
+  // The camera's whole card, three positions in one folder: the first is read,
+  // and the rest are said to be other positions, to be handed in on their own
+  // — not re-shoots from a camera that moved.
+  {
+    const photos = [0, 120, 240].map((azimuth, k) => {
+      const s = scene(PAGE, 64, { azimuth });
+      return camera(s, 45 + k)(position(s, { leading: 2, trailing: 3 }));
+    });
+    const prints = photos.flatMap((p) => p.prints).map((f, i) => ({ ...f, ordinal: i }));
+    const truth = photos.flatMap((p, k) => p.truth.map((t) => (k === 0 ? t : t < 0 ? -1 : 10000 + t)));
+    const r = indexPosition(prints, expected);
+    assert.equal(misplaced(r.assignment, truth), 0);
+    assert.deepEqual(r.usableProjectors, [0, 1, 2, 3]);
+    assert.equal(r.problems.length, 1, r.problems.join(' | '));
+    assert.match(r.problems[0], /^From photograph 144 on, the folder holds \d+ runs that match no projector of this camera position/);
+    assert.match(r.problems[0], /split the folder at photograph 144 and hand each position in on its own/);
+  }
+
+  // A run lost to a doubled frame, and its re-shoot from a camera that moved
+  // ten degrees: the re-shoot matches nothing, and the lost run is not told to
+  // be re-shot and added to the end again, which is what just failed.
+  {
+    const shots = position(all, { trailing: 1 });
+    shots.splice(R + 6, 0, shots[R + 6]);
+    const moved = scene(PAGE, 64, { azimuth: 10 });
+    const photos = joined(camera(all, 48)(shots), camera(moved, 49)(run(moved, 1)));
+    const r = indexPosition(photos.prints, expected);
+    assert.equal(misplaced(r.assignment, photos.truth), 0);
+    const lost = r.problems.find((x) => x.startsWith("Projector 2's")) ?? '';
+    assert.match(lost, /Re-shoot projector 2\. A re-shoot added to this folder could not be matched, so shoot the whole camera position again/);
+    assert.doesNotMatch(lost, /add the new photographs to the end/);
+    assert.ok(r.problems.some((x) => /after the end of this camera position, (matches no projector|copies photographs)/.test(x)), r.problems.join(' | '));
+  }
+
+  // One run found, and the ends allow two numberings: "projector", once.
+  {
+    const c = scene(CHEAP, 16, { azimuth: 0, elevation: 70, distance: 3 });
+    const { prints } = camera(c, 50)(position(c, { unseen: [0, 2, 3], trailing: 33 }));
+    const r = indexPosition(prints, expectedOf(CHEAP));
+    assert.match(r.problems[0] ?? '', /^The run found could be projector 1 or projector 2: /);
+  }
+
+  // A re-shoot handed in alone: the refusal says to add it to the position's
+  // folder and to keep every photograph, and does not describe deleting any.
+  {
+    const { prints } = camera(all, 51)([{ projector: 1, frame: 0 }, ...run(all, 1), null]);
+    const r = indexPosition(prints, expected);
+    assert.match(r.problems[0] ?? '', /a re-shoot of one projector handed in on its own/);
+    assert.match(r.problems[0] ?? '', /Hand in every photograph the camera took, the dark ones included/);
+    assert.doesNotMatch(r.problems[0] ?? '', /delet/);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Where the count stops
 // ---------------------------------------------------------------------------
 
@@ -1406,12 +1830,12 @@ test('what only this reader needs is refused by name: the phase steps, the folde
 
   const swapped = prints.slice();
   [swapped[3], swapped[4]] = [swapped[4], swapped[3]];
-  assert.match(indexPosition(swapped, expected).problems[0] ?? '', /Fingerprint 4 says it is photograph 4, and it is number 3 in the list/);
+  assert.match(indexPosition(swapped, expected).problems[0] ?? '', /^The fingerprint at place 4 in the list says it is photograph 5\./);
 
   const dark = shoot(Array.from({ length: prints.length }, (): Shot => null));
   const d = indexPosition(dark.prints, expected);
   assert.equal(d.ok, false);
-  assert.match(d.problems[0] ?? '', /^Every one of the 136 photographs is dark/);
+  assert.match(d.problems[0] ?? '', /^Every one of the 136 photographs is the same picture/);
 
   // The same photographs read as if their phase steps alternated between the
   // axes: lit, and no run anywhere.

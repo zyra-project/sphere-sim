@@ -436,40 +436,47 @@ const SMALL_MANIFEST: CaptureManifest = captureManifest(
 );
 
 /**
- * One frame of the plan as a photograph — the projector's raster, straight.
+ * One frame of the plan as a photograph: the projector's raster, straight, on
+ * its own half of the picture — projector 1 on the left eight columns,
+ * projector 2 on the right, each raster squeezed into its half.
  *
  * No sphere, no warp, no albedo, and `linearise` is given the matching linear
  * transfer, so what comes back out is what `compileFrame` put in. That is the
  * same separation Experiment 8 keeps and for the same reason: this is a test of
  * whether the INDEXING places photographs correctly, and a photometric wobble
- * mixed into it would be reported as a fault-tolerance result.
+ * mixed into it would be reported as a fault-tolerance result. Each projector
+ * lights its own half because two projectors on a sphere light their own parts
+ * of it, and the page's reader rests on that: two runs that photograph alike
+ * are one projector shot twice. A fixture where both projectors photograph the
+ * same raster would be a position with one projector in it, re-shot.
  */
-function photographOf(spec: FrameSpec): EncodedImage {
+function photographOf(spec: FrameSpec, projector: number): EncodedImage {
   const frame = compileFrame(spec, SMALL, SMALL_RES.x, SMALL_RES.y);
   const data = new Uint8Array(SMALL_RES.x * SMALL_RES.y);
   for (let y = 0; y < SMALL_RES.y; y++) {
     for (let x = 0; x < SMALL_RES.x; x++) {
-      const coord = frame.axis === null ? 0 : frame.axis === 'u' ? x + 0.5 : y + 0.5;
+      if (Math.floor(x / 8) !== projector) continue;
+      const coord = frame.axis === null ? 0 : frame.axis === 'u' ? (x % 8) * 2 + 1 : y + 0.5;
       data[y * SMALL_RES.x + x] = Math.round(255 * Math.min(1, Math.max(0, frame.at(coord))));
     }
   }
   return { width: SMALL_RES.x, height: SMALL_RES.y, channels: 1, data, maxValue: 255 };
 }
 
-/** A whole camera position, as the frame indices it is built from. */
-function position(order: readonly number[]): ReturnType<typeof summarisePhoto>[] {
+/** A whole camera position, as the projector and frame index of each photograph. */
+function position(order: readonly (readonly [number, number])[]): ReturnType<typeof summarisePhoto>[] {
   const specs = planFrames(SMALL);
   const blocks = complementPlan(SMALL).minBlocks;
-  return order.map((frame, i) =>
-    summarisePhoto(photographOf(specs[frame]), i, `IMG_${i}.jpg`, { kind: 'linear' }, blocks),
+  return order.map(([projector, frame], i) =>
+    summarisePhoto(photographOf(specs[frame], projector), i, `IMG_${i}.jpg`, { kind: 'linear' }, blocks),
   );
 }
 
-/** The frame indices a clean position holds: every run played in plan order. */
-function cleanOrder(): number[] {
+/** What a clean position holds: every run played in plan order. */
+function cleanOrder(): [number, number][] {
   const perRun = planFrames(SMALL).length;
-  const out: number[] = [];
-  for (let p = 0; p < SMALL_PROJECTORS; p++) for (let f = 0; f < perRun; f++) out.push(f);
+  const out: [number, number][] = [];
+  for (let p = 0; p < SMALL_PROJECTORS; p++) for (let f = 0; f < perRun; f++) out.push([p, f]);
   return out;
 }
 
@@ -551,7 +558,10 @@ test('a projector the camera cannot see is said to be out of view, not refused',
   // position; now the run it can see is placed, and the other is a line that
   // says there is nothing to re-shoot.
   const perRun = planFrames(SMALL).length;
-  const order = [...Array.from({ length: perRun }, (_, f) => f), ...Array.from({ length: perRun }, () => 1)];
+  const order = [
+    ...Array.from({ length: perRun }, (_, f): [number, number] => [0, f]),
+    ...Array.from({ length: perRun }, (): [number, number] => [1, 1]),
+  ];
   const indexed = indexPhotographs(position(order), SMALL_MANIFEST);
   assert.equal(indexed.ok, true, indexed.problems.join(' '));
   assert.deepEqual(indexed.problems, []);
@@ -571,29 +581,8 @@ test('a re-shot run added to the end of the folder is read in place of the origi
   // the end of the same folder. It is matched to its projector by its white and
   // black, placed instead of the original, and the account says where it came
   // from — so a reader of the result can tell which photographs decoded.
-  //
-  // Not the fixture above: there every projector photographs the same raster,
-  // so a re-shoot matches both and is refused as ambiguous. Here each projector
-  // lights its own half of the picture, as two projectors on a sphere light
-  // their own parts of it.
-  const specs = planFrames(SMALL);
-  const perRun = specs.length;
-  const blocks = complementPlan(SMALL).minBlocks;
-  const half = (spec: FrameSpec, projector: number): EncodedImage => {
-    const frame = compileFrame(spec, SMALL, SMALL_RES.x, SMALL_RES.y);
-    const data = new Uint8Array(SMALL_RES.x * SMALL_RES.y);
-    for (let y = 0; y < SMALL_RES.y; y++) {
-      for (let x = 0; x < SMALL_RES.x; x++) {
-        if (Math.floor(x / 8) !== projector) continue;
-        const coord = frame.axis === null ? 0 : frame.axis === 'u' ? (x % 8) * 2 + 1 : y + 0.5;
-        data[y * SMALL_RES.x + x] = Math.round(255 * Math.min(1, Math.max(0, frame.at(coord))));
-      }
-    }
-    return { width: SMALL_RES.x, height: SMALL_RES.y, channels: 1, data, maxValue: 255 };
-  };
-  const shots = [0, 1, 1].flatMap((projector) => specs.map((spec) => half(spec, projector)));
-  const summaries = shots.map((image, i) => summarisePhoto(image, i, `IMG_${i}.jpg`, { kind: 'linear' }, blocks));
-  const indexed = indexPhotographs(summaries, SMALL_MANIFEST);
+  const perRun = planFrames(SMALL).length;
+  const indexed = indexPhotographs(position([...cleanOrder(), ...cleanOrder().slice(perRun)]), SMALL_MANIFEST);
   assert.equal(indexed.ok, true, indexed.problems.join(' '));
   assert.deepEqual(indexed.reshoots, [{ projector: 1, used: 2 * perRun, replaced: perRun }]);
   assert.deepEqual(
@@ -618,7 +607,7 @@ test('what the indexer vouches for is what the decoder can read', () => {
   assert.ok(indexed.runs.length > 0);
 
   const run = indexed.runs[0];
-  const images = run.ordinals.map((o) => photographOf(specs[order[o]]));
+  const images = run.ordinals.map((o) => photographOf(specs[order[o][1]], order[o][0]));
   const result = readCapture(
     [{ camera: 0, projector: run.projector, images, names: run.ordinals.map((o) => `IMG_${o}.jpg`) }],
     SMALL_MANIFEST,
@@ -643,8 +632,8 @@ test('a fingerprint too coarse for the plan is refused rather than believed', ()
   // the plan cannot be checked at. The refusal is the same one the mechanism
   // makes for itself; this asserts the page's route reaches it.
   const specs = planFrames(SMALL);
-  const coarse = cleanOrder().map((frame, i) =>
-    summarisePhoto(photographOf(specs[frame]), i, `IMG_${i}.jpg`, { kind: 'linear' }, 1),
+  const coarse = cleanOrder().map(([projector, frame], i) =>
+    summarisePhoto(photographOf(specs[frame], projector), i, `IMG_${i}.jpg`, { kind: 'linear' }, 1),
   );
   const indexed = indexPhotographs(coarse, SMALL_MANIFEST);
   assert.equal(indexed.ok, false);
@@ -712,7 +701,7 @@ test('the verdict needs only the pairs, not the decoded points', () => {
   // routes agree: whatever `readCapture` says a capture was worth, the same
   // verdict comes out of the parts alone.
   const specs = planFrames(SMALL);
-  const images = specs.map(photographOf);
+  const images = specs.map((spec) => photographOf(spec, 0));
   const run: CaptureRun = {
     camera: 0,
     projector: 0,

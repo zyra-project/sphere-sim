@@ -1439,12 +1439,13 @@ function roundShift(s: Shift): Record<string, number | null> {
  * The first eight are the bookends' and the complement check's, which the page
  * used when this experiment measured it and Q0b still calls. The rest are the
  * reader the page uses now, `indexPosition`: a projector's photographs lit with
- * no run found in them, a folder too short to be a position or dark
- * throughout, one with no run anywhere, runs whose projector numbers cannot be
- * told, a re-shoot that matches no projector, and a plan the reader cannot
- * read by. Its notes — unseen and barely seen projectors, photographs before
- * Play and after the black, replaced runs — are never problems and never
- * reach here.
+ * no run found in them, a folder too short to be a position or the same
+ * picture throughout, one with no run anywhere, runs whose projector numbers
+ * cannot be told, a re-shoot that matches no projector or a second camera
+ * position in the folder, and a plan the reader cannot read by. Its notes —
+ * unseen and barely seen projectors, photographs before Play and after the
+ * black, test shots, replaced runs and re-shoots that did not pass — are never
+ * problems and never reach here.
  */
 type ReasonClass =
   | 'margin'
@@ -1474,7 +1475,7 @@ export function reasonOf(problem: string): ReasonClass {
   if (/at the sensor's ceiling/.test(problem)) return 'clipping';
   if (/^Projector \d+'s photographs are lit, but no run of \d+ could be found/.test(problem)) return 'unfound';
   if (/^The folder holds \d+ photographs, and a whole camera position is/.test(problem)) return 'short';
-  if (/^Every one of the \d+ photographs is dark/.test(problem)) return 'dark';
+  if (/^Every one of the \d+ photographs is (dark|the same picture)/.test(problem)) return 'dark';
   if (/^No projector run could be found in the \d+ photographs/.test(problem)) return 'norun';
   if (
     /^The (run|\d+ runs) found (could be|does not fit|do not fit)/.test(problem) ||
@@ -1485,10 +1486,15 @@ export function reasonOf(problem: string): ReasonClass {
   ) {
     return 'numbering';
   }
-  if (/^The run at photographs? [\d–]+, after the end of this camera position, /.test(problem)) return 'reshoot';
+  if (
+    /^The run at photographs? [\d–]+, after the end of this camera position, /.test(problem) ||
+    /^From photographs? \d+ on, the folder holds .* match no projector of this camera position/.test(problem)
+  ) {
+    return 'reshoot';
+  }
   if (
     /^The folder holds no photographs/.test(problem) ||
-    /^Fingerprint \d+ says it is photograph \d+, and it is number \d+ in the list/.test(problem) ||
+    /^The fingerprint at place \d+ in the list says it is photograph \d+/.test(problem) ||
     /does not say which frames of a run are phase steps/.test(problem) ||
     /^This capture plan lists phase steps/.test(problem) ||
     /projectors, and a camera position needs at least one/.test(problem)
