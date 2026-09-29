@@ -926,7 +926,11 @@ export function sessionForPlan(
  * runs, each counted under the camera its position is held as, and told the
  * plan's projector count, so that a projector no held camera decoded is named
  * rather than left out: a session whose positions each decoded projectors 1 to
- * 3 of four was reported usable, projector 4 unmentioned.
+ * 3 of four was reported usable, projector 4 unmentioned. It is told every
+ * camera held, too, so that a position that decoded no run is named as a
+ * camera that decoded nothing: camera 1's decoded runs beside camera 2's
+ * folder, refused whole, were a report asking for a second camera position,
+ * beneath the list naming camera 2.
  *
  * Null when no run of any held position decoded, for {@link finishCapture}'s
  * reason: `captureWorth` would report on an empty capture rather than on these
@@ -939,7 +943,8 @@ export function sessionWorth(session: CaptureSession): CaptureWorth | null {
       pairs.push({ camera: held.camera, projector: run.projector, stats: run.stats });
     }
   }
-  return pairs.length === 0 ? null : captureWorth(pairs, session.plan?.projectors);
+  const cameras = session.positions.map((p) => p.camera);
+  return pairs.length === 0 ? null : captureWorth(pairs, session.plan?.projectors, cameras);
 }
 
 /** "IMG_0001.jpg to IMG_0136.jpg", or the one name. */

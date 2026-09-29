@@ -1066,6 +1066,24 @@ test('two camera positions make a report that each alone refuses', () => {
   assert.match(told, /Camera 2 decoded nothing — start there\./);
 });
 
+test('a held camera whose position decoded no run is the one the report sends the operator to', () => {
+  // Review of PR #53: a position refused whole is held with no runs, and the
+  // worth was taken over runs alone, so camera 2 was listed as held while the
+  // report asked for a second camera position. The session tells captureWorth
+  // every camera it holds, and the report names camera 2 as the one that
+  // decoded nothing.
+  const one = heldPosition(0, 1, 36);
+  const refused = heldPosition(1, 37, 36, []);
+  const both = holdPosition(holdPosition(freshSession(), SMALL_MANIFEST, one).session, SMALL_MANIFEST, refused);
+  const worth = sessionWorth(both.session);
+  assert.equal(worth?.usable, false);
+  assert.deepEqual(worth?.silentCameras, [1]);
+  const said = describeSession(both.session, both.changes);
+  assert.match(said, /\n {2}Camera 2: IMG_0037\.jpg to IMG_0072\.jpg, 36 photographs; no run decoded\.\n/);
+  assert.match(said, /Camera 2 decoded nothing — start there\.$/);
+  assert.doesNotMatch(said, /A second camera position is needed/);
+});
+
 test("a projector no held camera decoded is named, since the session knows the plan's count", () => {
   // Two positions, each decoding projector 1 of the plan's two: two cameras
   // contributed, and projector 2 has no view at all. The session vouched for

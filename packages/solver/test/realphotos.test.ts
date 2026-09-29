@@ -561,6 +561,45 @@ test('a projector no camera decoded is named, where the rig\'s projector count i
   assert.deepEqual(captureWorth(pairs, 3), untold, 'a count the pairs already cover changes nothing');
 });
 
+test('a camera handed in with no run decoded is named, where the cameras handed in are given', () => {
+  // Review of PR #53: captureWorth knew a camera only by its pairs, and a camera
+  // none of whose runs reached the decoder has none. Camera 1 decoding, beside
+  // camera 2's folder refused whole, was told a second camera position was
+  // needed. Told the cameras handed in, it names camera 2 as one that decoded
+  // nothing, as it names a camera whose runs decoded no point. Without them it
+  // is as it was.
+  const some = {
+    considered: 1000,
+    accepted: 400,
+    rejectedLowModulation: 600,
+    rejectedGrayAmbiguous: 0,
+    rejectedPhaseWeak: 0,
+    rejectedDisagreement: 0,
+    rejectedOutOfRange: 0,
+    rejectedMissingAxis: 0,
+    rejectedOffSphere: 0,
+    rejectedOffImage: 0,
+  };
+  const pairs: PairContribution[] = [0, 1].map((projector) => ({ camera: 0, projector, stats: some }));
+  const told = captureWorth(pairs, 2, [0, 1]);
+  assert.equal(told.usable, false);
+  assert.deepEqual(told.silentCameras, [1]);
+  assert.deepEqual(told.contributingCameras, [0]);
+  assert.match(told.refusal ?? '', /^Only 1 camera contributed\. /);
+  assert.match(told.refusal ?? '', /Camera 2 decoded nothing — start there\.$/);
+  const untold = captureWorth(pairs, 2);
+  assert.match(untold.refusal ?? '', /A second camera position is needed: hand in its photographs, or shoot one\.$/);
+  assert.deepEqual(captureWorth(pairs, 2, [0]), untold, 'cameras the pairs already name change nothing');
+
+  // Beside two cameras that contributed, a third handed in with no run decoded
+  // is named in the summary, as a camera whose runs decoded nothing is.
+  const two = [...pairs, ...[0, 1].map((projector) => ({ camera: 1, projector, stats: some }))];
+  const three = captureWorth(two, 2, [0, 1, 2]);
+  assert.equal(three.usable, true, three.refusal ?? '');
+  assert.deepEqual(three.silentCameras, [2]);
+  assert.match(three.summary, /Camera 3 contributed nothing and is not in this result\.$/);
+});
+
 test('colour survives the ingest, because the decoder has its own opinion about channels', () => {
   // Three channels in, three out: decode.ts reads Rec.709 luminance by default
   // and PARAMETERS.md §3.2 warns the channels diverge in gamma, gain and black

@@ -94,7 +94,11 @@ export interface CaptureWorth {
   accepted: number;
   /** Camera pixels the decoder looked at. */
   considered: number;
-  /** Cameras that contributed nothing at all. */
+  /**
+   * Cameras that contributed nothing at all: those whose pairs accepted no
+   * point, and, where the caller names the cameras handed in, those with no
+   * pair.
+   */
   silentCameras: number[];
   /** Cameras that contributed something. */
   contributingCameras: number[];
@@ -129,12 +133,24 @@ export interface CaptureWorth {
  * four-projector rig passed as usable, with projector 4 unmentioned. With it,
  * such a projector is refused like one only a single camera decoded, named with
  * none.
+ *
+ * `handedIn`, where the caller knows them, are the cameras handed in. Without
+ * them a camera is known only by its pairs, and one none of whose runs reached
+ * the decoder has none: a session holding camera 1's decoded runs and camera
+ * 2's folder, refused whole, was told a second camera position was needed,
+ * beneath a list naming camera 2. With them, such a camera is silent, like one
+ * whose runs decoded no point, and is named as one.
  */
-export function captureWorth(pairs: readonly PairContribution[], projectors?: number): CaptureWorth {
+export function captureWorth(
+  pairs: readonly PairContribution[],
+  projectors?: number,
+  handedIn?: readonly number[],
+): CaptureWorth {
   const accepted = pairs.reduce((a, p) => a + p.stats.accepted, 0);
   const considered = pairs.reduce((a, p) => a + p.stats.considered, 0);
 
   const byCamera = new Map<number, number>();
+  for (const c of handedIn ?? []) byCamera.set(c, 0);
   for (const p of pairs) byCamera.set(p.camera, (byCamera.get(p.camera) ?? 0) + p.stats.accepted);
   const cameras = [...byCamera.keys()].sort((a, b) => a - b);
   const silentCameras = cameras.filter((c) => (byCamera.get(c) ?? 0) === 0);
@@ -220,7 +236,10 @@ export function captureWorth(pairs: readonly PairContribution[], projectors?: nu
      * nothing, which a one-position-at-a-time caller could never do: its one
      * camera either contributed or left nothing decoded at all, which is refused
      * above. It said "Cameras 2" for a single camera, unnoticed while nothing
-     * reached it; it is singular for one now.
+     * reached it; it is singular for one now. A camera none of whose runs
+     * reached the decoder is one of these where the caller names the cameras
+     * handed in (`handedIn`); where it does not, that camera has no pair, and
+     * the sentence asks for a second position the caller already holds.
      */
     const remedy =
       silentCameras.length > 0
