@@ -1510,8 +1510,11 @@ function runWindowAt(
   whiteAt: number,
   blackAt: number,
 ): RunWindow | null {
-  const white = fps[start + whiteAt];
-  const black = fps[start + blackAt];
+  return referenceWindow(fps[start + whiteAt], fps[start + blackAt], start);
+}
+
+/** {@link runWindowAt} for any two photographs taken as a white and a black. */
+function referenceWindow(white: FrameFingerprint, black: FrameFingerprint, start: number): RunWindow | null {
   const cells = white.values.length;
   let peak = 0;
   let whiter = 0;
@@ -1952,6 +1955,20 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * rather than guessed at; so is a folder that counts only with more extras
  * than that, which is also what a lost run looks like.
  *
+ * The ends are looked at as well as counted. A photograph there is an extra
+ * only when something says what it is: dark beside the run next to it; a copy
+ * of the white of a run found — the page's step 0 shown before Play, a test
+ * shot of the exposure, the white a re-shoot starts from; a copy of a frame of
+ * the run next to it, or after the last run of any run found; or the room's
+ * light. Lit photographs nothing accounts for, more than {@link SLOT_SLACK}
+ * strays, that lead straight into a numbering's first run or follow straight on
+ * from its last are a run the page was playing there, and that numbering is
+ * not used: it took the end of a run the camera was started in the middle of
+ * for photographs before Play, or a run it could not find for photographs after
+ * the black, and every run was filed a projector over. Such a numbering still
+ * takes part in the disagreement below, as does one kept out by the allowance,
+ * so it can refuse a folder but never be the numbering used.
+ *
  * Between numbered runs, a stretch of `R` dark photographs is a projector the
  * camera could not see — a note, never a refusal — and one with light in it is
  * a run that could not be found, refused loudly with the projector it belongs
@@ -1986,7 +2003,12 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * matches nothing, or more than one projector, is refused: the usual reason is
  * that the camera moved between the two; with a whole camera position's worth
  * of photographs after it, the folder holds two positions and is told to be
- * split. A folder too short to be a camera position — a re-shoot handed in on
+ * split. A reading that takes such a run for a re-shoot added after the
+ * position is not used where the run follows the one before it straight on,
+ * with no dark photograph between — its own white shown before Play set aside:
+ * the page ends a position by painting black, and a run where the next one
+ * would stand is more likely the position's own, counted past its end. A
+ * folder too short to be a camera position — a re-shoot handed in on
  * its own — is refused with how to hand it in, and one whose every run found
  * repeats a run that could not be read has nothing to number a re-shoot by,
  * and is refused too.
@@ -2008,7 +2030,11 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * exposure, noted and set aside). Content alone would do on a sphere; counting
  * alone would file a re-shoot whose projectors in between were out of view
  * under one of them. When the readings that fit disagree about a run, none is
- * used.
+ * used. A reading whose count has a stretch that is not whole runs is set aside
+ * for one without — a re-shoot added after the position always leaves such a
+ * stretch before it, read as the position's — except where that one takes a run
+ * it cannot match for a re-shoot after the position's end: then both are asked,
+ * since that is also how a genuine run looks once the count has put it there.
  *
  * ## What it still refuses, and what it cannot see
  *
@@ -2035,6 +2061,22 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * projectors that photograph alike — stacked on one mount — are outside it as
  * well: the second reads as the first shot again, which no reading of a
  * position fits, and the folder is refused.
+ *
+ * Nor can it tell how many photographs an end lost where the end is dark: a
+ * projector this camera cannot see there, or the page's black, looks the same
+ * cut short or whole. A position that lost four or more photographs at a dark
+ * end — its camera started after Play, or stopped before the page's end, which
+ * from here can look like the sphere going dark while a projector it cannot see
+ * plays on — and that holds thirty-one or more extras at the other end reads,
+ * by count, exactly like one numbered a projector over, and it is filed
+ * wrongly. So is one with a run's worth of dark photographs added inside — a
+ * projector this camera cannot see played twice, or the page paused a minute
+ * in its run — when the last projector is out of view as well: its dark run
+ * reads as photographs taken after the black, with no extras needed at all. And
+ * a remnant of three photographs or fewer at an end is taken for strays.
+ * Nothing in the photographs says otherwise, so the page's instructions are
+ * the defence: start the camera before Play, stop it only when the page has
+ * played to its end, and stop the camera rather than pause the page.
  */
 export function indexPosition(
   fingerprints: readonly FrameFingerprint[],
@@ -2220,19 +2262,22 @@ export function indexPosition(
   // its white before the first run found is the page's step 0 shown before
   // Play, for the first run, or a test shot of the exposure, for a later one —
   // neither says where run j belongs.
-  const evidence: number[][] = found.map((w) => {
+  /** Each run's frames a copy of it would show: its white, and the pairs and phase steps that light its crescent. */
+  const distinctiveOf = found.map((w) =>
+    [...new Set([whiteAt, ...pairs.flat(), ...phases.flat()])]
+      .map((f) => fingerprints[w.start + f])
+      .filter((g) => levelOn(g, w) >= BLACK_CUT),
+  );
+  const evidence: number[][] = found.map((w, j) => {
     let firstOwn = w.start;
     while (firstOwn > 0 && copiesFrame(fingerprints[firstOwn - 1], w.white, w)) firstOwn--;
-    const distinctive = [...new Set([whiteAt, ...pairs.flat(), ...phases.flat()])]
-      .map((f) => fingerprints[w.start + f])
-      .filter((g) => levelOn(g, w) >= BLACK_CUT);
     const out: number[] = [];
     for (let x = 0; x < firstOwn; x++) {
       // A copy lights something above this run's black, as copiesFrame asks;
       // a photograph dark beside it copies nothing, and is not asked.
       if (inWindow[x] === 1 || darkBeside(x, w)) continue;
       if (x < found[0].start && copiesFrame(fingerprints[x], w.white, w)) continue;
-      if (distinctive.some((g) => copiesFrame(fingerprints[x], g, w))) out.push(x);
+      if (distinctiveOf[j].some((g) => copiesFrame(fingerprints[x], g, w))) out.push(x);
     }
     return out;
   });
@@ -2244,6 +2289,66 @@ export function indexPosition(
    */
   const testShot = (x: number, j: number): boolean =>
     x < found[0].start && copiesFrame(fingerprints[x], found[j].white, found[j]);
+
+  /**
+   * Whether lit photographs changed the way a room changes rather than the way
+   * a projector's patterns do. A run lights its crescent in turn and at
+   * different levels — a pattern, then its complement; the white at full, the
+   * phase steps about half — so its photographs share few lit blocks, and those
+   * at levels a factor of two apart. Light that brightens the same part of the
+   * picture in every photograph that is lit at all, by about the same amount,
+   * is the room's. `dark` is what each block reads unlit there.
+   */
+  const roomLike = (litPhotos: readonly { f: FrameFingerprint; blocks: Set<number> }[], dark: ArrayLike<number>): boolean => {
+    const lit = new Set<number>();
+    for (const { blocks } of litPhotos) for (const b of blocks) lit.add(b);
+    let shared = litPhotos.length >= 2 ? new Set(litPhotos[0].blocks) : new Set<number>();
+    for (const { blocks } of litPhotos.slice(1)) shared = new Set([...shared].filter((b) => blocks.has(b)));
+    const rises = litPhotos.map(({ f }) => {
+      let sum = 0;
+      for (const b of shared) sum += f.values[b] - dark[b];
+      return sum / Math.max(1, shared.size);
+    });
+    return shared.size > 0 && 2 * shared.size >= lit.size && Math.max(...rises) <= 1.5 * Math.min(...rises);
+  };
+
+  // ---- what lies at the ends of the folder
+  //
+  // Photographs before the first run and after the last are extras only when
+  // something says what they are: dark beside the run next to them — the page's
+  // black, or a projector this camera cannot see — a copy of a white of a run
+  // found (the page's step 0 shown before Play, a test shot of the exposure, the
+  // white a re-shoot starts from), a copy of any frame of the run next to them
+  // (an attempt at it the page was stepped back from, a page paused on one of
+  // its frames), after the last run a copy of any frame of any run found (a
+  // re-shoot of that run which did not pass), or the room's light. What is left
+  // is lit, and part of a projector's run the reader could not find: before the
+  // first run, a copy of a later run's frame is that run's original, too broken
+  // to be found.
+  /**
+   * The lit photographs in `[from, to)` that nothing above accounts for; `near`
+   * is the run next to them, and `anyRun` whether a copy of any run's frame is
+   * set aside or only of `near`'s.
+   */
+  const unexplainedLit = (from: number, to: number, near: RunWindow, anyRun: boolean): number[] => {
+    const litPhotos: { f: FrameFingerprint; blocks: Set<number>; x: number }[] = [];
+    const framesOf = anyRun ? found.map((_, j) => j) : [found.indexOf(near)];
+    for (let x = from; x < to; x++) {
+      if (inWindow[x] === 1 || darkBeside(x, near)) continue;
+      const f = fingerprints[x];
+      const copy =
+        found.some((w) => copiesFrame(f, w.white, w)) ||
+        framesOf.some((j) => distinctiveOf[j].some((g) => copiesFrame(f, g, found[j])));
+      if (copy) continue;
+      const blocks = new Set<number>();
+      for (let i = 0; i < cells; i++) {
+        if (usableBlock(f, i) && usableBlock(near.black, i) && f.values[i] - near.black.values[i] >= DARK_LIMIT) blocks.add(i);
+      }
+      litPhotos.push({ f, blocks, x });
+    }
+    return roomLike(litPhotos, near.black.values) ? [] : litPhotos.map((l) => l.x);
+  };
+  const frontLit = unexplainedLit(0, found[0].start, found[0], false);
 
   // ---- how the position's runs are numbered
   //
@@ -2381,13 +2486,30 @@ export function indexPosition(
   // one projector or starting after the position's photographs end, and no run
   // copied by photographs in another projector's place. If the readings that
   // fit disagree about any run, none is used.
+  /**
+   * What keeps a reading that fits from being used: the ends allow another
+   * numbering, its extras overrun the allowance, lit photographs no run was
+   * found in lead straight into its first run or follow straight on from its
+   * last, or its first re-shoot matches nothing and follows the position with
+   * no black between.
+   */
+  type Doubt =
+    | { kind: 'count' }
+    | { kind: 'allowance' }
+    | { kind: 'front' | 'back'; strays: number[] }
+    | { kind: 'tail'; run: RunWindow };
   interface Reading {
     t: number;
     /** Null where no run of the position was found: it is everything before the first run. */
     count: Count | null;
     a0: number;
-    /** The only numbering the ends allow, and inside the allowance. */
+    /**
+     * The only numbering the ends allow, inside the allowance, and nothing at an
+     * end or before a re-shoot it cannot match that says the count is a run out.
+     */
     acceptable: boolean;
+    /** Why a reading is not acceptable: what a refusal of it names. Null when it is. */
+    doubt: Doubt | null;
     slotOf: Map<RunWindow, number>;
     /** The position's runs that repeat an earlier run: in-line re-shoots. */
     inLine: Set<RunWindow>;
@@ -2510,6 +2632,81 @@ export function indexPosition(
     }
     return { tailProjector, tailWhy };
   };
+  /** The window of the brightest photograph within SLOT_SLACK of `x0` before the first run: a slot's white, where its run starts there. */
+  const whiteNear = (x0: number): RunWindow | null => {
+    const black = found[0].black;
+    let best = -1;
+    let most = 0;
+    for (let y = Math.max(0, x0 - SLOT_SLACK); y <= x0 + SLOT_SLACK && y < found[0].start; y++) {
+      const f = fingerprints[y];
+      let light = 0;
+      for (let i = 0; i < cells; i++) {
+        if (usableBlock(f, i) && usableBlock(black, i)) light += Math.max(0, f.values[i] - black.values[i]);
+      }
+      if (light > most) {
+        most = light;
+        best = y;
+      }
+    }
+    return best < 0 ? null : referenceWindow(fingerprints[best], black, best);
+  };
+  const backLitOf = new Map<number, number[]>();
+  /**
+   * Lit photographs no run was found in, straight before a numbering's first
+   * slot or straight after its last, more of them than SLOT_SLACK strays: a
+   * run the page was playing there, so the count has a run it has no room for.
+   * A camera started after Play leaves the end of a run before the first found
+   * — "taken before Play" by the count, which then numbers every run a
+   * projector early; a run lost after the position's last found one, with a
+   * run's worth of dark photographs inside the position the count took for a
+   * projector out of view, sits after the last slot as photographs "taken after
+   * the screen went black", and the runs were filed a projector late. Where
+   * the slot at an end has no run found, its own run may be up to SLOT_SLACK
+   * longer, and those photographs are its.
+   */
+  const endDoubt = (c: Count, a0: number, where: Pick<Reading, 'slotOf' | 'positionEnd'>): Doubt | null => {
+    const x0 = found[0].start - a0 * runLength;
+    const before = a0 > 0 ? SLOT_SLACK : 0;
+    let front = frontLit.filter((x) => x < x0 - before);
+    if (a0 > 0 && front.length > SLOT_SLACK) {
+      // Where the first slot's run was not found, the photographs before it
+      // that copy its white are the page's step 0 all the same.
+      const w0 = whiteNear(x0);
+      if (w0 !== null) front = front.filter((x) => !copiesFrame(fingerprints[x], w0.white, w0));
+    }
+    if (front.length > SLOT_SLACK && front[front.length - 1] >= x0 - before - SLOT_SLACK) {
+      return { kind: 'front', strays: front };
+    }
+    // Past a stretch that is not whole runs the runs after it are the later
+    // projectors', and the end is counted as the stretch allows.
+    if (c.numberedCount < c.pass1.length) return null;
+    let lit = backLitOf.get(c.t);
+    if (lit === undefined) {
+      lit = unexplainedLit(c.last.start + runLength, c.backLimit, c.last, true);
+      backLitOf.set(c.t, lit);
+    }
+    const after = where.slotOf.get(c.last) === projectors - 1 ? 0 : SLOT_SLACK;
+    const back = lit.filter((x) => x >= where.positionEnd + after);
+    if (back.length > SLOT_SLACK && back[0] < where.positionEnd + after + SLOT_SLACK) {
+      return { kind: 'back', strays: back };
+    }
+    return null;
+  };
+  /**
+   * A reading whose first re-shoot matches nothing takes the position to have
+   * ended before it, and the page ends a position by painting black: a camera
+   * running then photographs it, and a re-shoot comes later. One that follows
+   * the run before it with no dark photograph between — its own white shown
+   * before Play set aside — is where the page's next run would be, and more
+   * likely the position's own run, counted a projector past the end.
+   */
+  const tailDoubt = (c: Count, tail: readonly RunWindow[], matched: Pick<Reading, 'tailProjector'>): Doubt | null => {
+    const w = tail[0];
+    if (w === undefined || matched.tailProjector.get(w) !== null) return null;
+    let x = w.start - 1;
+    while (x >= 0 && inWindow[x] !== 1 && copiesFrame(fingerprints[x], w.white, w)) x--;
+    return x >= 0 && inWindow[x] !== 1 && darkBeside(x, c.last) ? null : { kind: 'tail', run: w };
+  };
   const readAs = (t: number): Reading[] => {
     const tail = found.slice(t);
     if (t === 0) {
@@ -2528,7 +2725,7 @@ export function indexPosition(
         positionEnd: found[0].start,
       };
       const matched = matchTail(tail, where);
-      return matched === null ? [] : [{ t, count: null, a0: 0, acceptable: true, ...where, ...matched }];
+      return matched === null ? [] : [{ t, count: null, a0: 0, acceptable: true, doubt: null, ...where, ...matched }];
     }
     const c = countPosition(t);
     if (c === null) return [];
@@ -2550,23 +2747,32 @@ export function indexPosition(
         });
       });
       if (misplacedCopy) continue;
-      out.push({
-        t,
-        count: c,
-        a0,
-        acceptable: c.candidates.length === 1 && c.within.includes(a0),
-        ...where,
-        ...matched,
-      });
+      const doubt: Doubt | null =
+        c.candidates.length !== 1
+          ? { kind: 'count' }
+          : !c.within.includes(a0)
+            ? { kind: 'allowance' }
+            : endDoubt(c, a0, where) ?? tailDoubt(c, tail, matched);
+      out.push({ t, count: c, a0, acceptable: doubt === null, doubt, ...where, ...matched });
     }
     return out;
   };
   const readings: Reading[] = [];
   for (let t = found.length; t >= 0; t--) readings.push(...readAs(t));
   // A gap between two of the position's runs that is not whole runs is a
-  // reading's own admission that something else is going on.
-  const whole = readings.filter((r) => r.count === null || r.count.gapProblem === null);
-  const pool = whole.length > 0 ? whole : readings;
+  // reading's own admission that something else is going on, and such a
+  // reading is set aside for one without — a re-shoot added after the position
+  // always leaves one before it, read as the position's. But not for a reading
+  // that takes a run it cannot match for a re-shoot after the position's end:
+  // that is also what a genuine run looks like once the count has put it past
+  // the end, and preferring it filed the runs before it a projector over while
+  // the reading with the honest gap, the true one, was never asked. Then every
+  // reading that fits takes part in the disagreement below.
+  /** A reading without a stretch that is not whole runs: the kind used, where one fits. */
+  const whole = (r: Reading): boolean => r.count === null || r.count.gapProblem === null;
+  const matchesEvery = (r: Reading): boolean => found.slice(r.t).every((w) => r.tailProjector.get(w) !== null);
+  const wholes = readings.filter(whole);
+  const pool = wholes.length > 0 && wholes.every(matchesEvery) ? wholes : readings;
   const positionAdvice =
     "A camera position is every projector's run back to back, from the first: keep every " +
     'dark photograph, since they are how the projectors this camera cannot see are counted, ' +
@@ -2682,13 +2888,55 @@ export function indexPosition(
     );
     return refuse();
   }
-  const reading = pool.find((r) => r.acceptable);
+  const reading = pool.find((r) => whole(r) && r.acceptable) ?? pool.find((r) => r.acceptable);
   if (reading === undefined) {
-    // Every reading that fits agrees, and none keeps its extras inside the
-    // allowance: the folder counts only with more photographs at an end than
-    // the page's procedure makes, which is also what a lost run looks like.
-    const r = pool[0];
+    // Every reading that fits agrees, and none can be used: the ends allow
+    // another numbering, the folder counts only with more photographs at an end
+    // than the page's procedure makes — which is also what a lost run looks
+    // like — or the photographs say the count is a run out.
+    const r = pool.find(whole) ?? pool[0];
     const c = r.count as Count;
+    const doubt = r.doubt as Doubt;
+    const could = `The ${runsFound(originalsOf(r).length)} found could be ${names(r)}`;
+    const worse = 'a run filed under the wrong projector is worse than one not used, so none is.';
+    const wholeAgain =
+      'Shoot the whole camera position again, into a folder of its own, and read it under the same ' +
+      'camera number: start the camera before Play, and stop it only once the page has played to its ' +
+      "end — not when the sphere goes dark on the camera's side, as it does while a projector this " +
+      'camera cannot see is playing.';
+    if (doubt.kind === 'front' || doubt.kind === 'back') {
+      const lit = photographs(doubt.strays[0], doubt.strays[doubt.strays.length - 1] + 1);
+      problems.push(
+        doubt.kind === 'front'
+          ? `${could} only if ${lit}, lit and in no run found, were taken before Play. They lead ` +
+              'straight into the first run, as the end of a run does where the camera was started ' +
+              'after Play, and a run the folder holds only the end of leaves nothing to count the ' +
+              `projectors before it by: ${worse} ${wholeAgain}`
+          : `${could} only if ${lit}, lit and in no run found, were taken after the screen went ` +
+              "black. They follow straight on from the position's last run, as a run that could not " +
+              'be found does, and leave the count with a run more than it has room for: ' +
+              `${worse} ${wholeAgain}`,
+      );
+      return refuse();
+    }
+    if (doubt.kind === 'tail') {
+      const w = doubt.run;
+      problems.push(
+        `${could} only if the run at ${photographs(w.start, w.start + runLength)}, which matches ` +
+          'no projector, is a re-shoot added after the position. It follows the run before it with ' +
+          "no dark photograph between, where the page's next run would be, so it is more likely " +
+          `this position's own and the count a run out: ${worse} ${wholeAgain}`,
+      );
+      return refuse();
+    }
+    if (doubt.kind === 'count') {
+      // The ends allow another first projector, whose reading did not fit.
+      problems.push(
+        `${could}, and the photographs before the first run and after the last allow another ` +
+          `first projector as well: ${worse} ${positionAdvice}`,
+      );
+      return refuse();
+    }
     const lastSlot = r.slotOf.get(c.last) as number;
     const front = c.before - runLength * r.a0;
     const back = c.after - runLength * (projectors - 1 - lastSlot);
@@ -2697,10 +2945,8 @@ export function indexPosition(
       ...(back > allowance ? [`${back} taken after the screen went black`] : []),
     ];
     problems.push(
-      `The ${runsFound(originalsOf(r).length)} found could be ${names(r)} only with ` +
-        `${ends.join(' and ')}, more than the page's instructions leave room for, and a run ` +
-        'filed under the wrong projector is worse than one not used, so none is. ' +
-        positionAdvice,
+      `${could} only with ${ends.join(' and ')}, more than the page's instructions leave room for, ` +
+        `and ${worse} ${positionAdvice}`,
     );
     return refuse();
   }
@@ -2881,22 +3127,7 @@ export function indexPosition(
       );
       continue;
     }
-    // A projector's run lights its crescent in turn and at different levels —
-    // a pattern, then its complement; the white at full, the phase steps about
-    // half — so its photographs share few lit blocks, and those at levels a
-    // factor of two apart. Light that brightens the same part of the picture
-    // in every photograph that is lit at all, by about the same amount, is the
-    // room's.
-    let shared = litPhotos.length >= 2 ? new Set(litPhotos[0].blocks) : new Set<number>();
-    for (const { blocks } of litPhotos.slice(1)) shared = new Set([...shared].filter((b) => blocks.has(b)));
-    const rises = litPhotos.map(({ f }) => {
-      let sum = 0;
-      for (const b of shared) sum += f.values[b] - dark[b];
-      return sum / Math.max(1, shared.size);
-    });
-    const roomLike =
-      shared.size > 0 && 2 * shared.size >= lit.size && Math.max(...rises) <= 1.5 * Math.min(...rises);
-    if (roomLike) {
+    if (roomLike(litPhotos, dark)) {
       problems.push(
         `Projector ${p + 1}'s photographs are lit, but no run of ${runLength} could be found ` +
           'among them, and the light in them changes the way a room changes rather than the way ' +

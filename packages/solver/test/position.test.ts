@@ -646,17 +646,19 @@ test('projector numbers are never wrong: every unseen set, pre-roll, trailing da
     }
   }
   // Not vacuous: a reader that refused everything would pass the loop above.
-  // Measured: 11 548 of 19 680 seen runs placed, 58.7%. The rest are refused
-  // on purpose — the run a black-frame fault broke, and folders whose ends
-  // allow more than one numbering or whose runs read two ways — so the floor
-  // sits just under the measured figure: a change that refuses more fails
-  // here, and has to say why. The ends are held to lower bounds only, so a
-  // folder that two numberings fit is refused rather than one of them
-  // excluded by an upper bound and the other used — which filed runs a
-  // projector over once the extras passed the allowance (the overrun test
-  // below). That costs this enumeration 60.1% -> 58.7%, all of it in folders
-  // with 20 or more extras at one end and an end at the other that cannot say
-  // how many of them are extras: 33 or 40 dark photographs, or a broken run.
+  // Measured: 11 654 of 19 680 seen runs placed, 59.2% — 58.7% until the reading
+  // that no run of the position was found stopped contesting folders whose
+  // photographs before the first run hold nothing a run found repeats. The rest
+  // are refused on purpose — the run a black-frame fault broke, and folders whose
+  // ends allow more than one numbering or whose runs read two ways — so the floor
+  // sits just under the measured figure: a change that refuses more fails here,
+  // and has to say why. The ends are held to lower bounds only, so a folder that
+  // two numberings fit is refused rather than one of them excluded by an upper
+  // bound and the other used — which filed runs a projector over once the extras
+  // passed the allowance (the overrun test below). That costs this enumeration
+  // 60.1% -> 58.7%, all of it in folders with 20 or more extras at one end and an
+  // end at the other that cannot say how many of them are extras: 33 or 40 dark
+  // photographs, or a broken run.
   assert.ok(folders > 5000, `${folders} folders`);
   assert.ok(placedRuns > 0.58 * seenRuns, `placed ${placedRuns} of ${seenRuns} seen runs`);
 });
@@ -1460,6 +1462,187 @@ test('the ends are held to lower bounds only: photographs past the allowance ref
     }
   }
   assert.equal(folders, 700);
+});
+
+test('lit photographs no run was found in, straight before the first run or after the last, are a run the count needs a place for', () => {
+  // Review B. The ends were counted, never looked at. A camera started four
+  // photographs after Play leaves the end of projector 1's run before the first
+  // run found; counted as photographs taken before Play, with 31 dark ones after
+  // the black, it numbered projectors 2 to 4 as 1 to 3 and the page said ok. The
+  // mirror, a camera stopped four photographs early, did the same the other way.
+  // And a run's worth of dark photographs inside the position — a projector
+  // this camera cannot see played twice — put the last run found in the last
+  // projector's place, the lost last run after it "belonging to no run". Lit
+  // photographs no run was found in, more than a few strays, that lead straight
+  // into a numbering's first run or follow straight on from its last are a run
+  // the page was playing there: that numbering is not used.
+  const expected = expectedOf(PAGE);
+  const R = 34;
+  const dark = (k: number): Shot[] => Array.from({ length: k }, (): Shot => null);
+  const read = (s: Scene, shots: Shot[], seed: number): { r: ReturnType<typeof indexPosition>; wrong: number } => {
+    const { prints, truth } = camera(s, seed)(shots);
+    const r = indexPosition(prints, expected);
+    return { r, wrong: misplaced(r.assignment, truth) };
+  };
+  const all = scene(PAGE, 64, { azimuth: 0 });
+  {
+    const { r, wrong } = read(all, [...position(all).slice(4), ...dark(31)], 90);
+    assert.equal(wrong, 0, 'started four late, 31 after the black: filed wrong');
+    assert.deepEqual(r.usableProjectors, []);
+    assert.match(r.problems[0] ?? '', /only if photographs 1–30, lit and in no run found, were taken before Play/);
+    assert.match(r.problems[0] ?? '', /read it under the same camera number/);
+  }
+  {
+    const shots = [...dark(31), ...position(all)];
+    const { r, wrong } = read(all, shots.slice(0, shots.length - 4), 91);
+    assert.equal(wrong, 0, '31 dark before Play, stopped four early: filed wrong');
+    assert.deepEqual(r.usableProjectors, []);
+    assert.match(r.problems[0] ?? '', /only if photographs 134–163, lit and in no run found, were taken after the screen went black/);
+  }
+  // Projector 2 out of view and played again in line, projector 4's run then
+  // lost to a doubled photograph.
+  const p2Out = scene(PAGE, 64, { azimuth: 300, elevation: 40, distance: 2.5 });
+  {
+    const p4 = run(p2Out, 3);
+    p4.splice(20, 0, p4[20]);
+    const shots = [{ projector: 0, frame: 0 }, { projector: 0, frame: 0 }, ...run(p2Out, 0), ...dark(2 * R), ...run(p2Out, 2), ...p4, ...dark(3)];
+    const { r, wrong } = read(p2Out, shots, 92);
+    assert.equal(wrong, 0, 'an unseen run played twice, the last run lost: filed wrong');
+    assert.deepEqual(r.usableProjectors, []);
+    assert.match(r.problems[0] ?? '', /were taken after the screen went black\. They follow straight on from the position's last run/);
+  }
+
+  // What the ends hold that is not a run is still set aside. The last run lost
+  // to a doubled photograph costs that run alone; a spoiled re-shoot of a run
+  // found is that run shot again, even straight after the position;
+  // projector 1 paused
+  // part way and played again from its white leaves its first attempt before
+  // the run used; ten of projector 1's white before Play, projector 1's run lost
+  // to a dropped black, are the page's step 0 all the same; the room's light
+  // coming on as the page goes black is the room's.
+  {
+    const p4 = run(all, 3);
+    p4.splice(20, 0, p4[20]);
+    const { r, wrong } = read(all, [{ projector: 0, frame: 0 }, ...run(all, 0), ...run(all, 1), ...run(all, 2), ...p4, ...dark(3)], 93);
+    assert.equal(wrong, 0);
+    assert.deepEqual(r.usableProjectors, [0, 1, 2]);
+    assert.equal(r.problems.length, 1, r.problems.join(' | '));
+    assert.match(r.problems[0], /Re-shoot projector 4\./);
+  }
+  {
+    // Straight on from the position, no black or white before it, and its own
+    // black dropped: it copies projector 1's frames, so it is projector 1 shot
+    // again and not passing, not a fifth run.
+    const again = run(all, 0);
+    again.splice(1, 1);
+    const { r, wrong } = read(all, [...position(all, { leading: 1 }), ...again, ...dark(2)], 94);
+    assert.equal(wrong, 0);
+    assert.deepEqual(r.problems, [], 'a spoiled re-shoot straight after the position');
+    assert.deepEqual(r.usableProjectors, [0, 1, 2, 3]);
+  }
+  {
+    const partial = run(all, 0).slice(0, 12);
+    partial.push(partial[11], partial[11]);
+    const first: Shot = { projector: 0, frame: 0 };
+    const { r, wrong } = read(all, [first, first, ...partial, first, ...position(all, { trailing: 3 })], 95);
+    assert.equal(wrong, 0);
+    assert.deepEqual(r.problems, [], 'projector 1 paused and played again');
+    assert.deepEqual(r.usableProjectors, [0, 1, 2, 3]);
+  }
+  {
+    const shots = position(all, { leading: 10, trailing: 3 });
+    shots.splice(11, 1);
+    const { r, wrong } = read(all, shots, 96);
+    assert.equal(wrong, 0);
+    assert.deepEqual(r.usableProjectors, [1, 2, 3], `projector 1's black dropped after ten of its white: ${r.problems.join(' | ')}`);
+    assert.equal(r.problems.length, 1);
+    assert.match(r.problems[0], /^Projector 1's photographs are lit/);
+  }
+  {
+    const clean = camera(all, 97)(position(all));
+    const g = stream(98);
+    const room = Array.from({ length: 6 }, (_, k): FrameFingerprint => ({
+      ordinal: clean.prints.length + k,
+      blocks: 64,
+      values: Float32Array.from({ length: 4096 }, () => 0.034 + 0.001 * g()),
+      measured: new Uint8Array(4096).fill(1),
+    }));
+    const r = indexPosition([...clean.prints, ...room], expected);
+    assert.equal(misplaced(r.assignment, [...clean.truth, ...room.map(() => -1)]), 0);
+    assert.deepEqual(r.problems, [], 'the room lit as the page went black');
+    assert.deepEqual(r.usableProjectors, [0, 1, 2, 3]);
+  }
+});
+
+test("a run that matches no projector is a re-shoot only after the position's black, and an honest gap contests it", () => {
+  // Review B. A run that matches nothing was taken for a re-shoot added after
+  // the position wherever the count put the position's end before it: with a
+  // projector this camera cannot see played twice in line, the last genuine run
+  // became "a re-shoot from a camera that moved" and every run before it was
+  // filed a projector late, decoded though the page refused. The page ends a
+  // position by painting black and a re-shoot comes after it, so such a run has
+  // to follow a dark photograph. And a reading whose count has an honest
+  // stretch that is not whole runs was set aside for one without — even one
+  // taking a genuine run for such a re-shoot; now they contest.
+  const expected = expectedOf(PAGE);
+  const R = 34;
+  const dark = (k: number): Shot[] => Array.from({ length: k }, (): Shot => null);
+  const refused = (label: string, s: Scene, shots: Shot[], seed: number): string => {
+    const { prints, truth } = camera(s, seed)(shots);
+    const r = indexPosition(prints, expected);
+    assert.equal(misplaced(r.assignment, truth), 0, `${label}: filed wrong`);
+    assert.deepEqual(r.usableProjectors, [], label);
+    return r.problems[0] ?? '';
+  };
+  const p2Out = scene(PAGE, 64, { azimuth: 300, elevation: 40, distance: 2.5 });
+  const lead: Shot[] = [{ projector: 0, frame: 0 }, { projector: 0, frame: 0 }];
+  // Projector 2 played again in line; then, instead, the page paused a minute in its run.
+  assert.match(
+    refused('projector 2 played twice', p2Out, [...lead, ...run(p2Out, 0), ...dark(2 * R), ...run(p2Out, 2), ...run(p2Out, 3), ...dark(3)], 100),
+    /only if the run at photographs 139–172, which matches no projector, is a re-shoot added after the position\. It follows the run before it with no dark photograph between/,
+  );
+  refused('a minute paused in projector 2', p2Out, [...lead, ...run(p2Out, 0), ...dark(R + 31), ...run(p2Out, 2), ...run(p2Out, 3), ...dark(3)], 101);
+  // A camera that moved ten degrees for its re-shoot, projector 1 out of view,
+  // and no dark photograph between: refused, not read with every run shifted.
+  const p1Out = scene(PAGE, 64, { azimuth: 250 });
+  {
+    const moved = scene(PAGE, 64, { azimuth: 260 });
+    const a = camera(p1Out, 102)(position(p1Out, { unseen: [0], leading: 2 }));
+    const b = camera(moved, 103)(run(moved, 1));
+    const photos = joined(a, { ...b, truth: b.truth.map((t) => (t < 0 ? -1 : 10000 + t)) });
+    const r = indexPosition(photos.prints, expected);
+    assert.equal(misplaced(r.assignment, photos.truth), 0, 'moved re-shoot straight after the position: filed wrong');
+    assert.deepEqual(r.usableProjectors, []);
+  }
+  // 31 dark photographs before Play and the page paused eight photographs in
+  // projector 3's run: the reading with the honest gap numbers projector 1's
+  // run 1 or 2, and the one without calls projector 4's run a re-shoot.
+  const all = scene(PAGE, 64, { azimuth: 0 });
+  {
+    const p3 = run(all, 2);
+    for (let k = 0; k < 8; k++) p3.splice(15, 0, p3[15]);
+    assert.match(
+      refused('31 dark before Play, projector 3 paused eight', all, [...dark(31), ...run(all, 0), ...run(all, 1), ...p3, ...run(all, 3), ...dark(3)], 104),
+      /^The run at photographs 32–65 could be projector 1 or projector 2/,
+    );
+  }
+  // The same with projector 3 out of view, so the run taken for a re-shoot does
+  // follow dark photographs: only the gap's reading refuses it.
+  refused('31 dark before Play, eight more in projector 3', all, [...dark(31), ...run(all, 0), ...run(all, 1), ...dark(R + 8), ...run(all, 3), ...dark(3)], 105);
+
+  // A re-shoot from a camera that moved, after ten dark photographs: the
+  // reading that counts it into the position past a stretch that is not whole
+  // runs agrees with the one that does not, and the one without is used — the
+  // position's runs placed, and the re-shoot refused as the camera having moved.
+  {
+    const moved = scene(PAGE, 64, { azimuth: 3 });
+    const photos = joined(camera(all, 106)(position(all, { trailing: 10 })), camera(moved, 107)(run(moved, 1)));
+    const r = indexPosition(photos.prints, expected);
+    assert.deepEqual(r.usableProjectors, [0, 1, 2, 3]);
+    assert.equal(misplaced(r.assignment, photos.truth), 0);
+    assert.equal(r.problems.length, 1, r.problems.join(' | '));
+    assert.match(r.problems[0], /after the end of this camera position, matches no projector/);
+  }
 });
 
 // ---------------------------------------------------------------------------
