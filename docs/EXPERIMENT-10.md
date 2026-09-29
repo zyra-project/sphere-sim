@@ -54,6 +54,44 @@ its tables are generated from the results file, and its prose quotes the same ce
   shots replayed through `shotTimings` in
   [`packages/experiments/src/tether/run.ts`](../packages/experiments/src/tether/run.ts)
 
+## Registered before the re-run with the page's reader
+
+> **2026-09-29, before the re-run measured anything.** This experiment is being run
+> again with the page's new reader, so the rescoring's page column runs at last:
+> each straddled camera position handed whole to the page's own reader. These bets
+> are recorded before any page-column output of the re-run's code exists. The
+> re-run reports each one as held or falsified, and none of them is changed after
+> it. The thresholds come from this document's own cells and from the new reader's
+> design, not from a look at the column.
+>
+> - **P10.** In every rescore and lateness cell, a run the page places files
+>   every photograph under the step that holds more than half that photograph's
+>   exposure. Any content misfile in a placed run, in any cell, falsifies it.
+>   Photographs with no majority step are counted apart and cannot falsify it.
+> - **P11.** In R1 the page is SILENT on no more of the touched captures than the
+>   counterfactual reader is (98 of 728). A page SILENT count above 98 in R1,
+>   attributed against the page's own reading of the clean twin, falsifies it.
+> - **P12.** A straddle never turns a run the page reads on the clean twin into a
+>   note. Any touched run, in any cell, that the clean twin places and the
+>   straddled position only notes as out of view or barely seen, with no problem
+>   naming it, falsifies it.
+> - **P13.** Q0 (the renderer's photographs) and the page's reading of the clean
+>   twin (the fast path's) agree at every one of the 108 clean positions: placed,
+>   out of view and barely seen equal, and neither with a problem. Any position
+>   where they differ falsifies it.
+> - **P6** stands as written. The new reader falsifies it by construction, since
+>   it places clean positions, and that is what starts the page column.
+>
+> The re-run also carries three checks on its own harness, which must hold before
+> any of the above is read:
+> - the page's reading of the clean twin equals
+>   `experiments/reader-acceptance.json` at all 108 positions, since the two start
+>   from the same photographs;
+> - the replaced reader, kept beside the new one in Q0, reproduces this run's Q0
+>   field for field;
+> - the page reads the fast path's straddled frames as it reads the renderer's
+>   (H8).
+
 ---
 
 ## Why it exists
