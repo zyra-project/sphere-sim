@@ -48,17 +48,22 @@
  * whole camera position into projector runs, or refuses. The two are kept
  * separate on purpose, because a bad decode should stay attributable to one
  * stage or the other.
+ *
+ * {@link holdPosition}, below that, keeps every camera position read against
+ * one plan, so that what the capture was worth is said over all of them. Taken
+ * one position at a time, `captureWorth` could only ever refuse it: one camera
+ * is degenerate.
  */
 
 import type { EncodedImage, Transfer } from '../../solver/src/ingest.ts';
 import { linearise } from '../../solver/src/ingest.ts';
 import type {
   FrameFingerprint,
-  FrameObservation,
   FrameStats,
-  IndexingResult,
+  PositionIndexing,
+  ReshootProvenance,
 } from '../../solver/src/indexing.ts';
-import { fingerprint, indexByFingerprint, litFractions, observe } from '../../solver/src/indexing.ts';
+import { fingerprint, indexPosition, observe } from '../../solver/src/indexing.ts';
 import type { AssembleParams, FrameRole } from '../../solver/src/assemble.ts';
 import { assembleCapture } from '../../solver/src/assemble.ts';
 import type { Correspondence, DecodeStats } from '../../solver/src/decode.ts';
@@ -70,7 +75,9 @@ import { manifestExpectedSequence, manifestFrameRoles } from './manifest.ts';
 
 /** One projector's run of photographs, as they came off the camera. */
 export interface CaptureRun {
+  /** Zero-based, as `worth.ts` counts cameras. An operator reads it counted from one. */
   camera: number;
+  /** Zero-based. An operator reads it counted from one. */
   projector: number;
   /**
    * The photographs, in the order they were shot.
@@ -86,7 +93,9 @@ export interface CaptureRun {
 
 /** What one run's photographs turned into. */
 export interface RunOutcome {
+  /** Zero-based; {@link describeRun} counts from one. */
   camera: number;
+  /** Zero-based; {@link describeRun} counts from one. */
   projector: number;
   frames: number;
   /** Null when the run refused before decoding. */
@@ -316,9 +325,21 @@ export function readCapture(
  */
 export const CLIPPING_WORTH_SAYING = 0.01;
 
-/** One line per run, for a report an operator reads rather than parses. */
+/**
+ * One line per run, for a report an operator reads rather than parses.
+ *
+ * Cameras and projectors are counted from one, as everything else an operator
+ * reads names them: the emitter's steps and projectors, {@link describeIndexing},
+ * and `captureWorth`, which calls camera index 2 "Camera 3". This line printed
+ * both indices as they are held, from zero. That was right while the page had a
+ * Projector box and a Camera box, both counted from zero, and this line echoed
+ * what was typed into them. Once indexing derived the projector, the line said
+ * "projector 0" beneath an account of "projectors 1 and 2". And once the page
+ * reports on more than one camera, the worth report's "Camera 2 decoded nothing"
+ * would have pointed at the camera this line called "Camera 1".
+ */
 export function describeRun(o: RunOutcome): string {
-  const who = `Camera ${o.camera}, projector ${o.projector}`;
+  const who = `Camera ${o.camera + 1}, projector ${o.projector + 1}`;
   if (o.stats === null) {
     return `${who}: ${o.frames} photographs, none decoded — see the problems below.`;
   }
@@ -395,13 +416,30 @@ export interface IndexedRun {
 }
 
 export interface IndexedCapture {
-  /** True when every photograph the plan asks for was placed. */
+  /**
+   * True when every run this camera could see was placed and nothing was
+   * refused. A projector out of view does not make it false: there is nothing
+   * of it to place.
+   */
   ok: boolean;
   /** The runs the indexer will vouch for. Empty when it vouches for none. */
   runs: IndexedRun[];
   /** What disagreed, in an operator's terms. Empty when all was well. */
   problems: string[];
-  mechanism: IndexingResult['mechanism'];
+  /**
+   * What was noticed and stopped nothing, in an operator's terms: photographs
+   * before Play or after the screen went black, projectors out of view or
+   * barely seen, runs replaced by their re-shoots. Never a refusal — those are
+   * {@link problems}.
+   */
+  notes: string[];
+  /** Projectors this camera could not see, zero-based: every photograph of their slot dark. */
+  unseen: number[];
+  /** Projectors that lit too little from here to check or decode, zero-based. */
+  barelySeen: number[];
+  /** Runs placed from a re-shoot appended to the position, and which run each replaced. */
+  reshoots: ReshootProvenance[];
+  mechanism: PositionIndexing['mechanism'];
   /** Photographs the folder held, and how many were placed. */
   total: number;
   placed: number;
@@ -416,14 +454,23 @@ export interface IndexedCapture {
  * projector's run at a time, in the order it was shot**, and that instruction
  * was the indexing — performed by a person, unchecked.
  *
- * It uses {@link indexByFingerprint}, which is the bookends plus the complement
- * check, because that is the mechanism Experiment 8 settled on: over 10 000
- * faulty captures it took the runs handed back from 5.8% mis-indexed to 0.4%,
- * and on every arm that cannot contain a cancelling pair it offered exactly the
- * runs the bookends offered and got none of them wrong. Ordering alone is not
- * offered here at all — it is the baseline the measurement exists to beat, and
- * the page should not hand an operator the mechanism that is silently wrong
- * 40% of the time.
+ * It uses `indexPosition`, which finds each run by what its own white, black
+ * and phase frames show and checks it with the complement check that
+ * Experiment 8 settled on. Until this changed it used `indexByFingerprint` —
+ * the bookends plus that check — which rests on classifying the whole capture
+ * into white, black and patterned, and `docs/EXPERIMENT-10.md` measured that
+ * refusing every clean bench position: seen from one place, the coarse Gray
+ * planes light all of a crescent or none of it, and some projectors are out of
+ * sight altogether. The complement check is unchanged and asked the same
+ * questions in the same words, so what Experiment 8 established about it still
+ * holds; what changed is how a run is found and how it gets its projector
+ * number. Ordering alone is still not offered here at all — it is the baseline
+ * the measurement exists to beat, and the page should not hand an operator the
+ * mechanism that is silently wrong 40% of the time.
+ *
+ * A projector the camera cannot see is a note, not a problem: its slot is dark
+ * photographs, and there is nothing to decode and nothing to re-shoot. A re-shot
+ * run added after the position replaces its original, and says so.
  *
  * ## What it still does not do
  *
@@ -455,15 +502,20 @@ export function indexPhotographs(
           `every projector's run shot back to back — ${expected.projectors} of them, ` +
           `${runLength} frames each.`,
       ],
-      mechanism: 'fingerprint',
+      notes: [],
+      unseen: [],
+      barelySeen: [],
+      reshoots: [],
+      mechanism: 'position',
       total,
       placed: 0,
     };
   }
 
-  const observations: FrameObservation[] = litFractions(summaries.map((s) => s.stats));
-  const fingerprints = summaries.map((s) => s.fingerprint);
-  const result = indexByFingerprint(observations, fingerprints, expected);
+  const result = indexPosition(
+    summaries.map((s) => s.fingerprint),
+    expected,
+  );
 
   // The assignment is a global frame number per photograph. Turning it back
   // into runs is the inverse of `p * runLength + f`, and it is done from the
@@ -474,11 +526,11 @@ export function indexPhotographs(
   for (let i = 0; i < result.assignment.length; i++) {
     const frame = result.assignment[i];
     // The assignment is the whole answer. A run the mechanism will not vouch
-    // for already has every one of its entries nulled — `indexByFingerprint`
-    // clears them before returning, and `packages/solver/test/indexing.test.ts`
-    // pins that — so filtering on `usableProjectors` here as well was a check
-    // that could not fail. Mutation testing said so: removing it changed
-    // nothing, which is the definition of a guard that is not guarding.
+    // for has no entry in it — `indexPosition` places only the run it uses for
+    // each projector, and `packages/solver/test/position.test.ts` scores every
+    // placed photograph against the truth — so filtering on `usableProjectors`
+    // here as well would be a check that could not fail. (Mutation testing said
+    // so of the same filter over the fingerprint mechanism's assignment.)
     if (frame === null) continue;
     placed++;
     const projector = Math.floor(frame / runLength);
@@ -491,7 +543,7 @@ export function indexPhotographs(
     .sort((a, b) => a[0] - b[0])
     .map(([projector, entries]) => ({
       projector,
-      // By plan position, not by folder position. Both mechanisms here assign a
+      // By plan position, not by folder position. The mechanism assigns a
       // contiguous ascending block per run, so today these are the same order
       // and this sort is a no-op — removing it breaks no test. It stays because
       // what it protects against is SILENT: a mechanism that placed frames out
@@ -503,10 +555,11 @@ export function indexPhotographs(
 
   const problems = [...result.problems];
   // Clipping is mentioned HERE only when nothing decoded, because it is a
-  // plausible cause of the refusal rather than a separate complaint: `classify`
-  // loses its margin when the white frames clip, and an operator told only that
-  // the references could not be told apart has not been told why. For runs that
-  // do decode, `readCapture` reports clipping against the run it belongs to.
+  // plausible cause of the refusal rather than a separate complaint: a clipped
+  // white is flat where a projector's light varies, which can hide the
+  // crescent a run is found by, and an operator told only that no run could be
+  // read has not been told why. For runs that do decode, `readCapture` reports
+  // clipping against the run it belongs to.
   if (runs.length === 0) {
     let worst = 0;
     let worstName = '';
@@ -525,23 +578,509 @@ export function indexPhotographs(
     }
   }
 
-  return { ok: result.ok, runs, problems, mechanism: result.mechanism, total, placed };
+  return {
+    ok: result.ok,
+    runs,
+    problems,
+    notes: [...result.notes],
+    unseen: [...result.unseenProjectors],
+    barelySeen: [...result.barelySeenProjectors],
+    reshoots: result.reshoots.map((r) => ({ ...r })),
+    mechanism: result.mechanism,
+    total,
+    placed,
+  };
 }
 
-/** One line saying what the indexer made of the folder. */
+/** "1, 2 and 4". */
+function listed(xs: readonly number[]): string {
+  if (xs.length <= 1) return xs.join('');
+  return `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
+}
+
+/**
+ * What the indexer made of the folder, for an operator: one line on what was
+ * placed, one on each projector the camera could not see or barely saw, one on
+ * each run read from a re-shoot, and then the indexer's other notes.
+ *
+ * The notes the indexer writes about unseen, barely seen and replaced runs are
+ * not repeated here — these lines say the same from the structured fields, so a
+ * reader of the lines and a reader of the fields see one account.
+ */
 export function describeIndexing(indexed: IndexedCapture, projectors: number): string {
+  const lines: string[] = [];
   if (indexed.runs.length === 0) {
-    return (
+    lines.push(
       `${indexed.total} photographs handed in, and none of them could be placed. Nothing was ` +
-      `decoded — the problems below are about the folder, not about the solve.`
+        `decoded — the problems below are about the folder, not about the solve.`,
+    );
+  } else {
+    const kept = indexed.runs.map((r) => r.projector + 1).join(', ');
+    const allSeen = indexed.unseen.length === 0 && indexed.barelySeen.length === 0;
+    lines.push(
+      `${indexed.total} photographs handed in; ${indexed.placed} placed into ` +
+        `${indexed.runs.length} of ${projectors} projector runs (${kept}). ` +
+        (indexed.ok
+          ? allSeen
+            ? 'Every frame the plan asks for was found.'
+            : 'Every run this camera could see was found.'
+          : 'The rest are listed below and were not decoded.'),
     );
   }
-  const kept = indexed.runs.map((r) => r.projector + 1).join(', ');
+  if (indexed.unseen.length > 0) {
+    const who = indexed.unseen.map((p) => p + 1);
+    lines.push(
+      `Not in this camera's view: projector${who.length === 1 ? '' : 's'} ${listed(who)} — ` +
+        'every photograph of the run is dark, so there is nothing to decode and nothing to re-shoot.',
+    );
+  }
+  if (indexed.barelySeen.length > 0) {
+    const who = indexed.barelySeen.map((p) => p + 1);
+    lines.push(
+      `Barely seen from here: projector${who.length === 1 ? '' : 's'} ${listed(who)} — too ` +
+        'little to check, so not decoded.',
+    );
+  }
+  for (const r of indexed.reshoots) {
+    lines.push(
+      `Projector ${r.projector + 1} was read from its re-shoot, photographs ${r.used + 1} on, ` +
+        `which replaced the run from photograph ${r.replaced + 1}.`,
+    );
+  }
+  const covered = /^Projector \d+ (was not in this camera's view|lit only)|was replaced by its re-shoot/;
+  for (const note of indexed.notes) if (!covered.test(note)) lines.push(note);
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// The session — every camera position read since the plan was loaded
+// ---------------------------------------------------------------------------
+
+/**
+ * What one decoded run contributed, without a camera. The position it is held
+ * under says which camera, and saying it in two places is how the two could
+ * come to disagree.
+ */
+export interface HeldRun {
+  /** Zero-based. */
+  projector: number;
+  stats: DecodeStats;
+}
+
+/**
+ * One camera position the page has read, as the session holds it.
+ *
+ * Only what the worth report and the account need. The decoded points are not
+ * among them, for the reason {@link CaptureVerdict} gives: they are 168 bytes
+ * each, and nothing on the page reads one.
+ */
+export interface HeldPosition {
+  /** Zero-based, as `worth.ts` counts cameras. An operator reads it counted from one. */
+  camera: number;
+  /** One {@link photographSignature} per photograph: all the session compares positions by. */
+  photographs: readonly string[];
+  /** The folder's first and last file names, in the order handed in, to name it by later. */
+  first: string;
+  last: string;
+  /** What its decoded runs contributed. Empty when none decoded. */
+  decoded: readonly HeldRun[];
+}
+
+/**
+ * What makes two photographs the same photograph, for the session: the bytes
+ * of the file, as their SHA-256 in hex.
+ *
+ * It was the name and size, and before that those and the last-modified time.
+ * The time went because a copied folder does not keep it: the same photographs,
+ * copied and read again under another camera number, counted as a second
+ * camera. The name and size went because two positions can share them outright:
+ * cameras reuse names — a new card starts again at IMG_0001, and some cameras
+ * restart at 10000 — and an uncompressed export at one resolution is one size.
+ * Two such folders signed every photograph alike, and the second was filed as
+ * the first read again under a new number: a real camera lost from the report.
+ * The bytes are what a copy keeps, under any name and at any time, and what a
+ * different photograph does not have, so their digest is the same for a folder
+ * copied, renamed or touched, and differs wherever one byte does.
+ *
+ * Bytes can still match by chance: two photographs of nothing, saved without
+ * the camera's record of when each was taken, can be the same bytes. So
+ * {@link holdPosition} calls two positions the same only when most of them do,
+ * each photograph matched once. And a photograph exported again from an editor
+ * is other bytes, so it is not known for the same one: this recognises a folder
+ * read again, not a picture re-encoded.
+ *
+ * `subtle` is the browser's digest, which a page has only where it was opened
+ * over https:// or as localhost. Opened across a network over http:// —
+ * `npm run app` with `HOST=0.0.0.0`, from the laptop beside the sphere — it has
+ * none, and the same digest is computed here instead ({@link sha256}): the page
+ * knows a photograph the same way wherever it was opened. Node has both, and a
+ * test holds each to Node's own.
+ */
+export async function photographSignature(
+  photo: Blob,
+  subtle: Digester | null = globalThis.crypto?.subtle ?? null,
+): Promise<string> {
+  const bytes = await photo.arrayBuffer();
+  const digest =
+    subtle === null ? sha256(new Uint8Array(bytes)) : new Uint8Array(await subtle.digest('SHA-256', bytes));
+  return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** The one call {@link photographSignature} makes of a browser's `crypto.subtle`. */
+interface Digester {
+  digest(algorithm: 'SHA-256', data: ArrayBuffer): Promise<ArrayBuffer>;
+}
+
+/**
+ * SHA-256's round constants: the first 32 bits of the fractional parts of the
+ * cube roots of the first 64 primes (FIPS 180-4, section 4.2.2).
+ */
+const SHA256_K = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]);
+
+/**
+ * SHA-256 (FIPS 180-4), for a page the browser gives no `crypto.subtle`.
+ *
+ * Written out because there is nothing to take it from: this repository has no
+ * run-time dependencies. It is the standard's own arithmetic on 32-bit words:
+ * every whole 64-byte block straight from the bytes, then the last, padded with
+ * a one bit, zeros, and the length in bits, which takes one block or two.
+ */
+function sha256(bytes: Uint8Array): Uint8Array {
+  const state = new Uint32Array([
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ]);
+  const w = new Uint32Array(64);
+  const compress = (view: DataView, at: number): void => {
+    for (let i = 0; i < 16; i++) w[i] = view.getUint32(at + 4 * i);
+    for (let i = 16; i < 64; i++) {
+      const x = w[i - 15];
+      const y = w[i - 2];
+      const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
+      const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
+      // A Uint32Array stores modulo 2^32, which is the addition the standard means.
+      w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+    }
+    let [a, b, c, d, e, f, g, h] = state;
+    for (let i = 0; i < 64; i++) {
+      const s1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      const t1 = (h + s1 + ((e & f) ^ (~e & g)) + SHA256_K[i] + w[i]) | 0;
+      const s0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      const t2 = (s0 + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      h = g;
+      g = f;
+      f = e;
+      e = (d + t1) | 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) | 0;
+    }
+    state[0] += a;
+    state[1] += b;
+    state[2] += c;
+    state[3] += d;
+    state[4] += e;
+    state[5] += f;
+    state[6] += g;
+    state[7] += h;
+  };
+  const whole = Math.floor(bytes.length / 64);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  for (let i = 0; i < whole; i++) compress(view, 64 * i);
+  const rest = bytes.length - 64 * whole;
+  const tail = new Uint8Array(rest < 56 ? 64 : 128);
+  tail.set(bytes.subarray(64 * whole));
+  tail[rest] = 0x80;
+  const end = new DataView(tail.buffer);
+  const bits = bytes.length * 8;
+  end.setUint32(tail.length - 8, Math.floor(bits / 0x100000000));
+  end.setUint32(tail.length - 4, bits >>> 0);
+  for (let at = 0; at < tail.length; at += 64) compress(end, at);
+  const out = new Uint8Array(32);
+  const put = new DataView(out.buffer);
+  for (let i = 0; i < 8; i++) put.setUint32(4 * i, state[i]);
+  return out;
+}
+
+/** Every camera position read against one plan: at most one per camera. */
+export interface CaptureSession {
+  /**
+   * The plan every position here was read against, compared by identity: the
+   * object parsed from the file, so one file loaded twice is two plans. Null
+   * while no plan is held.
+   */
+  plan: CaptureManifest | null;
+  /** Ascending by camera. No two share a camera, and no two are the same photographs ({@link holdPosition}). */
+  positions: readonly HeldPosition[];
+}
+
+/** The session before any plan has been read. */
+export const EMPTY_SESSION: CaptureSession = { plan: null, positions: [] };
+
+/** What filing one position did to the session. */
+export type SessionChange =
+  /** The camera held nothing, and no other camera held any of these photographs. */
+  | { kind: 'added'; camera: number }
+  /** The camera held another reading, and this one replaced it. */
+  | { kind: 'replaced'; camera: number; earlier: HeldPosition }
+  /**
+   * Another camera held `shared` of these photographs, more than half of the
+   * smaller position's: the same photographs. That position is no longer held,
+   * and they count under this camera.
+   */
+  | { kind: 'moved'; camera: number; from: HeldPosition; shared: number }
+  /** Read against a plan this session is not for, so not kept. */
+  | { kind: 'otherPlan'; camera: number };
+
+/**
+ * File a camera position under its camera number.
+ *
+ * `docs/EXPERIMENT-10.md` records the page's worth report printing "Only 1
+ * camera contributed." for a folder, whatever the folder held, because the page
+ * read one camera position at a time and reported on that position alone. One
+ * camera cannot separate a projector's distance from its field of view —
+ * `worth.ts` says so with EXPERIMENT-1's numbers — so a report on one position
+ * could never be anything but that refusal. The page now keeps every position
+ * it reads, and the worth ({@link sessionWorth}) is over all of them.
+ *
+ * Three rules, each for a mistake an operator can make at a desk with three
+ * folders and one camera box:
+ *
+ * - **A camera read again is replaced, never added to.** Two readings of one
+ *   camera are one camera's position read twice — a re-shoot added to its
+ *   folder, a folder corrected — and adding them would count that position
+ *   twice. The change names the folder replaced, so a camera number left
+ *   unchanged between two positions is seen rather than silently absorbed.
+ * - **The same photographs count under one camera, the one given last.** The
+ *   same photographs under two camera numbers are one position posing as two,
+ *   and two cameras are exactly what `captureWorth` asks for before it will
+ *   vouch for a solve: it would vouch for one no data supports. So a position
+ *   that is the same photographs as another camera's — more than half of the
+ *   smaller one's match — replaces that one too. More than half, not the whole
+ *   folder: a folder read again with a re-shoot added is the same position
+ *   with more photographs in it. And not any one: a photograph is known here
+ *   by its bytes ({@link photographSignature}), which two photographs of
+ *   nothing can share, and each photograph matches once, however many of one
+ *   folder's are the same bytes.
+ * - **A position read against another plan is not kept.** Positions decoded
+ *   against different plans are not one capture, and a plan file loaded while a
+ *   position was being read leaves that reading out.
+ *
+ * Pure: the session handed in is not changed, and nothing here touches a page.
+ */
+export function holdPosition(
+  session: CaptureSession,
+  plan: CaptureManifest,
+  position: HeldPosition,
+): { session: CaptureSession; changes: SessionChange[] } {
+  if (plan !== session.plan) {
+    return { session, changes: [{ kind: 'otherPlan', camera: position.camera }] };
+  }
+  const changes: SessionChange[] = [];
+  const kept: HeldPosition[] = [];
+  for (const held of session.positions) {
+    if (held.camera === position.camera) {
+      changes.push({ kind: 'replaced', camera: position.camera, earlier: held });
+      continue;
+    }
+    const shared = matched(held.photographs, position.photographs);
+    if (2 * shared > Math.min(held.photographs.length, position.photographs.length)) {
+      changes.push({ kind: 'moved', camera: position.camera, from: held, shared });
+      continue;
+    }
+    kept.push(held);
+  }
+  if (changes.length === 0) changes.push({ kind: 'added', camera: position.camera });
+  kept.push(position);
+  kept.sort((a, b) => a.camera - b.camera);
+  return { session: { plan, positions: kept }, changes };
+}
+
+/**
+ * The session a newly loaded plan starts, and what the old one held.
+ *
+ * Loading a plan file clears the session whatever the file says, the same file
+ * loaded again included. The page stops trusting the old plan the instant a new
+ * one is chosen (`loadPlanFile` says why), and every position held was decoded
+ * against the plan being replaced. `letGo` is what the page tells the operator
+ * it let go; {@link describeLetGo} says it.
+ */
+export function sessionForPlan(
+  previous: CaptureSession,
+  plan: CaptureManifest | null,
+): { session: CaptureSession; letGo: readonly HeldPosition[] } {
+  return { session: { plan, positions: [] }, letGo: previous.positions };
+}
+
+/**
+ * What every position held was worth together: `captureWorth` over all their
+ * runs, each counted under the camera its position is held as, and told the
+ * plan's projector count, so that a projector no held camera decoded is named
+ * rather than left out: a session whose positions each decoded projectors 1 to
+ * 3 of four was reported usable, projector 4 unmentioned. It is told every
+ * camera held, too, so that a position that decoded no run is named as a
+ * camera that decoded nothing: camera 1's decoded runs beside camera 2's
+ * folder, refused whole, were a report asking for a second camera position,
+ * beneath the list naming camera 2.
+ *
+ * Null when no run of any held position decoded, for {@link finishCapture}'s
+ * reason: `captureWorth` would report on an empty capture rather than on these
+ * photographs.
+ */
+export function sessionWorth(session: CaptureSession): CaptureWorth | null {
+  const pairs: PairContribution[] = [];
+  for (const held of session.positions) {
+    for (const run of held.decoded) {
+      pairs.push({ camera: held.camera, projector: run.projector, stats: run.stats });
+    }
+  }
+  const cameras = session.positions.map((p) => p.camera);
+  return pairs.length === 0 ? null : captureWorth(pairs, session.plan?.projectors, cameras);
+}
+
+/** "IMG_0001.jpg to IMG_0136.jpg", or the one name. */
+function folderOf(p: HeldPosition): string {
+  return p.first === p.last ? p.first : `${p.first} to ${p.last}`;
+}
+
+/**
+ * How many photographs of `a` have a photograph of their own in `b`: each
+ * photograph of `b` matches at most one of `a`'s.
+ *
+ * Counted as a set's members, one photograph's bytes recurring in a folder —
+ * the dark photographs of a projector out of view, saved without the camera's
+ * record of when each was taken — were so many matches against another
+ * folder's single copy, and could make two positions one. A name and size never
+ * recurred in a folder, since its names differ; bytes can.
+ */
+function matched(a: readonly string[], b: readonly string[]): number {
+  const unmatched = new Map<string, number>();
+  for (const s of b) unmatched.set(s, (unmatched.get(s) ?? 0) + 1);
+  let n = 0;
+  for (const s of a) {
+    const left = unmatched.get(s) ?? 0;
+    if (left > 0) {
+      n++;
+      unmatched.set(s, left - 1);
+    }
+  }
+  return n;
+}
+
+/** Whether every photograph of `part` is matched in `whole`, each once ({@link matched}). */
+function within(part: readonly string[], whole: readonly string[]): boolean {
+  return matched(part, whole) === part.length;
+}
+
+function samePhotographs(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && within(a, b);
+}
+
+function describeChange(session: CaptureSession, change: SessionChange): string {
+  const n = change.camera + 1;
+  const now = session.positions.find((p) => p.camera === change.camera);
+  switch (change.kind) {
+    case 'added':
+      return `This position is now held as camera ${n}.`;
+    case 'replaced': {
+      const earlier = folderOf(change.earlier);
+      // The same folder again, or the same folder grown — which is what a
+      // re-shoot added to its end looks like — is this camera's own position
+      // read again, and saying "in place of" would send the operator looking
+      // for a mistake that was not made. The folder is named either way.
+      if (now !== undefined && within(change.earlier.photographs, now.photographs)) {
+        const more = now.photographs.length - change.earlier.photographs.length;
+        return more === 0
+          ? `Camera ${n}'s photographs (${earlier}) were read again, and this reading replaces the last.`
+          : `Camera ${n}'s position (${earlier}) was read again with ${more} more ` +
+              `photograph${more === 1 ? '' : 's'}, and this reading replaces the last.`;
+      }
+      return (
+        `This position is now held as camera ${n}, in place of the one read as camera ${n} ` +
+        `before (${earlier}). Reading a camera number again replaces what it held, so if that ` +
+        `was another camera's position, give this one its own number and read both again.`
+      );
+    }
+    case 'moved': {
+      const m = change.from.camera + 1;
+      if (now !== undefined && samePhotographs(now.photographs, change.from.photographs)) {
+        return (
+          `These photographs were held as camera ${m}. They count as camera ${n} now, the number ` +
+          `given last, and camera ${m} is no longer held: one position under two numbers would ` +
+          `pass for two cameras.`
+        );
+      }
+      return (
+        `Camera ${m}'s position (${folderOf(change.from)}) shares ${change.shared} of its ` +
+        `${change.from.photographs.length} photographs with this one, so it is the same position and ` +
+        `no longer held: a position counts under one camera, the number given last.`
+      );
+    }
+    case 'otherPlan':
+      return (
+        'A plan file was loaded while this position was being read, so it is not held: it was ' +
+        'read against the plan before. Read it again to add it.'
+      );
+  }
+}
+
+/** One held position, for the account. */
+function describeHeld(p: HeldPosition): string {
+  const photos = p.photographs.length;
+  const runs = p.decoded.length;
+  const points = p.decoded.reduce((a, r) => a + r.stats.accepted, 0);
   return (
-    `${indexed.total} photographs handed in; ${indexed.placed} placed into ` +
-    `${indexed.runs.length} of ${projectors} projector runs (${kept}). ` +
-    (indexed.ok
-      ? 'Every frame the plan asks for was found.'
-      : 'The rest are listed below and were not decoded.')
+    `Camera ${p.camera + 1}: ${folderOf(p)}, ${photos} photograph${photos === 1 ? '' : 's'}; ` +
+    (runs === 0
+      ? 'no run decoded.'
+      : `${runs} run${runs === 1 ? '' : 's'} decoded, ${points.toLocaleString()} correspondences.`)
+  );
+}
+
+/**
+ * The session, for an operator: what filing the last position did, every
+ * position held, and what they were worth together — `captureWorth`'s summary,
+ * and its refusal if it makes one.
+ *
+ * Cameras are counted from one, as `captureWorth` names them, so "Camera 2
+ * decoded nothing" in its refusal is the "Camera 2" listed above it.
+ */
+export function describeSession(session: CaptureSession, changes: readonly SessionChange[]): string {
+  const lines = changes.map((c) => describeChange(session, c));
+  if (session.positions.length === 0) {
+    lines.push('No camera position is held, so there is no worth to report.');
+    return lines.join('\n');
+  }
+  lines.push('Camera positions held until a plan file is loaded; the worth below covers every one:');
+  for (const p of session.positions) lines.push(`  ${describeHeld(p)}`);
+  const worth = sessionWorth(session);
+  if (worth === null) {
+    lines.push('None of them decoded a run, so there is no worth to report.');
+  } else {
+    lines.push(worth.summary);
+    if (worth.refusal !== null) lines.push(worth.refusal);
+  }
+  return lines.join('\n');
+}
+
+/** What loading a plan file let go, for an operator. Empty when it held nothing. */
+export function describeLetGo(letGo: readonly HeldPosition[]): string {
+  if (letGo.length === 0) return '';
+  const one = letGo.length === 1;
+  const cameras = listed(letGo.map((p) => p.camera + 1));
+  return (
+    `The position${one ? '' : 's'} read as camera${one ? '' : 's'} ${cameras} ` +
+    `${one ? 'is' : 'are'} no longer held: loading a plan file starts the report over, since ` +
+    `every position is decoded against the plan it was read with. Read ` +
+    `${one ? 'it' : 'them'} again to include ${one ? 'it' : 'them'}.`
   );
 }

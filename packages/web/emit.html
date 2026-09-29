@@ -157,7 +157,8 @@ button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); 
       <label class="field"><span>Auto-advance, seconds</span>
         <input id="dwell" type="number" min="0.2" max="30" step="0.1"/></label>
       <label class="check"><input id="tick" type="checkbox"/>
-        Tick on each step, so you can work without watching the screen</label>
+        Tick on each step, and a lower, longer tone at the end, so you can work without watching
+        the screen</label>
     </div>
     <p class="note" id="plannote"></p>
     <div class="hudrow">
@@ -189,12 +190,69 @@ button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); 
     </p>
     <p class="note">
       Hand in the <strong>whole camera position</strong> — every projector’s run, back to back,
-      in the order they were shot. This page finds where each run starts, from the white and black
-      frames that open it, and then checks that each Gray plane still sits beside its own
-      complement. A frame deleted or shot twice inside one run is usually caught, and costs that
-      projector’s run rather than the capture. You still have to say which <em>camera</em> took
-      them: each camera is a separate solver input with its own pose, and nothing in a photograph
-      says which one held the shutter.
+      in the order they were shot — and <strong>never delete a photograph from its folder</strong>:
+      not a spoiled run, not an exposure test. A deleted run is a fault this page cannot catch,
+      because every projector after it can then be numbered wrongly with nothing to say so.
+      Photographs that do not belong — ones taken before you pressed Play, a few test shots before
+      the first run, of any frame and at any exposure, dark ones taken after the screen went black
+      — are recognised and set aside, and a projector this camera could not see is noted rather
+      than refused: there is nothing of it to decode. This page finds each run by what its own
+      white, black and phase frames show, then checks that each Gray plane still sits beside its
+      own complement. A frame lost or shot twice inside one run is usually caught, and costs that
+      projector’s run rather than the capture.
+    </p>
+    <p class="note">
+      So that those extras stay few, do not start the intervalometer long before you press Play,
+      and stop it soon after this page’s end tone: keep them under about 30 at each end with the
+      default plan of 34 frames a projector, which is about a minute at a 2-second dwell, and well
+      under one projector’s run with any plan. When a projector is out of this camera’s view, its
+      run is dark photographs too, and they look just like extras at either end. A long run of
+      extras can then leave this page unable to tell which projector is which, and it refuses the
+      folder rather than guess. What it cannot tell from a clean folder are the faults these notes
+      name — a deleted run, photographs lost at an end, a paused page, a run stepped back within —
+      which can file runs under the wrong projector with nothing to say so.
+    </p>
+    <p class="note">
+      The end tone, not the sphere going dark, is the end of the position. With “Tick on each
+      step” ticked, every step ticks and the end is a lower, longer tone, as the page paints the
+      screen black. You stand at one camera, and from there the sphere looks dark for the whole
+      run of a projector lighting its far side: that is a projector this camera cannot see, still
+      playing, and its run must still be photographed — its dark photographs are how this page
+      counts it. So start the intervalometer before you press Play, and stop it only after the end
+      tone. A camera started after Play loses photographs at the front of the folder, and one
+      stopped when the sphere went dark on your side loses them at the back; where the projector
+      there is one this camera cannot see, they are dark, and nothing in the folder says they are
+      gone. Four or more of those lost at one end — or all but a few, where the projector there is
+      one this camera can see — with more than 30 dark extras at the other, such as the
+      page’s black kept a minute after the end tone or a long wait before Play where projector 1 is
+      out of this camera’s view, read by count exactly like a folder numbered a projector over, and
+      this page can file every run under the wrong projector with nothing to say so. So can a page
+      paused for a minute while a projector this camera cannot see is playing, where the last
+      projector is out of view too: stop the camera, not the page.
+    </p>
+    <p class="note">
+      Set the <em>camera</em> number before you read each position — 1 for the first, 2 for the
+      next. Each camera is a separate solver input with its own pose, and nothing in a photograph
+      says which one held the shutter. Every position you read is kept under its number until you
+      load a plan file, and the report covers all of them, because one camera cannot separate a
+      projector’s distance from its field of view: it takes a second position before the report
+      will vouch for a solve. Reading a camera number again replaces what it held, and photographs
+      read again under another number move to it.
+    </p>
+    <p class="note">
+      If a report asks you to re-shoot a projector, leave the spoiled run where it is, add the new
+      photographs to the end of that camera position’s own folder, and read the folder again under
+      the same camera number. Re-shoot a run from its white — <kbd>Home</kbd>, then <kbd>]</kbd> —
+      and never step back within it with <kbd>←</kbd> or Previous: a run played again from partway
+      can be filed with its frames out of place, with nothing to say so. Each re-shot run is
+      matched to its projector by comparing it with the photographs already there, and is read in
+      place of that projector’s earlier run if it passes its checks. Do that only while the tripod
+      has not moved since the position was shot: that comparison cannot tell a camera that moved.
+      Once it has, shoot the whole position again into a new folder and read it under the same
+      camera number, which replaces what that number held. Do the same, aiming the start, when the
+      refusals are patterns that no longer add up to their complements in more than one run: that is
+      what a photograph taken while the pattern changed looks like, and it spreads across the whole
+      position, runs that passed included (<code>docs/CALIBRATE.md</code> Part 4.2).
     </p>
     <div class="row">
       <label class="field"><span>The plan file</span>
@@ -204,8 +262,8 @@ button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); 
 
     </div>
     <div class="hudrow">
-      <label class="field"><span>Camera</span>
-        <input id="camidx" type="number" min="0" step="1" value="0"/></label>
+      <label class="field"><span>Camera number</span>
+        <input id="camidx" type="number" min="1" step="1" value="1"/></label>
       <span class="spacer"></span>
       <button id="readback" type="button" disabled>Index and decode these photographs</button>
     </div>

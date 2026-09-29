@@ -84,12 +84,22 @@ import {
   type CaptureManifest,
 } from '../src/manifest.ts';
 import {
+  EMPTY_SESSION,
   describeIndexing,
+  describeLetGo,
   describeRun,
+  describeSession,
   finishCapture,
+  holdPosition,
   indexPhotographs,
+  photographSignature,
   readRun,
+  sessionForPlan,
+  sessionWorth,
   summarisePhoto,
+  type CaptureSession,
+  type HeldPosition,
+  type HeldRun,
   type PhotoSummary,
   type RunOutcome,
 } from '../src/readback.ts';
@@ -816,6 +826,18 @@ let reading = false;
  * dropped.
  */
 let planPick = 0;
+/**
+ * Every camera position read since the plan was loaded, one per camera, which
+ * the worth report is over. See `holdPosition` for its rules. Replaced, never
+ * changed in place, and filed into only by a read that finished.
+ */
+let session: CaptureSession = EMPTY_SESSION;
+/**
+ * Positions a plan file let go that the page has not yet said it let go. A plan
+ * chosen before the last one was read replaces the note that would have said
+ * so, and the next note says it instead.
+ */
+let unsaidLetGo: readonly HeldPosition[] = [];
 
 function syncReadback(): void {
   const haveFiles = (photosEl.files?.length ?? 0) > 0;
@@ -834,15 +856,39 @@ function syncReadback(): void {
  * their photographs against the FIRST plan. This module exists to stop a
  * capture being decoded against the wrong plan, and the picker in front of it
  * was doing exactly that.
+ *
+ * The session of camera positions goes at the same instant and for the same
+ * reason: every position it holds was decoded against the plan this choice
+ * replaces. Whatever the file turns out to be, the note it ends in says what
+ * was let go.
  */
 function loadPlanFile(file: File): void {
   const pick = ++planPick;
   // Before the await, not after it: until this file has been read there is no
   // plan in hand, and the button must say so.
   heldManifest = null;
+  // A read still under way is not filed into the new session either:
+  // `holdPosition` knows it by the plan it was read against.
+  const cleared = sessionForPlan(session, null);
+  session = cleared.session;
+  unsaidLetGo = [...unsaidLetGo, ...cleared.letGo];
+  if (!reading) {
+    // The last account ends with the session just let go, so it goes too. A read
+    // under way keeps the readout: it is about to say its position was not held.
+    readoutEl.hidden = true;
+    readoutEl.textContent = '';
+    delete readoutEl.dataset.smoke;
+  }
   readNoteEl.textContent = `Reading ${file.name}…`;
   readNoteEl.dataset.smoke = 'plan-reading';
   syncReadback();
+
+  /** The let-go note, said once, by whichever ending this selection reaches. */
+  const letGo = (): string => {
+    const said = describeLetGo(unsaidLetGo);
+    unsaidLetGo = [];
+    return said === '' ? '' : ` ${said}`;
+  };
 
   void file
     .text()
@@ -851,12 +897,13 @@ function loadPlanFile(file: File): void {
       const parsed = parseCaptureManifest(text);
       if (!parsed.ok) {
         heldManifest = null;
-        readNoteEl.textContent = parsed.problems.join(' ');
+        readNoteEl.textContent = parsed.problems.join(' ') + letGo();
         readNoteEl.dataset.smoke = 'plan-refused';
         syncReadback();
         return;
       }
       heldManifest = parsed.manifest;
+      session = sessionForPlan(session, parsed.manifest).session;
       const m = parsed.manifest;
       readNoteEl.textContent =
         `Plan read: ${m.plan.grayBits} Gray planes per axis, ${m.plan.phaseSteps} phase steps, ` +
@@ -864,7 +911,10 @@ function loadPlanFile(file: File): void {
         `raster, ${m.projectors} projectors` +
         (m.written === '' ? '.' : `, written ${m.written}.`) +
         ` Hand in the whole camera position — every projector's run, back to back, in the ` +
-        `order they were shot. This page works out where each run starts.`;
+        `order they were shot — and never delete a photograph from it, a spoiled run included. ` +
+        `Set its camera number before you read it. Each position you read is kept until another ` +
+        `plan file is loaded, and the report covers them all.` +
+        letGo();
       readNoteEl.dataset.smoke = 'plan-read';
       syncReadback();
     })
@@ -873,7 +923,7 @@ function loadPlanFile(file: File): void {
       // — is an ordinary mistake. Unhandled, it left the page silent.
       if (pick !== planPick) return;
       heldManifest = null;
-      readNoteEl.textContent = `That plan file could not be read: ${(e as Error).message}`;
+      readNoteEl.textContent = `That plan file could not be read: ${(e as Error).message}` + letGo();
       readNoteEl.dataset.smoke = 'plan-refused';
       syncReadback();
     });
@@ -889,13 +939,60 @@ function loadPlanFile(file: File): void {
  * camera index they changed while it was working. A reader that silently
  * combines two different intentions is the same class of fault as decoding
  * against the wrong plan.
+ *
+ * The photographs are taken here as the files the picker handed over, and
+ * everything later reads those: their pixels, and their signatures, which the
+ * session knows them by. A signature is a digest of the file's bytes
+ * (`photographSignature`), so it is computed in the first pass, after the first
+ * await, and that keeps the rule: a `File` is not the DOM, and photographs
+ * chosen meanwhile give the input a new list and leave this one as it was.
+ *
+ * The one thing read after the awaits is the session, and that is deliberate:
+ * a finished read is filed into the session as it is when the read ends. A plan
+ * file loaded meanwhile has replaced it, and `holdPosition` then refuses a
+ * position read against the plan before, rather than putting it into a report
+ * on the new one.
  */
 async function runReadback(): Promise<void> {
   const files = Array.from(photosEl.files ?? []);
   const manifest = heldManifest;
-  const camera = Math.max(0, Math.trunc(Number(camIdxEl.value) || 0));
+  // Counted from one in the box, as the report names cameras (`captureWorth`
+  // calls camera index 2 "Camera 3"), and held from zero, as `PairContribution`
+  // counts them. A box that does not hold a whole number from 1 is refused, not
+  // clamped as it was: the clamp turned an empty box or a negative number into
+  // camera 0 without a word, and would now turn a 0 typed from habit, from when
+  // the box counted from zero, into camera 1. A camera number this page made up
+  // is one the operator is wrong about with nothing on the page saying so.
+  const typed = Number(camIdxEl.value);
   const transfer = canvasTransfer();
   if (manifest === null || files.length === 0 || reading) return;
+  if (!Number.isInteger(typed) || typed < 1) {
+    readoutEl.hidden = false;
+    readoutEl.textContent =
+      'Set the camera number to a whole number from 1: 1 for the first camera position, 2 for ' +
+      'the next, and so on. Nothing in a photograph says which camera took it, so this page ' +
+      'does not guess.';
+    readoutEl.dataset.smoke = 'read-no-camera';
+    return;
+  }
+  const camera = typed - 1;
+  const first = files[0].name;
+  const last = files[files.length - 1].name;
+  /** One signature per photograph, in the order handed in, signed in the first pass. */
+  const photographs: string[] = [];
+  /**
+   * File this position in the session and say what that did. Only a read that
+   * finished calls it, so every photograph has been signed by then: one that
+   * threw, or stopped at the memory bound, leaves the session as it was. A
+   * position whose runs were all refused is filed with none, because it is
+   * still the latest word on this camera.
+   */
+  const hold = (decoded: readonly HeldRun[]): string => {
+    const filed = holdPosition(session, manifest, { camera, photographs, first, last, decoded });
+    const said = describeSession(filed.session, filed.changes);
+    session = filed.session;
+    return said;
+  };
 
   reading = true;
   syncReadback();
@@ -913,10 +1010,12 @@ async function runReadback(): Promise<void> {
     // the pixels go. A camera position is every projector's run back to back —
     // 136 frames at the page's own plan — and holding that as linear light is
     // several gigabytes. What survives per photograph is a histogram and a
-    // block grid, a few kilobytes. See `PhotoSummary`.
+    // block grid, a few kilobytes. See `PhotoSummary`. Its signature is taken
+    // here too, one file's bytes at a time for the same reason.
     const summaries: PhotoSummary[] = [];
     for (let i = 0; i < files.length; i++) {
       readoutEl.textContent = `Reading photograph ${i + 1} of ${files.length}…`;
+      photographs.push(await photographSignature(files[i]));
       summaries.push(
         summarisePhoto(await readImageFile(files[i]), i, files[i].name, transfer, blocks),
       );
@@ -927,6 +1026,7 @@ async function runReadback(): Promise<void> {
     for (const problem of indexed.problems) lines.push(`  ${problem}`);
 
     if (indexed.runs.length === 0) {
+      lines.push('', hold([]));
       readoutEl.textContent = lines.join('\n');
       readoutEl.dataset.smoke = 'read-unindexed';
       return;
@@ -968,7 +1068,13 @@ async function runReadback(): Promise<void> {
           lines.push(describeRun(done));
           for (const problem of done.problems) lines.push(`  ${problem}`);
         }
-        lines.push('', over);
+        lines.push(
+          '',
+          over,
+          '',
+          'This position was not read to the end, so it is not held.',
+          describeSession(session, []),
+        );
         readoutEl.textContent = lines.join('\n');
         readoutEl.dataset.smoke = 'read-too-large';
         return;
@@ -994,19 +1100,27 @@ async function runReadback(): Promise<void> {
       lines.push(describeRun(run));
       for (const problem of run.problems) lines.push(`  ${problem}`);
     }
-    if (result.ok) {
-      lines.push('', result.worth.summary);
-      if (result.worth.refusal !== null) lines.push(result.worth.refusal);
-      readoutEl.dataset.smoke = result.worth.usable ? 'read-ok' : 'read-unusable';
-    } else {
-      lines.push('', result.refusal);
-      readoutEl.dataset.smoke = 'read-refused';
-    }
+    // This position's own worth is not said. It is one camera's, which
+    // `captureWorth` refuses whatever the photographs hold: `docs/EXPERIMENT-10.md`
+    // records this page printing that refusal "for a folder, whatever the folder
+    // holds". The worth said is the session's, over every position held.
+    if (!result.ok) lines.push('', result.refusal);
+    lines.push('', hold(pairs.map((p) => ({ projector: p.projector, stats: p.stats }))));
+    const worth = sessionWorth(session);
+    readoutEl.dataset.smoke = !result.ok
+      ? 'read-refused'
+      : worth !== null && worth.usable
+        ? 'read-ok'
+        : 'read-unusable';
     readoutEl.textContent = lines.join('\n');
   } catch (e) {
     // A file the browser cannot decode is an ordinary operator mistake — a RAW
     // file, a stray .txt — and belongs in the report rather than in the console.
-    readoutEl.textContent = `These photographs could not be read: ${(e as Error).message}`;
+    // The session is left as it was, and says so, so that the positions already
+    // read are not taken to have gone with this one.
+    readoutEl.textContent =
+      `These photographs could not be read: ${(e as Error).message}\n\n` +
+      `This read changed nothing that is held.\n${describeSession(session, [])}`;
     readoutEl.dataset.smoke = 'read-failed';
   } finally {
     reading = false;

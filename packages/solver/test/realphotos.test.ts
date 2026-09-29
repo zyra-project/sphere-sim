@@ -270,6 +270,49 @@ test('what the capture was worth is said before any pose is', () => {
   assert.equal(worth.refusal, null);
 });
 
+test('the one-camera refusal asks for a second position without presuming none was shot', () => {
+  // It ended "Shoot the sequence from a second position." EXPERIMENT-10's Q0
+  // recorded that for a clean folder of a three-camera bench capture: the emitter
+  // page read one camera position at a time, so it reported one camera however
+  // many had been shot. A caller holding one position of several has the second
+  // already, and it needs handing in, not shooting.
+  const stats = {
+    considered: 1000,
+    accepted: 5000,
+    rejectedLowModulation: 0,
+    rejectedGrayAmbiguous: 0,
+    rejectedPhaseWeak: 0,
+    rejectedDisagreement: 0,
+    rejectedOutOfRange: 0,
+    rejectedMissingAxis: 0,
+    rejectedOffSphere: 0,
+    rejectedOffImage: 0,
+  };
+  const lonely = captureWorth([{ camera: 0, projector: 0, stats }]).refusal ?? '';
+  // The pinned parts stay word for word: the count, and the measurement that
+  // makes one camera degenerate rather than poor.
+  assert.match(lonely, /^Only 1 camera contributed\. /);
+  assert.ok(
+    lonely.includes(
+      'docs/EXPERIMENT-1.md measures one camera at 17 489.84 mm against 41.82 mm for two, and ' +
+        'the second camera is worth 418x.',
+    ),
+    lonely,
+  );
+  assert.match(lonely, /A second camera position is needed: hand in its photographs, or shoot one\.$/);
+  assert.doesNotMatch(lonely, /Shoot the sequence/, 'the remedy that presumed nothing else was shot');
+
+  // The other arm names a camera that was handed in and decoded nothing,
+  // counted from one as the summary names it, and in the singular for one.
+  const silent =
+    captureWorth([
+      { camera: 0, projector: 0, stats },
+      { camera: 1, projector: 0, stats: { ...stats, accepted: 0 } },
+    ]).refusal ?? '';
+  assert.match(silent, /^Only 1 camera contributed\. /);
+  assert.match(silent, /Camera 2 decoded nothing — start there\.$/);
+});
+
 test('8-bit sRGB is not what limits the phase, and the test says by how much', () => {
   // The question an operator asks first — "will a JPEG do, or do I need raw?" —
   // and the one case where this fixture can answer it, because quantisation is
@@ -478,6 +521,83 @@ test('every projector needs two views, not the capture as a whole', () => {
   ]);
   assert.equal(silent.usable, false);
   assert.match(silent.refusal ?? '', /A projector was seen by fewer than two cameras: P1 \(1\)/);
+});
+
+test('a projector no camera decoded is named, where the rig\'s projector count is given', () => {
+  // A second review of the page found a session of two camera positions, each
+  // decoding projectors 1 to 3 of four, reported usable with projector 4 never
+  // mentioned: the per-projector check can judge only the projectors some pair
+  // names. Told the rig's count, it refuses that projector as it refuses one a
+  // single camera saw, named with none. Without the count it is as it was.
+  const some = {
+    considered: 1000,
+    accepted: 400,
+    rejectedLowModulation: 600,
+    rejectedGrayAmbiguous: 0,
+    rejectedPhaseWeak: 0,
+    rejectedDisagreement: 0,
+    rejectedOutOfRange: 0,
+    rejectedMissingAxis: 0,
+    rejectedOffSphere: 0,
+    rejectedOffImage: 0,
+  };
+  const pairs: PairContribution[] = [0, 1].flatMap((camera) =>
+    [0, 1, 2].map((projector) => ({ camera, projector, stats: some })),
+  );
+  const told = captureWorth(pairs, 4);
+  assert.equal(told.usable, false);
+  assert.match(told.refusal ?? '', /^A projector was seen by fewer than two cameras: P4 \(0\)\./);
+  assert.deepEqual(
+    told.camerasPerProjector.map((e) => [e.projector, e.cameras.length]),
+    [
+      [0, 2],
+      [1, 2],
+      [2, 2],
+      [3, 0],
+    ],
+  );
+  const untold = captureWorth(pairs);
+  assert.equal(untold.usable, true, 'without the count, only projectors a pair names are judged');
+  assert.deepEqual(captureWorth(pairs, 3), untold, 'a count the pairs already cover changes nothing');
+});
+
+test('a camera handed in with no run decoded is named, where the cameras handed in are given', () => {
+  // Review of PR #53: captureWorth knew a camera only by its pairs, and a camera
+  // none of whose runs reached the decoder has none. Camera 1 decoding, beside
+  // camera 2's folder refused whole, was told a second camera position was
+  // needed. Told the cameras handed in, it names camera 2 as one that decoded
+  // nothing, as it names a camera whose runs decoded no point. Without them it
+  // is as it was.
+  const some = {
+    considered: 1000,
+    accepted: 400,
+    rejectedLowModulation: 600,
+    rejectedGrayAmbiguous: 0,
+    rejectedPhaseWeak: 0,
+    rejectedDisagreement: 0,
+    rejectedOutOfRange: 0,
+    rejectedMissingAxis: 0,
+    rejectedOffSphere: 0,
+    rejectedOffImage: 0,
+  };
+  const pairs: PairContribution[] = [0, 1].map((projector) => ({ camera: 0, projector, stats: some }));
+  const told = captureWorth(pairs, 2, [0, 1]);
+  assert.equal(told.usable, false);
+  assert.deepEqual(told.silentCameras, [1]);
+  assert.deepEqual(told.contributingCameras, [0]);
+  assert.match(told.refusal ?? '', /^Only 1 camera contributed\. /);
+  assert.match(told.refusal ?? '', /Camera 2 decoded nothing — start there\.$/);
+  const untold = captureWorth(pairs, 2);
+  assert.match(untold.refusal ?? '', /A second camera position is needed: hand in its photographs, or shoot one\.$/);
+  assert.deepEqual(captureWorth(pairs, 2, [0]), untold, 'cameras the pairs already name change nothing');
+
+  // Beside two cameras that contributed, a third handed in with no run decoded
+  // is named in the summary, as a camera whose runs decoded nothing is.
+  const two = [...pairs, ...[0, 1].map((projector) => ({ camera: 1, projector, stats: some }))];
+  const three = captureWorth(two, 2, [0, 1, 2]);
+  assert.equal(three.usable, true, three.refusal ?? '');
+  assert.deepEqual(three.silentCameras, [2]);
+  assert.match(three.summary, /Camera 3 contributed nothing and is not in this result\.$/);
 });
 
 test('colour survives the ingest, because the decoder has its own opinion about channels', () => {

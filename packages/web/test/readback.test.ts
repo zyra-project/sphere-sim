@@ -23,6 +23,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import {
@@ -34,6 +35,7 @@ import {
   type PatternPlan,
 } from '../../bench/src/patterns.ts';
 import type { FrameRole } from '../../solver/src/assemble.ts';
+import type { DecodeStats } from '../../solver/src/decode.ts';
 import type { EncodedImage } from '../../solver/src/ingest.ts';
 import {
   MANIFEST_VERSION,
@@ -46,13 +48,23 @@ import {
   type CaptureManifest,
 } from '../src/manifest.ts';
 import {
+  EMPTY_SESSION,
   describeIndexing,
+  describeLetGo,
+  describeRun,
+  describeSession,
   finishCapture,
+  holdPosition,
+  photographSignature,
   indexPhotographs,
   readCapture,
   readRun,
+  sessionForPlan,
+  sessionWorth,
   summarisePhoto,
   type CaptureRun,
+  type HeldPosition,
+  type RunOutcome,
 } from '../src/readback.ts';
 
 const RES = 256;
@@ -436,40 +448,47 @@ const SMALL_MANIFEST: CaptureManifest = captureManifest(
 );
 
 /**
- * One frame of the plan as a photograph — the projector's raster, straight.
+ * One frame of the plan as a photograph: the projector's raster, straight, on
+ * its own half of the picture — projector 1 on the left eight columns,
+ * projector 2 on the right, each raster squeezed into its half.
  *
  * No sphere, no warp, no albedo, and `linearise` is given the matching linear
  * transfer, so what comes back out is what `compileFrame` put in. That is the
  * same separation Experiment 8 keeps and for the same reason: this is a test of
  * whether the INDEXING places photographs correctly, and a photometric wobble
- * mixed into it would be reported as a fault-tolerance result.
+ * mixed into it would be reported as a fault-tolerance result. Each projector
+ * lights its own half because two projectors on a sphere light their own parts
+ * of it, and the page's reader rests on that: two runs that photograph alike
+ * are one projector shot twice. A fixture where both projectors photograph the
+ * same raster would be a position with one projector in it, re-shot.
  */
-function photographOf(spec: FrameSpec): EncodedImage {
+function photographOf(spec: FrameSpec, projector: number): EncodedImage {
   const frame = compileFrame(spec, SMALL, SMALL_RES.x, SMALL_RES.y);
   const data = new Uint8Array(SMALL_RES.x * SMALL_RES.y);
   for (let y = 0; y < SMALL_RES.y; y++) {
     for (let x = 0; x < SMALL_RES.x; x++) {
-      const coord = frame.axis === null ? 0 : frame.axis === 'u' ? x + 0.5 : y + 0.5;
+      if (Math.floor(x / 8) !== projector) continue;
+      const coord = frame.axis === null ? 0 : frame.axis === 'u' ? (x % 8) * 2 + 1 : y + 0.5;
       data[y * SMALL_RES.x + x] = Math.round(255 * Math.min(1, Math.max(0, frame.at(coord))));
     }
   }
   return { width: SMALL_RES.x, height: SMALL_RES.y, channels: 1, data, maxValue: 255 };
 }
 
-/** A whole camera position, as the frame indices it is built from. */
-function position(order: readonly number[]): ReturnType<typeof summarisePhoto>[] {
+/** A whole camera position, as the projector and frame index of each photograph. */
+function position(order: readonly (readonly [number, number])[]): ReturnType<typeof summarisePhoto>[] {
   const specs = planFrames(SMALL);
   const blocks = complementPlan(SMALL).minBlocks;
-  return order.map((frame, i) =>
-    summarisePhoto(photographOf(specs[frame]), i, `IMG_${i}.jpg`, { kind: 'linear' }, blocks),
+  return order.map(([projector, frame], i) =>
+    summarisePhoto(photographOf(specs[frame], projector), i, `IMG_${i}.jpg`, { kind: 'linear' }, blocks),
   );
 }
 
-/** The frame indices a clean position holds: every run played in plan order. */
-function cleanOrder(): number[] {
+/** What a clean position holds: every run played in plan order. */
+function cleanOrder(): [number, number][] {
   const perRun = planFrames(SMALL).length;
-  const out: number[] = [];
-  for (let p = 0; p < SMALL_PROJECTORS; p++) for (let f = 0; f < perRun; f++) out.push(f);
+  const out: [number, number][] = [];
+  for (let p = 0; p < SMALL_PROJECTORS; p++) for (let f = 0; f < perRun; f++) out.push([p, f]);
   return out;
 }
 
@@ -515,7 +534,7 @@ test('a clean camera position is split into its projector runs, in plan order', 
     Array.from({ length: perRun }, (_, i) => perRun + i),
   );
   assert.deepEqual(indexed.problems, []);
-  assert.equal(indexed.mechanism, 'fingerprint');
+  assert.equal(indexed.mechanism, 'position');
 });
 
 test('a cancelling drop and duplicate costs its own run and leaves the other decodable', () => {
@@ -544,6 +563,51 @@ test('a cancelling drop and duplicate costs its own run and leaves the other dec
   assert.match(line, /1 of 2 projector runs/);
 });
 
+test('a projector the camera cannot see is said to be out of view, not refused', () => {
+  // EXPERIMENT-10's finding F1b, at the page's own join: a camera position
+  // where projector 2 lit nothing the camera saw, so its whole run is dark
+  // photographs. The reader used to find one run of two and refuse the
+  // position; now the run it can see is placed, and the other is a line that
+  // says there is nothing to re-shoot.
+  const perRun = planFrames(SMALL).length;
+  const order = [
+    ...Array.from({ length: perRun }, (_, f): [number, number] => [0, f]),
+    ...Array.from({ length: perRun }, (): [number, number] => [1, 1]),
+  ];
+  const indexed = indexPhotographs(position(order), SMALL_MANIFEST);
+  assert.equal(indexed.ok, true, indexed.problems.join(' '));
+  assert.deepEqual(indexed.problems, []);
+  assert.deepEqual(indexed.unseen, [1]);
+  assert.deepEqual(
+    indexed.runs.map((r) => r.projector),
+    [0],
+  );
+  const line = describeIndexing(indexed, SMALL_PROJECTORS);
+  assert.match(line, /placed into 1 of 2 projector runs \(1\)\. Every run this camera could see was found\./);
+  assert.match(line, /Not in this camera's view: projector 2 — every photograph of the run is dark/);
+  assert.doesNotMatch(line, /Re-shoot/);
+});
+
+test('a re-shot run added to the end of the folder is read in place of the original, and says so', () => {
+  // F7: the page asks for a projector to be re-shot, and the re-shoot goes on
+  // the end of the same folder. It is matched to its projector by its white and
+  // black, placed instead of the original, and the account says where it came
+  // from — so a reader of the result can tell which photographs decoded.
+  const perRun = planFrames(SMALL).length;
+  const indexed = indexPhotographs(position([...cleanOrder(), ...cleanOrder().slice(perRun)]), SMALL_MANIFEST);
+  assert.equal(indexed.ok, true, indexed.problems.join(' '));
+  assert.deepEqual(indexed.reshoots, [{ projector: 1, used: 2 * perRun, replaced: perRun }]);
+  assert.deepEqual(
+    indexed.runs.map((r) => [r.projector, r.ordinals[0]]),
+    [
+      [0, 0],
+      [1, 2 * perRun],
+    ],
+  );
+  const line = describeIndexing(indexed, SMALL_PROJECTORS);
+  assert.match(line, /Projector 2 was read from its re-shoot, photographs 37 on, which replaced the run from photograph 19\./);
+});
+
 test('what the indexer vouches for is what the decoder can read', () => {
   // The join that makes the wiring worth anything: the ordinals come back in
   // plan order, so handing those photographs to `readCapture` decodes. If the
@@ -555,7 +619,7 @@ test('what the indexer vouches for is what the decoder can read', () => {
   assert.ok(indexed.runs.length > 0);
 
   const run = indexed.runs[0];
-  const images = run.ordinals.map((o) => photographOf(specs[order[o]]));
+  const images = run.ordinals.map((o) => photographOf(specs[order[o][1]], order[o][0]));
   const result = readCapture(
     [{ camera: 0, projector: run.projector, images, names: run.ordinals.map((o) => `IMG_${o}.jpg`) }],
     SMALL_MANIFEST,
@@ -580,8 +644,8 @@ test('a fingerprint too coarse for the plan is refused rather than believed', ()
   // the plan cannot be checked at. The refusal is the same one the mechanism
   // makes for itself; this asserts the page's route reaches it.
   const specs = planFrames(SMALL);
-  const coarse = cleanOrder().map((frame, i) =>
-    summarisePhoto(photographOf(specs[frame]), i, `IMG_${i}.jpg`, { kind: 'linear' }, 1),
+  const coarse = cleanOrder().map(([projector, frame], i) =>
+    summarisePhoto(photographOf(specs[frame], projector), i, `IMG_${i}.jpg`, { kind: 'linear' }, 1),
   );
   const indexed = indexPhotographs(coarse, SMALL_MANIFEST);
   assert.equal(indexed.ok, false);
@@ -649,7 +713,7 @@ test('the verdict needs only the pairs, not the decoded points', () => {
   // routes agree: whatever `readCapture` says a capture was worth, the same
   // verdict comes out of the parts alone.
   const specs = planFrames(SMALL);
-  const images = specs.map(photographOf);
+  const images = specs.map((spec) => photographOf(spec, 0));
   const run: CaptureRun = {
     camera: 0,
     projector: 0,
@@ -673,4 +737,408 @@ test('the verdict needs only the pairs, not the decoded points', () => {
     one.correspondences.length > 0,
     'the run really did decode points — otherwise this proves nothing',
   );
+});
+
+test('a run is named counted from one, the way the worth report names its camera', () => {
+  // `describeRun` printed the indices it was handed, from zero. That echoed the
+  // page's Camera and Projector boxes while both counted from zero. Once the
+  // projector was derived, the line said "projector 0" beneath an account of
+  // projectors 1 and 2. And `captureWorth` names camera index 1 "Camera 2", so
+  // a report on two cameras would have named one camera two ways.
+  const stats = {
+    considered: 1000,
+    accepted: 400,
+    rejectedLowModulation: 600,
+    rejectedGrayAmbiguous: 0,
+    rejectedPhaseWeak: 0,
+    rejectedDisagreement: 0,
+    rejectedOutOfRange: 0,
+    rejectedMissingAxis: 0,
+    rejectedOffSphere: 0,
+    rejectedOffImage: 0,
+  };
+  const outcome = (camera: number, accepted: number): RunOutcome => ({
+    camera,
+    projector: 0,
+    frames: 34,
+    stats: { ...stats, accepted },
+    correspondences: accepted,
+    problems: [],
+    worstClippedHigh: 0,
+    worstClippedName: '',
+  });
+  const first = outcome(0, 400);
+  const second = outcome(1, 0);
+  assert.match(describeRun(first), /^Camera 1, projector 1: 400 correspondences from 1,000 camera pixels/);
+  assert.match(describeRun({ ...second, stats: null }), /^Camera 2, projector 1: 34 photographs, none decoded/);
+
+  const verdict = finishCapture(
+    [first, second],
+    [first, second].map((o) => ({ camera: o.camera, projector: o.projector, stats: o.stats ?? stats })),
+    2,
+  );
+  assert.ok(verdict.ok);
+  assert.match(describeRun(second), /^Camera 2,/);
+  assert.match(verdict.worth.refusal ?? '', /Camera 2 decoded nothing/, 'the same camera, named the same way');
+});
+
+// ---------------------------------------------------------------------------
+// The session: every camera position read since the plan was loaded
+// ---------------------------------------------------------------------------
+
+/** What `decodeCapture` reports for a run that kept `accepted` of 1000 camera pixels. */
+function decodedStats(accepted: number): DecodeStats {
+  return {
+    considered: 1000,
+    accepted,
+    rejectedLowModulation: 1000 - accepted,
+    rejectedGrayAmbiguous: 0,
+    rejectedPhaseWeak: 0,
+    rejectedDisagreement: 0,
+    rejectedOutOfRange: 0,
+    rejectedMissingAxis: 0,
+    rejectedOffSphere: 0,
+    rejectedOffImage: 0,
+  };
+}
+
+/**
+ * A camera position as the page files one: `count` photographs numbered from
+ * `from`, and one decoded run per projector in `sees`, 400 correspondences
+ * each. Each photograph is known by a stand-in for its signature, one per name,
+ * so two of these share a photograph where they share a name; the tests below
+ * that are about the signature sign files as the page does.
+ */
+function heldPosition(camera: number, from: number, count: number, sees: readonly number[] = [0, 1]): HeldPosition {
+  const names = Array.from({ length: count }, (_, i) => `IMG_${String(from + i).padStart(4, '0')}.jpg`);
+  return {
+    camera,
+    photographs: names.map((name) => `the bytes of ${name}`),
+    first: names[0],
+    last: names[names.length - 1],
+    decoded: sees.map((projector) => ({ projector, stats: decodedStats(400) })),
+  };
+}
+
+/** A session for the test plan, before anything is read. */
+function freshSession(): ReturnType<typeof sessionForPlan>['session'] {
+  return sessionForPlan(EMPTY_SESSION, SMALL_MANIFEST).session;
+}
+
+test('reading a camera again replaces what it held, and names the folder it replaced', () => {
+  // Two readings of one camera are one position read twice — a re-shoot added
+  // to its folder, a folder corrected — and adding them would count it twice.
+  // Naming the folder replaced is what makes a camera number left unchanged
+  // between two positions visible: one of them has just stopped being held.
+  const a = heldPosition(0, 1, 36);
+  const b = heldPosition(0, 101, 36);
+  const once = holdPosition(freshSession(), SMALL_MANIFEST, a);
+  assert.deepEqual(once.changes, [{ kind: 'added', camera: 0 }]);
+  const twice = holdPosition(once.session, SMALL_MANIFEST, b);
+  assert.deepEqual(twice.session.positions, [b], 'one position per camera: the latest');
+  assert.deepEqual(twice.changes, [{ kind: 'replaced', camera: 0, earlier: a }]);
+  assert.equal(sessionWorth(twice.session)?.accepted, 800, 'the worth counts the latest reading alone');
+
+  const said = describeSession(twice.session, twice.changes);
+  assert.match(
+    said,
+    /now held as camera 1, in place of the one read as camera 1 before \(IMG_0001\.jpg to IMG_0036\.jpg\)/,
+  );
+  assert.match(said, /Camera 1: IMG_0101\.jpg to IMG_0136\.jpg, 36 photographs; 2 runs decoded, 800 correspondences\./);
+
+  // The same folder read again is said to be that, not named as a folder lost;
+  // and so is the folder with a re-shoot added to its end, which is how the
+  // page asks for a re-shoot to be handed in.
+  const again = holdPosition(twice.session, SMALL_MANIFEST, b);
+  assert.deepEqual(again.session.positions, [b]);
+  assert.match(
+    describeSession(again.session, again.changes),
+    /^Camera 1's photographs \(IMG_0101\.jpg to IMG_0136\.jpg\) were read again, and this reading replaces the last\./,
+  );
+  const reshot = heldPosition(0, 101, 54);
+  const grown = holdPosition(again.session, SMALL_MANIFEST, reshot);
+  assert.deepEqual(grown.session.positions, [reshot]);
+  assert.match(
+    describeSession(grown.session, grown.changes),
+    /^Camera 1's position \(IMG_0101\.jpg to IMG_0136\.jpg\) was read again with 18 more photographs, and this reading replaces the last\./,
+  );
+});
+
+test('photographs read under a second camera number move to it, and never count twice', () => {
+  // One position under two camera numbers would pass for two cameras, which is
+  // what captureWorth asks for before it vouches for a solve. It would vouch for
+  // one that no data supports.
+  const a = heldPosition(0, 1, 36);
+  const held = holdPosition(freshSession(), SMALL_MANIFEST, a).session;
+  const renumbered = { ...a, camera: 1 };
+  const moved = holdPosition(held, SMALL_MANIFEST, renumbered);
+  assert.deepEqual(moved.session.positions, [renumbered], 'the camera number given last wins');
+  assert.deepEqual(moved.changes, [{ kind: 'moved', camera: 1, from: a, shared: 36 }]);
+  const worth = sessionWorth(moved.session);
+  assert.equal(worth?.usable, false, 'one position under two numbers is still one camera');
+  assert.match(worth?.refusal ?? '', /^Only 1 camera contributed/);
+  assert.deepEqual(worth?.contributingCameras, [1]);
+  assert.match(
+    describeSession(moved.session, moved.changes),
+    /^These photographs were held as camera 1\. They count as camera 2 now, the number given last, and camera 1 is no longer held/,
+  );
+
+  // More than half of the smaller position is enough: a folder read again with
+  // a re-shoot added is the same position with more photographs in it, and so is
+  // the same folder with its first few left out of the selection.
+  const grown = heldPosition(2, 1, 54);
+  const regrown = holdPosition(held, SMALL_MANIFEST, grown);
+  assert.deepEqual(regrown.session.positions, [grown]);
+  assert.deepEqual(regrown.changes, [{ kind: 'moved', camera: 2, from: a, shared: 36 }]);
+  assert.match(
+    describeSession(regrown.session, regrown.changes),
+    /^Camera 1's position \(IMG_0001\.jpg to IMG_0036\.jpg\) shares 36 of its 36 photographs with this one, so it is the same position and no longer held/,
+  );
+  const shifted = heldPosition(2, 5, 36);
+  assert.deepEqual(holdPosition(held, SMALL_MANIFEST, shifted).changes, [{ kind: 'moved', camera: 2, from: a, shared: 32 }]);
+});
+
+/**
+ * A photograph's file as an uncompressed export writes one: `length` bytes,
+ * the same length for every photograph, and different bytes for every `seed`.
+ */
+function exported(seed: number, length = 4096): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(length);
+  let x = (Math.imul(seed + 1, 2654435761) >>> 0) || 1;
+  for (let i = 0; i < length; i++) {
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    bytes[i] = x & 0xff;
+  }
+  return bytes;
+}
+
+/** A folder's files, one per seed, shot two seconds apart, named `IMG_0001.bmp` on unless `name` says otherwise. */
+function filesOf(
+  photos: readonly number[],
+  name = (i: number): string => `IMG_${String(i + 1).padStart(4, '0')}.bmp`,
+): File[] {
+  return photos.map((seed, i) => new File([exported(seed)], name(i), { lastModified: 1_790_000_000_000 + 2000 * i }));
+}
+
+/** A camera position of these files, each signed as the page signs it, with two runs decoded. */
+async function filedPosition(camera: number, files: readonly File[]): Promise<HeldPosition> {
+  return {
+    camera,
+    photographs: await Promise.all(files.map((f) => photographSignature(f))),
+    first: files[0].name,
+    last: files[files.length - 1].name,
+    decoded: [0, 1].map((projector) => ({ projector, stats: decodedStats(400) })),
+  };
+}
+
+const seeds = (from: number, count: number): number[] => Array.from({ length: count }, (_, i) => from + i);
+
+test("a photograph's signature is the SHA-256 of its bytes, with the browser's digest or without it", async () => {
+  // A page has `crypto.subtle` only over https:// or from the machine serving
+  // it; opened across a network over http:// it computes the same digest
+  // itself. Both are held to Node's, either side of each padding boundary and
+  // across many blocks, and to the standard's own example.
+  for (const length of [0, 1, 55, 56, 63, 64, 65, 119, 120, 128, 1000, 100_003]) {
+    const bytes = exported(length, length);
+    const want = createHash('sha256').update(bytes).digest('hex');
+    assert.equal(await photographSignature(new Blob([bytes])), want, `${length} bytes, the platform's digest`);
+    assert.equal(await photographSignature(new Blob([bytes]), null), want, `${length} bytes, the page's own`);
+  }
+  assert.equal(
+    await photographSignature(new Blob(['abc']), null),
+    'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+    'FIPS 180-4, "abc"',
+  );
+});
+
+test('two positions whose files share every name and size are two cameras', async () => {
+  // Review of PR #53: a photograph was its name and size, and two cameras'
+  // folders can share both throughout. A new card starts again at IMG_0001,
+  // and an uncompressed export at one resolution is one size. The second
+  // position was filed as the first read again under a new number, and the
+  // report lost a camera. A photograph is its bytes now.
+  const one = filesOf(seeds(0, 36));
+  const two = filesOf(seeds(1000, 36));
+  assert.deepEqual(
+    two.map((f) => [f.name, f.size]),
+    one.map((f) => [f.name, f.size]),
+    'every name and size is shared',
+  );
+  const first = holdPosition(freshSession(), SMALL_MANIFEST, await filedPosition(0, one)).session;
+  const both = holdPosition(first, SMALL_MANIFEST, await filedPosition(1, two));
+  assert.deepEqual(both.changes, [{ kind: 'added', camera: 1 }]);
+  assert.deepEqual(both.session.positions.map((p) => p.camera), [0, 1]);
+  assert.equal(sessionWorth(both.session)?.usable, true, 'two positions, two cameras');
+});
+
+test('a copied folder is the same photographs under any name or time, and one photograph matching by chance moves nothing', async () => {
+  // A second review of the page: the session knew a photograph by its name,
+  // size and last-modified time, and a folder copied to another place gets new
+  // modification times — so the same position, copied and read under the next
+  // camera number, counted as a second camera, and the report vouched for a
+  // solve from one. A copy can take new names as well, from whatever imported
+  // it. It keeps the bytes, which is what a photograph is known by now.
+  const card = filesOf(seeds(0, 36), (i) => `IMG_${String(i + 1).padStart(4, '0')}.jpg`);
+  const bytes = await Promise.all(card.map(async (f) => new Uint8Array(await f.arrayBuffer())));
+  const copied = card.map((f, i) => new File([bytes[i]], f.name, { lastModified: 1_790_086_400_000 + i }));
+  const renamed = card.map(
+    (_, i) => new File([bytes[i]], `north-${String(i + 1).padStart(3, '0')}.jpg`, { lastModified: 1_790_172_800_000 }),
+  );
+  const held = await filedPosition(0, card);
+  const first = holdPosition(freshSession(), SMALL_MANIFEST, held).session;
+  for (const copy of [copied, renamed]) {
+    const again = holdPosition(first, SMALL_MANIFEST, await filedPosition(1, copy));
+    assert.deepEqual(again.changes, [{ kind: 'moved', camera: 1, from: held, shared: 36 }], copy[0].name);
+    assert.equal(sessionWorth(again.session)?.usable, false, 'one position copied is still one camera');
+  }
+
+  // Another card whose photographs are other photographs, one of them the same
+  // bytes as one of the first card's: both positions are held.
+  const other = filesOf(seeds(100, 36), (i) => `IMG_${String(101 + i).padStart(4, '0')}.jpg`);
+  other[35] = card[35];
+  const both = holdPosition(first, SMALL_MANIFEST, await filedPosition(1, other));
+  assert.deepEqual(both.changes, [{ kind: 'added', camera: 1 }]);
+  assert.deepEqual(both.session.positions.map((p) => p.camera), [0, 1]);
+  assert.equal(sessionWorth(both.session)?.usable, true);
+});
+
+test('bytes that recur in a folder are so many photographs, each matched once', async () => {
+  // A signature can recur in one folder where a name could not: the dark
+  // photographs of a projector out of view, exported without the camera's
+  // record of when each was taken, can be the same bytes. Counted as a set's
+  // members, twenty of them here each matched the other camera's one copy, and
+  // two positions were one.
+  const dark = 7;
+  const one = filesOf([...Array<number>(20).fill(dark), ...seeds(100, 16)]);
+  const two = filesOf([dark, ...seeds(200, 35)], (i) => `IMG_${String(101 + i).padStart(4, '0')}.bmp`);
+  const held = await filedPosition(0, one);
+  const first = holdPosition(freshSession(), SMALL_MANIFEST, held).session;
+  const both = holdPosition(first, SMALL_MANIFEST, await filedPosition(1, two));
+  assert.deepEqual(both.changes, [{ kind: 'added', camera: 1 }]);
+  assert.deepEqual(both.session.positions.map((p) => p.camera), [0, 1]);
+
+  // And a camera read again is said to be its folder read again only when every
+  // photograph of that folder is matched in this one: here 17 of 36 are, and
+  // the other 19 are new.
+  const redone = filesOf([dark, ...seeds(100, 16), ...seeds(300, 19)]);
+  const replaced = holdPosition(first, SMALL_MANIFEST, await filedPosition(0, redone));
+  assert.deepEqual(replaced.changes, [{ kind: 'replaced', camera: 0, earlier: held }]);
+  assert.match(
+    describeSession(replaced.session, replaced.changes),
+    /^This position is now held as camera 1, in place of the one read as camera 1 before \(IMG_0001\.bmp to IMG_0036\.bmp\)/,
+  );
+});
+
+test('two camera positions make a report that each alone refuses', () => {
+  // EXPERIMENT-10's finding F9: the page read one position at a time, so its
+  // worth report was one camera's, and one camera is refused whatever the
+  // photographs hold. Held together, two positions are what the report needs.
+  const one = heldPosition(0, 1, 36);
+  const two = heldPosition(1, 37, 36);
+  for (const alone of [one, two]) {
+    const worth = sessionWorth(holdPosition(freshSession(), SMALL_MANIFEST, alone).session);
+    assert.equal(worth?.usable, false);
+    assert.match(worth?.refusal ?? '', /Only 1 camera contributed/);
+    assert.match(worth?.refusal ?? '', /EXPERIMENT-1/);
+    assert.match(worth?.refusal ?? '', /A second camera position is needed: hand in its photographs, or shoot one\.$/);
+  }
+  const both = holdPosition(holdPosition(freshSession(), SMALL_MANIFEST, one).session, SMALL_MANIFEST, two);
+  assert.deepEqual(both.changes, [{ kind: 'added', camera: 1 }]);
+  const worth = sessionWorth(both.session);
+  assert.equal(worth?.usable, true, worth?.refusal ?? '');
+  assert.deepEqual(worth?.contributingCameras, [0, 1]);
+  assert.equal(worth?.accepted, 1600);
+  const said = describeSession(both.session, both.changes);
+  assert.match(said, /^This position is now held as camera 2\./);
+  assert.match(said, /\n {2}Camera 1: IMG_0001\.jpg to IMG_0036\.jpg, 36 photographs; 2 runs decoded/);
+  assert.match(said, /\n {2}Camera 2: IMG_0037\.jpg to IMG_0072\.jpg, 36 photographs; 2 runs decoded/);
+  assert.match(said, /1,600 points decoded from 4 camera-projector pairs/);
+  assert.doesNotMatch(said, /Only 1 camera/);
+
+  // A held camera that decoded nothing is the one the worth report sends the
+  // operator to, by the number the list gives it.
+  const silent = { ...two, decoded: two.decoded.map((r) => ({ ...r, stats: decodedStats(0) })) };
+  const mixed = holdPosition(holdPosition(freshSession(), SMALL_MANIFEST, one).session, SMALL_MANIFEST, silent);
+  const told = describeSession(mixed.session, mixed.changes);
+  assert.match(told, /Camera 2: IMG_0037\.jpg to IMG_0072\.jpg, 36 photographs; 2 runs decoded, 0 correspondences\./);
+  assert.match(told, /Camera 2 decoded nothing — start there\./);
+});
+
+test('a held camera whose position decoded no run is the one the report sends the operator to', () => {
+  // Review of PR #53: a position refused whole is held with no runs, and the
+  // worth was taken over runs alone, so camera 2 was listed as held while the
+  // report asked for a second camera position. The session tells captureWorth
+  // every camera it holds, and the report names camera 2 as the one that
+  // decoded nothing.
+  const one = heldPosition(0, 1, 36);
+  const refused = heldPosition(1, 37, 36, []);
+  const both = holdPosition(holdPosition(freshSession(), SMALL_MANIFEST, one).session, SMALL_MANIFEST, refused);
+  const worth = sessionWorth(both.session);
+  assert.equal(worth?.usable, false);
+  assert.deepEqual(worth?.silentCameras, [1]);
+  const said = describeSession(both.session, both.changes);
+  assert.match(said, /\n {2}Camera 2: IMG_0037\.jpg to IMG_0072\.jpg, 36 photographs; no run decoded\.\n/);
+  assert.match(said, /Camera 2 decoded nothing — start there\.$/);
+  assert.doesNotMatch(said, /A second camera position is needed/);
+});
+
+test("a projector no held camera decoded is named, since the session knows the plan's count", () => {
+  // Two positions, each decoding projector 1 of the plan's two: two cameras
+  // contributed, and projector 2 has no view at all. The session vouched for
+  // that capture before the plan's count reached the worth report.
+  const one = heldPosition(0, 1, 36, [0]);
+  const two = heldPosition(1, 37, 36, [0]);
+  const both = holdPosition(holdPosition(freshSession(), SMALL_MANIFEST, one).session, SMALL_MANIFEST, two).session;
+  const worth = sessionWorth(both);
+  assert.deepEqual(worth?.contributingCameras, [0, 1]);
+  assert.equal(worth?.usable, false);
+  assert.match(worth?.refusal ?? '', /^A projector was seen by fewer than two cameras: P2 \(0\)\./);
+});
+
+test('loading a plan lets every position go, and a reading of the plan before is not kept', () => {
+  const one = heldPosition(0, 1, 36);
+  const two = heldPosition(1, 37, 36);
+  const held = holdPosition(holdPosition(freshSession(), SMALL_MANIFEST, one).session, SMALL_MANIFEST, two).session;
+
+  // The same plan's file loaded again is a new plan: it is the load that clears,
+  // whatever the file says.
+  const reloaded = captureManifest(SMALL, SMALL_RES, SMALL_PROJECTORS, 0.5, '2026-09-18T00:00:00Z');
+  const next = sessionForPlan(held, reloaded);
+  assert.deepEqual(next.session.positions, []);
+  assert.equal(next.session.plan, reloaded);
+  assert.deepEqual(next.letGo, [one, two]);
+  assert.equal(sessionWorth(next.session), null);
+  assert.match(describeLetGo(next.letGo), /^The positions read as cameras 1 and 2 are no longer held: /);
+  assert.match(describeLetGo([one]), /^The position read as camera 1 is no longer held: /);
+  assert.equal(describeLetGo(sessionForPlan(next.session, reloaded).letGo), '', 'nothing held, nothing said');
+
+  // A position read against the plan before, finishing after the load, is not
+  // filed into a report on the new one.
+  const late = holdPosition(next.session, SMALL_MANIFEST, heldPosition(2, 73, 36));
+  assert.equal(late.session, next.session);
+  assert.deepEqual(late.changes, [{ kind: 'otherPlan', camera: 2 }]);
+  assert.match(
+    describeSession(late.session, late.changes),
+    /^A plan file was loaded while this position was being read, so it is not held[^\n]*\nNo camera position is held/,
+  );
+  // Nor while the new file is still being read and no plan is held at all.
+  const between = sessionForPlan(held, null).session;
+  assert.deepEqual(holdPosition(between, SMALL_MANIFEST, one).changes, [{ kind: 'otherPlan', camera: 0 }]);
+});
+
+test('a position that decoded nothing is still the latest word on its camera', () => {
+  // A folder the indexer refused whole, or whose every run the assembler
+  // refused, is filed with no runs: the operator's latest statement about the
+  // camera is these photographs, and a report still counting the folder they
+  // replaced would be about photographs no longer handed in.
+  const a = heldPosition(0, 1, 36);
+  const refused = heldPosition(0, 101, 36, []);
+  const filed = holdPosition(holdPosition(freshSession(), SMALL_MANIFEST, a).session, SMALL_MANIFEST, refused);
+  assert.deepEqual(filed.session.positions, [refused]);
+  assert.equal(sessionWorth(filed.session), null, 'nothing decoded, so captureWorth is not asked');
+  const said = describeSession(filed.session, filed.changes);
+  assert.match(said, /Camera 1: IMG_0101\.jpg to IMG_0136\.jpg, 36 photographs; no run decoded\./);
+  assert.match(said, /None of them decoded a run, so there is no worth to report\.$/);
 });

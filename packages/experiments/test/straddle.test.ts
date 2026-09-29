@@ -1002,10 +1002,14 @@ test('T23 the page path runs on encoded frames, and grey reads as the canvas RGB
   // two the same: `summarisePhoto` reads channel 0 and drops alpha, and a
   // layout slip — alpha where red should be — would read every photograph as
   // full white. Then a clean reduced position goes through the page's own
-  // `indexPhotographs` and comes back whole in its accounting. Whether it
-  // PLACES the runs is not asserted: the page's capture-wide classification
-  // refuses clean bench positions (the experiment's precondition stage
-  // measures that), and pinning it here as passing would pin a defect.
+  // `indexPhotographs` and comes back whole in its accounting, and placed:
+  // every run this camera sees under its own projector, each photograph under
+  // its own step, and the projector it cannot see said to be out of view rather
+  // than refused. Until the page read positions with `indexPosition` this
+  // asserted the accounting alone, because the page's capture-wide
+  // classification refused every clean bench position (the experiment's
+  // precondition stage measured that) and pinning it as passing would have
+  // pinned a defect.
   const b = rig();
   const { c, p } = brightestRun(b);
   const summaries = [];
@@ -1030,6 +1034,17 @@ test('T23 the page path runs on encoded frames, and grey reads as the canvas RGB
   const unplaced = STEPS.map((_, j) => j).filter((j) => !inRuns.includes(j)).length;
   assert.equal(indexed.placed, inRuns.length);
   assert.equal(indexed.placed + unplaced, STEPS.length);
+  const everyProjector = Array.from({ length: PROJECTORS }, (_, q) => q);
+  const seen = everyProjector.filter((q) => b.lit[c][q] > 0);
+  assert.ok(seen.length > 0 && seen.length < PROJECTORS, 'this needs a camera that sees some projectors and not others');
+  assert.deepEqual(indexed.problems, []);
+  assert.equal(indexed.ok, true);
+  assert.deepEqual(indexed.runs.map((r) => r.projector), seen);
+  assert.deepEqual(indexed.unseen, everyProjector.filter((q) => !seen.includes(q)));
+  for (const r of indexed.runs) {
+    const own = STEPS.flatMap((step, j) => (step.projector === r.projector ? [j] : []));
+    assert.deepEqual(r.ordinals, own, `projector ${r.projector + 1}'s run holds photographs of other steps`);
+  }
 
   // The encode inverts through the page's own `decodeTransfer` to within half
   // an 8-bit step, over every 12-bit level the sensor can produce and over the

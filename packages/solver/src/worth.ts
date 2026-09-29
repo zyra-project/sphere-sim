@@ -94,14 +94,20 @@ export interface CaptureWorth {
   accepted: number;
   /** Camera pixels the decoder looked at. */
   considered: number;
-  /** Cameras that contributed nothing at all. */
+  /**
+   * Cameras that contributed nothing at all: those whose pairs accepted no
+   * point, and, where the caller names the cameras handed in, those with no
+   * pair.
+   */
   silentCameras: number[];
   /** Cameras that contributed something. */
   contributingCameras: number[];
   /** Pairs that contributed nothing. */
   silentPairs: { camera: number; projector: number }[];
   /**
-   * Per projector, the cameras that decoded anything against it.
+   * Per projector, the cameras that decoded anything against it: every
+   * projector a pair names, and every projector of the rig where its count was
+   * given.
    *
    * A projector is solved from the views that saw IT, so this rather than the
    * capture-wide camera count is what the degeneracy below is about.
@@ -117,11 +123,34 @@ export interface CaptureWorth {
   refusal: string | null;
 }
 
-export function captureWorth(pairs: readonly PairContribution[]): CaptureWorth {
+/**
+ * What the capture was worth, from what each camera decoded of each projector.
+ *
+ * `projectors`, where the caller knows the rig, is how many projectors it has.
+ * Without it only the projectors some pair names can be judged, and a projector
+ * no camera decoded — every run of it refused, say, at every position — is not
+ * in the report at all: two cameras that each decoded projectors 1 to 3 of a
+ * four-projector rig passed as usable, with projector 4 unmentioned. With it,
+ * such a projector is refused like one only a single camera decoded, named with
+ * none.
+ *
+ * `handedIn`, where the caller knows them, are the cameras handed in. Without
+ * them a camera is known only by its pairs, and one none of whose runs reached
+ * the decoder has none: a session holding camera 1's decoded runs and camera
+ * 2's folder, refused whole, was told a second camera position was needed,
+ * beneath a list naming camera 2. With them, such a camera is silent, like one
+ * whose runs decoded no point, and is named as one.
+ */
+export function captureWorth(
+  pairs: readonly PairContribution[],
+  projectors?: number,
+  handedIn?: readonly number[],
+): CaptureWorth {
   const accepted = pairs.reduce((a, p) => a + p.stats.accepted, 0);
   const considered = pairs.reduce((a, p) => a + p.stats.considered, 0);
 
   const byCamera = new Map<number, number>();
+  for (const c of handedIn ?? []) byCamera.set(c, 0);
   for (const p of pairs) byCamera.set(p.camera, (byCamera.get(p.camera) ?? 0) + p.stats.accepted);
   const cameras = [...byCamera.keys()].sort((a, b) => a - b);
   const silentCameras = cameras.filter((c) => (byCamera.get(c) ?? 0) === 0);
@@ -140,6 +169,7 @@ export function captureWorth(pairs: readonly PairContribution[]): CaptureWorth {
    * refusal exists to name, while the capture-wide test waves it through.
    */
   const byProjector = new Map<number, Set<number>>();
+  for (let p = 0; p < (projectors ?? 0); p++) byProjector.set(p, new Set());
   for (const p of pairs) {
     if (!byProjector.has(p.projector)) byProjector.set(p.projector, new Set());
     if (p.stats.accepted > 0) byProjector.get(p.projector)?.add(p.camera);
@@ -190,6 +220,32 @@ export function captureWorth(pairs: readonly PairContribution[]): CaptureWorth {
   }
 
   if (contributingCameras.length < 2) {
+    /**
+     * The remedy, which may not presume that nothing else was shot.
+     *
+     * It read "Shoot the sequence from a second position." `docs/EXPERIMENT-10.md`'s
+     * Q0 recorded this refusal, ending that way, for a clean folder of the bench's
+     * own three-camera capture, and says the emitter page printed it "for a folder,
+     * whatever the folder holds": the page read one camera position at a time and
+     * handed this function only that position's pairs. A caller in that state may
+     * already hold the second position's photographs, and then the remedy is to
+     * hand them in, not to go back to the sphere. Which is true is the caller's to
+     * know, so the sentence offers both.
+     *
+     * The other arm is reached only when a camera was handed in and decoded
+     * nothing, which a one-position-at-a-time caller could never do: its one
+     * camera either contributed or left nothing decoded at all, which is refused
+     * above. It said "Cameras 2" for a single camera, unnoticed while nothing
+     * reached it; it is singular for one now. A camera none of whose runs
+     * reached the decoder is one of these where the caller names the cameras
+     * handed in (`handedIn`); where it does not, that camera has no pair, and
+     * the sentence asks for a second position the caller already holds.
+     */
+    const remedy =
+      silentCameras.length > 0
+        ? `Camera${silentCameras.length === 1 ? '' : 's'} ` +
+          `${silentCameras.map((c) => c + 1).join(', ')} decoded nothing — start there.`
+        : `A second camera position is needed: hand in its photographs, or shoot one.`;
     return {
       accepted,
       considered,
@@ -205,9 +261,7 @@ export function captureWorth(pairs: readonly PairContribution[]): CaptureWorth {
         `separate a projector's distance from its field of view, so this is not a poor ` +
         `calibration but a degenerate one: docs/EXPERIMENT-1.md measures one camera at ` +
         `17 489.84 mm against 41.82 mm for two, and the second camera is worth 418x. ` +
-        (silentCameras.length > 0
-          ? `Cameras ${silentCameras.map((c) => c + 1).join(', ')} decoded nothing — start there.`
-          : `Shoot the sequence from a second position.`),
+        remedy,
     };
   }
 

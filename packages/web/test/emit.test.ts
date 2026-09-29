@@ -308,3 +308,55 @@ test('every element the emitter page reaches for exists in its markup', () => {
     'emit.html defines ids nothing reads: a control the operator can set and that does nothing',
   );
 });
+
+test('the page says a position ends at its end tone, and advance() plays one unlike a step', () => {
+  // From one camera the sphere looks dark for the whole run of a projector
+  // lighting its far side, so the sphere going dark is no end-of-sequence
+  // signal for an operator standing there. A camera stopped on it loses that
+  // run's photographs, which are dark and which nothing in the folder misses,
+  // and with a long run of dark extras at the other end the reader numbers
+  // every run a projector over (`indexPosition`'s docblock). So the page's
+  // notes and its tick box say to wait for the end tone — a lower, longer tone
+  // than a step's, played as the page paints black — and that is only true
+  // while `advance()` plays one.
+  const root = path.resolve(fileURLToPath(import.meta.url), '../../../..');
+  const html = fs.readFileSync(path.join(root, 'packages/web/emit.html'), 'utf8').replace(/\s+/g, ' ');
+  const module_ = fs.readFileSync(path.join(root, 'packages/web/web/emit.ts'), 'utf8');
+
+  const body = /\nfunction advance\(\): void \{\n([\s\S]*?)\n\}\n/.exec(module_)?.[1] ?? '';
+  const end = /finished = true;[\s\S]*?paint\(\);[\s\S]*?tick\((\d+), (\d+)\);\s*return;/.exec(body);
+  const step = /go\(at \+ 1\);\s*tick\((\d+), (\d+)\);/.exec(body);
+  assert.ok(end !== null && step !== null, 'advance() no longer paints black and plays a tone at the end, and one at each step');
+  const [endHz, endMs, stepHz, stepMs] = [end[1], end[2], step[1], step[2]].map(Number);
+  assert.ok(endHz < stepHz, `the end tone (${endHz} Hz) is not lower than a step's (${stepHz} Hz)`);
+  assert.ok(endMs > stepMs, `the end tone (${endMs} ms) is not longer than a step's (${stepMs} ms)`);
+
+  assert.match(html, /Tick on each step, and a lower, longer tone at the end,/);
+  assert.match(html, /The end tone, not the sphere going dark, is the end of the position\./);
+  assert.match(html, /every step ticks and the end is a lower, longer tone, as the page paints the screen black\./);
+  assert.match(html, /from there the sphere looks dark for the whole run of a projector lighting its far side/);
+  assert.match(html, /So start the intervalometer before you press Play, and stop it only after the end tone\./);
+  assert.match(html, /and stop it soon after this page’s end tone:/);
+});
+
+test('the page names what its reader sets aside, and the faults it cannot tell from a clean folder', () => {
+  // The reader sets aside a few test shots before the first run whatever
+  // frame and exposure they are of (review C's C1), and refuses a folder its
+  // extras leave unnumbered. What it files wrongly with nothing to say so
+  // (`indexPosition`'s docblock) comes from what an operator does: deletes a
+  // run, starts the camera late or stops it early with a long run of dark
+  // extras at the other end, pauses the page for a minute, or steps back
+  // within a run. The notes name each, and what to do instead.
+  const root = path.resolve(fileURLToPath(import.meta.url), '../../../..');
+  const html = fs.readFileSync(path.join(root, 'packages/web/emit.html'), 'utf8').replace(/\s+/g, ' ');
+  assert.match(html, /a few test shots before the first run, of any frame and at any exposure,/);
+  assert.match(html, /are recognised and set aside/);
+  assert.match(
+    html,
+    /What it cannot tell from a clean folder are the faults these notes name — a deleted run, photographs lost at an end, a paused page, a run stepped back within — which can file runs under the wrong projector with nothing to say so\./,
+  );
+  assert.match(html, /A deleted run is a fault this page cannot catch/);
+  assert.match(html, /Four or more of those lost at one end — or all but a few, where the projector there is one this camera can see — with more than 30 dark extras at the other,/);
+  assert.match(html, /So can a page paused for a minute while a projector this camera cannot see is playing, where the last projector is out of view too: stop the camera, not the page\./);
+  assert.match(html, /Re-shoot a run from its white — <kbd>Home<\/kbd>, then <kbd>]<\/kbd> — and never step back within it with <kbd>←<\/kbd> or Previous/);
+});

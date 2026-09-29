@@ -42,6 +42,12 @@ A straddle is worse than a drop for one specific reason:
 > 108: 105 at classify and 3 at the run count. See
 > [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
 
+> **2026-09-29: “today's page”, in every note on this page, is the page's reader
+> when EXPERIMENT-10 ran.** It has since been replaced, and on the bench's rendered
+> photographs the new reader places every clean camera position the old one
+> refused. What it makes of a straddled capture is not measured yet; see the dated
+> notes in [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
+
 `docs/EXPERIMENT-8.md` measured Phase 2's blind spot to be a cancelling
 drop-and-duplicate inside one run. This is a second way into the same blind spot,
 reached without anybody deleting a file.
