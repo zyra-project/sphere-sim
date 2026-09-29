@@ -41,8 +41,10 @@ one page meant for a real sphere rather than a simulated one. Opened full-screen
 on the framebuffer a Science On a Sphere installation drives, it plays the same
 structured-light sequence into one projector's raster at a time, with nothing
 installed on the display machine. It is Phase 1 of `docs/OPERATOR-PATH.md`:
-`docs/CALIBRATE.md` is the field card that goes with it, and both are candid
-that the phases which read the photographs back do not exist yet.
+`docs/CALIBRATE.md` is the field card that goes with it. The same page reads a
+camera position's photographs back and says what they were worth, and both
+documents are candid that it has read only rendered and synthesised
+photographs, never a real one, and stops short of a pose.
 
 These pages are published from `main` by
 [`.github/workflows/pages.yml`](.github/workflows/pages.yml), and
