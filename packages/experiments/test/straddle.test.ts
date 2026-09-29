@@ -2703,3 +2703,44 @@ test("T44 H8 holds the page's own reading of the fast path to its reading of the
   assert.equal(got.pageAgree, true);
   assert.ok(got.identical < got.pixels, 'the hook and the fast path are the same frames, so this compares nothing');
 });
+
+test('T45 every page record the reduced run wrote is what the page reads of that position afresh', async () => {
+  // The rescoring hands the page column the twin's cached summaries for every
+  // run a straddle did not touch, and for a touched run the frames its noisy
+  // fingerprints were walked from. Both are the page's own reading by
+  // construction, and T24's determinism cannot see it if they are not: a
+  // wrong cache is wrong in both processes. So each changed position of R1
+  // (whose frames the noisy walk hands over), R7 (a refresh wait per step) and
+  // L-aimed-7.5 (a late emitter) is rebuilt from its cell's own shots and read
+  // again, every touched run walked afresh, and must be the record the stage
+  // wrote; a position nothing changed carries none.
+  const S = await import('../src/straddle/stages.ts');
+  let store = testPlanStore;
+  if (store === null) {
+    store = S.memoryStore();
+    const ctx = S.runContext(S.TEST_PLAN, store, () => {});
+    for (const stage of ['q0', 'bank', 'rescore', 'lateness'] as const) S.runStages(ctx, stage);
+  }
+  const checkpoint = (stage: string) => JSON.parse((store as NonNullable<typeof store>).read(`${stage}.json`) as string);
+  const b = rig();
+  const rc = S.rigContextOf('main:0', b, checkpoint('bank').units['main:0'].twins);
+  const cells = [...S.rescoreCells(S.TEST_PLAN), ...S.latenessCells(S.TEST_PLAN)];
+  type Scored = { pos: number; changed: boolean; touched: number[]; page: unknown };
+  let reread = 0;
+  for (const [stage, id] of [['rescore', 'R1'], ['rescore', 'R7'], ['lateness', 'L-aimed-7.5']]) {
+    const cell = cells.find((x) => x.id === id);
+    assert.ok(cell !== undefined, id);
+    for (const cap of checkpoint(stage).units['A:main:0'].score.cells[id] as { t: number; positions: Scored[] }[]) {
+      for (const pos of cap.positions) {
+        if (!pos.changed) {
+          assert.equal(pos.page, null, `${id} trial ${cap.t} position ${pos.pos} changed nothing and carries a page reading`);
+          continue;
+        }
+        const photos = S.cellPhotos(cell, S.cellShots(cell, cap.t), cap.t, pos.pos, b.height);
+        assert.deepEqual(S.pagePath(rc, pos.pos, photos, pos.touched), pos.page, `${id} trial ${cap.t} position ${pos.pos}`);
+        reread++;
+      }
+    }
+  }
+  assert.ok(reread >= 10, `only ${reread} positions re-read`);
+});

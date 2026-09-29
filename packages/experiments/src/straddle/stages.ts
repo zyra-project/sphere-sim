@@ -3490,7 +3490,11 @@ function vsyncJitters(label: string, t: number): ((m: number) => number)[] {
   });
 }
 
-function cellShots(cell: CellSpec, t: number): ShotTiming[] {
+/**
+ * Trial `t`'s shots in a cell: EXPERIMENT-9's own draws. With {@link cellPhotos}, exported for
+ * `straddle.test.ts`, which re-reads a scored position from them.
+ */
+export function cellShots(cell: CellSpec, t: number): ShotTiming[] {
   const arm = armOf(cell.arm);
   return shotTimings(
     arm,
@@ -3500,7 +3504,8 @@ function cellShots(cell: CellSpec, t: number): ShotTiming[] {
   );
 }
 
-function cellPhotos(
+/** What position `pos` of trial `t` photographed in a cell, photograph `j` filed as step `j`. */
+export function cellPhotos(
   cell: CellSpec,
   shots: readonly ShotTiming[],
   t: number,
