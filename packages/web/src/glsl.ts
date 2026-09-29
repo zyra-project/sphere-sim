@@ -50,6 +50,11 @@
  * they disagree, each projector paints the texel from where it believes it is
  * pointing, which is what doubles and kinks the grid lines.
  *
+ * A frame of the calibration sequence replaces step 3 with a read of the
+ * physical projector's own raster, because that is where the emitter writes it
+ * — no calibration is asked anything. See `CHUNK_PATTERN`, and `RasterSource`
+ * in `packages/sim/src/misregistration.ts`, its CPU twin.
+ *
  * ## Known approximations, each deliberate
  *
  *  - **float32.** The CPU model is float64. This dominates the parity delta.
@@ -260,6 +265,15 @@ uniform int   uRailOn;
 uniform int   uAimGuides;
 
 uniform sampler2D uEquirect;
+
+// A frame of the calibration sequence in place of content: the emitter's raw
+// raster rather than a picture on the sphere. See CHUNK_PATTERN. With uPatternOn
+// at 0 the content trace runs and nothing reads the four below it.
+uniform int   uPatternOn;
+uniform int   uPatternMask;           // bit i: rig projector i is emitting; the rest are sent black
+uniform int   uPatternRow;            // the frame's first texel in uPatternAtlas
+uniform int   uPatternAxis;           // 0 a flat field, 1 across the raster (u), 2 down it (v)
+uniform sampler2D uPatternAtlas;      // compileFrame at every pixel centre: web/src/patternfilm.ts
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -823,6 +837,65 @@ vec3 emittedRadianceRgb(vec3 signal, int i) {
 `;
 
 /**
+ * A frame of the structured-light sequence, straight off a projector's own
+ * raster. `packages/sim`'s `RasterSource`, with `packages/bench`'s
+ * `compileFrame` behind both.
+ *
+ * ## Why there is no Gray code in this file
+ *
+ * `compileFrame`'s docblock warns that the obvious way to make a pattern fast is
+ * to restate it inline, and that the repository then holds two definitions of a
+ * Gray plane — the one the documentation points at and the one that ran. So this
+ * chunk computes no pattern. `web/src/patternfilm.ts`'s `patternAtlas` tabulates
+ * every frame at every pixel centre, on the CPU, from `compileFrame` itself, and
+ * the shader reads the table. The test that the table IS the definition runs in
+ * Node over every pixel of every raster the page offers; a GLSL restatement could
+ * only have been checked at runtime, by a parity check that reads blind on half
+ * the Gray frames at the page's default view.
+ *
+ * ## What is applied, and what is not
+ *
+ * The frame is reconstructed over the PHYSICAL projector's pixel grid exactly as
+ * content is, and encoded by `blendedSignal` at weight 1, which is the emitter's
+ * own 2.2 encode. It is NOT sent back through the content rig, and no blend
+ * weight, polar mask or graticule touches it: the emitter paints the raw raster,
+ * which is also why `packages/bench`'s capture switches the blend and the mask
+ * off. A projector outside `uPatternMask` is sent zero and still leaks its black
+ * floor, as the dark quadrants of the emitter page do while another runs.
+ */
+const CHUNK_PATTERN = `
+// The frame's target at pixel (col, row) of a raster. A corner half a pixel past
+// the edge has no pixel of its own and reads the edge's; sim's RasterSource is
+// handed indices clamped the same way.
+float patternTarget(int col, int row, vec4 raster) {
+  if (uPatternAxis == 0) return packedTexel(uPatternAtlas, uPatternRow).r;
+  bool across = uPatternAxis == 1;
+  int res = int(across ? raster.x : raster.y);
+  return packedTexel(uPatternAtlas, uPatternRow + clamp(across ? col : row, 0, res - 1)).r;
+}
+
+// What projector i sends toward a point it lights from raster coordinate px: the
+// four surrounding pixel centres of the frame, bilinear -- the reconstruction
+// shadeTwoRig gives content -- each encoded as the emitter encodes it.
+vec3 patternSignal(int i, vec2 px) {
+  if (((uPatternMask >> i) & 1) == 0) return vec3(0.0);
+  vec2 f = px - 0.5;
+  vec2 i0 = floor(f);
+  vec2 tf = f - i0;
+  vec3 s = vec3(0.0);
+  for (int c = 0; c < 4; c++) {
+    int du = (c == 1 || c == 3) ? 1 : 0;
+    int dv = c >= 2 ? 1 : 0;
+    float w = (du == 1 ? tf.x : 1.0 - tf.x) * (dv == 1 ? tf.y : 1.0 - tf.y);
+    if (w <= 0.0) continue;
+    float t = patternTarget(int(i0.x) + du, int(i0.y) + dv, uRaster[i]);
+    s += w * blendedSignal(vec3(t), 1.0);
+  }
+  return s;
+}
+`;
+
+/**
  * The two-rig trace. `packages/sim/src/misregistration.ts` `traceTwoRig`.
  *
  * There is no view direction, because there is nothing that needs one. The CPU
@@ -872,61 +945,75 @@ vec3 shadeTwoRig(
     litCount++;
     if (uHighlight >= 0 && uHighlight != i) continue;
 
-    // Step 3: what the compositor wrote into that pixel, found by sending the
-    // pixel back out through the calibration the compositor believed it had.
-    //
-    // Reconstructed over the projector's PIXEL GRID rather than resampled
-    // continuously. The compositor writes one value per pixel, at its centre,
-    // and a projector cannot draw anything finer than that; a continuous
-    // resample gave every projector infinite resolution, so the panel's
-    // Resolution control changed the readout — the grid metric has modelled the
-    // pixel grid all along — and left the sphere looking identical at 1024x768
-    // and at 4K.
-    //
-    // Bilinear over the four surrounding centres, which is the same
-    // reconstruction packages/sim/src/metrics/grid.ts uses and its reason is
-    // the same: it is what a real projector does with its grid. The softness
-    // that comes out at low resolution is the point. What is still NOT modelled
-    // is the lens spot, which overlaps its neighbours and would soften it
-    // further.
     vec3 signal = vec3(0.0);
-    vec2 f = px - 0.5;
-    vec2 i0 = floor(f);
-    vec2 tf = f - i0;
-    for (int c = 0; c < 4; c++) {
-      vec2 corner = i0 + vec2(float(c == 1 || c == 3), float(c >= 2)) + 0.5;
-      float w = (c == 1 || c == 3 ? tf.x : 1.0 - tf.x) * (c >= 2 ? tf.y : 1.0 - tf.y);
-      if (w <= 0.0) continue;
-      vec3 dir = rayFrom(uCRot[i], uCIntr[i], uCRaster[i].zw, corner.x, corner.y);
-      // The CONTENT rig's own intersection -- the second one, against the same
-      // MODEL and a different calibration. The model does not change between the
-      // two rigs; only what the compositor believes about where its lenses are.
-      vec4 back = surfaceIntersect(uCLens[i], dir, uCRadius, 1e-9, BVH_FAR);
-      if (back.x <= 0.0) continue;
-      vec3 xp = uCLens[i] + dir * back.x;
-      bool backMesh = back.y >= 0.0;
-      int backTri = int(back.y);
-      // A model's UV is anchored by its own unwrap and it has no pole, so
-      // neither the rotation offset nor the polar mask applies to it -- the same
-      // two exceptions render.ts and warp.ts make.
-      vec2 ll = backMesh ? bvhCoordAt(backTri, back.z, back.w) : worldToLatLon(xp);
-      vec3 backNormal = backMesh ? bvhNormalAt(backTri, back.z, back.w) : xp / uCRadius;
-      vec4 backFieldLo = vec4(0.0);
-      vec4 backFieldHi = vec4(0.0);
-      if (backMesh) bvhFieldAt(backTri, back.z, back.w, backFieldLo, backFieldHi);
-      int count;
-      float weight =
-        contentWeight(xp, backNormal, backFieldLo, backFieldHi, backTri, i, count);
-      if (!backMesh) weight *= polarMask(ll.x);
-      overlapCount = max(overlapCount, count);
-      if (weight > strongestWeight) {
-        strongestWeight = weight;
+    if (uPatternOn == 1) {
+      // A frame of the calibration sequence, read off this projector's own
+      // raster -- see CHUNK_PATTERN. The content rig is asked nothing, so the
+      // overlays take the PHYSICAL footprint: a frame is not blended, and the
+      // by-projector view shows each raster whole where it lands.
+      signal = patternSignal(i, px);
+      if (strongest < 0) {
         strongest = i;
+        strongestWeight = 1.0;
       }
-      tintAcc += uTint[i] * (weight * w);
-      tintW += weight * w;
-      float texLon = backMesh ? ll.y : wrapDeg180(ll.y - uCRotOffset);
-      signal += w * blendedSignal(contentAt(ll.x, texLon), weight);
+      tintAcc += uTint[i];
+      tintW += 1.0;
+    } else {
+      // Step 3: what the compositor wrote into that pixel, found by sending the
+      // pixel back out through the calibration the compositor believed it had.
+      //
+      // Reconstructed over the projector's PIXEL GRID rather than resampled
+      // continuously. The compositor writes one value per pixel, at its centre,
+      // and a projector cannot draw anything finer than that; a continuous
+      // resample gave every projector infinite resolution, so the panel's
+      // Resolution control changed the readout — the grid metric has modelled the
+      // pixel grid all along — and left the sphere looking identical at 1024x768
+      // and at 4K.
+      //
+      // Bilinear over the four surrounding centres, which is the same
+      // reconstruction packages/sim/src/metrics/grid.ts uses and its reason is
+      // the same: it is what a real projector does with its grid. The softness
+      // that comes out at low resolution is the point. What is still NOT modelled
+      // is the lens spot, which overlaps its neighbours and would soften it
+      // further.
+      vec2 f = px - 0.5;
+      vec2 i0 = floor(f);
+      vec2 tf = f - i0;
+      for (int c = 0; c < 4; c++) {
+        vec2 corner = i0 + vec2(float(c == 1 || c == 3), float(c >= 2)) + 0.5;
+        float w = (c == 1 || c == 3 ? tf.x : 1.0 - tf.x) * (c >= 2 ? tf.y : 1.0 - tf.y);
+        if (w <= 0.0) continue;
+        vec3 dir = rayFrom(uCRot[i], uCIntr[i], uCRaster[i].zw, corner.x, corner.y);
+        // The CONTENT rig's own intersection -- the second one, against the same
+        // MODEL and a different calibration. The model does not change between the
+        // two rigs; only what the compositor believes about where its lenses are.
+        vec4 back = surfaceIntersect(uCLens[i], dir, uCRadius, 1e-9, BVH_FAR);
+        if (back.x <= 0.0) continue;
+        vec3 xp = uCLens[i] + dir * back.x;
+        bool backMesh = back.y >= 0.0;
+        int backTri = int(back.y);
+        // A model's UV is anchored by its own unwrap and it has no pole, so
+        // neither the rotation offset nor the polar mask applies to it -- the same
+        // two exceptions render.ts and warp.ts make.
+        vec2 ll = backMesh ? bvhCoordAt(backTri, back.z, back.w) : worldToLatLon(xp);
+        vec3 backNormal = backMesh ? bvhNormalAt(backTri, back.z, back.w) : xp / uCRadius;
+        vec4 backFieldLo = vec4(0.0);
+        vec4 backFieldHi = vec4(0.0);
+        if (backMesh) bvhFieldAt(backTri, back.z, back.w, backFieldLo, backFieldHi);
+        int count;
+        float weight =
+          contentWeight(xp, backNormal, backFieldLo, backFieldHi, backTri, i, count);
+        if (!backMesh) weight *= polarMask(ll.x);
+        overlapCount = max(overlapCount, count);
+        if (weight > strongestWeight) {
+          strongestWeight = weight;
+          strongest = i;
+        }
+        tintAcc += uTint[i] * (weight * w);
+        tintW += weight * w;
+        float texLon = backMesh ? ll.y : wrapDeg180(ll.y - uCRotOffset);
+        signal += w * blendedSignal(contentAt(ll.x, texLon), weight);
+      }
     }
 
     // A display tone curve on what the PROJECTOR is drawing, and nothing else.
@@ -1025,7 +1112,13 @@ vec3 shadeSurface(vec3 point, vec3 normal) {
     // The ray reaching this floor point missed the sphere, so the content there
     // is black and conventions.ts section P collapses to gain * blackFloor. That
     // is the rectangle of glow around the sphere in every real SOS photograph.
-    acc += uGain[i] * uBlack[i] * (cosv * falloff);
+    //
+    // A calibration frame is not masked to the silhouette -- the emitter paints
+    // the whole raster -- so it lands here too, stripes and all: the spill a
+    // capture with the room on photographs. Like the rest of this function it is
+    // outside the parity check, whose CPU half draws no floor and no room.
+    vec3 leak = uPatternOn == 1 ? emittedRadianceRgb(patternSignal(i, px), i) : uGain[i] * uBlack[i];
+    acc += leak * (cosv * falloff);
   }
   return acc * uRoomAlbedo * roomTint(normal);
 }
@@ -1527,6 +1620,11 @@ export const FRAGMENT_CHUNKS: readonly { name: string; mirrors: string; source: 
   { name: 'optics', mirrors: 'sim/src/optics.ts', source: CHUNK_OPTICS },
   { name: 'blend', mirrors: 'sim/src/blend.ts + coverage.ts', source: CHUNK_BLEND },
   { name: 'transfer', mirrors: 'sim/src/photometry.ts + render.ts', source: CHUNK_TRANSFER },
+  {
+    name: 'pattern',
+    mirrors: 'sim/src/misregistration.ts RasterSource, over bench/src/patterns.ts compileFrame',
+    source: CHUNK_PATTERN,
+  },
   { name: 'trace', mirrors: 'sim/src/misregistration.ts', source: CHUNK_TRACE },
   { name: 'overlay', mirrors: '(presentation only)', source: CHUNK_OVERLAY },
   { name: 'room', mirrors: '(presentation only — no model reads it)', source: CHUNK_ROOM },

@@ -41,6 +41,7 @@ import { blendWidthM } from '../../sim/src/footprint.ts';
 import type { Vec3 } from '../../calibration/src/index.ts';
 import type { Surface } from '../../sim/src/surface.ts';
 import { MAX_PROJECTORS } from './glsl.ts';
+import type { PatternAtlas } from './patternfilm.ts';
 import { PROJECTOR_TINTS_LINEAR } from './settings.ts';
 
 export type OverlayMode = 'none' | 'overlap' | 'seams' | 'unlit' | 'byprojector';
@@ -108,6 +109,30 @@ export interface DisplayOptions {
    * off made selecting P3 isolate P4 and paint it P3's colour.
    */
   slots?: readonly number[];
+  /**
+   * A frame of the calibration sequence in place of content, or absent/`null`
+   * for content. See `CHUNK_PATTERN` in `glsl.ts`.
+   */
+  pattern?: PatternDisplay | null;
+}
+
+/**
+ * Which frame of the calibration sequence the shader draws, and on whom.
+ *
+ * The frame is an index and not a picture because the table holds every frame
+ * already: stepping, or drawing an older frame for the parity check, changes two
+ * integers and uploads nothing.
+ */
+export interface PatternDisplay {
+  /** Every frame at every pixel centre, built for the rig's own raster. */
+  atlas: PatternAtlas;
+  /** Index into `planFrames(atlas.plan)`. */
+  frame: number;
+  /**
+   * Bit `i` for RIG projector `i` — the index the shader loops over, which is
+   * not the panel slot once a projector is switched off. The rest are sent black.
+   */
+  mask: number;
 }
 
 /** One rig's arrays, in the layout the shader declares. */
@@ -456,6 +481,50 @@ export interface DisplayUniforms {
   wallRadius: number;
   rail: number;
   aimGuides: number;
+
+  /** 1 when a calibration frame replaces content; every field below is then read. */
+  patternOn: number;
+  /** Bit per rig projector: which are emitting. */
+  patternMask: number;
+  /** The frame's first texel in the table — its `AtlasRow.offset`. */
+  patternRow: number;
+  /** 0 flat, 1 across, 2 down — its `AtlasRow.axis`. */
+  patternAxis: number;
+  /**
+   * The table itself, for `gl.ts` to upload, or `null` with content on screen —
+   * in which case a 1×1 placeholder stays bound, because a sampler bound to
+   * nothing is undefined on some drivers even in a branch nobody takes.
+   */
+  patternAtlas: PatternAtlas | null;
+}
+
+/**
+ * Refuse a frame the shader would read wrongly, rather than draw it.
+ *
+ * The table is indexed by PIXEL, so a table built for one raster drawn on a rig
+ * with another puts the right stripes in the wrong places — a picture that looks
+ * exactly like a calibration pattern and is not the one the emitter would send.
+ * Every projector on the page shares one raster; a rig where they differ has no
+ * single table to draw, and is refused by name.
+ */
+function checkPattern(pattern: PatternDisplay, physical: PreparedRig, drawn: number): void {
+  const { atlas, frame, mask } = pattern;
+  if (!Number.isInteger(frame) || frame < 0 || frame >= atlas.rows.length) {
+    throw new Error(`calibration frame ${frame} is not one of the ${atlas.rows.length} this plan has`);
+  }
+  if (!Number.isInteger(mask) || mask < 0 || mask >= 1 << MAX_PROJECTORS) {
+    throw new Error(`calibration mask ${mask} names projectors the shader has no room for`);
+  }
+  for (let i = 0; i < drawn; i++) {
+    const it = physical.projectors[i].cal.intrinsics;
+    if (it.resX !== atlas.resX || it.resY !== atlas.resY) {
+      throw new Error(
+        `the calibration sequence was tabulated for a ${atlas.resX} × ${atlas.resY} raster and ` +
+          `${physical.projectors[i].cal.id} has ${it.resX} × ${it.resY}; the shader would light its ` +
+          'stripes at another raster’s pixels',
+      );
+    }
+  }
 }
 
 /** The tints in RIG order, which is panel order until somebody uses the switch. */
@@ -565,6 +634,9 @@ export function buildDisplayUniforms(
   // constant separately would let a change to the cap break that silently --
   // which is the exact failure this pair exists to prevent, applied to itself.
   const drawn = Math.min(MAX_PROJECTORS, physical.projectors.length);
+  const pattern = options.pattern ?? null;
+  if (pattern !== null) checkPattern(pattern, physical, drawn);
+  const row = pattern === null ? null : pattern.atlas.rows[pattern.frame];
   return {
     projCount: drawn,
     droppedProjectors: physical.projectors.length - drawn,
@@ -637,6 +709,12 @@ export function buildDisplayUniforms(
     // check red, which is the check doing its job.
     rail: (options.rail ?? false) ? 1 : 0,
     aimGuides: (options.aimGuides ?? false) ? 1 : 0,
+
+    patternOn: pattern === null ? 0 : 1,
+    patternMask: pattern === null ? 0 : pattern.mask,
+    patternRow: row === null ? 0 : row.offset,
+    patternAxis: row === null ? 0 : row.axis,
+    patternAtlas: pattern === null ? null : pattern.atlas,
   };
 }
 

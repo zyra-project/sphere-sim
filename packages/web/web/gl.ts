@@ -3,7 +3,8 @@
 
 /**
  * WebGL2 plumbing for the display shader: one context, one program, one content
- * texture, and the offscreen target the parity check reads back from.
+ * texture, the calibration sequence's table, and the offscreen target the parity
+ * check reads back from.
  *
  * Two rules enforced rather than documented:
  *
@@ -24,6 +25,17 @@ import {
   glslUniformNames,
 } from '../src/glsl.ts';
 import type { DisplayMesh, DisplayUniforms, PackedRig } from '../src/uniforms.ts';
+import type { PatternAtlas } from '../src/patternfilm.ts';
+
+/**
+ * The texture unit the calibration sequence's table lives on.
+ *
+ * Unit 0 is the content, 1 to 3 the packed model. A fifth unit rather than a
+ * shared one, and bound at the point of use like the other four — this file has
+ * twice found a unit clobbered by a stray bind, and a sequence drawn from the
+ * wrong texture would still look like stripes.
+ */
+export const PATTERN_UNIT = 4;
 
 export interface DisplayGl {
   gl: WebGL2RenderingContext;
@@ -52,6 +64,15 @@ export interface DisplayGl {
    * is false, so the guard needs no special case; the initial value carries it.
    */
   meshUploaded: DisplayMesh | null | undefined;
+  /** The calibration sequence's table, on {@link PATTERN_UNIT}. */
+  patternTexture: WebGLTexture;
+  /**
+   * What is in {@link patternTexture}: `undefined` before anything has been, `null`
+   * for the 1×1 placeholder — the same three states as `meshUploaded`, for its
+   * reason. A context rebuilt after a loss starts at `undefined`, which is what
+   * makes the first frame afterwards upload the table again.
+   */
+  patternUploaded: PatternAtlas | null | undefined;
   /** `RGBA32F` or `RGBA16F` — whichever the device gave us. */
   textureFormat: string;
   /** True when the parity read-back can be float rather than 8-bit. */
@@ -147,6 +168,8 @@ export function createDisplayGl(canvas: HTMLCanvasElement): DisplayGl {
   if (!meshNodes || !meshTris || !meshField) {
     throw new Error('gl.createTexture returned null for the packed model');
   }
+  const patternTexture = gl.createTexture();
+  if (!patternTexture) throw new Error('gl.createTexture returned null for the calibration sequence');
 
   return {
     gl,
@@ -157,6 +180,8 @@ export function createDisplayGl(canvas: HTMLCanvasElement): DisplayGl {
     meshTextures: { nodes: meshNodes, triangles: meshTris, contentField: meshField },
     // `undefined`, not `null`: see the field. `null` is a model that IS uploaded.
     meshUploaded: undefined,
+    patternTexture,
+    patternUploaded: undefined,
     textureFormat: floatLinear ? 'RGBA32F' : 'RGBA16F',
     floatReadback: colorFloat,
     readTarget: null,
@@ -431,6 +456,51 @@ function bindMesh(h: DisplayGl): void {
 }
 
 /**
+ * The calibration sequence's table on {@link PATTERN_UNIT}, if it is not there
+ * already. `null` puts the 1×1 placeholder there instead.
+ *
+ * `R32F` and `NEAREST`, for `uploadMesh`'s reason: these are exact values the
+ * shader fetches by index, and a filtered fetch would average two pixels of a
+ * Gray plane into a grey no projector emits. A single float channel with
+ * `NEAREST` is complete on every WebGL2 device, with no extension.
+ *
+ * Bound every call and uploaded only on a change, the split `bindMesh` records
+ * learning the hard way. The table holds the whole sequence, so a new frame is
+ * two integers in `setUniforms` and never reaches here as an upload.
+ */
+export function uploadPatternAtlas(h: DisplayGl, atlas: PatternAtlas | null): void {
+  bindPattern(h);
+  if (h.patternUploaded === atlas) return;
+  const gl = h.gl;
+  gl.activeTexture(gl.TEXTURE0 + PATTERN_UNIT);
+  gl.bindTexture(gl.TEXTURE_2D, h.patternTexture);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  if (atlas === null) {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, 1, 1, 0, gl.RED, gl.FLOAT, new Float32Array(1));
+  } else {
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0, gl.R32F, atlas.width, atlas.height, 0, gl.RED, gl.FLOAT, atlas.data,
+    );
+  }
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  h.patternUploaded = atlas;
+  // Unit 0 again, for the reason `uploadMesh` gives.
+  gl.activeTexture(gl.TEXTURE0);
+}
+
+/** Point the sequence's sampler at its texture. Every frame, like `bindMesh`. */
+function bindPattern(h: DisplayGl): void {
+  const gl = h.gl;
+  gl.activeTexture(gl.TEXTURE0 + PATTERN_UNIT);
+  gl.bindTexture(gl.TEXTURE_2D, h.patternTexture);
+  gl.activeTexture(gl.TEXTURE0);
+}
+
+/**
  * Push one rig's arrays under a name prefix.
  *
  * The physical rig's uniforms are `uLens`, `uRot`, …; the compositor's are the
@@ -539,6 +609,15 @@ export function setUniforms(h: DisplayGl, u: DisplayUniforms): void {
   gl.uniform1i(loc('uCFieldStride'), u.mesh?.contentFieldStride ?? 1);
   gl.uniform1f(loc('uMeshShadowBias'), u.mesh?.shadowBias ?? 0);
   gl.uniform1f(loc('uCMeshBlendWidthM'), u.mesh?.contentBlendWidthM ?? 0);
+
+  // The calibration sequence. Uploaded only when the table changes, which is a
+  // new plan or a new raster; a new frame is `uPatternRow` and nothing else.
+  uploadPatternAtlas(h, u.patternAtlas);
+  gl.uniform1i(loc('uPatternAtlas'), PATTERN_UNIT);
+  gl.uniform1i(loc('uPatternOn'), u.patternOn);
+  gl.uniform1i(loc('uPatternMask'), u.patternMask);
+  gl.uniform1i(loc('uPatternRow'), u.patternRow);
+  gl.uniform1i(loc('uPatternAxis'), u.patternAxis);
 
   gl.uniform1i(loc('uEquirect'), 0);
 }

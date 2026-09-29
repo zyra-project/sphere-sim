@@ -21,22 +21,37 @@
  * paired with its inverse, and then watch four phase steps slide a fringe across
  * what the search narrowed to. The sequence explains itself; the frame cannot.
  *
- * So this module renders the sequence — not as a picture of the ball, but as the
- * images that go down the projector's cable, which is what the inspect card's
- * first tab already calls "its frame". A visitor can watch it without running a
- * calibration, which matters: the patterns are how the thing works, and making
- * somebody press Recalibrate and wait to find that out gets it backwards.
+ * So this module renders the sequence twice over: as the images that go down the
+ * projector's cable, which is what the inspect card's first tab already calls
+ * "its frame", and — through {@link patternAtlas} — as the table the display
+ * shader reads to put the same frames on the ball. A visitor can watch it
+ * without running a calibration, which matters: the patterns are how the thing
+ * works, and making somebody press Recalibrate and wait to find that out gets it
+ * backwards.
  *
- * ## Why it is not a picture of the sphere
+ * ## A picture of the sphere, too
  *
- * That would be the more striking image, and it is deliberately not what this
- * does. Emitted radiance at a raster coordinate is a pure function — the same
- * `compileFrame` the bench photographs through — so this module is exact by
- * construction and testable in Node. Putting the pattern ON the ball means
- * either re-running a capture (a ray cast per pixel per frame) or teaching the
- * display shader a new content source, and that shader sits inside the GPU↔CPU
- * parity chain. Neither cost buys accuracy; both buy drama. This is the honest
- * half, and it is the half that is cheap and provable.
+ * This section used to explain why it was not one. Putting the pattern ON the
+ * ball meant teaching the display shader a new content source, inside the
+ * GPU↔CPU parity chain, and that cost was judged to buy drama rather than
+ * accuracy. For a presentation or a tutorial the drama is the point — the ball
+ * is where people look, and a Gray plane crawling across it and flipping to its
+ * complement IS the explanation — so the cost was paid, in a way that keeps the
+ * reasons it looked expensive:
+ *
+ *  - **The pattern is still defined once.** The shader restates no Gray code:
+ *    {@link patternAtlas} tabulates `compileFrame` at every pixel centre and the
+ *    shader looks the value up, so what lands on the ball is what this module
+ *    computes, and `test/patternfilm.test.ts` checks every pixel of every raster
+ *    the page offers.
+ *  - **It stays inside the parity chain.** `packages/sim`'s `RasterSource` lets
+ *    the CPU renderer draw the same frame from the same numbers, so the check
+ *    compares two renderers on one picture rather than exempting it.
+ *  - **It is still not the camera's photograph.** The bench photographs these
+ *    frames in luminance, through a sensor, with an idealised inverse transfer
+ *    and an incidence cut-off. The ball on screen is lit through the display's
+ *    own physics, like any content: it shows what lands on the sphere, not what
+ *    a camera records of it.
  *
  * ## Linear in, encoded out, and why they are two functions
  *
@@ -55,6 +70,7 @@ import {
   compileFrame,
   planFrames,
   strideFor,
+  type CompiledFrame,
   type FrameSpec,
   type PatternPlan,
 } from '../../bench/src/patterns.ts';
@@ -248,4 +264,136 @@ export function strideInfo(plan: PatternPlan, resX: number, resY: number): {
     strideXPx: strideFor(resX, plan.grayBits),
     strideYPx: strideFor(resY, plan.grayBits),
   };
+}
+
+/**
+ * A frame's target at one PIXEL CENTRE of its raster: the value the emitter page
+ * paints into that pixel, and the one number both of the page's renderers read
+ * for it.
+ *
+ * `index` is clamped into the raster first. The display reconstructs over the
+ * four pixel centres around a point, and within half a pixel of the raster's
+ * edge one of them is off it, where there is no pixel to emit anything but the
+ * edge's own value. `packages/sim`'s `RasterSource` is handed indices already
+ * clamped the same way, and the shader's `patternTarget` clamps the same again.
+ */
+export function pixelCentreTarget(frame: CompiledFrame, res: number, index: number): number {
+  if (frame.axis === null) return frame.at(0);
+  const i = Math.min(res - 1, Math.max(0, index));
+  return frame.at(i + 0.5);
+}
+
+/**
+ * The frame's value at pixel (`column`, `row`), whichever axis it varies along.
+ * What the model worker hands `RasterSource.at`.
+ */
+export function rasterTarget(
+  frame: CompiledFrame,
+  resX: number,
+  resY: number,
+  column: number,
+  row: number,
+): number {
+  if (frame.axis === 'v') return pixelCentreTarget(frame, resY, row);
+  return pixelCentreTarget(frame, resX, column);
+}
+
+/**
+ * Texels in one row of the sequence texture.
+ *
+ * Not a choice made here: it is `glsl.ts`'s `PACK_WIDTH`, the row width the
+ * shader's `packedTexel` divides by, and `test/patternfilm.test.ts` reads it out
+ * of the shader source so the two cannot come apart.
+ */
+export const ATLAS_WIDTH = 1024;
+
+/**
+ * The most rows the table may take: WebGL2's guaranteed `MAX_TEXTURE_SIZE`. A
+ * device may offer more; the page must run on one that offers exactly this.
+ */
+export const ATLAS_MAX_ROWS = 2048;
+
+/** Where one frame of the sequence lives in the table. */
+export interface AtlasRow {
+  /** Texel index of the frame's value at pixel 0 — the shader's `uPatternRow`. */
+  offset: number;
+  /** 0 for a flat field, 1 when it varies across the raster (u), 2 down it (v). */
+  axis: 0 | 1 | 2;
+  /** Texels the frame occupies: 1, `resX` or `resY`. */
+  length: number;
+}
+
+/**
+ * Every frame of a plan, tabulated at every pixel centre, for the display shader.
+ *
+ * `plan`, `resX` and `resY` are what it was built from, kept beside it so a
+ * caller can tell a table that fits the rig from one that does not — the shader
+ * indexes by pixel, and a table built for another raster would light the right
+ * stripes in the wrong places.
+ */
+export interface PatternAtlas {
+  plan: PatternPlan;
+  resX: number;
+  resY: number;
+  /** One per frame of `planFrames(plan)`, in capture order. */
+  rows: readonly AtlasRow[];
+  /** {@link ATLAS_WIDTH}. */
+  width: number;
+  height: number;
+  /** `width * height` floats, one single-channel texel each. */
+  data: Float32Array;
+}
+
+/**
+ * The whole sequence as one small float texture.
+ *
+ * ## Why a table rather than a shader function
+ *
+ * `compileFrame`'s docblock says it plainly: the obvious way to make a pattern
+ * fast is to inline the Gray arithmetic into the renderer, and then the
+ * repository holds two statements of what a Gray plane is — the one the
+ * documentation points at and the one that actually ran. A GLSL Gray code would
+ * be that second statement, checkable only at runtime by a parity check that
+ * reads blind on half the Gray frames at the page's default view. A table is
+ * the definition itself, sampled where a projector samples it, and a Node test
+ * can compare every entry against `compileFrame` exactly.
+ *
+ * One frame varies along one raster axis, so a frame is one row of values —
+ * `resX` of them across, `resY` down, a single one for white and black — and the
+ * whole default plan at 3840 × 2160 is 96 002 floats, 94 rows of
+ * {@link ATLAS_WIDTH}. Values are stored as float32: the Gray planes and the flat
+ * fields are 0 and 1 exactly, and a phase step is `compileFrame`'s double rounded
+ * once, 3e-8 at worst.
+ *
+ * Built for every frame at once rather than for the one on screen, so moving to
+ * the next frame — or asking the shader to draw an older one for the parity
+ * check — is two integers and no upload.
+ */
+export function patternAtlas(plan: PatternPlan, resX: number, resY: number): PatternAtlas {
+  if (!(Number.isInteger(resX) && Number.isInteger(resY) && resX > 0 && resY > 0)) {
+    throw new Error(`patternAtlas: ${resX} × ${resY} is not a projector raster`);
+  }
+  const frames = planFrames(plan).map((spec) => compileFrame(spec, plan, resX, resY));
+  const rows: AtlasRow[] = [];
+  let total = 0;
+  for (const frame of frames) {
+    const axis = frame.axis === null ? 0 : frame.axis === 'u' ? 1 : 2;
+    const length = axis === 0 ? 1 : axis === 1 ? resX : resY;
+    rows.push({ offset: total, axis, length });
+    total += length;
+  }
+  const height = Math.max(1, Math.ceil(total / ATLAS_WIDTH));
+  if (height > ATLAS_MAX_ROWS) {
+    throw new Error(
+      `patternAtlas: ${frames.length} frames at ${resX} × ${resY} need ${height} rows of texture, ` +
+        `past the ${ATLAS_MAX_ROWS} every WebGL2 device must support`,
+    );
+  }
+  const data = new Float32Array(ATLAS_WIDTH * height);
+  for (let f = 0; f < frames.length; f++) {
+    const { offset, axis, length } = rows[f];
+    const res = axis === 2 ? resY : resX;
+    for (let i = 0; i < length; i++) data[offset + i] = pixelCentreTarget(frames[f], res, i);
+  }
+  return { plan: { ...plan }, resX, resY, rows, width: ATLAS_WIDTH, height, data };
 }

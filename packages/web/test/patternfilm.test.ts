@@ -15,13 +15,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { DEFAULT_PATTERN_PLAN, planFrames } from '../../bench/src/patterns.ts';
+import { DEFAULT_PATTERN_PLAN, compileFrame, planFrames } from '../../bench/src/patterns.ts';
+import type { PatternPlan } from '../../bench/src/patterns.ts';
 import {
+  ATLAS_MAX_ROWS,
+  ATLAS_WIDTH,
   describeSequence,
   encodeToRgba,
+  patternAtlas,
+  pixelCentreTarget,
+  rasterTarget,
   sampleFrame,
   strideInfo,
 } from '../src/patternfilm.ts';
+import { FRAGMENT_SHADER } from '../src/glsl.ts';
+import { RESOLUTIONS } from '../src/settings.ts';
 
 const PLAN = DEFAULT_PATTERN_PLAN;
 const RES_X = 1920;
@@ -193,4 +201,93 @@ test('the strip count and its width are consistent with the plan', () => {
   // The coupling that makes the whole sequence decodable: a strip has to be
   // several camera pixels wide. At 1920 across it is 30 projector pixels.
   assert.ok(info.strideXPx >= 8, 'the finest feature is not a hairline');
+});
+
+// ---------------------------------------------------------------------------
+// The sequence texture the display shader reads
+// ---------------------------------------------------------------------------
+
+test('the sequence texture is compileFrame at every pixel centre, for every raster the page offers', () => {
+  // The shader computes no pattern: it looks the value up in this table. So the
+  // table has to BE the definition — not a resampling of it, not a copy that
+  // agreed once — at the one place a projector samples it, the pixel centre.
+  // Every plan the emitter can play (1 to 8 Gray planes, 4 to 12 phase steps)
+  // on every raster the Resolution control offers, every pixel of every frame.
+  let checked = 0;
+  const plans: PatternPlan[] = [];
+  for (let grayBits = 1; grayBits <= 8; grayBits++) plans.push({ ...PLAN, grayBits });
+  plans.push({ ...PLAN, phaseSteps: 7 }, { ...PLAN, phaseSteps: 12, phasePeriodStrides: 4 });
+  for (const r of RESOLUTIONS) {
+    for (const plan of plans) {
+      const atlas = patternAtlas(plan, r.resX, r.resY);
+      const specs = planFrames(plan);
+      assert.equal(atlas.rows.length, specs.length, 'one row of the table per frame, in capture order');
+      assert.equal(atlas.data.length, atlas.width * atlas.height);
+      let next = 0;
+      for (let f = 0; f < specs.length; f++) {
+        const frame = compileFrame(specs[f], plan, r.resX, r.resY);
+        const row = atlas.rows[f];
+        assert.equal(row.offset, next, 'rows are packed end to end');
+        const axis = frame.axis === null ? 0 : frame.axis === 'u' ? 1 : 2;
+        assert.equal(row.axis, axis, `frame ${f} is tabulated along the wrong axis`);
+        const res = axis === 2 ? r.resY : r.resX;
+        assert.equal(row.length, axis === 0 ? 1 : res);
+        for (let i = 0; i < row.length; i++) {
+          const want = Math.fround(axis === 0 ? frame.at(0) : frame.at(i + 0.5));
+          if (atlas.data[row.offset + i] !== want) {
+            assert.fail(
+              `${r.label}, ${plan.grayBits} planes, frame ${f} pixel ${i}: the table holds ` +
+                `${atlas.data[row.offset + i]} and compileFrame says ${want}`,
+            );
+          }
+          checked++;
+        }
+        next += row.length;
+      }
+    }
+  }
+  assert.ok(checked > 1_000_000, `only ${checked} pixel centres were compared`);
+});
+
+test('the table is as wide as the shader reads it, and fits the smallest texture WebGL2 allows', () => {
+  // `packedTexel` divides a texel index by PACK_WIDTH. Read out of the shader
+  // rather than restated, so the two cannot quietly differ.
+  const m = /#define PACK_WIDTH (\d+)/.exec(FRAGMENT_SHADER);
+  assert.ok(m, 'the shader no longer defines PACK_WIDTH');
+  assert.equal(ATLAS_WIDTH, Number(m[1]));
+  // The biggest table the emitter's own limits allow, on the biggest raster.
+  const biggest = patternAtlas({ ...PLAN, grayBits: 8, phaseSteps: 12 }, 3840, 2160);
+  assert.equal(biggest.width, ATLAS_WIDTH);
+  assert.ok(biggest.height <= ATLAS_MAX_ROWS, `${biggest.height} rows`);
+  assert.equal(ATLAS_MAX_ROWS, 2048, 'WebGL2\u2019s guaranteed MAX_TEXTURE_SIZE');
+  // And the default one, whose size the docblock quotes.
+  const usual = patternAtlas(PLAN, 3840, 2160);
+  const used = usual.rows.reduce((n, row) => n + row.length, 0);
+  assert.equal(used, 96_002);
+  assert.equal(usual.height, 94);
+  assert.throws(() => patternAtlas(PLAN, 0, 1080), /not a projector raster/);
+});
+
+test('a corner off the raster reads the edge pixel, and a flat field reads its one value', () => {
+  const gray = planFrames(PLAN).find((s) => s.kind === 'gray' && s.axis === 'u' && s.index === 5);
+  assert.ok(gray);
+  const frame = compileFrame(gray, PLAN, RES_X, RES_Y);
+  assert.equal(pixelCentreTarget(frame, RES_X, -1), frame.at(0.5));
+  assert.equal(pixelCentreTarget(frame, RES_X, RES_X), frame.at(RES_X - 0.5));
+  assert.equal(pixelCentreTarget(frame, RES_X, 17), frame.at(17.5));
+  const white = compileFrame({ kind: 'white', axis: null, index: 0 }, PLAN, RES_X, RES_Y);
+  assert.equal(pixelCentreTarget(white, RES_X, 999_999), 1);
+});
+
+test('the value handed to the CPU renderer is read along the frame\u2019s own axis', () => {
+  const across = planFrames(PLAN).find((s) => s.kind === 'phase' && s.axis === 'u' && s.index === 1);
+  const down = planFrames(PLAN).find((s) => s.kind === 'phase' && s.axis === 'v' && s.index === 1);
+  assert.ok(across && down);
+  const u = compileFrame(across, PLAN, RES_X, RES_Y);
+  const v = compileFrame(down, PLAN, RES_X, RES_Y);
+  // Same column, different rows: an across frame must not change, a down frame must.
+  assert.equal(rasterTarget(u, RES_X, RES_Y, 40, 3), rasterTarget(u, RES_X, RES_Y, 40, 900));
+  assert.notEqual(rasterTarget(v, RES_X, RES_Y, 40, 3), rasterTarget(v, RES_X, RES_Y, 40, 900));
+  assert.equal(rasterTarget(v, RES_X, RES_Y, 40, 900), v.at(900.5));
+  assert.equal(rasterTarget(u, RES_X, RES_Y, 40, 900), u.at(40.5));
 });
