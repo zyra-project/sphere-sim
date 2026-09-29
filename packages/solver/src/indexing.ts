@@ -2514,8 +2514,13 @@ export function indexPosition(
     const tail = found.slice(t);
     if (t === 0) {
       // No run of the position was found: it is everything before the first
-      // run, which has to be long enough to have been one.
+      // run, which has to be long enough to have been one, and has to hold
+      // photographs that a run found repeats — the run too broken to be found
+      // that it re-shoots. A long wait before Play holds none, whatever it
+      // shows, and read as a position whose every run was lost it made a clean
+      // position's every run a re-shoot of a run that could not be read.
       if (found[0].start < runLength * projectors - SLOT_SLACK) return [];
+      if (!evidence.some((e) => e.some((x) => x < found[0].start))) return [];
       const where = {
         slotOf: new Map<RunWindow, number>(),
         inLine: new Set<RunWindow>(),

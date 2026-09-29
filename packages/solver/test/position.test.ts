@@ -1696,6 +1696,29 @@ test('a refusal says what the folder holds: one unchanging picture, a whole card
     assert.match(r.problems[0] ?? '', /^The run found could be projector 1 or projector 2: /);
   }
 
+  // A long wait before Play is not a camera position whose every run was lost.
+  // With 133 photographs or more before the first run, the reading that no
+  // run of the position was found, everything before the first run being it,
+  // fitted too, and the folder was refused as every run found repeating
+  // photographs of a run that could not be read. Copies of projector 1's white
+  // are the page's step 0, and a clean position after them is read, a stray
+  // photograph at the head included; dark ones hold nothing a re-shoot could
+  // repeat, and leave only the count to refuse.
+  for (const wait of [133, 200]) {
+    // Lit, and a copy of no frame of any run: half of each of two whites.
+    const stray: Shot = { projector: 1, frame: 0, blend: { projector: 2, frame: 0, weight: 0.5 } };
+    const white = camera(all, 52)([stray, ...Array.from({ length: wait }, (): Shot => ({ projector: 0, frame: 0 })), ...position(all, { trailing: 3 })]);
+    const r = indexPosition(white.prints, expected);
+    assert.equal(misplaced(r.assignment, white.truth), 0);
+    assert.deepEqual(r.problems, [], `${wait} of projector 1's white before Play`);
+    assert.deepEqual(r.usableProjectors, [0, 1, 2, 3]);
+    const dark = camera(all, 53)([...Array.from({ length: wait }, (): Shot => null), ...position(all, { trailing: 3 })]);
+    const d = indexPosition(dark.prints, expected);
+    assert.equal(misplaced(d.assignment, dark.truth), 0);
+    assert.doesNotMatch(d.problems.join(' '), /^No run of this camera position could be read/, `${wait} dark before Play`);
+    assert.match(d.problems[0] ?? '', /could be projector 1 or projector 2/, `${wait} dark before Play`);
+  }
+
   // A re-shoot handed in alone: the refusal says to add it to the position's
   // folder and to keep every photograph, and does not describe deleting any.
   {
