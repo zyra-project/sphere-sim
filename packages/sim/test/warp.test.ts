@@ -20,7 +20,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
 import type { SurfaceMesh } from '../../calibration/src/index.ts';
-import { buildWarpExport, buildWarpExports, formatWarpMesh } from '../src/warp.ts';
+import { buildWarpExport, buildWarpExports, formatWarpMesh, warpTexture } from '../src/warp.ts';
 import { prepareRig, pixelToRay } from '../src/optics.ts';
 import { coverageAndWeights, polarMask } from '../src/coverage.ts';
 import { nominalRig } from '../src/scene.ts';
@@ -131,6 +131,38 @@ test('texture v runs UP while the equirectangular map runs down from the pole', 
     }
   }
   assert.ok(checked > 40, `expected a real sample of both hemispheres, got ${checked}`);
+});
+
+test('the rotation warpTexture reports is the one baked into u, and a mesh has none', () => {
+  // Nothing in the file says it, so `layout.json` does, and a player that
+  // believes it will not apply the rotation a second time. That is only safe if
+  // the number stated is the number baked, so this measures the bake instead of
+  // trusting that both read `warpTexture`.
+  //
+  // P1's centre node is its optical axis, aimed at the sphere's centre from
+  // longitude 0, so it lands at world longitude 0. Its `u` is (texture
+  // longitude + 180) / 360, so taking `rotationOffsetDeg` off the longitude
+  // moves it by exactly that over 360.
+  const centreU = (rotationOffsetDeg: number, onAMesh: boolean): number => {
+    const base = nominalRig({ rotationOffsetDeg });
+    const rig = onAMesh ? prepareRig(base, meshSurface(uvSphere(48, 24))) : prepareRig(base);
+    const w = buildWarpExport(rig, 0, { cols: 3, rows: 3 });
+    assert.ok(w.nodes[4].intensity >= 0, 'the centre node missed the body');
+    return w.nodes[4].u;
+  };
+
+  const turned = prepareRig(nominalRig({ rotationOffsetDeg: 37 }));
+  assert.deepEqual(warpTexture(turned), { surface: 'sphere', rotationOffsetDeg: 37 });
+  const moved = centreU(0, false) - centreU(37, false);
+  assert.ok(Math.abs(moved - 37 / 360) < 1e-9, `u moved by ${moved * 360} degrees, not 37`);
+
+  // A model's UV is anchored by its own unwrap. The rig still carries the
+  // sphere's 37 degrees — which is exactly why "the rig's rotation" is the
+  // wrong thing to report for a mesh.
+  const onModel = prepareRig(nominalRig({ rotationOffsetDeg: 37 }), meshSurface(uvSphere(48, 24)));
+  assert.equal(onModel.rotationOffsetDeg, 37);
+  assert.deepEqual(warpTexture(onModel), { surface: 'mesh', rotationOffsetDeg: null });
+  assert.equal(centreU(37, true), centreU(0, true), "a mesh's u moved with the sphere's rotation");
 });
 
 // ---------------------------------------------------------------------------

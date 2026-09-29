@@ -43,10 +43,10 @@ import { meshSurface } from '../../sim/src/mesh/surface.ts';
 import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import type { PreparedRig } from '../../sim/src/optics.ts';
-import { buildWarpExports, formatWarpMesh } from '../../sim/src/warp.ts';
+import { buildWarpExports, formatWarpMesh, warpTexture } from '../../sim/src/warp.ts';
 import { buildZip } from '../src/zip.ts';
 import type { ZipEntry } from '../src/zip.ts';
-import { bundleEntries, CONFIG_ABSENT, FILE_NOTES } from '../src/bundle.ts';
+import { bundleEntries, CONFIG_ABSENT, FILE_NOTES, projectorLayout } from '../src/bundle.ts';
 import {
   type HeldOriginal,
   type InstallTarget,
@@ -4643,6 +4643,17 @@ function buildBundle(): {
       buildWarpExports(model.content).map((e) => [e.projectorId, formatWarpMesh(e)] as const),
     ) ?? []
   );
+  // Where each of those meshes goes, which a Bourke file cannot say. From the
+  // SAME prepared rig the meshes were traced on, and from the ids of `warp`
+  // itself rather than from the rig's projector list, so the layout names the
+  // meshes the archive actually holds, in its order — none when the meshes were
+  // refused, and nothing for a projector switched off at the wall.
+  //
+  // `warpTexture` is the function `buildWarpExport` bakes the sphere's rotation
+  // from, so the rotation the layout states is the one in the files.
+  const layout = attempt('the projector layout', () =>
+    projectorLayout(model.content.rig, warpTexture(model.content), warp.map(([id]) => id)),
+  );
   const sos = attempt('the SOS alignment files', () =>
     buildSosAlignments(model.physical, model.content),
   );
@@ -4730,8 +4741,14 @@ function buildBundle(): {
   /**
    * What the archive would overwrite, against what this page could put back.
    *
-   * The targets are exactly the files `bundleEntries` writes, listed from the
-   * same arrays, so the plan cannot drift from the archive it describes.
+   * The targets are the files `bundleEntries` writes FOR THE SPHERE — the
+   * meshes, the alignment files and the config — listed from the same arrays,
+   * so the plan cannot drift from the archive it describes. Not every file it
+   * writes: `README.txt` is read by a person and `layout.json` by whatever loads
+   * the meshes, and neither is an install target. Listing one would ask
+   * the operator, through the adoption picker, for an "original" of a file this
+   * tool invented, and would count it against a restore point it has nothing to
+   * do with.
    *
    * The held set is short and will stay short until the page can be given the
    * operator's existing files: `state.sosConfigText` is the one original it
@@ -4776,6 +4793,7 @@ function buildBundle(): {
     configNote,
     entries: bundleEntries({
       warp,
+      layout,
       alignment,
       config,
       // The name it arrived under, so what comes out of the archive matches
@@ -7457,7 +7475,7 @@ function renderReadout(): void {
         }),
       );
       if (state.downloadOpen) {
-        for (const note of [FILE_NOTES.warp, FILE_NOTES.alignment] as const) {
+        for (const note of [FILE_NOTES.warp, FILE_NOTES.layout, FILE_NOTES.alignment] as const) {
           box.append(
             el('p', { className: 'note tiny', textContent: `${note.title} — ${note.page}` }),
           );

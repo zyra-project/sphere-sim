@@ -20,10 +20,39 @@
  * description of the same limits, free to drift from the first — and the reader
  * who most needs them is the one who has already closed the page and is holding
  * the files.
+ *
+ * ## Where each mesh goes, said by the archive rather than by a filename
+ *
+ * A Bourke mesh does not say which part of the framebuffer it drives, and the
+ * archive used to leave that to its filename: a player had to read `P3` out of
+ * `warp/P3.data` and assume SOS's default `projectorInfo(viewport)` order to
+ * put it in the top-left. That is the failure `viewportPixels` in `emit.ts`
+ * calls the expensive one — a mesh in the wrong quadrant still draws a
+ * plausible picture, so nothing on the sphere says the file was misread — and
+ * every consumer that re-derived the layout was another chance to invert the
+ * bottom-left origin. `layout.json` (issue #49) states it from the rig the
+ * meshes were built from; see {@link projectorLayout}.
  */
 
+import type {
+  ProjectorCalibration,
+  RigCalibration,
+  Viewport,
+} from '../../calibration/src/index.ts';
+import type { WarpTexture } from '../../sim/src/warp.ts';
 import type { ZipEntry } from './zip.ts';
 import { type RestorePlan, restoreEntries } from './restore.ts';
+
+/**
+ * A projector's warp mesh, as the archive names it.
+ *
+ * One expression, used by the entries, the README and `layout.json`, so that
+ * every `mesh` path the layout gives is the name of an entry the archive holds
+ * rather than a second spelling of it.
+ */
+export function warpEntryName(id: string): string {
+  return `warp/${id}.data`;
+}
 
 /**
  * What each file is, and what it cannot say.
@@ -42,6 +71,36 @@ export const FILE_NOTES = {
       'A Bourke warp-and-blend mesh per lit projector: five columns per vertex, the ' +
       'displacement and the blend weight together. This carries the full correction, ' +
       'including the part an SOS alignment file cannot.',
+  },
+  layout: {
+    title: 'layout.json',
+    page:
+      'Which part of the framebuffer each warp mesh drives, and the rotation already inside ' +
+      'the meshes, read from the rig they were built from, because a Bourke file says neither.',
+    readme:
+      'Where each warp mesh goes. A Bourke file cannot say which part of the display it ' +
+      'drives, and a mesh drawn into the wrong part still draws a plausible picture, so ' +
+      'nothing on the sphere would say the file was misread. Pair each mesh with its ' +
+      'viewport here, by its "mesh" path, and never by the projector\'s name: a name is not ' +
+      'a position, and two rigs can give one name two different places. This file is for ' +
+      'whatever loads the meshes. It is not an install target, so restore/ neither covers ' +
+      'it nor counts it.\n' +
+      '\n' +
+      '- "format": sphere-sim/projector-layout@1. Anything else is a different format; do ' +
+      'not read it as this one.\n' +
+      '- "origin": bottom-left. A viewport\'s y counts UP from the bottom of the framebuffer, ' +
+      'as SOS\'s projectorInfo(viewport) does. A screen that counts rows down from the top ' +
+      'puts the viewport\'s top edge at 1 - y - h of its height.\n' +
+      '- "framebuffer": the one display every viewport divides, width and height in pixels. ' +
+      'Check yours against it before drawing: a display of another size resamples every ' +
+      'mesh and one of another shape stretches it, and neither looks wrong on the sphere.\n' +
+      '- "surface" and "rotationOffsetDeg": what u and v address. "sphere" is the ' +
+      'equirectangular map, and the sphere\'s rotation, in degrees, has already been taken ' +
+      'off u: do not apply it again. "mesh" is the model\'s own UV set, which has no ' +
+      'rotation, so the field is null.\n' +
+      '- "projectors": one entry per mesh in warp/, in the same order, and no others. ' +
+      '"viewport" is x, y, w and h as fractions of the framebuffer, exactly as the ' +
+      'calibration holds them. Draw "mesh" into that rectangle.',
   },
   alignment: {
     title: 'alignment/<projector>.alignment',
@@ -83,13 +142,226 @@ export const CONFIG_ABSENT =
   'understand survives untouched. Load your site config on the page and export again to ' +
   'get one.';
 
+/**
+ * What the README adds when the config had to move aside, so the move is said
+ * rather than left for the reader to notice.
+ *
+ * It says what to do as well as why. `config/` is only where the archive keeps
+ * the file; where it is installed, it is still the file it arrived as.
+ */
+export function configMovedNote(name: string): string {
+  return (
+    `It is in config/ because ${name} is a name this archive keeps for its own files. ` +
+    `Install it as ${name}, the name it arrived under.`
+  );
+}
+
+/**
+ * Why no `layout.json` is in the archive, when there is none.
+ *
+ * Every case is covered by one sentence rather than a guess at which one this
+ * is: there were no meshes to place, or the layout was refused and the refusal
+ * is listed. What matters more than the cause is the instruction, because the
+ * reader's fallback — a projector's name — is the thing that goes wrong.
+ */
+export const LAYOUT_ABSENT =
+  'No layout.json is included: it places warp meshes, and it is written only beside them, ' +
+  'from the same rig. Without it, nothing here says which part of the display a mesh ' +
+  "drives. Do not pair one with a part by its projector's name instead, because a name is " +
+  'not a position.';
+
+/**
+ * What `layout.json` declares itself to be, and the only value a reader should
+ * accept as it.
+ *
+ * Declared here, beside its only writer, and not in `packages/calibration`
+ * beside the rig's own `schema`. That package is the boundary object: the one
+ * thing allowed to cross between `sim/` and `solver/`, so that the two can
+ * disagree loudly about what its numbers mean. Neither side reads or writes
+ * this file. A literal would pass `tools/boundary-lint.ts` there — R2 forbids
+ * arithmetic and callables, not strings — but a format whose only reader is
+ * outside the repository is not something the two models have to agree on, and
+ * every other output format here (`bench-results`, `coverage-reference`,
+ * `metrics`) lives beside the code that writes it for the same reason.
+ *
+ * Bump it when a reader of `@1` would misread the file, not when a field is
+ * added that such a reader can ignore.
+ */
+export const LAYOUT_FORMAT = 'sphere-sim/projector-layout@1';
+
+/** Where the layout travels in the archive. */
+export const LAYOUT_ENTRY = 'layout.json';
+
+/**
+ * The part of a `RigCalibration` a layout reads, and all of it: the
+ * framebuffer, and each projector's name and viewport. A whole calibration is
+ * one of these.
+ */
+export interface LayoutRig {
+  framebuffer: RigCalibration['framebuffer'];
+  projectors: readonly Pick<ProjectorCalibration, 'id' | 'viewport'>[];
+}
+
+/** One projector's entry in `layout.json`. */
+export interface LayoutProjector {
+  /** The projector's name. A label, never a position. */
+  id: string;
+  /** Its Bourke mesh, as the archive names it: always an entry of the same archive. */
+  mesh: string;
+  /** Normalised to the framebuffer, origin bottom-left, exactly as the calibration holds it. */
+  viewport: Viewport;
+}
+
+/**
+ * `layout.json`, field for field. The names are the boundary object's own —
+ * `framebuffer`, `viewport`, `rotationOffsetDeg` — so a reader who knows the
+ * calibration already knows what they mean.
+ *
+ * The surface and the rotation travel as the pair {@link WarpTexture} is, so
+ * the type admits `'sphere'` with a number and `'mesh'` with `null` and nothing
+ * in between.
+ */
+export type ProjectorLayout = {
+  format: typeof LAYOUT_FORMAT;
+  origin: 'bottom-left';
+  framebuffer: { width: number; height: number };
+} & WarpTexture & {
+  projectors: LayoutProjector[];
+};
+
+/**
+ * Where each warp mesh goes, for whatever loads the meshes.
+ *
+ * `rig` is the calibration the meshes were built from, `texture` is what
+ * `warpTexture` reports for that same rig, and `meshes` is the id of every mesh
+ * the archive carries, in its order. Returns `null` when there are none: a
+ * layout places meshes, and one with nothing to place would be a file the
+ * reader has to open to learn it says nothing.
+ *
+ * ## What a reader must do with each field
+ *
+ *   - **`format`** is {@link LAYOUT_FORMAT}. Anything else is a different
+ *     contract, and reading it as this one is a guess.
+ *   - **`origin`** is `'bottom-left'`, stated rather than implied because it is
+ *     the field most likely to be read backwards. A viewport's `y` counts UP from
+ *     the bottom of the framebuffer, as conventions.ts §V and SOS's
+ *     `projectorInfo(viewport)` do. A reader drawing in a top-left system — a
+ *     canvas, most window systems — puts the top edge at `(1 − y − h)` of the
+ *     height, which is the flip `viewportPixels` in `emit.ts` makes.
+ *   - **`framebuffer`** is the one display every viewport divides, in pixels:
+ *     `RigCalibration.framebuffer`. A reader compares it with the display it is
+ *     about to drive. A mesh's `x` spans its projector's aspect and its viewport
+ *     gives the pixel shape it lands in; on a display of another shape the two
+ *     disagree and the picture stretches, and nothing on the sphere says so.
+ *   - **`surface`** and **`rotationOffsetDeg`** say what the meshes' `u` and `v`
+ *     address. `'sphere'`: the equirectangular content, with the sphere's
+ *     mechanical rotation already taken off `u` — so a reader must NOT apply it
+ *     again, and the number is here so an operator can see what was baked in
+ *     rather than add it twice. `'mesh'`: the model's own UV set, which has no
+ *     rotation, so `null`. Both come from `warpTexture`, which is also what
+ *     `buildWarpExport` bakes from.
+ *   - **`projectors`** has one entry per mesh the archive carries, in the
+ *     archive's order, and no others — a projector switched off at the wall has
+ *     no mesh and is not listed, and its quadrant is simply dark. A reader draws
+ *     each `mesh` into its `viewport` and pairs the two by this entry alone.
+ *     NEVER by `id`: `placedRig` names projectors `P1`…`Pn` in placement order
+ *     and lays them out with `gridViewports`, so two placed projectors split the
+ *     framebuffer into halves and a lone placed `P1` is the whole of it, where
+ *     SOS's `P1` is the bottom-left quadrant. The layout carries the viewports
+ *     the rig actually has, never SOS's defaults by id, which is the whole
+ *     reason it exists. terraviz's multi-monitor plan (its
+ *     `docs/MULTI_MONITOR_PLAN.md`, Rung 16; terraviz#450) withdrew its id
+ *     fallback on exactly this ground: handed a bundle with no layout, it asks
+ *     the operator, and refuses otherwise.
+ *
+ * Throws when a mesh names a projector the rig does not hold, or a name that is
+ * given twice — two projectors in the rig, or two meshes in the list. Either
+ * way the meshes and the rig disagree about which projectors exist, and a
+ * layout that picked one would be the silent misplacement this file exists to
+ * end.
+ */
+export function projectorLayout(
+  rig: LayoutRig,
+  texture: WarpTexture,
+  meshes: readonly string[],
+): ProjectorLayout | null {
+  if (meshes.length === 0) return null;
+
+  const viewports = new Map<string, Viewport>();
+  const shared = new Set<string>();
+  for (const p of rig.projectors) {
+    if (viewports.has(p.id)) shared.add(p.id);
+    viewports.set(p.id, p.viewport);
+  }
+
+  const listed = new Set<string>();
+  const projectors = meshes.map((id): LayoutProjector => {
+    const viewport = viewports.get(id);
+    if (viewport === undefined) {
+      throw new Error(
+        `${warpEntryName(id)} has no projector ${id} in the rig it was built from, so ` +
+          'nothing can say which part of the framebuffer it drives',
+      );
+    }
+    if (shared.has(id) || listed.has(id)) {
+      throw new Error(
+        `the name ${id} is given twice, so it cannot say which viewport ` +
+          `${warpEntryName(id)} belongs to`,
+      );
+    }
+    listed.add(id);
+    return {
+      id,
+      mesh: warpEntryName(id),
+      // Copied field by field, as the calibration holds them. Not rounded and
+      // not converted to pixels: the calibration's normalised numbers are the
+      // contract, and a rounded copy would be a second, slightly different one.
+      viewport: { x: viewport.x, y: viewport.y, w: viewport.w, h: viewport.h },
+    };
+  });
+
+  // The pair copied as the pair, for the viewport's reason, and so the file's
+  // key order is this one whatever order the caller's object was built in.
+  const surface: WarpTexture =
+    texture.surface === 'sphere'
+      ? { surface: 'sphere', rotationOffsetDeg: texture.rotationOffsetDeg }
+      : { surface: 'mesh', rotationOffsetDeg: null };
+
+  return {
+    format: LAYOUT_FORMAT,
+    origin: 'bottom-left',
+    framebuffer: { width: rig.framebuffer.width, height: rig.framebuffer.height },
+    ...surface,
+    projectors,
+  };
+}
+
+/** `layout.json`'s text: plain indented JSON, because people open it as well as programs. */
+function layoutText(layout: ProjectorLayout): string {
+  return `${JSON.stringify(layout, null, 2)}\n`;
+}
+
 export interface BundleInput {
   /** `[projectorId, text]` for each lit projector. */
   warp: readonly (readonly [string, string])[];
+  /**
+   * Where each of those meshes goes: {@link projectorLayout} given the ids of
+   * `warp` above, in its order, and the rig they were built from.
+   *
+   * `null` when there is no mesh to place, or when the layout was refused — in
+   * which case `refused` says why. Required rather than optional, because an
+   * archive of meshes with no layout is exactly the ambiguity this file exists
+   * to end, and a caller should have to write down that it means one.
+   */
+  layout: ProjectorLayout | null;
   alignment: readonly (readonly [string, string])[];
   /** The patched config, or `null` when none was loaded. */
   config: string | null;
-  /** The name that config arrived under, so it leaves under the same one. */
+  /**
+   * The name that config arrived under, so it leaves under the same one — in
+   * `config/` when the archive keeps that name for its own files. See
+   * {@link configEntryName}, which both the entries and the README ask.
+   */
   configName: string;
   /** What the reduction cost on this rig, as the panel reports it. */
   alignmentCost: string;
@@ -140,7 +412,15 @@ export function bundleReadme(input: BundleInput): string {
   section(
     FILE_NOTES.warp.title,
     FILE_NOTES.warp.readme,
-    input.warp.map(([id]) => `warp/${id}.data`),
+    input.warp.map(([id]) => warpEntryName(id)),
+  );
+  // Straight after the meshes it places. The archive lists it before them
+  // (see `bundleEntries`), but a reader meets what a warp mesh IS before where
+  // each one goes.
+  section(
+    FILE_NOTES.layout.title,
+    input.layout === null ? LAYOUT_ABSENT : FILE_NOTES.layout.readme,
+    input.layout === null ? [] : [LAYOUT_ENTRY],
   );
   section(
     FILE_NOTES.alignment.title,
@@ -149,10 +429,21 @@ export function bundleReadme(input: BundleInput): string {
       : `${FILE_NOTES.alignment.readme}\n\n${input.alignmentCost}`,
     input.alignment.map(([id]) => `alignment/${id}.alignment`),
   );
+  // Listed where `bundleEntries` puts it, by asking the same function, and not
+  // under the name it arrived with. The two differ only when the config was
+  // moved aside, and then the name it arrived with is one the archive keeps
+  // for its own files: listing it sent the reader to the README they were
+  // holding, or to the layout.
+  const configEntry = configEntryName(input.configName);
+  const configBase = configEntry.slice(configEntry.lastIndexOf('/') + 1);
   section(
     FILE_NOTES.config.title,
-    input.config === null ? CONFIG_ABSENT : FILE_NOTES.config.readme,
-    input.config === null ? [] : [input.configName],
+    input.config === null
+      ? CONFIG_ABSENT
+      : configEntry === configBase
+        ? FILE_NOTES.config.readme
+        : `${FILE_NOTES.config.readme}\n\n${configMovedNote(configBase)}`,
+    input.config === null ? [] : [configEntry],
   );
 
   /**
@@ -217,12 +508,24 @@ function wrap(text: string): string[] {
  */
 export function bundleEntries(input: BundleInput): ZipEntry[] {
   const entries: ZipEntry[] = [{ name: 'README.txt', text: bundleReadme(input) }];
-  for (const [id, text] of input.warp) entries.push({ name: `warp/${id}.data`, text });
+  // Beside the README, for the README's reason: it explains the files after it.
+  // And ahead of everything an operator installs, so those stay together — it
+  // is read by whatever loads the meshes and is not an install target.
+  //
+  // Nothing else is ever written at this name, in any archive: whatever loads
+  // the meshes reads `layout.json` at the root as the layout, and would read a
+  // config there as one. This push does not always run, so it is not what keeps
+  // the name. `ARCHIVE_NAMES` keeps it, whether or not a layout is written and
+  // wherever this line sits.
+  if (input.layout !== null) {
+    entries.push({ name: LAYOUT_ENTRY, text: layoutText(input.layout) });
+  }
+  for (const [id, text] of input.warp) entries.push({ name: warpEntryName(id), text });
   for (const [id, text] of input.alignment) {
     entries.push({ name: `alignment/${id}.alignment`, text });
   }
   if (input.config !== null) {
-    entries.push({ name: configEntryName(input.configName, entries), text: input.config });
+    entries.push({ name: configEntryName(input.configName), text: input.config });
   }
   // Last, and inside its own directory: an extractor lists central-directory
   // order, so the files an operator installs stay together at the top and the
@@ -232,7 +535,32 @@ export function bundleEntries(input: BundleInput): ZipEntry[] {
 }
 
 /**
- * Where the loaded config goes, given what is already in the archive.
+ * Every name the archive's own entries take at its root: the two files it
+ * writes there, and the folders everything else sits in.
+ *
+ * KEPT WHETHER OR NOT THIS ARCHIVE WRITES THEM. The first version kept a name
+ * only once an entry had taken it, and `layout.json` is not always written:
+ * `buildBundle` builds it through `attempt()`, so a refused layout leaves the
+ * meshes in the archive and the layout out of it. A config called
+ * `layout.json` then took the root name, and whatever loads the meshes would
+ * have read an SOS config as their layout, beside a README saying there was
+ * none. Review caught it.
+ *
+ * The folders are here because an extractor cannot make a file `warp` and a
+ * folder `warp/` side by side. ZIP allows both names and a disk does not, so
+ * one of the two is lost, and which one depends on the tool. Comparing whole
+ * entry names never saw it.
+ */
+const ARCHIVE_NAMES: readonly string[] = [
+  'README.txt',
+  LAYOUT_ENTRY,
+  'warp',
+  'alignment',
+  'restore',
+];
+
+/**
+ * Where the loaded config goes in the archive, decided by its name alone.
  *
  * IT KEEPS THE NAME IT ARRIVED UNDER whenever that name is free, because the
  * whole point of writing it back is that the operator can diff it against the
@@ -246,19 +574,25 @@ export function bundleEntries(input: BundleInput): ZipEntry[] {
  * prompt — so the operator's instructions could be silently overwritten by
  * JSON, or the config lost. Neither is a failure anybody would see happen.
  *
+ * Free means not one of {@link ARCHIVE_NAMES}, which every archive keeps, and
+ * never just "not written yet". Because nothing but the name decides it, the
+ * README, which is written before the files it lists, asks this same function
+ * and names the path the entries use.
+ *
  * Compared case-INSENSITIVELY, because the extractor is the thing that has to
  * cope and Windows and macOS will treat `readme.txt` as the same file.
  *
  * On a collision the file keeps its name and moves into `config/`, which cannot
- * clash with anything this function writes. A directory is a smaller change to
- * ask of a reader than a mangled filename, and the README says it happened.
+ * clash with anything else the archive writes. A directory is a smaller change
+ * to ask of a reader than a mangled filename, and the README lists the file
+ * there and says why ({@link configMovedNote}).
  */
-export function configEntryName(name: string, existing: readonly ZipEntry[]): string {
+export function configEntryName(name: string): string {
   // A basename. `file.name` from a picker is already one, but a name carrying a
   // path separator would either nest unexpectedly or, with `..` in it, be a
   // traversal for an extractor that resolves entry paths.
   const base = name.split(/[\\/]/).pop()?.trim() ?? '';
   const safe = base === '' || base === '.' || base === '..' ? 'local_sos_config.json' : base;
-  const taken = new Set(existing.map((e) => e.name.toLowerCase()));
-  return taken.has(safe.toLowerCase()) ? `config/${safe}` : safe;
+  const kept = ARCHIVE_NAMES.some((n) => n.toLowerCase() === safe.toLowerCase());
+  return kept ? `config/${safe}` : safe;
 }

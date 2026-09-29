@@ -66,7 +66,13 @@ export type TargetKind = keyof typeof TARGET_KINDS;
 
 /** One file the archive would put on the operator's machine. */
 export interface InstallTarget {
-  /** Where it goes, written the way the archive and the sphere both name it. */
+  /**
+   * Where it goes, written the way the sphere names it. The archive names its
+   * own copy the same way, except a config moved into `config/` because the
+   * archive keeps its name for files of its own (`configEntryName` in
+   * `bundle.ts`): its target is still the name it arrived under, because that
+   * is the file a restore puts back.
+   */
   path: string;
   kind: TargetKind;
 }
@@ -213,9 +219,19 @@ const MANIFEST_NAME = 'restore/MANIFEST.txt';
  * manifest so the two cannot disagree about where a file went. Compared
  * case-insensitively, because the extractor is what has to cope and Windows
  * and macOS treat `manifest.txt` as the same file.
+ *
+ * A folder is a name too. A config called `warp`, with the warp originals
+ * handed in, wanted `restore/warp` beside `restore/warp/P1.data`: ZIP allows
+ * both and a disk does not, so an extractor loses one of them. Every folder a
+ * copy sits in is therefore taken before any copy is named, and the file is
+ * the one that moves.
  */
 export function restoreEntryNames(covered: readonly CoveredTarget[]): Map<string, string> {
   const taken = new Set<string>([MANIFEST_NAME.toLowerCase()]);
+  for (const c of covered) {
+    const parts = `restore/${c.path}`.toLowerCase().split('/');
+    for (let i = 2; i < parts.length; i++) taken.add(parts.slice(0, i).join('/'));
+  }
   const out = new Map<string, string>();
   for (const c of covered) {
     const wanted = `restore/${c.path}`;

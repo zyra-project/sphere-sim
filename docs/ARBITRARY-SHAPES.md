@@ -828,6 +828,25 @@ how that survives being looked at. `pixelAspect` belongs in the ratio, because
 the format's number is about the displayed rectangle and a non-square pixel makes
 that a different shape from the raster's own ratio.
 
+**What the format cannot say travels beside it, in `layout.json`.** A Bourke
+file is a type line, its dimensions and five numbers a node, so it says nothing
+about which part of the framebuffer it drives, or whether the sphere's
+mechanical rotation is already inside `u` — the exporter takes
+`rotationOffsetDeg` off the longitude for the analytic sphere, and does nothing
+for a mesh, whose UV is anchored by its own unwrap. The archive used to leave
+both to the reader, who had to take a projector's quadrant from its name and
+SOS's default order. A mesh in the wrong quadrant still draws a plausible
+picture, and a rotation applied twice still draws a globe. `layout.json`
+(issue #49) states them: the framebuffer in pixels, each mesh's viewport exactly
+as the calibration holds it, the bottom-left origin said out loud, and the
+surface with the rotation already baked in — `null` on a model. The viewports
+come from the rig the meshes were traced on and never from SOS's table by name,
+because a placed rig's names land elsewhere: two placed projectors split the
+framebuffer into halves, and a lone `P1` is all of it. The rotation comes from
+`warpTexture`, the one function the bake reads too. The page still writes the
+archive from the install rig, so today its layouts are SOS's quadrants, with a
+projector switched off at the wall left out and its quadrant dark.
+
 **A test premise, not the code, was wrong once here.** The polar mask looked
 absent from the sphere's export until the export was interrogated: at a 31×31
 grid the deepest node reaches latitude −65.5°, above the −70° full-mask

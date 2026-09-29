@@ -645,6 +645,12 @@ the operator: *here is what changes, here is how to change it back.*
   `sos_stream_control.config` patched rather than rewritten, so every setting the
   tool does not understand survives untouched. *Landed before this phase —
   `formatSosConfig` is a surgical edit of the file it was given.*
+- **Where each mesh goes**, which a Bourke file cannot say about itself.
+  `layout.json` beside the meshes gives the framebuffer in pixels and each
+  mesh's viewport, read from the rig rather than from the projector's name, and
+  states the sphere rotation already baked into the meshes so nobody applies it
+  twice. *Landed (issue #49). It is read by whatever loads the meshes and is not
+  an install target, so the restore point below neither covers nor counts it.*
 - **A restore point taken before anything is written**, and a one-step way back.
   Not a documented manual procedure — an action. *The plan is built, the archive
   carries it, and it can now cover every file it overwrites. The ACTION is still
@@ -876,7 +882,11 @@ simulated and solved, and **cannot be written back as an SOS config**. That is a
 property of the format, not a gap in this project, and the operator path must say
 so out loud rather than discover it at the write step. Bourke warp-and-blend
 files are per projector and carry no such cap, so a larger rig still has a route
-out — it is just not the SOS one.
+out — it is just not the SOS one. The archive's `layout.json` is the half of that
+route the files cannot carry: it takes each mesh's place in the framebuffer from
+the rig's own viewports, never from SOS's four by name, so it has no cap either.
+The page still writes the archive from the install rig, though, so a hand-placed
+rig does not reach it yet.
 
 The harness sitting at 4 while the app is at 8 is a discrepancy worth resolving on
 its own, and it is not this plan's job.

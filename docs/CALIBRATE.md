@@ -884,7 +884,10 @@ sphere has wasted a trip:
   words. The panel now has a second picker: hand it your current warp and
   alignment files and copies of **all five** originals travel in the archive,
   with a line saying installing is reversible. Until you do, the refusal still
-  names exactly which paths are uncovered.
+  names exactly which paths are uncovered. The archive also carries
+  `layout.json`, which tells whatever loads the warp meshes which part of the
+  display each one drives. It is not one of the files the archive installs, so
+  the restore point neither covers it nor counts it.
 
   What has **not** changed is that putting a file back is you copying it out of
   `restore/`. A browser cannot write to the sphere's filesystem, so "one step"
