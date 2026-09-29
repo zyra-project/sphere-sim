@@ -1370,6 +1370,79 @@ test('a projector re-shot in line — paused, stepped back, played again — rep
   }
 });
 
+test('a run shot again in line and spoiled there is not the next projector: the photographs after it that copy it say where they belong', () => {
+  // Review B's B2d, review C's C5. The page stepped back in line — Pause, [,
+  // Play — to re-shoot a projector, with no photograph between the passes, and
+  // the run shot again spoiled by a photograph doubled or dropped, so no run
+  // was found there. Counted as the next projector's place, it put every run
+  // after it a projector late, decoded while the page refused the rest: 15 of
+  // the review's 56 folders on the cheap plan, and 15 again once the page's
+  // remedy was followed. A run's photographs belong where the run is, before it
+  // or after it; the photographs after a run that copy its frames, other than
+  // what a paused page leaves straight after its last, are that run shot again.
+  const expected = expectedOf(PAGE);
+  for (const azimuth of [0, 110]) {
+    const s = scene(PAGE, 64, { azimuth });
+    const shoot = camera(s, 8100 + azimuth);
+    for (const q of [0, 1]) {
+      for (const [how, at] of [
+        ['doubled', 11],
+        ['dropped', 20],
+      ] as const) {
+        const again = run(s, q);
+        if (how === 'doubled') again.splice(at, 0, again[at]);
+        else again.splice(at, 1);
+        const shots: Shot[] = [{ projector: 0, frame: 0 }, { projector: 0, frame: 0 }];
+        for (let p = 0; p < 4; p++) {
+          shots.push(...run(s, p));
+          if (p === q) shots.push(...again);
+        }
+        shots.push(null, null, null);
+        const { prints, truth } = shoot(shots);
+        const r = indexPosition(prints, expected);
+        const label = `azimuth ${azimuth}, projector ${q + 1} shot again in line with photograph ${at + 1} ${how}`;
+        assert.equal(misplaced(r.assignment, truth), 0, `${label}: filed wrong`);
+        assert.equal(r.ok, false, label);
+        assert.ok(
+          r.problems.some((x) => x.includes('Shoot the whole camera position again, into a folder of its own')),
+          `${label}: ${r.problems.join(' | ')}`,
+        );
+      }
+    }
+  }
+  // A copy of a run's white after it is not that run played again: Home and ]
+  // show every white on the way to a re-shoot. Projector 4's run lost to a
+  // dropped photograph, one short of its place, and the re-shoot's walk from
+  // projector 1's white straight after it: the first white lies in projector
+  // 4's place, and the folder is read with projector 4 re-shot.
+  // On the page's plan from azimuth 0 projector 1's second plane lights nine
+  // tenths of its crescent, and its white copies it: a frame that reads flat
+  // about its median level carries no more than the white does.
+  const walk: Shot[] = [0, 1, 2, 3].map((p): Shot => ({ projector: p, frame: 0 }));
+  for (const [plan, where] of [
+    [CHEAP, { azimuth: 0, elevation: 70, distance: 3 }],
+    [PAGE, { azimuth: 0 }],
+  ] as const) {
+    const c = scene(plan, plan === CHEAP ? 16 : 64, where);
+    const e = expectedOf(plan);
+    const lost = position(c);
+    lost.splice(3 * 34 + 6, 1);
+    for (const after of [[null, null, null], [null]] as Shot[][]) {
+      const { prints, truth } = camera(c, 55)([...lost, ...walk, ...run(c, 3), ...after]);
+      const r = indexPosition(prints, e);
+      const label = `${plan === CHEAP ? 'cheap' : "page's"} plan, the walk to the re-shoot straight after the position`;
+      assert.equal(misplaced(r.assignment, truth), 0, label);
+      assert.deepEqual(r.problems, [], label);
+      assert.deepEqual(r.usableProjectors, [0, 1, 2, 3], label);
+      assert.deepEqual(
+        r.reshoots.map((x) => x.projector),
+        [3],
+        label,
+      );
+    }
+  }
+});
+
 test("a photograph copying a run names the slot it lies in, whichever pass of the page laid that slot", () => {
   // Found by review C's fuzzer once a copy before the first slot stopped naming
   // it. Projector 2 re-shot in line, its re-shot run spoiled, with projector
@@ -1413,7 +1486,7 @@ test("a photograph copying a run names the slot it lies in, whichever pass of th
     const r = indexPosition(prints, expected);
     assert.equal(misplaced(r.assignment, truth), 0, `seed ${seed}: filed wrong`);
     assert.equal(r.ok, false);
-    assert.match(r.problems[0] ?? '', /^The run at photographs 107–140 is copied by photograph 70, where no run was found/);
+    assert.match(r.problems[0] ?? '', /^The run at photographs \d+–\d+ is copied by photograph \d+, where no run was found/);
   }
   // And what lies between the passes is in neither: the page played part of
   // projector 3's run, was sent Home and played again from projector 1. Taken

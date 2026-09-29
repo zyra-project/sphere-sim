@@ -1639,35 +1639,50 @@ function copiesFrame(f: FrameFingerprint, g: FrameFingerprint, w: RunWindow): bo
 
 /**
  * Whether frame `g` of run `w` reads flat across the crescent: within what
- * {@link copiesFrame} allows a copy of the run's own white dimmed to the level
- * that comes nearest it — the modulation-weighted median of `g`'s level, block
- * by block. That dimmed white is a test shot of the exposure, and it copies
- * `g`, so a copy of `g` says nothing about which frame or which run a
- * photograph is. A phase step at a fringe finer than the fingerprint's blocks
- * reads a half in every block, and so does the finest Gray plane at the page's
- * grid: a white a stop under copies either.
+ * {@link copiesFrame} allows of the run's own white dimmed to the level that
+ * comes nearest it — the modulation-weighted median of `g`'s level, block by
+ * block. That dimmed white is a test shot of the exposure, and it copies `g`,
+ * so a copy of `g` says nothing about which frame or which run a photograph
+ * is. A phase step at a fringe finer than the fingerprint's blocks reads a half
+ * in every block, and so does the finest Gray plane at the page's grid: a
+ * white a stop under copies either. `level` is `g`'s mean level over the
+ * crescent, {@link levelOn}: the deviation from it is never less than from the
+ * median and never more than twice it, so the median is looked for only
+ * between.
  */
-function readsFlat(g: FrameFingerprint, w: RunWindow): boolean {
-  const levels: { level: number; m: number }[] = [];
+function readsFlat(g: FrameFingerprint, w: RunWindow, level: number): boolean {
+  const limit = COMPLEMENT_LIMIT * w.modulation;
+  let deviation = 0;
+  for (const i of w.crescent) {
+    if (!usableBlock(g, i)) continue;
+    const b = w.black.values[i];
+    deviation += Math.abs(g.values[i] - b - level * (w.white.values[i] - b));
+  }
+  if (deviation <= limit) return true;
+  if (deviation > 2 * limit) return false;
+  const levels = new Float64Array(w.crescent.length);
+  const weights = new Float64Array(w.crescent.length);
+  let count = 0;
+  let total = 0;
   for (const i of w.crescent) {
     if (!usableBlock(g, i)) continue;
     const b = w.black.values[i];
     const m = w.white.values[i] - b;
-    levels.push({ level: (g.values[i] - b) / m, m });
+    levels[count] = (g.values[i] - b) / m;
+    weights[count++] = m;
+    total += m;
   }
-  levels.sort((a, b) => a.level - b.level);
-  let total = 0;
-  for (const { m } of levels) total += m;
+  const order = Array.from({ length: count }, (_, k) => k).sort((a, b) => levels[a] - levels[b]);
   let below = 0;
   let median = 0;
-  for (const { level, m } of levels) {
-    below += m;
-    median = level;
+  for (const k of order) {
+    below += weights[k];
+    median = levels[k];
     if (below >= total / 2) break;
   }
-  let deviation = 0;
-  for (const { level, m } of levels) deviation += m * Math.abs(level - median);
-  return deviation <= COMPLEMENT_LIMIT * w.modulation;
+  let nearest = 0;
+  for (let k = 0; k < count; k++) nearest += weights[k] * Math.abs(levels[k] - median);
+  return nearest <= limit;
 }
 
 /**
@@ -2376,11 +2391,15 @@ export function indexPosition(
    * Each run's frames a copy of it would show: its white, and the pairs and
    * phase steps that light its crescent in a pattern no dimmed white copies.
    */
+  const patterned = [...new Set([...pairs.flat(), ...phases.flat()])];
   const distinctiveOf = found.map((w) => [
     w.white,
-    ...[...new Set([...pairs.flat(), ...phases.flat()])]
+    ...patterned
       .map((f) => fingerprints[w.start + f])
-      .filter((g) => levelOn(g, w) >= BLACK_CUT && !readsFlat(g, w)),
+      .filter((g) => {
+        const level = levelOn(g, w);
+        return level >= BLACK_CUT && !readsFlat(g, w, level);
+      }),
   ]);
   const evidence: number[][] = found.map((w, j) => {
     let firstOwn = w.start;
@@ -2393,6 +2412,25 @@ export function indexPosition(
       if (x < found[0].start && copiesFrame(fingerprints[x], w.white, w)) continue;
       if (distinctiveOf[j].some((g) => copiesFrame(fingerprints[x], g, w))) out.push(x);
     }
+    return out;
+  });
+  /**
+   * Photographs after run j, outside every run found, that copy its patterns:
+   * the page stepped back to run j in line and its run shot again, spoiled so
+   * that no run was found there. Not a copy of its white, which the page shows
+   * again on the way to a re-shoot — Home and ] step through the whites — and
+   * which says nothing about where run j belongs. The photographs straight
+   * after the run that copy it are more of the run itself — the page paused on
+   * its last frame, or a frame one shot twice pushed out — and its own verdict
+   * speaks for them.
+   */
+  const echo: number[][] = found.map((w, j) => {
+    const copies = (x: number): boolean =>
+      distinctiveOf[j].some((g) => g !== w.white && copiesFrame(fingerprints[x], g, w));
+    let x = w.start + runLength;
+    while (x < n && inWindow[x] !== 1 && copies(x) && !darkBeside(x, w)) x++;
+    const out: number[] = [];
+    for (; x < n; x++) if (inWindow[x] !== 1 && copies(x) && !darkBeside(x, w)) out.push(x);
     return out;
   });
   /**
@@ -2914,7 +2952,7 @@ export function indexPosition(
       const misplacedCopy = found.slice(0, t).some((w, j) => {
         const q = where.slotOf.get(w);
         if (q === undefined || where.inLine.has(w)) return false;
-        return evidence[j].some((x) => {
+        return [...evidence[j], ...echo[j]].some((x) => {
           const o = slotOfCopy(where.laid, j, x);
           return o !== null && o !== q;
         });
@@ -2956,7 +2994,10 @@ export function indexPosition(
   if (pool.length === 0) {
     // The runs number, so what no reading fits is a run that repeats another
     // somewhere no re-shoot can be; or they do not number at all.
-    const j = found.findIndex((_, k) => matchedBy[k].length > 0 || evidence[k].length > 0);
+    // A copy of a run's white is also the page's step 0, a test shot or a
+    // re-shoot's first photograph; a copy of any other frame tells more.
+    const telling = found.map((w, k) => [...evidence[k], ...echo[k]].filter((x) => !copiesFrame(fingerprints[x], w.white, w)));
+    const j = found.findIndex((_, k) => matchedBy[k].length > 0 || telling[k].length > 0);
     if (j < 0) {
       problems.push(
         `The ${runsFound(found.length)} found ${found.length === 1 ? 'does' : 'do'} not fit ` +
@@ -2971,13 +3012,15 @@ export function indexPosition(
       matchedBy[j].length > 0
         ? `shows the same white and black as the run at ` +
           `${photographs(found[matchedBy[j][0]].start, found[matchedBy[j][0]].start + runLength)}`
-        : `is copied by ${photographs(evidence[j][0], evidence[j][0] + 1)}, where no run was found`;
+        : `is copied by ${photographs(telling[j][0], telling[j][0] + 1)}, where no run was found`;
     problems.push(
       `The run at ${photographs(w.start, w.start + runLength)} ${what}, and no reading of the ` +
         'folder fits the two: a re-shoot is added after the whole camera position, or played ' +
         'from the projector it repeats on to the end. That is what photographs out of the order ' +
-        'they were shot look like, and a run filed under the wrong projector is worse than one ' +
-        'not used, so none is.',
+        'they were shot look like, or a run shot again in line that did not pass, and a run ' +
+        'filed under the wrong projector is worse than one not used, so none is. Shoot the ' +
+        'whole camera position again, into a folder of its own, and read it under the same ' +
+        'camera number.',
     );
     return refuse();
   }
