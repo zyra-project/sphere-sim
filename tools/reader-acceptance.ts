@@ -36,9 +36,11 @@
  *     faults an operator makes on the way (review B's finding 11): the camera
  *     started late or stopped early by a few photographs, a test shot of
  *     another projector's white before Play, alone and with that projector
- *     re-shot, and a run spoiled by a photograph shot twice or not at all,
- *     re-shot and appended or played on — each read as its position, or
- *     refused in words, and never misfiled.
+ *     re-shot, a run spoiled by a photograph shot twice or not at all,
+ *     re-shot and appended or played on, a test shot of any projector's Gray
+ *     plane or of its white a stop under before Play, and the room's light
+ *     switched on at the end tone — each read as its position, or refused in
+ *     words, and never misfiled.
  *   - How a re-shoot is matched (review finding F14). A re-shot run is taken
  *     for its projector when its white and black reproduce the original's
  *     within `COMPLEMENT_LIMIT`, both ways round. Here: that residual for every
@@ -95,8 +97,11 @@ import {
   referenceResidual,
   runPart,
   runsPart,
+  ROOM_LIGHT,
   secondSeed,
   SPOILED,
+  STOP_UNDER,
+  SWITCHING,
   turnedRuns,
   type DecodeRecord,
   type PositionRecord,
@@ -576,9 +581,16 @@ function assemble(results: Map<string, UnitResult>, units: readonly string[], co
         rigs: DESIGNED_RIGS,
         builds: ['main', 'spill'],
         // The faults: photographs a camera started late or stopped early by, and
-        // the photograph of a spoiled run shot twice or not at all, counted from 1.
+        // the photograph of a spoiled run shot twice or not at all, counted from 1
+        // — the Gray plane a focus test shot is taken of, too; the exposure a
+        // test shot of a white is taken at; and the room's own light raised so
+        // many times over at the end tone, the first photograph after it
+        // catching so much of the switch.
         lost: FEW_LOST,
         spoiledPhotograph: SPOILED + 1,
+        stopUnder: STOP_UNDER,
+        roomLight: ROOM_LIGHT,
+        roomSwitching: SWITCHING,
       },
       turned: { variant: 'reduced', rigs: DESIGNED_RIGS, degrees: TURNS_DEG },
       exposureOff: EXPOSURE_OFF,

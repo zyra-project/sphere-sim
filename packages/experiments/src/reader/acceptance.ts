@@ -49,11 +49,13 @@
  * until then): the camera started a few photographs after Play, with a few dark
  * ones after the black; stopped a few photographs early, with a few of step 0
  * before Play; an exposure test shot of another projector's white before Play,
- * alone and with that projector's re-shoot appended; and a projector's run
+ * alone and with that projector's re-shoot appended; a projector's run
  * spoiled, one photograph shot twice or not at all, with its re-shoot appended
- * or played on. None of those has to read as the position: each is held to
- * reading as it, or being refused in words, and never to a photograph filed
- * under the wrong projector or frame.
+ * or played on; and (review C's C1 and C6) a test shot of each projector's
+ * Gray plane or of its white a stop under before Play, and the room's light
+ * switched on at the end tone. None of those has to read as the position: each
+ * is held to reading as it, or being refused in words, and never to a
+ * photograph filed under the wrong projector or frame.
  *
  * Used by `packages/experiments/test/reader.test.ts` on two rigs at the reduced
  * preset and by `tools/reader-acceptance.ts` on every clean position
@@ -164,6 +166,18 @@ export interface CameraShots {
    * fires twice on one step. Rendered when first asked for.
    */
   twiceOf: (p: number, f: number) => PhotoSummary;
+  /**
+   * Projector p's white a stop under — its radiance halved — as a test shot of
+   * the exposure taken before Play. Rendered when first asked for.
+   */
+  underOf: (p: number) => PhotoSummary;
+  /**
+   * The page's black after the last step with the room's light switched on at
+   * the end tone: four photographs of it, the room's own light raised `times`
+   * over, the first taken as the light came on and lit {@link SWITCHING} of
+   * that. Rendered when first asked for.
+   */
+  roomLit: (times: number) => PhotoSummary[];
 }
 
 /**
@@ -174,6 +188,22 @@ export interface CameraShots {
  * draw of the same frame, for any frame shot twice but that one.
  */
 const TWICE_AT = FRAMES_PER_RUN - 5;
+
+/** The draw a white a stop under is taken from: the one before a photograph shot twice. */
+const UNDER_AT = TWICE_AT - 1;
+
+/** A stop under: the exposure a test shot of a white is taken at, as a share of the position's. */
+export const STOP_UNDER = 0.5;
+
+/** How much of the room's light the first photograph after the switch catches: review C's C6. */
+export const SWITCHING = 0.4;
+
+/**
+ * How many times over the room's own light is raised when it is switched on
+ * at the end tone. The bench's ambient, `L0`, lights the sphere at about 4% of
+ * a white's peak (0.036 against 0.93), so these put it at about 12% and 38%.
+ */
+export const ROOM_LIGHT: readonly number[] = [3, 10];
 
 /**
  * Camera `camera` of `bank`, photographed.
@@ -186,7 +216,10 @@ const TWICE_AT = FRAMES_PER_RUN - 5;
  * and after the black come from the end of their pair's stream under the same
  * seed, one photograph a draw, so that no two photographs in one folder are the
  * same draws of the same frame: a copy of a white taken before Play is a second
- * photograph of it, not the same one.
+ * photograph of it, not the same one. A white a stop under takes the draw
+ * before a photograph shot twice; the page's black with the room's light
+ * switched on takes the draws of the page's black, and is never in a folder
+ * with it.
  */
 export function photographCamera(bank: RigBank, camera: number, second: number): CameraShots {
   const lit = bank.lit[camera].slice();
@@ -201,6 +234,13 @@ export function photographCamera(bank: RigBank, camera: number, second: number):
   const own = EVERY.map((p) => shoot(bank, camera, p, frames(p), bank.seed));
   const last = PROJECTORS - 1;
   const dark = stateFrame(bank, camera, last, 'dark');
+  const ambient = bank.ambient[camera];
+  /** The page's black with the room's own light raised `times` over, `share` of the way. */
+  const roomOn = (times: number, share: number): Float32Array => {
+    const out = new Float32Array(dark.length);
+    for (let i = 0; i < out.length; i++) out[i] = dark[i] + share * (times - 1) * ambient[i];
+    return out;
+  };
   const twice = kept((key) => {
     const p = Math.floor(key / FRAMES_PER_RUN);
     const f = key % FRAMES_PER_RUN;
@@ -216,6 +256,16 @@ export function photographCamera(bank: RigBank, camera: number, second: number):
     whiteOf: kept((p) => shoot(bank, camera, p, () => bank.frames[camera][p][WHITE], second, FRAMES_PER_RUN - 3)),
     darks: shoot(bank, camera, last, () => dark, second, FRAMES_PER_RUN - 4),
     twiceOf: (p, f) => twice(p * FRAMES_PER_RUN + f),
+    underOf: kept((p) => {
+      const white = bank.frames[camera][p][WHITE];
+      const half = white.map((x) => x * STOP_UNDER);
+      return shoot(bank, camera, p, () => half, second, UNDER_AT)[0];
+    }),
+    roomLit: kept((times) => {
+      const switching = roomOn(times, SWITCHING);
+      const on = roomOn(times, 1);
+      return shoot(bank, camera, last, (f) => (f === FRAMES_PER_RUN - 4 ? switching : on), second, FRAMES_PER_RUN - 4);
+    }),
   };
 }
 
@@ -710,7 +760,9 @@ export const FEW_LOST: readonly number[] = [1, 2, 4, 8];
  * Which of the faults' folders {@link judgeShapes} builds: every one, or a few
  * for a test — started and stopped 2 and 4 photographs out, the last projector
  * placed test-shot, and the first projector re-shot spoiled, doubled and
- * appended and dropped and played on.
+ * appended and dropped and played on; then the last projector placed
+ * test-shot on a Gray plane and a stop under, and the room's light switched on
+ * at the end tone the brighter way.
  */
 export type Faults = 'every' | 'few';
 
@@ -736,7 +788,11 @@ export const SPOILED = 10;
  * test shot of its white before two of step 0, alone and with that projector
  * re-shot and appended; and for each projector in `reshot`, its run with
  * {@link SPOILED} shot twice and not at all, each re-shot and appended and
- * re-shot and played on. `faults` can ask for a few of those instead.
+ * re-shot and played on. Then, for each projector the position places, a test
+ * shot of its Gray plane {@link SPOILED} and of its white a stop under, each
+ * before two of step 0; and the room's light switched on at the end tone,
+ * {@link ROOM_LIGHT} times over, with two of step 0 before Play. `faults` can
+ * ask for a few of those instead.
  */
 export function judgeShapes(
   shots: CameraShots,
@@ -903,6 +959,42 @@ export function judgeShapes(
         );
       }
     }
+  }
+  // A test shot of anything, at any exposure (review C's C1): a focus shot of
+  // a projector's Gray plane, or its white a stop under, before two of step 0.
+  const tail = [first(shots.whiteOf(0), 2), position, first(shots.darks, 2)];
+  for (const q of few ? expect.placed.slice(-1) : expect.placed) {
+    out.push(
+      readShape(
+        shots,
+        `a test shot of projector ${q + 1}'s Gray plane, photograph ${SPOILED + 1} of its run, before Play`,
+        'a test shot of a Gray plane before Play',
+        [extrasPart([shots.twiceOf(q, SPOILED)]), ...tail],
+        asPositionOrRefused(expect),
+      ),
+    );
+    out.push(
+      readShape(
+        shots,
+        `a test shot of projector ${q + 1}'s white a stop under before Play`,
+        'a test shot a stop under before Play',
+        [extrasPart([shots.underOf(q)]), ...tail],
+        asPositionOrRefused(expect),
+      ),
+    );
+  }
+  // The room's light switched on at the end tone (review C's C6), the first
+  // photograph after it taken as it came on, and the camera stopped with four.
+  for (const times of few ? ROOM_LIGHT.slice(-1) : ROOM_LIGHT) {
+    out.push(
+      readShape(
+        shots,
+        `the room light switched on at the end tone, ${times} times the room's own`,
+        'the room light switched on at the end tone',
+        [first(shots.whiteOf(0), 2), position, extrasPart(shots.roomLit(times))],
+        asPositionOrRefused(expect),
+      ),
+    );
   }
   return out;
 }

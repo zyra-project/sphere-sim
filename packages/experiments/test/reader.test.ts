@@ -167,7 +167,7 @@ test("the card's folder shapes, from the same renders: photographs before Play a
   assert.equal(tailsWithUnseen, 4);
 });
 
-test('the faults on the way — the camera started late or stopped early, a test shot before Play, a spoiled run re-shot — read as the position or are refused in words, and are never misfiled', () => {
+test('the faults on the way — the camera started late or stopped early, a test shot before Play of any frame at any exposure, a spoiled run re-shot, the room light switched on at the end tone — read as the position or are refused in words, and are never misfiled', () => {
   for (const k of RIGS) {
     for (const { label, lit, reshot, shapes } of readRig(k)) {
       const q = reshot;
@@ -185,6 +185,9 @@ test('the faults on the way — the camera started late or stopped early, a test
           `a test shot of projector ${last + 1}'s white before Play, projector ${last + 1} re-shot and appended`,
           `projector ${q + 1} spoiled, photograph 11 of its run doubled, re-shot and appended`,
           `projector ${q + 1} spoiled, photograph 11 of its run dropped, re-shot and played on`,
+          `a test shot of projector ${last + 1}'s Gray plane, photograph 11 of its run, before Play`,
+          `a test shot of projector ${last + 1}'s white a stop under before Play`,
+          "the room light switched on at the end tone, 10 times the room's own",
         ],
         label,
       );
@@ -194,7 +197,7 @@ test('the faults on the way — the camera started late or stopped early, a test
         assert.equal(s.misfiled, 0, where);
         if (!s.read) assert.ok(s.problems.length > 0, `${where}: neither read nor refused`);
       }
-      const [late2, late4, early2, early4, testShot, testShotReshot, doubled, dropped] = faults;
+      const [late2, late4, early2, early4, testShot, testShotReshot, doubled, dropped, grayShot, underShot, roomOn] = faults;
       // The folders are what their names say: a position of 136, less or plus
       // what the fault took or added.
       const position = PROJECTORS * FRAMES_PER_RUN;
@@ -209,6 +212,9 @@ test('the faults on the way — the camera started late or stopped early, a test
           3 + position + 2 + FRAMES_PER_RUN,
           position + 1 + 2 + FRAMES_PER_RUN,
           position - 1 + 5 + (PROJECTORS - q) * FRAMES_PER_RUN + 2,
+          1 + 2 + position + 2,
+          1 + 2 + position + 2,
+          2 + position + 4,
         ],
         label,
       );
@@ -236,6 +242,12 @@ test('the faults on the way — the camera started late or stopped early, a test
       assert.deepEqual(doubled.reshoots.map((r) => r.projector), [q], label);
       assert.equal(dropped.read, true, label);
       assert.deepEqual(dropped.reshoots.map((r) => r.projector), seen.filter((p) => p >= q), label);
+      // A test shot of a Gray plane, or of a white a stop under, names no
+      // projector's place before Play (review C's C1), and the room's light
+      // switched on at the end tone is no run's (C6): each is read.
+      assert.equal(grayShot.read, true, label);
+      assert.equal(underShot.read, true, label);
+      assert.equal(roomOn.read, true, label);
     }
   }
 });
