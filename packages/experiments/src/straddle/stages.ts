@@ -977,6 +977,14 @@ export interface TwinCamera {
    */
   worthUsable: boolean;
   worthRefusal: string | null;
+  /**
+   * The page twin: the page's own reader on the same clean frames, whole, as
+   * the page column reads a straddled position ({@link pagePath}). A run the
+   * page column counts against a straddle is one this places, as the
+   * counterfactual's are the ones `placedContent` holds. Optional only so a
+   * twin written out by hand, as the tests write them, still stands for one.
+   */
+  page?: PagePosition;
 }
 
 export function twinStatus(t: TwinCamera): TwinStatus[] {
@@ -990,7 +998,8 @@ export function twinStatus(t: TwinCamera): TwinStatus[] {
 
 /**
  * One camera's twin: the clean position through the fast path, fingerprinted,
- * checked on both footings, and read by the page run by run.
+ * checked on both footings, read by the page run by run, and read by the page
+ * whole, as a folder (the page twin, {@link TwinCamera.page}).
  *
  * The noisy fingerprints are handed back too, because the re-scoring needs them
  * for every run a straddle did not touch: those frames are the twin's, draw for
@@ -1001,10 +1010,12 @@ export function computeTwin(
   c: number,
 ): { twin: TwinCamera; prints: FrameFingerprint[] } {
   const prints: FrameFingerprint[] = [];
+  const summaries: PhotoSummary[] = [];
   const reads: ReturnType<typeof readRun>[] = [];
   for (let p = 0; p < PROJECTORS; p++) {
     const images = fastRun(bank, c, p, CLEAN);
     prints.push(...runPrints(images, p));
+    summaries.push(...runSummaries(images, p));
     reads.push(pageRead(c, p, images));
   }
   const clean = positionFingerprints(bank, c, CLEAN);
@@ -1059,32 +1070,54 @@ export function computeTwin(
       runs,
       worthUsable: worth.ok ? worth.worth.usable : false,
       worthRefusal: worth.ok ? worth.worth.refusal : worth.refusal,
+      page: pageTwinOf(summaries),
     },
     prints,
   };
 }
 
+/** The page's reading of a clean position's 136 summaries: what a page twin records. */
+function pageTwinOf(summaries: readonly PhotoSummary[]): PagePosition {
+  return pageRecord(() => indexPhotographs(summaries, MANIFEST), CLEAN);
+}
+
 /**
  * Everything one rig contributes to a stage, built once while the rig is held:
  * the bank, its twins from the BANK checkpoint, and the twins' noisy
- * fingerprints and page decodes as the stage asks for them.
+ * fingerprints, page summaries and page decodes as the stage asks for them.
+ *
+ * Every cache is here and nowhere at module level, so a stage computes the
+ * same numbers in a process that has run others before it as in a fresh one
+ * (T24 runs the reduced design in both and compares the documents).
  */
 export interface RigContext {
   unit: string;
   bank: RigBank;
   twins: Map<number, TwinCamera>;
   prints: Map<number, FrameFingerprint[]>;
+  summaries: Map<number, PhotoSummary[]>;
   decodes: Map<string, Correspondence[]>;
   prepared: PreparedRig | null;
+}
+
+/** A held rig with its twins, and nothing computed from it yet. */
+export function rigContextOf(unit: string, bank: RigBank, twins: readonly TwinCamera[]): RigContext {
+  return {
+    unit,
+    bank,
+    twins: new Map(twins.map((t) => [t.camera, t])),
+    prints: new Map(),
+    summaries: new Map(),
+    decodes: new Map(),
+    prepared: null,
+  };
 }
 
 function rigContext(ctx: RunContext, unit: string, bankFile: StageFile<BankUnit>): RigContext {
   const bank = bankOf(ctx, unit);
   const stored = bankFile.units[unit];
   if (stored === undefined) throw new Error(`experiment10: the bank stage has no ${unit}`);
-  const twins = new Map<number, TwinCamera>();
-  for (const t of stored.twins) twins.set(t.camera, t);
-  return { unit, bank, twins, prints: new Map(), decodes: new Map(), prepared: null };
+  return rigContextOf(unit, bank, stored.twins);
 }
 
 function twinOf(rc: RigContext, c: number): TwinCamera {
@@ -1111,6 +1144,39 @@ function twinPrints(rc: RigContext, c: number): FrameFingerprint[] {
       throw new Error(`experiment10: ${rc.unit} camera ${c}'s twin no longer places ${stored}`);
     }
     rc.prints.set(c, got);
+  }
+  return got;
+}
+
+/**
+ * The twin's 136 photographs as the page summarises them, folder order,
+ * recomputed on the rig's own stream and checked against the page twin the
+ * bank stage recorded.
+ *
+ * A run a straddle did not touch is the clean twin's own photographs, draw for
+ * draw — the same `fastRun(bank, c, q, CLEAN)` — so the page column reads
+ * these for it rather than walking, encoding and summarising the run again on
+ * every position.
+ */
+function twinSummaries(rc: RigContext, c: number): PhotoSummary[] {
+  let got = rc.summaries.get(c);
+  if (got === undefined) {
+    got = [];
+    for (let p = 0; p < PROJECTORS; p++) got.push(...runSummaries(fastRun(rc.bank, c, p, CLEAN), p));
+    // As in `twinPrints`: the BANK stage read these same draws, and a page
+    // that no longer reads them so is reading another twin than the one on
+    // record, and every attribution against it would be wrong.
+    const stored = twinOf(rc, c).page;
+    if (stored === undefined) {
+      throw new Error(`experiment10: ${rc.unit} camera ${c}'s twin has no page reading on record`);
+    }
+    if (JSON.stringify(pageTwinOf(got)) !== JSON.stringify(stored)) {
+      throw new Error(
+        `experiment10: ${rc.unit} camera ${c}'s page twin no longer reads as the bank stage ` +
+          `recorded it (placed ${stored.placed.map((p) => p + 1).join(',') || 'nothing'})`,
+      );
+    }
+    rc.summaries.set(c, got);
   }
   return got;
 }
@@ -3440,20 +3506,30 @@ function decodeOne(
 /**
  * The page's own reader on a whole treated position: the fast path's noisy frames, encoded and
  * summarised in folder order.
+ *
+ * A run the straddle did not touch is the clean twin's photographs, so its summaries are the
+ * twin's, computed once per camera and held to the bank stage's page twin
+ * ({@link twinSummaries}). Only the touched runs are summarised here, from the frames `framesOf`
+ * hands over: the fast path's walk of the run's noise, which the rescoring has usually taken
+ * already for the run's noisy fingerprints. A drift of the twin or a failed render is raised;
+ * what the page's own calls throw is the position's crash ({@link pageRecord}).
  */
-function pagePath(
+export function pagePath(
   rc: RigContext,
   c: number,
   photos: readonly Photo[],
   touched: readonly number[],
+  framesOf: (q: number) => readonly LinearImage[] = (q) => fastRun(rc.bank, c, q, photos),
 ): PagePosition {
-  const frames = Array.from({ length: PROJECTORS }, (_, q) =>
-    fastRun(rc.bank, c, q, touched.includes(q) ? photos : CLEAN),
-  );
-  return pageRecord(
-    () => indexPhotographs(frames.flatMap((images, q) => runSummaries(images, q)), MANIFEST),
-    photos,
-  );
+  const clean = twinSummaries(rc, c);
+  const frames = touched.map((q) => framesOf(q));
+  return pageRecord(() => {
+    const summaries = clean.slice();
+    touched.forEach((q, i) => {
+      summaries.splice(q * FRAMES_PER_RUN, FRAMES_PER_RUN, ...runSummaries(frames[i], q));
+    });
+    return indexPhotographs(summaries, MANIFEST);
+  }, photos);
 }
 
 /**
@@ -3498,12 +3574,23 @@ function scorePosition(
   if (touched.length === 0) return empty;
   const twin = twinOf(rc, c);
   const fps0 = positionFingerprints(rc.bank, c, photos);
+  // A touched run's frames through the fast path, walked once: its noisy
+  // fingerprints and the page column read the same frames.
+  const frames = new Map<number, LinearImage[]>();
+  const framesOf = (q: number): LinearImage[] => {
+    let got = frames.get(q);
+    if (got === undefined) {
+      got = fastRun(rc.bank, c, q, photos);
+      frames.set(q, got);
+    }
+    return got;
+  };
   const noisyRuns = new Map<number, FrameFingerprint[]>();
   const noisyOf = (q: number): FrameFingerprint[] => {
     let got = noisyRuns.get(q);
     if (got === undefined) {
       got = touched.includes(q)
-        ? runPrints(fastRun(rc.bank, c, q, photos), q)
+        ? runPrints(framesOf(q), q)
         : twinPrints(rc, c).slice(q * FRAMES_PER_RUN, (q + 1) * FRAMES_PER_RUN);
       noisyRuns.set(q, got);
     }
@@ -3595,7 +3682,7 @@ function scorePosition(
     content: content.runs,
     filed: filed.runs,
     assignment: placedTouched.length > 0 ? content.best.assignment : null,
-    page: pageColumn ? pagePath(rc, c, photos, touched) : null,
+    page: pageColumn ? pagePath(rc, c, photos, touched, framesOf) : null,
     decodes,
   };
 }

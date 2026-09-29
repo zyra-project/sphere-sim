@@ -1109,7 +1109,8 @@ test('T24 deterministic: the reduced design run twice is one document, and it re
   child.stderr.on('data', (chunk: Buffer) => err.push(chunk));
   const exited = new Promise<number | null>((resolve) => child.on('close', resolve));
 
-  const here = runExperiment10(runContext(TEST_PLAN, memoryStore(), () => {}));
+  const store = memoryStore();
+  const here = runExperiment10(runContext(TEST_PLAN, store, () => {}));
   assert.ok(here !== null, 'the reduced design did not assemble');
   const code = await exited;
   assert.equal(code, 0, `the second run failed: ${Buffer.concat(err).toString()}`);
@@ -1129,6 +1130,22 @@ test('T24 deterministic: the reduced design run twice is one document, and it re
   assert.ok(r1.capturesRecorded > 0 && late.capturesRecorded > 0, 'no touched capture was scored');
   assert.ok(doc.rescore.cells.some((c: { decode: { runs: number } }) => c.decode.runs > 0), 'no subsample was decoded');
   assert.match(doc.verdict.statement, /^Today's page placed /);
+  // The page column ran, so its determinism above is about something: Q0
+  // placed runs on the reduced rig and triggered it, the bank stage recorded
+  // a page twin for every camera, and every changed position of R1 and
+  // L-aimed-7.5 carries the page's reading of it.
+  assert.equal(doc.precondition.q0.contingency.triggered, true, 'the page column was not triggered');
+  const checkpoint = (stage: string) => JSON.parse(store.read(`${stage}.json`) as string);
+  const bankTwins = Object.values(checkpoint('bank').units as Record<string, { twins: { camera: number; page?: unknown }[] }>).flatMap((u) => u.twins);
+  assert.ok(bankTwins.length > 0 && bankTwins.every((t) => t.page !== undefined && t.page !== null), 'a camera has no page twin');
+  for (const [stage, id] of [['rescore', 'R1'], ['lateness', 'L-aimed-7.5']]) {
+    type Scored = { changed: boolean; page: { placed: number[]; crash: string | null } | null };
+    const changed = Object.entries(checkpoint(stage).units as Record<string, { score?: { cells: Record<string, { positions: Scored[] }[]> } }>)
+      .filter(([unit]) => unit.startsWith('A:'))
+      .flatMap(([, u]) => (u.score?.cells[id] ?? []).flatMap((cap) => cap.positions.filter((p) => p.changed)));
+    assert.ok(changed.length > 0, `${id} changed no position`);
+    assert.ok(changed.every((p) => p.page !== null && Array.isArray(p.page.placed)), `${id} has a changed position the page did not read`);
+  }
 
   // No time, and no machine: no date-time, no epoch milliseconds, no key
   // naming a moment or a duration with anything in it, no absolute path. The
@@ -2518,4 +2535,75 @@ test('T41 a run the page places is judged by what its photographs show, and a re
   }, CLEAN);
   assert.equal(thrown.crash, 'a folder this reader was never built against');
   assert.deepEqual(Object.keys(thrown).sort(), Object.keys(got).sort());
+});
+
+test('T42 the page column reads the clean position as its page twin, and three forward straddles as pinned here', async () => {
+  // The page column hands every straddled position whole to the page's own
+  // reader, and counts a run against the straddle only if the page twin, its
+  // reading of the same clean frames, places it. So the twin is the clean
+  // position through the column itself: read from the cache of the twin's
+  // summaries, and read again with every run walked, both are the bank
+  // stage's record, and it places every run where the folder files it.
+  const { computeTwin, pagePath, reasonOf, rigContextOf } = await import('../src/straddle/stages.ts');
+  const b = rig();
+  const twins = b.cameras.map((c) => computeTwin(b, c).twin);
+  const rc = rigContextOf('main:0', b, twins);
+  const fields = ['ok', 'placed', 'starts', 'offsets', 'contentMisfiles', 'ambiguous', 'unseen', 'barelySeen', 'reshoots', 'problems', 'notes', 'crash'];
+  for (const c of b.cameras) {
+    const twin = twins[c].page;
+    assert.ok(twin !== undefined, `camera ${c} has no page twin`);
+    assert.deepEqual(Object.keys(twin).sort(), [...fields].sort());
+    assert.deepEqual(pagePath(rc, c, CLEAN, []), twin, `camera ${c}: the cached clean runs do not read as the twin`);
+    assert.deepEqual(pagePath(rc, c, CLEAN, RUNS), twin, `camera ${c}: the clean runs walked again do not read as the twin`);
+    assert.ok(twin.placed.length > 0 && twin.crash === null && twin.ok, JSON.stringify(twin));
+    assert.deepEqual(twin.starts, twin.placed.map((p) => p * FRAMES_PER_RUN));
+    for (const none of [twin.offsets, twin.contentMisfiles, twin.ambiguous]) assert.deepEqual(none, twin.placed.map(() => 0));
+    assert.deepEqual(twin.problems, []);
+  }
+
+  // Forward straddles of the whole position at 0.03, 0.3 and 0.95. What
+  // follows is what the page was OBSERVED to make of them on this rig when
+  // this test was written, pinned so that a change to the reader or to the
+  // column shows here: observations, not predictions. At 0.95 it finds runs
+  // one photograph early, which is a departure from the folder's order and
+  // not a misfile, since each photograph shows the step it is placed as.
+  const read = (s: number) => {
+    const photos = designedPhotos('forward', () => s, 1);
+    const touched = RUNS.filter((p) => photos.slice(p * FRAMES_PER_RUN, (p + 1) * FRAMES_PER_RUN).some(contentChanged));
+    return b.cameras.map((c) => {
+      const r = pagePath(rc, c, photos, touched);
+      const { problems, notes, ...rest } = r;
+      return { ...rest, reasons: problems.map(reasonOf), notes: notes.length };
+    });
+  };
+  const at = (placed: number[], starts: number[], unseen: number[], reasons: string[], notes: number) => ({
+    ok: reasons.length === 0,
+    placed,
+    starts,
+    offsets: placed.map((p, i) => starts[i] - p * FRAMES_PER_RUN),
+    contentMisfiles: placed.map(() => 0),
+    ambiguous: placed.map(() => 0),
+    unseen,
+    barelySeen: [],
+    reshoots: 0,
+    crash: null,
+    reasons,
+    notes,
+  });
+  const cleanAt = [at([0, 1, 2], [0, 34, 68], [3], [], 1), at([1, 2, 3], [34, 68, 102], [0], [], 1), at([0, 2, 3], [0, 68, 102], [1], [], 1)];
+  assert.deepEqual(read(0.03), cleanAt, 'forward 0.03');
+  assert.deepEqual(read(0.3), b.cameras.map(() => at([], [], [], ['norun'], 0)), 'forward 0.3');
+  assert.deepEqual(
+    read(0.95),
+    [at([1], [33], [3], ['unfound', 'unfound'], 2), at([1, 2, 3], [33, 67, 101], [0], [], 2), at([2, 3], [67, 101], [1], ['unfound'], 2)],
+    'forward 0.95',
+  );
+
+  // The twin's summaries are the rig's own stream read again, held to the
+  // bank stage's page twin: a twin that no longer reads as recorded stops the
+  // column, as `twinPrints` stops the counterfactual.
+  const drifted = twins.map((t) => (t.camera === 0 ? { ...t, page: { ...(t.page as NonNullable<typeof t.page>), notes: [] } } : t));
+  assert.throws(() => pagePath(rigContextOf('main:0', b, drifted), 0, CLEAN, [0]), /page twin no longer reads as the bank stage recorded it/);
+  const unrecorded = twins.map((t) => (t.camera === 0 ? { ...t, page: undefined } : t));
+  assert.throws(() => pagePath(rigContextOf('main:0', b, unrecorded), 0, CLEAN, [0]), /has no page reading on record/);
 });
