@@ -926,6 +926,19 @@ test('two camera positions make a report that each alone refuses', () => {
   assert.match(told, /Camera 2 decoded nothing — start there\./);
 });
 
+test("a projector no held camera decoded is named, since the session knows the plan's count", () => {
+  // Two positions, each decoding projector 1 of the plan's two: two cameras
+  // contributed, and projector 2 has no view at all. The session vouched for
+  // that capture before the plan's count reached the worth report.
+  const one = heldPosition(0, 1, 36, [0]);
+  const two = heldPosition(1, 37, 36, [0]);
+  const both = holdPosition(holdPosition(freshSession(), SMALL_MANIFEST, one).session, SMALL_MANIFEST, two).session;
+  const worth = sessionWorth(both);
+  assert.deepEqual(worth?.contributingCameras, [0, 1]);
+  assert.equal(worth?.usable, false);
+  assert.match(worth?.refusal ?? '', /^A projector was seen by fewer than two cameras: P2 \(0\)\./);
+});
+
 test('loading a plan lets every position go, and a reading of the plan before is not kept', () => {
   const one = heldPosition(0, 1, 36);
   const two = heldPosition(1, 37, 36);

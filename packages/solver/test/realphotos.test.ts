@@ -523,6 +523,44 @@ test('every projector needs two views, not the capture as a whole', () => {
   assert.match(silent.refusal ?? '', /A projector was seen by fewer than two cameras: P1 \(1\)/);
 });
 
+test('a projector no camera decoded is named, where the rig\'s projector count is given', () => {
+  // A second review of the page found a session of two camera positions, each
+  // decoding projectors 1 to 3 of four, reported usable with projector 4 never
+  // mentioned: the per-projector check can judge only the projectors some pair
+  // names. Told the rig's count, it refuses that projector as it refuses one a
+  // single camera saw, named with none. Without the count it is as it was.
+  const some = {
+    considered: 1000,
+    accepted: 400,
+    rejectedLowModulation: 600,
+    rejectedGrayAmbiguous: 0,
+    rejectedPhaseWeak: 0,
+    rejectedDisagreement: 0,
+    rejectedOutOfRange: 0,
+    rejectedMissingAxis: 0,
+    rejectedOffSphere: 0,
+    rejectedOffImage: 0,
+  };
+  const pairs: PairContribution[] = [0, 1].flatMap((camera) =>
+    [0, 1, 2].map((projector) => ({ camera, projector, stats: some })),
+  );
+  const told = captureWorth(pairs, 4);
+  assert.equal(told.usable, false);
+  assert.match(told.refusal ?? '', /^A projector was seen by fewer than two cameras: P4 \(0\)\./);
+  assert.deepEqual(
+    told.camerasPerProjector.map((e) => [e.projector, e.cameras.length]),
+    [
+      [0, 2],
+      [1, 2],
+      [2, 2],
+      [3, 0],
+    ],
+  );
+  const untold = captureWorth(pairs);
+  assert.equal(untold.usable, true, 'without the count, only projectors a pair names are judged');
+  assert.deepEqual(captureWorth(pairs, 3), untold, 'a count the pairs already cover changes nothing');
+});
+
 test('colour survives the ingest, because the decoder has its own opinion about channels', () => {
   // Three channels in, three out: decode.ts reads Rec.709 luminance by default
   // and PARAMETERS.md §3.2 warns the channels diverge in gamma, gain and black

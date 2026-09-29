@@ -101,7 +101,9 @@ export interface CaptureWorth {
   /** Pairs that contributed nothing. */
   silentPairs: { camera: number; projector: number }[];
   /**
-   * Per projector, the cameras that decoded anything against it.
+   * Per projector, the cameras that decoded anything against it: every
+   * projector a pair names, and every projector of the rig where its count was
+   * given.
    *
    * A projector is solved from the views that saw IT, so this rather than the
    * capture-wide camera count is what the degeneracy below is about.
@@ -117,7 +119,18 @@ export interface CaptureWorth {
   refusal: string | null;
 }
 
-export function captureWorth(pairs: readonly PairContribution[]): CaptureWorth {
+/**
+ * What the capture was worth, from what each camera decoded of each projector.
+ *
+ * `projectors`, where the caller knows the rig, is how many projectors it has.
+ * Without it only the projectors some pair names can be judged, and a projector
+ * no camera decoded — every run of it refused, say, at every position — is not
+ * in the report at all: two cameras that each decoded projectors 1 to 3 of a
+ * four-projector rig passed as usable, with projector 4 unmentioned. With it,
+ * such a projector is refused like one only a single camera decoded, named with
+ * none.
+ */
+export function captureWorth(pairs: readonly PairContribution[], projectors?: number): CaptureWorth {
   const accepted = pairs.reduce((a, p) => a + p.stats.accepted, 0);
   const considered = pairs.reduce((a, p) => a + p.stats.considered, 0);
 
@@ -140,6 +153,7 @@ export function captureWorth(pairs: readonly PairContribution[]): CaptureWorth {
    * refusal exists to name, while the capture-wide test waves it through.
    */
   const byProjector = new Map<number, Set<number>>();
+  for (let p = 0; p < (projectors ?? 0); p++) byProjector.set(p, new Set());
   for (const p of pairs) {
     if (!byProjector.has(p.projector)) byProjector.set(p.projector, new Set());
     if (p.stats.accepted > 0) byProjector.get(p.projector)?.add(p.camera);
