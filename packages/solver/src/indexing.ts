@@ -1539,7 +1539,8 @@ function addLitBlocks(f: FrameFingerprint, floor: Float64Array, into: Set<number
  * the sphere or over the whole picture after each projector's white at three
  * places, this refuses the run in 44 of the 70 folders where the camera sees
  * it; without it 10 of those are refused all the same, where the room lights
- * the crescent too and the complement check sees it, and 34 are read.
+ * the crescent too and the run's phase steps no longer add up to its white and
+ * black, and 34 are read.
  */
 function runWindowAt(
   fps: readonly FrameFingerprint[],
