@@ -2698,6 +2698,37 @@ test('a window whose black outshines its white is not a run: a phase step shot t
   }
 });
 
+test('a window with a frame darker than its black is not a run: a run paused three shutters is refused, never placed a projector late', () => {
+  // A run whose twenty-first photograph was taken four times — the page paused
+  // three shutters — puts its own phase frames back in the phase slots of the
+  // window three photographs into it. From 110 degrees that window's white is
+  // projector 3's first plane's complement, lighting nearly all of the
+  // crescent, and its black the second plane, lighting little of it: its
+  // black does not outshine its white and its pairs separate, so it was found
+  // as a broken run, and the page's in-line re-shoot after it, projector 3's
+  // run shot again, was counted as projector 4's, decoded. A run's black is the
+  // page's black, and no photograph of the run is darker; that window's next
+  // planes are.
+  const expected = expectedOf(PAGE);
+  const s = scene(PAGE, 64, { azimuth: 110 });
+  for (const leading of [2, 20]) {
+    const paused = run(s, 2);
+    paused.splice(20, 0, paused[20], paused[20], paused[20]);
+    const shots: Shot[] = [
+      ...position(s, { leading }).slice(0, leading + 68),
+      ...paused,
+      null,
+      ...run(s, 2),
+      ...Array.from({ length: 37 }, (): Shot => null),
+    ];
+    const { prints, truth } = camera(s, 1800 + leading)(shots);
+    const r = indexPosition(prints, expected);
+    const label = `${leading} before Play, projector 3 paused three shutters and shot again in line`;
+    assert.equal(misplaced(r.assignment, truth), 0, `${label}: filed wrong`);
+    assert.equal(r.ok, false, label);
+  }
+});
+
 test("a window whose Gray planes never separate from their complements is not a run: bracketed test shots of a white are not projector 1", () => {
   // Review C. Test shots of projector 1's white bracketed about the exposure —
   // one over, one under — then copies of it at the exposure: a window starting

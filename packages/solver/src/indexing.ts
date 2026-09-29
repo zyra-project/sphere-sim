@@ -1778,6 +1778,42 @@ function phaseFramesHold(
 }
 
 /**
+ * Whether every frame of the window stands above its black. A run's black is
+ * the page's black, the least light the projector gives, so no photograph of
+ * the run is darker. Over the 1315 runs with a crescent photographed from 384
+ * camera placements in `position.test.ts`'s model, and the 345 on the bench's
+ * own photographs of every clean position `tools/reader-acceptance.ts` reads,
+ * no frame fell below its black by the decoder's floor, {@link DARK_LIMIT}, in
+ * any block. A window that starts on a Gray plane has that plane
+ * for its white and the next for its black, and the next plane's complement
+ * is darker than it wherever it is lit. It happened: a run whose twenty-first
+ * photograph was taken four times — the page paused three shutters — put its
+ * own phase frames back in the phase slots of the window three photographs in,
+ * whose first plane lit nearly all of the crescent and whose second little of
+ * it, so that window's black did not outshine its white and its pairs
+ * separated; found as a broken run, it pushed the in-line re-shoot after it a
+ * projector late. Its frames fell below its black by 0.46 of its modulation.
+ * What falls below may be a tenth of the modulation — the share
+ * {@link LIGHT_INSIDE} leaves the room's light to shift, as for the black
+ * against the white.
+ */
+function framesAboveBlack(fps: readonly FrameFingerprint[], w: RunWindow, runLength: number): boolean {
+  const budget = (1 - LIGHT_INSIDE) * w.modulation;
+  for (let k = 0; k < runLength; k++) {
+    const f = fps[w.start + k];
+    if (f === w.white || f === w.black) continue;
+    let below = 0;
+    for (let i = 0; i < f.values.length; i++) {
+      if (!usableBlock(f, i) || !usableBlock(w.black, i)) continue;
+      const d = w.black.values[i] - f.values[i];
+      if (d >= DARK_LIMIT) below += d;
+    }
+    if (below > budget) return false;
+  }
+  return true;
+}
+
+/**
  * Whether one of the window's Gray pairs separates over the crescent by
  * {@link PAIR_SEPARATION} of its modulation: the plane lit where its
  * complement is not, as a run's coarsest plane always is.
@@ -2284,7 +2320,8 @@ export function indexPosition(
       w === null ||
       w.crescent.length === 0 ||
       !phaseFramesHold(fingerprints, w, phases) ||
-      !pairsSeparate(fingerprints, w, pairs)
+      !pairsSeparate(fingerprints, w, pairs) ||
+      !framesAboveBlack(fingerprints, w, runLength)
     ) {
       s++;
       continue;
