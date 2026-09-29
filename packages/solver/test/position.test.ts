@@ -1370,6 +1370,99 @@ test('a projector re-shot in line — paused, stepped back, played again — rep
   }
 });
 
+test("a photograph copying a run names the slot it lies in, whichever pass of the page laid that slot", () => {
+  // Found by review C's fuzzer once a copy before the first slot stopped naming
+  // it. Projector 2 re-shot in line, its re-shot run spoiled, with projector
+  // 3's white photographed as the page was stepped back; projector 4 out of
+  // view; and the page's remedy added, projector 1 re-shot and played on. One
+  // reading takes the added projector 1 for the whole position played again
+  // in line, which lays projector 3's place once more after it, and the stray
+  // white copying projector 3 — in the first pass's place for projector 3 — was
+  // judged by the later pass's layout alone: in no place, so no evidence, and
+  // that reading filed projector 3 as projector 4. The first pass's places
+  // count too.
+  const s = scene(CHEAP, 16, { azimuth: 0, elevation: 70, distance: 3 });
+  const expected = expectedOf(CHEAP);
+  const dark = (k: number): Shot[] => Array.from({ length: k }, (): Shot => null);
+  const white = (p: number): Shot => ({ projector: p, frame: 0 });
+  const doubled = (p: number, f: number): Shot[] => {
+    const r = run(s, p);
+    r.splice(f, 0, r[f]);
+    return r;
+  };
+  for (const seed of [1105223, 8]) {
+    const shots = [
+      white(0),
+      ...run(s, 0),
+      ...run(s, 1),
+      white(2),
+      white(1),
+      ...doubled(1, 15),
+      ...run(s, 2),
+      ...dark(37),
+      ...run(s, 0),
+      ...run(s, 1),
+      ...doubled(2, 9),
+      ...dark(36),
+      white(0),
+      white(0),
+      white(1),
+      ...dark(37),
+    ];
+    const { prints, truth } = camera(s, seed)(shots);
+    const r = indexPosition(prints, expected);
+    assert.equal(misplaced(r.assignment, truth), 0, `seed ${seed}: filed wrong`);
+    assert.equal(r.ok, false);
+    assert.match(r.problems[0] ?? '', /^The run at photographs 107–140 is copied by photograph 70, where no run was found/);
+  }
+  // And what lies between the passes is in neither: the page played part of
+  // projector 3's run, was sent Home and played again from projector 1. Taken
+  // for photographs before the later pass's first slot, the part of projector
+  // 3's run was a run's worth of copies naming projector 1, and the folder was
+  // refused; it is read.
+  const page = scene(PAGE, 64, { azimuth: 0 });
+  const pageExpected = expectedOf(PAGE);
+  for (const part of [8, 20]) {
+    const again = [white(0), white(0), ...run(page, 0), ...run(page, 1), ...run(page, 2).slice(0, part), ...position(page, { trailing: 3 })];
+    const { prints, truth } = camera(page, 7900 + part)(again);
+    const r = indexPosition(prints, pageExpected);
+    assert.equal(misplaced(r.assignment, truth), 0, `${part} of projector 3 then Home: filed wrong`);
+    assert.deepEqual(r.problems, [], `${part} of projector 3 then Home`);
+    assert.deepEqual(r.usableProjectors, [0, 1, 2, 3], `${part} of projector 3 then Home`);
+  }
+});
+
+test('a spoiled run re-shot from an earlier projector and played on is read: its runs are the same projectors, played on in line or added after', () => {
+  // The page's remedy steps to the projector asked for, but Home goes to the
+  // first projector's white, and a re-shoot started from there plays every run
+  // again. After the page's black that reads two ways — the page played on in
+  // line from projector 2, or runs added after the position — and the two
+  // differed only in calling the re-shot run of the spoiled projector its own
+  // or its re-shoot. The folder was refused as "could be projector 3 or a
+  // re-shoot of projector 3" at every place and every ending tried from 250
+  // degrees. Both file every run under the same projector, and the latest
+  // that passes is used either way.
+  const expected = expectedOf(PAGE);
+  const s = scene(PAGE, 64, { azimuth: 250 });
+  const dark = (k: number): Shot[] => Array.from({ length: k }, (): Shot => null);
+  const shoot = camera(s, 7800);
+  for (const q of [2, 3]) {
+    for (const trail of [0, 3, 17]) {
+      const spoilt = run(s, q);
+      spoilt.splice(20, 0, spoilt[20]);
+      const own = [...dark(2), ...dark(34), ...[1, 2, 3].flatMap((p) => (p === q ? spoilt : run(s, p))), ...dark(trail)];
+      const again = [{ projector: 1, frame: 0 }, ...run(s, 1), ...run(s, 2), ...run(s, 3), ...dark(3)];
+      const { prints, truth } = shoot([...own, ...again]);
+      const r = indexPosition(prints, expected);
+      const label = `projector ${q + 1} spoiled, re-shot from projector 2, ${trail} dark between`;
+      assert.equal(misplaced(r.assignment, truth), 0, `${label}: filed wrong`);
+      assert.deepEqual(r.problems, [], label);
+      assert.deepEqual(r.usableProjectors, [1, 2, 3], label);
+      assert.ok(r.assignment[own.length + 1 + (q - 1) * 34] === q * 34, `${label}: the re-shot run used`);
+    }
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Test 8d — the ends of the folder, past the page's allowance
 // ---------------------------------------------------------------------------

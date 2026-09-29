@@ -2654,50 +2654,58 @@ export function indexPosition(
     inLine: Set<RunWindow>;
     /** Where each projector's photographs are — the latest the page showed — by the runs either side. */
     range: ({ from: number; to: number } | null)[];
+    /**
+     * Every slot each pass laid out, the earlier pass's too: where a photograph
+     * lies in the position, whichever time the page showed that projector.
+     */
+    laid: { q: number; from: number; to: number }[];
     /** Where the position's photographs end and a re-shoot's may begin. */
     positionEnd: number;
     /** Each re-shot run's projector, or null where it matches none or several. */
     tailProjector: Map<RunWindow, number | null>;
     tailWhy: Map<RunWindow, string>;
   }
-  const layout = (c: Count, a0: number): Pick<Reading, 'slotOf' | 'inLine' | 'range' | 'positionEnd'> => {
+  const layout = (c: Count, a0: number): Pick<Reading, 'slotOf' | 'inLine' | 'range' | 'laid' | 'positionEnd'> => {
     const slotOf = new Map<RunWindow, number>();
     for (const [w, r] of c.rel) slotOf.set(w, a0 + r);
     const inLine = new Set(c.pass2.filter((w) => repeats[found.indexOf(w)]));
     const range: ({ from: number; to: number } | null)[] = Array.from({ length: projectors }, () => null);
+    const laid: { q: number; from: number; to: number }[] = [];
+    const place = (q: number, from: number, to: number): void => {
+      range[q] = { from, to };
+      laid.push({ q, from, to });
+    };
     // Each pass lays out its own slots: its runs, the slots between them and,
     // for the pass the page played to the end, the slots after its last run.
     // Pass 2 comes second, so where both hold a slot, its photographs — the
     // latest the page showed — are the ones kept.
     const lay = (runs: readonly RunWindow[], toEnd: boolean): void => {
-      for (const w of runs) range[slotOf.get(w) as number] = { from: w.start, to: w.start + runLength };
+      for (const w of runs) place(slotOf.get(w) as number, w.start, w.start + runLength);
       for (let j = 0; j + 1 < runs.length; j++) {
         const from = runs[j].start + runLength;
         const to = runs[j + 1].start;
         const s0 = slotOf.get(runs[j]) as number;
         const missing = (slotOf.get(runs[j + 1]) as number) - s0 - 1;
         for (let t = 0; t < missing; t++) {
-          range[s0 + 1 + t] = { from: from + t * runLength, to: t === missing - 1 ? to : from + (t + 1) * runLength };
+          place(s0 + 1 + t, from + t * runLength, t === missing - 1 ? to : from + (t + 1) * runLength);
         }
       }
       if (!toEnd) return;
       const lastSlot = slotOf.get(runs[runs.length - 1]) as number;
       const lastEnd = runs[runs.length - 1].start + runLength;
       for (let q = lastSlot + 1; q < projectors; q++) {
-        range[q] = {
-          from: Math.min(c.backLimit, lastEnd + (q - lastSlot - 1) * runLength),
-          to: Math.min(c.backLimit, lastEnd + (q - lastSlot) * runLength),
-        };
+        place(
+          q,
+          Math.min(c.backLimit, lastEnd + (q - lastSlot - 1) * runLength),
+          Math.min(c.backLimit, lastEnd + (q - lastSlot) * runLength),
+        );
       }
     };
     const numbered1 = c.pass1.slice(0, c.numberedCount);
     // Before the first run the slots are laid back from it.
     const first = numbered1[0];
     for (let q = 0; q < a0; q++) {
-      range[q] = {
-        from: Math.max(0, first.start - (a0 - q) * runLength),
-        to: Math.max(0, first.start - (a0 - q - 1) * runLength),
-      };
+      place(q, Math.max(0, first.start - (a0 - q) * runLength), Math.max(0, first.start - (a0 - q - 1) * runLength));
     }
     // After a stretch that is not whole runs nothing says where the later
     // slots are, so they are left without a place rather than given a wrong
@@ -2706,13 +2714,11 @@ export function indexPosition(
     lay(numbered1, c.pass2.length === 0 && c.numberedCount === c.pass1.length);
     if (c.pass2.length > 0) lay(c.pass2, true);
     const lastSlot = slotOf.get(c.last) as number;
-    return { slotOf, inLine, range, positionEnd: c.last.start + runLength + (projectors - 1 - lastSlot) * runLength };
+    return { slotOf, inLine, range, laid, positionEnd: c.last.start + runLength + (projectors - 1 - lastSlot) * runLength };
   };
-  const slotIn = (range: Reading['range'], x: number): number | null => {
-    for (let q = 0; q < projectors; q++) {
-      const r = range[q];
-      if (r !== null && x >= r.from && x < r.to) return q;
-    }
+  /** The slot photograph x lies in, in whichever pass laid it, or none. */
+  const slotIn = (laid: Reading['laid'], x: number): number | null => {
+    for (const r of laid) if (x >= r.from && x < r.to) return r.q;
     return null;
   };
   /**
@@ -2727,15 +2733,16 @@ export function indexPosition(
    * somewhere else, its original. A broken first run's own photographs lie
    * inside the first slot, and name it as they stand.
    */
-  const slotOfCopy = (range: Reading['range'], j: number, x: number): number | null => {
-    const q = slotIn(range, x);
-    const first = range[0];
-    if (q !== null || first === null || x >= first.from) return q;
-    return evidence[j].filter((y) => y < first.from).length > SLOT_SLACK ? 0 : null;
+  const slotOfCopy = (laid: Reading['laid'], j: number, x: number): number | null => {
+    const q = slotIn(laid, x);
+    if (q !== null || laid.length === 0) return q;
+    const x0 = Math.min(...laid.map((r) => r.from));
+    if (x >= x0) return null;
+    return evidence[j].filter((y) => y < x0).length > SLOT_SLACK ? 0 : null;
   };
   const matchTail = (
     tail: readonly RunWindow[],
-    where: Pick<Reading, 'slotOf' | 'range' | 'positionEnd'>,
+    where: Pick<Reading, 'slotOf' | 'laid' | 'positionEnd'>,
   ): Pick<Reading, 'tailProjector' | 'tailWhy'> | null => {
     const tailProjector = new Map<RunWindow, number | null>();
     const tailWhy = new Map<RunWindow, string>();
@@ -2765,7 +2772,7 @@ export function indexPosition(
           .map((x) => {
             const slots = new Set<number>();
             for (let d = -SLOT_SLACK; d <= SLOT_SLACK; d++) {
-              const q = slotOfCopy(where.range, j, x + d);
+              const q = slotOfCopy(where.laid, j, x + d);
               if (q !== null) slots.add(q);
             }
             return slots;
@@ -2879,6 +2886,7 @@ export function indexPosition(
         slotOf: new Map<RunWindow, number>(),
         inLine: new Set<RunWindow>(),
         range: Array.from({ length: projectors }, (): { from: number; to: number } | null => null),
+        laid: [],
         positionEnd: found[0].start,
       };
       const matched = matchTail(tail, where);
@@ -2899,7 +2907,7 @@ export function indexPosition(
         const q = where.slotOf.get(w);
         if (q === undefined || where.inLine.has(w)) return false;
         return evidence[j].some((x) => {
-          const o = slotOfCopy(where.range, j, x);
+          const o = slotOfCopy(where.laid, j, x);
           return o !== null && o !== q;
         });
       });
@@ -3005,7 +3013,16 @@ export function indexPosition(
     'a run that could not be — so there is nothing to count projectors from: a re-shoot is ' +
     "numbered by the position's own runs, and it has none. Shoot the whole camera position " +
     'again, into a folder of its own, and read it under the same camera number.';
-  const contested = found.find((w) => pool.some((r) => statusOf(r, w) !== statusOf(pool[0], w)));
+  /**
+   * The projector a reading files run w under, its own run or a re-shoot of it
+   * alike, or null. Whether a run is a projector's own or its re-shoot changes
+   * nothing filed: that projector's runs are the same runs in either reading,
+   * and the latest that passes is used. A run shot again after the page went
+   * black can be read as played on in line or as added after the position, and
+   * where the two agree on every projector, the folder is read.
+   */
+  const projectorOf = (r: Reading, w: RunWindow): number | null => r.slotOf.get(w) ?? r.tailProjector.get(w) ?? null;
+  const contested = found.find((w) => pool.some((r) => projectorOf(r, w) !== projectorOf(pool[0], w)));
   if (contested !== undefined) {
     // Where one reading is that no run of the position was found at all, the
     // others count the position from a re-shoot and a run's worth or more of
@@ -3369,7 +3386,7 @@ export function indexPosition(
     const from = c.pass1[c.pass1.length - 1].start + runLength;
     const to = c.pass2[0].start;
     const strays = Array.from({ length: Math.max(0, to - from) }, (_, k) => from + k).filter(
-      (x) => slotIn(range, x) === null,
+      (x) => slotIn(reading.laid, x) === null,
     ).length;
     notes.push(
       `The page was stepped back to projector ${(slotOf.get(c.pass2[0]) as number) + 1} and played ` +
