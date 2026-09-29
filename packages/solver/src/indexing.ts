@@ -1972,7 +1972,11 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * Between numbered runs, a stretch of `R` dark photographs is a projector the
  * camera could not see — a note, never a refusal — and one with light in it is
  * a run that could not be found, refused loudly with the projector it belongs
- * to. Dark there is judged against the stretch's own photographs, block by
+ * to, or noted barely seen where it lights fewer than
+ * {@link MIN_CRESCENT_BLOCKS} blocks. Not the slot the front of the folder cuts
+ * short, though: a camera started after Play took its white first, the run's
+ * brightest photograph, and what is left cannot say the projector lights too
+ * little to find, so lit at all it is refused. Dark there is judged against the stretch's own photographs, block by
  * block, and the folder's end against the last run's black — the page painting
  * every quadrant black, photographed by this camera — never against the folder
  * as a whole: room light that came on or went off elsewhere in the folder, or
@@ -3128,7 +3132,18 @@ export function indexPosition(
       );
       continue;
     }
-    if (lit.size < MIN_CRESCENT_BLOCKS) {
+    // A slot the front of the folder cuts short lost its first photographs to
+    // a camera started after Play, and a run's first photograph is its white,
+    // its brightest: what is left cannot say the projector lights too little to
+    // find, and lit at all it is a run that could not be found. On the bench a
+    // run lit only by the room behind the sphere, placed whole, lit 1 to 3
+    // blocks without its white and was noted barely seen, with a note that a
+    // re-shoot from there would see no more of it. Inside the position a slot
+    // short of a run is a photograph dropped, any of its 34, and is judged as
+    // it stands. Light with no pattern in it at all is dark against the slot's
+    // own photographs wherever the slot is, and reads as out of view.
+    const cutByLateStart = r.from === 0 && r.to - r.from < runLength;
+    if (lit.size < MIN_CRESCENT_BLOCKS && !cutByLateStart) {
       barelySeenProjectors.push(p);
       notes.push(
         `Projector ${p + 1} lit only ${lit.size} fingerprint block${lit.size === 1 ? '' : 's'} ` +

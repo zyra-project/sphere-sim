@@ -414,13 +414,13 @@ function scene(plan: Plan, blocks: number, where: Placement): Scene {
   return got;
 }
 
-/** The page plan at azimuth 0, with the projectors moved or re-balanced. */
-function sceneWith(rig: { azimuths: number[]; gains: number[] }): Scene {
+/** The page plan at azimuth 0, or where given, with the projectors moved or re-balanced. */
+function sceneWith(rig: { azimuths: number[]; gains: number[] }, where: Placement = { azimuth: 0 }): Scene {
   const saved = [PROJECTOR_AZIMUTHS.slice(), PROJECTOR_GAINS.slice()];
   PROJECTOR_AZIMUTHS.splice(0, 4, ...rig.azimuths);
   PROJECTOR_GAINS.splice(0, 4, ...rig.gains);
   try {
-    return sceneOf(PAGE, 64, { azimuth: 0 });
+    return sceneOf(PAGE, 64, where);
   } finally {
     PROJECTOR_AZIMUTHS.splice(0, 4, ...saved[0]);
     PROJECTOR_GAINS.splice(0, 4, ...saved[1]);
@@ -1763,6 +1763,53 @@ test('dark is judged where it is looked at: room light elsewhere in the folder n
 // ---------------------------------------------------------------------------
 // Test 8f — photographs of a white that are not a run's
 // ---------------------------------------------------------------------------
+
+test('a slot cut short at the front by a late start is refused where light is left in it, not noted barely seen', () => {
+  // A run's first photograph is its white, its brightest, and a camera started
+  // after Play loses it first. On the bench a run lit only by the room behind
+  // the sphere — each Gray plane photographed as the room's bounce of it, alike
+  // across the picture — was placed whole, and without its white lit 1 to 3
+  // blocks against its slot's own photographs: noted barely seen, and dropped
+  // with a note that a re-shoot from there would see no more of it. Here
+  // projector 1 at a tenth of its gain, each Gray plane photographed half and
+  // half with its complement.
+  const expected = expectedOf(PAGE);
+  const weak = sceneWith({ azimuths: [45, 135, 225, 315], gains: [0.1, 0.92, 1.06, 0.97] });
+  const shots: Shot[] = position(weak, { trailing: 3 }).map((x) =>
+    x === null || x.projector !== 0 || x.frame < 2 || x.frame > 25
+      ? x
+      : { ...x, blend: { projector: 0, frame: x.frame ^ 1, weight: 0.5 } },
+  );
+  const whole = camera(weak, 39)(shots);
+  const read = indexPosition(whole.prints, expected);
+  assert.equal(misplaced(read.assignment, whole.truth), 0);
+  assert.deepEqual(read.usableProjectors, [0, 1, 2, 3], 'placed whole');
+  for (const lost of [1, 2]) {
+    const cut = camera(weak, 39)(shots.slice(lost));
+    const r = indexPosition(cut.prints, expected);
+    const label = `started ${lost} late`;
+    assert.equal(misplaced(r.assignment, cut.truth), 0, label);
+    assert.deepEqual(r.barelySeenProjectors, [], label);
+    assert.deepEqual(r.usableProjectors, [1, 2, 3], label);
+    assert.match(r.problems[0] ?? '', /^Projector 1's photographs are lit, but no run of 34 could be found/, label);
+  }
+  // Inside the position a slot short of a run is a photograph dropped, any of
+  // 34 and not its white first: projector 2 grazing the sphere from here,
+  // barely seen whole, is barely seen still with its white dropped.
+  const grazing = sceneWith({ azimuths: [45, 135, 225, 315], gains: [1, 0.03, 1.06, 0.97] }, { azimuth: 100 });
+  const all = position(grazing, { trailing: 3 });
+  for (const [label, shots] of [
+    ['whole', all],
+    ["projector 2's white dropped", [...all.slice(0, 34), ...all.slice(35)]],
+  ] as const) {
+    const photos = camera(grazing, 40)(shots);
+    const r = indexPosition(photos.prints, expected);
+    assert.equal(misplaced(r.assignment, photos.truth), 0, label);
+    assert.deepEqual(r.barelySeenProjectors, [1], label);
+    assert.deepEqual(r.usableProjectors, [0, 2], label);
+    assert.deepEqual(r.problems, [], label);
+  }
+});
 
 test('test shots of a white before the position, and a white shot twice before its run, cost nothing', () => {
   // An operator setting the exposure steps through the projectors' whites and
