@@ -59,11 +59,14 @@
  * changes when it ran, so a result committed on its own still names the code
  * that wrote it.
  *
- * Usage:  node tools/reader-acceptance.ts [--lanes N] [--only UNIT,...] [--out FILE]
+ * Usage:  node tools/reader-acceptance.ts [--lanes N] [--out FILE]
+ *         node tools/reader-acceptance.ts [--lanes N] --only UNIT,... --out FILE
  *
  * A unit is `main:K`, `spill:K`, `fine:K:C` or `turned:K`. About 30 minutes of
  * one core, 8 on four lanes; lanes run units in parallel, one rig each at a
- * time (a fine rig's camera is about 170 MB of frames).
+ * time (a fine rig's camera is about 170 MB of frames). The whole sweep writes
+ * `experiments/reader-acceptance.json` unless `--out` says otherwise; a run of
+ * some units must name another file (see {@link parseArgs}).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -724,17 +727,35 @@ function measuredCode(): { commit: string; clean: boolean } {
   return { commit, clean: status === '' };
 }
 
-function parseArgs(argv: readonly string[]): { lanes: number; only: string[] | null; out: string } {
+/**
+ * The command line, refused before any work where it would write part of the
+ * sweep over the whole of it.
+ *
+ * `--only` runs some units, and the file written then holds only theirs. It went
+ * to the registered file whenever `--out` did not say otherwise, so a quick look
+ * at one rig, `--only main:0`, replaced the whole sweep's record with one rig's
+ * positions: the file `docs/OPERATOR-PATH.md`'s table is generated from, and
+ * whose numbers the docs quote. Review of PR #53 caught it. A run of some units
+ * now needs an `--out` of its own, and one naming the registered file is
+ * refused too.
+ */
+export function parseArgs(argv: readonly string[]): { lanes: number; only: string[] | null; out: string } {
   let lanes = os.availableParallelism();
   let only: string[] | null = null;
-  let out = OUT;
+  let out: string | null = null;
   for (let i = 0; i < argv.length; i++) {
     const next = argv[i + 1];
     if (argv[i] === '--lanes' && next) lanes = Math.max(1, Number(next));
     else if (argv[i] === '--only' && next) only = next.split(',');
     else if (argv[i] === '--out' && next) out = path.resolve(next);
   }
-  return { lanes, only, out };
+  if (only !== null && (out === null || out === OUT)) {
+    throw new Error(
+      `reader-acceptance: --only runs part of the sweep, and ${path.relative(ROOT, OUT)} is the whole ` +
+        `sweep's record: docs/OPERATOR-PATH.md's table is generated from it. Name another file with --out.`,
+    );
+  }
+  return { lanes, only, out: out ?? OUT };
 }
 
 async function main(): Promise<void> {
@@ -787,11 +808,15 @@ async function main(): Promise<void> {
   console.log(`  wrote ${path.relative(ROOT, out)}`);
 }
 
+// Run only as the command: a test imports `parseArgs` from here, and importing
+// must not start the sweep. The lanes are this file too, as workers.
 if (isMainThread) {
-  main().catch((e: unknown) => {
-    console.error(e);
-    process.exitCode = 1;
-  });
+  if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    main().catch((e: unknown) => {
+      console.error(e);
+      process.exitCode = 1;
+    });
+  }
 } else if ((workerData as { lane?: boolean } | null)?.lane === true) {
   parentPort?.on('message', (unit: string) => {
     parentPort?.postMessage(runUnit(unit));
