@@ -2311,6 +2311,36 @@ test('a test shot of any frame, at any exposure, says nothing about where a run 
     }
   }
 
+  // However many test shots of one projector's pattern, they are no run
+  // played: projector 4's Gray plane photographed four, six and ten times
+  // before Play, with projector 1 out of view and 31 dark photographs before
+  // Play. Counted as that run played before Play, they named projector 1's
+  // place, and the one reading left took projector 4's run for projector 1's
+  // re-shoot and filed every run a projector over, the page saying all was
+  // well. A pass of a run — its frames from its white, in order — is what the
+  // page playing it leaves; one frame photographed again and again is not. So
+  // the folder is refused, as any with that many dark photographs before Play
+  // is: they could be projector 1's run.
+  {
+    const s = scene(PAGE, 64, { azimuth: 250 });
+    const shoot = camera(s, 4242);
+    for (const times of [4, 6, 10]) {
+      const tests = Array.from({ length: times }, (): Shot => ({ projector: 3, frame: MID_U }));
+      const { r, wrong } = read(shoot([...tests, ...position(s, { unseen: [0], leading: 31, trailing: 3 })]));
+      assert.equal(wrong, 0, `projector 4's Gray plane shot ${times} times before Play: filed wrong`);
+      assert.match(r.problems[0] ?? '', /^The run at photographs \d+–\d+ could be projector 2 or projector 3:/, `${times} test shots`);
+    }
+    // And with two photographs of step 0 before Play, read: counted as a run,
+    // they refused it.
+    for (const times of [4, 10]) {
+      const tests = Array.from({ length: times }, (): Shot => ({ projector: 3, frame: MID_U }));
+      const { r, wrong } = read(shoot([...tests, ...position(s, { unseen: [0], leading: 2, trailing: 3 })]));
+      assert.equal(wrong, 0, `projector 4's Gray plane shot ${times} times, 2 before Play: filed wrong`);
+      assert.deepEqual(r.problems, [], `projector 4's Gray plane shot ${times} times, 2 before Play`);
+      assert.deepEqual(r.usableProjectors, [1, 2, 3], `projector 4's Gray plane shot ${times} times, 2 before Play`);
+    }
+  }
+
   // The page's remedy walked end to end with such test shots kept at the head:
   // projector 2's run spoiled by a doubled photograph is refused by name, its
   // re-shoot added as the page says is used, and so is the position shot again.
@@ -2355,6 +2385,34 @@ test('a test shot of any frame, at any exposure, says nothing about where a run 
         assert.equal(wrong, 0, label);
         assert.deepEqual(r.problems, [], label);
         assert.ok(r.reshoots.some((x) => x.projector === q), `${label}: ${JSON.stringify(r.reshoots)}`);
+      }
+    }
+  }
+  // The same on the cheap plan from 110 degrees, each projector the camera
+  // sees lost and re-shot, its white checked at four exposures under. Projector
+  // 3's last phase step there reads flat about its median level and not quite
+  // about its mean: a white a stop under copies it, and it is no frame a copy
+  // can be told by.
+  {
+    const c = scene(CHEAP, 16, { azimuth: 110 });
+    const shootC = camera(c, 55);
+    const e = expectedOf(CHEAP);
+    for (const q of [0, 1, 2]) {
+      for (const gap of [0, 1, 2]) {
+        for (const gain of [0.4, 0.5, 0.6, 0.7]) {
+          const lost = position(c, { unseen: [3], leading: 2, trailing: gap });
+          lost.splice(2 + q * 34 + 6, 1);
+          const replay: Shot[] = [];
+          for (let p = q; p < 4; p++) replay.push(...(p === 3 ? run(c, p).map((): Shot => null) : run(c, p)));
+          const shots = [...lost, { projector: q, frame: 0 }, { projector: q, frame: 0 }, ...replay, null, null, null];
+          const photos = exposed(shootC(shots), new Map([[lost.length, gain]]));
+          const r = indexPosition(photos.prints, e);
+          const label = `cheap plan, projector ${q + 1} lost and re-shot, its white at ${gain} of the exposure ${gap} after the position`;
+          assert.equal(misplaced(r.assignment, photos.truth), 0, label);
+          assert.deepEqual(r.problems, [], label);
+          assert.deepEqual(r.usableProjectors, [0, 1, 2], label);
+          assert.ok(r.reshoots.some((x) => x.projector === q), `${label}: ${JSON.stringify(r.reshoots)}`);
+        }
       }
     }
   }

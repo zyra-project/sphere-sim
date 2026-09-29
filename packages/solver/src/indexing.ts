@@ -2177,10 +2177,10 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * the fingerprint's resolution: a frame that reads flat across the crescent —
  * a phase step, and on the page's plan the finest Gray planes — is copied by
  * a white at another exposure. Before the first slot the camera was being set
- * up, and the few photographs there that copy a run are test shots, of any
- * frame at any exposure, set aside; more than {@link SLOT_SLACK} copying one
- * run are that run played, and name the first slot, since before Play the page
- * plays only the first projector's run. Content alone would do on a sphere;
+ * up, and the photographs there that copy a run are test shots, of any frame at
+ * any exposure, however many of each, set aside; copies there of more than
+ * {@link SLOT_SLACK} of the run's frames are that run played, and name the
+ * first slot, since before Play the page plays only the first projector's run. Content alone would do on a sphere;
  * counting alone would file a re-shoot whose projectors in between were out of
  * view under one of them. When the readings that fit disagree about a run, none
  * is used. A reading whose count has a stretch that is not whole runs is set
@@ -2662,28 +2662,20 @@ export function indexPosition(
     if (copiesFrame(fingerprints[x], found[0].white, found[0])) whiteCopiesBeforeFirst++;
   }
   /**
-   * The projector a run re-shoots in line, counted from the run before it:
-   * the page stepped back (Pause, `[`, Play) from a pass of that projector too
-   * spoiled to be found. That pass is the same run as far as it got — its
-   * photographs are the run's own frames, in order, from its white — so it is
-   * found by them, starting where a place between the two runs starts, within
-   * {@link SLOT_SLACK}, and matching frame by frame through at least one of
-   * the run's patterns: a white and black alone match any pair of one
-   * projector's where a plane lights all of what the camera sees, and a
-   * window found inside a spoiled run, that plane standing in for its white,
-   * is copied by the run's earlier photographs too. The pass ends at the last
-   * photograph between the two that copies the run — a frame the page was
-   * paused on, photographed again — and what follows it, the page stepped on
-   * to the next white or back through the whites, is no projector's. A copy of
-   * the run's patterns earlier in the position would say it belongs somewhere
-   * else, and then it is no re-shoot in line. Null where no such pass lies
-   * between the two runs.
+   * How many photographs from `y` are a pass of run j the page played and was
+   * stopped in: the run's own frames from its white, frame by frame — each
+   * within {@link COMPLEMENT_LIMIT} of the run's over its crescent — up to
+   * `limit`, and through at least one of its patterns. A white and black alone
+   * match any pair of one projector's where a plane lights all of what the
+   * camera sees, and a window found inside a spoiled run, that plane standing
+   * in for its white, is copied by the run's earlier photographs too. A pass
+   * that runs straight into the run, the run's first photograph
+   * the frame the pass would have shown next, never stopped: that is the run
+   * itself, found late where the page was stepped back within it (←). Zero
+   * where the photographs from `y` are no pass.
    */
-  const shotAgainAfter = (before: RunWindow, w: RunWindow): { place: number; end: number } | null => {
-    const j = found.indexOf(w);
-    const from = before.start + runLength;
-    const telling = evidence[j].filter((x) => x >= found[0].start && !copiesFrame(fingerprints[x], w.white, w));
-    if (telling.some((x) => x < from)) return null;
+  const passAt = (j: number, y: number, limit: number): number => {
+    const w = found[j];
     const budget = COMPLEMENT_LIMIT * w.modulation;
     const same = (f: FrameFingerprint, g: FrameFingerprint): boolean => {
       let deviation = 0;
@@ -2694,24 +2686,59 @@ export function indexPosition(
       }
       return true;
     };
+    let got = 0;
+    while (y + got < limit && got < runLength && same(fingerprints[y + got], fingerprints[w.start + got])) got++;
+    let patterned = false;
+    for (let k = 2; k < got && !patterned; k++) patterned = distinctiveOf[j].includes(fingerprints[w.start + k]);
+    if (!patterned) return 0;
+    if (y + got === w.start && got < runLength && same(fingerprints[w.start], fingerprints[w.start + got])) return 0;
+    return got;
+  };
+  /**
+   * The projector a run re-shoots in line, counted from the run before it:
+   * the page stepped back (Pause, `[`, Play) from a pass of that projector too
+   * spoiled to be found, a pass ({@link passAt}) lying between the two runs
+   * and starting where a place between them starts, within
+   * {@link SLOT_SLACK}. The pass ends at the last photograph between the two
+   * that copies the run — a frame the page was paused on, photographed again —
+   * and what follows it, the page stepped on to the next white or back through
+   * the whites, is no projector's. A copy of the run's patterns earlier in the
+   * position would say it belongs somewhere else, and then it is no re-shoot in
+   * line. Null where no such pass lies between the two runs.
+   */
+  const shotAgainAfter = (before: RunWindow, w: RunWindow): { place: number; end: number } | null => {
+    const j = found.indexOf(w);
+    const from = before.start + runLength;
+    const telling = evidence[j].filter((x) => x >= found[0].start && !copiesFrame(fingerprints[x], w.white, w));
+    if (telling.some((x) => x < from)) return null;
     const places = Math.max(1, Math.round((w.start - from) / runLength));
     for (let place = 1; place <= places; place++) {
       const at = from + (place - 1) * runLength;
       for (let y = Math.max(from, at - SLOT_SLACK); y <= at + SLOT_SLACK && y < w.start; y++) {
-        let got = 0;
-        while (y + got < w.start && got < runLength && same(fingerprints[y + got], fingerprints[w.start + got])) got++;
-        let patterned = false;
-        for (let k = 2; k < got && !patterned; k++) patterned = distinctiveOf[j].includes(fingerprints[w.start + k]);
-        if (!patterned) continue;
-        // A pass that runs straight into the run, the run's first photograph
-        // the frame that pass would have shown next, never stopped: it is the
-        // run itself, found late where the page stepped back within it (←)
-        // and a plane that lights all of the crescent stands in for the white.
-        if (y + got === w.start && got < runLength && same(fingerprints[w.start], fingerprints[w.start + got])) continue;
-        return { place, end: Math.max(y + got, ...telling.map((x) => x + 1)) };
+        const got = passAt(j, y, w.start);
+        if (got > 0) return { place, end: Math.max(y + got, ...telling.map((x) => x + 1)) };
       }
     }
     return null;
+  };
+  /**
+   * Each photograph before the first run found that copies run j, with the
+   * frames of run j it copies: its patterns, since a copy of its white there is
+   * the page's step 0 or a test shot of the exposure.
+   */
+  const copiedBeforeFirst = found.map((w, j) =>
+    evidence[j]
+      .filter((x) => x < found[0].start)
+      .map((x) => ({
+        x,
+        frames: distinctiveOf[j].filter((g) => g !== w.white && copiesFrame(fingerprints[x], g, w)),
+      })),
+  );
+  /** How many of run j's frames the photographs before `x0` copy, however many times each. */
+  const framesCopiedBefore = (j: number, x0: number): number => {
+    const frames = new Set<FrameFingerprint>();
+    for (const c of copiedBeforeFirst[j]) if (c.x < x0) for (const g of c.frames) frames.add(g);
+    return frames.size;
   };
   const countPosition = (t: number): Count | null => {
     const runs = found.slice(0, t);
@@ -2934,10 +2961,11 @@ export function indexPosition(
   /**
    * The slot a photograph copying run j's frames names in a reading: the one it
    * lies in, or none. Before the first slot the page showed step 0 while the
-   * camera was set up, and a few copies there are test shots, which say nothing
-   * about where run j belongs — a focus shot of its stripes, a test of the
-   * exposure. More than {@link SLOT_SLACK} of them are run j played, and before
-   * the position the page plays only the first projector's run — step 0 is its
+   * camera was set up, and copies there are test shots, however many, which say
+   * nothing about where run j belongs — a focus shot of its stripes, a test of
+   * the exposure, each one frame photographed again and again. Copies of more
+   * than {@link SLOT_SLACK} of run j's frames are run j played, and before the
+   * position the page plays only the first projector's run — step 0 is its
    * white, and Play starts from it — so they name the first slot: an attempt at
    * that run the page was stepped back from or, in a reading that has put run j
    * somewhere else, its original. A broken first run's own photographs lie
@@ -2948,7 +2976,7 @@ export function indexPosition(
     if (q !== null || laid.length === 0) return q;
     const x0 = Math.min(...laid.map((r) => r.from));
     if (x >= x0) return null;
-    return evidence[j].filter((y) => y < x0).length > SLOT_SLACK ? 0 : null;
+    return framesCopiedBefore(j, x0) > SLOT_SLACK ? 0 : null;
   };
   const matchTail = (
     tail: readonly RunWindow[],
