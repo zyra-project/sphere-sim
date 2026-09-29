@@ -1481,7 +1481,29 @@ function addLitBlocks(f: FrameFingerprint, floor: Float64Array, into: Set<number
   }
 }
 
-/** The references at `start`, or null when they light nothing. */
+/**
+ * The references at `start`, or null when they light nothing — or when the
+ * black outshines the white.
+ *
+ * A run's white is its brightest photograph and its black the page's black, so
+ * wherever the two differ the white is the brighter. Nine tenths of what they
+ * differ by has to be the white's — the share {@link LIGHT_INSIDE} asks of a
+ * photograph's light before it is taken for part of a run — which leaves the
+ * room's light room to shift between two photographs. A window that starts on a
+ * Gray plane has that plane for its white and the plane's complement for its
+ * black, lit wherever the plane is dark, and every later pair still adds up to
+ * the two, so the complement identity cannot tell it from a run. It happened:
+ * one run's second phase step photographed three times put that run's phase
+ * frames back in the phase slots of a window two photographs in, the phase
+ * identities held, and the window was placed with the run's frames a slot or
+ * two out while the page said every frame was found. In `position.test.ts`'s
+ * model the black of each such window took 0.72 to 0.95 of what it and its
+ * white differed by, and over 1316 runs photographed from 384 camera
+ * placements no run's black was brighter than its white in any block. What
+ * this cannot see is a coarse plane that lights all of what the camera sees of
+ * its projector: that plane is then the run's white in every block, and its
+ * complement the run's black.
+ */
 function runWindowAt(
   fps: readonly FrameFingerprint[],
   start: number,
@@ -1492,12 +1514,17 @@ function runWindowAt(
   const black = fps[start + blackAt];
   const cells = white.values.length;
   let peak = 0;
+  let whiter = 0;
+  let blacker = 0;
   for (let i = 0; i < cells; i++) {
     if (!usableBlock(white, i) || !usableBlock(black, i)) continue;
     const m = white.values[i] - black.values[i];
     if (m > peak) peak = m;
+    if (m >= DARK_LIMIT) whiter += m;
+    else if (-m >= DARK_LIMIT) blacker -= m;
   }
   if (!(peak >= DARK_LIMIT)) return null;
+  if (!(whiter >= LIGHT_INSIDE * (whiter + blacker))) return null;
   const cut = Math.max(DARK_LIMIT, MODULATION_FLOOR * peak);
   const crescent: number[] = [];
   const lit = new Uint8Array(cells);

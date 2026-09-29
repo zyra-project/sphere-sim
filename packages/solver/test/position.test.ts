@@ -1875,3 +1875,37 @@ test('phase slots holding a white, a black, a plane lit nowhere and one lit ever
   assert.match(r.problems.join(' '), /Re-shoot projector 1\./);
   assert.deepEqual(r.usableProjectors, [1, 2, 3]);
 });
+
+test('a window whose black outshines its white is not a run: a phase step shot three times refuses its run, never places it frames out', () => {
+  // Review B. With one run's second phase step photographed three times — the
+  // page paused two shutters, or the camera fired twice more — the run's own
+  // window no longer fits, and the scan went on into it: a window starting on
+  // the run's first Gray plane, that plane for its white and its complement for
+  // its black, passed every identity, and the run was placed with its frames a
+  // slot or two out while the page said every frame was found. A run's black is
+  // never brighter than its white; that window's black was, over most of what
+  // the two differ by. The five folders the review found, each refused now in
+  // words that name its projector, and costing no other run.
+  const expected = expectedOf(PAGE);
+  const R = 34;
+  for (const [azimuth, elevation, q, f] of [
+    [0, -12, 0, 27],
+    [0, 30, 0, 27],
+    [110, -12, 1, 27],
+    [250, 30, 3, 27],
+    [250, 30, 3, 28],
+  ] as const) {
+    const s = scene(PAGE, 64, { azimuth, elevation });
+    const label = `azimuth ${azimuth}, elevation ${elevation}: projector ${q + 1}'s frame ${f + 1} three times`;
+    const clean = indexPosition(camera(s, 1900 + azimuth + f)(position(s, { leading: 1, trailing: 2 })).prints, expected);
+    const shots = position(s, { leading: 1, trailing: 2 });
+    const at = 1 + q * R + f;
+    shots.splice(at, 0, shots[at], shots[at]);
+    const { prints, truth } = camera(s, 900 + azimuth + f)(shots);
+    const r = indexPosition(prints, expected);
+    assert.equal(misplaced(r.assignment, truth), 0, `${label}: filed wrong`);
+    assert.ok(clean.usableProjectors.includes(q), `${label}: the clean position has to place it`);
+    assert.deepEqual(r.usableProjectors, clean.usableProjectors.filter((p) => p !== q), label);
+    assert.match(r.problems.join(' '), new RegExp(`Re-shoot projector ${q + 1}\\.`), label);
+  }
+});
