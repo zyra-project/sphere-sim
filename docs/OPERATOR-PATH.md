@@ -459,7 +459,16 @@ cameras from 0; the correction below is about that reader.)
 >
 > None of those is a real photograph. What the reader cannot see, its docblock
 > names: a run deleted from the folder, which is why the page tells the operator
-> never to delete a photograph; a camera moved between a run and its re-shoot —
+> never to delete a photograph; photographs lost at an end where a projector the
+> camera cannot see was playing — four or more of them, with more than 30 extras
+> at the other end, read by count exactly like a position numbered a projector
+> over — which is why the page and the card tell the operator to start the
+> camera before Play and stop it at the page's end tone, not when the sphere
+> goes dark on the camera's side, as it does for the whole run of a projector
+> lighting the far side; a run's worth of dark photographs added inside such a
+> projector's run — the page paused while it played, or it played twice —
+> which, where the last projector is out of view too, reads the same way; a
+> camera moved between a run and its re-shoot —
 > on the bench's photographs of the designed rigs, at the reduced preset, a
 > re-shoot from a camera turned half a degree was still matched in 139 of 140
 > runs, and from one turned five degrees in 67 of 140, so the tripod staying put,

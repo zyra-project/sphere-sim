@@ -2067,16 +2067,19 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * cut short or whole. A position that lost four or more photographs at a dark
  * end — its camera started after Play, or stopped before the page's end, which
  * from here can look like the sphere going dark while a projector it cannot see
- * plays on — and that holds thirty-one or more extras at the other end reads,
- * by count, exactly like one numbered a projector over, and it is filed
- * wrongly. So is one with a run's worth of dark photographs added inside — a
- * projector this camera cannot see played twice, or the page paused a minute
- * in its run — when the last projector is out of view as well: its dark run
- * reads as photographs taken after the black, with no extras needed at all. And
- * a remnant of three photographs or fewer at an end is taken for strays.
- * Nothing in the photographs says otherwise, so the page's instructions are
- * the defence: start the camera before Play, stop it only when the page has
- * played to its end, and stop the camera rather than pause the page.
+ * plays on — and that holds thirty-one or more dark extras at the other end, a
+ * run and the allowance at most, reads, by count, exactly like one numbered a
+ * projector over, and it is filed wrongly. (Extras lit by the page's first
+ * step, shot before Play, put light where that numbering needs a projector out
+ * of view, and it is refused.) One with a run's worth of dark photographs added
+ * inside — a projector this camera cannot see played twice, or the page paused
+ * a minute in its run — is filed wrongly too when the last projector is out of
+ * view as well: its dark run reads as photographs taken after the black, with
+ * no extras needed at all. And a remnant of three photographs or fewer at an
+ * end is taken for strays. Nothing in the photographs says otherwise, so the
+ * page's instructions are the defence: start the camera before Play, stop it
+ * only at the page's end tone — not when the sphere goes dark on the camera's
+ * side — and stop the camera rather than pause the page.
  */
 export function indexPosition(
   fingerprints: readonly FrameFingerprint[],
@@ -2126,7 +2129,10 @@ export function indexPosition(
         "it with the position's own photographs, so it has to be added to the end of that " +
         "camera position's folder, not handed in alone. Hand in every photograph the camera " +
         'took, the dark ones included: they are how the projectors this camera cannot see are ' +
-        'counted.',
+        'counted. And if the camera was started after Play, or stopped before the page had ' +
+        "played to its end — the sphere goes dark on the camera's side while a projector this " +
+        'camera cannot see is playing — shoot the whole camera position again, into a folder of ' +
+        'its own, and read it under the same camera number.',
     );
     return refuse();
   }
@@ -2774,9 +2780,11 @@ export function indexPosition(
   const wholes = readings.filter(whole);
   const pool = wholes.length > 0 && wholes.every(matchesEvery) ? wholes : readings;
   const positionAdvice =
-    "A camera position is every projector's run back to back, from the first: keep every " +
-    'dark photograph, since they are how the projectors this camera cannot see are counted, ' +
-    'and keep the photographs taken before Play and after the screen goes black to a few.';
+    "A camera position is every projector's run back to back, from the first: start the camera " +
+    'before Play and stop it only once the page has played to its end, not when the sphere goes ' +
+    "dark on the camera's side, as it does while a projector this camera cannot see is playing; " +
+    'keep every dark photograph, since they are how such projectors are counted; and keep the ' +
+    'photographs taken before Play and after the screen goes black to a few.';
   const runsFound = (k: number): string => (k === 1 ? 'run' : `${k} runs`);
   if (pool.length === 0) {
     // The runs number, so what no reading fits is a run that repeats another

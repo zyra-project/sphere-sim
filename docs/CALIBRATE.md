@@ -139,9 +139,13 @@ not a calibration.
       4½ minutes on a four-projector rig at a 2-second dwell; the page shows the
       count for yours. The tone marks each step, so you can hear that the shutter
       is still falling between steps rather than on them.
-- [ ] **The screen goes black when the position is done.** That is the only
-      end-of-sequence signal visible from where you are standing.
-- [ ] **Stop the intervalometer soon after the screen goes black**, then **check
+- [ ] **The position is done at the page's end tone, not when the sphere goes
+      dark on your side.** Each step ticks; the end is a lower, longer tone, as
+      the page paints the screen black. From where you stand the sphere looks
+      dark for the whole run of a projector lighting its far side — one this
+      camera cannot see — and that run is still playing and must still be
+      photographed: its dark photographs are how the page counts it. (Part 4.6)
+- [ ] **Stop the intervalometer soon after the end tone**, then **check
       on the camera before you move** (Part 5): white frame not clipped inside
       the crescent, black frame nearly black, finest stripes clearly separated
       rather than shimmering, whole silhouette in frame.
@@ -152,7 +156,10 @@ not a calibration.
       the folder it looks just like extras, so keep them **under about 30 at
       each end** — about a minute at a 2-second dwell. Past that the page may
       not be able to tell which projector is which, and it refuses the folder
-      rather than guess. (Part 4.6)
+      rather than guess — unless photographs are missing at the other end as
+      well, from a camera started after Play or stopped before the end tone
+      where a projector it cannot see was playing: then it can file every run
+      under the wrong projector with nothing to say so. (Part 4.6)
 - [ ] **If you know a frame was spoiled** — somebody walked into the beam, a
       shot was missed — **re-shoot that projector now, into the same folder,
       before you move the tripod.** Press **Home**, then **]** until the page
@@ -416,7 +423,10 @@ sphere. The page sequences this; you never arrange it.
 **Nothing but the pattern may be on screen.** Everything the page draws is light
 on the ball, its own control panel included. Arm it — the panel and the cursor go
 away — before the shutter opens. When the sequence ends the screen goes black,
-which is the only end-of-sequence signal visible from where you are standing.
+which is the only end-of-sequence signal visible from where you are standing —
+but from there not every dark sphere is the end: it looks dark on your side for
+the whole run of a projector lighting its far side. The end to trust is the
+page's end tone (rule 6 below).
 
 At the page's settings the sequence is **34 frames per projector**: an all-white
 and an all-black reference, then per axis six Gray planes each followed
@@ -664,23 +674,42 @@ Then, in order:
    **name, ascending**, and hand in one camera position at a time.
 5. Do not move the tripod within a position. Move it only between positions,
    and only once any re-shoot of the position you are at is done (rule 2).
-6. **Keep the photographs taken after the screen went black, and keep the
-   extras at either end few.** The page sets aside the photographs before you
-   pressed `Play` and the dark ones after the black, each with a note, and notes
-   a projector this camera could not see rather than refusing it. What it cannot
-   always tell is which is which: a projector out of view is a run of dark
-   photographs, and at either end of the folder it looks just like extras. So do
-   not start the intervalometer long before you press `Play`, and stop it soon
-   after the screen goes black — **under about 30 at each end** with the default
-   plan of 34 frames a projector, about a minute at a 2-second dwell, and well
-   under one projector's run with any plan. A long run of extras can leave the
-   page unable to tell which projector is which, and it refuses the folder
-   rather than guess. An earlier version of this card said to delete the
-   photographs after the black, because the page's old reader counted the last
-   run to the end of the folder and dropped it. The page's reader no longer
-   does: on the bench's rendered photographs every folder with none, one or
-   three photographs before `Play` and none, one or two after the black read as
-   its position, 432 of 432.
+6. **Photograph the whole sequence, from before `Play` to the page's end tone,
+   and keep the extras at either end few.** The end of the position is the
+   page's end tone, not the sphere going dark on your side. You stand at one
+   camera, and from there the sphere looks dark for the whole run of a
+   projector lighting its far side: that is a projector this camera cannot
+   see, still playing, and its run must still be photographed — its dark
+   photographs are how the page counts it. With the tick on, every step ticks
+   and the end is a lower, longer tone, as the page paints the screen black
+   (`advance()` in `emit.ts`). And the camera starts before `Play`, as the
+   aimed start has it.
+
+   Keep the photographs taken after the screen went black. The page sets aside
+   the photographs before you pressed `Play` and the dark ones after the black,
+   each with a note, and notes a projector this camera could not see rather
+   than refusing it. What it cannot always tell is which is which: a projector
+   out of view is a run of dark photographs, and at either end of the folder it
+   looks just like extras. So do not start the intervalometer long before you
+   press `Play`, and stop it soon after the end tone — **under about 30 at each
+   end** with the default plan of 34 frames a projector, about a minute at a
+   2-second dwell, and well under one projector's run with any plan. A long run
+   of extras can leave the page unable to tell which projector is which, and it
+   refuses the folder rather than guess — while nothing is missing at the other
+   end. A camera started after `Play` loses photographs at the front of the
+   folder, and one stopped when the sphere went dark on your side loses them at
+   the back; where the projector there is one this camera cannot see they are
+   dark, and nothing in the folder says they are gone. Four or more of those
+   lost at one end, with more than 30 extras at the other, read by count
+   exactly like a folder numbered a projector over, and the page can file every
+   run under the wrong projector with nothing to say so (`indexPosition`'s
+   docblock, `packages/solver/src/indexing.ts`).
+
+   An earlier version of this card said to delete the photographs after the
+   black, because the page's old reader counted the last run to the end of the
+   folder and dropped it. The page's reader no longer does: on the bench's
+   rendered photographs every folder with none, one or three photographs before
+   `Play` and none, one or two after the black read as its position, 432 of 432.
 
 ## Part 5 · What good looks like, before you leave
 
@@ -716,6 +745,7 @@ for software that does not exist yet, and it should get shorter as the phases in
 | Re-shoot a spoiled projector into the same folder, before the tripod moves | **survives, and is the page's own remedy now.** It reads the re-shot run in place of the spoiled one; the tripod is what keeps that safe, because the page cannot tell a re-shoot from a camera that moved |
 | Re-shoot the whole position, aimed, after a straddle | **goes with the aimed start, when Phase 5's done-when is met.** Until nothing can start mid-change, a straddle smears the runs that pass as well, and nothing on the page says so |
 | Keep the extras at either end few | **survives for now, and is looser than it was.** It used to be *delete the photographs after the screen goes black*, because the page counted the last run to the end of the folder. Its reader sets extras aside now, but cannot tell dark extras from a projector out of view at the same end |
+| Start the camera before `Play` and stop it after the end tone | **Phase 5 could delete it** — a tethered camera is tripped by the laptop that advances the pattern. Until then a dark end cut short looks the same as a whole one, and the page's reader cannot tell them apart |
 | Set the camera number for each position, from 1 | **Phase 5 could delete it** — a tethered camera is known to the software driving it. Until then nothing in a photograph says which camera took it (below) |
 | Make sure filenames sort in capture order | **Phase 2 softened it** — a run is found by its references, not by its filenames — but the order inside a run still comes from them |
 | One projector lit at a time | **Phase 1 deleted it as a task.** Still true of the physics; the emitter sequences it and the operator never arranges it |

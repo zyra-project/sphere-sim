@@ -157,7 +157,8 @@ button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); 
       <label class="field"><span>Auto-advance, seconds</span>
         <input id="dwell" type="number" min="0.2" max="30" step="0.1"/></label>
       <label class="check"><input id="tick" type="checkbox"/>
-        Tick on each step, so you can work without watching the screen</label>
+        Tick on each step, and a lower, longer tone at the end, so you can work without watching
+        the screen</label>
     </div>
     <p class="note" id="plannote"></p>
     <div class="hudrow">
@@ -201,12 +202,26 @@ button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); 
     </p>
     <p class="note">
       So that those extras stay few, do not start the intervalometer long before you press Play,
-      and stop it soon after the screen goes black: keep them under about 30 at each end with the
+      and stop it soon after this page’s end tone: keep them under about 30 at each end with the
       default plan of 34 frames a projector, which is about a minute at a 2-second dwell, and well
       under one projector’s run with any plan. When a projector is out of this camera’s view, its
       run is dark photographs too, and they look just like extras at either end. A long run of
       extras can then leave this page unable to tell which projector is which, and it refuses the
       folder rather than guess.
+    </p>
+    <p class="note">
+      The end tone, not the sphere going dark, is the end of the position. With “Tick on each
+      step” ticked, every step ticks and the end is a lower, longer tone, as the page paints the
+      screen black. You stand at one camera, and from there the sphere looks dark for the whole
+      run of a projector lighting its far side: that is a projector this camera cannot see, still
+      playing, and its run must still be photographed — its dark photographs are how this page
+      counts it. So start the intervalometer before you press Play, and stop it only after the end
+      tone. A camera started after Play loses photographs at the front of the folder, and one
+      stopped when the sphere went dark on your side loses them at the back; where the projector
+      there is one this camera cannot see, they are dark, and nothing in the folder says they are
+      gone. Four or more of those lost at one end, with more than 30 extras at the other, read by
+      count exactly like a folder numbered a projector over, and this page can file every run
+      under the wrong projector with nothing to say so.
     </p>
     <p class="note">
       Set the <em>camera</em> number before you read each position — 1 for the first, 2 for the

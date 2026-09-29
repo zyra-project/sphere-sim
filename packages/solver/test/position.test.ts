@@ -1429,6 +1429,33 @@ test('the ends are held to lower bounds only: photographs past the allowance ref
     assert.match(problems[0] ?? '', /keep the photographs taken before Play and after the screen goes black to a few\.$/);
     assert.doesNotMatch(problems.join(' '), /re-shoot/i);
   }
+  // Projector 4 out of view, and the camera stopped two photographs into its
+  // run: from the camera's side the sphere went dark as that run began, which
+  // is easy to take for the page's end. Too short for a position with two
+  // photographs of the page's first step before Play, and with thirty nothing
+  // numbers three runs and two dark photographs as four projectors. Either way
+  // the words say which end to wait for: the page's, not the sphere going dark.
+  // (With thirty-one DARK photographs before Play — the page left on black —
+  // it numbers them one over and says ok: the limit `indexPosition`'s docblock
+  // names, which only the procedure prevents.)
+  const whites = (k: number): Shot[] => Array.from({ length: k }, (): Shot => ({ projector: 0, frame: 0 }));
+  const stopped = [...run(p4Out, 0), ...run(p4Out, 1), ...run(p4Out, 2), ...dark(2)];
+  {
+    const problems = refusedWhole('projector 4 out of view, stopped as its run began', [...whites(2), ...stopped], p4Out, 36);
+    assert.match(problems[0] ?? '', /^The folder holds 106 photographs, /);
+    assert.match(
+      problems[0] ?? '',
+      /And if the camera was started after Play, or stopped before the page had played to its end — the sphere goes dark on the camera's side while a projector this camera cannot see is playing — shoot the whole camera position again, into a folder of its own, and read it under the same camera number\.$/,
+    );
+  }
+  {
+    const problems = refusedWhole('projector 4 out of view, 30 before Play, stopped as its run began', [...whites(30), ...stopped], p4Out, 37);
+    assert.match(problems[0] ?? '', /^The 3 runs found do not fit 4 projectors /);
+    assert.match(
+      problems[0] ?? '',
+      /start the camera before Play and stop it only once the page has played to its end, not when the sphere goes dark on the camera's side, as it does while a projector this camera cannot see is playing;/,
+    );
+  }
   // A clean position, every projector in view, 50 dark photographs after the
   // black: one numbering, but only with more extras than the page leaves room
   // for — which is also what a run lost from the folder looks like.
