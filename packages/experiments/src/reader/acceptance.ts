@@ -45,6 +45,16 @@
  * when Play is left running, or handed in alone. Every one is read against what
  * the position alone was read as.
  *
+ * And the faults an operator makes on the way (review B's finding 11, untested
+ * until then): the camera started a few photographs after Play, with a few dark
+ * ones after the black; stopped a few photographs early, with a few of step 0
+ * before Play; an exposure test shot of another projector's white before Play,
+ * alone and with that projector's re-shoot appended; and a projector's run
+ * spoiled, one photograph shot twice or not at all, with its re-shoot appended
+ * or played on. None of those has to read as the position: each is held to
+ * reading as it, or being refused in words, and never to a photograph filed
+ * under the wrong projector or frame.
+ *
  * Used by `packages/experiments/test/reader.test.ts` on two rigs at the reduced
  * preset and by `tools/reader-acceptance.ts` on every clean position
  * EXPERIMENT-10's Q0 photographed, so the two hold the reader to one statement
@@ -149,7 +159,21 @@ export interface CameraShots {
   whiteOf: (p: number) => PhotoSummary[];
   /** Four photographs of the page's black after the last step. */
   darks: PhotoSummary[];
+  /**
+   * A second photograph of projector p's frame f, as the camera takes when it
+   * fires twice on one step. Rendered when first asked for.
+   */
+  twiceOf: (p: number, f: number) => PhotoSummary;
 }
+
+/**
+ * The draw of a pair's second stream a photograph shot twice is taken from:
+ * the one before the three a white shot before Play is taken from and the four
+ * of the page's black. A run shot again takes this draw for its own frame 29,
+ * so a folder holding both still holds no two photographs that are the same
+ * draw of the same frame, for any frame shot twice but that one.
+ */
+const TWICE_AT = FRAMES_PER_RUN - 5;
 
 /**
  * Camera `camera` of `bank`, photographed.
@@ -177,6 +201,11 @@ export function photographCamera(bank: RigBank, camera: number, second: number):
   const own = EVERY.map((p) => shoot(bank, camera, p, frames(p), bank.seed));
   const last = PROJECTORS - 1;
   const dark = stateFrame(bank, camera, last, 'dark');
+  const twice = kept((key) => {
+    const p = Math.floor(key / FRAMES_PER_RUN);
+    const f = key % FRAMES_PER_RUN;
+    return shoot(bank, camera, p, () => bank.frames[camera][p][f], second, TWICE_AT)[0];
+  });
   return {
     rig: bank.k,
     camera,
@@ -186,6 +215,7 @@ export function photographCamera(bank: RigBank, camera: number, second: number):
     again: kept((p) => shoot(bank, camera, p, frames(p), second)),
     whiteOf: kept((p) => shoot(bank, camera, p, () => bank.frames[camera][p][WHITE], second, FRAMES_PER_RUN - 3)),
     darks: shoot(bank, camera, last, () => dark, second, FRAMES_PER_RUN - 4),
+    twiceOf: (p, f) => twice(p * FRAMES_PER_RUN + f),
   };
 }
 
@@ -219,6 +249,34 @@ export function runsPart(runOf: (p: number) => readonly PhotoSummary[], from: nu
 /** Photographs that belong to no run. */
 export function extrasPart(photos: readonly PhotoSummary[]): Part {
   return { photos, truth: photos.map(() => -1) };
+}
+
+/** A part less its first `k` photographs: what a camera started `k` photographs after Play keeps. */
+export function withoutFirst(part: Part, k: number): Part {
+  return { photos: part.photos.slice(k), truth: part.truth.slice(k) };
+}
+
+/** A part less its last `k` photographs: what a camera stopped `k` photographs early keeps. */
+export function withoutLast(part: Part, k: number): Part {
+  const n = part.photos.length - k;
+  return { photos: part.photos.slice(0, n), truth: part.truth.slice(0, n) };
+}
+
+/**
+ * A part with photograph `at` shot twice — `twice`, a second photograph of the
+ * same frame, straight after it — or not shot at all.
+ */
+export function spoiled(part: Part, at: number, how: 'doubled' | 'dropped', twice: PhotoSummary): Part {
+  if (how === 'dropped') {
+    return {
+      photos: [...part.photos.slice(0, at), ...part.photos.slice(at + 1)],
+      truth: [...part.truth.slice(0, at), ...part.truth.slice(at + 1)],
+    };
+  }
+  return {
+    photos: [...part.photos.slice(0, at + 1), twice, ...part.photos.slice(at + 1)],
+    truth: [...part.truth.slice(0, at + 1), part.truth[at], ...part.truth.slice(at + 1)],
+  };
 }
 
 export interface Folder {
@@ -532,6 +590,8 @@ export interface ShapeRecord {
   rig: number;
   camera: number;
   shape: string;
+  /** The shape less the projector and the counts it was made with: what the totals count by. */
+  kind: string;
   photographs: number;
   placed: number[];
   unseen: number[];
@@ -541,6 +601,8 @@ export interface ShapeRecord {
   problems: string[];
   reasons: Reason[];
   notes: string[];
+  /** Read as the position alone was, a re-shot run used where one was added, and nothing refused. */
+  read: boolean;
   misfiled: number;
   failures: string[];
 }
@@ -548,23 +610,22 @@ export interface ShapeRecord {
 const same = (a: readonly number[], b: readonly number[]): boolean =>
   a.length === b.length && a.every((x, i) => x === b[i]);
 
-/** Read one shape, and what it fails of `expect` and of `extra`. */
-function readShape(
-  shots: CameraShots,
-  shape: string,
-  parts: readonly Part[],
-  judge: (indexed: IndexedCapture, failures: string[]) => void,
-): ShapeRecord {
+/** Adds what a shape fails to `failures`, and says whether the page read it as its position. */
+export type Judge = (indexed: IndexedCapture, failures: string[]) => boolean;
+
+/** Read one shape, and what it fails of its judge. */
+function readShape(shots: CameraShots, shape: string, kind: string, parts: readonly Part[], judge: Judge): ShapeRecord {
   const f = folder(parts);
   const indexed = indexPhotographs(f.summaries, MANIFEST);
   const wrong = misfiled(indexed, f.truth);
   const failures: string[] = [];
   if (wrong.length > 0) failures.push(`${wrong.length} photographs filed under the wrong frame: ${wrong.slice(0, 3).join('; ')}`);
-  judge(indexed, failures);
+  const read = judge(indexed, failures) && wrong.length === 0;
   return {
     rig: shots.rig,
     camera: shots.camera,
     shape,
+    kind,
     photographs: f.summaries.length,
     placed: indexed.runs.map((r) => r.projector),
     unseen: [...indexed.unseen],
@@ -574,6 +635,7 @@ function readShape(
     problems: [...indexed.problems],
     reasons: indexed.problems.map(reasonOf),
     notes: [...indexed.notes],
+    read,
     misfiled: wrong.length,
     failures,
   };
@@ -583,8 +645,9 @@ function readShape(
  * Every run placed, and out of view and barely seen, as `expect` says, and
  * nothing refused that the position alone was not refused on.
  */
-function asPosition(expect: Expected) {
-  return (indexed: IndexedCapture, failures: string[]): void => {
+function asPosition(expect: Expected): Judge {
+  return (indexed, failures) => {
+    const before = failures.length;
     const placed = indexed.runs.map((r) => r.projector);
     if (!same(placed, expect.placed)) failures.push(`placed [${placed}], and the position alone [${expect.placed}]`);
     if (!same(indexed.unseen, expect.unseen)) failures.push(`out of view [${indexed.unseen}], and the position alone [${expect.unseen}]`);
@@ -595,8 +658,68 @@ function asPosition(expect: Expected) {
       const p = problemProjector(problem);
       if (p === null || !expect.refused.includes(p)) failures.push(`refused: ${problem}`);
     }
+    return failures.length === before;
   };
 }
+
+/** Re-shoots used for exactly `want`'s projectors, each from a run at or after photograph `from`, counted from 0. */
+function reshotAfter(want: readonly number[], from: number): Judge {
+  return (indexed, failures) => {
+    const before = failures.length;
+    const got = indexed.reshoots.map((r) => r.projector);
+    if (!same(got, want)) failures.push(`re-shoots used for [${got}], where runs of [${want}] were added`);
+    if (!indexed.reshoots.every((r) => r.used >= from)) failures.push('a re-shoot used from inside the position');
+    return failures.length === before;
+  };
+}
+
+/**
+ * Read as its position, and as `also` says where given — or refused in words.
+ * Refused in words: a problem said, nothing placed or noted that the position
+ * alone did not place or note, and every run the position alone placed that
+ * this does not place named in a problem, unless one is about the folder as a
+ * whole. What is placed is held to the photographs' frames either way.
+ */
+export function asPositionOrRefused(expect: Expected, also?: Judge): Judge {
+  return (indexed, failures) => {
+    const asIt: string[] = [];
+    const read = asPosition(expect)(indexed, asIt);
+    if (read && (also === undefined || also(indexed, asIt))) return true;
+    if (indexed.problems.length === 0) {
+      failures.push(`neither read as its position nor refused: ${asIt.join('; ')}`);
+      return false;
+    }
+    const placed = indexed.runs.map((r) => r.projector);
+    for (const p of placed) if (!expect.placed.includes(p)) failures.push(`projector ${p + 1} placed, and the position alone does not place it`);
+    for (const p of indexed.unseen) if (!expect.unseen.includes(p)) failures.push(`projector ${p + 1} noted out of view, and the position alone does not note it`);
+    for (const p of indexed.barelySeen) {
+      if (!expect.barelySeen.includes(p)) failures.push(`projector ${p + 1} noted barely seen, and the position alone does not note it`);
+    }
+    const named = new Set(indexed.problems.map(problemProjector));
+    if (!named.has(null)) {
+      for (const p of expect.placed) if (!placed.includes(p) && !named.has(p)) failures.push(`projector ${p + 1} neither placed nor refused`);
+    }
+    return false;
+  };
+}
+
+/** How many photographs the camera started late or stopped early by, in the faults' folders. */
+export const FEW_LOST: readonly number[] = [1, 2, 4, 8];
+
+/**
+ * Which of the faults' folders {@link judgeShapes} builds: every one, or a few
+ * for a test — started and stopped 2 and 4 photographs out, the last projector
+ * placed test-shot, and the first projector re-shot spoiled, doubled and
+ * appended and dropped and played on.
+ */
+export type Faults = 'every' | 'few';
+
+/**
+ * The frame a spoiled run has shot twice or not at all: Gray plane u4, frame 11
+ * counted from 1, whose complement follows it. Every frame after it in the run
+ * is then one out, and its pair and every later one no longer add up.
+ */
+export const SPOILED = 10;
 
 /**
  * The card's folder shapes for one camera, each read by the page and held to
@@ -605,8 +728,23 @@ function asPosition(expect: Expected) {
  * shot again and added after the position, shot again with the page played on
  * to the end (copies of its white before it, every run from it to the last,
  * and dark photographs after), and shot again and handed in alone.
+ *
+ * Then the faults in the header, each read as the position or refused in
+ * words: the camera started 1, 2, 4 or 8 photographs after Play, with three
+ * dark ones after the black; stopped that many early, with three of step 0
+ * before Play; for each projector but the first that the position places, a
+ * test shot of its white before two of step 0, alone and with that projector
+ * re-shot and appended; and for each projector in `reshot`, its run with
+ * {@link SPOILED} shot twice and not at all, each re-shot and appended and
+ * re-shot and played on. `faults` can ask for a few of those instead.
  */
-export function judgeShapes(shots: CameraShots, expect: Expected, reshot: readonly number[]): ShapeRecord[] {
+export function judgeShapes(
+  shots: CameraShots,
+  expect: Expected,
+  reshot: readonly number[],
+  faults: Faults = 'every',
+): ShapeRecord[] {
+  const few = faults === 'few';
   const out: ShapeRecord[] = [];
   const position = runsPart((p) => shots.own[p], 0);
   for (const leading of [0, 1, 3]) {
@@ -615,6 +753,7 @@ export function judgeShapes(shots: CameraShots, expect: Expected, reshot: readon
         readShape(
           shots,
           `leading ${leading}, trailing ${trailing}`,
+          'before Play and after the black',
           [extrasPart(shots.whiteOf(0).slice(0, leading)), position, extrasPart(shots.darks.slice(0, trailing))],
           asPosition(expect),
         ),
@@ -628,6 +767,7 @@ export function judgeShapes(shots: CameraShots, expect: Expected, reshot: readon
       readShape(
         shots,
         `projector ${q + 1} re-shot and appended`,
+        're-shot and appended',
         [
           position,
           extrasPart(shots.darks.slice(0, 1)),
@@ -635,6 +775,7 @@ export function judgeShapes(shots: CameraShots, expect: Expected, reshot: readon
           runPart(shots.again(q), q),
         ],
         (indexed, failures) => {
+          const before = failures.length;
           asPosition(expect)(indexed, failures);
           const want = [{ projector: q, used: appendedAt, replaced: q * FRAMES_PER_RUN }];
           if (JSON.stringify(indexed.reshoots) !== JSON.stringify(want)) {
@@ -642,6 +783,7 @@ export function judgeShapes(shots: CameraShots, expect: Expected, reshot: readon
           }
           const replaced = `Projector ${q + 1}'s run at photographs ${q * FRAMES_PER_RUN + 1}–${(q + 1) * FRAMES_PER_RUN} was replaced by its re-shoot`;
           if (!indexed.notes.some((n) => n.startsWith(replaced))) failures.push('no note says the original was replaced');
+          return failures.length === before;
         },
       ),
     );
@@ -651,6 +793,7 @@ export function judgeShapes(shots: CameraShots, expect: Expected, reshot: readon
       readShape(
         shots,
         `projector ${q + 1} re-shot and played on`,
+        're-shot and played on',
         [
           position,
           extrasPart(shots.darks.slice(0, 2)),
@@ -659,11 +802,10 @@ export function judgeShapes(shots: CameraShots, expect: Expected, reshot: readon
           extrasPart(shots.darks.slice(2, 4)),
         ],
         (indexed, failures) => {
+          const before = failures.length;
           asPosition(expect)(indexed, failures);
-          const got = indexed.reshoots.map((r) => r.projector);
-          const want = expect.placed.filter((p) => p >= q);
-          if (!same(got, want)) failures.push(`re-shoots used for [${got}], where the played-on runs of [${want}] were added`);
-          if (!indexed.reshoots.every((r) => r.used >= POSITION)) failures.push('a re-shoot used from inside the position');
+          reshotAfter(expect.placed.filter((p) => p >= q), POSITION)(indexed, failures);
+          return failures.length === before;
         },
       ),
     );
@@ -672,6 +814,7 @@ export function judgeShapes(shots: CameraShots, expect: Expected, reshot: readon
       readShape(
         shots,
         `projector ${q + 1} re-shot alone`,
+        're-shot alone',
         [extrasPart(shots.whiteOf(q).slice(0, 1)), runPart(shots.again(q), q)],
         (indexed, failures) => {
           const first = indexed.problems[0] ?? '';
@@ -679,9 +822,87 @@ export function judgeShapes(shots: CameraShots, expect: Expected, reshot: readon
           if (!/a re-shoot of one projector handed in on its own/.test(first) || !/added to the end of that camera position's folder/.test(first)) {
             failures.push(`refused without the remedy: ${first}`);
           }
+          return false;
         },
       ),
     );
+  }
+  // ---- the faults on the way
+  const first = (photos: readonly PhotoSummary[], k: number): Part => extrasPart(photos.slice(0, k));
+  const lostBy = few ? [2, 4] : FEW_LOST;
+  for (const lost of lostBy) {
+    out.push(
+      readShape(
+        shots,
+        `started ${lost} late, trailing 3`,
+        'camera started late',
+        [withoutFirst(position, lost), first(shots.darks, 3)],
+        asPositionOrRefused(expect),
+      ),
+    );
+  }
+  for (const lost of lostBy) {
+    out.push(
+      readShape(
+        shots,
+        `stopped ${lost} early, leading 3`,
+        'camera stopped early',
+        [first(shots.whiteOf(0), 3), withoutLast(position, lost)],
+        asPositionOrRefused(expect),
+      ),
+    );
+  }
+  const others = expect.placed.filter((p) => p !== 0);
+  for (const q of few ? others.slice(-1) : others) {
+    // The third photograph of q's white, so that the one a re-shoot starts from is another.
+    const head = [extrasPart(shots.whiteOf(q).slice(2, 3)), first(shots.whiteOf(0), 2)];
+    out.push(
+      readShape(
+        shots,
+        `a test shot of projector ${q + 1}'s white before Play`,
+        'a test shot before Play',
+        [...head, position, first(shots.darks, 2)],
+        asPositionOrRefused(expect),
+      ),
+    );
+    out.push(
+      readShape(
+        shots,
+        `a test shot of projector ${q + 1}'s white before Play, projector ${q + 1} re-shot and appended`,
+        'a test shot before Play, re-shot and appended',
+        [...head, position, first(shots.darks, 1), first(shots.whiteOf(q), 1), runPart(shots.again(q), q)],
+        asPositionOrRefused(expect, reshotAfter([q], 3 + POSITION)),
+      ),
+    );
+  }
+  for (const q of few ? reshot.slice(0, 1) : reshot) {
+    for (const how of ['doubled', 'dropped'] as const) {
+      const spoilt = spoiled(position, q * FRAMES_PER_RUN + SPOILED, how, shots.twiceOf(q, SPOILED));
+      const end = spoilt.photos.length;
+      const name = `projector ${q + 1} spoiled, photograph ${SPOILED + 1} of its run ${how}`;
+      if (!few || how === 'doubled') {
+        out.push(
+          readShape(
+            shots,
+            `${name}, re-shot and appended`,
+            'spoiled, re-shot and appended',
+            [spoilt, first(shots.darks, 1), first(shots.whiteOf(q), 1), runPart(shots.again(q), q)],
+            asPositionOrRefused(expect, reshotAfter([q], end)),
+          ),
+        );
+      }
+      if (!few || how === 'dropped') {
+        out.push(
+          readShape(
+            shots,
+            `${name}, re-shot and played on`,
+            'spoiled, re-shot and played on',
+            [spoilt, first(shots.darks, 2), first(shots.whiteOf(q), 3), runsPart(shots.again, q), extrasPart(shots.darks.slice(2, 4))],
+            asPositionOrRefused(expect, reshotAfter(expect.placed.filter((p) => p >= q), end)),
+          ),
+        );
+      }
+    }
   }
   return out;
 }

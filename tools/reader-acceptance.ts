@@ -32,7 +32,13 @@
  *     far the rest sit from the truth.
  *   - The folder shapes on the designed rigs, with the room off and on:
  *     photographs before Play and after the black, and every projector the
- *     position places re-shot and appended, played on, and alone.
+ *     position places re-shot and appended, played on, and alone. And the
+ *     faults an operator makes on the way (review B's finding 11): the camera
+ *     started late or stopped early by a few photographs, a test shot of
+ *     another projector's white before Play, alone and with that projector
+ *     re-shot, and a run spoiled by a photograph shot twice or not at all,
+ *     re-shot and appended or played on — each read as its position, or
+ *     refused in words, and never misfiled.
  *   - How a re-shoot is matched (review finding F14). A re-shot run is taken
  *     for its projector when its white and black reproduce the original's
  *     within `COMPLEMENT_LIMIT`, both ways round. Here: that residual for every
@@ -78,6 +84,7 @@ import {
 import { indexPhotographs, type PhotoSummary } from '../packages/web/src/readback.ts';
 import {
   extrasPart,
+  FEW_LOST,
   folder,
   judgePosition,
   judgeShapes,
@@ -89,6 +96,7 @@ import {
   runPart,
   runsPart,
   secondSeed,
+  SPOILED,
   turnedRuns,
   type DecodeRecord,
   type PositionRecord,
@@ -514,8 +522,6 @@ function assemble(results: Map<string, UnitResult>, units: readonly string[], co
   });
 
   // ---- shapes
-  const kindOf = (shape: string): string =>
-    shape.startsWith('leading') ? 'before Play and after the black' : shape.replace(/^projector \d+ /, '');
   const shapeTotals = (which: Which | 'all') => {
     const ss = shapes.filter((s) => which === 'all' || s.which === which);
     return {
@@ -523,10 +529,20 @@ function assemble(results: Map<string, UnitResult>, units: readonly string[], co
       shapes: ss.length,
       passing: ss.filter((s) => s.failures.length === 0).length,
       misfiled: ss.reduce((a, s) => a + s.misfiled, 0),
+      // Per kind: how many pass, and of those how many the page read as their
+      // position (the rest, of the faults, it refused in words).
       byKind: Object.fromEntries(
-        [...new Set(ss.map((s) => kindOf(s.shape)))].map((kind) => {
-          const of = ss.filter((s) => kindOf(s.shape) === kind);
-          return [kind, { shapes: of.length, passing: of.filter((s) => s.failures.length === 0).length }];
+        [...new Set(ss.map((s) => s.kind))].map((kind) => {
+          const of = ss.filter((s) => s.kind === kind);
+          return [
+            kind,
+            {
+              shapes: of.length,
+              passing: of.filter((s) => s.failures.length === 0).length,
+              read: of.filter((s) => s.failures.length === 0 && s.read).length,
+              misfiled: of.reduce((a, s) => a + s.misfiled, 0),
+            },
+          ];
         }),
       ),
     };
@@ -556,7 +572,14 @@ function assemble(results: Map<string, UnitResult>, units: readonly string[], co
         spill: { variant: variantOf(FULL_PLAN, 'spill'), rigs: FULL_PLAN.spillRigs },
         fine: { variant: variantOf(FULL_PLAN, 'fine'), rigs: FULL_PLAN.fineRigs },
       },
-      shapes: { rigs: DESIGNED_RIGS, builds: ['main', 'spill'] },
+      shapes: {
+        rigs: DESIGNED_RIGS,
+        builds: ['main', 'spill'],
+        // The faults: photographs a camera started late or stopped early by, and
+        // the photograph of a spoiled run shot twice or not at all, counted from 1.
+        lost: FEW_LOST,
+        spoiledPhotograph: SPOILED + 1,
+      },
       turned: { variant: 'reduced', rigs: DESIGNED_RIGS, degrees: TURNS_DEG },
       exposureOff: EXPOSURE_OFF,
       reader: {
@@ -667,6 +690,7 @@ function assemble(results: Map<string, UnitResult>, units: readonly string[], co
       barelySeen: s.barelySeen,
       reshoots: s.reshoots,
       ok: s.ok,
+      read: s.read,
       reasons: s.reasons,
       misfiled: s.misfiled,
       failures: s.failures,

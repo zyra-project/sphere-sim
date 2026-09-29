@@ -21,15 +21,17 @@
  * run-count refusals. The folder shapes the card's procedure makes are built
  * from the same renders, with the photographs besides the position from a
  * second noise stream, `nullSeed(k, 0)`: the seed EXPERIMENT-10 photographs its
- * first re-shoot of rig k with.
+ * first re-shoot of rig k with. So are a few of the faults an operator makes on
+ * the way (review B's finding 11); `tools/reader-acceptance.ts` builds them all.
  */
 
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
 import { MIN_CRESCENT_BLOCKS } from '../../solver/src/indexing.ts';
-import { summarisePhoto } from '../../web/src/readback.ts';
+import { summarisePhoto, type IndexedCapture } from '../../web/src/readback.ts';
 import {
+  asPositionOrRefused,
   extrasPart,
   folder,
   judgePosition,
@@ -39,7 +41,7 @@ import {
   type PositionRecord,
   type ShapeRecord,
 } from '../src/reader/acceptance.ts';
-import { FINGERPRINT_BLOCKS, PROJECTORS, TRANSFER } from '../src/straddle/design.ts';
+import { FINGERPRINT_BLOCKS, FRAMES_PER_RUN, PROJECTORS, TRANSFER } from '../src/straddle/design.ts';
 import { buildRig } from '../src/straddle/bank.ts';
 
 const RIGS: readonly number[] = [0, 3];
@@ -81,7 +83,7 @@ function readRig(k: number): CameraReading[] {
       lit: shots.lit,
       position: judgePosition(shots, false).record,
       reshot,
-      shapes: judgeShapes(shots, expect, [reshot]),
+      shapes: judgeShapes(shots, expect, [reshot], 'few'),
     };
   });
   readings.set(k, got);
@@ -130,7 +132,7 @@ test("the card's folder shapes, from the same renders: photographs before Play a
     for (const { label, lit, reshot, shapes } of readRig(k)) {
       const q = reshot;
       assert.deepEqual(
-        shapes.map((s) => s.shape),
+        shapes.slice(0, 12).map((s) => s.shape),
         [
           ...[0, 1, 3].flatMap((l) => [0, 1, 2].map((tr) => `leading ${l}, trailing ${tr}`)),
           `projector ${q + 1} re-shot and appended`,
@@ -139,7 +141,7 @@ test("the card's folder shapes, from the same renders: photographs before Play a
         ],
         label,
       );
-      for (const s of shapes) {
+      for (const s of shapes.slice(0, 12)) {
         assert.deepEqual(s.failures, [], `${label}, ${s.shape}`);
         assert.equal(s.misfiled, 0, `${label}, ${s.shape}`);
       }
@@ -148,7 +150,7 @@ test("the card's folder shapes, from the same renders: photographs before Play a
         assert.deepEqual(s.placed, seen, `${label}, ${s.shape}`);
         assert.deepEqual(s.problems, [], `${label}, ${s.shape}`);
       }
-      const [appended, playedOn, alone] = shapes.slice(9);
+      const [appended, playedOn, alone] = shapes.slice(9, 12);
       assert.deepEqual(appended.placed, seen, label);
       assert.deepEqual(appended.reshoots.map((r) => r.projector), [q], label);
       assert.deepEqual(playedOn.placed, seen, label);
@@ -163,6 +165,112 @@ test("the card's folder shapes, from the same renders: photographs before Play a
   // A played-on re-shoot holds a projector the camera cannot see: rig 0's and
   // rig 3's camera 0 (projector 4) and camera 2 (projector 2).
   assert.equal(tailsWithUnseen, 4);
+});
+
+test('the faults on the way — the camera started late or stopped early, a test shot before Play, a spoiled run re-shot — read as the position or are refused in words, and are never misfiled', () => {
+  for (const k of RIGS) {
+    for (const { label, lit, reshot, shapes } of readRig(k)) {
+      const q = reshot;
+      const seen = EVERY.filter((p) => lit[p] > 0);
+      const last = seen[seen.length - 1];
+      const faults = shapes.slice(12);
+      assert.deepEqual(
+        faults.map((s) => s.shape),
+        [
+          'started 2 late, trailing 3',
+          'started 4 late, trailing 3',
+          'stopped 2 early, leading 3',
+          'stopped 4 early, leading 3',
+          `a test shot of projector ${last + 1}'s white before Play`,
+          `a test shot of projector ${last + 1}'s white before Play, projector ${last + 1} re-shot and appended`,
+          `projector ${q + 1} spoiled, photograph 11 of its run doubled, re-shot and appended`,
+          `projector ${q + 1} spoiled, photograph 11 of its run dropped, re-shot and played on`,
+        ],
+        label,
+      );
+      for (const s of faults) {
+        const where = `${label}, ${s.shape}`;
+        assert.deepEqual(s.failures, [], where);
+        assert.equal(s.misfiled, 0, where);
+        if (!s.read) assert.ok(s.problems.length > 0, `${where}: neither read nor refused`);
+      }
+      const [late2, late4, early2, early4, testShot, testShotReshot, doubled, dropped] = faults;
+      // The folders are what their names say: a position of 136, less or plus
+      // what the fault took or added.
+      const position = PROJECTORS * FRAMES_PER_RUN;
+      assert.deepEqual(
+        faults.map((s) => s.photographs),
+        [
+          position - 2 + 3,
+          position - 4 + 3,
+          3 + position - 2,
+          3 + position - 4,
+          3 + position + 2,
+          3 + position + 2 + FRAMES_PER_RUN,
+          position + 1 + 2 + FRAMES_PER_RUN,
+          position - 1 + 5 + (PROJECTORS - q) * FRAMES_PER_RUN + 2,
+        ],
+        label,
+      );
+      // Two photographs lost where the projector at that end is out of view
+      // lose nothing a count needs; lost from a run the camera sees, they are
+      // its white and black or its last two phase steps, and it is refused by
+      // name.
+      assert.equal(late2.read, lit[0] === 0, `${label}: started 2 late`);
+      if (!late2.read) assert.match(late2.problems[0] ?? '', /^Projector 1's photographs are lit, but no run/, label);
+      assert.equal(early2.read, lit[PROJECTORS - 1] === 0, `${label}: stopped 2 early`);
+      if (!early2.read) assert.match(early2.problems[0] ?? '', /^Projector 4's photographs are lit, but no run/, label);
+      // Four is past what a count lets go by at either end: refused whole.
+      for (const s of [late4, early4]) {
+        assert.equal(s.read, false, `${label}, ${s.shape}`);
+        assert.deepEqual(s.placed, [], `${label}, ${s.shape}`);
+      }
+      // A test shot of another projector's white is set aside, and does not
+      // stop that projector's re-shoot being matched (review B's finding 4).
+      assert.equal(testShot.read, true, label);
+      assert.equal(testShotReshot.read, true, label);
+      assert.deepEqual(testShotReshot.reshoots.map((r) => r.projector), [last], label);
+      // A run spoiled by a photograph shot twice or not at all is replaced by
+      // its re-shoot, appended or played on.
+      assert.equal(doubled.read, true, label);
+      assert.deepEqual(doubled.reshoots.map((r) => r.projector), [q], label);
+      assert.equal(dropped.read, true, label);
+      assert.deepEqual(dropped.reshoots.map((r) => r.projector), seen.filter((p) => p >= q), label);
+    }
+  }
+});
+
+test("a fault's folder passes only read as its position, or refused in words with nothing placed that the position did not place", () => {
+  // The judge the faults above are held to, on readings made up to fail it:
+  // the sweep has no second check behind it.
+  const expect = { placed: [0, 1, 2], unseen: [3], barelySeen: [], refused: [] };
+  const reading = (over: Partial<IndexedCapture>): IndexedCapture => ({
+    ok: true,
+    runs: [0, 1, 2].map((projector) => ({ projector, ordinals: [] })),
+    problems: [],
+    notes: [],
+    unseen: [3],
+    barelySeen: [],
+    reshoots: [],
+    mechanism: 'position',
+    total: 136,
+    placed: 102,
+    ...over,
+  });
+  const judged = (r: IndexedCapture): { read: boolean; failures: string[] } => {
+    const failures: string[] = [];
+    return { read: asPositionOrRefused(expect)(r, failures), failures };
+  };
+  assert.deepEqual(judged(reading({})), { read: true, failures: [] });
+  // A run lost with nothing said: projector 3 noted out of view.
+  const silent = judged(reading({ runs: [0, 1].map((projector) => ({ projector, ordinals: [] })), unseen: [2, 3] }));
+  assert.equal(silent.read, false);
+  assert.match(silent.failures.join(' | '), /^neither read as its position nor refused: /);
+  // Refused in words, and still noting a run the position placed as out of view.
+  const misnoted = judged(reading({ ok: false, runs: [0, 1].map((projector) => ({ projector, ordinals: [] })), unseen: [2, 3], problems: ["Projector 2's run ..."] }));
+  assert.deepEqual(misnoted.failures, ['projector 3 noted out of view, and the position alone does not note it', 'projector 3 neither placed nor refused']);
+  // Refused whole, in words: passes, read or not.
+  assert.deepEqual(judged(reading({ ok: false, runs: [], unseen: [], problems: ['The 3 runs found do not fit ...'] })), { read: false, failures: [] });
 });
 
 test('a photograph summarised once and placed in a folder is the summary the page makes of it there', () => {
