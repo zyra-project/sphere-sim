@@ -1601,6 +1601,114 @@ test('lit photographs no run was found in, straight before the first run or afte
   }
 });
 
+test('light at an end that changes only in level is not a run: the room switched on or off, a door, a bracketed test shot', () => {
+  // Review C. An end was doubted wherever its lit photographs failed a narrow
+  // test of the room's light — the same blocks, rising by amounts within half
+  // again of each other — and a room light is not that on the photograph that
+  // catches the switch: a clean position whose camera ran on at the end tone
+  // while the lights came on was refused, "shoot the whole camera position
+  // again", as were ramps, a door, lights put out just before Play, and test
+  // shots of the white bracketed about the exposure before a short pre-roll.
+  // What a run the page was playing shows instead is its structure: a pattern
+  // lit where another is not, and that one lit where the first is not. Light
+  // that changes only in level moves every block the same way, and light that
+  // stays on under a run cancels between two of its photographs.
+  const expected = expectedOf(PAGE);
+  const R = 34;
+  const read = (photos: Photos): { r: ReturnType<typeof indexPosition>; wrong: number } => {
+    const r = indexPosition(photos.prints, expected);
+    return { r, wrong: misplaced(r.assignment, photos.truth) };
+  };
+  const dark = (k: number): Shot[] => Array.from({ length: k }, (): Shot => null);
+  for (const [azimuth, seen] of [
+    [0, [0, 1, 2, 3]],
+    [250, [1, 2, 3]],
+  ] as const) {
+    const s = scene(PAGE, 64, { azimuth });
+    const unseen = [0, 1, 2, 3].filter((p) => !seen.includes(p as never));
+    const shoot = camera(s, 7400 + azimuth);
+    const placed = (label: string, photos: Photos): void => {
+      const { r, wrong } = read(photos);
+      assert.equal(wrong, 0, `azimuth ${azimuth}, ${label}: filed wrong`);
+      assert.deepEqual(r.problems, [], `azimuth ${azimuth}, ${label}`);
+      assert.deepEqual(r.usableProjectors, [...seen], `azimuth ${azimuth}, ${label}`);
+    };
+    // The lights switched on as the end tone sounds, the camera still running:
+    // the first lit photograph catches the switch.
+    for (const room of [0.03, 0.1]) {
+      for (const black of [0, 2]) {
+        for (const lit of [4, 6]) {
+          const base = shoot(position(s, { unseen, leading: 2, trailing: black + lit }));
+          const from = base.prints.length - lit;
+          placed(
+            `the room at ${room} switched on ${black} after the black, ${lit} lit`,
+            relit(base, (values, i) => {
+              if (i >= from) for (let k = 0; k < values.length; k++) values[k] += (i === from ? 0.4 : 1) * room;
+            }),
+          );
+        }
+      }
+    }
+    // A lamp warming up, and a door opening on the right third of the picture.
+    const after = shoot(position(s, { unseen, leading: 2, trailing: 8 }));
+    const from = after.prints.length - 6;
+    placed(
+      'a lamp warming up after the black',
+      relit(after, (values, i) => {
+        if (i >= from) for (let k = 0; k < values.length; k++) values[k] += 0.02 + 0.008 * (i - from);
+      }),
+    );
+    placed(
+      'a door opening after the black',
+      relit(after, (values, i) => {
+        if (i >= from) for (let k = 0; k < values.length; k++) if (k % 64 >= 43) values[k] += 0.015 * (i - from + 1);
+      }),
+    );
+    // The lights put out just before Play, dimming.
+    const before = shoot(position(s, { unseen, leading: 6, trailing: 3 }));
+    placed(
+      'the lights put out just before Play',
+      relit(before, (values, i) => {
+        if (i < 4) for (let k = 0; k < values.length; k++) values[k] += 0.01 * (4 - i);
+      }),
+    );
+    // The exposure set on the first projector in view's white, bracketed, then
+    // one photograph of the page's step 0 before Play.
+    const q = seen[0];
+    const gains = [0.5, 0.7, 1.4, 2];
+    placed(
+      `the white of projector ${q + 1} bracketed, then one before Play`,
+      relit(shoot([...gains.map((): Shot => ({ projector: q, frame: 0 })), ...position(s, { unseen, leading: 1, trailing: 3 })]), (values, i) => {
+        if (i < gains.length) for (let k = 0; k < values.length; k++) values[k] *= gains[i];
+      }),
+    );
+  }
+
+  // A run the page was playing still shows its structure at an end, and the
+  // numbering that calls it extras is not used: a camera started 8, or 28 —
+  // only phase steps left — photographs after Play with 33 dark ones after the
+  // black; stopped 26 early with 33 before Play; and started 20 late with the
+  // room's light on under the remnant, which cancels between its photographs.
+  const all = scene(PAGE, 64, { azimuth: 0 });
+  const shoot = camera(all, 7500);
+  for (const [label, photos] of [
+    ['started 8 late', shoot([...position(all).slice(8), ...dark(33)])],
+    ['started 28 late', shoot([...position(all).slice(28), ...dark(33)])],
+    ['stopped 26 early', shoot([...dark(33), ...position(all).slice(0, 4 * R - 26)])],
+    [
+      'started 20 late, the room lit under the remnant',
+      relit(shoot([...position(all).slice(20), ...dark(36)]), (values, i) => {
+        if (i < R - 20) for (let k = 0; k < values.length; k++) values[k] += 0.3;
+      }),
+    ],
+  ] as const) {
+    const { r, wrong } = read(photos);
+    assert.equal(wrong, 0, `${label}: filed wrong`);
+    assert.deepEqual(r.usableProjectors, [], label);
+    assert.match(r.problems[0] ?? '', /lit and in no run found/, label);
+  }
+});
+
 test("a run that matches no projector is a re-shoot only after the position's black, and an honest gap contests it", () => {
   // Review B. A run that matches nothing was taken for a re-shoot added after
   // the position wherever the count put the position's end before it: with a

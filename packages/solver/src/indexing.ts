@@ -2034,16 +2034,23 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * than that, which is also what a lost run looks like.
  *
  * The ends are looked at as well as counted. A photograph there is an extra
- * only when something says what it is: dark beside the run next to it; a copy
- * of the white of a run found — the page's step 0 shown before Play, a test
- * shot of the exposure, the white a re-shoot starts from; a copy of a frame of
- * the run next to it, or after the last run of any run found; or the room's
- * light. Lit photographs nothing accounts for, more than {@link SLOT_SLACK}
- * strays, that lead straight into a numbering's first run or follow straight on
- * from its last are a run the page was playing there, and that numbering is
- * not used: it took the end of a run the camera was started in the middle of
- * for photographs before Play, or a run it could not find for photographs after
- * the black, and every run was filed a projector over. Such a numbering still
+ * when something says what it is: dark beside the run next to it; a copy of
+ * the white of a run found — the page's step 0 shown before Play, a test shot
+ * of the exposure, the white a re-shoot starts from; a copy of a frame of the
+ * run next to it, or after the last run of any run found. Lit photographs
+ * nothing accounts for, more than {@link SLOT_SLACK} strays, that lead straight
+ * into a numbering's first run or follow straight on from its last, are a run
+ * the page was playing there where they show a run's structure: two of them
+ * each lit, by the decoder's floor, where the other is not, over as many
+ * blocks as the smallest crescent this reads — a Gray plane and its
+ * complement, two planes, two phase steps. Then that numbering is not used: it
+ * took the end of a run the camera was started in the middle of for
+ * photographs before Play, or a run it could not find for photographs after
+ * the black, and every run was filed a projector over. Light that changes only
+ * in level between photographs — the room's switched on or off, a lamp
+ * warming, a door, a white bracketed about the exposure — moves every block
+ * the same way, and is set aside; light that stays on under a run cancels
+ * between two of its photographs, and hides nothing. Such a numbering still
  * takes part in the disagreement below, as does one kept out by the allowance,
  * so it can refuse a folder but never be the numbering used.
  *
@@ -2427,18 +2434,19 @@ export function indexPosition(
   // found (the page's step 0 shown before Play, a test shot of the exposure, the
   // white a re-shoot starts from), a copy of any frame of the run next to them
   // (an attempt at it the page was stepped back from, a page paused on one of
-  // its frames), after the last run a copy of any frame of any run found (a
-  // re-shoot of that run which did not pass), or the room's light. What is left
-  // is lit, and part of a projector's run the reader could not find: before the
-  // first run, a copy of a later run's frame is that run's original, too broken
-  // to be found.
+  // its frames), or after the last run a copy of any frame of any run found (a
+  // re-shoot of that run which did not pass). What is left is lit, and it is
+  // part of a run the reader could not find only where it shows a run's
+  // structure (showsARun): light that changes only in level is the room's, or
+  // a test shot's. Before the first run, a copy of a later run's frame is that
+  // run's original, too broken to be found.
   /**
    * The lit photographs in `[from, to)` that nothing above accounts for; `near`
    * is the run next to them, and `anyRun` whether a copy of any run's frame is
    * set aside or only of `near`'s.
    */
   const unexplainedLit = (from: number, to: number, near: RunWindow, anyRun: boolean): number[] => {
-    const litPhotos: { f: FrameFingerprint; blocks: Set<number>; x: number }[] = [];
+    const lit: number[] = [];
     const framesOf = anyRun ? found.map((_, j) => j) : [found.indexOf(near)];
     for (let x = from; x < to; x++) {
       if (inWindow[x] === 1 || darkBeside(x, near)) continue;
@@ -2446,16 +2454,40 @@ export function indexPosition(
       const copy =
         found.some((w) => copiesFrame(f, w.white, w)) ||
         framesOf.some((j) => distinctiveOf[j].some((g) => copiesFrame(f, g, found[j])));
-      if (copy) continue;
-      const blocks = new Set<number>();
-      for (let i = 0; i < cells; i++) {
-        if (usableBlock(f, i) && usableBlock(near.black, i) && f.values[i] - near.black.values[i] >= DARK_LIMIT) blocks.add(i);
-      }
-      litPhotos.push({ f, blocks, x });
+      if (!copy) lit.push(x);
     }
-    return roomLike(litPhotos, near.black.values) ? [] : litPhotos.map((l) => l.x);
+    return lit;
   };
   const frontLit = unexplainedLit(0, found[0].start, found[0], false);
+  /**
+   * Whether photographs show a run's structure: two of them, no more than a
+   * run apart, each lighting {@link MIN_CRESCENT_BLOCKS} blocks or more at
+   * least {@link DARK_LIMIT} above the other — a Gray plane and its complement,
+   * two planes, two phase steps, lighting different parts of a crescent. Light
+   * that changes only in level between photographs — the room's switched on or
+   * off, a lamp warming up, a door opening on the same wall, a test shot of a
+   * white at another exposure — brightens every block the same way from one
+   * photograph to the next, and light that stays on, the room's under a run,
+   * cancels in the difference.
+   */
+  const showsARun = (xs: readonly number[]): boolean => {
+    for (let a = 0; a < xs.length; a++) {
+      const f = fingerprints[xs[a]];
+      for (let b = a + 1; b < xs.length && xs[b] - xs[a] < runLength; b++) {
+        const g = fingerprints[xs[b]];
+        let brighter = 0;
+        let dimmer = 0;
+        for (let i = 0; i < cells; i++) {
+          if (!usableBlock(f, i) || !usableBlock(g, i)) continue;
+          const d = f.values[i] - g.values[i];
+          if (d >= DARK_LIMIT) brighter++;
+          else if (-d >= DARK_LIMIT) dimmer++;
+        }
+        if (brighter >= MIN_CRESCENT_BLOCKS && dimmer >= MIN_CRESCENT_BLOCKS) return true;
+      }
+    }
+    return false;
+  };
 
   // ---- how the position's runs are numbered
   //
@@ -2777,8 +2809,9 @@ export function indexPosition(
   const backLitOf = new Map<number, number[]>();
   /**
    * Lit photographs no run was found in, straight before a numbering's first
-   * slot or straight after its last, more of them than SLOT_SLACK strays: a
-   * run the page was playing there, so the count has a run it has no room for.
+   * slot or straight after its last, more of them than SLOT_SLACK strays and
+   * showing a run's structure (showsARun): a run the page was playing there,
+   * so the count has a run it has no room for.
    * A camera started after Play leaves the end of a run before the first found
    * — "taken before Play" by the count, which then numbers every run a
    * projector early; a run lost after the position's last found one, with a
@@ -2798,7 +2831,7 @@ export function indexPosition(
       const w0 = whiteNear(x0);
       if (w0 !== null) front = front.filter((x) => !copiesFrame(fingerprints[x], w0.white, w0));
     }
-    if (front.length > SLOT_SLACK && front[front.length - 1] >= x0 - before - SLOT_SLACK) {
+    if (front.length > SLOT_SLACK && front[front.length - 1] >= x0 - before - SLOT_SLACK && showsARun(front)) {
       return { kind: 'front', strays: front };
     }
     // Past a stretch that is not whole runs the runs after it are the later
@@ -2811,7 +2844,7 @@ export function indexPosition(
     }
     const after = where.slotOf.get(c.last) === projectors - 1 ? 0 : SLOT_SLACK;
     const back = lit.filter((x) => x >= where.positionEnd + after);
-    if (back.length > SLOT_SLACK && back[0] < where.positionEnd + after + SLOT_SLACK) {
+    if (back.length > SLOT_SLACK && back[0] < where.positionEnd + after + SLOT_SLACK && showsARun(back)) {
       return { kind: 'back', strays: back };
     }
     return null;
