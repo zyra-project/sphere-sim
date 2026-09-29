@@ -119,6 +119,45 @@ export interface WarpOptions {
 }
 
 /**
+ * What a mesh's `u` and `v` address, and the rotation already inside them.
+ *
+ * Neither is in the file. A Bourke mesh is a type line, its dimensions and five
+ * numbers per node, so a player holding one cannot tell a texel of the
+ * sphere's equirectangular map from a texel of a model's own unwrap — and cannot
+ * tell whether the sphere's mechanical rotation has been applied. An operator
+ * who then applies it too turns the picture by twice the offset, and a turned
+ * globe is still a globe.
+ *
+ *   - `'sphere'`: `u` and `v` address the equirectangular content, and `u` has
+ *     had `rotationOffsetDeg` taken off its longitude (conventions.ts §S,
+ *     `lon_texture = lon_world − rotationOffsetDeg`). Already applied; applying
+ *     it again doubles it.
+ *   - `'mesh'`: they address the model's own UV set, which is anchored by its
+ *     unwrap and has no rotation to apply. `null` rather than `0`, because zero
+ *     is a rotation somebody could have set, and this is the absence of one.
+ */
+export type WarpTexture =
+  | { surface: 'sphere'; rotationOffsetDeg: number }
+  | { surface: 'mesh'; rotationOffsetDeg: null };
+
+/**
+ * The {@link WarpTexture} every mesh built on this rig carries.
+ *
+ * ONE RULE, TWO READERS. {@link buildWarpExport} bakes the rotation by asking
+ * this function, and `packages/web/src/bundle.ts` states it in `layout.json` by
+ * asking it too. If the statement were derived beside the bake instead, the two
+ * would agree until somebody changed one — and the failure would be a layout
+ * that tells a player to rotate a picture that is already rotated.
+ */
+export function warpTexture(rig: PreparedRig): WarpTexture {
+  // The sphere's texture is anchored to the world by a mechanical rotation; a
+  // mesh's UV is anchored by its own unwrap and has no such offset.
+  return blendModelApplies(rig.surface)
+    ? { surface: 'sphere', rotationOffsetDeg: rig.rotationOffsetDeg }
+    : { surface: 'mesh', rotationOffsetDeg: null };
+}
+
+/**
  * Build the warp-and-blend mesh for one projector.
  *
  * For each node: send the pixel out through the rig, find where it lands on the
@@ -155,6 +194,7 @@ export function buildWarpExport(
   const it = projector.cal.intrinsics;
   const aspect = (it.resX * (it.pixelAspect || 1)) / it.resY;
   const masked = blendModelApplies(rig.surface);
+  const texture = warpTexture(rig);
   const interpretation = options.maskInterpretation ?? 'latitude';
 
   const nodes: WarpNode[] = new Array<WarpNode>(cols * rows);
@@ -182,11 +222,13 @@ export function buildWarpExport(
 
 
       const coord = rig.surface.coordAt(hit.point, hit.location);
-      // The sphere's texture is anchored to the world by a mechanical rotation;
-      // a mesh's UV is anchored by its own unwrap and has no such offset.
-      const texLon = masked
-        ? worldLonToTextureLon(coord.lonDeg, rig.rotationOffsetDeg)
-        : coord.lonDeg;
+      // The rotation `warpTexture` reports, and only that one: `layout.json`
+      // tells a player this number is already in `u`, so the bake has to read
+      // it from the same place the statement does.
+      const texLon =
+        texture.rotationOffsetDeg === null
+          ? coord.lonDeg
+          : worldLonToTextureLon(coord.lonDeg, texture.rotationOffsetDeg);
       const tex = coordToUv({ latDeg: coord.latDeg, lonDeg: texLon });
 
       const { weights } = coverageAndWeights(hit.point, hit.normal, rig, hit.location);
