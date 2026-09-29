@@ -81,15 +81,20 @@ import { DEFAULT_PATTERN_PLAN, planFrames } from '../../bench/src/patterns.ts';
 import {
   describeSequence,
   encodeToRgba,
+  patternAtlas,
+  patternMask,
   sampleFrame,
+  sequenceStep,
   strideInfo,
 } from '../src/patternfilm.ts';
+import type { PatternAtlas } from '../src/patternfilm.ts';
 import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
   BOULDER_PRESET,
   CONTENTS,
   CONTENT_CUSTOM,
   CONTENT_MARBLE,
+  CONTENT_PATTERN,
   CONTROLS,
   GROUPS,
   cameraDistanceM,
@@ -121,10 +126,11 @@ import type { WebWorld } from '../src/rigs.ts';
 import type { Reading, RigFact } from '../src/readout.ts';
 import { buildDisplayUniforms, packMesh, pickMarkerNear, slotOfRigIndex } from '../src/uniforms.ts';
 import { MAX_PROJECTORS } from '../src/glsl.ts';
-import type { DisplayMesh, DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
+import type { DisplayMesh, DisplayUniforms, OverlayMode, PatternDisplay } from '../src/uniforms.ts';
 import type { ParityVerdict } from '../src/parity.ts';
 import {
   ALLOWANCE_LABEL,
+  MIN_LIT_PIXELS,
   percentLabel,
   PARITY_HEIGHT,
   PARITY_WIDTH,
@@ -136,6 +142,7 @@ import type {
   ModelMessage,
   ModelRequest,
   ModelResponse,
+  PatternRequest,
   FramesMessage,
   FramesRequest,
   RecoveredAxis,
@@ -465,6 +472,99 @@ function suppliedName(): string {
   if (c === CONTENT_MARBLE) return marbleImage ? 'blue-marble-4096' : '';
   if (c === CONTENT_CUSTOM) return customImage ? customName : '';
   return '';
+}
+
+// ---------------------------------------------------------------------------
+// The calibration sequence, on the sphere
+// ---------------------------------------------------------------------------
+
+/**
+ * The plan the sphere plays: the emitter page's default, which is also the plan
+ * the inspect card's film shows. A calibration on this page picks its own Gray
+ * count from the camera (`pipeline.ts`), and the chip says so rather than
+ * following it — the sequence on the ball is the emitter's, not a replay of one
+ * capture.
+ */
+const SEQUENCE_PLAN = DEFAULT_PATTERN_PLAN;
+
+/**
+ * Where the sequence is: a step in the emitter's order, every projector's run
+ * end to end. Page state, and deliberately NOT a `Setting` — `ModelRequest.pattern`
+ * says what a step in `settings` would do to the parity check.
+ */
+let sequenceAt = 0;
+
+/** Is the calibration sequence what the sphere is showing? */
+function patternActive(): boolean {
+  return Math.round(state.settings.content) === CONTENT_PATTERN;
+}
+
+/** The raster every projector on the page has, read off the control that sets it. */
+function sequenceRaster(): { resX: number; resY: number } {
+  return RESOLUTIONS[Math.round(state.settings.resolution)] ?? RESOLUTIONS[1];
+}
+
+/**
+ * The sequence as a table for the shader, built once per raster. It holds every
+ * frame, so a step — or the parity check drawing an older one — is two integers
+ * and no upload; `gl.ts` re-sends it only when this object changes.
+ */
+let atlasBuilt: PatternAtlas | null = null;
+
+function sequenceAtlas(): PatternAtlas {
+  const { resX, resY } = sequenceRaster();
+  if (atlasBuilt === null || atlasBuilt.resX !== resX || atlasBuilt.resY !== resY) {
+    atlasBuilt = patternAtlas(SEQUENCE_PLAN, resX, resY);
+  }
+  return atlasBuilt;
+}
+
+/** A step, placed in the emitter's order for however many projectors the room has. */
+function sequenceNow(step = sequenceAt): ReturnType<typeof sequenceStep> {
+  return sequenceStep(step, Math.round(state.settings.projectorCount), SEQUENCE_PLAN);
+}
+
+/**
+ * The frame to draw, for a rig whose projectors came from panel slots `slots`,
+ * or `null` when the sphere is showing content.
+ *
+ * `slots` is the DRAWN rig's for the picture and the install rig's for the parity
+ * request; the mask is a rig index, and the two rigs index differently whenever a
+ * placement card is drawing.
+ */
+function patternDisplay(slots: readonly number[], step = sequenceAt): PatternDisplay | null {
+  if (!patternActive()) return null;
+  const at = sequenceNow(step);
+  return { atlas: sequenceAtlas(), frame: at.frame, mask: patternMask(slots, at.slot) };
+}
+
+/** The same frame named for the worker, against the rig it builds: the install rig. */
+function patternRequest(step = sequenceAt): PatternRequest | null {
+  if (!patternActive()) return null;
+  const at = sequenceNow(step);
+  const slots = buildWorld(state.settings).slots;
+  return { plan: SEQUENCE_PLAN, frame: at.frame, mask: patternMask(slots, at.slot) };
+}
+
+/**
+ * The calibration frame the last parity request asked the worker to draw, and
+ * the step it was — `null` when that request was for content.
+ *
+ * The CPU half lands half a second after it was asked for, and playback may be
+ * frames further on by then. So `checkParity` draws the GPU half at THIS frame
+ * rather than the live one, as `withFrozenContent` does for a video: the verdict
+ * is about one frame drawn twice, and `parityLine` names which.
+ */
+let parityAsked: { request: PatternRequest; step: number } | null = null;
+
+/** The frame the verdict on screen was judged on, or `null` for content. */
+let parityJudged: { request: PatternRequest; step: number } | null = null;
+
+/** "P2 · Gray plane 3 of 6, down · step 51 of 136", for a verdict or a caption. */
+function frameName(step: number): string {
+  const at = sequenceNow(step);
+  const note = describeSequence(SEQUENCE_PLAN)[at.frame];
+  return `P${at.slot + 1} · ${note.label} · step ${at.step + 1} of ${at.total}`;
 }
 
 /**
@@ -2207,6 +2307,7 @@ function postModel(fine: boolean): void {
           }
         : null,
     customImageId: suppliedName(),
+    pattern: patternRequest(),
   };
   sentImageId = suppliedName();
   // Not until a real frame has been through the GPU. Until then the model holds
@@ -2227,6 +2328,8 @@ function postModel(fine: boolean): void {
       imageShift: camera.imageShift ?? 0,
     };
     parityRequestKey = viewKey();
+    // The frame this request names, held for the reply: see `parityAsked`.
+    parityAsked = req.pattern === null ? null : { request: req.pattern, step: sequenceAt };
   }
   modelWorker.postMessage(req);
   renderReadout();
@@ -2325,7 +2428,7 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage | Surf
   const kept = model?.projectorFrames ?? [];
   const projectorFrames = msg.projectorFrames.map((f, i) => f ?? kept[i] ?? null);
   model = { ...msg, projectorFrames };
-  if (msg.parityImage) checkParity(msg.parityImage, msg.parityMs, msg.parityMeshId);
+  if (msg.parityImage) checkParity(msg.parityImage, msg.parityMs, msg.parityMeshId, msg.parityPattern);
   renderReadout();
   renderInspect();
   // LAST, and this is not tidiness.
@@ -2858,6 +2961,8 @@ function draw(): void {
       wallRadiusM: state.settings.wallRadiusM,
       rail: state.railOn,
       aimGuides: state.aimGuides,
+      // The calibration frame on screen, against the DRAWN rig's slots.
+      pattern: patternDisplay(model.slots),
     },
   );
 
@@ -3208,9 +3313,18 @@ function checkParity(
   cpu: { width: number; height: number; data: Float32Array },
   cpuMs: number,
   cpuMeshId: string,
+  cpuPattern: PatternRequest | null,
 ): void {
   if (!gl) return;
   if (viewKey() !== parityRequestKey) {
+    parity = null;
+    return;
+  }
+  // And the same FRAME, when a calibration frame is what was drawn: the one this
+  // page asked for, which the worker echoes. Playback moving on since is not a
+  // mismatch — the GPU half below is drawn at the asked frame, not the live one.
+  const asked = parityAsked;
+  if (JSON.stringify(cpuPattern) !== JSON.stringify(asked?.request ?? null)) {
     parity = null;
     return;
   }
@@ -3291,6 +3405,13 @@ function checkParity(
         displayGamma: 0,
         samplesPerPixel: paritySamples(),
         slots: model.slots,
+        // The frame the worker was asked to draw, NOT the live step the picture
+        // on screen uses: during playback that has usually moved on. The mask
+        // was taken against the install rig's slots, which is the rig here too.
+        pattern:
+          asked === null
+            ? null
+            : { atlas: sequenceAtlas(), frame: asked.request.frame, mask: asked.request.mask },
       },
     );
     // The frame the worker was given, not the one on screen. With a video
@@ -3314,6 +3435,7 @@ function checkParity(
       floatReadback: gpu.float,
       cpuMs,
     });
+    parityJudged = asked;
   } catch (err) {
     parity = null;
     lastError = err instanceof Error ? err.message : String(err);
@@ -7168,7 +7290,18 @@ function parityLine(): HTMLElement {
     );
     return wrap;
   }
-  const line = el('p', { className: 'note', textContent: parity.summary });
+  // A verdict on a calibration frame says which one. Playback moves on without
+  // anybody touching a control, so without the name a reader would take a
+  // verdict on frame 5 for one about whatever is on the ball now.
+  const judged = parityJudged;
+  if (judged !== null) {
+    wrap.append(
+      el('p', { className: 'note tiny num', textContent: `Judged on ${frameName(judged.step)}.` }),
+    );
+  }
+  const summary =
+    judged !== null && parity.blind ? blindFrameSentence(judged.request, parity) : parity.summary;
+  const line = el('p', { className: 'note', textContent: summary });
   line.style.color = parity.blind ? 'var(--warn)' : parity.pass ? 'var(--good)' : 'var(--bad)';
   wrap.append(line);
   wrap.append(
@@ -7191,10 +7324,45 @@ function parityLine(): HTMLElement {
       textContent:
         'The floor and the graticule are off on both sides for this comparison — the model’s ' +
         'two-calibration renderer draws no floor, and the graticule measures the driver’s ' +
-        'trigonometry rather than this model. Both are what this number does not cover.',
+        'trigonometry rather than this model. Both are what this number does not cover.' +
+        (patternActive()
+          ? ' Nor is a calibration frame\u2019s spill onto the floor and the room: the emitter ' +
+            'paints the whole raster, so the stripes land there too, and only the ball is compared.'
+          : ''),
     }),
   );
   return wrap;
+}
+
+/**
+ * Why a verdict on a calibration frame has nothing to judge, in the frame's terms.
+ *
+ * `judgeParity`'s own sentence says "move closer", which is right for content and
+ * wrong for a frame that is dark by design: stepping in does nothing for an all
+ * black frame, and a run played to a projector switched off at the wall lights
+ * nothing anywhere.
+ */
+function blindFrameSentence(request: PatternRequest, verdict: ParityVerdict): string {
+  const kind = planFrames(request.plan)[request.frame]?.kind;
+  if (kind === 'black') {
+    return (
+      'A dark frame has nothing to compare: every projector is sent black, and the black floor ' +
+      'they leak is below what counts as lit. The check has something to judge again on the ' +
+      'next lit frame.'
+    );
+  }
+  if (request.mask === 0) {
+    return (
+      'This run is going to a projector switched off at the wall, so the ball is dark and there ' +
+      'is nothing to compare. The check has something to judge again on the next lit run.'
+    );
+  }
+  return (
+    `Too little of the ball is lit to compare — ${verdict.delta.litPixelCount} lit pixels, ` +
+    `under the ${MIN_LIT_PIXELS} this needs. One projector lights about a quarter of the ball, ` +
+    'and a Gray plane or a phase step leaves part of that dark; from closer in ("Standing at ' +
+    'it") there is enough.'
+  );
 }
 
 const MULT_COLORS = ['#2a2f38', '#2a61a0', '#33ad6b', '#e62419'];

@@ -26,6 +26,7 @@ function request(over: Partial<ModelRequest> = {}): ModelRequest {
     customImage: null,
     customImageId: '',
     projectorPreviewWidth: 0,
+    pattern: null,
     ...over,
   };
 }

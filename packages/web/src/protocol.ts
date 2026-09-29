@@ -24,6 +24,7 @@ import type { RigCalibration, SurfaceMesh } from '../../calibration/src/index.ts
 import type { Settings } from './settings.ts';
 import type { Reading, RigFact } from './readout.ts';
 import type { ProjectorPlacement } from '../../sim/src/placement.ts';
+import type { PatternPlan } from '../../bench/src/patterns.ts';
 
 /** A downscale of the live camera, for the CPU half of the parity check. */
 export interface ParityCameraRequest {
@@ -104,6 +105,39 @@ export interface ModelRequest {
    * worth a picture.
    */
   projectorPreviewWidth: number;
+  /**
+   * The frame of the calibration sequence the sphere is showing, or `null` when
+   * it is showing content.
+   *
+   * Carried because the sequence moves with nobody touching a control, so it is
+   * not in `settings` — a step in `settings` would change `viewKey` on every
+   * frame and retire every parity reply before it could be judged. The page
+   * instead records the frame it ASKED about and draws its own half of the
+   * comparison at that frame, however far playback has moved since; this is
+   * that frame. Only the parity render reads it: no metric reads the content,
+   * and a calibration frame is content's replacement, not a change to the rig.
+   */
+  pattern: PatternRequest | null;
+}
+
+/**
+ * One frame of the calibration sequence, named rather than sent.
+ *
+ * The worker tabulates nothing: it asks `compileFrame` directly, at the pixel
+ * centres the page's table was built from, so the two renderers read the same
+ * numbers without a table crossing the boundary.
+ */
+export interface PatternRequest {
+  plan: PatternPlan;
+  /** Index into `planFrames(plan)`. */
+  frame: number;
+  /**
+   * Bit `i` for projector `i` of the rig THIS worker builds — the install rig,
+   * with switched-off projectors dropped — which is not a panel slot. Zero is a
+   * run on a projector switched off at the wall: every lamp that is on is sent
+   * black.
+   */
+  mask: number;
 }
 
 export interface ModelResponse {
@@ -130,6 +164,13 @@ export interface ModelResponse {
    * that means nothing is a fault.
    */
   parityMeshId: string;
+  /**
+   * The calibration frame {@link ModelResponse.parityImage} was drawn with, or
+   * `null` for content — echoed for {@link ModelResponse.parityMeshId}'s reason.
+   * The page compares it with the frame it froze when it asked, and withholds
+   * the verdict rather than compare two pictures of different frames.
+   */
+  parityPattern: PatternRequest | null;
   /** Worst grid-line displacement, mm. Pulled out because the page leads with it. */
   gridWorstMm: number;
   /** The same number with the compositor believing the config as written. */

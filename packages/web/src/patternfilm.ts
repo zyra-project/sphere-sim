@@ -74,6 +74,8 @@ import {
   type FrameSpec,
   type PatternPlan,
 } from '../../bench/src/patterns.ts';
+import type { RigCalibration } from '../../calibration/src/index.ts';
+import type { RasterSource } from '../../sim/src/misregistration.ts';
 
 /**
  * What one frame is and why the sequence contains it.
@@ -396,4 +398,88 @@ export function patternAtlas(plan: PatternPlan, resX: number, resY: number): Pat
     for (let i = 0; i < length; i++) data[offset + i] = pixelCentreTarget(frames[f], res, i);
   }
   return { plan: { ...plan }, resX, resY, rows, width: ATLAS_WIDTH, height, data };
+}
+
+/**
+ * The frame the CPU renderer draws for the parity check: `compileFrame` asked at
+ * each pixel centre directly, per projector, for the rig the worker built.
+ *
+ * Not {@link patternAtlas}: the table is a float32 texture for the GPU, and
+ * passing it across the worker boundary would be a table to keep in step with a
+ * second one. Both are {@link pixelCentreTarget} over the same frame, so the two
+ * renderers read the same numbers — exactly for the Gray planes and the flat
+ * fields, and to float32's rounding of a phase step, 3e-8 at worst.
+ */
+export function patternRasterSource(
+  plan: PatternPlan,
+  frame: number,
+  mask: number,
+  rig: RigCalibration,
+): RasterSource {
+  const spec = planFrames(plan)[frame];
+  if (spec === undefined) {
+    const n = planFrames(plan).length;
+    throw new Error(`calibration frame ${frame} is not one of the ${n} this plan has`);
+  }
+  const frames = rig.projectors.map((p) => ({
+    frame: compileFrame(spec, plan, p.intrinsics.resX, p.intrinsics.resY),
+    resX: p.intrinsics.resX,
+    resY: p.intrinsics.resY,
+  }));
+  return {
+    mask,
+    at: (index, column, row) => {
+      const f = frames[index];
+      return rasterTarget(f.frame, f.resX, f.resY, column, row);
+    },
+  };
+}
+
+/** One step of the sequence as the emitter plays it: whose run, and which frame of it. */
+export interface SequenceStep {
+  /** 0-based position in the whole sequence, after wrapping. */
+  step: number;
+  /** Steps in the whole sequence: frames per run × projectors. */
+  total: number;
+  /** Frames in one projector's run: `planFrames(plan).length`. */
+  framesPerRun: number;
+  /**
+   * The projector whose run this is, as the emitter counts them: 0 to N − 1 in
+   * panel order, whether or not its lamp is on. The page's tab name is `P{slot+1}`.
+   */
+  slot: number;
+  /** Index into `planFrames(plan)`. */
+  frame: number;
+}
+
+/**
+ * Step `n` of the emitter's order for `projectors` projectors, wrapping both ways
+ * so the sequence loops and stepping back from the first frame lands on the last.
+ *
+ * Projector-major, frame-minor — `src/emit.ts`'s `emitOrder`, which puts every
+ * Gray plane beside its own complement and the rest of the rig outside that
+ * pair; `test/patternfilm.test.ts` holds the two to the same order. Computed
+ * rather than taken from `emitOrder` because that function refuses a rig above
+ * four, which it must — nothing documents a fifth quadrant — and the simulator
+ * can be handed a placed rig of up to eight.
+ */
+export function sequenceStep(n: number, projectors: number, plan: PatternPlan): SequenceStep {
+  const framesPerRun = planFrames(plan).length;
+  const total = framesPerRun * Math.max(1, Math.round(projectors));
+  const step = ((Math.round(n) % total) + total) % total;
+  const slot = Math.floor(step / framesPerRun);
+  return { step, total, framesPerRun, slot, frame: step % framesPerRun };
+}
+
+/**
+ * The shader's and the worker's mask for a run on panel slot `slot`, given which
+ * slot each rig projector came from.
+ *
+ * Zero when that slot is switched off at the wall: it is not in the rig, so no
+ * lamp that is on is sent this frame — they are all sent black, which is what
+ * the emitter's other quadrants are while its run plays to a dark projector.
+ */
+export function patternMask(slots: readonly number[], slot: number): number {
+  const i = slots.indexOf(slot);
+  return i < 0 || i >= 31 ? 0 : 1 << i;
 }

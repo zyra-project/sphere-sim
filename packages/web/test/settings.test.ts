@@ -35,6 +35,8 @@ import {
   BOULDER_PRESET,
   CONTENTS,
   CONTENT_CUSTOM,
+  CONTENT_MARBLE,
+  CONTENT_PATTERN,
   CONTROLS,
   GROUPS,
   IN_TO_M,
@@ -53,6 +55,7 @@ import {
 } from '../src/settings.ts';
 import { MAX_PROJECTORS } from '../src/glsl.ts';
 import type { Settings } from '../src/settings.ts';
+import { DEFAULT_PATTERN_PLAN } from '../../bench/src/patterns.ts';
 
 test('every control names a group that exists', () => {
   const ids = new Set(GROUPS.map((g) => g.id));
@@ -507,6 +510,29 @@ test('every base field says what it is for', () => {
   assert.equal(BOULDER_PRESET.gridOn, 1, 'the alignment grid should be on at first sight');
   // The drop-in is last, so the three flat fields read as a run.
   assert.equal(CONTENT_CUSTOM, CONTENTS.length - 1);
+});
+
+test('the calibration sequence says what it is, what it is not, and which plan it plays', () => {
+  const entry = CONTENTS[CONTENT_PATTERN];
+  assert.equal(entry.label, 'Calibration patterns');
+  // Before the drop-in, which stays last; after the four fields that are content.
+  assert.ok(CONTENT_PATTERN > CONTENT_MARBLE && CONTENT_PATTERN < CONTENT_CUSTOM);
+  const help = entry.help;
+  // What it is.
+  assert.match(help, /raw frames the emitter sends/);
+  assert.match(help, /lit through the rig as it was actually built/);
+  assert.match(help, /one projector\u2019s whole run, then the next, with the others sent black/);
+  // What it is not.
+  assert.match(help, /not the camera\u2019s photograph/);
+  assert.match(help, /recalibrating does not change them/);
+  assert.match(help, /no metric reads it/);
+  // The numbers it states are the plan the sphere plays, so a change to the
+  // default plan cannot leave the chip describing another one.
+  assert.equal(DEFAULT_PATTERN_PLAN.grayBits, 6);
+  assert.equal(DEFAULT_PATTERN_PLAN.phaseSteps, 4);
+  assert.match(help, /six Gray planes/);
+  assert.match(help, /four phase steps/);
+  assert.match(help, /picks its own count from the camera/);
 });
 
 test('every control opens inside its own range', () => {

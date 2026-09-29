@@ -47,6 +47,7 @@ import { BOULDER_PRESET } from '../src/settings.ts';
 import { CONTENT_DECODE_GAMMA } from '../src/rigs.ts';
 import { buildViewer, buildWorld } from '../src/rigs.ts';
 import { patternAtlas } from '../src/patternfilm.ts';
+import type { PatternDisplay } from '../src/uniforms.ts';
 import { DEFAULT_PATTERN_PLAN } from '../../bench/src/patterns.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -1376,14 +1377,21 @@ test('the sequence texture is bound where it is used, with a placeholder, and re
   // Same source-level reasoning as the mesh test above: gl.ts needs DOM types.
   assert.ok(/export const PATTERN_UNIT = 4;/.test(GL_SOURCE), 'the table lives on unit 4');
   // The four samplers before it keep their units; a fifth must not share one.
-  for (const [name, unit] of [['uEquirect', 0], ['uBvhNodes', 1], ['uBvhTris', 2], ['uCBvhField', 3]] as const) {
-    assert.ok(GL_SOURCE.includes(`gl.uniform1i(loc('${name}'), ${unit});`), `${name} is not on unit ${unit}`);
+  const units = [['uEquirect', 0], ['uBvhNodes', 1], ['uBvhTris', 2], ['uCBvhField', 3]] as const;
+  for (const [name, unit] of units) {
+    assert.ok(
+      GL_SOURCE.includes(`gl.uniform1i(loc('${name}'), ${unit});`),
+      `${name} is not on unit ${unit}`,
+    );
   }
   const setUniforms = GL_SOURCE.slice(
     GL_SOURCE.indexOf('export function setUniforms('),
     GL_SOURCE.indexOf('function bindContent('),
   );
-  assert.ok(setUniforms.includes('uploadPatternAtlas(h, u.patternAtlas);'), 'setUniforms never binds the table');
+  assert.ok(
+    setUniforms.includes('uploadPatternAtlas(h, u.patternAtlas);'),
+    'setUniforms never binds the table',
+  );
   assert.ok(setUniforms.includes("gl.uniform1i(loc('uPatternAtlas'), PATTERN_UNIT);"));
   const upload = GL_SOURCE.slice(
     GL_SOURCE.indexOf('export function uploadPatternAtlas('),
@@ -1392,8 +1400,14 @@ test('the sequence texture is bound where it is used, with a placeholder, and re
   const bind = upload.indexOf('bindPattern(h);');
   const guard = upload.indexOf('if (h.patternUploaded === atlas) return;');
   assert.ok(bind >= 0 && guard > bind, 'the binding must not be skipped with the upload');
-  assert.ok(/gl\.R32F, 1, 1, 0, gl\.RED, gl\.FLOAT, new Float32Array\(1\)/.test(upload), 'no 1×1 placeholder');
-  assert.ok(upload.includes('gl.NEAREST') && !upload.includes('gl.LINEAR'), 'a filtered fetch mixes two pixels');
+  assert.ok(
+    /gl\.R32F, 1, 1, 0, gl\.RED, gl\.FLOAT, new Float32Array\(1\)/.test(upload),
+    'no 1×1 placeholder',
+  );
+  assert.ok(
+    upload.includes('gl.NEAREST') && !upload.includes('gl.LINEAR'),
+    'a filtered fetch would mix two pixels of a Gray plane',
+  );
   // A context lost and rebuilt starts the record at undefined, which is what
   // sends the table up again; main.ts rebuilds it rather than reusing the dead one.
   const create = GL_SOURCE.slice(
@@ -1427,16 +1441,51 @@ test('the display uniforms carry a calibration frame, refuse one tabulated for a
   assert.equal(u.patternMask, 0b0100);
 
   const other = patternAtlas(DEFAULT_PATTERN_PLAN, 1920, 1080);
-  assert.throws(
-    () => buildDisplayUniforms(physical, content, world.scene, camera, { pattern: { atlas: other, frame: 0, mask: 1 } }),
-    /tabulated for a 1920 × 1080 raster/,
+  const drawing = (pattern: PatternDisplay) => () =>
+    buildDisplayUniforms(physical, content, world.scene, camera, { pattern });
+  assert.throws(drawing({ atlas: other, frame: 0, mask: 1 }), /tabulated for a 1920 × 1080 raster/);
+  assert.throws(drawing({ atlas, frame: 34, mask: 1 }), /not one of the 34/);
+  assert.throws(drawing({ atlas, frame: 0, mask: 1 << MAX_PROJECTORS }), /no room for/);
+});
+
+test('the parity check draws the calibration frame it asked the worker for, not the one on screen now', () => {
+  // The sequence moves with nobody touching a control, so a reply lands frames
+  // after it was asked for. Drawn at the live step, the GPU half would be a
+  // different picture and the verdict a disagreement belonging to neither
+  // renderer — `parity.test.ts` measures exactly that. So the request records
+  // the frame beside the view key, the worker echoes it, and the GPU half is
+  // drawn from the record.
+  const post = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function postModel('),
+    MAIN_SOURCE.indexOf('modelWorker.onmessage'),
   );
-  assert.throws(
-    () => buildDisplayUniforms(physical, content, world.scene, camera, { pattern: { atlas, frame: 34, mask: 1 } }),
-    /not one of the 34/,
+  assert.ok(post.includes('pattern: patternRequest(),'), 'the request does not name the frame');
+  const key = post.indexOf('parityRequestKey = viewKey();');
+  const freeze = post.indexOf(
+    'parityAsked = req.pattern === null ? null : { request: req.pattern, step: sequenceAt };',
   );
-  assert.throws(
-    () => buildDisplayUniforms(physical, content, world.scene, camera, { pattern: { atlas, frame: 0, mask: 1 << MAX_PROJECTORS } }),
-    /no room for/,
+  assert.ok(key > 0 && freeze > key, 'the asked frame must be recorded with its view key');
+
+  const check = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function checkParity('),
+    MAIN_SOURCE.indexOf('function frame('),
   );
+  assert.ok(
+    check.includes('JSON.stringify(cpuPattern) !== JSON.stringify(asked?.request ?? null)'),
+    'a reply drawn with another frame must be refused, not judged',
+  );
+  assert.ok(check.includes('frame: asked.request.frame, mask: asked.request.mask'));
+  assert.ok(!check.includes('patternDisplay('), 'the GPU half must not read the live frame');
+  assert.ok(check.indexOf('parityJudged = asked;') > check.indexOf('judgeParity('));
+  assert.ok(
+    MAIN_SOURCE.includes(
+      'checkParity(msg.parityImage, msg.parityMs, msg.parityMeshId, msg.parityPattern)',
+    ),
+  );
+  // And the live frame is what the picture on screen draws.
+  const draw = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function draw('),
+    MAIN_SOURCE.indexOf('function renderCameraShot('),
+  );
+  assert.ok(draw.includes('pattern: patternDisplay(model.slots),'));
 });

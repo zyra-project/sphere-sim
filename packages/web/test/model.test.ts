@@ -22,7 +22,15 @@ import { test } from 'node:test';
 
 import { createImage } from '../../sim/src/equirect.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
-import { BOULDER_PRESET, CONTENT_CUSTOM, PERFECT_PRESET, noNudge, withNudge } from '../src/settings.ts';
+import {
+  BOULDER_PRESET,
+  CONTENT_CUSTOM,
+  CONTENT_PATTERN,
+  PERFECT_PRESET,
+  noNudge,
+  withNudge,
+} from '../src/settings.ts';
+import { DEFAULT_PATTERN_PLAN, planFrames } from '../../bench/src/patterns.ts';
 import { buildWorld } from '../src/rigs.ts';
 import { computeModel, computeSurface } from '../src/model.ts';
 import type { ModelRequest, SurfaceRequest } from '../src/protocol.ts';
@@ -57,6 +65,7 @@ function request(over: Partial<ModelRequest> = {}): ModelRequest {
     projectorPreviewWidth: 0,
     customImage: null,
     customImageId: '',
+    pattern: null,
     ...over,
   };
 }
@@ -528,4 +537,118 @@ test('the surface cache never answers with a stale build', () => {
   // The rigs really do differ, or the third line above proves nothing.
   assert.notDeepEqual(coldMoved.facts, coldBox.facts, 'the moved rig must light the box differently');
   assert.notDeepEqual(coldBaffled.facts, coldBox.facts, 'the baffle must change the facts');
+});
+
+// ---------------------------------------------------------------------------
+// A frame of the calibration sequence in the parity render
+// ---------------------------------------------------------------------------
+
+/** The settings, camera and plan the calibration-frame tests below share. */
+const SEQUENCE_SETTINGS = { ...BOULDER_PRESET, content: CONTENT_PATTERN, gridOn: 0 };
+const WIDE_PARITY = {
+  width: 96,
+  height: 72,
+  fovHDeg: 44,
+  position: { x: 5.4, y: 1.4, z: 0.9 },
+  target: { x: 0, y: 0, z: 0 },
+  samplesPerPixel: 1,
+  imageShift: 0,
+};
+const EVERY_PROJECTOR = 0b1111;
+
+/** The index of a frame of the default plan, found by what it is. */
+function frameOf(kind: string, axis: 'u' | 'v' | null = null, index = 0): number {
+  const f = planFrames(DEFAULT_PATTERN_PLAN).findIndex(
+    (s) => s.kind === kind && s.axis === axis && s.index === index,
+  );
+  assert.ok(f >= 0, `the default plan has no ${kind} ${axis} ${index}`);
+  return f;
+}
+
+function sequenceParity(frame: number, mask: number, id = 1) {
+  const reply = computeModel(
+    request({
+      id,
+      settings: SEQUENCE_SETTINGS,
+      parity: WIDE_PARITY,
+      pattern: { plan: DEFAULT_PATTERN_PLAN, frame, mask },
+    }),
+  );
+  assert.ok(reply.parityImage, 'a parity render was asked for and none came back');
+  return reply;
+}
+
+test('the worker draws the calibration frame it was named, says which, and moves no metric', () => {
+  const white = sequenceParity(frameOf('white'), EVERY_PROJECTOR);
+  assert.deepEqual(white.parityPattern, {
+    plan: DEFAULT_PATTERN_PLAN,
+    frame: frameOf('white'),
+    mask: EVERY_PROJECTOR,
+  });
+  const content = computeModel(
+    request({ settings: SEQUENCE_SETTINGS, parity: WIDE_PARITY, pattern: null }),
+  );
+  assert.equal(content.parityPattern, null, 'a content render must not claim a frame');
+  // Content here is the black field the chip leaves in the texture, so the white
+  // frame has to be far brighter than it: the frame is what was drawn.
+  const mean = (r: typeof white): number =>
+    r.parityImage!.data.reduce((a, b) => a + b, 0) / r.parityImage!.data.length;
+  assert.ok(mean(white) > 4 * mean(content), `white ${mean(white)} against content ${mean(content)}`);
+  // No gate reads the content, and a calibration frame is content's stand-in.
+  assert.equal(white.gridWorstMm, content.gridWorstMm);
+  assert.deepEqual(white.multiplicityAreaFraction, content.multiplicityAreaFraction);
+});
+
+test('a Gray plane and its complement add up to white and black, through the whole forward model', () => {
+  // The identity the decode rests on, asked of the picture rather than of the
+  // pattern: wherever a point's four reconstruction corners agree, one of the two
+  // frames sends it full and the other zero, so the two renders sum to the white
+  // render plus the black one EXACTLY — same operations, same operands. A blend
+  // weight, a polar mask or a content-rig lookup anywhere in the path breaks it,
+  // because none of them is shared between a plane and its inverse. At a stripe's
+  // edge the corners disagree and the projector's gamma makes the sum differ,
+  // which is a one-pixel ramp and must stay a small minority.
+  //
+  // One projector, as the emitter plays it: P1, which faces this camera. The
+  // others are sent black in all four frames, so their leak is the same operand
+  // in the same place each time and the equality can be asked for exactly.
+  const plane = frameOf('gray', 'u', 1);
+  assert.equal(frameOf('grayInverse', 'u', 1), plane + 1, 'the complement follows its plane');
+  const [g, inv, w, b] = [plane, plane + 1, frameOf('white'), frameOf('black')].map(
+    (f, k) => sequenceParity(f, 0b0001, 10 + k).parityImage!.data,
+  );
+  let lit = 0;
+  let exact = 0;
+  let split = 0;
+  for (let i = 0; i < w.length; i++) {
+    if (w[i] - b[i] < 1e-3) continue;
+    lit++;
+    if (g[i] + inv[i] === w[i] + b[i]) exact++;
+    if (Math.abs(g[i] - inv[i]) > 0.5 * (w[i] - b[i])) split++;
+  }
+  assert.ok(lit > 2000, `only ${lit} lit channels; the comparison would be vacuous`);
+  assert.ok(exact > 0.9 * lit, `the identity held exactly at ${exact} of ${lit} lit channels`);
+  assert.ok(split > 0.8 * lit, `the plane divided only ${split} of ${lit} channels between them`);
+});
+
+test('a projector outside the mask is sent black, and a mask of nobody is a dark room', () => {
+  const white = frameOf('white');
+  const black = frameOf('black');
+  // A run played to a projector switched off at the wall: nobody that is on is
+  // emitting, which is the same picture as every projector sent the black frame.
+  const nobody = sequenceParity(white, 0, 20).parityImage!.data;
+  const allBlack = sequenceParity(black, EVERY_PROJECTOR, 21).parityImage!.data;
+  assert.deepEqual(nobody, allBlack);
+  // One projector's run lights a subset of what all four at once light — the
+  // multi-bit mask is plumbing the page does not expose, and it must still mean
+  // what it says.
+  const one = sequenceParity(white, 0b0001, 22).parityImage!.data;
+  const all = sequenceParity(white, EVERY_PROJECTOR, 23).parityImage!.data;
+  let brighter = 0;
+  for (let i = 0; i < one.length; i++) {
+    assert.ok(all[i] >= one[i] - 1e-12, `channel ${i}: four projectors lit less than one`);
+    assert.ok(one[i] >= nobody[i] - 1e-12, `channel ${i}: a lit projector made the ball darker`);
+    if (all[i] > one[i] + 1e-3) brighter++;
+  }
+  assert.ok(brighter > 100, 'the other three projectors added no light anywhere');
 });

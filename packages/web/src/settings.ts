@@ -336,6 +336,24 @@ export const CONTENTS: readonly {
       'recognises; both are one click apart, and no metric reads either.',
   },
   {
+    // Not an equirect at all: see `CONTENT_PATTERN`. The black field is what the
+    // content texture and the worker hold while the shader draws the frame.
+    label: 'Calibration patterns',
+    background: 0,
+    help:
+      'The structured-light sequence a calibration projects — white, black, six Gray planes each ' +
+      'followed by its complement, across the raster and then down it, and four phase steps each ' +
+      'way — played in the emitter page\u2019s order: one projector\u2019s whole run, then the ' +
+      'next, with the others sent black. These are the raw frames the emitter sends, written ' +
+      'straight into each projector\u2019s own raster and lit through the rig as it was actually ' +
+      'built, so no warp, blend or mask touches them and recalibrating does not change them — ' +
+      'which is exactly why a camera can measure the lenses from them. What you see is what lands ' +
+      'on the ball, not the camera\u2019s photograph of it, and no metric reads it. Six planes is ' +
+      'the emitter\u2019s default; a calibration on this page picks its own count from the camera. ' +
+      'With the room on, the stripes land on the wall as well, which is the spill a capture has ' +
+      'to reject.',
+  },
+  {
     label: 'Your own image or video',
     background: 0.18,
     help:
@@ -350,13 +368,19 @@ export const CONTENTS: readonly {
   },
 ];
 
-/** Index into {@link CONTENTS} for the drop-in image. */
 /** The shipped Blue Marble. See `assets/README.md` on where the file came from. */
 export const CONTENT_MARBLE = 3;
 
-export const CONTENT_CUSTOM = 4;
+/**
+ * The calibration sequence, which is not content: the shader draws each frame
+ * straight off the projector's own raster, as the emitter page paints it, and
+ * this entry's field is never sampled. See `CHUNK_PATTERN` in `glsl.ts`.
+ */
+export const CONTENT_PATTERN = 4;
 
-/** Per-projector rasters. §3.4: the X screen is twice this in each dimension. */
+/** Index into {@link CONTENTS} for the drop-in image, which stays last. */
+export const CONTENT_CUSTOM = 5;
+
 /**
  * How far back an operator stands, for a sphere of this radius.
  *
@@ -377,6 +401,7 @@ export function cameraDistanceM(radiusM: number): number {
 /** PARAMETERS.md §1's 68-inch sphere, in metres. */
 const NOMINAL_RADIUS_M = (68 * IN_TO_M) / 2;
 
+/** Per-projector rasters. §3.4: the X screen is twice this in each dimension. */
 export const RESOLUTIONS: readonly { label: string; resX: number; resY: number }[] = [
   { label: '1024 × 768 · 4:3', resX: 1024, resY: 768 },
   { label: '1920 × 1080 · 16:9', resX: 1920, resY: 1080 },

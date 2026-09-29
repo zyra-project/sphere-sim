@@ -519,9 +519,9 @@ function checkPattern(pattern: PatternDisplay, physical: PreparedRig, drawn: num
     const it = physical.projectors[i].cal.intrinsics;
     if (it.resX !== atlas.resX || it.resY !== atlas.resY) {
       throw new Error(
-        `the calibration sequence was tabulated for a ${atlas.resX} × ${atlas.resY} raster and ` +
-          `${physical.projectors[i].cal.id} has ${it.resX} × ${it.resY}; the shader would light its ` +
-          'stripes at another raster’s pixels',
+        `the calibration sequence was tabulated for a ${atlas.resX} × ${atlas.resY} raster ` +
+          `and ${physical.projectors[i].cal.id} has ${it.resX} × ${it.resY}; the shader would ` +
+          'light its stripes at another raster’s pixels',
       );
     }
   }

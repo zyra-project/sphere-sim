@@ -43,6 +43,7 @@ import type { MeshSurface } from '../../sim/src/mesh/surface.ts';
 import { isIlluminatedAt } from '../../sim/src/coverage.ts';
 import type { ViewerCamera } from '../../sim/src/render.ts';
 import { buildWorld, placedRigOn } from './rigs.ts';
+import { patternRasterSource } from './patternfilm.ts';
 import { framebufferSentence, projectorFacts, readingsFrom, rigFacts } from './readout.ts';
 import type { EquirectImage } from '../../sim/src/equirect.ts';
 import type {
@@ -611,6 +612,11 @@ export function computeModel(req: ModelRequest): ModelResponse {
   const paritySurface =
     req.meshId !== '' && cachedMesh?.meshId === req.meshId ? cachedMesh.surface : null;
   const parityMeshId = paritySurface === null ? '' : req.meshId;
+  // The calibration frame the sphere is showing, if it is showing one, drawn
+  // from the TRUTH rig's rasters: the emitter writes it into the raster, so no
+  // calibration is consulted and the compositor rig below only rides along.
+  const pattern = req.pattern ?? null;
+  let parityPattern: ModelResponse['parityPattern'] = null;
   if (req.parity) {
     const p1 = performance.now();
     const camera: ViewerCamera = {
@@ -650,10 +656,18 @@ export function computeModel(req: ModelRequest): ModelResponse {
       // a picture with lines against one without.
       { ...world.scene, graticule: null },
       camera,
-      { samplesPerPixel: Math.max(1, req.parity.samplesPerPixel), sampleLattice: 'grid' },
+      {
+        samplesPerPixel: Math.max(1, req.parity.samplesPerPixel),
+        sampleLattice: 'grid',
+        raster:
+          pattern === null
+            ? null
+            : patternRasterSource(pattern.plan, pattern.frame, pattern.mask, world.truthRig),
+      },
     );
     parityMs = performance.now() - p1;
     parityImage = { width: img.width, height: img.height, data: img.data };
+    parityPattern = pattern;
   }
 
   // Each projector's own frame — what goes down its cable. Rendered from the
@@ -736,6 +750,7 @@ export function computeModel(req: ModelRequest): ModelResponse {
     scatter: set.fields.gridSamples,
     parityImage,
     parityMeshId,
+    parityPattern,
     parityMs,
     metricsMs,
     densityScale: req.densityScale,
