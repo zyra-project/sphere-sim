@@ -1211,15 +1211,23 @@ export function indexByFingerprint(
  *
  * The decoder's modulation floor, `DEFAULT_DECODE_OPTIONS.minModulation` in
  * `decode.ts`, imported rather than restated so the two cannot drift: a block
- * that does not clear it is one the decoder would not read either, so a
- * photograph none of whose blocks clears it holds nothing to decode. It is an
- * absolute number where {@link MODULATION_FLOOR} is relative, and that is not
- * the inconsistency it looks like: the decoder already applies this one to the
- * same linearised pixels these fingerprints average.
+ * whose mean does not clear it carries less modulation than the decoder reads
+ * one pixel by, so a photograph none of whose blocks clears it holds nothing a
+ * run can be found by. It is an absolute number where {@link MODULATION_FLOOR}
+ * is relative, and that is not the inconsistency it looks like: the decoder
+ * already applies this one to the same linearised pixels these fingerprints
+ * average.
  *
- * The reader-fix plan's probe (EXPERIMENT-10's rig 0 at the reduced preset,
- * with sensor noise) found an unseen projector's frames and every black at most
- * 0.0032 above the floor, and the dimmest white any camera saw 0.062 above it.
+ * Such a photograph is not always empty to the decoder, which reads pixels one
+ * at a time. A projector grazing the limb lights a line of them too thin to
+ * lift any block's mean past this. `tools/reader-acceptance.ts`, over every
+ * clean position EXPERIMENT-10 photographed, found six runs like that, whose
+ * brightest block rose 0.0055 to 0.016 above its slot's own dark: each is
+ * called out of view, and would have decoded 1 to 112 correspondences, fewer
+ * than the 200 below which EXPERIMENT-10 calls a run minor. Every slot of a
+ * projector that lit no pixel at all rose at most 0.0027 (80 slots, the room on
+ * and off, at three presets), and the dimmest run placed had its brightest
+ * block 0.026 above its black.
  */
 export const DARK_LIMIT = DEFAULT_DECODE_OPTIONS.minModulation;
 
@@ -1261,11 +1269,18 @@ export const SLOT_SLACK = 3;
  *
  * A projector that lights fewer is "barely seen": a note rather than a refusal,
  * and not decoded — a handful of blocks is too little for the complement check
- * to mean anything, and a re-shoot would see no more of it. Eight is
- * provisional: the plan's probe read a 19-block grazing crescent cleanly, and
- * the full sweep of `docs/EXPERIMENT-10.md`'s positions is where it should be
- * set. It counts blocks of whatever grid the plan asks for, so it is a smaller
- * patch of sphere at a finer grid.
+ * to mean anything, and a re-shoot would see no more of it. It counts blocks of
+ * whatever grid the plan asks for, so it is a smaller patch of sphere at a
+ * finer grid.
+ *
+ * Eight stands on `tools/reader-acceptance.ts`, which read every clean position
+ * EXPERIMENT-10 photographed: no crescent there has 8 or 9 blocks, so it sits
+ * between the largest noted barely seen, 7, and the smallest placed, 10. What
+ * it gives up is small. The 18 runs noted barely seen light 4 to 176 pixels,
+ * four of them only the room behind the sphere, and would have decoded 4 to
+ * 176 correspondences each. The complement check passes every one of them,
+ * which says it does not refuse them for noise, not that it could find a fault
+ * in so few blocks — and that is what this guards.
  */
 export const MIN_CRESCENT_BLOCKS = 8;
 
@@ -1572,6 +1587,20 @@ function copiesFrame(f: FrameFingerprint, g: FrameFingerprint, w: RunWindow): bo
  * same place. {@link complementResidual} with one run's white and black as the
  * pair and the other's as the reference, both ways round, each within
  * {@link COMPLEMENT_LIMIT} — so the two agree over both crescents, not just one.
+ *
+ * "The same place" is as near as the limit makes it, and no limit makes it
+ * nearer. Measured by `tools/reader-acceptance.ts` on the bench's own
+ * photographs: a run shot again from where it stood reproduces its original to
+ * 0.002–0.056 over every run placed in EXPERIMENT-10's clean positions, and to
+ * 0.022–0.088 with the re-shoot's exposure 2% off; two projectors of one
+ * position are at least 0.79 apart. With the camera set turned between the two
+ * — EXPERIMENT-10's designed rigs at the reduced preset — a run reproduces its
+ * original to 0.009–0.155 at half a degree, 139 of 140 runs within the limit,
+ * and to 0.059–2.0 at five, 67 of 140 still within it. A large crescent seen
+ * from half a degree away is closer than a grazing one seen again from the same
+ * spot, so no one number tells the two apart. What keeps a re-shoot from a
+ * camera that moved out of a position is the tripod staying where it stood, not
+ * this.
  */
 function sameReferences(a: RunWindow, b: RunWindow): boolean {
   const ab = complementResidual(b.white, b.black, a.white, a.black);
