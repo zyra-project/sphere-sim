@@ -1828,6 +1828,35 @@ test('a re-shoot added after the position explains nothing at the end before it:
   }
 });
 
+test('a numbering leaves a projector for every run found after a stretch that is not whole runs', () => {
+  // Review C. Projector 2, out of view, paused a run's worth in its run, and
+  // projector 4's run spoiled and re-shot: the count put projector 3 in the
+  // last projector's place and called what followed it a stretch that is not
+  // whole runs, the re-shoot after it one of the later projectors — of which
+  // there were none. Projector 3 was filed as projector 4, decoded, in 30 of
+  // the review's 180 folders. The runs after such a stretch are the position's
+  // later projectors, so the numbering has to leave one for each.
+  const expected = expectedOf(PAGE);
+  const R = 34;
+  const dark = (k: number): Shot[] => Array.from({ length: k }, (): Shot => null);
+  const white = (p: number): Shot => ({ projector: p, frame: 0 });
+  const s = scene(PAGE, 64, { azimuth: 300, elevation: 40, distance: 2.5 });
+  for (const [how, at] of [
+    ['doubled', 5],
+    ['dropped', 17],
+  ] as const) {
+    const p4 = run(s, 3);
+    if (how === 'doubled') p4.splice(at, 0, p4[at]);
+    else p4.splice(at, 1);
+    const shots = [white(0), white(0), ...run(s, 0), ...dark(R + 31), ...run(s, 2), ...p4, ...dark(3), ...run(s, 3), ...dark(3)];
+    const { prints, truth } = camera(s, 7700 + at)(shots);
+    const r = indexPosition(prints, expected);
+    const label = `projector 2 paused 31 in its run, projector 4's photograph ${at + 1} ${how}, and re-shot`;
+    assert.equal(misplaced(r.assignment, truth), 0, `${label}: filed wrong`);
+    assert.equal(r.ok, false, label);
+  }
+});
+
 test("a run that matches no projector is a re-shoot only after the position's black, and an honest gap contests it", () => {
   // Review B. A run that matches nothing was taken for a re-shoot added after
   // the position wherever the count put the position's end before it: with a

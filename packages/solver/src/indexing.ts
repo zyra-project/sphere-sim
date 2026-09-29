@@ -2609,7 +2609,13 @@ export function indexPosition(
     for (let x = lastEnd; backIsDark && x < n; x++) if (!darkBeside(x, last)) backIsDark = false;
     const candidates: number[] = [];
     const within: number[] = [];
-    for (let a = 0; a + span <= projectors - 1; a++) {
+    // Runs found after a stretch that is not whole runs are still the
+    // position's, each a later projector than the last one numbered, so the
+    // numbering has to leave a projector for each: with none left, what the
+    // count calls a stretch between runs lies after the position's last
+    // projector, and the run after it is no projector of this position.
+    const unnumbered = pass1.length - numberedCount;
+    for (let a = 0; a + span + unnumbered <= projectors - 1; a++) {
       const front = before - runLength * a;
       const back = after - runLength * (projectors - 1 - (a + lastRel));
       if (front < -SLOT_SLACK || back < -SLOT_SLACK - gapExcess) continue;
