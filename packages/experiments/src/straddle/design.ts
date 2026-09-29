@@ -3,7 +3,8 @@
 
 /**
  * Experiment 10 — what a photograph taken across a pattern change costs a
- * calibration, with today's page.
+ * calibration, read by a counterfactual reader and, in the rescoring's page
+ * column, by the page's own.
  *
  * EXPERIMENT-9 counted how often the shutter is open while the emitter changes
  * pattern — 728 of 2,000 simulated captures at the page's defaults — and said in

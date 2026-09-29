@@ -40,11 +40,15 @@
  * ## What is NOT established here
  *
  * The oracle observations ({@link oracleObservations}) are exact lit fractions,
- * EXPERIMENT-8's footing. Today's page cannot supply them — its capture-wide
- * classification refuses clean bench positions before the complement check
- * runs — so every verdict built on them is the verdict of a counterfactual
- * reader whose bookends can place runs. It is labelled that way where it is
- * reported, and no fix to the page is implied by it.
+ * EXPERIMENT-8's footing, and no page supplies them. The reader the page had
+ * when this experiment was designed classified the whole capture and refused
+ * clean bench positions before its complement check ran; the reader it has now
+ * finds each run by its own frames and computes no lit fraction at all. So
+ * every verdict built on them is the verdict of a counterfactual reader whose
+ * bookends can place runs, and it is labelled that way where it is reported.
+ * The page's own reader is handed the same straddled positions beside it, in
+ * the rescoring's page column (`stages.ts`, `pagePath`), and what it makes of
+ * them is what the re-run measures.
  */
 
 import type { ExposurePart, ShutterStraddle } from '../../../bench/src/capture.ts';

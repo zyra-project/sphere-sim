@@ -15,7 +15,7 @@
  * A checkpoint is a measurement taken by one build against one design, so it
  * carries a fingerprint of the design constants and of every source file that
  * decides what it holds, and a mismatch refuses to resume (see
- * {@link codeFingerprint}). The full run is about four hours of measurement.
+ * {@link codeFingerprint}). The full run is hours of measurement.
  * While the assembly lived in the same file as the stages, the fingerprint
  * covered it too. So an edit to a document field, to what a table needs or to
  * the verdict's wording, made after that run had started, turned every
@@ -383,8 +383,8 @@ export const QUICK_PLAN: Exp10Plan = {
 /**
  * `--smoke`: the solve path, which `--quick` never touches, on one designed
  * rig with one level of each pose arm, one re-shoot, and the first few solved
- * captures of the headline and lateness cells. For finding out that a
- * three-hour run would crash at its first solve before it has spent two hours
+ * captures of the headline and lateness cells. For finding out that a run of
+ * several hours would crash at its first solve before it has spent hours
  * getting there.
  */
 export const SMOKE_PLAN: Exp10Plan = {
@@ -4170,8 +4170,10 @@ export function loadSolves(ctx: RunContext): void {
 }
 
 /**
- * The pairs the page would not decode on the clean capture: every run the twin refuses, on every
- * camera.
+ * The pairs the counterfactual reader refuses on the clean capture: every run the twin refuses, on
+ * every camera. Every solve withholds them. The page's own reader may refuse others there, or
+ * place some of these ({@link TwinCamera.page}); the solves do not follow it, and the re-run
+ * measures where the two differ.
  */
 function cleanRefused(rc: RigContext): string[] {
   const out: string[] = [];
@@ -4689,14 +4691,15 @@ export interface CapturePlan {
  * treated solve and its twin alike, are two kinds of pair. First, every pair the
  * clean capture refuses (`refusedClean`, the twin's refusals on every camera).
  * Second, every run of a straddled position whose deciding outcome is not
- * `placed`, because the page would not decode it.
+ * `placed`, because the counterfactual reader, whose verdicts these are, would
+ * not decode it.
  *
  * The second kind means every such run, where §6 R1 of the spec withheld only a
  * MIXED position's refused runs. A collateral refusal is an untouched,
- * attributable run that the page refuses because a neighbour's slip moved the
- * bookends, and it can sit inside a PLACED position. Under the spec's rule the
- * treated solve was still handed that run, rendered clean. The page decodes
- * nothing of a refused run, so this is the amendment the document's caveats
+ * attributable run that the counterfactual refuses because a neighbour's slip
+ * moved the bookends, and it can sit inside a PLACED position. Under the spec's
+ * rule the treated solve was still handed that run, rendered clean. Nothing of
+ * a refused run is decoded, so this is the amendment the document's caveats
  * record. The twin withholds the run too, so the pair still differs by the
  * straddle and nothing else.
  *
@@ -4772,9 +4775,9 @@ export function policyAnswers<T>(
 /**
  * Solve one scored capture under the policies asked for. Every position is
  * rendered from the same timing the score came from, straddled with the
- * content footing's assignment — the photographs the page would decode — and
- * the pairs the page would not decode are withheld from the solve
- * ({@link capturePlan}).
+ * content footing's assignment — the photographs the counterfactual reader
+ * would decode — and the pairs it would not decode are withheld from the solve
+ * ({@link capturePlan}). The page column's own verdicts choose nothing here.
  *
  * Exported for `straddle.test.ts`, which answers every solve it asks for from
  * a filled `ctx.solves`, so the policies' wiring is held without a solve.
