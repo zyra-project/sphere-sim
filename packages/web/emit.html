@@ -222,7 +222,13 @@ button.primary:hover:not(:disabled) { color: #180a02; filter: brightness(1.12); 
       photographs to the end of that camera position’s own folder, and read the folder again under
       the same camera number. Each re-shot run is matched to its projector by comparing it with the
       photographs already there, and is read in place of that projector’s earlier run if it passes
-      its checks.
+      its checks. Do that only while the tripod has not moved since the position was shot: that
+      comparison cannot tell a camera that moved. Once it has, shoot the whole position again into
+      a new folder and read it under the same camera number, which replaces what that number held.
+      Do the same, aiming the start, when the refusals are patterns that no longer add up to their
+      complements in more than one run: that is what a photograph taken while the pattern changed
+      looks like, and it spreads across the whole position, runs that passed included
+      (<code>docs/CALIBRATE.md</code> Part 4.2).
     </p>
     <div class="row">
       <label class="field"><span>The plan file</span>

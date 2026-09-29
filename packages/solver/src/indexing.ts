@@ -14,8 +14,8 @@
  * Phase 1's emitter counts its own steps. Nothing connects that count to the
  * files on a camera card, so today the shooting ORDER is the only record of what
  * a photograph shows — which is why `docs/CALIBRATE.md` has to tell an operator
- * not to delete, skip or re-shoot a single frame. This module is what makes that
- * rule softer, and it is deliberately not what makes it disappear.
+ * never to patch a run and never to delete a photograph. This module is what
+ * makes those rules softer, and it is deliberately not what makes them disappear.
  *
  * ## What it is allowed to look at
  *
@@ -1810,7 +1810,10 @@ function handIn(projector: number): string {
     `To hand the re-shoot in, step the emitter to projector ${projector}'s white (Home goes to ` +
     "the first projector's white and ] to the next projector's), press Play, and add the new " +
     "photographs to the end of this camera position's folder: a re-shot run is matched to its " +
-    'projector by comparing it with the photographs already there. The page can be left to play ' +
+    'projector by comparing it with the photographs already there. Do that only while the camera ' +
+    'has not moved since this position was shot, because that comparison cannot tell a camera ' +
+    'that moved; once the tripod has moved, shoot the whole camera position again, into a new ' +
+    'folder, and read it under the same camera number. The page can be left to play ' +
     "to the end — every later projector's run it shoots again is matched the same way, and each " +
     "projector's latest run that passes is the one used — or the camera stopped once projector " +
     `${projector}'s run is done. Stop the camera, not the page: a paused page is photographed ` +
