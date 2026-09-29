@@ -22,6 +22,18 @@ index in the rig, and the run was repeated once more: only those positions
 changed, and no figure quoted below moved. **This document reports the last run**:
 its tables are generated from the results file, and its prose quotes the same cells.
 
+> **2026-09-29: the page's reader has since been replaced, and this run was not
+> repeated.** “Today's page” below is the reader the page had when it ran. The page
+> now reads a camera position with `indexPosition`, and on the bench's photographs
+> of the 108 clean positions Q0 rendered it refuses none and files no photograph
+> under the wrong projector or frame (`experiments/reader-acceptance.json`, and the
+> dated notes below). Q0 and its folder shapes stay the record of the reader it
+> replaced. The loud and silent
+> counts are unchanged as a measurement of the complement check, which the new
+> reader runs unchanged, refusing a broken pair in the same words. What that reader
+> does with a straddled capture is the rescoring's page column, which a re-run of
+> this experiment would now run; nothing here says what it will show.
+
 - **Data** — [`experiments/experiment-10.json`](../experiments/experiment-10.json)
   (`sphere-sim/experiment-10@1`). Every table below is generated from it and checked
   by `npm run check:docs`. The sentence in `verdict.statement` is assembled from its
@@ -146,6 +158,23 @@ the same clean positions it refuses 66 of the 288 runs of the sweep anyway, 64 o
 them runs whose projector the camera cannot see, and it would tell the operator
 “Re-shoot projector N” on 66 of the 72 positions.
 
+> **2026-09-29: the page's reader now places these positions.** Handed the bench's
+> photographs of the same 108 clean positions through the page's own path, the
+> reader that replaced this one refuses none and files no photograph under the
+> wrong projector or frame. It
+> places 327 runs where the counterfactual places 349: the 22 between them are
+> grazing runs of 0 to 7 fingerprint blocks lighting 4 to 176 pixels, which it
+> notes as barely seen (18) or out of view (4) and does not decode, and which the
+> counterfactual passes. Every one of the 80 runs that light no pixel it notes as
+> out of view, where the counterfactual refuses each and asks for a re-shoot. Its
+> worth report now covers every camera position read since the plan file was
+> loaded, so “Only 1 camera contributed.” means that only one has been read. The
+> new reader's table is in [`docs/OPERATOR-PATH.md`](OPERATOR-PATH.md), Phase 2,
+> generated from `experiments/reader-acceptance.json`; the table below is the
+> reader it replaced. What the new reader makes of a straddled position is not
+> measured: that is the rescoring's page column, which a re-run of this experiment
+> would now run.
+
 The card's own folder shapes cost something without any straddle. Photographs
 before the first white frame cost a problem line and nothing else; a dark
 photograph after the last step lengthens the last run until it is refused; and a
@@ -155,6 +184,18 @@ remedy the page's own refusal asks for. (The card has since changed: it now says
 delete the photographs taken after the screen goes black, and to re-shoot the whole
 position rather than one projector, `docs/CALIBRATE.md`. The measurement stands: it
 is what the page does with such folders.)
+
+> **2026-09-29: and it is no longer what the page does with them.** On the designed
+> rigs, with the room spill off and on, the page's reader reads each of these
+> shapes as its position: 432 of 432 with none, one or three photographs taken
+> before Play and none, one or two dark ones after the last step; and every
+> run a position places, re-shot and added after the position (150 of 150) or
+> played on to the end as the page's own remedy leaves it (150 of 150). A re-shot
+> run handed in alone is still refused, now with how to hand it in (150 of 150).
+> The card now says to keep every photograph and to re-shoot a spoiled projector
+> into the position's own folder before the tripod moves — and still to re-shoot
+> the whole position after a straddle, for the straddle's sake
+> (`docs/CALIBRATE.md`).
 
 <!-- generated: experiment-10-precondition -->
 | clean positions | raster | positions | placed a run | refused at | classify margin (needs 0.15): median · max | runs a per-run classify would rescue |
@@ -494,6 +535,18 @@ cannot read. (The card has since changed: it now says to re-shoot the whole
 position, `docs/CALIBRATE.md`. The page's refusal still says “Re-shoot
 projector N”.)
 
+> **2026-09-29: the page reads that remedy now, and after a straddle it is still
+> the wrong one.** The page's reader reads a re-shot run added to the position's
+> folder, or played on to the end, in place of the original (the first section's
+> notes), and its refusal now says how to hand one in. But a straddle smears the
+> whole position and each run crosses the check at its own smear (the section on
+> crossings), so the runs that passed can carry the same smear silently, and
+> re-shooting only the projector named keeps them. The card says to re-shoot one
+> projector into the same folder for a frame spoiled on its own, before the tripod
+> moves, and the whole position, aimed, after a straddle. The refusal still blames
+> a dropped and a duplicated frame. Whether the new reader refuses a straddled run
+> where the counterfactual does is the rescoring's page column, not yet run.
+
 A silent position gets no message at all. Under policy A, which keeps a MIXED
 position's placed runs because that is what the page decodes, 97 of R1's loud
 captures also carry a silent part — a PLACED position, or the placed runs of a MIXED
@@ -569,6 +622,14 @@ _Content footing (primary): a photograph observes as the kind of the part holdin
   rescoring's page column has to be run. A classify fix must stop classifying Gray
   planes by lit fraction, and the run count must allow for a projector the camera
   cannot see.
+
+  > **2026-09-29: the page can place a clean position now.** Its reader was
+  > replaced by one that finds runs without classifying the capture and notes a
+  > projector out of sight, the two things this item asks for, and on the bench's
+  > photographs it places every clean position Q0 rendered without a refusal
+  > (`experiments/reader-acceptance.json`). So the rescoring's page column is the
+  > next run; until it is made, every loud/silent split here is still the
+  > counterfactual's.
 - **The display machine's timing.** The emitter's lateness was never measured here:
   the emitter-timing probe its design called for (`tools/emitter-timing.ts`) was never built, so 7.5 ms is a
   design-time headless figure and every lateness in this document is an input, not a
@@ -615,6 +676,21 @@ whole. The only remedy the page reads back is re-shooting the whole position, an
 the refusal text and the card's “keep both runs” should say so. That is recorded
 here and not acted on. (The card now says to re-shoot the position:
 `docs/CALIBRATE.md`. The refusal text still says “Re-shoot projector N”.)
+
+> **2026-09-29: the first is done on the bench; the second is not.** The page's
+> reader has been replaced with one that finds each run by what it shows and notes
+> a projector out of sight. On the bench's photographs of every clean position Q0
+> rendered it refuses nothing and misfiles nothing, and it places 327 runs to the
+> counterfactual's 349,
+> the 22 between them grazing runs it notes and does not decode
+> (`experiments/reader-acceptance.json`). It also reads a re-shot run added to the
+> folder, so re-shooting the whole position is no longer the only remedy the page
+> reads back; after a straddle it is still the right one, for the straddle's sake,
+> and the card says so. The refusal still says “Re-shoot projector N”, now with how
+> to hand the re-shoot in. The loud and silent counts above stay the
+> counterfactual's; what the new reader does with a straddled capture is what a
+> re-run of this experiment, with the rescoring's page column, will measure, and
+> nothing here says what it will show.
 
 **Most of what passes is not harmless, and the check is not the protection.** A
 straddle the check lets through keeps its Gray words and shifts its phase, and at
