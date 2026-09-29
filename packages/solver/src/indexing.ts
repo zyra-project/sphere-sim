@@ -1528,6 +1528,18 @@ function addLitBlocks(f: FrameFingerprint, floor: Float64Array, into: Set<number
  * this cannot see is a coarse plane that lights all of what the camera sees of
  * its projector: that plane is then the run's white in every block, and its
  * complement the run's black.
+ *
+ * Such a window's later planes are darker than its black as well, and
+ * {@link framesAboveBlack} refuses it for that too. What only this refuses is a
+ * run whose black carries light its white does not: the room's light switched
+ * on after the white was photographed. The page's card says light that comes
+ * on while a projector is playing spoils that projector's run, and the run is
+ * refused by name rather than read against a white photographed in another
+ * light. In `position.test.ts`'s model, with the room lit over the wall behind
+ * the sphere or over the whole picture after each projector's white at three
+ * places, this refuses the run in 44 of the 70 folders where the camera sees
+ * it; without it 10 of those are refused all the same, where the room lights
+ * the crescent too and the complement check sees it, and 34 are read.
  */
 function runWindowAt(
   fps: readonly FrameFingerprint[],

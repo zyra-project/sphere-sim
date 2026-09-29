@@ -2756,6 +2756,31 @@ test('a window whose black outshines its white is not a run: a phase step shot t
     assert.deepEqual(r.usableProjectors, clean.usableProjectors.filter((p) => p !== q), label);
     assert.match(r.problems.join(' '), new RegExp(`Re-shoot projector ${q + 1}\\.`), label);
   }
+  // A run's black can outshine its white another way: the room's light
+  // switched on just after the white was photographed, so that every later
+  // photograph, the black among them, carries light the white does not. The
+  // page's card says light that comes on while a projector is playing spoils
+  // that projector's run, and it is refused by name rather than read against a
+  // white photographed in another light; the runs after it, the room's light
+  // under their white and black alike, are read.
+  for (const [azimuth, q] of [
+    [0, 0],
+    [250, 3],
+  ] as const) {
+    const s = scene(PAGE, 64, { azimuth });
+    const photos = camera(s, 1950 + azimuth)(position(s, { leading: 2, trailing: 3 }));
+    const white = 2 + q * R;
+    const lit = relit(photos, (values, i) => {
+      if (i > white) for (let k = 0; k < values.length; k++) values[k] += 0.03;
+    });
+    const clean = indexPosition(photos.prints, expected);
+    const r = indexPosition(lit.prints, expected);
+    const label = `azimuth ${azimuth}: the room's light switched on after projector ${q + 1}'s white`;
+    assert.equal(misplaced(r.assignment, lit.truth), 0, `${label}: filed wrong`);
+    assert.ok(clean.usableProjectors.includes(q), `${label}: the position without the room's light has to place it`);
+    assert.deepEqual(r.usableProjectors, clean.usableProjectors.filter((p) => p !== q), label);
+    assert.match(r.problems.join(' '), new RegExp(`Re-shoot projector ${q + 1}\\.`), label);
+  }
 });
 
 test('a window with a frame darker than its black is not a run: a run paused three shutters and shot again in line is read, never a projector late', () => {
