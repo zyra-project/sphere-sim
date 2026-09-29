@@ -1754,6 +1754,20 @@ test('lit photographs no run was found in, straight before the first run or afte
     assert.match(r.problems[0], /^Projector 1's photographs are lit/);
   }
   {
+    // And with a focus shot of projector 4's stripes before the ten: two of the
+    // photographs before the first run found are then each lit where the other
+    // is not, as a run's are, but the copies of projector 1's white among them
+    // are its step 0 still, though its run was not found, and the one stray
+    // left is no run.
+    const shots: Shot[] = [{ projector: 3, frame: 2 + 2 * 3 }, ...position(all, { leading: 10, trailing: 3 })];
+    shots.splice(12, 1);
+    const { r, wrong } = read(all, shots, 99);
+    assert.equal(wrong, 0);
+    assert.deepEqual(r.usableProjectors, [1, 2, 3], `and a focus shot before them: ${r.problems.join(' | ')}`);
+    assert.equal(r.problems.length, 1);
+    assert.match(r.problems[0], /^Projector 1's photographs are lit/);
+  }
+  {
     const clean = camera(all, 97)(position(all));
     const g = stream(98);
     const room = Array.from({ length: 6 }, (_, k): FrameFingerprint => ({
