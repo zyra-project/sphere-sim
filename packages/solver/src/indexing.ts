@@ -1338,6 +1338,31 @@ export const PHASE_COVERAGE = 0.5;
  */
 export const PHASE_CONTRAST_LIMIT = 0.55;
 
+/**
+ * The share of a run's modulation by which, over its crescent, at least one of
+ * its Gray planes has to differ from its complement.
+ *
+ * Half. The complement identity says a plane and its complement add up to the
+ * run's white and black; it does not say they differ, and two copies of one
+ * photograph halfway between a window's white and black add up to them too. A
+ * run's planes separate: the coarsest lights the crescent on one side of its
+ * edge and its complement the other side, so the two differ by the run's whole
+ * modulation in every block but the few the edge crosses. It happened: test
+ * shots of projector 1's white bracketed about the exposure — one over, one
+ * under — then copies of it at the exposure, 34 photographs from the first
+ * bracket shot to Play, made a window whose white was the shot over, whose
+ * black the shot under, and whose every pair was the white twice. Every
+ * identity held, it was placed as projector 1, and every run after it was filed
+ * a projector late with the page saying all was well. In `position.test.ts`'s
+ * model such windows separate by 0.013 to 0.08 of their modulation, bracketed
+ * from twice the exposure and half to a tenth either side, and every run with
+ * a crescent photographed from 384 camera placements on the page's plan and the
+ * cheap one — 1315 runs — by 0.938 or more. On the bench's own photographs,
+ * every clean position `tools/reader-acceptance.ts` reads, the 345 runs with a
+ * crescent separate by 0.72 or more, the least of them with the room on.
+ */
+export const PAIR_SEPARATION = 0.5;
+
 /** Where a re-shot run came from, and which run it replaced. */
 export interface ReshootProvenance {
   /** Zero-based projector. */
@@ -1735,6 +1760,26 @@ function phaseFramesHold(
     if (!(modulation > 0 && deviation <= COMPLEMENT_LIMIT * modulation)) return false;
   }
   return true;
+}
+
+/**
+ * Whether one of the window's Gray pairs separates over the crescent by
+ * {@link PAIR_SEPARATION} of its modulation: the plane lit where its
+ * complement is not, as a run's coarsest plane always is.
+ */
+function pairsSeparate(
+  fps: readonly FrameFingerprint[],
+  w: RunWindow,
+  pairs: readonly (readonly [number, number])[],
+): boolean {
+  for (const [a, b] of pairs) {
+    const f = fps[w.start + a];
+    const g = fps[w.start + b];
+    let apart = 0;
+    for (const i of w.crescent) if (usableBlock(f, i) && usableBlock(g, i)) apart += Math.abs(f.values[i] - g.values[i]);
+    if (apart >= PAIR_SEPARATION * w.modulation) return true;
+  }
+  return false;
 }
 
 /**
@@ -2213,7 +2258,12 @@ export function indexPosition(
   const found: RunWindow[] = [];
   for (let s = 0; s + runLength <= n; ) {
     const w = runWindowAt(fingerprints, s, whiteAt, blackAt);
-    if (w === null || w.crescent.length === 0 || !phaseFramesHold(fingerprints, w, phases)) {
+    if (
+      w === null ||
+      w.crescent.length === 0 ||
+      !phaseFramesHold(fingerprints, w, phases) ||
+      !pairsSeparate(fingerprints, w, pairs)
+    ) {
       s++;
       continue;
     }

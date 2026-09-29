@@ -1772,11 +1772,13 @@ test('a slot cut short at the front by a late start is refused where light is le
   // blocks against its slot's own photographs: noted barely seen, and dropped
   // with a note that a re-shoot from there would see no more of it. Here
   // projector 1 at a tenth of its gain, each Gray plane photographed half and
-  // half with its complement.
+  // half with its complement but the coarsest, whose two halves light the room
+  // either side as they do on the bench, where that pair still separates by
+  // 0.93 of the run's modulation.
   const expected = expectedOf(PAGE);
   const weak = sceneWith({ azimuths: [45, 135, 225, 315], gains: [0.1, 0.92, 1.06, 0.97] });
   const shots: Shot[] = position(weak, { trailing: 3 }).map((x) =>
-    x === null || x.projector !== 0 || x.frame < 2 || x.frame > 25
+    x === null || x.projector !== 0 || x.frame < 4 || x.frame > 25
       ? x
       : { ...x, blend: { projector: 0, frame: x.frame ^ 1, weight: 0.5 } },
   );
@@ -2364,5 +2366,58 @@ test('a window whose black outshines its white is not a run: a phase step shot t
     assert.ok(clean.usableProjectors.includes(q), `${label}: the clean position has to place it`);
     assert.deepEqual(r.usableProjectors, clean.usableProjectors.filter((p) => p !== q), label);
     assert.match(r.problems.join(' '), new RegExp(`Re-shoot projector ${q + 1}\\.`), label);
+  }
+});
+
+test("a window whose Gray planes never separate from their complements is not a run: bracketed test shots of a white are not projector 1", () => {
+  // Review C. Test shots of projector 1's white bracketed about the exposure —
+  // one over, one under — then copies of it at the exposure: a window starting
+  // at the shot over has it for its white, the shot under for its black, and
+  // every pair the white twice, which adds up to the two as a plane and its
+  // complement do. Every identity held; it was placed as projector 1, and with
+  // the last projector out of view and 34 photographs from the first bracket
+  // shot to Play every run after it was filed a projector late — 135
+  // photographs, the page saying every frame was found. A run's coarsest plane
+  // lights the crescent one side of its edge and its complement the other, so
+  // one of its pairs always differs by most of its modulation; this window's
+  // differ by none of it.
+  const expected = expectedOf(PAGE);
+  for (const azimuth of [110, 0, 45]) {
+    const s = scene(PAGE, 64, { azimuth });
+    const shoot = camera(s, 2468 + azimuth);
+    const seen = indexPosition(shoot(position(s, { leading: 2, trailing: 3 })).prints, expected).usableProjectors;
+    assert.ok(azimuth !== 110 || !seen.includes(3), 'the last projector out of view at azimuth 110');
+    for (const gains of [
+      [1.4, 0.7, 1, 1],
+      [1.25, 0.8, 1, 1],
+    ]) {
+      for (const leading of [28, 30, 40]) {
+        const shots: Shot[] = [...gains.map((): Shot => ({ projector: 0, frame: 0 })), ...position(s, { leading, trailing: 0 })];
+        const photos = relit(shoot(shots), (values, i) => {
+          if (i < gains.length) for (let k = 0; k < values.length; k++) values[k] *= gains[i];
+        });
+        const r = indexPosition(photos.prints, expected);
+        const label = `azimuth ${azimuth}, white shot at ${gains.join(', ')} then ${leading} before Play`;
+        assert.equal(misplaced(r.assignment, photos.truth), 0, `${label}: filed wrong`);
+        assert.deepEqual(r.problems, [], label);
+        assert.deepEqual(r.usableProjectors, seen, label);
+      }
+    }
+  }
+  // And a run whose pairs separate least is still a run: of 1315 runs with a
+  // crescent photographed from 384 camera placements, the least separated are on
+  // the cheap plan from 25 degrees up, by 0.938 of their modulation.
+  const cheap = expectedOf(CHEAP);
+  for (const [azimuth, q] of [
+    [0, 3],
+    [90, 1],
+    [180, 1],
+    [270, 2],
+  ]) {
+    const s = scene(CHEAP, 16, { azimuth, elevation: 25 });
+    const r = indexPosition(camera(s, 2500 + azimuth)(position(s, { leading: 2, trailing: 3 })).prints, cheap);
+    const label = `cheap plan, azimuth ${azimuth}, 25 degrees up`;
+    assert.deepEqual(r.problems, [], label);
+    assert.ok(r.usableProjectors.includes(q), `${label}: projector ${q + 1} not placed (${r.usableProjectors})`);
   }
 });
