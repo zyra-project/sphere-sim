@@ -687,17 +687,128 @@ export interface HeldPosition {
 }
 
 /**
- * What makes two photographs the same photograph, for the session: name and
- * size. Not the last-modified time, which a copied folder does not keep: the
- * same photographs, copied and read again under another camera number, counted
- * as a second camera. Not the pixels, which would mean reading every file again
- * to compare them, and not the name alone, which cameras reuse — a new card
- * starts again at IMG_0001, and some cameras restart at 10000. Name and size can
- * still match by chance, two dark photographs compressing to the same bytes, so
- * {@link holdPosition} calls two positions the same only when most of them do.
+ * What makes two photographs the same photograph, for the session: the bytes
+ * of the file, as their SHA-256 in hex.
+ *
+ * It was the name and size, and before that those and the last-modified time.
+ * The time went because a copied folder does not keep it: the same photographs,
+ * copied and read again under another camera number, counted as a second
+ * camera. The name and size went because two positions can share them outright:
+ * cameras reuse names — a new card starts again at IMG_0001, and some cameras
+ * restart at 10000 — and an uncompressed export at one resolution is one size.
+ * Two such folders signed every photograph alike, and the second was filed as
+ * the first read again under a new number: a real camera lost from the report.
+ * The bytes are what a copy keeps, under any name and at any time, and what a
+ * different photograph does not have, so their digest is the same for a folder
+ * copied, renamed or touched, and differs wherever one byte does.
+ *
+ * Bytes can still match by chance: two photographs of nothing, saved without
+ * the camera's record of when each was taken, can be the same bytes. So
+ * {@link holdPosition} calls two positions the same only when most of them do,
+ * each photograph matched once. And a photograph exported again from an editor
+ * is other bytes, so it is not known for the same one: this recognises a folder
+ * read again, not a picture re-encoded.
+ *
+ * `subtle` is the browser's digest, which a page has only where it was opened
+ * over https:// or as localhost. Opened across a network over http:// —
+ * `npm run app` with `HOST=0.0.0.0`, from the laptop beside the sphere — it has
+ * none, and the same digest is computed here instead ({@link sha256}): the page
+ * knows a photograph the same way wherever it was opened. Node has both, and a
+ * test holds each to Node's own.
  */
-export function photographSignature(file: { readonly name: string; readonly size: number }): string {
-  return `${file.size}:${file.name}`;
+export async function photographSignature(
+  photo: Blob,
+  subtle: Digester | null = globalThis.crypto?.subtle ?? null,
+): Promise<string> {
+  const bytes = await photo.arrayBuffer();
+  const digest =
+    subtle === null ? sha256(new Uint8Array(bytes)) : new Uint8Array(await subtle.digest('SHA-256', bytes));
+  return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** The one call {@link photographSignature} makes of a browser's `crypto.subtle`. */
+interface Digester {
+  digest(algorithm: 'SHA-256', data: ArrayBuffer): Promise<ArrayBuffer>;
+}
+
+/**
+ * SHA-256's round constants: the first 32 bits of the fractional parts of the
+ * cube roots of the first 64 primes (FIPS 180-4, section 4.2.2).
+ */
+const SHA256_K = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]);
+
+/**
+ * SHA-256 (FIPS 180-4), for a page the browser gives no `crypto.subtle`.
+ *
+ * Written out because there is nothing to take it from: this repository has no
+ * run-time dependencies. It is the standard's own arithmetic on 32-bit words:
+ * every whole 64-byte block straight from the bytes, then the last, padded with
+ * a one bit, zeros, and the length in bits, which takes one block or two.
+ */
+function sha256(bytes: Uint8Array): Uint8Array {
+  const state = new Uint32Array([
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ]);
+  const w = new Uint32Array(64);
+  const compress = (view: DataView, at: number): void => {
+    for (let i = 0; i < 16; i++) w[i] = view.getUint32(at + 4 * i);
+    for (let i = 16; i < 64; i++) {
+      const x = w[i - 15];
+      const y = w[i - 2];
+      const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
+      const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
+      // A Uint32Array stores modulo 2^32, which is the addition the standard means.
+      w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+    }
+    let [a, b, c, d, e, f, g, h] = state;
+    for (let i = 0; i < 64; i++) {
+      const s1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      const t1 = (h + s1 + ((e & f) ^ (~e & g)) + SHA256_K[i] + w[i]) | 0;
+      const s0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      const t2 = (s0 + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      h = g;
+      g = f;
+      f = e;
+      e = (d + t1) | 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) | 0;
+    }
+    state[0] += a;
+    state[1] += b;
+    state[2] += c;
+    state[3] += d;
+    state[4] += e;
+    state[5] += f;
+    state[6] += g;
+    state[7] += h;
+  };
+  const whole = Math.floor(bytes.length / 64);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  for (let i = 0; i < whole; i++) compress(view, 64 * i);
+  const rest = bytes.length - 64 * whole;
+  const tail = new Uint8Array(rest < 56 ? 64 : 128);
+  tail.set(bytes.subarray(64 * whole));
+  tail[rest] = 0x80;
+  const end = new DataView(tail.buffer);
+  const bits = bytes.length * 8;
+  end.setUint32(tail.length - 8, Math.floor(bits / 0x100000000));
+  end.setUint32(tail.length - 4, bits >>> 0);
+  for (let at = 0; at < tail.length; at += 64) compress(end, at);
+  const out = new Uint8Array(32);
+  const put = new DataView(out.buffer);
+  for (let i = 0; i < 8; i++) put.setUint32(4 * i, state[i]);
+  return out;
 }
 
 /** Every camera position read against one plan: at most one per camera. */
@@ -757,7 +868,9 @@ export type SessionChange =
  *   smaller one's match — replaces that one too. More than half, not the whole
  *   folder: a folder read again with a re-shoot added is the same position
  *   with more photographs in it. And not any one: a photograph is known here
- *   by its name and size, and a dark one can match another card's in both.
+ *   by its bytes ({@link photographSignature}), which two photographs of
+ *   nothing can share, and each photograph matches once, however many of one
+ *   folder's are the same bytes.
  * - **A position read against another plan is not kept.** Positions decoded
  *   against different plans are not one capture, and a plan file loaded while a
  *   position was being read leaves that reading out.
@@ -772,7 +885,6 @@ export function holdPosition(
   if (plan !== session.plan) {
     return { session, changes: [{ kind: 'otherPlan', camera: position.camera }] };
   }
-  const mine = new Set(position.photographs);
   const changes: SessionChange[] = [];
   const kept: HeldPosition[] = [];
   for (const held of session.positions) {
@@ -780,7 +892,7 @@ export function holdPosition(
       changes.push({ kind: 'replaced', camera: position.camera, earlier: held });
       continue;
     }
-    const shared = held.photographs.filter((p) => mine.has(p)).length;
+    const shared = matched(held.photographs, position.photographs);
     if (2 * shared > Math.min(held.photographs.length, position.photographs.length)) {
       changes.push({ kind: 'moved', camera: position.camera, from: held, shared });
       continue;
@@ -835,10 +947,33 @@ function folderOf(p: HeldPosition): string {
   return p.first === p.last ? p.first : `${p.first} to ${p.last}`;
 }
 
-/** Whether every photograph of `part` is in `whole`. */
+/**
+ * How many photographs of `a` have a photograph of their own in `b`: each
+ * photograph of `b` matches at most one of `a`'s.
+ *
+ * Counted as a set's members, one photograph's bytes recurring in a folder —
+ * the dark photographs of a projector out of view, saved without the camera's
+ * record of when each was taken — were so many matches against another
+ * folder's single copy, and could make two positions one. A name and size never
+ * recurred in a folder, since its names differ; bytes can.
+ */
+function matched(a: readonly string[], b: readonly string[]): number {
+  const unmatched = new Map<string, number>();
+  for (const s of b) unmatched.set(s, (unmatched.get(s) ?? 0) + 1);
+  let n = 0;
+  for (const s of a) {
+    const left = unmatched.get(s) ?? 0;
+    if (left > 0) {
+      n++;
+      unmatched.set(s, left - 1);
+    }
+  }
+  return n;
+}
+
+/** Whether every photograph of `part` is matched in `whole`, each once ({@link matched}). */
 function within(part: readonly string[], whole: readonly string[]): boolean {
-  const inWhole = new Set(whole);
-  return part.every((s) => inWhole.has(s));
+  return matched(part, whole) === part.length;
 }
 
 function samePhotographs(a: readonly string[], b: readonly string[]): boolean {

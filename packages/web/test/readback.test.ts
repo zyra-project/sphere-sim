@@ -23,6 +23,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import {
@@ -803,14 +804,16 @@ function decodedStats(accepted: number): DecodeStats {
 
 /**
  * A camera position as the page files one: `count` photographs numbered from
- * `from`, each signed the way the page signs a file, and one decoded run per
- * projector in `sees`, 400 correspondences each.
+ * `from`, and one decoded run per projector in `sees`, 400 correspondences
+ * each. Each photograph is known by a stand-in for its signature, one per name,
+ * so two of these share a photograph where they share a name; the tests below
+ * that are about the signature sign files as the page does.
  */
 function heldPosition(camera: number, from: number, count: number, sees: readonly number[] = [0, 1]): HeldPosition {
   const names = Array.from({ length: count }, (_, i) => `IMG_${String(from + i).padStart(4, '0')}.jpg`);
   return {
     camera,
-    photographs: names.map((name) => photographSignature({ name, size: 4194304 })),
+    photographs: names.map((name) => `the bytes of ${name}`),
     first: names[0],
     last: names[names.length - 1],
     decoded: sees.map((projector) => ({ projector, stats: decodedStats(400) })),
@@ -895,37 +898,137 @@ test('photographs read under a second camera number move to it, and never count 
   assert.deepEqual(holdPosition(held, SMALL_MANIFEST, shifted).changes, [{ kind: 'moved', camera: 2, from: a, shared: 32 }]);
 });
 
-test('a copied folder is the same photographs, and one photograph matching by chance moves nothing', () => {
+/**
+ * A photograph's file as an uncompressed export writes one: `length` bytes,
+ * the same length for every photograph, and different bytes for every `seed`.
+ */
+function exported(seed: number, length = 4096): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(length);
+  let x = (Math.imul(seed + 1, 2654435761) >>> 0) || 1;
+  for (let i = 0; i < length; i++) {
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    bytes[i] = x & 0xff;
+  }
+  return bytes;
+}
+
+/** A folder's files, one per seed, shot two seconds apart, named `IMG_0001.bmp` on unless `name` says otherwise. */
+function filesOf(
+  photos: readonly number[],
+  name = (i: number): string => `IMG_${String(i + 1).padStart(4, '0')}.bmp`,
+): File[] {
+  return photos.map((seed, i) => new File([exported(seed)], name(i), { lastModified: 1_790_000_000_000 + 2000 * i }));
+}
+
+/** A camera position of these files, each signed as the page signs it, with two runs decoded. */
+async function filedPosition(camera: number, files: readonly File[]): Promise<HeldPosition> {
+  return {
+    camera,
+    photographs: await Promise.all(files.map((f) => photographSignature(f))),
+    first: files[0].name,
+    last: files[files.length - 1].name,
+    decoded: [0, 1].map((projector) => ({ projector, stats: decodedStats(400) })),
+  };
+}
+
+const seeds = (from: number, count: number): number[] => Array.from({ length: count }, (_, i) => from + i);
+
+test("a photograph's signature is the SHA-256 of its bytes, with the browser's digest or without it", async () => {
+  // A page has `crypto.subtle` only over https:// or from the machine serving
+  // it; opened across a network over http:// it computes the same digest
+  // itself. Both are held to Node's, either side of each padding boundary and
+  // across many blocks, and to the standard's own example.
+  for (const length of [0, 1, 55, 56, 63, 64, 65, 119, 120, 128, 1000, 100_003]) {
+    const bytes = exported(length, length);
+    const want = createHash('sha256').update(bytes).digest('hex');
+    assert.equal(await photographSignature(new Blob([bytes])), want, `${length} bytes, the platform's digest`);
+    assert.equal(await photographSignature(new Blob([bytes]), null), want, `${length} bytes, the page's own`);
+  }
+  assert.equal(
+    await photographSignature(new Blob(['abc']), null),
+    'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+    'FIPS 180-4, "abc"',
+  );
+});
+
+test('two positions whose files share every name and size are two cameras', async () => {
+  // Review of PR #53: a photograph was its name and size, and two cameras'
+  // folders can share both throughout. A new card starts again at IMG_0001,
+  // and an uncompressed export at one resolution is one size. The second
+  // position was filed as the first read again under a new number, and the
+  // report lost a camera. A photograph is its bytes now.
+  const one = filesOf(seeds(0, 36));
+  const two = filesOf(seeds(1000, 36));
+  assert.deepEqual(
+    two.map((f) => [f.name, f.size]),
+    one.map((f) => [f.name, f.size]),
+    'every name and size is shared',
+  );
+  const first = holdPosition(freshSession(), SMALL_MANIFEST, await filedPosition(0, one)).session;
+  const both = holdPosition(first, SMALL_MANIFEST, await filedPosition(1, two));
+  assert.deepEqual(both.changes, [{ kind: 'added', camera: 1 }]);
+  assert.deepEqual(both.session.positions.map((p) => p.camera), [0, 1]);
+  assert.equal(sessionWorth(both.session)?.usable, true, 'two positions, two cameras');
+});
+
+test('a copied folder is the same photographs under any name or time, and one photograph matching by chance moves nothing', async () => {
   // A second review of the page: the session knew a photograph by its name,
   // size and last-modified time, and a folder copied to another place gets new
   // modification times — so the same position, copied and read under the next
   // camera number, counted as a second camera, and the report vouched for a
-  // solve from one. A photograph is its name and size now. Those can match by
-  // chance across two cards — a dark photograph's JPEG — so one shared
-  // photograph is not two positions being one: more than half of the smaller
-  // must match.
-  const card = Array.from({ length: 36 }, (_, i) => ({ name: `IMG_${String(i + 1).padStart(4, '0')}.jpg`, size: 3_000_000 + i }));
-  const copied = card.map((f) => ({ ...f, lastModified: 1_790_000_000_000 + 86_400_000 }));
-  assert.deepEqual(copied.map(photographSignature), card.map(photographSignature));
-  const position = (camera: number, files: readonly { name: string; size: number }[]): HeldPosition => ({
-    camera,
-    photographs: files.map(photographSignature),
-    first: files[0].name,
-    last: files[files.length - 1].name,
-    decoded: [0, 1].map((projector) => ({ projector, stats: decodedStats(400) })),
-  });
-  const first = holdPosition(freshSession(), SMALL_MANIFEST, position(0, card)).session;
-  const again = holdPosition(first, SMALL_MANIFEST, position(1, copied));
-  assert.deepEqual(again.changes.map((c) => c.kind), ['moved']);
-  assert.equal(sessionWorth(again.session)?.usable, false, 'one position copied is still one camera');
+  // solve from one. A copy can take new names as well, from whatever imported
+  // it. It keeps the bytes, which is what a photograph is known by now.
+  const card = filesOf(seeds(0, 36), (i) => `IMG_${String(i + 1).padStart(4, '0')}.jpg`);
+  const bytes = await Promise.all(card.map(async (f) => new Uint8Array(await f.arrayBuffer())));
+  const copied = card.map((f, i) => new File([bytes[i]], f.name, { lastModified: 1_790_086_400_000 + i }));
+  const renamed = card.map(
+    (_, i) => new File([bytes[i]], `north-${String(i + 1).padStart(3, '0')}.jpg`, { lastModified: 1_790_172_800_000 }),
+  );
+  const held = await filedPosition(0, card);
+  const first = holdPosition(freshSession(), SMALL_MANIFEST, held).session;
+  for (const copy of [copied, renamed]) {
+    const again = holdPosition(first, SMALL_MANIFEST, await filedPosition(1, copy));
+    assert.deepEqual(again.changes, [{ kind: 'moved', camera: 1, from: held, shared: 36 }], copy[0].name);
+    assert.equal(sessionWorth(again.session)?.usable, false, 'one position copied is still one camera');
+  }
 
   // Another card whose photographs are other photographs, one of them the same
-  // name and size as one of the first card's: both positions are held.
-  const other = card.map((f, i) => (i === 35 ? f : { name: `IMG_${String(101 + i).padStart(4, '0')}.jpg`, size: 3_500_000 + i }));
-  const both = holdPosition(first, SMALL_MANIFEST, position(1, other));
+  // bytes as one of the first card's: both positions are held.
+  const other = filesOf(seeds(100, 36), (i) => `IMG_${String(101 + i).padStart(4, '0')}.jpg`);
+  other[35] = card[35];
+  const both = holdPosition(first, SMALL_MANIFEST, await filedPosition(1, other));
   assert.deepEqual(both.changes, [{ kind: 'added', camera: 1 }]);
   assert.deepEqual(both.session.positions.map((p) => p.camera), [0, 1]);
   assert.equal(sessionWorth(both.session)?.usable, true);
+});
+
+test('bytes that recur in a folder are so many photographs, each matched once', async () => {
+  // A signature can recur in one folder where a name could not: the dark
+  // photographs of a projector out of view, exported without the camera's
+  // record of when each was taken, can be the same bytes. Counted as a set's
+  // members, twenty of them here each matched the other camera's one copy, and
+  // two positions were one.
+  const dark = 7;
+  const one = filesOf([...Array<number>(20).fill(dark), ...seeds(100, 16)]);
+  const two = filesOf([dark, ...seeds(200, 35)], (i) => `IMG_${String(101 + i).padStart(4, '0')}.bmp`);
+  const held = await filedPosition(0, one);
+  const first = holdPosition(freshSession(), SMALL_MANIFEST, held).session;
+  const both = holdPosition(first, SMALL_MANIFEST, await filedPosition(1, two));
+  assert.deepEqual(both.changes, [{ kind: 'added', camera: 1 }]);
+  assert.deepEqual(both.session.positions.map((p) => p.camera), [0, 1]);
+
+  // And a camera read again is said to be its folder read again only when every
+  // photograph of that folder is matched in this one: here 17 of 36 are, and
+  // the other 19 are new.
+  const redone = filesOf([dark, ...seeds(100, 16), ...seeds(300, 19)]);
+  const replaced = holdPosition(first, SMALL_MANIFEST, await filedPosition(0, redone));
+  assert.deepEqual(replaced.changes, [{ kind: 'replaced', camera: 0, earlier: held }]);
+  assert.match(
+    describeSession(replaced.session, replaced.changes),
+    /^This position is now held as camera 1, in place of the one read as camera 1 before \(IMG_0001\.bmp to IMG_0036\.bmp\)/,
+  );
 });
 
 test('two camera positions make a report that each alone refuses', () => {

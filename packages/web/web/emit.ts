@@ -938,8 +938,14 @@ function loadPlanFile(file: File): void {
  * decode loop, so a run could pair the photographs the operator chose with a
  * camera index they changed while it was working. A reader that silently
  * combines two different intentions is the same class of fault as decoding
- * against the wrong plan. The photographs' signatures, which the session knows
- * them by, are taken here with everything else.
+ * against the wrong plan.
+ *
+ * The photographs are taken here as the files the picker handed over, and
+ * everything later reads those: their pixels, and their signatures, which the
+ * session knows them by. A signature is a digest of the file's bytes
+ * (`photographSignature`), so it is computed in the first pass, after the first
+ * await, and that keeps the rule: a `File` is not the DOM, and photographs
+ * chosen meanwhile give the input a new list and leave this one as it was.
  *
  * The one thing read after the awaits is the session, and that is deliberate:
  * a finished read is filed into the session as it is when the read ends. A plan
@@ -949,7 +955,6 @@ function loadPlanFile(file: File): void {
  */
 async function runReadback(): Promise<void> {
   const files = Array.from(photosEl.files ?? []);
-  const photographs = files.map(photographSignature);
   const manifest = heldManifest;
   // Counted from one in the box, as the report names cameras (`captureWorth`
   // calls camera index 2 "Camera 3"), and held from zero, as `PairContribution`
@@ -973,11 +978,14 @@ async function runReadback(): Promise<void> {
   const camera = typed - 1;
   const first = files[0].name;
   const last = files[files.length - 1].name;
+  /** One signature per photograph, in the order handed in, signed in the first pass. */
+  const photographs: string[] = [];
   /**
    * File this position in the session and say what that did. Only a read that
-   * finished calls it: one that threw, or stopped at the memory bound, leaves
-   * the session as it was. A position whose runs were all refused is filed
-   * with none, because it is still the latest word on this camera.
+   * finished calls it, so every photograph has been signed by then: one that
+   * threw, or stopped at the memory bound, leaves the session as it was. A
+   * position whose runs were all refused is filed with none, because it is
+   * still the latest word on this camera.
    */
   const hold = (decoded: readonly HeldRun[]): string => {
     const filed = holdPosition(session, manifest, { camera, photographs, first, last, decoded });
@@ -1002,10 +1010,12 @@ async function runReadback(): Promise<void> {
     // the pixels go. A camera position is every projector's run back to back —
     // 136 frames at the page's own plan — and holding that as linear light is
     // several gigabytes. What survives per photograph is a histogram and a
-    // block grid, a few kilobytes. See `PhotoSummary`.
+    // block grid, a few kilobytes. See `PhotoSummary`. Its signature is taken
+    // here too, one file's bytes at a time for the same reason.
     const summaries: PhotoSummary[] = [];
     for (let i = 0; i < files.length; i++) {
       readoutEl.textContent = `Reading photograph ${i + 1} of ${files.length}…`;
+      photographs.push(await photographSignature(files[i]));
       summaries.push(
         summarisePhoto(await readImageFile(files[i]), i, files[i].name, transfer, blocks),
       );
