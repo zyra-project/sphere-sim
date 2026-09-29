@@ -2098,25 +2098,29 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * than that, which is also what a lost run looks like.
  *
  * The ends are looked at as well as counted. A photograph there is an extra
- * when something says what it is: dark beside the run next to it; a copy of
- * the white of a run found — the page's step 0 shown before Play, a test shot
- * of the exposure, the white a re-shoot starts from; a copy of a frame of the
- * run next to it, or after the last run of any run found. Lit photographs
- * nothing accounts for, more than {@link SLOT_SLACK} strays, that lead straight
- * into a numbering's first run or follow straight on from its last, are a run
- * the page was playing there where they show a run's structure: two of them
- * each lit, by the decoder's floor, where the other is not, over as many
- * blocks as the smallest crescent this reads — a Gray plane and its
- * complement, two planes, two phase steps. Then that numbering is not used: it
- * took the end of a run the camera was started in the middle of for
- * photographs before Play, or a run it could not find for photographs after
- * the black, and every run was filed a projector over. Light that changes only
- * in level between photographs — the room's switched on or off, a lamp
- * warming, a door, a white bracketed about the exposure — moves every block
- * the same way, and is set aside; light that stays on under a run cancels
- * between two of its photographs, and hides nothing. Such a numbering still
- * takes part in the disagreement below, as does one kept out by the allowance,
- * so it can refuse a folder but never be the numbering used.
+ * when something says what it is: dark beside the run next to it; before the
+ * first run, a copy of the white of any run found — the page's step 0 shown
+ * before Play, a test shot of the exposure — or of a frame of the first run;
+ * after the last run, a copy of a frame of any run found before it, or of a
+ * later run's white in that run's own pre-roll, every photograph from it to the
+ * run a copy of that white — the white the page shows before a re-shoot. A copy
+ * of a re-shoot's white anywhere else after the last run is not set aside: the
+ * original the re-shoot replaces, spoiled at the end of the position, begins
+ * with that white too. Lit photographs nothing accounts for, more than
+ * {@link SLOT_SLACK} strays, that lead straight into a numbering's first run or
+ * follow straight on from its last, are a run the page was playing there where
+ * they show a run's structure: two of them each lit, by the decoder's floor,
+ * where the other is not, over as many blocks as the smallest crescent this
+ * reads — a Gray plane and its complement, two planes, two phase steps. Then
+ * that numbering is not used: it took the end of a run the camera was started
+ * in the middle of for photographs before Play, or a run it could not find for
+ * photographs after the black, and every run was filed a projector over. Light
+ * that changes only in level between photographs — the room's switched on or
+ * off, a lamp warming, a door, a white bracketed about the exposure — moves
+ * every block the same way, and is set aside; light that stays on under a run
+ * cancels between two of its photographs, and hides nothing. Such a numbering
+ * still takes part in the disagreement below, as does one kept out by the
+ * allowance, so it can refuse a folder but never be the numbering used.
  *
  * Between numbered runs, a stretch of `R` dark photographs is a projector the
  * camera could not see — a note, never a refusal — and one with light in it is
@@ -2497,9 +2501,19 @@ export function indexPosition(
         return level >= BLACK_CUT && !readsFlat(g, w, level);
       }),
   ]);
+  /**
+   * Where each run's pre-roll begins: the photographs straight before it that
+   * copy its white, every one of them up to the run — step 0 shown before Play
+   * for the first run, the white the page shows before a re-shoot for a later
+   * one.
+   */
+  const preRollFrom = found.map((w) => {
+    let x = w.start;
+    while (x > 0 && copiesFrame(fingerprints[x - 1], w.white, w)) x--;
+    return x;
+  });
   const evidence: number[][] = found.map((w, j) => {
-    let firstOwn = w.start;
-    while (firstOwn > 0 && copiesFrame(fingerprints[firstOwn - 1], w.white, w)) firstOwn--;
+    const firstOwn = preRollFrom[j];
     const out: number[] = [];
     for (let x = 0; x < firstOwn; x++) {
       // A copy lights something above this run's black, as copiesFrame asks;
@@ -2564,22 +2578,26 @@ export function indexPosition(
   //
   // Photographs before the first run and after the last are extras only when
   // something says what they are: dark beside the run next to them — the page's
-  // black, or a projector this camera cannot see — a copy of a white of a run
-  // found (the page's step 0 shown before Play, a test shot of the exposure, the
-  // white a re-shoot starts from), a copy of any frame of the run next to them
-  // (an attempt at it the page was stepped back from, a page paused on one of
-  // its frames), or after the last run a copy of any frame of a run found
-  // before it (a re-shoot of that run which did not pass). Not of a run found
-  // after it: a re-shoot added to the folder copies its original, and an
-  // original cut short at the position's end is what that stretch may be. What
-  // is left is lit, and it is part of a run the reader could not find only
-  // where it shows a run's structure (showsARun): light that changes only in
-  // level is the room's, or a test shot's. Before the first run, a copy of a
-  // later run's frame is that run's original, too broken to be found.
+  // black, or a projector this camera cannot see — before the first run a copy
+  // of the white of any run found (the page's step 0 shown before Play, a test
+  // shot of the exposure) or of any frame of the first run (an attempt at it
+  // the page was stepped back from, a page paused on one of its frames), and
+  // after the last run a copy of any frame of a run found before it (a re-shoot
+  // of that run which did not pass, a page paused on its last frame). Not of a
+  // run found after it: a re-shoot added to the folder copies its original, and
+  // an original cut short or spoiled at the position's end is what that stretch
+  // may be — its white too, save in the re-shoot's own pre-roll, the white the
+  // page shows before it, which leads straight into it. What is left is lit,
+  // and it is part of a run the reader could not find only where it shows a
+  // run's structure (showsARun): light that changes only in level is the
+  // room's, or a test shot's. Before the first run, a copy of a later run's
+  // frame is that run's original, too broken to be found.
   /**
    * The lit photographs in `[from, to)` that nothing above accounts for; `near`
-   * is the run next to them, and `anyRun` whether a copy of a frame of any run
-   * found before them is set aside or only of `near`'s.
+   * is the run next to them, and `anyRun` whether they lie after the last run,
+   * where a copy of a frame of any run found before them is set aside and of a
+   * later run's white only in its pre-roll, or before the first, where a copy
+   * of `near`'s frames or of any run's white is.
    */
   const unexplainedLit = (from: number, to: number, near: RunWindow, anyRun: boolean): number[] => {
     const lit: number[] = [];
@@ -2588,7 +2606,7 @@ export function indexPosition(
       if (inWindow[x] === 1 || darkBeside(x, near)) continue;
       const f = fingerprints[x];
       const copy =
-        found.some((w) => copiesFrame(f, w.white, w)) ||
+        found.some((w, j) => (!anyRun || x >= preRollFrom[j]) && copiesFrame(f, w.white, w)) ||
         framesOf.some((j) => distinctiveOf[j].some((g) => copiesFrame(f, g, found[j])));
       if (!copy) lit.push(x);
     }

@@ -1928,7 +1928,13 @@ test('a numbering leaves a projector for every run found after a stretch that is
   // projector 4's black dropped, its spoiled run is no pass of the re-shoot —
   // a pass begins with the run's white and black — so the stretch before the
   // re-shoot is counted as it stands, and five dark photographs after it leave
-  // it short of whole runs.
+  // it short of whole runs. With its black doubled instead, the spoiled run
+  // begins with a copy of the re-shoot's white and two dark photographs; while
+  // every copy of a found run's white after the last run was set aside, what
+  // was left of the spoiled run did not follow straight on from projector 3's,
+  // and projector 3 was filed as projector 4 again — in 30 of 2448 folders of
+  // this shape swept on either plan. After the last run a later run's white is
+  // set aside only in that run's own pre-roll.
   const expected = expectedOf(PAGE);
   const R = 34;
   const dark = (k: number): Shot[] => Array.from({ length: k }, (): Shot => null);
@@ -1938,6 +1944,7 @@ test('a numbering leaves a projector for every run found after a stretch that is
     ['doubled', 5, 3],
     ['dropped', 17, 3],
     ['dropped', 1, 5],
+    ['doubled', 1, 3],
   ] as const) {
     const p4 = run(s, 3);
     if (how === 'doubled') p4.splice(at, 0, p4[at]);
@@ -1948,6 +1955,50 @@ test('a numbering leaves a projector for every run found after a stretch that is
     const label = `projector 2 paused 31 in its run, projector 4's photograph ${at + 1} ${how}, and re-shot`;
     assert.equal(misplaced(r.assignment, truth), 0, `${label}: filed wrong`);
     assert.equal(r.ok, false, label);
+  }
+});
+
+test("a re-shoot's white after the position is set aside as its pre-roll, however long, and nowhere else", () => {
+  // After the last run a copy of a later run's white is set aside only in that
+  // run's own pre-roll, every photograph from it to the run a copy of it: the
+  // white the page shows before a re-shoot, for as long as the operator takes.
+  // Anywhere else it may be the first photograph of the original the re-shoot
+  // replaces, spoiled at the position's end. With the original spoiled beyond
+  // finding — its black dropped, so it is no pass of the re-shoot — four, eight
+  // or twenty copies of the white before the re-shoot are its pre-roll all the
+  // same, and the folder reads with the re-shoot in the original's place: after
+  // three dark photographs, and after nineteen with the room's light switched
+  // on at the end tone. There the white, not set aside, would be lit where the
+  // room-lit photographs are not and they where it is not, as two of a run's
+  // photographs are, and the folder would be refused.
+  const expected = expectedOf(PAGE);
+  const dark = (k: number): Shot[] => Array.from({ length: k }, (): Shot => null);
+  const white = (p: number): Shot => ({ projector: p, frame: 0 });
+  const s = scene(PAGE, 64, { azimuth: 0 });
+  const shoot = camera(s, 7750);
+  for (const q of [2, 3]) {
+    for (const room of [false, true]) {
+      for (const before of [4, 8, 20]) {
+        const spoilt = run(s, q);
+        spoilt.splice(1, 1);
+        const own = [white(0), white(0), ...[0, 1, 2, 3].flatMap((p) => (p === q ? spoilt : run(s, p)))];
+        const after = room ? 19 : 3;
+        const shots = [...own, ...dark(after), ...Array.from({ length: before }, () => white(q)), ...run(s, q), ...dark(3)];
+        const photos = relit(shoot(shots), (values, i) => {
+          if (room && i >= own.length && i < own.length + after) for (let k = 0; k < values.length; k++) values[k] += i === own.length ? 0.04 : 0.1;
+        });
+        const r = indexPosition(photos.prints, expected);
+        const label = `projector ${q + 1}'s black dropped, ${room ? 'the room lit at the end tone' : 'three dark'}, re-shot after ${before} of its white`;
+        assert.equal(misplaced(r.assignment, photos.truth), 0, `${label}: filed wrong`);
+        assert.deepEqual(r.problems, [], label);
+        assert.deepEqual(r.usableProjectors, [0, 1, 2, 3], label);
+        assert.deepEqual(
+          r.reshoots.map((x) => x.projector),
+          [q],
+          label,
+        );
+      }
+    }
   }
 });
 
