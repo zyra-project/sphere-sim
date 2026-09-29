@@ -2434,20 +2434,22 @@ export function indexPosition(
   // found (the page's step 0 shown before Play, a test shot of the exposure, the
   // white a re-shoot starts from), a copy of any frame of the run next to them
   // (an attempt at it the page was stepped back from, a page paused on one of
-  // its frames), or after the last run a copy of any frame of any run found (a
-  // re-shoot of that run which did not pass). What is left is lit, and it is
-  // part of a run the reader could not find only where it shows a run's
-  // structure (showsARun): light that changes only in level is the room's, or
-  // a test shot's. Before the first run, a copy of a later run's frame is that
-  // run's original, too broken to be found.
+  // its frames), or after the last run a copy of any frame of a run found
+  // before it (a re-shoot of that run which did not pass). Not of a run found
+  // after it: a re-shoot added to the folder copies its original, and an
+  // original cut short at the position's end is what that stretch may be. What
+  // is left is lit, and it is part of a run the reader could not find only
+  // where it shows a run's structure (showsARun): light that changes only in
+  // level is the room's, or a test shot's. Before the first run, a copy of a
+  // later run's frame is that run's original, too broken to be found.
   /**
    * The lit photographs in `[from, to)` that nothing above accounts for; `near`
-   * is the run next to them, and `anyRun` whether a copy of any run's frame is
-   * set aside or only of `near`'s.
+   * is the run next to them, and `anyRun` whether a copy of a frame of any run
+   * found before them is set aside or only of `near`'s.
    */
   const unexplainedLit = (from: number, to: number, near: RunWindow, anyRun: boolean): number[] => {
     const lit: number[] = [];
-    const framesOf = anyRun ? found.map((_, j) => j) : [found.indexOf(near)];
+    const framesOf = anyRun ? found.flatMap((w, j) => (w.start < from ? [j] : [])) : [found.indexOf(near)];
     for (let x = from; x < to; x++) {
       if (inWindow[x] === 1 || darkBeside(x, near)) continue;
       const f = fingerprints[x];

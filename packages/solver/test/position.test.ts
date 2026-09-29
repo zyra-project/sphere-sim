@@ -1802,6 +1802,32 @@ test('light at an end that changes only in level is not a run: the room switched
   }
 });
 
+test('a re-shoot added after the position explains nothing at the end before it: its original, cut short there, is still a run the count has no room for', () => {
+  // Review C. The card's own remedy — a run missed, re-shoot that projector
+  // into the same folder — appends a run whose frames the photographs of its
+  // original copy, and after the last run a copy of any run's frame was set
+  // aside as an extra. So the lit end of a camera stopped four or more
+  // photographs early, projector 4 in view and 31 dark before Play, was
+  // explained away by projector 4's re-shoot, and the numbering a projector
+  // over was used: 324 of the review's 1575 folders on either plan, silent.
+  // Only a copy of a run found before the stretch is set aside now.
+  const expected = expectedOf(PAGE);
+  const dark = (k: number): Shot[] => Array.from({ length: k }, (): Shot => null);
+  const white = (p: number): Shot => ({ projector: p, frame: 0 });
+  const s = scene(PAGE, 64, { azimuth: 45 });
+  for (const lost of [4, 8]) {
+    for (const before of [0, 2]) {
+      const pos = position(s, { unseen: [2] });
+      const shots = [...dark(31), ...pos.slice(0, pos.length - lost), ...Array.from({ length: before }, () => white(3)), ...run(s, 3), ...dark(3)];
+      const { prints, truth } = camera(s, 7600 + lost + before)(shots);
+      const r = indexPosition(prints, expected);
+      const label = `31 dark before Play, stopped ${lost} early in projector 4, re-shot with ${before} of its white before`;
+      assert.equal(misplaced(r.assignment, truth), 0, `${label}: filed wrong`);
+      assert.equal(r.ok, false, label);
+    }
+  }
+});
+
 test("a run that matches no projector is a re-shoot only after the position's black, and an honest gap contests it", () => {
   // Review B. A run that matches nothing was taken for a re-shoot added after
   // the position wherever the count put the position's end before it: with a
