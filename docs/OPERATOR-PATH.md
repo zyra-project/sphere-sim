@@ -7,8 +7,10 @@ Gray plane and the frame beside it still add up to the run's own white and black
 — takes a cancelling drop and duplicate from 22.7% of captures silently wrong to
 1.1% without spending any raster area, and the emitter page now indexes a whole
 camera position with it rather than asking an operator to hand in one run at a
-time. What it still needs is a real sphere, because every number scoring it comes
-from an experiment that renders nothing. Phase 3 is
+time. What it still needs is a real sphere: the numbers scoring that check come
+from an experiment that renders nothing, and the page's reader has never been
+handed a real photograph — since 2026-09-29 it places every clean position among
+the bench's rendered ones, where before it refused them all (Phase 2). Phase 3 is
 plumbed and now reachable but still unproven: the modules that turn encoded
 photographs into correspondences exist, agree with each other end to end, and
 the emitter page now **calls them on photographs an operator hands in** — but no
@@ -118,6 +120,13 @@ It is now a *smaller* problem with a measured boundary rather than an open one.
 of the exposure and leave one case — see Phase 2 — so the rule this friction
 forces on an operator softens from *never delete a frame* to *a spoiled frame
 costs that projector's run*. The remaining case still needs a real sphere.
+
+> **2026-09-29: *never delete* is back, for another reason.** The page's reader
+> numbers projectors by counting runs and the photographs between them, so a run
+> deleted from a folder can leave every projector after it numbered wrongly with
+> nothing to say so (Phase 2). The page now tells the operator never to delete a
+> photograph. A spoiled frame still costs only that projector's run, and a
+> re-shoot of it added to the folder is read in its place.
 
 ---
 
@@ -257,7 +266,7 @@ everything downstream then rested on. The page shows the plan it is playing and
 counts the steps; turning that into an index a decoder can trust is the next
 phase and is named as such on the page itself.
 
-## Phase 2 — Make every photograph say which frame it is. **THE BLIND SPOT IS CLOSED BAR ONE CASE; THE ROOM IS STILL UNMEASURED**
+## Phase 2 — Make every photograph say which frame it is. **THE BLIND SPOT IS CLOSED BAR ONE CASE; THE PAGE READS THE BENCH'S CAPTURES; A REAL ROOM IS STILL UNMEASURED**
 
 The crux, and the phase that decides whether this is adoptable. If the software
 can work out which pattern a photograph shows, **tethering leaves the critical
@@ -385,17 +394,25 @@ a refusal is closed bar the phase block, and that part is named and bounded rath
 than open-ended. What remains is the room: every number above is an
 ideal-classification, ideal-fingerprint baseline from an experiment that renders
 nothing, and neither threshold this phase leans on has been priced on a real
-photograph.
+photograph. **On the bench's rendered photographs of clean positions it now is
+(2026-09-29, the note that closes this phase); on a real photograph, not yet.**
 
 **It is wired into the page now**, which it was not when the mechanisms landed.
 The emitter page takes a whole camera position — every projector's run back to
-back — finds where each run starts, checks each Gray plane against its own
-complement, and decodes the runs it can vouch for. The instruction it replaces
+back — finds each projector's run by what that run's own white, black and phase
+frames show, checks each Gray plane against its own complement, and decodes the
+runs it can vouch for. A projector the camera cannot see is noted rather than
+refused, the photographs taken before Play and after the screen went black are
+set aside, and a re-shot run added to the position's folder is read in place of
+the run it re-shoots when it passes its checks. The instruction it replaces
 was *"hand in one projector's run at a time, in the order it was shot"*: the
 indexing done by a person, unchecked, with nothing to notice when they got it
-wrong. What the page still asks for is the **camera** index, and that is not an
-oversight — `docs/CALIBRATE.md` is explicit that Phase 2 removes the need to know
-which frame a photograph is and not the need to know which camera took it.
+wrong. What the page still asks for is the **camera number**, counted from 1, and
+that is not an oversight — `docs/CALIBRATE.md` is explicit that Phase 2 removes
+the need to know which frame a photograph is and not the need to know which
+camera took it. (Until 2026-09-29 the page found the runs with
+`indexByFingerprint`, which classifies the whole capture first, and counted
+cameras from 0; the correction below is about that reader.)
 
 > **Corrected by EXPERIMENT-10: before the room, what remains is the page's
 > reader.** On bench photographs of clean camera positions, today's page refuses
@@ -405,6 +422,52 @@ which frame a photograph is and not the need to know which camera took it.
 > reader has landed, and until one does, what
 > [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md) measures of the complement check is a
 > counterfactual reader's.
+
+> **Fixed on the bench, 2026-09-29: the page's reader places every clean position
+> it refused.** The page now reads a camera position with `indexPosition`
+> (`packages/solver/src/indexing.ts`). It finds each run by what the run's own
+> white, black and phase frames show, holding the phase steps to identities (on
+> the page's plan, opposite steps are complements); checks every Gray plane
+> against its complement with the same `complementResidual`; notes a projector the
+> camera cannot see, its slot dark against the slot's own photographs, instead of
+> refusing it; and numbers the projectors by counting from both ends of the
+> folder, refusing whenever more than one numbering fits, or the one that fits
+> needs more extras at an end than the page's instructions leave room for.
+> `tools/reader-acceptance.ts` handed it every clean position EXPERIMENT-10's Q0
+> photographed, through the page's own path, beside a counterfactual reader told
+> every frame's kind. On the bench's rendered photographs:
+>
+<!-- generated: reader-acceptance-operator-path -->
+> | clean positions | raster | positions | refused | photographs misfiled | runs placed: the page · the counterfactual | placing what the counterfactual places | noted out of view (lighting no pixel) | noted barely seen | folder shapes passing |
+> | --- | --- | ---: | ---: | ---: | --- | --- | --- | ---: | --- |
+> | the sweep | 320×240 | 72 | 0 | 0 | 212 · 222 | 65 of 72 | 68 (64) | 8 | 426 of 426 |
+> | room spill on | 320×240 | 24 | 0 | 0 | 80 · 89 | 17 of 24 | 7 (6) | 9 | 456 of 456 |
+> | the finer preset | 640×480 | 12 | 0 | 0 | 35 · 38 | 10 of 12 | 12 (10) | 1 | — |
+> | **all** | | **108** | **0** | **0** | **327 · 349** | **92 of 108** | **87 (80)** | **18** | **882 of 882** |
+>
+> _The counterfactual is `indexByFingerprint` handed the same fingerprints and every frame’s kind exactly, as EXPERIMENT-10’s counterfactual reader was. Refused: positions where the page raised a problem. Noted out of view: a projector whose run is dark in every photograph from that position; noted barely seen: one that lights fewer than 8 fingerprint blocks, and is not decoded. Every run that lights no pixel is noted out of view, 80 of 80; the counterfactual refuses 80 of them as a broken pair and asks for that projector to be re-shot._
+>
+> _Where the two disagree — 22 runs in 16 positions — the counterfactual places a run the page does not decode: a crescent of 0–7 fingerprint blocks lighting 4–176 pixels, noted barely seen (18) or out of view (4)._
+>
+> _Folder shapes, on the 8 designed rigs with the room off and on: before Play and after the black 432 of 432 · re-shot and appended 150 of 150 · re-shot and played on 150 of 150 · re-shot alone 150 of 150. A shape passes when the page reads it as it read the position alone, with a re-shot run used in place of its original; a re-shot run handed in alone passes when it is refused with how to hand it in. Photographs misfiled in them: 0._
+<!-- /generated -->
+>
+> With the room spill on, 15 runs are lit only by the wall behind the sphere; the
+> 10 of them the page places, the counterfactual places too, and they decode only
+> off the sphere. That is segmentation's to remove: nothing that reads
+> fingerprints knows where the sphere is.
+>
+> None of those is a real photograph. What the reader cannot see, its docblock
+> names: a run deleted from the folder, which is why the page tells the operator
+> never to delete a photograph; a camera moved between a run and its re-shoot —
+> on the bench's photographs of the designed rigs, at the reduced preset, a
+> re-shoot from a camera turned half a degree was still matched in 139 of 140
+> runs, and from one turned five degrees in 67 of 140, so the tripod staying put,
+> not the check, keeps a moved camera out of a position; and the cancelling
+> faults the complement check cannot see. What it does with a straddled capture
+> is not measured: EXPERIMENT-10's loud and silent counts are still the
+> counterfactual's, and putting those captures through this reader is the
+> rescoring's page column, which a re-run of EXPERIMENT-10 would now run.
 
 ## Phase 3 — Let the solver see a real photograph. **REACHABLE; STILL NO REAL PHOTOGRAPH**
 
@@ -459,10 +522,12 @@ invented here would become the thing the pipeline rested on.
 this repository calls them — a test does"*, which was the honest description of
 three modules that worked and could not be reached. The emitter page now has a
 reader: hand it the plan it wrote and a camera position's photographs, and it
-indexes them into projector runs and then runs `linearise` -> `assembleCapture`
--> `decodeCapture` -> `captureWorth` over each one, reporting what the capture
-was worth. (It took one run at a time, in shot order, until Phase 2's indexing
-was wired in.)
+indexes them into projector runs, runs `linearise` -> `assembleCapture` ->
+`decodeCapture` over each run it vouches for, and then `captureWorth` over every
+camera position read since the plan file was loaded, reporting what they were
+worth together. (It took one run at a time, in shot order, until Phase 2's
+indexing was wired in; and until 2026-09-29 it reported on each position alone,
+which for one camera is always a refusal.)
 
 **The plan travels with the photographs**, which is the part that makes the
 reader trustworthy rather than merely present. `assembleCapture` needs
@@ -512,8 +577,7 @@ needs each camera's intrinsics and a rough pose, which the reader does not have
 phase here removes. Inventing them to reach a number would make that number the
 thing somebody trusted.
 
-**Three things the reader does not do**, each named rather than left to be
-discovered:
+**What the reader does not do**, each named rather than left to be discovered:
 
 - **It indexes the photographs now, and that is Phase 2's work rather than this
   phase's.** The two stages stay separable on purpose — the report says what the
@@ -521,10 +585,17 @@ discovered:
   names which of them produced it. What indexing does not touch is the order
   files arrive in: that is still read as the order they were shot in, and what
   changed is that a fault in it is usually caught rather than decoded.
-- **It reads one camera position at a time.** A whole capture is three of them
-  and the operator drives them one by one. Within a position the projector runs
-  are found rather than stated, which is the part that used to be the operator's
-  job.
+- **It does not know which camera took a folder.** It reads one camera position
+  per folder, and the operator gives each its camera number, counted from 1:
+  nothing in a photograph says which camera held the shutter. A whole capture is
+  three positions handed in one by one. The page keeps every position it reads
+  under its number until a plan file is loaded, and reports what they were worth
+  together, so its one-camera refusal — "Only 1 camera contributed" — now means
+  that only one position has been read, and it ends by asking for a second: hand
+  in its photographs, or shoot one. Within a position the projector runs are
+  found rather than stated, which is the part that used to be the operator's
+  job. (Until 2026-09-29 the report covered one position at a time, and so
+  printed that refusal for every folder.)
 - **The browser gives it 8-bit sRGB pixels** whatever the file held, because
   `createImageBitmap` onto a canvas is how a page gets at a JPEG at all. The
   measurement above is what makes the 8 bits survivable rather than an
@@ -552,7 +623,8 @@ the operator: *here is what changes, here is how to change it back.*
 - **Before and after, on their own sphere**, using the comparison the page
   already builds for the simulated case — overlay, blink, side by side.
   *Not built, and blocked by Phase 3: this needs a calibration from real
-  photographs, and nothing reads a folder yet.*
+  photographs, and the page's reader stops at what a capture was worth, short of
+  a pose.*
 - **The files, written the way the page already writes them**: Bourke
   warp-and-blend per projector, SOS alignment files, and the operator's own
   `sos_stream_control.config` patched rather than rewritten, so every setting the
@@ -655,6 +727,10 @@ reached without anybody deleting a file.
 > capture places, at EXPERIMENT-9's headline cell. See
 > [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
 
+> **2026-09-29: the page's reader has since been replaced**, and places every
+> clean bench position (Phase 2). What it makes of a straddled one is not
+> measured yet.
+
 **The first version of that experiment got the answer wrong, and the correction
 is the finding.** It swept clock drift, found almost nothing, and concluded that
 tethering was unjustified. Review found that the start phase — where in a dwell
@@ -726,6 +802,16 @@ lateness come from a headless browser — 7.5 ms per step at design time, and ab
 
 _Policy P, the counterfactual reader. The aimed start protects while the emitter runs less than about 3.50–3.70 ms late per step (derived); 1% of aimed captures are touched from 3.6 ms (swept). The emitter’s lateness has been measured only headless: a design-time 7.5 ms per step, and about 9.3 ms armed with the tick on._
 <!-- /generated -->
+
+> **2026-09-29: still the counterfactual's table, and the page's reader has
+> changed.** The page now places the clean bench positions and reads a re-shot
+> run added to a position's folder (Phase 2), so a re-shoot of one projector is no
+> longer a folder it refuses whole. After a straddle it is still the wrong remedy:
+> a straddle smears the whole position, each run crosses the check at its own
+> smear, and the runs that passed can carry the same smear with nothing said — so
+> the field card says to re-shoot the whole position, aimed. What the page's own
+> reader makes of these captures is the rescoring's page column, which a re-run of
+> EXPERIMENT-10 would now run; nothing here says what it will show.
 
 ### What that does to this phase
 

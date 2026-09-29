@@ -2104,6 +2104,219 @@ export function experiment10Operator(result: Experiment10): string {
   return out.join('\n');
 }
 
+// ---------------------------------------------------------------------------
+// The page's reader (tools/reader-acceptance.ts)
+// ---------------------------------------------------------------------------
+
+/** How one reader's runs came out, by its verdict: `placed`, `unseen`, `barely seen`, `broken`, … */
+type VerdictsRA = Record<string, number>;
+
+/** One kind of rig's clean positions, as the tool totals them. */
+interface PositionsRA {
+  positions: number;
+  /** Positions where the page placed the projectors the counterfactual placed. */
+  agreeing: number;
+  /** Positions where the page raised no problem. */
+  ok: number;
+  misfiled: number;
+  runs: number;
+  page: VerdictsRA;
+  counterfactual: VerdictsRA;
+  /** Runs that light no pixel of the camera's picture, and what the page made of them. */
+  darkRuns: number;
+  darkRunsReadAs: VerdictsRA;
+}
+
+/** The folder shapes of one build, as the tool totals them. */
+interface ShapesRA {
+  cameras: number;
+  shapes: number;
+  passing: number;
+  misfiled: number;
+  byKind: Record<string, { shapes: number; passing: number }>;
+}
+
+/** Only the fields the table below reads. The file carries far more. */
+interface ReaderAcceptance {
+  generatedFrom: {
+    reader: { MIN_CRESCENT_BLOCKS: number };
+    shapes: { rigs: number[] };
+  };
+  totals: {
+    positions: Record<'all' | 'main' | 'spill' | 'fine', PositionsRA>;
+    shapes: Record<'all' | 'main' | 'spill', ShapesRA>;
+    disagreements: { where: string; litPixels: number; crescentBlocks: number; page: string; counterfactual: string }[];
+  };
+  positions: {
+    which: string;
+    width: number;
+    height: number;
+    runs: { litPixels: number; page: string; counterfactual: string }[];
+  }[];
+}
+
+/** A cell the table reads. Absent is a fault and never a blank, for the reason `has10` gives. */
+function hasRA<T>(value: T | undefined, what: string): T {
+  if (value === undefined) {
+    throw new Error(
+      `reader-acceptance: the results file has no ${what}; a cell a table reads is missing, which is ` +
+        'a fault and not a blank',
+    );
+  }
+  return value;
+}
+
+/** A finite number, and nothing else. */
+function nRA(value: number | undefined, what: string): number {
+  const v = hasRA(value, what);
+  if (typeof v !== 'number' || !Number.isFinite(v)) {
+    throw new Error(`reader-acceptance: ${what} is ${JSON.stringify(v)}, and the table needs a number there`);
+  }
+  return v;
+}
+
+/** How many runs a reader gave one verdict. A verdict it never gave is not in the file, and is none. */
+const verdictRA = (verdicts: VerdictsRA, name: string, what: string): number =>
+  name in verdicts ? nRA(verdicts[name], `${what}.${name}`) : 0;
+
+/** "4–176", or "7" when the two ends agree. */
+const spanRA = (xs: readonly number[]): string => {
+  const lo = Math.min(...xs);
+  const hi = Math.max(...xs);
+  return lo === hi ? String(lo) : `${lo}–${hi}`;
+};
+
+/** The folder shapes as the tool builds them, in its order. A kind the file lacks is a fault. */
+const SHAPE_KINDS_RA: readonly string[] = [
+  'before Play and after the black',
+  're-shot and appended',
+  're-shot and played on',
+  're-shot alone',
+];
+
+/**
+ * The page's reader on every clean position EXPERIMENT-10's Q0 photographed,
+ * against the counterfactual reader, and on the folder shapes the field card's
+ * procedure makes.
+ *
+ * Rows by kind of rig, labelled as EXPERIMENT-10's Q0 table labels the same
+ * positions so the two can be read side by side: that table is the reader the
+ * page had then, this one the reader it has now. The folder shapes are built on
+ * the designed rigs with the room off and on, so the sweep's row carries the
+ * room-off shapes, the room-on row the rest, and the finer preset has none.
+ *
+ * Registered in `docs/OPERATOR-PATH.md`, as Phase 2's status.
+ */
+export function readerAcceptance(result: ReaderAcceptance): string {
+  const totals = hasRA(result.totals, 'totals');
+  const positions = hasRA(totals.positions, 'totals.positions');
+  const shapes = hasRA(totals.shapes, 'totals.shapes');
+  const records = hasRA(result.positions, 'positions');
+  const raster = (which: string): string => {
+    const sizes = [...new Set(records.filter((p) => p.which === which).map((p) => `${p.width}×${p.height}`))];
+    if (sizes.length === 0) throw new Error(`reader-acceptance: no position record is '${which}'`);
+    return sizes.join(', ');
+  };
+  const shapeCell = (s: ShapesRA | undefined, where: string): string =>
+    s === undefined ? DASH10 : `${nRA(s.passing, `${where}.passing`)} of ${nRA(s.shapes, `${where}.shapes`)}`;
+  const row = (label: string, which: 'all' | 'main' | 'spill' | 'fine', rasterCell: string): string => {
+    const v = hasRA(positions[which], `totals.positions.${which}`);
+    const where = `totals.positions.${which}`;
+    const page = hasRA(v.page, `${where}.page`);
+    const cf = hasRA(v.counterfactual, `${where}.counterfactual`);
+    const dark = hasRA(v.darkRunsReadAs, `${where}.darkRunsReadAs`);
+    const n = nRA(v.positions, `${where}.positions`);
+    const b = (s: string): string => (which === 'all' ? `**${s}**` : s);
+    // The finer preset has no folder shapes: they are built on the designed rigs.
+    const shape = which === 'fine' ? undefined : hasRA(shapes[which], `totals.shapes.${which}`);
+    const cells = [
+      b(label),
+      rasterCell,
+      b(String(n)),
+      b(String(n - nRA(v.ok, `${where}.ok`))),
+      b(String(nRA(v.misfiled, `${where}.misfiled`))),
+      b(`${verdictRA(page, 'placed', `${where}.page`)} · ${verdictRA(cf, 'placed', `${where}.counterfactual`)}`),
+      b(`${nRA(v.agreeing, `${where}.agreeing`)} of ${n}`),
+      b(`${verdictRA(page, 'unseen', `${where}.page`)} (${verdictRA(dark, 'unseen', `${where}.darkRunsReadAs`)})`),
+      b(String(verdictRA(page, 'barely seen', `${where}.page`))),
+      shape === undefined ? DASH10 : b(shapeCell(shape, `totals.shapes.${which}`)),
+    ];
+    return `| ${cells.join(' | ')} |`.replace(/\|  \|/g, '| |');
+  };
+  const out = [
+    '| clean positions | raster | positions | refused | photographs misfiled | ' +
+      'runs placed: the page · the counterfactual | placing what the counterfactual places | ' +
+      'noted out of view (lighting no pixel) | noted barely seen | folder shapes passing |',
+    '| --- | --- | ---: | ---: | ---: | --- | --- | --- | ---: | --- |',
+  ];
+  // The same positions as EXPERIMENT-10's Q0 table, under the same names.
+  for (const [which, label] of Q0_VARIANTS10) out.push(row(label, which, raster(which)));
+  out.push(row('all', 'all', ''));
+
+  const all = hasRA(positions.all, 'totals.positions.all');
+  const darkRuns = nRA(all.darkRuns, 'totals.positions.all.darkRuns');
+  const darkUnseen = verdictRA(hasRA(all.darkRunsReadAs, 'totals.positions.all.darkRunsReadAs'), 'unseen', 'darkRunsReadAs');
+  // What the counterfactual said of the same dark runs, from the per-position
+  // records. `broken` is the tool's name for its broken-pair refusal, whose
+  // words always end "Re-shoot projector N." (`indexByFingerprint`); the file
+  // keeps the words themselves only where the two readers disagree.
+  const darkRecords = records
+    .flatMap((p) => hasRA(p.runs, `positions[${p.which}].runs`))
+    .filter((r) => nRA(r.litPixels, 'positions[].runs[].litPixels') === 0);
+  if (darkRecords.length !== darkRuns) {
+    throw new Error(`reader-acceptance: ${darkRecords.length} run records light no pixel, and the totals say ${darkRuns}`);
+  }
+  const darkReshoot = darkRecords.filter((r) => r.counterfactual === 'broken').length;
+  const minBlocks = nRA(result.generatedFrom?.reader?.MIN_CRESCENT_BLOCKS, 'generatedFrom.reader.MIN_CRESCENT_BLOCKS');
+  out.push('');
+  out.push(
+    '_The counterfactual is `indexByFingerprint` handed the same fingerprints and every frame’s kind ' +
+      'exactly, as EXPERIMENT-10’s counterfactual reader was. Refused: positions where the page raised a ' +
+      'problem. Noted out of view: a projector whose run is dark in every photograph from that position; ' +
+      `noted barely seen: one that lights fewer than ${minBlocks} fingerprint blocks, and is not decoded. ` +
+      `Every run that lights no pixel is noted out of view, ${darkUnseen} of ${darkRuns}; the ` +
+      `counterfactual refuses ${darkReshoot} of them as a broken pair and asks for that projector to be re-shot._`,
+  );
+
+  const dis = hasRA(totals.disagreements, 'totals.disagreements');
+  const notDecoded = dis.filter((d) => d.counterfactual === 'placed' && d.page !== 'placed');
+  if (notDecoded.length !== dis.length) {
+    throw new Error(
+      `reader-acceptance: ${dis.length - notDecoded.length} disagreements are not a run the counterfactual ` +
+        'places and the page does not, which this table has no words for',
+    );
+  }
+  out.push('');
+  out.push(
+    dis.length === 0
+      ? '_The two readers place the same runs everywhere._'
+      : `_Where the two disagree — ${dis.length} runs in ${new Set(dis.map((d) => d.where)).size} ` +
+          `positions — the counterfactual places a run the page does not decode: a crescent of ` +
+          `${spanRA(dis.map((d) => nRA(d.crescentBlocks, 'disagreements[].crescentBlocks')))} fingerprint blocks lighting ` +
+          `${spanRA(dis.map((d) => nRA(d.litPixels, 'disagreements[].litPixels')))} pixels, noted barely seen ` +
+          `(${dis.filter((d) => d.page === 'barely seen').length}) or out of view ` +
+          `(${dis.filter((d) => d.page === 'unseen').length})._`,
+  );
+
+  const every = hasRA(shapes.all, 'totals.shapes.all');
+  const byKind = hasRA(every.byKind, 'totals.shapes.all.byKind');
+  const kinds = SHAPE_KINDS_RA.map((kind) => {
+    const k = hasRA(byKind[kind], `totals.shapes.all.byKind['${kind}']`);
+    return `${kind} ${nRA(k.passing, `byKind['${kind}'].passing`)} of ${nRA(k.shapes, `byKind['${kind}'].shapes`)}`;
+  });
+  const extra = Object.keys(byKind).filter((k) => !SHAPE_KINDS_RA.includes(k));
+  if (extra.length > 0) throw new Error(`reader-acceptance: folder shapes this table does not know: ${extra.join(', ')}`);
+  out.push('');
+  out.push(
+    `_Folder shapes, on the ${hasRA(result.generatedFrom?.shapes?.rigs, 'generatedFrom.shapes.rigs').length} ` +
+      `designed rigs with the room off and on: ${kinds.join(' · ')}. A shape passes when the page reads ` +
+      'it as it read the position alone, with a re-shot run used in place of its original; a re-shot ' +
+      `run handed in alone passes when it is refused with how to hand it in. Photographs misfiled in ` +
+      `them: ${nRA(every.misfiled, 'totals.shapes.all.misfiled')}._`,
+  );
+  return out.join('\n');
+}
+
 const BLOCKS: Record<string, Block> = {
   'experiment-10-precondition': {
     doc: 'docs/EXPERIMENT-10.md',
@@ -2157,6 +2370,16 @@ const BLOCKS: Record<string, Block> = {
     doc: 'docs/CALIBRATE.md',
     data: 'experiments/experiment-10.json',
     render: experiment10Operator as (r: never) => string,
+  },
+  // The page's reader on the same clean positions EXPERIMENT-10's Q0 refused
+  // whole, in the plan whose Phase 2 status it is. Registered and not copied,
+  // for the reason the Phase 2 entry below gives: that status IS these numbers.
+  // It sits in the dated note under EXPERIMENT-10's correction, hence the prefix.
+  'reader-acceptance-operator-path': {
+    doc: 'docs/OPERATOR-PATH.md',
+    data: 'experiments/reader-acceptance.json',
+    render: readerAcceptance as (r: never) => string,
+    prefix: '> ',
   },
   'experiment-9-phase': {
     doc: 'docs/EXPERIMENT-9.md',
