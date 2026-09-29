@@ -440,16 +440,16 @@ cameras from 0; the correction below is about that reader.)
 <!-- generated: reader-acceptance-operator-path -->
 > | clean positions | raster | positions | refused | photographs misfiled | runs placed: the page · the counterfactual | placing what the counterfactual places | noted out of view (lighting no pixel) | noted barely seen | folder shapes passing |
 > | --- | --- | ---: | ---: | ---: | --- | --- | --- | ---: | --- |
-> | the sweep | 320×240 | 72 | 0 | 0 | 212 · 222 | 65 of 72 | 68 (64) | 8 | 426 of 426 |
-> | room spill on | 320×240 | 24 | 0 | 0 | 80 · 89 | 17 of 24 | 7 (6) | 9 | 456 of 456 |
+> | the sweep | 320×240 | 72 | 0 | 0 | 212 · 222 | 65 of 72 | 68 (64) | 8 | 1006 of 1006 |
+> | room spill on | 320×240 | 24 | 0 | 0 | 80 · 89 | 17 of 24 | 7 (6) | 9 | 1084 of 1084 |
 > | the finer preset | 640×480 | 12 | 0 | 0 | 35 · 38 | 10 of 12 | 12 (10) | 1 | — |
-> | **all** | | **108** | **0** | **0** | **327 · 349** | **92 of 108** | **87 (80)** | **18** | **882 of 882** |
+> | **all** | | **108** | **0** | **0** | **327 · 349** | **92 of 108** | **87 (80)** | **18** | **2090 of 2090** |
 >
 > _The counterfactual is `indexByFingerprint` handed the same fingerprints and every frame’s kind exactly, as EXPERIMENT-10’s counterfactual reader was. Refused: positions where the page raised a problem. Noted out of view: a projector whose run is dark in every photograph from that position; noted barely seen: one that lights fewer than 8 fingerprint blocks, and is not decoded. Every run that lights no pixel is noted out of view, 80 of 80; the counterfactual refuses 80 of them as a broken pair and asks for that projector to be re-shot._
 >
 > _Where the two disagree — 22 runs in 16 positions — the counterfactual places a run the page does not decode: a crescent of 0–7 fingerprint blocks lighting 4–176 pixels, noted barely seen (18) or out of view (4)._
 >
-> _Folder shapes, on the 8 designed rigs with the room off and on: before Play and after the black 432 of 432 · re-shot and appended 150 of 150 · re-shot and played on 150 of 150 · re-shot alone 150 of 150. A shape passes when the page reads it as it read the position alone, with a re-shot run used in place of its original; a re-shot run handed in alone passes when it is refused with how to hand it in. Photographs misfiled in them: 0._
+> _Folder shapes, on the 8 designed rigs with the room off and on: before Play and after the black 432 of 432 · re-shot and appended 150 of 150 · re-shot and played on 150 of 150 · re-shot alone 150 of 150. A shape passes when the page reads it as it read the position alone, with a re-shot run used in place of its original; a re-shot run handed in alone passes when it is refused with how to hand it in. The faults an operator makes on the way pass when the page reads them so or refuses them in words, placing nothing the position alone does not: the camera started 1, 2, 4 or 8 photographs late 192 of 192 (20 read) · stopped as many early 192 of 192 (28 read) · a test shot of another projector’s white before Play 112 of 112 (112 read) · and with that projector re-shot and appended 112 of 112 (112 read) · a run spoiled by its photograph 11 shot twice or not at all, re-shot and appended 300 of 300 (300 read) · and played on 300 of 300 (298 read). Photographs misfiled in them all: 0._
 <!-- /generated -->
 >
 > With the room spill on, 15 runs are lit only by the wall behind the sphere; the

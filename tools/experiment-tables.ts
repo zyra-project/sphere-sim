@@ -2133,14 +2133,16 @@ interface ShapesRA {
   shapes: number;
   passing: number;
   misfiled: number;
-  byKind: Record<string, { shapes: number; passing: number }>;
+  /** `read`: of those passing, how many the page read as the position; the rest of a fault it refused in words. */
+  byKind: Record<string, { shapes: number; passing: number; read?: number }>;
 }
 
 /** Only the fields the table below reads. The file carries far more. */
 interface ReaderAcceptance {
   generatedFrom: {
     reader: { MIN_CRESCENT_BLOCKS: number };
-    shapes: { rigs: number[] };
+    /** `lost`: photographs a camera started late or stopped early by; `spoiledPhotograph`: counted from 1. */
+    shapes: { rigs: number[]; lost: number[]; spoiledPhotograph: number };
   };
   totals: {
     positions: Record<'all' | 'main' | 'spill' | 'fine', PositionsRA>;
@@ -2195,9 +2197,26 @@ const SHAPE_KINDS_RA: readonly string[] = [
 ];
 
 /**
+ * The faults on the way, as the tool builds them, in its order, each with the
+ * words the table says it in. They pass read as the position or refused in
+ * words, so each says how many were read.
+ */
+const FAULT_KINDS_RA: readonly { kind: string; say: (lost: string, photograph: number) => string }[] = [
+  { kind: 'camera started late', say: (lost) => `the camera started ${lost} photographs late` },
+  { kind: 'camera stopped early', say: () => 'stopped as many early' },
+  { kind: 'a test shot before Play', say: () => 'a test shot of another projector’s white before Play' },
+  { kind: 'a test shot before Play, re-shot and appended', say: () => 'and with that projector re-shot and appended' },
+  {
+    kind: 'spoiled, re-shot and appended',
+    say: (_, photograph) => `a run spoiled by its photograph ${photograph} shot twice or not at all, re-shot and appended`,
+  },
+  { kind: 'spoiled, re-shot and played on', say: () => 'and played on' },
+];
+
+/**
  * The page's reader on every clean position EXPERIMENT-10's Q0 photographed,
  * against the counterfactual reader, and on the folder shapes the field card's
- * procedure makes.
+ * procedure makes and the faults an operator makes on the way.
  *
  * Rows by kind of rig, labelled as EXPERIMENT-10's Q0 table labels the same
  * positions so the two can be read side by side: that table is the reader the
@@ -2304,15 +2323,28 @@ export function readerAcceptance(result: ReaderAcceptance): string {
     const k = hasRA(byKind[kind], `totals.shapes.all.byKind['${kind}']`);
     return `${kind} ${nRA(k.passing, `byKind['${kind}'].passing`)} of ${nRA(k.shapes, `byKind['${kind}'].shapes`)}`;
   });
-  const extra = Object.keys(byKind).filter((k) => !SHAPE_KINDS_RA.includes(k));
+  const lostBy = hasRA(result.generatedFrom?.shapes?.lost, 'generatedFrom.shapes.lost').map((x) => nRA(x, 'generatedFrom.shapes.lost[]'));
+  const lost = lostBy.length === 1 ? String(lostBy[0]) : `${lostBy.slice(0, -1).join(', ')} or ${lostBy[lostBy.length - 1]}`;
+  const photograph = nRA(result.generatedFrom?.shapes?.spoiledPhotograph, 'generatedFrom.shapes.spoiledPhotograph');
+  const faults = FAULT_KINDS_RA.map(({ kind, say }) => {
+    const k = hasRA(byKind[kind], `totals.shapes.all.byKind['${kind}']`);
+    return (
+      `${say(lost, photograph)} ${nRA(k.passing, `byKind['${kind}'].passing`)} of ` +
+      `${nRA(k.shapes, `byKind['${kind}'].shapes`)} (${nRA(k.read, `byKind['${kind}'].read`)} read)`
+    );
+  });
+  const known = [...SHAPE_KINDS_RA, ...FAULT_KINDS_RA.map((f) => f.kind)];
+  const extra = Object.keys(byKind).filter((k) => !known.includes(k));
   if (extra.length > 0) throw new Error(`reader-acceptance: folder shapes this table does not know: ${extra.join(', ')}`);
   out.push('');
   out.push(
     `_Folder shapes, on the ${hasRA(result.generatedFrom?.shapes?.rigs, 'generatedFrom.shapes.rigs').length} ` +
       `designed rigs with the room off and on: ${kinds.join(' · ')}. A shape passes when the page reads ` +
       'it as it read the position alone, with a re-shot run used in place of its original; a re-shot ' +
-      `run handed in alone passes when it is refused with how to hand it in. Photographs misfiled in ` +
-      `them: ${nRA(every.misfiled, 'totals.shapes.all.misfiled')}._`,
+      'run handed in alone passes when it is refused with how to hand it in. The faults an operator ' +
+      'makes on the way pass when the page reads them so or refuses them in words, placing nothing ' +
+      `the position alone does not: ${faults.join(' · ')}. Photographs misfiled in them all: ` +
+      `${nRA(every.misfiled, 'totals.shapes.all.misfiled')}._`,
   );
   return out.join('\n');
 }

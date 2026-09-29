@@ -614,7 +614,10 @@ Then, in order:
    the run shot again from where the camera stood, every such folder read as its
    position with the re-shot run in place: 150 of 150 with the run added after
    the position, and 150 of 150 with the page played on to the end
-   (`experiments/reader-acceptance.json`). A re-shot run handed in on its own is
+   (`experiments/reader-acceptance.json`). With the run spoiled first, one of
+   its photographs shot twice or not at all, 300 of 300 read so with the re-shoot
+   added after the position and 298 of 300 with the page played on; the other 2
+   were refused, and none was misfiled. A re-shot run handed in on its own is
    refused, with how to hand it in.
 
    **Before you move the tripod**, because that match is by what the camera saw,
@@ -659,7 +662,10 @@ Then, in order:
    it cannot catch: every projector after it can then be numbered wrongly with
    nothing to say so. What does not belong — photographs taken before `Play`, a
    test shot before the first run, dark ones after the screen went black — it
-   recognises and sets aside. An earlier version of this card said "If you
+   recognises and sets aside: on the bench's rendered photographs, a test shot
+   of another projector's white before `Play` in 112 folders of 112, and in 112
+   more with that projector re-shot and added after the position, whose re-shoot
+   it still matched. An earlier version of this card said "If you
    delete, delete; do not also add". Deleting is now the mistake.
 4. Make sure filenames **sort in capture order**. Most cameras do this; some
    restart numbering at 10000.
@@ -703,7 +709,12 @@ Then, in order:
    lost at one end, with more than 30 extras at the other, read by count
    exactly like a folder numbered a projector over, and the page can file every
    run under the wrong projector with nothing to say so (`indexPosition`'s
-   docblock, `packages/solver/src/indexing.ts`).
+   docblock, `packages/solver/src/indexing.ts`). With only three extras at the
+   other end it misfiles nothing: on the bench's rendered photographs, a camera
+   started 1, 2, 4 or 8 photographs after `Play`, or stopped as many early, in
+   384 folders, read as its position in 48 — each only 1 or 2 out, where the
+   projector at that end was out of view or barely seen — and was refused in
+   words in the other 336.
 
    An earlier version of this card said to delete the photographs after the
    black, because the page's old reader counted the last run to the end of the
