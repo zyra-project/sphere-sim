@@ -54,6 +54,7 @@ import {
   describeSession,
   finishCapture,
   holdPosition,
+  photographSignature,
   indexPhotographs,
   readCapture,
   readRun,
@@ -809,7 +810,7 @@ function heldPosition(camera: number, from: number, count: number, sees: readonl
   const names = Array.from({ length: count }, (_, i) => `IMG_${String(from + i).padStart(4, '0')}.jpg`);
   return {
     camera,
-    photographs: names.map((n) => `4194304:1790000000000:${n}`),
+    photographs: names.map((name) => photographSignature({ name, size: 4194304 })),
     first: names[0],
     last: names[names.length - 1],
     decoded: sees.map((projector) => ({ projector, stats: decodedStats(400) })),
@@ -879,16 +880,52 @@ test('photographs read under a second camera number move to it, and never count 
     /^These photographs were held as camera 1\. They count as camera 2 now, the number given last, and camera 1 is no longer held/,
   );
 
-  // Sharing any photograph is enough: a folder read again with a re-shoot added
-  // is the same position with more photographs in it.
+  // More than half of the smaller position is enough: a folder read again with
+  // a re-shoot added is the same position with more photographs in it, and so is
+  // the same folder with its first few left out of the selection.
   const grown = heldPosition(2, 1, 54);
   const regrown = holdPosition(held, SMALL_MANIFEST, grown);
   assert.deepEqual(regrown.session.positions, [grown]);
   assert.deepEqual(regrown.changes, [{ kind: 'moved', camera: 2, from: a, shared: 36 }]);
   assert.match(
     describeSession(regrown.session, regrown.changes),
-    /^Camera 1's position \(IMG_0001\.jpg to IMG_0036\.jpg\) shares 36 of its 36 photographs with this one, so it is no longer held/,
+    /^Camera 1's position \(IMG_0001\.jpg to IMG_0036\.jpg\) shares 36 of its 36 photographs with this one, so it is the same position and no longer held/,
   );
+  const shifted = heldPosition(2, 5, 36);
+  assert.deepEqual(holdPosition(held, SMALL_MANIFEST, shifted).changes, [{ kind: 'moved', camera: 2, from: a, shared: 32 }]);
+});
+
+test('a copied folder is the same photographs, and one photograph matching by chance moves nothing', () => {
+  // A second review of the page: the session knew a photograph by its name,
+  // size and last-modified time, and a folder copied to another place gets new
+  // modification times — so the same position, copied and read under the next
+  // camera number, counted as a second camera, and the report vouched for a
+  // solve from one. A photograph is its name and size now. Those can match by
+  // chance across two cards — a dark photograph's JPEG — so one shared
+  // photograph is not two positions being one: more than half of the smaller
+  // must match.
+  const card = Array.from({ length: 36 }, (_, i) => ({ name: `IMG_${String(i + 1).padStart(4, '0')}.jpg`, size: 3_000_000 + i }));
+  const copied = card.map((f) => ({ ...f, lastModified: 1_790_000_000_000 + 86_400_000 }));
+  assert.deepEqual(copied.map(photographSignature), card.map(photographSignature));
+  const position = (camera: number, files: readonly { name: string; size: number }[]): HeldPosition => ({
+    camera,
+    photographs: files.map(photographSignature),
+    first: files[0].name,
+    last: files[files.length - 1].name,
+    decoded: [0, 1].map((projector) => ({ projector, stats: decodedStats(400) })),
+  });
+  const first = holdPosition(freshSession(), SMALL_MANIFEST, position(0, card)).session;
+  const again = holdPosition(first, SMALL_MANIFEST, position(1, copied));
+  assert.deepEqual(again.changes.map((c) => c.kind), ['moved']);
+  assert.equal(sessionWorth(again.session)?.usable, false, 'one position copied is still one camera');
+
+  // Another card whose photographs are other photographs, one of them the same
+  // name and size as one of the first card's: both positions are held.
+  const other = card.map((f, i) => (i === 35 ? f : { name: `IMG_${String(101 + i).padStart(4, '0')}.jpg`, size: 3_500_000 + i }));
+  const both = holdPosition(first, SMALL_MANIFEST, position(1, other));
+  assert.deepEqual(both.changes, [{ kind: 'added', camera: 1 }]);
+  assert.deepEqual(both.session.positions.map((p) => p.camera), [0, 1]);
+  assert.equal(sessionWorth(both.session)?.usable, true);
 });
 
 test('two camera positions make a report that each alone refuses', () => {

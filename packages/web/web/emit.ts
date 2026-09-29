@@ -92,6 +92,7 @@ import {
   finishCapture,
   holdPosition,
   indexPhotographs,
+  photographSignature,
   readRun,
   sessionForPlan,
   sessionWorth,
@@ -838,16 +839,6 @@ let session: CaptureSession = EMPTY_SESSION;
  */
 let unsaidLetGo: readonly HeldPosition[] = [];
 
-/**
- * What makes two photographs the same photograph, for the session: name, size
- * and last-modified time. Not the pixels, which would mean reading every file
- * again to compare them, and not the name alone, which cameras reuse — a new
- * card starts again at IMG_0001, and some cameras restart at 10000.
- */
-function photoSignature(file: File): string {
-  return `${file.size}:${file.lastModified}:${file.name}`;
-}
-
 function syncReadback(): void {
   const haveFiles = (photosEl.files?.length ?? 0) > 0;
   // `reading` is part of the condition and was not, which is how a photo change
@@ -958,7 +949,7 @@ function loadPlanFile(file: File): void {
  */
 async function runReadback(): Promise<void> {
   const files = Array.from(photosEl.files ?? []);
-  const photographs = files.map(photoSignature);
+  const photographs = files.map(photographSignature);
   const manifest = heldManifest;
   // Counted from one in the box, as the report names cameras (`captureWorth`
   // calls camera index 2 "Camera 3"), and held from zero, as `PairContribution`

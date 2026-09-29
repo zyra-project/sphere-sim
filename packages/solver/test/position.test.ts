@@ -1011,7 +1011,7 @@ test('a re-shot run appended to its position replaces the original, and one that
     assert.deepEqual(r.reshoots, []);
     assert.equal(misplaced(r.assignment, photos.truth), 0);
     assert.match(r.problems.join(' '), /after the end of this camera position, matches no projector/);
-    assert.match(r.problems.join(' '), /the camera moved between the two/);
+    assert.match(r.problems.join(' '), /the camera moved between the two: shoot the whole camera position again, into a folder of its own, and read it under the same camera number/);
   }
 
   // Two projectors that photograph alike are outside what this reads: on a
@@ -1146,7 +1146,7 @@ test('a re-shoot played on to the end replaces every run it shoots again, and on
                 if (
                   r.usableProjectors.length > 0 ||
                   !why.startsWith('No run of this camera position could be read') ||
-                  !why.includes('Shoot the whole camera position again, into a folder of its own.')
+                  !why.includes('Shoot the whole camera position again, into a folder of its own, and read it under the same camera number.')
                 ) {
                   assert.fail(label());
                 }
@@ -1708,6 +1708,7 @@ test('dark is judged where it is looked at: room light elsewhere in the folder n
     assert.equal(r.problems.length, 1, r.problems.join(' | '));
     assert.match(r.problems[0], /^Projector 1's photographs are lit, but no run of 34 could be found among them, and the light in them changes the way a room changes/);
     assert.match(r.problems[0], /Most likely the room's light changed while they were shot/);
+    assert.match(r.problems[0], /with the room's light as it will stay, and read it under the same camera number/);
     assert.match(r.problems[0], /Re-shoot projector 1\./);
   }
 
@@ -1866,7 +1867,7 @@ test('a refusal says what the folder holds: one unchanging picture, a whole card
     const r = indexPosition(photos.prints, expected);
     assert.equal(misplaced(r.assignment, photos.truth), 0);
     const lost = r.problems.find((x) => x.startsWith("Projector 2's")) ?? '';
-    assert.match(lost, /Re-shoot projector 2\. A re-shoot added to this folder could not be matched, so shoot the whole camera position again/);
+    assert.match(lost, /Re-shoot projector 2\. A re-shoot added to this folder could not be matched, so shoot the whole camera position again, into a folder of its own, and read it under the same camera number/);
     assert.doesNotMatch(lost, /add the new photographs to the end/);
     assert.ok(r.problems.some((x) => /after the end of this camera position, (matches no projector|copies photographs)/.test(x)), r.problems.join(' | '));
   }
@@ -1954,7 +1955,7 @@ test('a stretch between runs that is not whole runs ends the count there, and a 
     // Six photographs shot twice can put a run's start six photographs in,
     // where a Gray pair stands in for its white and black: found, not numbered.
     assert.match(r.problems[0], /: the (run|2 runs) found after it (is|are) not used, and projectors 3 and 4 are not decoded\./, label);
-    assert.match(r.problems[0], /Shoot the whole camera position again, into a folder of its own/, label);
+    assert.match(r.problems[0], /Shoot the whole camera position again, into a folder of its own, and read it under the same camera number/, label);
   }
   // Projector 1's run again where projector 3's belongs.
   {

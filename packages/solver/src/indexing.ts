@@ -2845,7 +2845,7 @@ export function indexPosition(
     'No run of this camera position could be read — every run found repeats photographs of ' +
     'a run that could not be — so there is nothing to count projectors from: a re-shoot is ' +
     "numbered by the position's own runs, and it has none. Shoot the whole camera position " +
-    'again, into a folder of its own.';
+    'again, into a folder of its own, and read it under the same camera number.';
   const contested = found.find((w) => pool.some((r) => statusOf(r, w) !== statusOf(pool[0], w)));
   if (contested !== undefined) {
     // Where one reading is that no run of the position was found at all, the
@@ -2965,9 +2965,9 @@ export function indexPosition(
           ? ''
           : `, and projector${lost.length === 1 ? '' : 's'} ${listed(lost)} ` +
             `${lost.length === 1 ? 'is' : 'are'} not decoded`) +
-        '. Shoot the whole camera position again, into a folder of its own: a re-shoot added ' +
-        'to this folder is matched against the runs around it, and the runs after this ' +
-        'stretch have no projector number to match.',
+        '. Shoot the whole camera position again, into a folder of its own, and read it under the ' +
+        'same camera number: a re-shoot added to this folder is matched against the runs around ' +
+        'it, and the runs after this stretch have no projector number to match.',
     );
   }
   const a0 = reading.a0;
@@ -2995,7 +2995,8 @@ export function indexPosition(
         `position, ${reading.tailWhy.get(w)}, so it cannot be told which projector it re-shoots. ` +
         "A re-shot run is matched by its white and black against the original's, and a " +
         'mismatch usually means the camera moved between the two: shoot the whole camera ' +
-        'position again, into a folder of its own, rather than one projector.',
+        'position again, into a folder of its own, and read it under the same camera number, ' +
+        'rather than one projector.',
     );
   }
   // Where a re-shoot added to this folder could not be matched, asking for
@@ -3003,7 +3004,8 @@ export function indexPosition(
   const remedy = (p: number): string =>
     unmatchedTail.length > 0 && !anotherPosition
       ? `Re-shoot projector ${p}. A re-shoot added to this folder could not be matched, so shoot ` +
-        'the whole camera position again, into a folder of its own, rather than adding another.'
+        'the whole camera position again, into a folder of its own, and read it under the same ' +
+        'camera number, rather than adding another.'
       : `Re-shoot projector ${p}. ${handIn(p)}`;
 
   // ---- each projector: its run, the latest one that passes, or why not
@@ -3134,8 +3136,8 @@ export function indexPosition(
           "a projector's patterns do: the same part of the picture brightens in every photograph " +
           "that is lit. Most likely the room's light changed while they were shot — a lamp, a " +
           'door, daylight — so shoot the whole camera position again, into a folder of its own, ' +
-          "with the room's light as it will stay. If it did not change, a dropped or doubled " +
-          `photograph did this: ${remedy(p + 1)}`,
+          "with the room's light as it will stay, and read it under the same camera number. If it " +
+          `did not change, a dropped or doubled photograph did this: ${remedy(p + 1)}`,
       );
       continue;
     }

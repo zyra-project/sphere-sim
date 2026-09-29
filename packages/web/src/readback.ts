@@ -677,17 +677,27 @@ export interface HeldRun {
 export interface HeldPosition {
   /** Zero-based, as `worth.ts` counts cameras. An operator reads it counted from one. */
   camera: number;
-  /**
-   * One signature per photograph, opaque here. The page builds each from the
-   * file's name, size and last-modified time; this module only asks whether two
-   * positions share one.
-   */
+  /** One {@link photographSignature} per photograph: all the session compares positions by. */
   photographs: readonly string[];
   /** The folder's first and last file names, in the order handed in, to name it by later. */
   first: string;
   last: string;
   /** What its decoded runs contributed. Empty when none decoded. */
   decoded: readonly HeldRun[];
+}
+
+/**
+ * What makes two photographs the same photograph, for the session: name and
+ * size. Not the last-modified time, which a copied folder does not keep: the
+ * same photographs, copied and read again under another camera number, counted
+ * as a second camera. Not the pixels, which would mean reading every file again
+ * to compare them, and not the name alone, which cameras reuse — a new card
+ * starts again at IMG_0001, and some cameras restart at 10000. Name and size can
+ * still match by chance, two dark photographs compressing to the same bytes, so
+ * {@link holdPosition} calls two positions the same only when most of them do.
+ */
+export function photographSignature(file: { readonly name: string; readonly size: number }): string {
+  return `${file.size}:${file.name}`;
 }
 
 /** Every camera position read against one plan: at most one per camera. */
@@ -698,7 +708,7 @@ export interface CaptureSession {
    * while no plan is held.
    */
   plan: CaptureManifest | null;
-  /** Ascending by camera. No two share a camera, and no two share a photograph. */
+  /** Ascending by camera. No two share a camera, and no two are the same photographs ({@link holdPosition}). */
   positions: readonly HeldPosition[];
 }
 
@@ -712,8 +722,9 @@ export type SessionChange =
   /** The camera held another reading, and this one replaced it. */
   | { kind: 'replaced'; camera: number; earlier: HeldPosition }
   /**
-   * Another camera held `shared` of these photographs. That position is no
-   * longer held, and the photographs count under this camera.
+   * Another camera held `shared` of these photographs, more than half of the
+   * smaller position's: the same photographs. That position is no longer held,
+   * and they count under this camera.
    */
   | { kind: 'moved'; camera: number; from: HeldPosition; shared: number }
   /** Read against a plan this session is not for, so not kept. */
@@ -738,13 +749,15 @@ export type SessionChange =
  *   folder, a folder corrected — and adding them would count that position
  *   twice. The change names the folder replaced, so a camera number left
  *   unchanged between two positions is seen rather than silently absorbed.
- * - **A photograph counts under one camera, the one given last.** The same
- *   photographs under two camera numbers are one position posing as two, and
- *   two cameras are exactly what `captureWorth` asks for before it will vouch
- *   for a solve: it would vouch for one no data supports. So a position that
- *   shares any photograph with another camera's position replaces that one
- *   too. Any photograph, not only the whole folder: a folder read again with a
- *   re-shoot added is the same position with more photographs in it.
+ * - **The same photographs count under one camera, the one given last.** The
+ *   same photographs under two camera numbers are one position posing as two,
+ *   and two cameras are exactly what `captureWorth` asks for before it will
+ *   vouch for a solve: it would vouch for one no data supports. So a position
+ *   that is the same photographs as another camera's — more than half of the
+ *   smaller one's match — replaces that one too. More than half, not the whole
+ *   folder: a folder read again with a re-shoot added is the same position
+ *   with more photographs in it. And not any one: a photograph is known here
+ *   by its name and size, and a dark one can match another card's in both.
  * - **A position read against another plan is not kept.** Positions decoded
  *   against different plans are not one capture, and a plan file loaded while a
  *   position was being read leaves that reading out.
@@ -768,7 +781,7 @@ export function holdPosition(
       continue;
     }
     const shared = held.photographs.filter((p) => mine.has(p)).length;
-    if (shared > 0) {
+    if (2 * shared > Math.min(held.photographs.length, position.photographs.length)) {
       changes.push({ kind: 'moved', camera: position.camera, from: held, shared });
       continue;
     }
@@ -868,8 +881,8 @@ function describeChange(session: CaptureSession, change: SessionChange): string 
       }
       return (
         `Camera ${m}'s position (${folderOf(change.from)}) shares ${change.shared} of its ` +
-        `${change.from.photographs.length} photographs with this one, so it is no longer held: a ` +
-        `photograph counts under one camera, the number given last.`
+        `${change.from.photographs.length} photographs with this one, so it is the same position and ` +
+        `no longer held: a position counts under one camera, the number given last.`
       );
     }
     case 'otherPlan':
