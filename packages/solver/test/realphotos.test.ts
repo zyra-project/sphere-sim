@@ -151,6 +151,52 @@ test('clipping is counted rather than judged, and a dead reference pair is refus
   assert.equal(referenceRange(dark.report, blown.report).usable, false);
 });
 
+test('a file of integers is undone through a table of its codes, to the same bits as one sample at a time', () => {
+  // `linearise` looks up every code of an integer file in a table built from
+  // `decodeTransfer` itself, where it once called it once a sample. A table
+  // entry one code off, or built under another transfer than the one named,
+  // would move every pixel of that code by a step of the transfer and nothing
+  // else would notice. So each path is handed every code, twice over, in 8 and
+  // 16 bits, grey and colour, and the two must agree bit for bit: the pixels,
+  // the clipping counts and the rest of the report. The per-sample path is
+  // what the same samples take when they are not typed as integers.
+  const transfers = [
+    { kind: 'srgb' },
+    { kind: 'linear' },
+    { kind: 'gamma', exponent: 2.2 },
+    { kind: 'gamma', exponent: 1.8 },
+  ] as const;
+  for (const max of [255, 65535]) {
+    for (const channels of [1, 3, 4]) {
+      // Every code, in every channel, twice: in order and then reversed, so a
+      // pixel's channels differ and the table holds fewer entries than the image.
+      const codes = max + 1;
+      const typed = max === 255 ? new Uint8Array(2 * codes * channels) : new Uint16Array(2 * codes * channels);
+      for (let i = 0; i < 2 * codes; i++) {
+        for (let c = 0; c < channels; c++) {
+          const k = i < codes ? i : 2 * codes - 1 - i;
+          typed[i * channels + c] = (k + 97 * c) % codes;
+        }
+      }
+      const image = (data: Uint8Array | Uint16Array): EncodedImage => ({ width: codes, height: 2, channels, data, maxValue: max });
+      for (const transfer of transfers) {
+        const byTable = linearise(image(typed), transfer);
+        const bySample = linearise(image(Array.from(typed) as unknown as Uint16Array), transfer);
+        const where = `${max} max, ${channels} channels, ${JSON.stringify(transfer)}`;
+        assert.ok(
+          Buffer.from(byTable.image.data.buffer).equals(Buffer.from(bySample.image.data.buffer)),
+          `${where}: the table's pixels are not the per-sample pixels`,
+        );
+        assert.deepStrictEqual(byTable.report, bySample.report, `${where}: the report differs`);
+        assert.equal(byTable.image.channels, bySample.image.channels);
+        // Not vacuous: both rails were in the image, and every code was undone.
+        assert.ok(byTable.report.clippedHigh > 0 && byTable.report.clippedLow > 0, where);
+        assert.equal(byTable.report.hi, decodeTransfer(1, transfer), where);
+      }
+    }
+  }
+});
+
 test('a folder of 8-bit sRGB frames decodes to the projector pixels that made it', () => {
   // The chain the phase exists to build. Nothing here is rendered by the bench:
   // integers in, correspondences out.
