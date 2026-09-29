@@ -277,33 +277,77 @@ export function stepKind(step: number): FrameKind {
 }
 
 /**
+ * The step a photograph shows: the one holding more than half its exposure, or
+ * null when none does — an exact 0.5/0.5 tie, or a split three ways. Under a
+ * rolling readout a part's share is its weight averaged over the rows, which is
+ * its share of the photograph's integrated light-time. `STEPS.length` (136) is
+ * the page's dark after the last step, which no run's frame is.
+ *
+ * The one statement of what a photograph shows, for the content footing
+ * ({@link oracleObservations}) and for the page's filing of a straddled
+ * position ({@link runFiling}), so the two cannot disagree about it.
+ */
+export function contentStep(photo: Photo): number | null {
+  const share = new Map<number, number>();
+  for (const row of photo.rows) {
+    for (const part of row) share.set(part.step, (share.get(part.step) ?? 0) + part.weight / photo.rows.length);
+  }
+  let step: number | null = null;
+  for (const [s, w] of share) if (w > 0.5) step = s;
+  return step;
+}
+
+/**
  * Exact observations for the isolated complement check: `{ordinal, mean: lit,
  * litFraction: lit}` with EXPERIMENT-8's lit fractions.
  *
  * Two footings, always both reported:
  *
  *   - `'content'` (primary, EXPERIMENT-8's footing extended to blends): the kind
- *     of the part that held more than half the exposure. A photograph with no
- *     such part — an exact 0.5/0.5 tie, or a split three ways — takes its filed
- *     step's kind. Under a rolling readout a part's share is its weight averaged
- *     over the rows, which is its share of the photograph's integrated light-time.
+ *     of the step the photograph shows ({@link contentStep}). A photograph with
+ *     no majority step takes its filed step's kind.
  *   - `'filed'` (secondary): the kind of the filed step, whatever was integrated.
  *
  * Ordinals are positions in `photos`, so fingerprints must carry the same.
  */
 export function oracleObservations(photos: readonly Photo[], footing: 'content' | 'filed'): FrameObservation[] {
   return photos.map((photo, ordinal) => {
-    let step = photo.filedStep;
-    if (footing === 'content') {
-      const share = new Map<number, number>();
-      for (const row of photo.rows) {
-        for (const part of row) share.set(part.step, (share.get(part.step) ?? 0) + part.weight / photo.rows.length);
-      }
-      for (const [s, w] of share) if (w > 0.5) step = s;
-    }
+    const step = footing === 'content' ? (contentStep(photo) ?? photo.filedStep) : photo.filedStep;
     const lit = ORACLE_LIT[stepKind(step)];
     return { ordinal, mean: lit, litFraction: lit };
   });
+}
+
+/**
+ * How a run the page placed files what its photographs show.
+ *
+ * The run is projector `projector`'s, placed at folder photographs `start` to
+ * `start + 33`, so photograph `start + f` is filed as step `34·projector + f`.
+ * It is a content misfile when it shows another step ({@link contentStep}),
+ * the dark after the last step included, and ambiguous, counted apart and
+ * never a misfile, when it shows no step by a majority.
+ *
+ * Against what the photographs show, not against the folder's order: a late
+ * emitter can leave every photograph of a run wholly on the step before the one
+ * it is filed as, and a reader that finds the run one photograph early is then
+ * right about every one of them.
+ */
+export function runFiling(
+  photos: readonly Photo[],
+  projector: number,
+  start: number,
+): { misfiles: number; ambiguous: number } {
+  if (!(Number.isInteger(start) && start >= 0 && start + FRAMES_PER_RUN <= photos.length)) {
+    throw new Error(`runFiling: a run of ${FRAMES_PER_RUN} cannot start at photograph ${start} of ${photos.length}`);
+  }
+  let misfiles = 0;
+  let ambiguous = 0;
+  for (let f = 0; f < FRAMES_PER_RUN; f++) {
+    const shows = contentStep(photos[start + f]);
+    if (shows === null) ambiguous++;
+    else if (shows !== projector * FRAMES_PER_RUN + f) misfiles++;
+  }
+  return { misfiles, ambiguous };
 }
 
 /**

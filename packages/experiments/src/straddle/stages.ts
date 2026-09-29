@@ -91,6 +91,7 @@ import {
   indexPhotographs,
   readRun,
   summarisePhoto,
+  type IndexedCapture,
   type PhotoSummary,
 } from '../../../web/src/readback.ts';
 import {
@@ -167,6 +168,7 @@ import {
   quarterMasses,
   reconcileShots,
   runCrossing,
+  runFiling,
   runPlaced,
   runVerdicts,
   straddleForCamera,
@@ -195,7 +197,12 @@ import {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 
-export const CHECKPOINT_SCHEMA = 'sphere-sim/experiment-10-checkpoint@1';
+/**
+ * The shape a checkpoint's units have. @2: a scored position's `page` is a
+ * {@link PagePosition}, the page's whole reading of it, where @1 kept the
+ * projectors placed and the problems alone.
+ */
+export const CHECKPOINT_SCHEMA = 'sphere-sim/experiment-10-checkpoint@2';
 
 export const STAGES = [
   'q0',
@@ -867,6 +874,24 @@ function runPrints(images: readonly LinearImage[], projector: number): FrameFing
   return images.map((img, f) =>
     fingerprint(img, projector * FRAMES_PER_RUN + f, FINGERPRINT_BLOCKS),
   );
+}
+
+/**
+ * One run's frames as the page reads a folder of them: each encoded to 8-bit
+ * sRGB as a camera file would carry it and summarised as the folder's
+ * photograph `34·projector + f`, under the name the page would show.
+ */
+function runSummaries(images: readonly LinearImage[], projector: number): PhotoSummary[] {
+  return images.map((img, f) => {
+    const j = projector * FRAMES_PER_RUN + f;
+    return summarisePhoto(
+      encodeSrgb8(img, ENCODE_FULL_SCALE),
+      j,
+      photoName(j),
+      TRANSFER,
+      FINGERPRINT_BLOCKS,
+    );
+  });
 }
 
 /**
@@ -3265,8 +3290,121 @@ export interface PositionScore {
    */
   assignment: (number | null)[] | null;
   /** The page's own reader on the whole position, where Q0 said it could place anything. */
-  page: { placed: number[]; problems: string[] } | null;
+  page: PagePosition | null;
   decodes: RunDecode[];
+}
+
+/**
+ * The page's own reader on one camera position: what `indexPhotographs` made
+ * of its 136 photographs, kept whole enough that the document can tell a
+ * placed run from a refused one and from a note, count what a placed run files
+ * under the wrong step, and compare where the page placed a run with where the
+ * counterfactual did.
+ *
+ * Every array but `unseen`, `barelySeen`, `problems` and `notes` is one entry
+ * per placed run, in the order of `placed`.
+ */
+export interface PagePosition {
+  /** Every run this camera could see was placed and nothing refused (`IndexedCapture.ok`). */
+  ok: boolean;
+  /** Projectors whose runs the page placed, ascending. */
+  placed: number[];
+  /** Each placed run's first photograph in the folder: the run is the 34 from there. */
+  starts: number[];
+  /**
+   * `starts[i] - 34·placed[i]`: 0 where the page placed the run where the folder
+   * files it, and otherwise how many photographs from there. A departure from
+   * the folder's order, which is not a misfile when the photographs show the
+   * steps they were placed as: see `contentMisfiles`.
+   */
+  offsets: number[];
+  /**
+   * Photographs of the run filed under another step than the one holding more
+   * than half their exposure ({@link runFiling}).
+   */
+  contentMisfiles: number[];
+  /** Photographs of the run with no majority step: counted apart, and never a misfile. */
+  ambiguous: number[];
+  /** Projectors noted out of this camera's view, and barely seen: notes, never refusals. */
+  unseen: number[];
+  barelySeen: number[];
+  /** Runs read from a re-shoot added to the folder. */
+  reshoots: number;
+  /**
+   * What the operator is told, verbatim, and what was noticed and stopped
+   * nothing. Kept in the checkpoint only: the document classifies the words
+   * and copies none per position.
+   */
+  problems: string[];
+  notes: string[];
+  /** What the reader threw on this folder, or null where it read it. See {@link pageRecord}. */
+  crash: string | null;
+}
+
+/**
+ * The page's reading of one position, as a {@link PagePosition}. `read` hands
+ * the page's own calls their photographs — `summarisePhoto` on each, then
+ * `indexPhotographs` — and whatever they throw is recorded as the position's
+ * `crash` rather than raised: a straddled folder is input the reader was never
+ * built against, and a throw on one position must not stop a stage hours in,
+ * with every rig after it unmeasured. So is a placed run that is not 34
+ * photographs in a row, which is how `indexPosition` places every run and the
+ * only shape `starts` and `offsets` can describe.
+ *
+ * `photos` are what the folder's photographs integrated, photograph `j` filed
+ * as step `j`, for {@link runFiling}. Nothing here classifies the page's words:
+ * `reasonOf` throws on a sentence it does not know, so the document classifies
+ * them after the run, where a new sentence costs a re-assembly and not a stage.
+ */
+export function pageRecord(read: () => IndexedCapture, photos: readonly Photo[]): PagePosition {
+  try {
+    const indexed = read();
+    const record: PagePosition = {
+      ok: indexed.ok,
+      placed: [],
+      starts: [],
+      offsets: [],
+      contentMisfiles: [],
+      ambiguous: [],
+      unseen: [...indexed.unseen],
+      barelySeen: [...indexed.barelySeen],
+      reshoots: indexed.reshoots.length,
+      problems: [...indexed.problems],
+      notes: [...indexed.notes],
+      crash: null,
+    };
+    for (const r of indexed.runs) {
+      const start = r.ordinals[0];
+      if (r.ordinals.length !== FRAMES_PER_RUN || r.ordinals.some((j, f) => j !== start + f)) {
+        throw new Error(
+          `the page placed projector ${r.projector + 1}'s run at photographs ` +
+            `${r.ordinals.map((j) => j + 1).join(', ')}, not ${FRAMES_PER_RUN} in a row`,
+        );
+      }
+      const filing = runFiling(photos, r.projector, start);
+      record.placed.push(r.projector);
+      record.starts.push(start);
+      record.offsets.push(start - r.projector * FRAMES_PER_RUN);
+      record.contentMisfiles.push(filing.misfiles);
+      record.ambiguous.push(filing.ambiguous);
+    }
+    return record;
+  } catch (e) {
+    return {
+      ok: false,
+      placed: [],
+      starts: [],
+      offsets: [],
+      contentMisfiles: [],
+      ambiguous: [],
+      unseen: [],
+      barelySeen: [],
+      reshoots: 0,
+      problems: [],
+      notes: [],
+      crash: e instanceof Error ? e.message : String(e),
+    };
+  }
 }
 
 export interface CaptureScore {
@@ -3308,25 +3446,14 @@ function pagePath(
   c: number,
   photos: readonly Photo[],
   touched: readonly number[],
-): { placed: number[]; problems: string[] } {
-  const summaries: PhotoSummary[] = [];
-  for (let q = 0; q < PROJECTORS; q++) {
-    const frames = fastRun(rc.bank, c, q, touched.includes(q) ? photos : CLEAN);
-    frames.forEach((img, f) => {
-      const j = q * FRAMES_PER_RUN + f;
-      summaries.push(
-        summarisePhoto(
-          encodeSrgb8(img, ENCODE_FULL_SCALE),
-          j,
-          photoName(j),
-          TRANSFER,
-          FINGERPRINT_BLOCKS,
-        ),
-      );
-    });
-  }
-  const indexed = indexPhotographs(summaries, MANIFEST);
-  return { placed: indexed.runs.map((r) => r.projector), problems: indexed.problems };
+): PagePosition {
+  const frames = Array.from({ length: PROJECTORS }, (_, q) =>
+    fastRun(rc.bank, c, q, touched.includes(q) ? photos : CLEAN),
+  );
+  return pageRecord(
+    () => indexPhotographs(frames.flatMap((images, q) => runSummaries(images, q)), MANIFEST),
+    photos,
+  );
 }
 
 /**

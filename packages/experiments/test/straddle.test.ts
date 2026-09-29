@@ -2429,3 +2429,93 @@ test('T40 Q0 photographs a camera alone with the noise its twin is built from', 
   const unkeyed = agreement(photographAlone('position'));
   assert.ok(unkeyed.share < 0.5, `keyed by position, camera ${c} still matched its twin on ${(100 * unkeyed.share).toFixed(2)}%: this test cannot see the key`);
 });
+
+// ---------------------------------------------------------------------------
+// T41-: the page column's record of a straddled position
+// ---------------------------------------------------------------------------
+
+test('T41 a run the page places is judged by what its photographs show, and a reader that throws is recorded, not raised', async () => {
+  // The page finds a run by what its frames show, so under a late emitter it
+  // can place a run one photograph early and be right about every photograph
+  // in it. Counted against the folder's order that is 34 misfiles; counted
+  // against what each photograph shows, none. The page column counts the
+  // second, by `contentStep`, the same rule the counterfactual's content
+  // footing reads kinds by, so the two cannot disagree about what a photograph
+  // is. A photograph that shows no step by a majority is neither right nor
+  // wrong, and the dark after the last step is no run's frame.
+  const { contentStep, pageParts, runFiling } = await import('../src/straddle/run.ts');
+  const { pageRecord } = await import('../src/straddle/stages.ts');
+  const photo = (filedStep: number, ...rows: { step: number; weight: number }[][]): Photo => ({
+    filedStep,
+    rows: rows.map((r) => pageParts(r, STEPS)),
+  });
+  assert.equal(contentStep(photo(5, [{ step: 5, weight: 0.6 }, { step: 6, weight: 0.4 }])), 5);
+  assert.equal(contentStep(photo(5, [{ step: 5, weight: 0.4 }, { step: 6, weight: 0.6 }])), 6);
+  assert.equal(contentStep(photo(5, [{ step: 5, weight: 0.5 }, { step: 6, weight: 0.5 }])), null, 'a tie is a majority');
+  assert.equal(contentStep(photo(5, [{ step: 4, weight: 0.3 }, { step: 5, weight: 0.4 }, { step: 6, weight: 0.3 }])), null, 'a three-way split is a majority');
+  assert.equal(contentStep(photo(135, [{ step: 135, weight: 0.2 }, { step: 136, weight: 0.8 }])), STEPS.length, 'the dark is not a step');
+  // Rolling rows: a part's share is its weight averaged over the rows.
+  assert.equal(contentStep(photo(5, [{ step: 5, weight: 1 }], [{ step: 6, weight: 1 }], [{ step: 6, weight: 1 }])), 6);
+  assert.equal(contentStep(photo(5, [{ step: 5, weight: 1 }], [{ step: 6, weight: 1 }])), null);
+  // The content footing reads its kinds by the same rule, the filed step where there is none.
+  for (const photos of [designedPhotos('forward', () => 0.7, 1), designedPhotos('backward', () => 0.5, 1), designedPhotos('forward', (row) => [0.3, 0.45, 0.6, 0.75][row], 4)]) {
+    const kinds = oracleObservations(photos, 'content').map((o) => o.litFraction);
+    assert.deepEqual(kinds, photos.map((ph) => oracleObservations([{ ...ph, filedStep: contentStep(ph) ?? ph.filedStep }], 'filed')[0].litFraction));
+  }
+
+  // A run placed where the folder files it, on the clean position: nothing misfiled.
+  const p = 1;
+  assert.deepEqual(runFiling(CLEAN, p, p * FRAMES_PER_RUN), { misfiles: 0, ambiguous: 0 });
+  // Forward at 0.95 every photograph shows the step after its own, so the run
+  // the page can find starts one photograph early, and there it misfiles none.
+  const late = designedPhotos('forward', () => 0.95, 1);
+  assert.deepEqual(runFiling(late, p, p * FRAMES_PER_RUN - 1), { misfiles: 0, ambiguous: 0 });
+  assert.deepEqual(runFiling(late, p, p * FRAMES_PER_RUN), { misfiles: FRAMES_PER_RUN, ambiguous: 0 });
+  // At 0.5 no photograph shows a step: all ambiguous, none misfiled.
+  assert.deepEqual(runFiling(designedPhotos('forward', () => 0.5, 1), p, p * FRAMES_PER_RUN), { misfiles: 0, ambiguous: FRAMES_PER_RUN });
+  // A photograph of the dark filed in a run is a misfile.
+  const darkLast = CLEAN.map((ph, j) => (j === STEPS.length - 1 ? photo(j, [{ step: STEPS.length, weight: 1 }]) : ph));
+  assert.deepEqual(runFiling(darkLast, PROJECTORS - 1, (PROJECTORS - 1) * FRAMES_PER_RUN), { misfiles: 1, ambiguous: 0 });
+
+  // The record, from an IndexedCapture written by hand.
+  const run = (projector: number, start: number) => ({ projector, ordinals: Array.from({ length: FRAMES_PER_RUN }, (_, f) => start + f) });
+  const indexed = (runs: { projector: number; ordinals: number[] }[]) => ({
+    ok: true,
+    runs,
+    problems: ['a problem'],
+    notes: ['a note'],
+    unseen: [3],
+    barelySeen: [0],
+    reshoots: [],
+    mechanism: 'position' as const,
+    total: STEPS.length,
+    placed: FRAMES_PER_RUN * runs.length,
+  });
+  const got = pageRecord(() => indexed([run(1, 33), run(2, 68)]), late);
+  assert.deepEqual(got, {
+    ok: true,
+    placed: [1, 2],
+    starts: [33, 68],
+    offsets: [-1, 0],
+    contentMisfiles: [0, FRAMES_PER_RUN],
+    ambiguous: [0, 0],
+    unseen: [3],
+    barelySeen: [0],
+    reshoots: 0,
+    problems: ['a problem'],
+    notes: ['a note'],
+    crash: null,
+  });
+  // A run that is not 34 photographs in a row is a crash, not a record.
+  const gapped = run(1, 34);
+  gapped.ordinals[20] = 100;
+  const broken = pageRecord(() => indexed([gapped]), CLEAN);
+  assert.match(broken.crash ?? '', /projector 2's run at photographs .* not 34 in a row/);
+  assert.deepEqual([broken.placed, broken.problems, broken.ok], [[], [], false]);
+  // A reader that throws on a folder stops nothing: the position records it.
+  const thrown = pageRecord(() => {
+    throw new Error('a folder this reader was never built against');
+  }, CLEAN);
+  assert.equal(thrown.crash, 'a folder this reader was never built against');
+  assert.deepEqual(Object.keys(thrown).sort(), Object.keys(got).sort());
+});
