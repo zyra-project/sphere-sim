@@ -1924,20 +1924,25 @@ test('a numbering leaves a projector for every run found after a stretch that is
   // whole runs, the re-shoot after it one of the later projectors — of which
   // there were none. Projector 3 was filed as projector 4, decoded, in 30 of
   // the review's 180 folders. The runs after such a stretch are the position's
-  // later projectors, so the numbering has to leave one for each.
+  // later projectors, so the numbering has to leave one for each. With
+  // projector 4's black dropped, its spoiled run is no pass of the re-shoot —
+  // a pass begins with the run's white and black — so the stretch before the
+  // re-shoot is counted as it stands, and five dark photographs after it leave
+  // it short of whole runs.
   const expected = expectedOf(PAGE);
   const R = 34;
   const dark = (k: number): Shot[] => Array.from({ length: k }, (): Shot => null);
   const white = (p: number): Shot => ({ projector: p, frame: 0 });
   const s = scene(PAGE, 64, { azimuth: 300, elevation: 40, distance: 2.5 });
-  for (const [how, at] of [
-    ['doubled', 5],
-    ['dropped', 17],
+  for (const [how, at, between] of [
+    ['doubled', 5, 3],
+    ['dropped', 17, 3],
+    ['dropped', 1, 5],
   ] as const) {
     const p4 = run(s, 3);
     if (how === 'doubled') p4.splice(at, 0, p4[at]);
     else p4.splice(at, 1);
-    const shots = [white(0), white(0), ...run(s, 0), ...dark(R + 31), ...run(s, 2), ...p4, ...dark(3), ...run(s, 3), ...dark(3)];
+    const shots = [white(0), white(0), ...run(s, 0), ...dark(R + 31), ...run(s, 2), ...p4, ...dark(between), ...run(s, 3), ...dark(3)];
     const { prints, truth } = camera(s, 7700 + at)(shots);
     const r = indexPosition(prints, expected);
     const label = `projector 2 paused 31 in its run, projector 4's photograph ${at + 1} ${how}, and re-shot`;
