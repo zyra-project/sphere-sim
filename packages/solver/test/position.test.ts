@@ -1895,6 +1895,138 @@ test("a test shot of a projector's white says nothing about where that projector
   assert.equal(folders, 14);
 });
 
+test('a test shot of any frame, at any exposure, says nothing about where a run belongs', () => {
+  // Review C. A focus shot of a projector's stripes, or its white a stop
+  // under, taken while the camera was set up and kept as the card says, was
+  // taken for a photograph of that run found outside every run. Before the
+  // first slot every such copy counted as projector 1's, so a later
+  // projector's test shot refused a clean position as out of order — 1071 of
+  // the 1638 folders of the review's sweep on the cheap plan — and with
+  // projector 1 out of view and 30 photographs before Play the one reading
+  // left took the last run for projector 1's re-shoot and filed every run a
+  // projector over, the page saying all was well. And a white a stop under
+  // reads a half in every block, as a phase step and the finest Gray planes do
+  // at the page's grid: it copied them. Now a copy before the first slot names
+  // no slot, and a frame that reads flat across the crescent is no frame a
+  // copy can be told by.
+  const expected = expectedOf(PAGE);
+  const FINEST_U = 2 + 2 * (PAGE.grayBits - 1);
+  const MID_U = 2 + 2 * 3;
+  const PHASE_U = 2 + 4 * PAGE.grayBits;
+  /** Photographs `at` taken at `gain` times the exposure of the rest. */
+  const exposed = (photos: Photos, at: ReadonlyMap<number, number>): Photos =>
+    relit(photos, (values, i) => {
+      const gain = at.get(i);
+      if (gain !== undefined) for (let k = 0; k < values.length; k++) values[k] *= gain;
+    });
+  const read = (photos: Photos): { r: ReturnType<typeof indexPosition>; wrong: number } => {
+    const r = indexPosition(photos.prints, expected);
+    return { r, wrong: misplaced(r.assignment, photos.truth) };
+  };
+  let folders = 0;
+  for (const [azimuth, seen] of [
+    [0, [0, 1, 2, 3]],
+    [250, [1, 2, 3]],
+  ] as const) {
+    const s = scene(PAGE, 64, { azimuth });
+    const unseen = [0, 1, 2, 3].filter((p) => !seen.includes(p as never));
+    const shoot = camera(s, 7100 + azimuth);
+    for (const q of seen.filter((p) => p > 0)) {
+      const shots: [string, Shot[], number[]][] = [
+        ['its white a stop under, then at the exposure', [{ projector: q, frame: 0 }, { projector: q, frame: 0 }], [0.5, 1]],
+        ['its finest Gray plane', [{ projector: q, frame: FINEST_U }], [1]],
+        ['a Gray plane the grid resolves, twice', [{ projector: q, frame: MID_U }, { projector: q, frame: MID_U }], [1, 1]],
+        ['a phase step', [{ projector: q, frame: PHASE_U }], [1]],
+      ];
+      for (const [what, tests, gains] of shots) {
+        for (const leading of [2, 26]) {
+          const photos = exposed(
+            shoot([...tests, ...position(s, { unseen, leading, trailing: 3 })]),
+            new Map(gains.map((g, i) => [i, g])),
+          );
+          const { r, wrong } = read(photos);
+          const label = `azimuth ${azimuth}, a test shot of projector ${q + 1}'s ${what}, ${leading} before Play`;
+          folders++;
+          assert.equal(wrong, 0, `${label}: filed wrong`);
+          assert.deepEqual(r.problems, [], label);
+          assert.deepEqual(r.usableProjectors, [...seen], label);
+        }
+      }
+    }
+  }
+  assert.equal(folders, 48);
+
+  // Projector 1 out of view, 30 photographs before Play: with the test shot,
+  // more than a run's worth of photographs lie before the first run, which a
+  // numbering a projector over also fits. Refused, never read that way.
+  {
+    const s = scene(PAGE, 64, { azimuth: 250 });
+    const shoot = camera(s, 7200);
+    for (const [tests, gains] of [
+      [[{ projector: 3, frame: FINEST_U }], [1]],
+      [[{ projector: 3, frame: 0 }, { projector: 3, frame: 0 }], [0.5, 1]],
+    ] as [Shot[], number[]][]) {
+      for (const trailing of [0, 3]) {
+        const photos = exposed(
+          shoot([...tests, ...position(s, { unseen: [0], leading: 30, trailing })]),
+          new Map(gains.map((g, i) => [i, g])),
+        );
+        const { r, wrong } = read(photos);
+        assert.equal(wrong, 0, `30 before Play, ${trailing} after: filed wrong`);
+        assert.equal(r.ok, false);
+      }
+    }
+  }
+
+  // The page's remedy walked end to end with such test shots kept at the head:
+  // projector 2's run spoiled by a doubled photograph is refused by name, its
+  // re-shoot added as the page says is used, and so is the position shot again.
+  {
+    const s = scene(PAGE, 64, { azimuth: 0 });
+    const shoot = camera(s, 7300);
+    const tests: Shot[] = [{ projector: 1, frame: 0 }, { projector: 1, frame: 0 }];
+    const gains = new Map([[0, 0.5]]);
+    const pre: Shot[] = [{ projector: 0, frame: 0 }, { projector: 0, frame: 0 }];
+    const doubled = run(s, 1);
+    doubled.splice(20, 0, doubled[20]);
+    const dark: Shot[] = [null, null, null];
+    const spoilt = [...tests, ...pre, ...run(s, 0), ...doubled, ...run(s, 2), ...run(s, 3), ...dark];
+    const first = read(exposed(shoot(spoilt), gains));
+    assert.equal(first.wrong, 0);
+    assert.deepEqual(first.r.usableProjectors, [0, 2, 3]);
+    assert.ok(first.r.problems.every((x) => x.includes('Re-shoot projector 2.')), first.r.problems.join(' | '));
+    const remedy: Shot[] = [{ projector: 1, frame: 0 }, { projector: 1, frame: 0 }, ...run(s, 1), ...run(s, 2), ...run(s, 3), ...dark];
+    const second = read(exposed(shoot([...spoilt, ...remedy]), gains));
+    assert.equal(second.wrong, 0);
+    assert.deepEqual(second.r.problems, [], 'the re-shoot added as the page says');
+    assert.deepEqual(second.r.usableProjectors, [0, 1, 2, 3]);
+    assert.ok(second.r.reshoots.some((x) => x.projector === 1 && x.used >= spoilt.length), JSON.stringify(second.r.reshoots));
+    const again = read(exposed(shoot([...tests, ...pre, ...run(s, 0), ...run(s, 1), ...run(s, 2), ...run(s, 3), ...dark]), gains));
+    assert.equal(again.wrong, 0);
+    assert.deepEqual(again.r.problems, [], 'the position shot again with the same test shots');
+    assert.deepEqual(again.r.usableProjectors, [0, 1, 2, 3]);
+
+    // The exposure checked again, a stop under, just before the re-shoot: a
+    // photograph a few after the position's last run, where it named the last
+    // projector's place as well as the lost original's, and the re-shoot was
+    // refused as copying photographs of more than one projector.
+    for (const q of [1, 2]) {
+      for (const gap of [0, 1, 2]) {
+        const lost = position(s, { leading: 2, trailing: gap });
+        lost.splice(2 + q * 34 + 6, 1);
+        const replay: Shot[] = [];
+        for (let p = q; p < 4; p++) replay.push(...run(s, p));
+        const shots = [...lost, { projector: q, frame: 0 }, { projector: q, frame: 0 }, ...replay, ...dark];
+        const { r, wrong } = read(exposed(shoot(shots), new Map([[lost.length, 0.5]])));
+        const label = `projector ${q + 1} lost and re-shot, its white a stop under ${gap} after the position`;
+        assert.equal(wrong, 0, label);
+        assert.deepEqual(r.problems, [], label);
+        assert.ok(r.reshoots.some((x) => x.projector === q), `${label}: ${JSON.stringify(r.reshoots)}`);
+      }
+    }
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Test 8g — what a refusal says
 // ---------------------------------------------------------------------------

@@ -1613,6 +1613,39 @@ function copiesFrame(f: FrameFingerprint, g: FrameFingerprint, w: RunWindow): bo
 }
 
 /**
+ * Whether frame `g` of run `w` reads flat across the crescent: within what
+ * {@link copiesFrame} allows a copy of the run's own white dimmed to the level
+ * that comes nearest it — the modulation-weighted median of `g`'s level, block
+ * by block. That dimmed white is a test shot of the exposure, and it copies
+ * `g`, so a copy of `g` says nothing about which frame or which run a
+ * photograph is. A phase step at a fringe finer than the fingerprint's blocks
+ * reads a half in every block, and so does the finest Gray plane at the page's
+ * grid: a white a stop under copies either.
+ */
+function readsFlat(g: FrameFingerprint, w: RunWindow): boolean {
+  const levels: { level: number; m: number }[] = [];
+  for (const i of w.crescent) {
+    if (!usableBlock(g, i)) continue;
+    const b = w.black.values[i];
+    const m = w.white.values[i] - b;
+    levels.push({ level: (g.values[i] - b) / m, m });
+  }
+  levels.sort((a, b) => a.level - b.level);
+  let total = 0;
+  for (const { m } of levels) total += m;
+  let below = 0;
+  let median = 0;
+  for (const { level, m } of levels) {
+    below += m;
+    median = level;
+    if (below >= total / 2) break;
+  }
+  let deviation = 0;
+  for (const { level, m } of levels) deviation += m * Math.abs(level - median);
+  return deviation <= COMPLEMENT_LIMIT * w.modulation;
+}
+
+/**
  * Two runs with the same references: the same projector, photographed from the
  * same place. {@link complementResidual} with one run's white and black as the
  * pair and the other's as the reference, both ways round, each within
@@ -2029,16 +2062,23 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * runs found as re-shoots added after the position, for every `t`, each with
  * every first projector the ends allow — and keeping those that fit: the
  * position's runs numbered, each re-shoot matched or past the position's end,
- * and no run copied by photographs in another projector's place (photographs
- * before the first run that copy a later run's white are test shots of the
- * exposure, noted and set aside). Content alone would do on a sphere; counting
- * alone would file a re-shoot whose projectors in between were out of view
- * under one of them. When the readings that fit disagree about a run, none is
- * used. A reading whose count has a stretch that is not whole runs is set aside
- * for one without — a re-shoot added after the position always leaves such a
- * stretch before it, read as the position's — except where that one takes a run
- * it cannot match for a re-shoot after the position's end: then both are asked,
- * since that is also how a genuine run looks once the count has put it there.
+ * and no run copied by photographs in another projector's place. A copy says
+ * where a run belongs only inside a slot, and only of a frame with a pattern at
+ * the fingerprint's resolution: a frame that reads flat across the crescent —
+ * a phase step, and on the page's plan the finest Gray planes — is copied by
+ * a white at another exposure. Before the first slot the camera was being set
+ * up, and the few photographs there that copy a run are test shots, of any
+ * frame at any exposure, set aside; more than {@link SLOT_SLACK} copying one
+ * run are that run played, and name the first slot, since before Play the page
+ * plays only the first projector's run. Content alone would do on a sphere;
+ * counting alone would file a re-shoot whose projectors in between were out of
+ * view under one of them. When the readings that fit disagree about a run, none
+ * is used. A reading whose count has a stretch that is not whole runs is set
+ * aside for one without — a re-shoot added after the position always leaves
+ * such a stretch before it, read as the position's — except where that one
+ * takes a run it cannot match for a re-shoot after the position's end: then
+ * both are asked, since that is also how a genuine run looks once the count has
+ * put it there.
  *
  * ## What it still refuses, and what it cannot see
  *
@@ -2271,13 +2311,20 @@ export function indexPosition(
   // Copies of j's white straight before it are its pre-roll, and every copy of
   // its white before the first run found is the page's step 0 shown before
   // Play, for the first run, or a test shot of the exposure, for a later one —
-  // neither says where run j belongs.
-  /** Each run's frames a copy of it would show: its white, and the pairs and phase steps that light its crescent. */
-  const distinctiveOf = found.map((w) =>
-    [...new Set([whiteAt, ...pairs.flat(), ...phases.flat()])]
+  // neither says where run j belongs. Nor does a copy of a frame that reads
+  // flat across the crescent: a test shot of any projector's white at another
+  // exposure copies it, and on the page's plan a white a stop under copies
+  // every phase step and the finest Gray planes.
+  /**
+   * Each run's frames a copy of it would show: its white, and the pairs and
+   * phase steps that light its crescent in a pattern no dimmed white copies.
+   */
+  const distinctiveOf = found.map((w) => [
+    w.white,
+    ...[...new Set([...pairs.flat(), ...phases.flat()])]
       .map((f) => fingerprints[w.start + f])
-      .filter((g) => levelOn(g, w) >= BLACK_CUT),
-  );
+      .filter((g) => levelOn(g, w) >= BLACK_CUT && !readsFlat(g, w)),
+  ]);
   const evidence: number[][] = found.map((w, j) => {
     let firstOwn = w.start;
     while (firstOwn > 0 && copiesFrame(fingerprints[firstOwn - 1], w.white, w)) firstOwn--;
@@ -2584,8 +2631,25 @@ export function indexPosition(
       const r = range[q];
       if (r !== null && x >= r.from && x < r.to) return q;
     }
-    // Before the first slot is the pre-roll, which shows projector 1's white.
-    return range[0] !== null && x < range[0].from ? 0 : null;
+    return null;
+  };
+  /**
+   * The slot a photograph copying run j's frames names in a reading: the one it
+   * lies in, or none. Before the first slot the page showed step 0 while the
+   * camera was set up, and a few copies there are test shots, which say nothing
+   * about where run j belongs — a focus shot of its stripes, a test of the
+   * exposure. More than {@link SLOT_SLACK} of them are run j played, and before
+   * the position the page plays only the first projector's run — step 0 is its
+   * white, and Play starts from it — so they name the first slot: an attempt at
+   * that run the page was stepped back from or, in a reading that has put run j
+   * somewhere else, its original. A broken first run's own photographs lie
+   * inside the first slot, and name it as they stand.
+   */
+  const slotOfCopy = (range: Reading['range'], j: number, x: number): number | null => {
+    const q = slotIn(range, x);
+    const first = range[0];
+    if (q !== null || first === null || x >= first.from) return q;
+    return evidence[j].filter((y) => y < first.from).length > SLOT_SLACK ? 0 : null;
   };
   const matchTail = (
     tail: readonly RunWindow[],
@@ -2619,7 +2683,7 @@ export function indexPosition(
           .map((x) => {
             const slots = new Set<number>();
             for (let d = -SLOT_SLACK; d <= SLOT_SLACK; d++) {
-              const q = slotIn(where.range, x + d);
+              const q = slotOfCopy(where.range, j, x + d);
               if (q !== null) slots.add(q);
             }
             return slots;
@@ -2745,14 +2809,14 @@ export function indexPosition(
       const matched = matchTail(tail, where);
       if (matched === null) continue;
       // A run of the position is where the photographs copying it are, or
-      // those photographs are its pre-roll or test shots of its white: a run
-      // copied in another projector's place is a re-shoot or a folder out of
-      // order, never two projectors.
+      // those photographs are its pre-roll or test shots: a run copied in
+      // another projector's place is a re-shoot or a folder out of order, never
+      // two projectors.
       const misplacedCopy = found.slice(0, t).some((w, j) => {
         const q = where.slotOf.get(w);
         if (q === undefined || where.inLine.has(w)) return false;
         return evidence[j].some((x) => {
-          const o = slotIn(where.range, x);
+          const o = slotOfCopy(where.range, j, x);
           return o !== null && o !== q;
         });
       });
