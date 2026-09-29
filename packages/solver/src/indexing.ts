@@ -2947,7 +2947,8 @@ export function indexPosition(
       }
     };
     const numbered1 = c.pass1.slice(0, c.numberedCount);
-    // Before the first run the slots are laid back from it.
+    // Before the first run the slots are laid back from it, the first slot
+    // first: slotOfCopy takes laid[0] for it.
     const first = numbered1[0];
     for (let q = 0; q < a0; q++) {
       place(q, Math.max(0, first.start - (a0 - q) * runLength), Math.max(0, first.start - (a0 - q - 1) * runLength));
@@ -2988,14 +2989,16 @@ export function indexPosition(
    * white, and Play starts from it — so they name the first slot: an attempt at
    * that run the page was stepped back from or, in a reading that has put run j
    * somewhere else, its original. A broken first run's own photographs lie
-   * inside the first slot, and name it as they stand.
+   * inside the first slot, and name it as they stand. Every slot before the
+   * first run found is laid back from it, the first of them first, so a
+   * photograph in no slot lies before the first slot only if it lies before
+   * that run: one between two passes of the page, or past the position's end,
+   * names none.
    */
   const slotOfCopy = (laid: Reading['laid'], j: number, x: number): number | null => {
     const q = slotIn(laid, x);
-    if (q !== null || laid.length === 0) return q;
-    const x0 = Math.min(...laid.map((r) => r.from));
-    if (x >= x0) return null;
-    return framesCopiedBefore(j, x0) > SLOT_SLACK ? 0 : null;
+    if (q !== null || laid.length === 0 || x >= found[0].start) return q;
+    return framesCopiedBefore(j, laid[0].from) > SLOT_SLACK ? 0 : null;
   };
   const matchTail = (
     tail: readonly RunWindow[],
