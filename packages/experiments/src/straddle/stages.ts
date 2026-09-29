@@ -84,14 +84,16 @@ import {
   type FrameFingerprint,
   type IndexingResult,
 } from '../../../solver/src/indexing.ts';
-import { manifestFrameRoles } from '../../../web/src/manifest.ts';
+import { manifestExpectedSequence, manifestFrameRoles, type CaptureManifest } from '../../../web/src/manifest.ts';
 import {
+  CLIPPING_WORTH_SAYING,
   describeIndexing,
   finishCapture,
   indexPhotographs,
   readRun,
   summarisePhoto,
   type IndexedCapture,
+  type IndexedRun,
   type PhotoSummary,
 } from '../../../web/src/readback.ts';
 import {
@@ -1521,16 +1523,18 @@ function roundShift(s: Shift): Record<string, number | null> {
 }
 
 // ---------------------------------------------------------------------------
-// q0 — today's page, as shipped; Q0b — the card's own folder shapes
+// q0 — the page's reader on clean positions, and the reader it replaced;
+// Q0b — the card's own folder shapes, read by the counterfactual
 // ---------------------------------------------------------------------------
 
 /**
  * What made the page refuse, by the words `indexing.ts` and `readback.ts` write.
  *
  * The first eight are the bookends' and the complement check's, which the page
- * used when this experiment measured it and Q0b still calls. The rest are the
- * reader the page uses now, `indexPosition`: a projector's photographs lit with
- * no run found in them, a folder too short to be a position or the same
+ * used when this experiment first measured it, and which Q0's record of that
+ * reader ({@link replacedIndexPhotographs}) and Q0b still call. The rest are
+ * the reader the page uses now, `indexPosition`: a projector's photographs lit
+ * with no run found in them, a folder too short to be a position or the same
  * picture throughout, one with no run anywhere, runs whose projector numbers
  * cannot be told, a re-shoot that matches no projector or a second camera
  * position in the folder, and a plan the reader cannot read by. Its notes —
@@ -1609,7 +1613,17 @@ export interface Q0Position {
   ok: boolean;
   problems: string[];
   reasons: ReasonClass[];
-  /** `classify(litFractions(stats)).margin` over the whole position, as the page computes it. */
+  /** Projectors the page's reader noted out of this camera's view, and barely seen. */
+  unseen: number[];
+  barelySeen: number[];
+  /** What the page's reader noticed and stopped nothing, verbatim. */
+  notes: string[];
+  /**
+   * `classify(litFractions(stats)).margin` over the whole position: EXPERIMENT-8's
+   * capture-wide classification, on the page's own summaries. The reader the
+   * page had when this experiment first ran stopped at it (see `replaced`);
+   * the page's reader now never classifies a capture.
+   */
   margin: number;
   /** Frames the capture-wide classification calls the wrong kind. */
   wrongKinds: number;
@@ -1617,6 +1631,17 @@ export interface Q0Position {
   perRun: { projector: number; margin: number; wrongKinds: number }[];
   description: string;
   clippedWorst: number;
+  /**
+   * The reader the page had when this experiment first ran, on the same
+   * summaries: {@link replacedIndexPhotographs}.
+   */
+  replaced: {
+    ok: boolean;
+    placed: number;
+    runsPlaced: number[];
+    problems: string[];
+    reasons: ReasonClass[];
+  };
 }
 
 export interface Q0bShape {
@@ -1631,13 +1656,125 @@ export interface Q0bShape {
 export interface Q0Unit {
   positions: Q0Position[];
   shapes: Q0bShape[];
-  /** F9, on the first rig's camera 0 only: the worth report the page would print. */
+  /**
+   * F9, on the first rig's camera 0 only: the worth report the page's
+   * `finishCapture` makes of one folder read alone, every run cut where the
+   * truth puts it — the report the page printed while it read a camera
+   * position at a time. The page now reports over every position it holds,
+   * which this does not.
+   */
   worth: {
     usable: boolean;
     contributingCameras: number[];
     refusal: string | null;
     summary: string | null;
   } | null;
+}
+
+/**
+ * What `replacedIndexPhotographs` returns: `readback.ts`'s `IndexedCapture` as
+ * it was at 754147f.
+ */
+interface ReplacedIndexedCapture {
+  ok: boolean;
+  runs: IndexedRun[];
+  problems: string[];
+  mechanism: IndexingResult['mechanism'];
+  total: number;
+  placed: number;
+}
+
+/**
+ * The reader the page had when this experiment first ran: `readback.ts`'s
+ * `indexPhotographs` at 754147f, reproduced line for line. It classifies the
+ * whole capture into white, black and patterned (`litFractions`), finds each
+ * run between its bookends and puts it to the complement check
+ * (`indexByFingerprint`), turns the assignment back into runs, and, where it
+ * placed nothing, names a clipped photograph as a possible cause.
+ *
+ * Kept because Q0's record of this reader on the bench's clean positions is
+ * the finding the experiment's precondition, P6 and the documents that cite
+ * them were written from, and a re-run with the page's current reader would
+ * otherwise leave that record in no results file, only in git. Q0 hands it the
+ * summaries it hands the page's reader, so each position carries both
+ * verdicts, and the identity `RERUN_IDENTITIES` names I-replaced holds this one
+ * to the Q0 committed at 754147f. The page no longer calls it; nothing but Q0
+ * does.
+ *
+ * What it calls computes what it computed then, and `indexByFingerprint` does
+ * not read the phase steps the manifest's expected sequence has carried since.
+ */
+export function replacedIndexPhotographs(
+  summaries: readonly PhotoSummary[],
+  manifest: CaptureManifest,
+): ReplacedIndexedCapture {
+  const expected = manifestExpectedSequence(manifest);
+  const runLength = expected.kinds.length;
+  const total = summaries.length;
+
+  if (total === 0) {
+    return {
+      ok: false,
+      runs: [],
+      problems: [
+        'No photographs were handed in, so there is nothing to index. A camera position is ' +
+          `every projector's run shot back to back — ${expected.projectors} of them, ` +
+          `${runLength} frames each.`,
+      ],
+      mechanism: 'fingerprint',
+      total,
+      placed: 0,
+    };
+  }
+
+  const observations = litFractions(summaries.map((s) => s.stats));
+  const fingerprints = summaries.map((s) => s.fingerprint);
+  const result = indexByFingerprint(observations, fingerprints, expected);
+
+  // The assignment is a global frame number per photograph, turned back into
+  // runs as the inverse of `p * runLength + f`; a run the mechanism will not
+  // vouch for has every entry nulled already.
+  const byProjector = new Map<number, { ordinal: number; position: number }[]>();
+  let placed = 0;
+  for (let i = 0; i < result.assignment.length; i++) {
+    const frame = result.assignment[i];
+    if (frame === null) continue;
+    placed++;
+    const projector = Math.floor(frame / runLength);
+    const list = byProjector.get(projector) ?? [];
+    list.push({ ordinal: i, position: frame % runLength });
+    byProjector.set(projector, list);
+  }
+
+  const runs: IndexedRun[] = [...byProjector.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([projector, entries]) => ({
+      projector,
+      ordinals: entries.sort((a, b) => a.position - b.position).map((e) => e.ordinal),
+    }));
+
+  const problems = [...result.problems];
+  // Clipping is named only when nothing decoded, as a plausible cause of the
+  // refusal: `classify` loses its margin when the white frames clip.
+  if (runs.length === 0) {
+    let worst = 0;
+    let worstName = '';
+    for (const s of summaries) {
+      if (s.clippedHigh > worst) {
+        worst = s.clippedHigh;
+        worstName = s.name;
+      }
+    }
+    if (worst > CLIPPING_WORTH_SAYING) {
+      problems.push(
+        `While nothing here decoded: ${(100 * worst).toFixed(1)}% of ${worstName} is at the ` +
+          `sensor's ceiling. A clipped white frame is one the references cannot be told apart ` +
+          `by, so an overexposed capture and an unreadable one look the same from here.`,
+      );
+    }
+  }
+
+  return { ok: result.ok, runs, problems, mechanism: result.mechanism, total, placed };
 }
 
 function q0Position(
@@ -1647,6 +1784,7 @@ function q0Position(
   summaries: readonly PhotoSummary[],
 ): Q0Position {
   const indexed = indexPhotographs(summaries, MANIFEST);
+  const replaced = replacedIndexPhotographs(summaries, MANIFEST);
   const stats = summaries.map((s) => s.stats);
   const whole = classify(litFractions(stats));
   const perRun = [];
@@ -1668,11 +1806,21 @@ function q0Position(
     ok: indexed.ok,
     problems: indexed.problems,
     reasons: indexed.problems.map(reasonOf),
+    unseen: indexed.unseen,
+    barelySeen: indexed.barelySeen,
+    notes: indexed.notes,
     margin: whole.margin,
     wrongKinds: whole.kinds.filter((kind, j) => kind !== EXPECTED.kinds[j % FRAMES_PER_RUN]).length,
     perRun,
     description: describeIndexing(indexed, PROJECTORS),
     clippedWorst: Math.max(...summaries.map((s) => s.clippedHigh)),
+    replaced: {
+      ok: replaced.ok,
+      placed: replaced.placed,
+      runsPlaced: replaced.runs.map((r) => r.projector),
+      problems: replaced.problems,
+      reasons: replaced.problems.map(reasonOf),
+    },
   };
 }
 
@@ -1770,15 +1918,8 @@ export function stageQ0(ctx: RunContext): StageFile<Q0Unit> {
       q0CaptureOptions(bank, cameras, (i, p, capture) => {
         const c = cameras[i];
         const frames = planOrder(capture);
-        frames.forEach((img, f) => {
-          const j = p * FRAMES_PER_RUN + f;
-          (summaries.get(c) as PhotoSummary[])[j] = summarisePhoto(
-            encodeSrgb8(img, ENCODE_FULL_SCALE),
-            j,
-            photoName(j),
-            TRANSFER,
-            FINGERPRINT_BLOCKS,
-          );
+        runSummaries(frames, p).forEach((summary, f) => {
+          (summaries.get(c) as PhotoSummary[])[p * FRAMES_PER_RUN + f] = summary;
         });
         if (c === keepFor) kept[p] = frames;
       }),
@@ -1809,9 +1950,10 @@ export function stageQ0(ctx: RunContext): StageFile<Q0Unit> {
         : [];
     for (const p of positions) {
       const reasons = [...new Set(p.reasons)].join(', ') || 'no problem';
+      const replaced = [...new Set(p.replaced.reasons)].join(', ') || 'no problem';
       ctx.log(
-        `    ${p.which} rig ${p.rig} camera ${p.camera}: placed ${p.placed}/${p.total}, ` +
-          `margin ${p.margin.toFixed(3)} (${reasons})`,
+        `    ${p.which} rig ${p.rig} camera ${p.camera}: placed ${p.placed}/${p.total} (${reasons}); ` +
+          `the replaced reader ${p.replaced.placed}/${p.total}, margin ${p.margin.toFixed(3)} (${replaced})`,
       );
     }
     return { positions, shapes, worth };
