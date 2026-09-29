@@ -32,6 +32,15 @@
  * where it *believes* it is pointing — which is exactly what produces the
  * doubled and kinked grid lines PARAMETERS.md §1's note describes.
  *
+ * ## One frame that asks no calibration at all
+ *
+ * A {@link RasterSource} replaces step 3 for the one thing a projector is ever
+ * sent that is not content: a frame of the structured-light sequence, which the
+ * emitter writes straight into each projector's raster. Its pixel carries the
+ * frame's own value, so the trace stops at the physical pixel and neither the
+ * content rig nor anything it decides is consulted. Steps 1, 2 and 4 are the
+ * same arithmetic either way, which is what makes the two pictures comparable.
+ *
  * ## Where this used to live
  *
  * `packages/bench/src/views.ts`, which still re-exports it so the bench's own
@@ -39,8 +48,11 @@
  * out of this package's primitives, and because two things outside the bench
  * need it: the browser app, which cannot import a module that opens `node:fs`,
  * and any future report that wants the picture without the PNG encoder. Nothing
- * about the arithmetic changed in the move; `test/misregistration.test.ts` pins
- * it against the constructions the bench relied on.
+ * about the arithmetic changed in the move. The content path is exercised here by
+ * `test/content.test.ts` and `test/mesh-surface.test.ts`, and against the page's
+ * shader by `packages/web/test/parity.test.ts` and `supersample.test.ts`;
+ * `test/misregistration.test.ts` pins the raster-source path. (This paragraph
+ * cited that file before it existed.)
  */
 
 import type { ChannelTriplet, Vec3 } from '../../calibration/src/index.ts';
@@ -96,6 +108,55 @@ export interface RoomViewOptions {
    * `gridSampleOffset` for why parity forces the choice.
    */
   sampleLattice?: 'halton' | 'grid';
+  /**
+   * A frame in each projector's own raster instead of content. Absent or `null`
+   * is the content trace, unchanged. See {@link RasterSource}.
+   */
+  raster?: RasterSource | null;
+}
+
+/**
+ * A frame that addresses each projector's own raster, where content addresses
+ * the sphere.
+ *
+ * The structured-light sequence is the one thing a projector is ever sent that
+ * is not content. The emitter page paints it straight into the projector's
+ * quadrant of the framebuffer, so no calibration is asked anything on the way:
+ * pixel (column, row) carries the frame's value at that pixel, whatever anybody
+ * believes about where the lens points. The trace therefore stops at the
+ * PHYSICAL projector's own pixel. There is no second ray through the content
+ * rig, no blend weight, no polar mask and no graticule — `packages/bench`'s
+ * capture turns the blend and the mask off for the same reason, and the warp is
+ * exactly what the emitter goes around.
+ *
+ * What stays is everything that is physics rather than content: which pixel the
+ * point is lit from, the reconstruction over that projector's pixel grid, the
+ * compositor's encode (the emitter encodes at the same 2.2), the projector's own
+ * transfer curve, and the shading. A frame of the sequence and a picture of the
+ * Earth are lit by the same light and differ only in where the value in the
+ * pixel came from.
+ *
+ * The frame arrives as a function because this package may import
+ * `packages/calibration` and nothing else (`tools/boundary-lint.ts`, R1), and
+ * the pattern definition lives in `packages/bench`. The browser app hands in
+ * `compileFrame` sampled at pixel centres — the same numbers its shader reads.
+ */
+export interface RasterSource {
+  /**
+   * Which projectors are emitting this frame: bit `i` for rig projector `i`.
+   *
+   * The rest are sent black, which is not the same as being absent. A projector
+   * sent black still leaks its black floor, exactly as the other quadrants do
+   * while one projector runs its sequence on the emitter page.
+   */
+  mask: number;
+  /**
+   * Target LINEAR radiance at the centre of pixel (`column`, `row`) of rig
+   * projector `index`'s own raster. Both indices are inside the raster; a
+   * reconstruction corner that falls off its edge is clamped before this is
+   * asked, because there is no pixel out there to emit anything.
+   */
+  at(index: number, column: number, row: number): number;
 }
 
 /**
@@ -116,6 +177,7 @@ export function renderTwoRigRoomView(
   const samples = grid ? gridSampleCount(asked) : asked;
   const seed = options.seed ?? 0;
   const shading = lambertianShading();
+  const raster = options.raster ?? null;
 
   const forward = normalize(sub(camera.target, camera.position));
   const upHint = camera.upHint ?? { x: 0, y: 0, z: 1 };
@@ -141,7 +203,7 @@ export function renderTwoRigRoomView(
         const sx = ((x + ox) / camera.width) * 2 - 1;
         const sy = 1 - ((y + oy) / camera.height) * 2 + shift;
         const dir = normalize(add(forward, add(scale(right, sx * halfW), scale(up, sy * halfH))));
-        const c = traceTwoRig(camera.position, dir, physical, content, scene, shading);
+        const c = traceTwoRig(camera.position, dir, physical, content, scene, shading, raster);
         r += c.r;
         g += c.g;
         b += c.b;
@@ -160,6 +222,10 @@ export function renderTwoRigRoomView(
  * shader against this exact function at a scatter of points rather than over a
  * whole raster, and re-deriving "the same trace, at a point" is how the two
  * quietly stop being the same trace.
+ *
+ * `raster`, when given, is what each projector sends instead of content — see
+ * {@link RasterSource}. `null`, the default, is the content trace exactly as it
+ * was before the parameter existed.
  */
 export function traceTwoRig(
   origin: Vec3,
@@ -168,6 +234,7 @@ export function traceTwoRig(
   content: PreparedRig,
   scene: Scene,
   shading: ReturnType<typeof lambertianShading> = lambertianShading(),
+  raster: RasterSource | null = null,
 ): ChannelTriplet {
   const hit = physical.surface.intersect(origin, dir);
   if (hit === null) return BLACK;
@@ -191,7 +258,15 @@ export function traceTwoRig(
     const cProj = content.projectors[i];
     let signal: ChannelTriplet = BLACK;
     let weight = 0;
-    if (cProj !== undefined) {
+    if (raster !== null) {
+      // Or what the emitter wrote there, which is the frame itself. No content
+      // rig, no weight, no mask: see `RasterSource`. A projector outside the
+      // mask keeps signal zero and still contributes, as its black floor.
+      if (emits(raster, i)) {
+        signal = rasterSignal(raster, i, px.u, px.v, phys.cal.intrinsics, scene.encodeGamma);
+        weight = 1;
+      }
+    } else if (cProj !== undefined) {
       // Reconstructed over the projector's PIXEL GRID, not resampled
       // continuously. The compositor writes one value per pixel, at its centre,
       // and a projector cannot draw anything finer; sampling the content at a
@@ -273,4 +348,56 @@ export function traceTwoRig(
     reflectance: scene.reflectance,
     ambient: scene.ambient,
   });
+}
+
+/** Is rig projector `i` one of the projectors a raster frame is lit on? */
+function emits(raster: RasterSource, i: number): boolean {
+  // Bits 0 to 30 only. Past them a shift count wraps modulo 32 and lights a
+  // projector nobody asked for, and bit 31 is the sign of a mask built with `<<`.
+  // The page's shader has room for eight.
+  return i < 31 && ((raster.mask >>> i) & 1) === 1;
+}
+
+/**
+ * One projector's raster frame at a point it lights from pixel coordinate
+ * (`u`, `v`): the four surrounding pixel centres, bilinear, each encoded as the
+ * emitter encodes it.
+ *
+ * The same reconstruction the content path above uses, and for its reason — a
+ * projector draws nothing finer than one value per pixel. What differs is where
+ * a centre's value comes from: the frame, asked directly, rather than a second
+ * trace through the compositor's belief. The weight is 1 because nothing blends
+ * a calibration frame; the encode is `blendedSignal` at that weight so the frame
+ * and content go through one expression on the way to the transfer curve.
+ */
+function rasterSignal(
+  raster: RasterSource,
+  index: number,
+  u: number,
+  v: number,
+  it: { resX: number; resY: number },
+  encodeGamma: ChannelTriplet,
+): ChannelTriplet {
+  const fu = u - 0.5;
+  const fv = v - 0.5;
+  const i0 = Math.floor(fu);
+  const j0 = Math.floor(fv);
+  const tu = fu - i0;
+  const tv = fv - j0;
+  let acc: ChannelTriplet = BLACK;
+  for (let c = 0; c < 4; c++) {
+    const du = c === 1 || c === 3 ? 1 : 0;
+    const dv = c >= 2 ? 1 : 0;
+    const w = (du ? tu : 1 - tu) * (dv ? tv : 1 - tv);
+    if (w <= 0) continue;
+    // A point within half a pixel of the raster's edge has a corner off it. The
+    // edge pixel stands in, which is what the shader's `clamp` does too; there
+    // is no pixel beyond it to emit anything else.
+    const column = Math.min(it.resX - 1, Math.max(0, i0 + du));
+    const row = Math.min(it.resY - 1, Math.max(0, j0 + dv));
+    const t = raster.at(index, column, row);
+    const s = blendedSignal({ r: t, g: t, b: t }, 1, encodeGamma);
+    acc = { r: acc.r + w * s.r, g: acc.g + w * s.g, b: acc.b + w * s.b };
+  }
+  return acc;
 }
