@@ -148,25 +148,33 @@ not a calibration.
 - [ ] **Stop the intervalometer soon after the end tone**, then **check
       on the camera before you move** (Part 5): white frame not clipped inside
       the crescent, black frame nearly black, finest stripes clearly separated
-      rather than shimmering, whole silhouette in frame.
+      rather than shimmering, whole silhouette in frame. **Keep the room dark,
+      and nothing moving in it, until the camera is stopped**: light that moves
+      at either end of the folder — a torch, somebody crossing a lit doorway —
+      can look like what is left of a run, and the page then refuses the
+      folder. (Part 4.6)
 - [ ] **Keep every photograph, and keep the extras few.** Delete nothing — not
       the dark photographs after the screen went black, not the ones before you
-      pressed Play: the page sets them aside with a note. But a projector this
+      pressed Play, not a few test shots before the first run, of any frame at
+      any exposure: the page sets them aside with a note. But a projector this
       camera cannot see is a run of dark photographs too, and at either end of
       the folder it looks just like extras, so keep them **under about 30 at
       each end** — about a minute at a 2-second dwell. Past that the page may
       not be able to tell which projector is which, and it refuses the folder
       rather than guess — unless photographs are missing at the other end as
       well, from a camera started after Play or stopped before the end tone
-      where a projector it cannot see was playing: then it can file every run
-      under the wrong projector with nothing to say so. (Part 4.6)
+      where a projector it cannot see was playing, or all but a few of a run it
+      can see: then it can file every run under the wrong projector with
+      nothing to say so. (Part 4.6)
 - [ ] **If you know a frame was spoiled** — somebody walked into the beam, a
       shot was missed — **re-shoot that projector now, into the same folder,
       before you move the tripod.** Press **Home**, then **]** until the page
       shows that projector's white, start the intervalometer and press
       **Play** as you did at the start. Let the page play on to the end, or stop
       the camera once that run is done: **stop the camera, not the page.** Leave
-      the spoiled run where it is. (Part 4.2)
+      the spoiled run where it is, and **never step back within it with ←**: a
+      run played again from partway can be filed with its frames out of place,
+      with nothing to say so. (Part 4.2)
 - [ ] Move the tripod to the next mark. Press **Home** to return the page to
       frame 0, and repeat from *Arm*.
 
@@ -607,8 +615,13 @@ Then, in order:
    shoots again is matched the same way, and each projector's latest run that
    passes is the one used — or stop the camera once that projector's run is
    done. Stop the camera, not the page: a paused page is photographed again on
-   the run's last frame, and that reads as one photograph too many. Leave the
-   spoiled run where it is. The page matches each re-shot run to its projector
+   the run's last frame, and that reads as one photograph too many. Nor step
+   back within the run with ← and play on: a run played again from partway
+   holds some of its frames twice, and where a plane it passes lights all of
+   what the camera sees of its projector, the page can file the run with its
+   frames out of place and nothing to say so — in `position.test.ts`'s model,
+   133 of 2584 such folders (`indexPosition`'s docblock). Leave the spoiled run
+   where it is. The page matches each re-shot run to its projector
    by comparing it with the photographs already there, and reads it in place of
    the spoiled run if it passes its checks. On the bench's rendered photographs,
    the run shot again from where the camera stood, every such folder read as its
@@ -658,15 +671,21 @@ Then, in order:
 3. **Never delete a photograph** — not a spoiled run, not an exposure test, not
    the dark ones at either end. A frame *lost* inside a run is survivable and a
    patched one is not, but the page numbers projectors by counting runs and the
-   photographs between them, so a run deleted from the folder is the one fault
-   it cannot catch: every projector after it can then be numbered wrongly with
+   photographs between them, so a run deleted from the folder is a fault it
+   cannot catch: every projector after it can then be numbered wrongly with
    nothing to say so. What does not belong — photographs taken before `Play`, a
-   test shot before the first run, dark ones after the screen went black — it
-   recognises and sets aside: on the bench's rendered photographs, a test shot
-   of another projector's white before `Play` in 112 folders of 112, and in 112
-   more with that projector re-shot and added after the position, whose re-shoot
-   it still matched. An earlier version of this card said "If you
-   delete, delete; do not also add". Deleting is now the mistake.
+   few test shots before the first run, of any frame at any exposure, dark ones
+   after the screen went black — it recognises and sets aside: on the bench's
+   rendered photographs, a test shot of another projector's white before `Play`
+   in 112 folders of 112, and in 112 more with that projector re-shot and added
+   after the position, whose re-shoot it still matched; a test shot of a
+   projector's Gray plane in 150 of 150, and of its white a stop under in 150 of
+   150. Photographs there copying more than a few of one projector's frames are
+   taken for that projector's run played: the folder is refused unless they are
+   projector 1's, and after a long dark wait before `Play` it can be filed a
+   projector over. So test one frame of a projector, not its run. An earlier
+   version of this card said "If you delete, delete; do not also add". Deleting
+   is now the mistake.
 4. Make sure filenames **sort in capture order**. Most cameras do this; some
    restart numbering at 10000.
 
@@ -693,28 +712,46 @@ Then, in order:
 
    Keep the photographs taken after the screen went black. The page sets aside
    the photographs before you pressed `Play` and the dark ones after the black,
-   each with a note, and notes a projector this camera could not see rather
-   than refusing it. What it cannot always tell is which is which: a projector
-   out of view is a run of dark photographs, and at either end of the folder it
-   looks just like extras. So do not start the intervalometer long before you
-   press `Play`, and stop it soon after the end tone — **under about 30 at each
-   end** with the default plan of 34 frames a projector, about a minute at a
-   2-second dwell, and well under one projector's run with any plan. A long run
-   of extras can leave the page unable to tell which projector is which, and it
-   refuses the folder rather than guess — while nothing is missing at the other
-   end. A camera started after `Play` loses photographs at the front of the
-   folder, and one stopped when the sphere went dark on your side loses them at
-   the back; where the projector there is one this camera cannot see they are
-   dark, and nothing in the folder says they are gone. Four or more of those
-   lost at one end, with more than 30 extras at the other, read by count
-   exactly like a folder numbered a projector over, and the page can file every
-   run under the wrong projector with nothing to say so (`indexPosition`'s
-   docblock, `packages/solver/src/indexing.ts`). With only three extras at the
-   other end it misfiles nothing: on the bench's rendered photographs, a camera
-   started 1, 2, 4 or 8 photographs after `Play`, or stopped as many early, in
-   384 folders, read as its position in 48 — each only 1 or 2 out, where the
-   projector at that end was out of view or barely seen — and was refused in
-   words in the other 336.
+   each with a note, and notes a projector this camera could not see rather than
+   refusing it. What it cannot always tell is which is which: a projector out of
+   view is a run of dark photographs, and at either end of the folder it looks
+   just like extras. So do not start the intervalometer long before you press
+   `Play`, and stop it soon after the end tone — **under about 30 at each end**
+   with the default plan of 34 frames a projector, about a minute at a 2-second
+   dwell, and well under one projector's run with any plan. A long run of extras
+   can leave the page unable to tell which projector is which, and it refuses
+   the folder rather than guess — while nothing is missing at an end and nothing
+   was added inside the position. A camera started after `Play` loses
+   photographs at the front of the folder, and one stopped when the sphere went
+   dark on your side loses them at the back; where the projector there is one
+   this camera cannot see they are dark, and nothing in the folder says they are
+   gone. Four or more of those lost at one end — or all but a few, where the
+   projector there is one this camera can see — with more than 30 dark extras at
+   the other, read by count exactly like a folder numbered a projector over, and
+   the page can file every run under the wrong projector with nothing to say so
+   (`indexPosition`'s docblock, `packages/solver/src/indexing.ts`). Any dark
+   photographs make those extras: the page's black kept a minute after the end
+   tone, a long wait before `Play` where projector 1 is out of view, a re-shoot
+   of a projector this camera cannot see, which the page never asks for. With
+   only three extras at the other end it misfiles nothing: on the bench's
+   rendered photographs, a camera started 1, 2, 4 or 8 photographs after `Play`,
+   or stopped as many early, in 384 folders, read as its position in 48 — each
+   only 1 or 2 out, where the projector at that end was out of view or barely
+   seen — and was refused in words in the other 336.
+
+   A run's worth of dark photographs added inside the position does the same
+   where the last projector is out of view as well, with no extras at all: the
+   page paused for a minute while a projector this camera cannot see was
+   playing, or such a projector played twice. Stop the camera, not the page.
+
+   Keep the room dark, and nothing moving in it, from before you press `Play`
+   until the camera is stopped. Light that changes only in level at an end is
+   set aside — the room's light switched on as the end tone sounds, on the
+   bench's rendered photographs raised 3 and 10 times over, 96 folders of 96
+   read as their positions. But light that moves at an end — a torch, somebody
+   crossing a lit doorway — can look like what is left of a run cut short, and
+   the page then refuses the folder; and light that comes on or goes off while a
+   projector is still playing spoils that projector's run.
 
    An earlier version of this card said to delete the photographs after the
    black, because the page's old reader counted the last run to the end of the
@@ -752,7 +789,8 @@ for software that does not exist yet, and it should get shorter as the phases in
 | --- | --- |
 | Shoot in strict order | **Phase 2 softened it, and cannot yet delete it.** The run's own references re-synchronise the count, so a lost frame costs that projector's run instead of the capture — but the order is still what indexes frames inside a run |
 | Never patch a run | **Phase 2 narrowed it** to: do not lose one frame and add another in the same run, and the page now catches most of even that. Still worth keeping — what it catches, it catches by refusing that run, which costs a re-shoot |
-| Never delete a photograph | **survives while projectors are numbered by counting.** A deleted run is the one fault the page's reader cannot catch: the projectors after it can be numbered wrongly with nothing to say so |
+| Never delete a photograph | **survives while projectors are numbered by counting.** A deleted run is a fault the page's reader cannot catch: the projectors after it can be numbered wrongly with nothing to say so |
+| Re-shoot a spoiled run from its white, never by stepping back within it; stop the camera, not the page | **survives while a run is found by its frames and numbered by counting.** A run played again from partway can be filed with its frames out of place, and a page paused for a minute inside a projector the camera cannot see adds a dark run's worth of photographs the count cannot tell from one, with nothing to say so either way |
 | Re-shoot a spoiled projector into the same folder, before the tripod moves | **survives, and is the page's own remedy now.** It reads the re-shot run in place of the spoiled one; the tripod is what keeps that safe, because the page cannot tell a re-shoot from a camera that moved |
 | Re-shoot the whole position, aimed, after a straddle | **goes with the aimed start, when Phase 5's done-when is met.** Until nothing can start mid-change, a straddle smears the runs that pass as well, and nothing on the page says so |
 | Keep the extras at either end few | **survives for now, and is looser than it was.** It used to be *delete the photographs after the screen goes black*, because the page counted the last run to the end of the folder. Its reader sets extras aside now, but cannot tell dark extras from a projector out of view at the same end |
@@ -768,7 +806,7 @@ for software that does not exist yet, and it should get shorter as the phases in
 | Set exposure, focus and white balance by hand | **Phase 5 narrows it** to confirming what the software proposes |
 | Warm the projectors 20 minutes | **permanent.** Lamp physics |
 | Tripod, not hands | **permanent.** Shake is a bias |
-| Darken the room | **permanent.** §5's ambient is unmeasured |
+| Darken the room | **permanent.** §5's ambient is unmeasured. And keep it dark and still until the camera is stopped: light that moves at an end of the folder can look like what is left of a run |
 | Lock the camera; nothing adaptive | **permanent** as a requirement, even when a tether is what enforces it |
 
 So four rules are the job and the rest is the tooling's absence. **The end state
@@ -798,8 +836,10 @@ sphere has wasted a trip:
   by the third, and the page names the projector to re-shoot and reads the
   re-shoot added to the folder (Part 4.2). **What it still
   cannot see** is a fault that disturbs no complementary pair — in the plan this
-  page writes, the phase frames rearranging among themselves. And it is a
-  refusal, not a repair: a run it doubts is dropped, not fixed.
+  page writes, the phase frames rearranging among themselves, or a run stepped
+  back within and played on where a plane it passes lights all of what the
+  camera sees of its projector (Part 4.2). And it is a refusal, not a
+  repair: a run it doubts is dropped, not fixed.
 
   **Still true on the day:** none of this happens at the sphere. You hand the
   folder in when you are home, so the rules in Part 4 are what protect the trip.

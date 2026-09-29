@@ -2211,6 +2211,9 @@ const FAULT_KINDS_RA: readonly { kind: string; say: (lost: string, photograph: n
     say: (_, photograph) => `a run spoiled by its photograph ${photograph} shot twice or not at all, re-shot and appended`,
   },
   { kind: 'spoiled, re-shot and played on', say: () => 'and played on' },
+  { kind: 'a test shot of a Gray plane before Play', say: () => 'a test shot of a projector’s Gray plane before Play' },
+  { kind: 'a test shot a stop under before Play', say: () => 'or of its white a stop under' },
+  { kind: 'the room light switched on at the end tone', say: () => 'the room light switched on at the end tone' },
 ];
 
 /**

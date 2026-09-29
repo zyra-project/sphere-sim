@@ -1,6 +1,6 @@
 {
   "schema": "sphere-sim/reader-acceptance@1",
-  "commit": "650e48ccf602e6d3015a671022f332ac35513e31",
+  "commit": "4447ae8aa44b6e6a7e6d5ea8a26890e046db0022",
   "clean": true,
   "generatedFrom": {
     "tool": "tools/reader-acceptance.ts",
@@ -91,7 +91,13 @@
         4,
         8
       ],
-      "spoiledPhotograph": 11
+      "spoiledPhotograph": 11,
+      "stopUnder": 0.5,
+      "roomLight": [
+        3,
+        10
+      ],
+      "roomSwitching": 0.4
     },
     "turned": {
       "variant": "reduced",
@@ -250,8 +256,8 @@
     "shapes": {
       "all": {
         "cameras": 48,
-        "shapes": 2090,
-        "passing": 2090,
+        "shapes": 2486,
+        "passing": 2486,
         "misfiled": 0,
         "byKind": {
           "before Play and after the black": {
@@ -313,13 +319,31 @@
             "passing": 300,
             "read": 298,
             "misfiled": 0
+          },
+          "a test shot of a Gray plane before Play": {
+            "shapes": 150,
+            "passing": 150,
+            "read": 150,
+            "misfiled": 0
+          },
+          "a test shot a stop under before Play": {
+            "shapes": 150,
+            "passing": 150,
+            "read": 150,
+            "misfiled": 0
+          },
+          "the room light switched on at the end tone": {
+            "shapes": 96,
+            "passing": 96,
+            "read": 96,
+            "misfiled": 0
           }
         }
       },
       "main": {
         "cameras": 24,
-        "shapes": 1006,
-        "passing": 1006,
+        "shapes": 1194,
+        "passing": 1194,
         "misfiled": 0,
         "byKind": {
           "before Play and after the black": {
@@ -381,13 +405,31 @@
             "passing": 140,
             "read": 140,
             "misfiled": 0
+          },
+          "a test shot of a Gray plane before Play": {
+            "shapes": 70,
+            "passing": 70,
+            "read": 70,
+            "misfiled": 0
+          },
+          "a test shot a stop under before Play": {
+            "shapes": 70,
+            "passing": 70,
+            "read": 70,
+            "misfiled": 0
+          },
+          "the room light switched on at the end tone": {
+            "shapes": 48,
+            "passing": 48,
+            "read": 48,
+            "misfiled": 0
           }
         }
       },
       "spill": {
         "cameras": 24,
-        "shapes": 1084,
-        "passing": 1084,
+        "shapes": 1292,
+        "passing": 1292,
         "misfiled": 0,
         "byKind": {
           "before Play and after the black": {
@@ -448,6 +490,24 @@
             "shapes": 160,
             "passing": 160,
             "read": 158,
+            "misfiled": 0
+          },
+          "a test shot of a Gray plane before Play": {
+            "shapes": 80,
+            "passing": 80,
+            "read": 80,
+            "misfiled": 0
+          },
+          "a test shot a stop under before Play": {
+            "shapes": 80,
+            "passing": 80,
+            "read": 80,
+            "misfiled": 0
+          },
+          "the room light switched on at the end tone": {
+            "shapes": 48,
+            "passing": 48,
+            "read": 48,
             "misfiled": 0
           }
         }
@@ -12779,6 +12839,182 @@
     {
       "which": "main",
       "rig": 0,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
       "camera": 1,
       "shape": "leading 0, trailing 0",
       "photographs": 136,
@@ -13883,6 +14119,182 @@
           "replaced": 102
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -14956,6 +15368,182 @@
     },
     {
       "which": "main",
+      "rig": 0,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 2,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 2,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 0,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
       "rig": 3,
       "camera": 0,
       "shape": "leading 0, trailing 0",
@@ -16011,6 +16599,182 @@
           "replaced": 68
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -17124,6 +17888,182 @@
           "replaced": 102
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -18197,6 +19137,182 @@
     },
     {
       "which": "main",
+      "rig": 3,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 2,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 2,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 3,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
       "rig": 6,
       "camera": 0,
       "shape": "leading 0, trailing 0",
@@ -19252,6 +20368,182 @@
           "replaced": 68
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -20365,6 +21657,182 @@
           "replaced": 102
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -21438,6 +22906,182 @@
     },
     {
       "which": "main",
+      "rig": 6,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 2,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 2,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 6,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
       "rig": 9,
       "camera": 0,
       "shape": "leading 0, trailing 0",
@@ -22493,6 +24137,182 @@
           "replaced": 68
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -23606,6 +25426,182 @@
           "replaced": 102
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -24679,6 +26675,182 @@
     },
     {
       "which": "main",
+      "rig": 9,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 2,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 2,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 9,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [
+        1
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
       "rig": 12,
       "camera": 0,
       "shape": "leading 0, trailing 0",
@@ -25734,6 +27906,182 @@
           "replaced": 68
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -26847,6 +29195,182 @@
           "replaced": 102
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -27654,6 +30178,138 @@
     },
     {
       "which": "main",
+      "rig": 12,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 12,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
       "rig": 15,
       "camera": 0,
       "shape": "leading 0, trailing 0",
@@ -28709,6 +31365,182 @@
           "replaced": 68
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -29822,6 +32654,182 @@
           "replaced": 102
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -30629,6 +33637,138 @@
     },
     {
       "which": "main",
+      "rig": 15,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [
+        1,
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [
+        1,
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [
+        1,
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [
+        1,
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [
+        1,
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 15,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [
+        1,
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
       "rig": 18,
       "camera": 0,
       "shape": "leading 0, trailing 0",
@@ -31684,6 +34824,182 @@
           "replaced": 68
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -32797,6 +36113,182 @@
           "replaced": 102
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -33870,6 +37362,182 @@
     },
     {
       "which": "main",
+      "rig": 18,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 2,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 2,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 18,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
       "rig": 21,
       "camera": 0,
       "shape": "leading 0, trailing 0",
@@ -34925,6 +38593,182 @@
           "replaced": 68
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -36038,6 +39882,182 @@
           "replaced": 102
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -37110,6 +41130,182 @@
       "failures": []
     },
     {
+      "which": "main",
+      "rig": 21,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 2,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 2,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "main",
+      "rig": 21,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
       "which": "spill",
       "rig": 0,
       "camera": 0,
@@ -38166,6 +42362,182 @@
           "replaced": 68
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -39279,6 +43651,182 @@
           "replaced": 102
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -40590,6 +45138,216 @@
     },
     {
       "which": "spill",
+      "rig": 0,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 2,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 2,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 2,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 2,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 0,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
       "rig": 3,
       "camera": 0,
       "shape": "leading 0, trailing 0",
@@ -41894,6 +46652,216 @@
     {
       "which": "spill",
       "rig": 3,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 0,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 0,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
       "camera": 1,
       "shape": "leading 0, trailing 0",
       "photographs": 136,
@@ -43197,6 +48165,216 @@
     {
       "which": "spill",
       "rig": 3,
+      "camera": 1,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 1,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
       "camera": 2,
       "shape": "leading 0, trailing 0",
       "photographs": 136,
@@ -44261,6 +49439,182 @@
     },
     {
       "which": "spill",
+      "rig": 3,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 2,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 2,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 3,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
       "rig": 6,
       "camera": 0,
       "shape": "leading 0, trailing 0",
@@ -45565,6 +50919,216 @@
     {
       "which": "spill",
       "rig": 6,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 0,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 0,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
       "camera": 1,
       "shape": "leading 0, trailing 0",
       "photographs": 136,
@@ -46868,6 +52432,216 @@
     {
       "which": "spill",
       "rig": 6,
+      "camera": 1,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 1,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
       "camera": 2,
       "shape": "leading 0, trailing 0",
       "photographs": 136,
@@ -48170,6 +53944,216 @@
     },
     {
       "which": "spill",
+      "rig": 6,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 2,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 2,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 2,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 2,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 6,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
       "rig": 9,
       "camera": 0,
       "shape": "leading 0, trailing 0",
@@ -49225,6 +55209,182 @@
           "replaced": 68
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -50338,6 +56498,182 @@
           "replaced": 102
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        1,
+        2,
+        3
+      ],
+      "unseen": [
+        0
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -51411,6 +57747,182 @@
     },
     {
       "which": "spill",
+      "rig": 9,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 2,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 2,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 9,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
       "rig": 12,
       "camera": 0,
       "shape": "leading 0, trailing 0",
@@ -52466,6 +58978,182 @@
           "replaced": 68
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [],
+      "barelySeen": [
+        3
+      ],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -53778,6 +60466,216 @@
     {
       "which": "spill",
       "rig": 12,
+      "camera": 1,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 1,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
       "camera": 2,
       "shape": "leading 0, trailing 0",
       "photographs": 136,
@@ -54568,6 +61466,138 @@
           "replaced": 102
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 12,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -55640,6 +62670,182 @@
     {
       "which": "spill",
       "rig": 15,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
       "camera": 1,
       "shape": "leading 0, trailing 0",
       "photographs": 136,
@@ -56943,6 +64149,216 @@
     {
       "which": "spill",
       "rig": 15,
+      "camera": 1,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 1,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
       "camera": 2,
       "shape": "leading 0, trailing 0",
       "photographs": 136,
@@ -57733,6 +65149,138 @@
           "replaced": 102
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 15,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        1,
+        2
+      ],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -58805,6 +66353,182 @@
     {
       "which": "spill",
       "rig": 18,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
       "camera": 1,
       "shape": "leading 0, trailing 0",
       "photographs": 136,
@@ -60051,6 +67775,216 @@
           "replaced": 102
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 1,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 1,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -61124,6 +69058,182 @@
     },
     {
       "which": "spill",
+      "rig": 18,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 2,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 2,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 18,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [
+        2
+      ],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
       "rig": 21,
       "camera": 0,
       "shape": "leading 0, trailing 0",
@@ -62179,6 +70289,182 @@
           "replaced": 68
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 0,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 0,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 0,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 0,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 0,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 0,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 0,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2
+      ],
+      "unseen": [
+        3
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],
@@ -63491,6 +71777,216 @@
     {
       "which": "spill",
       "rig": 21,
+      "camera": 1,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 1,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 1,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 1,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 1,
+      "shape": "a test shot of projector 3's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 1,
+      "shape": "a test shot of projector 3's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 1,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 1,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 1,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "unseen": [],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
       "camera": 2,
       "shape": "leading 0, trailing 0",
       "photographs": 136,
@@ -64547,6 +73043,182 @@
           "replaced": 102
         }
       ],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 2,
+      "shape": "a test shot of projector 1's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 2,
+      "shape": "a test shot of projector 1's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 2,
+      "shape": "a test shot of projector 2's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 2,
+      "shape": "a test shot of projector 2's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 2,
+      "shape": "a test shot of projector 4's Gray plane, photograph 11 of its run, before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 2,
+      "shape": "a test shot of projector 4's white a stop under before Play",
+      "photographs": 141,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 3 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
+      "ok": true,
+      "read": true,
+      "reasons": [],
+      "misfiled": 0,
+      "failures": []
+    },
+    {
+      "which": "spill",
+      "rig": 21,
+      "camera": 2,
+      "shape": "the room light switched on at the end tone, 10 times the room's own",
+      "photographs": 142,
+      "placed": [
+        0,
+        1,
+        3
+      ],
+      "unseen": [
+        2
+      ],
+      "barelySeen": [],
+      "reshoots": [],
       "ok": true,
       "read": true,
       "reasons": [],

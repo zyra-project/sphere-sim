@@ -440,16 +440,16 @@ cameras from 0; the correction below is about that reader.)
 <!-- generated: reader-acceptance-operator-path -->
 > | clean positions | raster | positions | refused | photographs misfiled | runs placed: the page · the counterfactual | placing what the counterfactual places | noted out of view (lighting no pixel) | noted barely seen | folder shapes passing |
 > | --- | --- | ---: | ---: | ---: | --- | --- | --- | ---: | --- |
-> | the sweep | 320×240 | 72 | 0 | 0 | 212 · 222 | 65 of 72 | 68 (64) | 8 | 1006 of 1006 |
-> | room spill on | 320×240 | 24 | 0 | 0 | 80 · 89 | 17 of 24 | 7 (6) | 9 | 1084 of 1084 |
+> | the sweep | 320×240 | 72 | 0 | 0 | 212 · 222 | 65 of 72 | 68 (64) | 8 | 1194 of 1194 |
+> | room spill on | 320×240 | 24 | 0 | 0 | 80 · 89 | 17 of 24 | 7 (6) | 9 | 1292 of 1292 |
 > | the finer preset | 640×480 | 12 | 0 | 0 | 35 · 38 | 10 of 12 | 12 (10) | 1 | — |
-> | **all** | | **108** | **0** | **0** | **327 · 349** | **92 of 108** | **87 (80)** | **18** | **2090 of 2090** |
+> | **all** | | **108** | **0** | **0** | **327 · 349** | **92 of 108** | **87 (80)** | **18** | **2486 of 2486** |
 >
 > _The counterfactual is `indexByFingerprint` handed the same fingerprints and every frame’s kind exactly, as EXPERIMENT-10’s counterfactual reader was. Refused: positions where the page raised a problem. Noted out of view: a projector whose run is dark in every photograph from that position; noted barely seen: one that lights fewer than 8 fingerprint blocks, and is not decoded. Every run that lights no pixel is noted out of view, 80 of 80; the counterfactual refuses 80 of them as a broken pair and asks for that projector to be re-shot._
 >
 > _Where the two disagree — 22 runs in 16 positions — the counterfactual places a run the page does not decode: a crescent of 0–7 fingerprint blocks lighting 4–176 pixels, noted barely seen (18) or out of view (4)._
 >
-> _Folder shapes, on the 8 designed rigs with the room off and on: before Play and after the black 432 of 432 · re-shot and appended 150 of 150 · re-shot and played on 150 of 150 · re-shot alone 150 of 150. A shape passes when the page reads it as it read the position alone, with a re-shot run used in place of its original; a re-shot run handed in alone passes when it is refused with how to hand it in. The faults an operator makes on the way pass when the page reads them so or refuses them in words, placing nothing the position alone does not: the camera started 1, 2, 4 or 8 photographs late 192 of 192 (20 read) · stopped as many early 192 of 192 (28 read) · a test shot of another projector’s white before Play 112 of 112 (112 read) · and with that projector re-shot and appended 112 of 112 (112 read) · a run spoiled by its photograph 11 shot twice or not at all, re-shot and appended 300 of 300 (300 read) · and played on 300 of 300 (298 read). Photographs misfiled in them all: 0._
+> _Folder shapes, on the 8 designed rigs with the room off and on: before Play and after the black 432 of 432 · re-shot and appended 150 of 150 · re-shot and played on 150 of 150 · re-shot alone 150 of 150. A shape passes when the page reads it as it read the position alone, with a re-shot run used in place of its original; a re-shot run handed in alone passes when it is refused with how to hand it in. The faults an operator makes on the way pass when the page reads them so or refuses them in words, placing nothing the position alone does not: the camera started 1, 2, 4 or 8 photographs late 192 of 192 (20 read) · stopped as many early 192 of 192 (28 read) · a test shot of another projector’s white before Play 112 of 112 (112 read) · and with that projector re-shot and appended 112 of 112 (112 read) · a run spoiled by its photograph 11 shot twice or not at all, re-shot and appended 300 of 300 (300 read) · and played on 300 of 300 (298 read) · a test shot of a projector’s Gray plane before Play 150 of 150 (150 read) · or of its white a stop under 150 of 150 (150 read) · the room light switched on at the end tone 96 of 96 (96 read). Photographs misfiled in them all: 0._
 <!-- /generated -->
 >
 > With the room spill on, 15 runs are lit only by the wall behind the sphere; the
@@ -459,16 +459,22 @@ cameras from 0; the correction below is about that reader.)
 >
 > None of those is a real photograph. What the reader cannot see, its docblock
 > names: a run deleted from the folder, which is why the page tells the operator
-> never to delete a photograph; photographs lost at an end where a projector the
-> camera cannot see was playing — four or more of them, with more than 30 extras
-> at the other end, read by count exactly like a position numbered a projector
-> over — which is why the page and the card tell the operator to start the
-> camera before Play and stop it at the page's end tone, not when the sphere
-> goes dark on the camera's side, as it does for the whole run of a projector
-> lighting the far side; a run's worth of dark photographs added inside such a
-> projector's run — the page paused while it played, or it played twice —
-> which, where the last projector is out of view too, reads the same way; a
-> camera moved between a run and its re-shoot —
+> never to delete a photograph; photographs lost at an end — four or more where
+> a projector the camera cannot see was playing, or all but a few of a run it
+> can see — with more than 30 dark extras at the other end, which read by count
+> exactly like a position numbered a projector over, and are why the page and
+> the card tell the operator to start the camera before Play and stop it at the
+> page's end tone, not when the sphere goes dark on the camera's side, as it
+> does for the whole run of a projector lighting the far side, and to test one
+> frame rather than step through a projector's run before Play, which after a
+> long dark wait can be taken for that run played there; a run's worth of
+> dark photographs added inside such a projector's run — the page paused while
+> it played, or it played twice — which, where the last projector is out of
+> view too, reads the same way, and is why they say to stop the camera rather
+> than pause the page; a run the page was stepped back within and played on,
+> where a plane it passes lights all of what the camera sees, whose window then
+> holds every identity with its frames out of place, which is why they say to
+> re-shoot a run from its white; a camera moved between a run and its re-shoot —
 > on the bench's photographs of the designed rigs, at the reduced preset, a
 > re-shoot from a camera turned half a degree was still matched in 139 of 140
 > runs, and from one turned five degrees in 67 of 140, so the tripod staying put,
