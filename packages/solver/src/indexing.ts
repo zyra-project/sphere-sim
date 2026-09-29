@@ -2239,11 +2239,17 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * extras: the page's black kept after the end tone, a long wait before Play
  * with projector 1 out of view, a re-shoot of a projector this camera cannot
  * see. (Extras lit by the page's first step, shot before Play, put light where
- * that numbering needs a projector out of view, and it is refused.) One with a
- * run's worth of dark photographs added inside — a projector this camera
- * cannot see played twice, or the page paused a minute in its run — is filed
- * wrongly too when the last projector is out of view as well: its dark run
- * reads as photographs taken after the black, with no extras needed at all.
+ * that numbering needs a projector out of view, and it is refused.) Test shots
+ * of more than a few of a later projector's frames, taken before Play, are
+ * that projector's run played there, whose place is the first; with such
+ * extras before the first run, that reading can be the one left, and the
+ * folder is filed wrongly the same way: in `position.test.ts`'s model, 6 of 92
+ * folders with 31 dark photographs before Play and five to ten of a later
+ * projector's frames test-shot. One with a run's worth of dark photographs
+ * added inside — a projector this camera cannot see played twice, or the page
+ * paused a minute in its run — is filed wrongly too when the last projector is
+ * out of view as well: its dark run reads as photographs taken after the
+ * black, with no extras needed at all.
  *
  * A lit end cut short is told from the extras beside it by what is left of
  * it. A remnant of three photographs or fewer is taken for strays, and a
