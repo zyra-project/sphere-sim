@@ -3725,9 +3725,10 @@ function decodeOne(
  * A run the straddle did not touch is the clean twin's photographs, so its summaries are the
  * twin's, computed once per camera and held to the bank stage's page twin
  * ({@link twinSummaries}). Only the touched runs are summarised here, from the frames `framesOf`
- * hands over: the fast path's walk of the run's noise, which the rescoring has usually taken
- * already for the run's noisy fingerprints. A drift of the twin or a failed render is raised;
- * what the page's own calls throw is the position's crash ({@link pageRecord}).
+ * hands over: the fast path's walk of the run's noise, which the rescoring has already taken for
+ * any run it re-evaluated with noise, and so for every touched run of a noisy cell (R1). A drift
+ * of the twin or a failed render is raised; what the page's own calls throw is the position's
+ * crash ({@link pageRecord}).
  */
 export function pagePath(
   rc: RigContext,
