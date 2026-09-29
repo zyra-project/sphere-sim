@@ -2700,7 +2700,7 @@ test('a window whose black outshines its white is not a run: a phase step shot t
   }
 });
 
-test('a window with a frame darker than its black is not a run: a run paused three shutters is refused, never placed a projector late', () => {
+test('a window with a frame darker than its black is not a run: a run paused three shutters and shot again in line is read, never a projector late', () => {
   // A run whose twenty-first photograph was taken four times — the page paused
   // three shutters — puts its own phase frames back in the phase slots of the
   // window three photographs into it. From 110 degrees that window's white is
@@ -2710,7 +2710,9 @@ test('a window with a frame darker than its black is not a run: a run paused thr
   // as a broken run, and the page's in-line re-shoot after it, projector 3's
   // run shot again, was counted as projector 4's, decoded. A run's black is the
   // page's black, and no photograph of the run is darker; that window's next
-  // planes are.
+  // planes are. With the window gone, the pass the page was stepped back from
+  // begins with projector 3's white and goes on as its run does, and the run
+  // shot again is read in its place.
   const expected = expectedOf(PAGE);
   const s = scene(PAGE, 64, { azimuth: 110 });
   for (const leading of [2, 20]) {
@@ -2727,7 +2729,111 @@ test('a window with a frame darker than its black is not a run: a run paused thr
     const r = indexPosition(prints, expected);
     const label = `${leading} before Play, projector 3 paused three shutters and shot again in line`;
     assert.equal(misplaced(r.assignment, truth), 0, `${label}: filed wrong`);
-    assert.equal(r.ok, false, label);
+    assert.deepEqual(r.problems, [], label);
+    assert.deepEqual(r.usableProjectors, [0, 1, 2], label);
+    assert.deepEqual(r.reshoots, [{ projector: 2, used: leading + 106, replaced: leading + 68 }], label);
+  }
+});
+
+test('a run shot again in line after a pass too spoiled to be found is that projector\'s: the pass begins with its white and goes on as the run does', () => {
+  // Review B's B5. The page paused in a projector's run and stepped back to
+  // its white (Pause, [, Play), the pass before too spoiled to be found as a
+  // run. Nothing matched the run shot again by its references, so the stretch
+  // before it was a count that is not whole runs, and such folders were
+  // refused: 90 of the review's 120. With more than thirty dark photographs
+  // before Play and projector 1 out of view, the dark ones read as projectors
+  // 1 and 2 and the run shot again as a re-shoot added after the position,
+  // and every run was filed a projector over with nothing said. The pass the
+  // page was stepped back from begins with the projector's white and black
+  // and goes on as its run does, so it is that projector's place, and the run
+  // shot again is read there.
+  const expected = expectedOf(PAGE);
+  const white = (p: number): Shot => ({ projector: p, frame: 0 });
+  let folders = 0;
+  for (const [azimuth, seen] of [
+    [0, [0, 1, 2, 3]],
+    [110, [0, 1, 2]],
+    [250, [1, 2, 3]],
+  ] as const) {
+    const s = scene(PAGE, 64, { azimuth });
+    const own = (p: number): Shot[] => (seen.includes(p as never) ? run(s, p) : run(s, p).map((): Shot => null));
+    for (const q of seen) {
+      for (const [k, pause] of [
+        [12, 2],
+        [25, 6],
+      ]) {
+        const first = [...own(q).slice(0, k), ...Array.from({ length: pause }, () => own(q)[k - 1])];
+        const shots: Shot[] = seen.includes(0 as never) ? [white(0), white(0)] : [null, null];
+        for (let p = 0; p < q; p++) shots.push(...own(p));
+        const from = shots.length;
+        shots.push(...first, white(q));
+        const used = shots.length;
+        for (let p = q; p < 4; p++) shots.push(...own(p));
+        shots.push(null, null, null);
+        const { prints, truth } = camera(s, 5100 + azimuth + k)(shots);
+        const r = indexPosition(prints, expected);
+        const label = `azimuth ${azimuth}, projector ${q + 1} paused at photograph ${k} and shot again in line`;
+        assert.equal(misplaced(r.assignment, truth), 0, `${label}: filed wrong`);
+        // Before the first run found there is no run to count the pass from:
+        // it is read with the photographs before Play, or refused.
+        if (q === seen[0]) continue;
+        folders++;
+        assert.deepEqual(r.problems, [], label);
+        assert.deepEqual(r.usableProjectors, [...seen], label);
+        assert.deepEqual(r.reshoots, [{ projector: q, used, replaced: from }], label);
+        // The pass ends at its last photograph copying the run, the frame the
+        // page was paused on; the white it was stepped back to is no run's.
+        const back = `The page was stepped back to projector ${q + 1} and played again from photograph ${used + 1}:`;
+        const stray = 'and the 1 photograph taken before it belongs to no run; not used.';
+        assert.ok(r.notes.some((n) => n.startsWith(back) && n.endsWith(stray)), `${label}: ${r.notes.join(' | ')}`);
+      }
+    }
+  }
+  assert.equal(folders, 14);
+
+  // Thirty-one dark photographs before Play, projector 1 out of view: the dark
+  // ones can be projector 1's run and extras, or projectors 1 and 2 less three
+  // lost to a late start, and the run shot again in line or added after the
+  // position. Both fit, so none is used.
+  {
+    const s = scene(CHEAP, 16, { azimuth: 180, elevation: 20 });
+    const e = expectedOf(CHEAP);
+    for (const [how, spoil] of [
+      ['paused three shutters', (x: Shot[]) => void x.splice(20, 0, x[20], x[20], x[20])],
+      ['a photograph doubled', (x: Shot[]) => void x.splice(15, 0, x[15])],
+    ] as const) {
+      const first = run(s, 2);
+      spoil(first);
+      const shots: Shot[] = [
+        ...Array.from({ length: 31 }, (): Shot => null),
+        ...run(s, 0).map((): Shot => null),
+        ...run(s, 1),
+        ...first,
+        null,
+        ...run(s, 2),
+        ...run(s, 3).map((): Shot => null),
+        null,
+        null,
+        null,
+      ];
+      const { prints, truth } = camera(s, 1831)(shots);
+      const r = indexPosition(prints, e);
+      assert.equal(misplaced(r.assignment, truth), 0, `31 dark before Play, projector 3 ${how}: filed wrong`);
+      assert.equal(r.ok, false, `31 dark before Play, projector 3 ${how}`);
+    }
+  }
+
+  // The page stepped back within a run (←) rather than to its white: the
+  // photographs before the window found run straight into it, the window's
+  // first photograph the frame they would have shown next. That pass never
+  // stopped: it is the run itself, found late, and not a pass before it.
+  {
+    const s = scene(PAGE, 64, { azimuth: 0 });
+    const stepped = [...run(s, 1).slice(0, 8), ...run(s, 1).slice(2)];
+    const shots: Shot[] = [white(0), white(0), ...run(s, 0), ...stepped, ...run(s, 2), ...run(s, 3), null, null, null];
+    const { prints, truth } = camera(s, 3062)(shots);
+    const r = indexPosition(prints, expected);
+    assert.equal(misplaced(r.assignment, truth), 0, 'stepped back six frames within projector 2: filed wrong');
   }
 });
 
