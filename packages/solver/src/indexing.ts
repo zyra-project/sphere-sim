@@ -2216,10 +2216,11 @@ export function indexPosition(
   const repeats = found.map((_, j) => matchedBy[j].length > 0);
   // Photographs outside every run found that copy one of run j's frames: the
   // stretch of an original too broken to be found, when j is its re-shoot.
-  // Copies of j's white straight before it are its pre-roll, and for the first
-  // run found every copy of its white before it is the page's step 0 shown
-  // before Play.
-  const evidence: number[][] = found.map((w, j) => {
+  // Copies of j's white straight before it are its pre-roll, and every copy of
+  // its white before the first run found is the page's step 0 shown before
+  // Play, for the first run, or a test shot of the exposure, for a later one —
+  // neither says where run j belongs.
+  const evidence: number[][] = found.map((w) => {
     let firstOwn = w.start;
     while (firstOwn > 0 && copiesFrame(fingerprints[firstOwn - 1], w.white, w)) firstOwn--;
     const distinctive = [...new Set([whiteAt, ...pairs.flat(), ...phases.flat()])]
@@ -2230,15 +2231,16 @@ export function indexPosition(
       // A copy lights something above this run's black, as copiesFrame asks;
       // a photograph dark beside it copies nothing, and is not asked.
       if (inWindow[x] === 1 || darkBeside(x, w)) continue;
-      if (j === 0 && copiesFrame(fingerprints[x], w.white, w)) continue;
+      if (x < found[0].start && copiesFrame(fingerprints[x], w.white, w)) continue;
       if (distinctive.some((g) => copiesFrame(fingerprints[x], g, w))) out.push(x);
     }
     return out;
   });
   /**
    * A photograph before the first run that copies run j's white: a test shot of
-   * that projector's white, taken while the exposure was set. It says nothing
-   * about where run j belongs.
+   * that projector's white, taken while the exposure was set. Like the page's
+   * step 0 it says nothing about where run j belongs, so no run's evidence holds
+   * one; it is counted for the note that sets it aside.
    */
   const testShot = (x: number, j: number): boolean =>
     x < found[0].start && copiesFrame(fingerprints[x], found[j].white, found[j]);
@@ -2538,7 +2540,6 @@ export function indexPosition(
         const q = where.slotOf.get(w);
         if (q === undefined || where.inLine.has(w)) return false;
         return evidence[j].some((x) => {
-          if (testShot(x, j)) return false;
           const o = slotIn(where.range, x);
           return o !== null && o !== q;
         });
@@ -2569,7 +2570,7 @@ export function indexPosition(
   if (pool.length === 0) {
     // The runs number, so what no reading fits is a run that repeats another
     // somewhere no re-shoot can be; or they do not number at all.
-    const j = found.findIndex((_, k) => matchedBy[k].length > 0 || evidence[k].some((x) => !testShot(x, k)));
+    const j = found.findIndex((_, k) => matchedBy[k].length > 0 || evidence[k].length > 0);
     if (j < 0) {
       problems.push(
         `The ${runsFound(found.length)} found ${found.length === 1 ? 'does' : 'do'} not fit ` +

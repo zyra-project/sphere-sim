@@ -1593,6 +1593,50 @@ test('test shots of a white before the position, and a white shot twice before i
   assert.ok(r.usableProjectors.includes(0) && r.usableProjectors.includes(1), `placed ${r.usableProjectors}`);
 });
 
+test("a test shot of a projector's white says nothing about where that projector's re-shoot belongs", () => {
+  // Review B. The page's own remedy for a run lost to a dropped photograph is
+  // to step to that projector's white and play on, adding the photographs to
+  // the folder; a re-shoot whose original was never found is matched by the
+  // photographs of the original's stretch that copy it. A test shot of the
+  // same projector's white, taken at the head of the folder while the exposure
+  // was set, copies it too, and it was counted: the re-shoot then copied
+  // photographs in two projectors' places and was refused as "the camera
+  // moved", in 16 of 16 such folders, 0 of 16 without the test shot. A copy of
+  // a run's white before the first run is a test shot or the page's step 0,
+  // for every run, not only the first.
+  const expected = expectedOf(PAGE);
+  const R = 34;
+  let folders = 0;
+  for (const [azimuth, seen] of [
+    [0, [0, 1, 2, 3]],
+    [250, [1, 2, 3]],
+  ] as const) {
+    const s = scene(PAGE, 64, { azimuth });
+    const unseen = [0, 1, 2, 3].filter((p) => !seen.includes(p as never));
+    const white = (p: number): Shot => (seen.includes(p as never) ? { projector: p, frame: 0 } : null);
+    for (const N of seen) {
+      for (const tests of [[N], [0, 1, 2, 3]]) {
+        const lost = position(s, { unseen, trailing: 3 });
+        lost.splice(N * R + 6, 1);
+        const remedy: Shot[] = [];
+        for (let p = 0; p <= N; p++) remedy.push(white(p));
+        for (let p = N; p < 4; p++) for (let f = 0; f < R; f++) remedy.push(seen.includes(p as never) ? { projector: p, frame: f } : null);
+        remedy.push(null, null, null);
+        const shots = [...tests.map(white), white(0), white(0), ...lost, ...remedy];
+        const { prints, truth } = camera(s, 9000 + azimuth)(shots);
+        const r = indexPosition(prints, expected);
+        const label = `azimuth ${azimuth}, projector ${N + 1} lost and re-shot, test shots of ${tests.map((p) => p + 1)}`;
+        folders++;
+        assert.equal(misplaced(r.assignment, truth), 0, `${label}: filed wrong`);
+        assert.deepEqual(r.problems, [], label);
+        assert.deepEqual(r.usableProjectors, [...seen], label);
+        assert.ok(r.reshoots.some((x) => x.projector === N), `${label}: ${JSON.stringify(r.reshoots)}`);
+      }
+    }
+  }
+  assert.equal(folders, 14);
+});
+
 // ---------------------------------------------------------------------------
 // Test 8g — what a refusal says
 // ---------------------------------------------------------------------------
