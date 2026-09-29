@@ -2108,12 +2108,57 @@ export interface HookRecord {
   pixels: number;
   identical: number;
   worstSteps: number;
+  /** The counterfactual's verdicts on the hook's frames and on the fast path's agree. */
   verdictsAgree: boolean;
   placedHook: number[];
   placedFast: number[];
   /** Worst per-run mean shift between `readRun` on the hook's frames and on the fast path's, px. */
   biasU: number;
   biasV: number;
+  /**
+   * H8-page: the page's own reader on the camera's whole straddled position, from the hook's
+   * frames and from the fast path's, which are what the page column reads.
+   */
+  pageHook: PageVerdict;
+  pageFast: PageVerdict;
+  /** {@link samePageVerdict} of the two. */
+  pageAgree: boolean;
+}
+
+/** What H8-page holds the hook's reading and the fast path's to: a {@link PagePosition}, less its words. */
+export interface PageVerdict {
+  placed: number[];
+  unseen: number[];
+  barelySeen: number[];
+  /** How many problems the page wrote. */
+  problems: number;
+  crash: string | null;
+}
+
+export function pageVerdictOf(read: PagePosition): PageVerdict {
+  return {
+    placed: read.placed,
+    unseen: read.unseen,
+    barelySeen: read.barelySeen,
+    problems: read.problems.length,
+    crash: read.crash,
+  };
+}
+
+/**
+ * Two readings of one position agree: the same runs placed, the same projectors noted out of
+ * view and barely seen, as many problems, and the same crash or none.
+ */
+export function samePageVerdict(a: PageVerdict, b: PageVerdict): boolean {
+  const same = (x: readonly number[], y: readonly number[]) =>
+    x.length === y.length && x.every((v, i) => v === y[i]);
+  return (
+    same(a.placed, b.placed) &&
+    same(a.unseen, b.unseen) &&
+    same(a.barelySeen, b.barelySeen) &&
+    a.problems === b.problems &&
+    a.crash === b.crash
+  );
 }
 
 export interface RollingRecord {
@@ -2362,8 +2407,18 @@ function gateNoisy(rc: RigContext, plan: Exp10Plan, c: number): NoisyRecord[] {
  * H8: the fast path against the renderer's own hook. The whole rig is
  * rendered, so the renderer's camera index is the rig's and the noise stream
  * is the one `noisyRun` walks; a straddle for camera `c` alone.
+ *
+ * Both readers are held to it. The counterfactual's verdicts and the page's
+ * decode, as before; and, since the page column hands the page's own reader
+ * the fast path's frames of a straddled position where the page would have
+ * the camera's, the page's reading of the camera's whole position from each
+ * (H8-page). That reader finds runs by absolute block levels, not by the
+ * complement check alone, so the counterfactual's agreement does not stand
+ * for it.
+ *
+ * Exported for `straddle.test.ts`.
  */
-function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord[] {
+export function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord[] {
   const { bank } = rc;
   const bits = DEFAULT_SENSOR.quantizationBits;
   if (bits === null) throw new Error('experiment10: DEFAULT_SENSOR no longer quantises');
@@ -2379,6 +2434,8 @@ function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord[] {
     let biasV = 0;
     const hookPrints: FrameFingerprint[] = [];
     const fastPrints: FrameFingerprint[] = [];
+    const hookSummaries: PhotoSummary[] = [];
+    const fastSummaries: PhotoSummary[] = [];
     captureAndDecode(bank.world.truthRig, bank.world.cameras, {
       ...base,
       conditions: { ...base.conditions, straddle: straddleForCamera(c, photos, null) },
@@ -2401,6 +2458,12 @@ function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord[] {
         }
         hookPrints.push(...runPrints(hook, p));
         fastPrints.push(...runPrints(fast, p));
+        runSummaries(hook, p).forEach((x, f) => {
+          hookSummaries[p * FRAMES_PER_RUN + f] = x;
+        });
+        runSummaries(fast, p).forEach((x, f) => {
+          fastSummaries[p * FRAMES_PER_RUN + f] = x;
+        });
         const shift = shiftBetween(
           pageRead(c, p, fast).correspondences,
           pageRead(c, p, hook).correspondences,
@@ -2411,6 +2474,8 @@ function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord[] {
     });
     const hook = isolatedCheck(hookPrints, photos, 'content');
     const fast = isolatedCheck(fastPrints, photos, 'content');
+    const pageHook = pageVerdictOf(pageRecord(() => indexPhotographs(hookSummaries, MANIFEST), photos));
+    const pageFast = pageVerdictOf(pageRecord(() => indexPhotographs(fastSummaries, MANIFEST), photos));
     out.push({
       camera: c,
       s,
@@ -2424,6 +2489,9 @@ function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord[] {
       placedFast: fast.usableProjectors,
       biasU,
       biasV,
+      pageHook,
+      pageFast,
+      pageAgree: samePageVerdict(pageHook, pageFast),
     });
   }
   return out;

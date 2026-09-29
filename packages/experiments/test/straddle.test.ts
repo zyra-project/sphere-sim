@@ -2669,3 +2669,37 @@ test("T43 Q0 keeps the reader the page replaced, and on this rig it reads as 754
   const atThreshold = replacedIndexPhotographs(summaries.map((x, j) => (j === 2 ? { ...x, clippedHigh: 0.01 } : x)), manifest);
   assert.deepEqual(atThreshold.problems, clipped.problems.slice(0, -1));
 });
+
+test("T44 H8 holds the page's own reading of the fast path to its reading of the hook's frames", async () => {
+  // The page column reads a straddled position from the fast path's frames,
+  // where the page would have the camera's; H8 held only the counterfactual's
+  // verdicts and the page's decode to the renderer's hook. The page's reader
+  // finds runs by absolute block levels, so its agreement is its own claim.
+  // Two readings agree when every field the page column counts by agrees.
+  const { TEST_PLAN, gateHook, rigContextOf, samePageVerdict } = await import('../src/straddle/stages.ts');
+  type Verdict = import('../src/straddle/stages.ts').PageVerdict;
+  const verdict: Verdict = { placed: [0, 2], unseen: [3], barelySeen: [1], problems: 1, crash: null };
+  assert.equal(samePageVerdict(verdict, structuredClone(verdict)), true);
+  const changes: [string, Partial<Verdict>][] = [
+    ['placed', { placed: [0] }],
+    ['placed', { placed: [0, 1] }],
+    ['unseen', { unseen: [] }],
+    ['barely seen', { barelySeen: [2] }],
+    ['problems', { problems: 2 }],
+    ['crash', { crash: 'a throw' }],
+  ];
+  for (const [field, other] of changes) {
+    assert.equal(samePageVerdict(verdict, { ...verdict, ...other }), false, `readings that differ in ${field} agree`);
+    assert.equal(samePageVerdict({ ...verdict, ...other }, verdict), false, `readings that differ in ${field} agree`);
+  }
+
+  // The gate stage's own record, at the quick plan's level on the reduced
+  // rig: both readings, and their agreement. The reading itself is as
+  // observed when this test was written, not predicted.
+  const b = rig();
+  const [got] = gateHook(rigContextOf('main:0', b, []), { ...TEST_PLAN, hookLevels: [0.12] }, 0);
+  assert.deepEqual(got.pageFast, { placed: [0], unseen: [3], barelySeen: [], problems: 2, crash: null });
+  assert.deepEqual(got.pageHook, got.pageFast);
+  assert.equal(got.pageAgree, true);
+  assert.ok(got.identical < got.pixels, 'the hook and the fast path are the same frames, so this compares nothing');
+});
