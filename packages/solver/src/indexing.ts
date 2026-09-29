@@ -2216,17 +2216,41 @@ function verdictProblem(v: RunVerdict, projector: number, runLength: number, res
  * from here can look like the sphere going dark while a projector it cannot see
  * plays on — and that holds thirty-one or more dark extras at the other end, a
  * run and the allowance at most, reads, by count, exactly like one numbered a
- * projector over, and it is filed wrongly. (Extras lit by the page's first
- * step, shot before Play, put light where that numbering needs a projector out
- * of view, and it is refused.) One with a run's worth of dark photographs added
- * inside — a projector this camera cannot see played twice, or the page paused
- * a minute in its run — is filed wrongly too when the last projector is out of
- * view as well: its dark run reads as photographs taken after the black, with
- * no extras needed at all. And a remnant of three photographs or fewer at an
- * end is taken for strays. Nothing in the photographs says otherwise, so the
- * page's instructions are the defence: start the camera before Play, stop it
- * only at the page's end tone — not when the sphere goes dark on the camera's
- * side — and stop the camera rather than pause the page.
+ * projector over, and it is filed wrongly. Any dark photographs make those
+ * extras: the page's black kept after the end tone, a long wait before Play
+ * with projector 1 out of view, a re-shoot of a projector this camera cannot
+ * see. (Extras lit by the page's first step, shot before Play, put light where
+ * that numbering needs a projector out of view, and it is refused.) With such
+ * extras before the first run, a run spoiled and shot again in line (Pause,
+ * `[`, Play) can be read as a re-shoot added after the position, which cuts
+ * the position a run short at the back, and it is filed wrongly the same way.
+ * One with a run's worth of dark photographs added inside — a projector this
+ * camera cannot see played twice, or the page paused a minute in its run — is
+ * filed wrongly too when the last projector is out of view as well: its dark
+ * run reads as photographs taken after the black, with no extras needed at all.
+ *
+ * A lit end cut short is told from the extras beside it by what is left of
+ * it. A remnant of three photographs or fewer is taken for strays, and a
+ * longer one that shows no pattern at the fingerprint's resolution — only the
+ * phase steps that end a run, where the fringe is finer than a block, or
+ * planes that each light all of what the camera sees of the projector or none
+ * of it — reads as light changing only in level, as a test shot's or the
+ * room's does. With thirty-one or more extras at the other end, either is filed
+ * a projector over, as a dark end is; with fewer, or where what is left shows a
+ * run's pattern, it is refused. In `position.test.ts`'s model, with 33 dark
+ * extras after the black, a camera started 26 to 30 photographs late — leaving
+ * only phase steps — is refused at each of four places tried on the page's
+ * plan, and on the cheap plan's coarser grid is filed wrongly at one of them,
+ * 28 to 30 late. On the bench's own photographs, of the 327 runs with a
+ * crescent of eight blocks or more in the clean positions
+ * `tools/reader-acceptance.ts` reads, the last four phase steps show a pattern
+ * in 295.
+ *
+ * Nothing in the photographs says otherwise, so the page's instructions are
+ * the defence: start the camera before Play, stop it only at the page's end
+ * tone — not when the sphere goes dark on the camera's side — keep the
+ * photographs before Play and after the black few, and stop the camera rather
+ * than pause the page.
  */
 export function indexPosition(
   fingerprints: readonly FrameFingerprint[],

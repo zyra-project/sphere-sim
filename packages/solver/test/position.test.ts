@@ -1341,8 +1341,10 @@ test('a projector re-shot in line — paused, stepped back, played again — rep
     }
   }
   assert.equal(folders, 512);
-  // Measured: 464 read whole. The rest are refused, in words.
-  assert.ok(placed >= 460, `${placed} of ${folders} read whole`);
+  // Measured: all 512 read whole. Until d4f46c7, 464: a copy of a run lying
+  // before the later pass's first slot — the next projector's white the page
+  // was paused on — named projector 1, and the folder was refused.
+  assert.equal(placed, folders, `${placed} of ${folders} read whole`);
 
   // A run that repeats nothing cannot be a projector the first pass already
   // holds a run of. Here a re-shoot played on from projector 2 has its
