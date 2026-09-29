@@ -338,3 +338,25 @@ test('the page says a position ends at its end tone, and advance() plays one unl
   assert.match(html, /So start the intervalometer before you press Play, and stop it only after the end tone\./);
   assert.match(html, /and stop it soon after this page’s end tone:/);
 });
+
+test('the page names what its reader sets aside, and the faults it cannot tell from a clean folder', () => {
+  // The reader sets aside a few test shots before the first run whatever
+  // frame and exposure they are of (review C's C1), and refuses a folder its
+  // extras leave unnumbered. What it files wrongly with nothing to say so
+  // (`indexPosition`'s docblock) comes from what an operator does: deletes a
+  // run, starts the camera late or stops it early with a long run of dark
+  // extras at the other end, pauses the page for a minute, or steps back
+  // within a run. The notes name each, and what to do instead.
+  const root = path.resolve(fileURLToPath(import.meta.url), '../../../..');
+  const html = fs.readFileSync(path.join(root, 'packages/web/emit.html'), 'utf8').replace(/\s+/g, ' ');
+  assert.match(html, /a few test shots before the first run, of any frame and at any exposure,/);
+  assert.match(html, /are recognised and set aside/);
+  assert.match(
+    html,
+    /What it cannot tell from a clean folder are the faults these notes name — a deleted run, photographs lost at an end, a paused page, a run stepped back within — which can file runs under the wrong projector with nothing to say so\./,
+  );
+  assert.match(html, /A deleted run is a fault this page cannot catch/);
+  assert.match(html, /Four or more of those lost at one end — or all but a few, where the projector there is one this camera can see — with more than 30 dark extras at the other,/);
+  assert.match(html, /So can a page paused for a minute while a projector this camera cannot see is playing, where the last projector is out of view too: stop the camera, not the page\./);
+  assert.match(html, /Re-shoot a run from its white — <kbd>Home<\/kbd>, then <kbd>]<\/kbd> — and never step back within it with <kbd>←<\/kbd> or Previous/);
+});
