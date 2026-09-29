@@ -2015,6 +2015,23 @@ test("a run that matches no projector is a re-shoot only after the position's bl
     assert.equal(r.problems.length, 1, r.problems.join(' | '));
     assert.match(r.problems[0], /after the end of this camera position, matches no projector/);
   }
+  // There every projector is numbered, and the count leaves the re-shoot no
+  // projector to be. With projector 4 out of view it leaves one: the reading
+  // with the stretch then fits as well, agreeing with the other about every
+  // run, and says only that the runs after the stretch cannot be numbered. The
+  // reading without it is used: projector 4 noted out of view, and the re-shoot
+  // refused as the camera having moved.
+  {
+    const p4Out = scene(PAGE, 64, { azimuth: 110 });
+    const moved = scene(PAGE, 64, { azimuth: 120 });
+    const photos = joined(camera(p4Out, 108)(position(p4Out, { unseen: [3], trailing: 10 })), camera(moved, 109)(run(moved, 2)));
+    const r = indexPosition(photos.prints, expected);
+    assert.deepEqual(r.usableProjectors, [0, 1, 2]);
+    assert.deepEqual(r.unseenProjectors, [3]);
+    assert.equal(misplaced(r.assignment, photos.truth), 0);
+    assert.equal(r.problems.length, 1, r.problems.join(' | '));
+    assert.match(r.problems[0], /after the end of this camera position, matches no projector/);
+  }
 });
 
 // ---------------------------------------------------------------------------
