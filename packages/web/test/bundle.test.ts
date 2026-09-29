@@ -27,12 +27,15 @@ import {
   bundleEntries,
   bundleReadme,
   configEntryName,
+  configMovedNote,
   CONFIG_ABSENT,
   FILE_NOTES,
   LAYOUT_ABSENT,
   projectorLayout,
+  warpEntryName,
 } from '../src/bundle.ts';
 import type { BundleInput, ProjectorLayout } from '../src/bundle.ts';
+import { type InstallTarget, planRestore } from '../src/restore.ts';
 import { buildWorld } from '../src/rigs.ts';
 import { BOULDER_PRESET } from '../src/settings.ts';
 import type { Settings } from '../src/settings.ts';
@@ -101,6 +104,62 @@ const P2_DARK: Settings = {
 function layoutIn(input: BundleInput): Record<string, unknown> | null {
   const entry = bundleEntries(input).find((e) => e.name === 'layout.json');
   return entry === undefined ? null : (JSON.parse(entry.text) as Record<string, unknown>);
+}
+
+/** Runs of whitespace collapsed, so a note is found however the README wrapped it. */
+const flat = (text: string): string => text.replace(/\s+/g, ' ');
+
+/**
+ * The paths the README lists under one section, as an operator reads them: the
+ * indented lines between the title's underline and the section's text.
+ */
+function listedUnder(readme: string, title: string): string[] {
+  const lines = readme.split('\n');
+  const at = lines.findIndex((l, i) => l === title && lines[i + 1] === '-'.repeat(title.length));
+  assert.ok(at >= 0, `the README has no section called ${title}`);
+  const out: string[] = [];
+  for (let i = at + 2; i < lines.length && lines[i].startsWith('  '); i++) out.push(lines[i].trim());
+  return out;
+}
+
+/**
+ * Every pair of entries an extractor cannot write both of: one name twice,
+ * letter case aside, or a file named like the folder another entry sits in.
+ * ZIP holds all of them. A disk holds one, and which one depends on the tool.
+ */
+function clashes(names: readonly string[]): string[] {
+  const out: string[] = [];
+  names.forEach((a, i) => {
+    names.forEach((b, j) => {
+      if (i < j && a.toLowerCase() === b.toLowerCase()) out.push(`${a} and ${b}`);
+      if (b.toLowerCase().startsWith(`${a.toLowerCase()}/`)) out.push(`${a} and the folder of ${b}`);
+    });
+  });
+  return out;
+}
+
+/**
+ * The archive with every part in it, as the page writes it once the operator
+ * has handed their files in: meshes and their layout, alignment files, a
+ * config, and a restore point holding the original of each. The targets are
+ * listed the way `buildBundle` lists them, the config's by the name it
+ * arrived under.
+ */
+function everyPart(configName: string): BundleInput {
+  const input = INPUT({ configName });
+  const targets: InstallTarget[] = [
+    ...input.warp.map(([id]) => ({ path: warpEntryName(id), kind: 'warp' as const })),
+    ...input.alignment.map(([id]) => ({
+      path: `alignment/${id}.alignment`,
+      kind: 'alignment' as const,
+    })),
+    { path: configName, kind: 'config' },
+  ];
+  const held = targets.map((t) => ({
+    path: t.path,
+    bytes: new TextEncoder().encode(`was ${t.path}\n`),
+  }));
+  return { ...input, restore: planRestore(targets, held) };
 }
 
 test('the README quotes the notes rather than restating them', () => {
@@ -253,12 +312,12 @@ test('a config name carrying a path is reduced to its basename', () => {
   // than a fix for something observed -- but an entry path with `..` in it is a
   // traversal for any extractor that resolves them, and the cost of not being
   // the archive that ships one is a `split`.
-  assert.equal(configEntryName('/etc/passwd', []), 'passwd');
-  assert.equal(configEntryName('../../local_sos_config.json', []), 'local_sos_config.json');
-  assert.equal(configEntryName('C:\\Users\\sos\\local_sos_config.json', []), 'local_sos_config.json');
+  assert.equal(configEntryName('/etc/passwd'), 'passwd');
+  assert.equal(configEntryName('../../local_sos_config.json'), 'local_sos_config.json');
+  assert.equal(configEntryName('C:\\Users\\sos\\local_sos_config.json'), 'local_sos_config.json');
   // A name that is nothing but a traversal has no basename to keep.
-  assert.equal(configEntryName('..', []), 'local_sos_config.json');
-  assert.equal(configEntryName('   ', []), 'local_sos_config.json');
+  assert.equal(configEntryName('..'), 'local_sos_config.json');
+  assert.equal(configEntryName('   '), 'local_sos_config.json');
 });
 
 test('every part of the archive is built through the same refusal path', () => {
@@ -493,9 +552,10 @@ test('layout.json is in the archive only beside meshes, and says why when not', 
 test('a config named layout.json does not overwrite the layout', () => {
   // The picker takes a config by CONTENT, so a site may call theirs anything —
   // including the one name this archive now writes beside the README. The
-  // README.txt case below is the same hazard; this one exists because the
-  // layout is written BEFORE the config, which is what lets `configEntryName`
-  // see it and move the config aside.
+  // README.txt case above is the same hazard. The layout used to be protected
+  // only by being written BEFORE the config, so that `configEntryName` saw it;
+  // it now keeps the name without looking, and the tests after this one hold
+  // the archives in which no layout is written at all.
   const clash = bundleEntries(INPUT({ configName: 'layout.json' }));
   const names = clash.map((e) => e.name);
   assert.equal(
@@ -511,6 +571,126 @@ test('a config named layout.json does not overwrite the layout', () => {
     'sphere-sim/projector-layout@1',
     'layout.json is the config, not the layout',
   );
+});
+
+test('nothing but the layout is ever written at layout.json, even in an archive without one', () => {
+  // Review found the name kept for the layout only once the layout had taken
+  // it. `buildBundle` builds the layout through `attempt()`, so a refusal
+  // leaves the meshes in and the layout out, and a config called `layout.json`
+  // then took the root name: whatever loads the meshes reads that file as
+  // their layout, and the README beside it said there was none.
+  //
+  // Refused here the way `buildBundle` refuses it: the builder throws, over a
+  // mesh the rig does not hold, and the meshes stay in the archive.
+  const warp: [string, string][] = [
+    ['P1', 'warp one\n'],
+    ['P5', 'warp five\n'],
+  ];
+  const refused: string[] = [];
+  let layout: ProjectorLayout | null = null;
+  try {
+    layout = projectorLayout(SOS_RIG, ON_THE_SPHERE, warp.map(([id]) => id));
+  } catch (err) {
+    refused.push(`the projector layout: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  assert.equal(layout, null, 'the builder did not refuse a mesh the rig does not hold');
+
+  for (const input of [
+    // Spread over INPUT rather than passed to it: INPUT lays out the meshes it
+    // is given, and these are the ones the builder refuses.
+    { ...INPUT({ configName: 'layout.json' }), warp, layout, refused },
+    // And null because there is nothing to place, with the name in other letters.
+    INPUT({ warp: [], configName: 'Layout.JSON' }),
+  ]) {
+    const entries = bundleEntries(input);
+    const names = entries.map((e) => e.name);
+    assert.equal(
+      entries.find((e) => e.text === input.config)?.name,
+      `config/${input.configName}`,
+      names.join(', '),
+    );
+    // There is no layout, so nothing may answer to its name at all.
+    assert.deepEqual(
+      names.filter((n) => n.toLowerCase() === 'layout.json'),
+      [],
+      names.join(', '),
+    );
+    // And the README says both: no layout, and the config where it went.
+    const readme = bundleReadme(input);
+    assert.ok(
+      flat(readme).includes(flat(LAYOUT_ABSENT)),
+      'the README does not say the layout is absent',
+    );
+    assert.deepEqual(listedUnder(readme, FILE_NOTES.config.title), [`config/${input.configName}`]);
+  }
+});
+
+test('with the layout written, the README lists a config named layout.json at config/layout.json', () => {
+  // The archive moved the config aside and the README still listed it under the
+  // name it arrived with, which here is the layout's own path: a reader
+  // following the README to their config would have opened the layout.
+  const input = INPUT({ configName: 'layout.json' });
+  const readme = bundleReadme(input);
+  assert.deepEqual(listedUnder(readme, FILE_NOTES.config.title), ['config/layout.json']);
+  assert.deepEqual(listedUnder(readme, FILE_NOTES.layout.title), ['layout.json']);
+  // The root path is listed once in the whole README, and that once is the layout.
+  assert.equal(readme.split('\n').filter((l) => l === '  layout.json').length, 1, readme);
+  // And the archive puts the config where the README says.
+  assert.equal(
+    bundleEntries(input).find((e) => e.text === input.config)?.name,
+    'config/layout.json',
+  );
+});
+
+test('a config moved aside is listed where it went, whichever of the archive’s names moved it', () => {
+  // Every name the archive's own entries take at its root, read off an archive
+  // that writes all of them rather than typed out here, so a root entry added
+  // later is held to this without anybody remembering to add it. The folders
+  // count: no extractor can make a file `warp` beside the folder `warp/`.
+  const full = everyPart('local_sos_config.json');
+  const roots = [
+    ...new Set(
+      bundleEntries(full)
+        .filter((e) => e.text !== full.config)
+        .map((e) => e.name.split('/')[0]),
+    ),
+  ];
+  for (const known of ['README.txt', 'layout.json', 'warp', 'alignment', 'restore']) {
+    assert.ok(roots.includes(known), `the archive no longer writes ${known}: ${roots.join(', ')}`);
+  }
+
+  for (const root of roots) {
+    // Letter case aside, because Windows and macOS set it aside.
+    for (const name of new Set([root, root.toUpperCase(), root.toLowerCase()])) {
+      // With every original held, so restore/ carries a copy of the config
+      // under its own name beside the copies of the meshes.
+      const input = everyPart(name);
+      const entries = bundleEntries(input);
+      const names = entries.map((e) => e.name);
+      assert.deepEqual(clashes(names), [], `a config named ${name}`);
+      assert.equal(
+        entries.find((e) => e.text === input.config)?.name,
+        `config/${name}`,
+        names.join(', '),
+      );
+      const readme = bundleReadme(input);
+      assert.deepEqual(listedUnder(readme, FILE_NOTES.config.title), [`config/${name}`]);
+      assert.ok(
+        flat(readme).includes(flat(configMovedNote(name))),
+        `the README does not say why ${name} moved`,
+      );
+    }
+  }
+
+  // A name the archive does not keep stays where it is, with nothing said
+  // about moving it.
+  for (const name of ['local_sos_config.json', 'config', 'P1.data']) {
+    const input = everyPart(name);
+    assert.deepEqual(clashes(bundleEntries(input).map((e) => e.name)), [], `a config named ${name}`);
+    const readme = bundleReadme(input);
+    assert.deepEqual(listedUnder(readme, FILE_NOTES.config.title), [name]);
+    assert.ok(!flat(readme).includes(flat(configMovedNote(name))), `the README moved ${name}`);
+  }
 });
 
 test('a mesh the rig does not hold, or a name two projectors share, is refused', () => {

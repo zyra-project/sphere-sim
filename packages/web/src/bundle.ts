@@ -143,6 +143,20 @@ export const CONFIG_ABSENT =
   'get one.';
 
 /**
+ * What the README adds when the config had to move aside, so the move is said
+ * rather than left for the reader to notice.
+ *
+ * It says what to do as well as why. `config/` is only where the archive keeps
+ * the file; where it is installed, it is still the file it arrived as.
+ */
+export function configMovedNote(name: string): string {
+  return (
+    `It is in config/ because ${name} is a name this archive keeps for its own files. ` +
+    `Install it as ${name}, the name it arrived under.`
+  );
+}
+
+/**
  * Why no `layout.json` is in the archive, when there is none.
  *
  * Every case is covered by one sentence rather than a guess at which one this
@@ -343,7 +357,11 @@ export interface BundleInput {
   alignment: readonly (readonly [string, string])[];
   /** The patched config, or `null` when none was loaded. */
   config: string | null;
-  /** The name that config arrived under, so it leaves under the same one. */
+  /**
+   * The name that config arrived under, so it leaves under the same one — in
+   * `config/` when the archive keeps that name for its own files. See
+   * {@link configEntryName}, which both the entries and the README ask.
+   */
   configName: string;
   /** What the reduction cost on this rig, as the panel reports it. */
   alignmentCost: string;
@@ -411,10 +429,21 @@ export function bundleReadme(input: BundleInput): string {
       : `${FILE_NOTES.alignment.readme}\n\n${input.alignmentCost}`,
     input.alignment.map(([id]) => `alignment/${id}.alignment`),
   );
+  // Listed where `bundleEntries` puts it, by asking the same function, and not
+  // under the name it arrived with. The two differ only when the config was
+  // moved aside, and then the name it arrived with is one the archive keeps
+  // for its own files: listing it sent the reader to the README they were
+  // holding, or to the layout.
+  const configEntry = configEntryName(input.configName);
+  const configBase = configEntry.slice(configEntry.lastIndexOf('/') + 1);
   section(
     FILE_NOTES.config.title,
-    input.config === null ? CONFIG_ABSENT : FILE_NOTES.config.readme,
-    input.config === null ? [] : [input.configName],
+    input.config === null
+      ? CONFIG_ABSENT
+      : configEntry === configBase
+        ? FILE_NOTES.config.readme
+        : `${FILE_NOTES.config.readme}\n\n${configMovedNote(configBase)}`,
+    input.config === null ? [] : [configEntry],
   );
 
   /**
@@ -483,10 +512,11 @@ export function bundleEntries(input: BundleInput): ZipEntry[] {
   // And ahead of everything an operator installs, so those stay together — it
   // is read by whatever loads the meshes and is not an install target.
   //
-  // Ahead of the config for a reason that is not tidiness. `configEntryName`
-  // moves a config aside only from names ALREADY written, and a site is free
-  // to call its config `layout.json`. Written first, this is one of those
-  // names; written after the config, the two would share it.
+  // Nothing else is ever written at this name, in any archive: whatever loads
+  // the meshes reads `layout.json` at the root as the layout, and would read a
+  // config there as one. This push does not always run, so it is not what keeps
+  // the name. `ARCHIVE_NAMES` keeps it, whether or not a layout is written and
+  // wherever this line sits.
   if (input.layout !== null) {
     entries.push({ name: LAYOUT_ENTRY, text: layoutText(input.layout) });
   }
@@ -495,7 +525,7 @@ export function bundleEntries(input: BundleInput): ZipEntry[] {
     entries.push({ name: `alignment/${id}.alignment`, text });
   }
   if (input.config !== null) {
-    entries.push({ name: configEntryName(input.configName, entries), text: input.config });
+    entries.push({ name: configEntryName(input.configName), text: input.config });
   }
   // Last, and inside its own directory: an extractor lists central-directory
   // order, so the files an operator installs stay together at the top and the
@@ -505,7 +535,32 @@ export function bundleEntries(input: BundleInput): ZipEntry[] {
 }
 
 /**
- * Where the loaded config goes, given what is already in the archive.
+ * Every name the archive's own entries take at its root: the two files it
+ * writes there, and the folders everything else sits in.
+ *
+ * KEPT WHETHER OR NOT THIS ARCHIVE WRITES THEM. The first version kept a name
+ * only once an entry had taken it, and `layout.json` is not always written:
+ * `buildBundle` builds it through `attempt()`, so a refused layout leaves the
+ * meshes in the archive and the layout out of it. A config called
+ * `layout.json` then took the root name, and whatever loads the meshes would
+ * have read an SOS config as their layout, beside a README saying there was
+ * none. Review caught it.
+ *
+ * The folders are here because an extractor cannot make a file `warp` and a
+ * folder `warp/` side by side. ZIP allows both names and a disk does not, so
+ * one of the two is lost, and which one depends on the tool. Comparing whole
+ * entry names never saw it.
+ */
+const ARCHIVE_NAMES: readonly string[] = [
+  'README.txt',
+  LAYOUT_ENTRY,
+  'warp',
+  'alignment',
+  'restore',
+];
+
+/**
+ * Where the loaded config goes in the archive, decided by its name alone.
  *
  * IT KEEPS THE NAME IT ARRIVED UNDER whenever that name is free, because the
  * whole point of writing it back is that the operator can diff it against the
@@ -519,19 +574,25 @@ export function bundleEntries(input: BundleInput): ZipEntry[] {
  * prompt — so the operator's instructions could be silently overwritten by
  * JSON, or the config lost. Neither is a failure anybody would see happen.
  *
+ * Free means not one of {@link ARCHIVE_NAMES}, which every archive keeps, and
+ * never just "not written yet". Because nothing but the name decides it, the
+ * README, which is written before the files it lists, asks this same function
+ * and names the path the entries use.
+ *
  * Compared case-INSENSITIVELY, because the extractor is the thing that has to
  * cope and Windows and macOS will treat `readme.txt` as the same file.
  *
  * On a collision the file keeps its name and moves into `config/`, which cannot
- * clash with anything this function writes. A directory is a smaller change to
- * ask of a reader than a mangled filename, and the README says it happened.
+ * clash with anything else the archive writes. A directory is a smaller change
+ * to ask of a reader than a mangled filename, and the README lists the file
+ * there and says why ({@link configMovedNote}).
  */
-export function configEntryName(name: string, existing: readonly ZipEntry[]): string {
+export function configEntryName(name: string): string {
   // A basename. `file.name` from a picker is already one, but a name carrying a
   // path separator would either nest unexpectedly or, with `..` in it, be a
   // traversal for an extractor that resolves entry paths.
   const base = name.split(/[\\/]/).pop()?.trim() ?? '';
   const safe = base === '' || base === '.' || base === '..' ? 'local_sos_config.json' : base;
-  const taken = new Set(existing.map((e) => e.name.toLowerCase()));
-  return taken.has(safe.toLowerCase()) ? `config/${safe}` : safe;
+  const kept = ARCHIVE_NAMES.some((n) => n.toLowerCase() === safe.toLowerCase());
+  return kept ? `config/${safe}` : safe;
 }

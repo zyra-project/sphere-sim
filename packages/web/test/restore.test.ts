@@ -323,6 +323,36 @@ test('a config named MANIFEST.txt does not evict the manifest', () => {
   assert.match(manifest, /restore\/MANIFEST-2\.txt {2}-> {2}MANIFEST\.txt/);
 });
 
+test('a config named like a folder in restore/ does not land beside that folder', () => {
+  // A folder is a name too. With the warp originals handed in and a config
+  // called `warp`, the copies wanted `restore/warp/P1.data` and `restore/warp`
+  // together. ZIP allows both and a disk does not, so the extractor keeps one,
+  // and the other is an original the operator believes they can put back.
+  const plan = planRestore(
+    [...targets().filter((t) => t.kind !== 'config'), { path: 'warp', kind: 'config' }],
+    [
+      ...everything().filter((h) => h.path !== 'local_sos_config.json'),
+      { path: 'warp', bytes: bytes(CONFIG_TEXT) },
+    ],
+  );
+  assert.equal(plan.complete, true);
+  const entries = restoreEntries(plan);
+  const names = entries.map((e) => e.name);
+  for (const file of names) {
+    const folder = `${file.toLowerCase()}/`;
+    assert.ok(
+      !names.some((n) => n.toLowerCase().startsWith(folder)),
+      `${file} is both a file and a folder: ${names.join(', ')}`,
+    );
+  }
+  // The meshes keep their paths. The config is the one that moves, and the
+  // manifest sends it back to its own name.
+  assert.ok(names.includes('restore/warp/P1.data'), names.join(', '));
+  assert.equal(restoreEntryNames(plan.covered).get('warp'), 'restore/warp-2');
+  const manifest = entries.find((e) => e.name === 'restore/MANIFEST.txt')?.text ?? '';
+  assert.match(manifest, /restore\/warp-2 {2}-> {2}warp\n/);
+});
+
 test('the refusal does not offer an action the page cannot perform', () => {
   // There is no picker for existing warp or alignment files — docs/OPERATOR-PATH.md
   // says so in this PR's own words. Telling an operator to "load them on the
