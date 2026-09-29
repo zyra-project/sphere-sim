@@ -1,6 +1,6 @@
 {
   "schema": "sphere-sim/reader-acceptance@1",
-  "commit": "f5d6f09c61166ddf898550cabe8ba5dcdd44a849",
+  "commit": "32afdc44754a695c9303720e8e8d91df2555c8ee",
   "clean": true,
   "generatedFrom": {
     "tool": "tools/reader-acceptance.ts",
