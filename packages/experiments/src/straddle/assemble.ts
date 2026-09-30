@@ -34,6 +34,8 @@
  */
 
 
+import * as fs from 'node:fs';
+
 import { deriveSeed, makeBenchRng, type BenchRng } from '../../../bench/src/random.ts';
 import { COMPLEMENT_LIMIT, MIN_CLASSIFY_MARGIN } from '../../../solver/src/indexing.ts';
 import { startPhase } from '../tether/run.ts';
@@ -44,6 +46,7 @@ import {
   EXP10_ROOT_SEED,
   EXPECTED,
   EXPOSURE_S,
+  FRAMES_PER_RUN,
   GATE_SCAN,
   GRID_GATE_MM,
   HEADLESS_LATENESS_MS,
@@ -52,16 +55,24 @@ import {
   PROJECTOR_RES,
   READOUT_S,
   REFINE_MARGIN,
+  RERUN_IDENTITIES,
+  RERUN_PREDICTIONS,
   ROTATION_GATE_DEG,
   STEPS,
 } from './design.ts';
 import {
   classifyCapture,
   classifyPosition,
+  decodedPhotographs,
   harmClass,
+  isMarginal,
+  isMinor,
+  type CaptureCategory,
   type CaptureClass,
   type Harm,
   type HarmClass,
+  type Photo,
+  type PositionCategory,
   type RunOutcomeKind,
 } from './run.ts';
 import {
@@ -91,7 +102,9 @@ import {
   twinStatus,
   variantOf,
   type BankUnit,
+  type CapturePlan,
   type CaptureScore,
+  type CaptureSolve,
   type CellSpec,
   type DecodeLevel,
   type DecodeRun,
@@ -100,7 +113,10 @@ import {
   type GateRun,
   type GateUnit,
   type HalfStats,
+  type HookRecord,
+  type PagePosition,
   type PoseUnit,
+  type PositionScore,
   type Q0Position,
   type Q0Unit,
   type RescoreUnit,
@@ -108,6 +124,7 @@ import {
   type RunScore,
   type SignTally,
   type SolveRecord,
+  type SolveSpec,
   type StageFile,
   type StageName,
   type TimingCell,
@@ -298,6 +315,22 @@ const CLASS_ORDER: readonly (ReportedClass | 'LOUD+SILENT')[] = [
   'UNCHANGED',
   'UNTOUCHED',
 ];
+
+/** A position table's columns, in the order the first full run's document wrote them. */
+const POSITION_ORDER: readonly PositionCategory[] = [
+  'UNTOUCHED',
+  'UNCHANGED',
+  'INVISIBLE-ONLY',
+  'REFUSED-ALL',
+  'MIXED',
+  'PLACED',
+];
+
+/** The same through the page, which has a category the counterfactual cannot: see QUIET. */
+const PAGE_POSITION_ORDER: readonly PagePositionCategory[] = [...POSITION_ORDER, 'QUIET'];
+
+/** Capture classes collapsed, for setting one reader's beside the other's. */
+const CAPTURE_GROUPS: readonly string[] = ['LOUD', 'SILENT', 'INVISIBLE-ONLY', 'UNCHANGED', 'UNTOUCHED'];
 
 /** The SILENT classes: nothing refused, a PLACED position reached the calibration. */
 const SILENT_CLASSES: readonly ReportedClass[] = [
@@ -584,6 +617,356 @@ function checkBand(cell: CellSpec, captures: readonly CaptureScore[], twin: Twin
   return inside;
 }
 
+// ---------------------------------------------------------------------------
+// The page column: the page's own reader on every changed position
+// ---------------------------------------------------------------------------
+//
+// The rescoring hands each changed position of a page-column rig whole to the
+// page's own reader (`pagePath`), and keeps what it made of it
+// (`PagePosition`). Below is what the document makes of those readings. The
+// counterfactual's machinery is reused wherever its rule is the same one: the
+// capture classes (`classifyCapture`), their intervals, the solves' harm and the
+// yardsticks. Where the page's rule differs, it says so where it is stated.
+// Nothing here is a stage's rule: pass S solves by the counterfactual's
+// categories alone, so the page's are pure functions of what the stage
+// recorded, and live in the assembly.
+
+/**
+ * The projector a problem the page wrote is about, zero-based, or null for a
+ * problem about the folder: the page names one run's refusal "Projector N's …",
+ * and nothing else starts so.
+ *
+ * `reader/acceptance.ts` reads the page's problems by the same rule, in a
+ * `problemProjector` it keeps to itself. It cannot be imported from there
+ * without editing that module, so it is stated again here, and
+ * `straddle.test.ts` holds the two to each other on every problem the reduced
+ * run's page column wrote.
+ */
+export function problemProjectorOf(problem: string): number | null {
+  const m = /^Projector (\d+)'s/.exec(problem);
+  return m === null ? null : Number(m[1]) - 1;
+}
+
+/**
+ * What the page did with one run of a position it read.
+ *
+ *   - `placed`: the run is among the runs it placed.
+ *   - `refused`: a problem names the run ({@link problemProjectorOf}); or the
+ *     folder was refused, with nothing placed and problems written; or a
+ *     problem about the folder stands and the run is none of the other
+ *     three. The last is the one reading beside the brief's two:
+ *     `indexPosition` places the runs before a stretch that is not whole runs,
+ *     and says in one problem about the folder that the projectors after it
+ *     "are not decoded", naming none of them the way it names a run.
+ *   - `noted`: out of this camera's view or barely seen, and no problem names
+ *     it. A note asks the operator for nothing: "nothing to re-shoot", "a
+ *     re-shoot from here would see no more of it".
+ *   - `crashed`: the reader threw on the folder (`PagePosition.crash`), so no
+ *     run of it was read. The operator gets an error and no calibration, so a
+ *     crashed run counts as refused wherever loudness is counted, and every
+ *     crash is counted apart as well.
+ *   - `unaccounted`: none of these. `indexPosition` gives every projector one
+ *     of the others, so this is counted apart and should stay empty.
+ */
+export type PageRunVerdict = 'placed' | 'refused' | 'noted' | 'crashed' | 'unaccounted';
+
+export const PAGE_RUN_VERDICTS: readonly PageRunVerdict[] = [
+  'placed',
+  'refused',
+  'noted',
+  'crashed',
+  'unaccounted',
+];
+
+/** Every run's verdict in one reading, projector by projector. */
+export function pageRunVerdicts(
+  read: Pick<PagePosition, 'placed' | 'unseen' | 'barelySeen' | 'problems' | 'crash'>,
+): PageRunVerdict[] {
+  const named = new Set(read.problems.map(problemProjectorOf));
+  const folder = (read.placed.length === 0 && read.problems.length > 0) || named.has(null);
+  return Array.from({ length: PROJECTORS }, (_, p): PageRunVerdict => {
+    if (read.crash !== null) return 'crashed';
+    if (read.placed.includes(p)) return 'placed';
+    if (named.has(p)) return 'refused';
+    if (read.unseen.includes(p) || read.barelySeen.includes(p)) return 'noted';
+    return folder ? 'refused' : 'unaccounted';
+  });
+}
+
+/**
+ * The problems that refuse one run: those naming it, or where none does, those
+ * about the whole folder. Empty for a run that is not refused.
+ */
+export function problemsRefusing(
+  read: Pick<PagePosition, 'problems'>,
+  projector: number,
+  verdict: PageRunVerdict,
+): string[] {
+  if (verdict !== 'refused') return [];
+  const named = read.problems.filter((x) => problemProjectorOf(x) === projector);
+  return named.length > 0 ? named : read.problems.filter((x) => problemProjectorOf(x) === null);
+}
+
+/**
+ * The page's words, in classes: `reasonOf`'s, and within three of them the
+ * finer cause the words give. `length` is split by where the page counted:
+ * `length-extra`, a photograph after the run's last frame lighting only this
+ * projector ("one more of this run"); `length-slot`, a run whose neighbours were
+ * found and whose slot holds the wrong count; and `length` itself, the
+ * bookends' count of a run's photographs, which the page's reader no longer
+ * writes. `unfound-room` is a run not found whose light changes the way a
+ * room's does; `numbering-gap` is a stretch between two runs that is not whole
+ * runs. A sentence none of `reasonOf`'s patterns knows is `other`: counted,
+ * named in the tables, and never a throw, since a document can be re-assembled
+ * but the words are the stage's.
+ */
+export function pageWordsOf(problem: string): string {
+  let reason: string;
+  try {
+    reason = reasonOf(problem);
+  } catch {
+    return 'other';
+  }
+  if (reason === 'unfound' && /changes the way a room changes/.test(problem)) return 'unfound-room';
+  if (reason === 'length' && /after its last frame, lights only what this projector lights/.test(problem))
+    return 'length-extra';
+  if (reason === 'length' && /Its neighbours were found/.test(problem)) return 'length-slot';
+  if (reason === 'numbering' && /lie between two runs/.test(problem)) return 'numbering-gap';
+  return reason;
+}
+
+/** The runs the page twin places: what a page verdict can be attributed against. */
+export function pageTwinPlaced(twin: Pick<TwinCamera, 'camera' | 'page'>): readonly number[] {
+  if (twin.page === undefined) {
+    throw new Error(
+      `experiment10: camera ${twin.camera}'s twin has no page reading, so nothing the page ` +
+        'column read of it can be attributed',
+    );
+  }
+  return twin.page.placed;
+}
+
+/** One run of a position the page read. */
+export interface PageRun {
+  projector: number;
+  touched: boolean;
+  /** The page twin places it: a verdict on it counts against the straddle. */
+  attributable: boolean;
+  /** The counterfactual's twin places it (`TwinCamera.placedContent`). */
+  counterfactualAttributable: boolean;
+  verdict: PageRunVerdict;
+  /** Its twin is minor or marginal: what `excludingMinorMarginal` leaves out, as the counterfactual's tables do. */
+  minorOrMarginal: boolean;
+}
+
+/**
+ * A changed position's runs as the page read them, each attributed against
+ * the page's reading of the same clean frames ({@link pageTwinPlaced}). The
+ * counterfactual attributes against its own verdict on them (`placedContent`),
+ * and the two twins differ where the page notes a grazing run the
+ * counterfactual places, or places one it refuses.
+ */
+export function pageRunsOf(score: PositionScore, twin: TwinCamera): PageRun[] {
+  if (score.page === null) {
+    throw new Error(`experiment10: camera ${score.pos}'s changed position has no page reading`);
+  }
+  const verdicts = pageRunVerdicts(score.page);
+  const placedClean = pageTwinPlaced(twin);
+  const status = twinStatus(twin);
+  return verdicts.map((verdict, p) => {
+    const t = status.find((x) => x.projector === p);
+    if (t === undefined) throw new Error(`experiment10: camera ${twin.camera}'s twin has no run ${p + 1}`);
+    return {
+      projector: p,
+      touched: score.touched.includes(p),
+      attributable: placedClean.includes(p),
+      counterfactualAttributable: twin.placedContent.includes(p),
+      verdict,
+      minorOrMarginal: isMinor(t) || isMarginal(t),
+    };
+  });
+}
+
+/**
+ * A position's category through the page: `classifyPosition`'s categories,
+ * and one it cannot have. `QUIET` is a position whose only non-placed
+ * attributable runs are quiet drops — runs the page twin places that the
+ * straddled reading only notes (P12) — so it is neither refused nor placed.
+ *
+ * Counted are the touched runs the page twin places, as `classifyPosition`
+ * counts the ones the counterfactual's twin places. Then: none counted,
+ * INVISIBLE-ONLY; none refused, PLACED when every one is placed and QUIET when
+ * a quiet drop is among them; some refused, REFUSED-ALL when none is placed and
+ * MIXED when some are. So a quiet drop beside a refusal leaves the position as
+ * loud as the refusal makes it, and is counted apart. A crashed run counts as
+ * refused ({@link PageRunVerdict}).
+ */
+export type PagePositionCategory = PositionCategory | 'QUIET';
+
+export function classifyPagePosition(
+  runs: readonly Pick<PageRun, 'touched' | 'attributable' | 'verdict' | 'minorOrMarginal'>[],
+  options: { exp9Flagged?: boolean; excludeMinorMarginal?: boolean } = {},
+): PagePositionCategory {
+  if (runs.length !== PROJECTORS) throw new Error(`experiment10: ${runs.length} runs, not ${PROJECTORS}`);
+  if (!runs.some((r) => r.touched)) return options.exp9Flagged === true ? 'UNCHANGED' : 'UNTOUCHED';
+  const counted = runs.filter(
+    (r) => r.touched && r.attributable && !(options.excludeMinorMarginal === true && r.minorOrMarginal),
+  );
+  if (counted.length === 0) return 'INVISIBLE-ONLY';
+  const refused = counted.filter((r) => r.verdict === 'refused' || r.verdict === 'crashed').length;
+  const placed = counted.filter((r) => r.verdict === 'placed').length;
+  if (refused === 0) return placed === counted.length ? 'PLACED' : 'QUIET';
+  return placed === 0 ? 'REFUSED-ALL' : 'MIXED';
+}
+
+/** {@link classifyPagePosition} of a scored position, UNTOUCHED or UNCHANGED where nothing changed. */
+export function pageCategoryOf(
+  score: PositionScore,
+  twin: TwinCamera,
+  excludeMinorMarginal: boolean,
+): PagePositionCategory {
+  if (!score.changed) return score.flagged ? 'UNCHANGED' : 'UNTOUCHED';
+  return classifyPagePosition(pageRunsOf(score, twin), {
+    exp9Flagged: score.flagged,
+    excludeMinorMarginal,
+  });
+}
+
+/**
+ * A capture's class through the page: `classifyCapture`, with a QUIET position
+ * kept as a PLACED one is. Nothing in it asks for a re-shoot, so under either
+ * policy it stays in the calibration, its placed runs straddled and its
+ * dropped ones missing. The capture is LOUD only where another position is
+ * refused, and SILENT otherwise; `quiet` in the page block counts the SILENT
+ * captures that are silent only through a quiet drop.
+ */
+export function pageCaptureClass(
+  categories: readonly PagePositionCategory[],
+  harm: Harm | null,
+  policy: 'P' | 'A',
+): CaptureCategory {
+  return classifyCapture(
+    categories.map((c) => (c === 'QUIET' ? 'PLACED' : c)),
+    harm,
+    policy,
+  );
+}
+
+/**
+ * What a policy renders and withholds for one capture read by the page:
+ * `capturePlan`'s rule on the page's categories. Straddled are the PLACED and
+ * QUIET positions, and under A the MIXED ones too; withheld are every run the
+ * page twin does not place, on every camera of the rig, and every run of a
+ * straddled position the page did not place. Null where nothing is straddled.
+ */
+export function pagePlanOf(
+  cap: Pick<CaptureScore, 'positions'>,
+  categories: readonly PagePositionCategory[],
+  verdictsAt: (camera: number) => readonly PageRunVerdict[],
+  twinPlacedAt: (camera: number) => readonly number[],
+  cameras: readonly number[],
+  policy: 'A' | 'P',
+): CapturePlan | null {
+  const exclude = new Set<string>();
+  for (const c of cameras) {
+    const placed = twinPlacedAt(c);
+    for (let p = 0; p < PROJECTORS; p++) if (!placed.includes(p)) exclude.add(`${c}.${p}`);
+  }
+  const positions: number[] = [];
+  cap.positions.forEach((pos, i) => {
+    const cat = categories[i];
+    if (!(cat === 'PLACED' || cat === 'QUIET' || (policy === 'A' && cat === 'MIXED'))) return;
+    positions.push(pos.pos);
+    verdictsAt(pos.pos).forEach((v, p) => {
+      if (v !== 'placed') exclude.add(`${pos.pos}.${p}`);
+    });
+  });
+  if (positions.length === 0) return null;
+  return { positions: positions.sort((x, y) => x - y), exclude: [...exclude].sort() };
+}
+
+/** Every photograph filed in order: all of a folder `decodedPhotographs` reads. */
+const FILED: readonly Photo[] = STEPS.map((_, j) => ({ filedStep: j, rows: [] }));
+
+/**
+ * Why a capture the page lets through takes a counterfactual solve's harm or
+ * does not: `same plan`, or the nearest miss among the capture's solves —
+ * `no solve`, then `positions`, `exclusions` and `placement`, each one step
+ * nearer.
+ */
+export type PageHarmWhy = 'same plan' | 'no solve' | 'positions' | 'exclusions' | 'placement';
+
+const HARM_MISSES: readonly PageHarmWhy[] = ['no solve', 'positions', 'exclusions', 'placement'];
+
+/**
+ * A counterfactual solve of this capture whose plan is the page's, placement
+ * included, or null and the nearest miss.
+ *
+ * A solve's id records its straddled positions and its exclusions, not where
+ * it placed each run: it renders a straddled position with the content
+ * footing's assignment (`decodedPhotographs`). So the page's plan is that
+ * solve's only if the positions and exclusions are the same and every run the
+ * page placed and the plan keeps sits, frame for frame, at the photographs the
+ * solve decoded as that run. Then the solve is the page's own, and its
+ * HARMLESS, BIASED or GATE-BREAKING is the page's. No solve is made here.
+ */
+export function pageSolveOf(
+  plan: CapturePlan,
+  cap: Pick<CaptureScore, 'positions'>,
+  candidates: readonly { treated: string; twin: string }[],
+  specOf: (id: string) => Pick<SolveSpec, 'straddle' | 'exclude'> | null,
+): { pair: { treated: string; twin: string } | null; why: PageHarmWhy } {
+  const kept = (): boolean => {
+    const excluded = new Set(plan.exclude);
+    for (const c of plan.positions) {
+      const pos = cap.positions.find((x) => x.pos === c);
+      if (pos === undefined || pos.page === null) return false;
+      const photoFor = decodedPhotographs(FILED, pos.assignment);
+      const read = pos.page;
+      for (let i = 0; i < read.placed.length; i++) {
+        const q = read.placed[i];
+        if (excluded.has(`${c}.${q}`)) continue;
+        for (let f = 0; f < FRAMES_PER_RUN; f++) {
+          if (photoFor[q * FRAMES_PER_RUN + f] !== read.starts[i] + f) return false;
+        }
+      }
+    }
+    return true;
+  };
+  let why: PageHarmWhy = 'no solve';
+  for (const pair of candidates) {
+    const spec = specOf(pair.treated);
+    if (spec === null) continue;
+    const m = /\/\[([\d,]*)\]$/.exec(spec.straddle);
+    const positions = m === null || m[1] === '' ? null : m[1].split(',').map(Number);
+    let miss: PageHarmWhy | null;
+    if (positions === null || positions.join() !== plan.positions.join()) miss = 'positions';
+    else if (spec.exclude.join() !== plan.exclude.join()) miss = 'exclusions';
+    else miss = kept() ? null : 'placement';
+    if (miss === null) return { pair, why: 'same plan' };
+    if (HARM_MISSES.indexOf(miss) > HARM_MISSES.indexOf(why)) why = miss;
+  }
+  return { pair: null, why };
+}
+
+/**
+ * The page's photographs filed under another step than the one holding more
+ * than half their exposure (P10) are listed one by one up to this many in a
+ * cell; past it a cell keeps the counts and the histogram.
+ */
+export const MISFILE_LIST_LIMIT = 200;
+
+/** Where a misfiled photograph's majority share falls: tenths of the half above a tie. */
+function shareHistogram(shares: readonly number[]): { from: number; to: number; n: number }[] {
+  const bins = Array.from({ length: 10 }, (_, i) => ({
+    from: round(0.5 + 0.05 * i, 2) as number,
+    to: round(0.55 + 0.05 * i, 2) as number,
+    n: 0,
+  }));
+  for (const s of shares) bins[Math.min(9, Math.max(0, Math.floor((s - 0.5) / 0.05)))].n++;
+  return bins;
+}
+
 /**
  * One scored cell, summarised: its captures and positions by category, both
  * policies, both footings, with and without minor and marginal runs, and the
@@ -620,22 +1003,22 @@ export function summariseCell(
   const which: Which = cell.which;
   const twinOf: TwinOf = (rig, camera) => twinFor(ev, which, rig, camera);
   const runsInBand = checkBand(cell, captures, twinOf);
-  const positionTable = (footing: 'content' | 'filed', excl: boolean): Record<string, number> => {
-    const counts: Record<string, number> = {
-      UNTOUCHED: 0,
-      UNCHANGED: 0,
-      'INVISIBLE-ONLY': 0,
-      'REFUSED-ALL': 0,
-      MIXED: 0,
-      PLACED: 0,
-    };
+  // A position table: every position of every capture kept, by a reader's category.
+  const tableOf = <C extends string>(
+    categories: readonly C[],
+    categoryAt: (cap: CaptureScore, pos: PositionScore) => C,
+    keep: (cap: CaptureScore) => boolean = () => true,
+  ): Record<string, number> => {
+    const counts: Record<string, number> = {};
+    for (const name of categories) counts[name] = 0;
     for (const cap of captures) {
-      for (const pos of cap.positions) {
-        counts[categoryOf(pos, footing, twinOf(cap.rig, pos.pos), excl)]++;
-      }
+      if (!keep(cap)) continue;
+      for (const pos of cap.positions) counts[categoryAt(cap, pos)]++;
     }
     return counts;
   };
+  const positionTable = (footing: 'content' | 'filed', excl: boolean): Record<string, number> =>
+    tableOf(POSITION_ORDER, (cap, pos) => categoryOf(pos, footing, twinOf(cap.rig, pos.pos), excl));
   type PolicyClasses = Classes & {
     solveErrors: string[];
     unjudgeable: string[];
@@ -643,9 +1026,33 @@ export function summariseCell(
     /** The harms of the SILENT captures judged, for the yardstick sensitivity. */
     silentHarms: Harm[];
   };
+  const solveFor = (cap: CaptureScore): CaptureSolve | null =>
+    solves.find((x) => x.t === cap.t) ?? null;
+  // What a reader makes of a capture, for the class tally: its class under a
+  // policy given a harm, the solve that judges its silent part, and whether
+  // that solve is the one policy A was given too.
+  interface Reader {
+    classify: (cap: CaptureScore, harm: Harm | null, policy: 'P' | 'A') => CaptureCategory;
+    pair: (cap: CaptureScore, policy: 'P' | 'A') => { treated: string; twin: string } | null;
+    sameSolveAsA: (cap: CaptureScore) => boolean;
+  }
+  const counterfactual: Reader = {
+    classify: (cap, harm, policy) =>
+      classifyCapture(
+        cap.positions.map((pos) => categoryOf(pos, 'content', twinOf(cap.rig, pos.pos), false)),
+        harm,
+        policy,
+      ),
+    pair: (cap, policy) => {
+      const solve = solveFor(cap);
+      return solve === null ? null : policy === 'A' ? solve.a : solve.p;
+    },
+    sameSolveAsA: (cap) => solveFor(cap)?.pIsA === true,
+  };
   const classesFor = (
     policy: 'P' | 'A',
     keep: (cap: CaptureScore) => boolean = () => true,
+    reader: Reader = counterfactual,
   ): PolicyClasses => {
     const out: PolicyClasses = {
       captures: 0,
@@ -671,17 +1078,9 @@ export function summariseCell(
     for (const name of CLASS_ORDER) out.byClass[name] = 0;
     for (const cap of captures) {
       if (!keep(cap)) continue;
-      const cats = cap.positions.map((pos) =>
-        categoryOf(pos, 'content', twinOf(cap.rig, pos.pos), false),
-      );
-      const solve = solves.find((x) => x.t === cap.t) ?? null;
-      const { harm, error, unjudgeable } = harmOf(
-        ev,
-        solve === null ? null : policy === 'A' ? solve.a : solve.p,
-        tau,
-      );
+      const { harm, error, unjudgeable } = harmOf(ev, reader.pair(cap, policy), tau);
       if (error !== null) out.solveErrors.push(`trial ${cap.t}: ${error}`);
-      const got = classifyCapture(cats, harm, policy);
+      const got = reader.classify(cap, harm, policy);
       let reported: ReportedClass = got.class;
       if (unjudgeable !== null) {
         out.unjudgeable.push(`trial ${cap.t}: ${unjudgeable}`);
@@ -704,7 +1103,7 @@ export function summariseCell(
         if (harm.dGridMm > 0.25) s.over025++;
         if (harm.dGridMm > 0.5) s.over05++;
         s.dGridMm.push(harm.dGridMm);
-        if (policy === 'P' && solve?.pIsA === true) s.sameSolveAsA++;
+        if (policy === 'P' && reader.sameSolveAsA(cap)) s.sameSolveAsA++;
         if (got.withinReshootNoise === true) {
           s.withinReshootNoise++;
           if (got.harm === 'GATE-BREAKING') s.gateBreakingWithinNoise++;
@@ -719,8 +1118,10 @@ export function summariseCell(
     }
     return out;
   };
-  const withIntervals = (c: Classes) => {
-    const rigs = cell.which === 'main' ? ev.plan.rigs : ev.plan.spillRigs;
+  const cellRigs = cell.which === 'main' ? ev.plan.rigs : ev.plan.spillRigs;
+  // Each class's share with its interval, resampling the rigs given, on a
+  // stream named off the cell (and off the reader, for any but the first).
+  const withIntervals = (c: Classes, rigs: readonly number[] = cellRigs, stream = cell.id) => {
     const shares: Record<string, ReturnType<typeof clusteredShare>> = {};
     for (const name of CLASS_ORDER) {
       if (name === 'UNTOUCHED') continue;
@@ -729,7 +1130,7 @@ export function summariseCell(
           num: c.byRig[String(k)]?.[name] ?? 0,
           den: c.byRig[String(k)]?.captures ?? 0,
         })),
-        `${cell.id}/${name}`,
+        `${stream}/${name}`,
       );
     }
     return shares;
@@ -787,13 +1188,14 @@ export function summariseCell(
       positionTau: at(yardsticks.positionTau),
     };
   };
-  // What a LOUD capture's operator reads. A position refused whole says "Found
-  // N projector runs", and re-shooting the position is a remedy the page reads
-  // back. A run refused on its own says, for the three kinds in
-  // RESHOOT_PROJECTOR_REFUSALS, "Re-shoot projector N": a folder the page then
-  // refuses whole, because it holds one run too many (Q0b). Read on the runs
-  // that make the capture loud: the touched attributable runs of its REFUSED-ALL
-  // and MIXED positions, on their deciding evaluation.
+  // What a LOUD capture's operator reads from the counterfactual reader. A
+  // position refused whole says "Found N projector runs", and re-shooting the
+  // position is a remedy it reads back. A run refused on its own says, for the
+  // three kinds in RESHOOT_PROJECTOR_REFUSALS, "Re-shoot projector N": a folder
+  // the counterfactual then refuses whole, because it holds one run too many
+  // (Q0b), where the page's reader reads the re-shoot. Read on the runs that
+  // make the capture loud: the touched attributable runs of its REFUSED-ALL and
+  // MIXED positions, on their deciding evaluation.
   const loud = (() => {
     const out = {
       captures: 0,
@@ -905,6 +1307,330 @@ export function summariseCell(
       : samples.map((x) => x.decode);
   const flagged = captures.filter((c) => c.positions.some((p) => p.flagged)).length;
   const changed = captures.filter((c) => c.positions.some((p) => p.changed)).length;
+
+  // ----- the page column: the page's own reader on each changed position
+  const page = (() => {
+    // The rigs Q0 put in the page column, by the rule the stage ran it by.
+    // Hand-built evidence (T26, T34) carries no Q0 and no page reading.
+    const pageRigs = ev.q0 === undefined ? new Set<string>() : pageColumnRigsOf(ev.q0);
+    const inColumn = (rig: number): boolean => pageRigs.has(`${which}:${rig}`);
+    // What the stage wrote must be what Q0 decided: a reading of every changed
+    // position of a page-column rig, and of nothing else.
+    for (const cap of captures) {
+      for (const pos of cap.positions) {
+        const wrong = inColumn(cap.rig) ? pos.changed && pos.page === null : pos.page !== null;
+        if (wrong) {
+          throw new Error(
+            `experiment10: ${cell.id} trial ${cap.t} camera ${pos.pos} ` +
+              (pos.page === null
+                ? 'changed and was not read by the page column, though its rig is in the column'
+                : 'was read by the page column, though its rig is not in the column'),
+          );
+        }
+      }
+    }
+    const columnRigs = cellRigs.filter(inColumn);
+    const rigs = { column: columnRigs.length, of: cellRigs.length };
+    // Q0 put none of this cell's rigs in the column: it did not run here, which
+    // is not the same as running and finding nothing to read (R8, L-aimed-2).
+    if (columnRigs.length === 0) return { status: 'not run' as const, rigs };
+    const keep = (cap: CaptureScore): boolean => inColumn(cap.rig);
+    const read = captures.filter(keep);
+    const readings = read.flatMap((cap) => cap.positions.filter((pos) => pos.page !== null));
+
+    // Each capture's runs and categories through the page, worked out once.
+    const analysed = new Map<CaptureScore, { runs: (PageRun[] | null)[]; cats: PagePositionCategory[] }>();
+    const analyse = (cap: CaptureScore) => {
+      let got = analysed.get(cap);
+      if (got === undefined) {
+        const runs = cap.positions.map((pos) =>
+          pos.changed ? pageRunsOf(pos, twinOf(cap.rig, pos.pos)) : null,
+        );
+        const cats = cap.positions.map((pos, i): PagePositionCategory => {
+          const r = runs[i];
+          if (r === null) return pos.flagged ? 'UNCHANGED' : 'UNTOUCHED';
+          return classifyPagePosition(r, { exp9Flagged: pos.flagged });
+        });
+        got = { runs, cats };
+        analysed.set(cap, got);
+      }
+      return got;
+    };
+    const camerasOf = (rig: number): number[] =>
+      Object.entries(ev.bank.units)
+        .filter(([key]) => {
+          const u = parseUnit(key);
+          return u.which === which && u.k === rig;
+        })
+        .flatMap(([, u]) => u.twins.map((t) => t.camera))
+        .sort((a, b) => a - b);
+    // The counterfactual solve whose plan is the page's, placement included,
+    // where one exists ({@link pageSolveOf}); nothing is solved for the page.
+    const matched = new Map<string, ReturnType<typeof pageSolveOf> | null>();
+    const matchOf = (cap: CaptureScore, policy: 'P' | 'A') => {
+      const key = `${cap.t}/${policy}`;
+      if (!matched.has(key)) {
+        const { runs, cats } = analyse(cap);
+        const verdictsAt = (camera: number): PageRunVerdict[] => {
+          const i = cap.positions.findIndex((pos) => pos.pos === camera);
+          return (runs[i] ?? []).map((r) => r.verdict);
+        };
+        const plan = pagePlanOf(
+          cap,
+          cats,
+          verdictsAt,
+          (camera) => pageTwinPlaced(twinOf(cap.rig, camera)),
+          camerasOf(cap.rig),
+          policy,
+        );
+        const solve = solveFor(cap);
+        const candidates: { treated: string; twin: string }[] = [];
+        for (const pair of solve === null ? [] : policy === 'A' ? [solve.a, solve.p] : [solve.p, solve.a]) {
+          if (pair !== null && !candidates.some((x) => x.treated === pair.treated)) candidates.push(pair);
+        }
+        matched.set(
+          key,
+          plan === null ? null : pageSolveOf(plan, cap, candidates, (id) => solveOf(ev, id)?.spec ?? null),
+        );
+      }
+      return matched.get(key) ?? null;
+    };
+    const pageReader: Reader = {
+      classify: (cap, harm, policy) => pageCaptureClass(analyse(cap).cats, harm, policy),
+      pair: (cap, policy) => matchOf(cap, policy)?.pair ?? null,
+      sameSolveAsA: (cap) => {
+        const pair = matchOf(cap, 'P')?.pair ?? null;
+        return pair !== null && pair.treated === solveFor(cap)?.a?.treated;
+      },
+    };
+    const PP = classesFor('P', keep, pageReader);
+
+    // Harm, where it can be read at all: the captures whose silent part reaches
+    // the calibration, and whether a counterfactual solve is of the page's plan.
+    const harm = {
+      silentPart: 0,
+      samePlan: 0,
+      notSolved: 0,
+      why: { 'no solve': 0, positions: 0, exclusions: 0, placement: 0 } as Record<string, number>,
+    };
+    // The capture classes of the two readers, crossed: each collapsed to LOUD,
+    // SILENT, INVISIBLE-ONLY or UNCHANGED under policy P.
+    const collapse = (c: CaptureCategory): string =>
+      c.class === 'LOUD' ? 'LOUD' : c.class.startsWith('SILENT') ? 'SILENT' : c.class;
+    const vsCounterfactual: Record<string, Record<string, number>> = {};
+    for (const a of CAPTURE_GROUPS) {
+      vsCounterfactual[a] = {};
+      for (const b of CAPTURE_GROUPS) vsCounterfactual[a][b] = 0;
+    }
+    // Quiet drops (P12): touched runs the page twin places that the straddled
+    // reading only notes, with no problem naming them.
+    const quiet = { runs: 0, positions: 0, captures: 0, silentOnlyThroughQuiet: 0 };
+    // What a LOUD capture's operator reads from the page, as `loud` counts the
+    // counterfactual's: the problems refusing the touched attributable runs of
+    // its REFUSED-ALL and MIXED positions.
+    const loud = {
+      captures: 0,
+      runByRun: 0,
+      wholePositionOnly: 0,
+      crashOnly: 0,
+      reshootNamed: 0,
+      // Told "what a dropped frame and a duplicated one look like": the page's
+      // complement refusal, the one sentence of its that says so.
+      dropAndDuplicate: 0,
+    };
+    for (const cap of read) {
+      const { runs, cats } = analyse(cap);
+      const got = pageCaptureClass(cats, null, 'P');
+      if (got.class.startsWith('SILENT') || got.loudAndSilent) {
+        harm.silentPart++;
+        const m = matchOf(cap, 'P');
+        if (m !== null && m.pair !== null) harm.samePlan++;
+        else {
+          harm.notSolved++;
+          harm.why[m === null ? 'no solve' : m.why]++;
+        }
+      }
+      vsCounterfactual[collapse(counterfactual.classify(cap, null, 'P'))][collapse(got)]++;
+      let quietHere = false;
+      runs.forEach((rs) => {
+        const n = (rs ?? []).filter((r) => r.touched && r.attributable && r.verdict === 'noted').length;
+        if (n === 0) return;
+        quiet.runs += n;
+        quiet.positions++;
+        quietHere = true;
+      });
+      if (quietHere) quiet.captures++;
+      if (got.class.startsWith('SILENT') && !cats.includes('PLACED')) quiet.silentOnlyThroughQuiet++;
+      if (got.class !== 'LOUD') continue;
+      let named = false;
+      let folder = false;
+      const words: string[] = [];
+      cap.positions.forEach((pos, i) => {
+        if (cats[i] !== 'REFUSED-ALL' && cats[i] !== 'MIXED') return;
+        for (const r of runs[i] ?? []) {
+          if (!(r.touched && r.attributable && r.verdict === 'refused')) continue;
+          const own = problemsRefusing(pos.page as PagePosition, r.projector, r.verdict);
+          if (own.some((x) => problemProjectorOf(x) === r.projector)) named = true;
+          else if (own.length > 0) folder = true;
+          words.push(...own);
+        }
+      });
+      loud.captures++;
+      if (named) loud.runByRun++;
+      else if (folder) loud.wholePositionOnly++;
+      else loud.crashOnly++;
+      if (words.some(namesReshoot)) loud.reshootNamed++;
+      if (words.some((x) => pageWordsOf(x) === 'broken')) loud.dropAndDuplicate++;
+    }
+    if (loud.captures !== PP.byClass.LOUD) {
+      throw new Error(
+        `experiment10: ${cell.id} has ${PP.byClass.LOUD} LOUD captures through the page and ` +
+          `${loud.captures} with a loud position`,
+      );
+    }
+
+    // Run by run, on the changed positions read: the page's verdict, crossed
+    // with the counterfactual's deciding outcome, apart by which twins place
+    // the run; and the page's words on each refused attributable run.
+    const crossOf = () =>
+      Object.fromEntries(PAGE_RUN_VERDICTS.map((v) => [v, {} as Record<string, number>])) as Record<
+        PageRunVerdict,
+        Record<string, number>
+      >;
+    const tally = {
+      touched: 0,
+      attributable: 0,
+      placed: 0,
+      refused: 0,
+      noted: 0,
+      crashed: 0,
+      unaccounted: 0,
+      // Untouched runs the page twin places that the straddled reading does
+      // not: a neighbour's straddle cost them.
+      collateral: 0,
+      // Runs the straddled reading places that the page twin does not: they
+      // reach the calibration, and no category counts them.
+      placedNotAttributable: 0,
+      both: crossOf(),
+      counterfactualOnly: crossOf(),
+      pageOnly: crossOf(),
+      neither: 0,
+    };
+    const words = { runs: 0, byClass: {} as Record<string, number> };
+    for (const cap of read) {
+      const { runs } = analyse(cap);
+      cap.positions.forEach((pos, i) => {
+        const rs = runs[i];
+        if (rs === null) return;
+        for (const r of rs) {
+          if (!r.touched && r.attributable && r.verdict !== 'placed') tally.collateral++;
+          if (r.verdict === 'placed' && !r.attributable) tally.placedNotAttributable++;
+          if (!r.touched) continue;
+          tally.touched++;
+          const cf = deciding(pos.content[r.projector]).outcome;
+          const into =
+            r.attributable && r.counterfactualAttributable
+              ? tally.both
+              : r.counterfactualAttributable
+                ? tally.counterfactualOnly
+                : r.attributable
+                  ? tally.pageOnly
+                  : null;
+          if (into === null) tally.neither++;
+          else into[r.verdict][cf] = (into[r.verdict][cf] ?? 0) + 1;
+          if (!r.attributable) continue;
+          tally.attributable++;
+          tally[r.verdict]++;
+          if (r.verdict !== 'refused') continue;
+          words.runs++;
+          const classes = new Set(
+            problemsRefusing(pos.page as PagePosition, r.projector, r.verdict).map(pageWordsOf),
+          );
+          for (const c of classes) words.byClass[c] = (words.byClass[c] ?? 0) + 1;
+        }
+      });
+    }
+
+    // Misfiles (P10): every photograph a placed run files under another step
+    // than the one holding more than half its exposure, with that share.
+    const shares: number[] = [];
+    const list: { t: number; pos: number; photo: number; filedStep: number; contentStep: number; share: number }[] = [];
+    let misfiledPositions = 0;
+    let misfilingRuns = 0;
+    let ambiguous = 0;
+    for (const cap of read) {
+      for (const pos of cap.positions) {
+        if (pos.page === null || pos.page.crash !== null) continue;
+        ambiguous += pos.page.ambiguous.reduce((a, n) => a + n, 0);
+        misfilingRuns += pos.page.contentMisfiles.filter((n) => n > 0).length;
+        if (pos.page.misfiled.length > 0) misfiledPositions++;
+        for (const m of pos.page.misfiled) {
+          shares.push(m.share);
+          list.push({
+            t: cap.t,
+            pos: pos.pos,
+            photo: m.photo,
+            filedStep: m.filedStep,
+            contentStep: m.contentStep,
+            share: round(m.share, 5) as number,
+          });
+        }
+      }
+    }
+    return {
+      status: readings.length === 0 ? ('nothing to read' as const) : ('read' as const),
+      rigs,
+      read: {
+        captures: read.length,
+        positions: readings.length,
+        crashes: readings.filter((pos) => pos.page !== null && pos.page.crash !== null).length,
+        placedAny: readings.filter((pos) => pos.page !== null && pos.page.placed.length > 0).length,
+      },
+      positions: {
+        all: tableOf(
+          PAGE_POSITION_ORDER,
+          (cap, pos) => pageCategoryOf(pos, twinOf(cap.rig, pos.pos), false),
+          keep,
+        ),
+        excludingMinorMarginal: tableOf(
+          PAGE_POSITION_ORDER,
+          (cap, pos) => pageCategoryOf(pos, twinOf(cap.rig, pos.pos), true),
+          keep,
+        ),
+      },
+      classes: {
+        P: {
+          counts: PP.byClass,
+          shares: withIntervals(PP, columnRigs, `${cell.id}/page`),
+          solveErrors: PP.solveErrors,
+          unjudgeable: PP.unjudgeable,
+          solved: solvedOf(PP.solved),
+          silentAgainst: silentAgainst(PP.silentHarms),
+          pastGate: pastGate(PP),
+          harm,
+          vsCounterfactual,
+        },
+      },
+      quiet,
+      loud,
+      words,
+      runs: tally,
+      misfiles: {
+        photographs: shares.length,
+        positions: misfiledPositions,
+        runs: misfilingRuns,
+        ambiguous,
+        share: {
+          min: shares.length === 0 ? null : round(Math.min(...shares), 5),
+          max: shares.length === 0 ? null : round(Math.max(...shares), 5),
+        },
+        below055: shares.filter((s) => s < 0.55).length,
+        histogram: shareHistogram(shares),
+        list: shares.length <= MISFILE_LIST_LIMIT ? list : null,
+      },
+    };
+  })();
+
   return {
     id: cell.id,
     spec: cell,
@@ -947,8 +1673,8 @@ export function summariseCell(
       },
       byOrigin,
     },
-    // LOUD captures by what the page tells the operator; the same captures
-    // under either policy, since LOUD reads only the positions.
+    // LOUD captures by what the counterfactual reader tells the operator; the
+    // same captures under either policy, since LOUD reads only the positions.
     loud,
     solved: solves.length > 0,
     solves: solves.length,
@@ -985,14 +1711,8 @@ export function summariseCell(
       gross: decodes.reduce((a, d) => a + (d.shift.gross ?? 0), 0),
       acceptedDelta: spread(decodes.map((d) => d.acceptedDelta)),
     },
-    page: captures.some((c) => c.positions.some((p) => p.page !== null))
-      ? {
-          positions: captures.flatMap((c) => c.positions.filter((p) => p.page !== null)).length,
-          placedAny: captures.flatMap((c) =>
-            c.positions.filter((p) => p.page !== null && p.page.placed.length > 0),
-          ).length,
-        }
-      : null,
+    // The page's own reader on the same captures: see the page column above.
+    page,
   };
 }
 
