@@ -2487,22 +2487,48 @@ test('T41 a run the page places is judged by what its photographs show, and a re
 
   // A run placed where the folder files it, on the clean position: nothing misfiled.
   const p = 1;
-  assert.deepEqual(runFiling(CLEAN, p, p * FRAMES_PER_RUN), { misfiles: 0, ambiguous: 0 });
+  assert.deepEqual(runFiling(CLEAN, p, p * FRAMES_PER_RUN), { misfiled: [], ambiguous: 0 });
+  // Each photograph of a run misfiled from `start`, as it would be listed.
+  const listed = (start: number, projector: number, shows: (j: number) => number, share: number) =>
+    Array.from({ length: FRAMES_PER_RUN }, (_, f) => ({
+      photo: start + f,
+      filedStep: projector * FRAMES_PER_RUN + f,
+      contentStep: shows(start + f),
+      share,
+    }));
   // Forward at 0.95 every photograph shows the step after its own, so the run
   // the page can find starts one photograph early, and there it misfiles none.
   const ahead = designedPhotos('forward', () => 0.95, 1);
-  assert.deepEqual(runFiling(ahead, p, p * FRAMES_PER_RUN - 1), { misfiles: 0, ambiguous: 0 });
-  assert.deepEqual(runFiling(ahead, p, p * FRAMES_PER_RUN), { misfiles: FRAMES_PER_RUN, ambiguous: 0 });
+  assert.deepEqual(runFiling(ahead, p, p * FRAMES_PER_RUN - 1), { misfiled: [], ambiguous: 0 });
+  assert.deepEqual(runFiling(ahead, p, p * FRAMES_PER_RUN), { misfiled: listed(p * FRAMES_PER_RUN, p, (j) => j + 1, 0.95), ambiguous: 0 });
   // Behind a late emitter every photograph can show the step before its own,
   // so the run starts one photograph late, and there it misfiles none.
   const behind = CLEAN.map((_, j) => photo(j, [{ step: j - 1, weight: 1 }]));
-  assert.deepEqual(runFiling(behind, p, p * FRAMES_PER_RUN + 1), { misfiles: 0, ambiguous: 0 });
-  assert.deepEqual(runFiling(behind, p, p * FRAMES_PER_RUN), { misfiles: FRAMES_PER_RUN, ambiguous: 0 });
+  assert.deepEqual(runFiling(behind, p, p * FRAMES_PER_RUN + 1), { misfiled: [], ambiguous: 0 });
+  assert.deepEqual(runFiling(behind, p, p * FRAMES_PER_RUN), { misfiled: listed(p * FRAMES_PER_RUN, p, (j) => j - 1, 1), ambiguous: 0 });
   // At 0.5 no photograph shows a step: all ambiguous, none misfiled.
-  assert.deepEqual(runFiling(designedPhotos('forward', () => 0.5, 1), p, p * FRAMES_PER_RUN), { misfiles: 0, ambiguous: FRAMES_PER_RUN });
+  assert.deepEqual(runFiling(designedPhotos('forward', () => 0.5, 1), p, p * FRAMES_PER_RUN), { misfiled: [], ambiguous: FRAMES_PER_RUN });
   // A photograph of the dark filed in a run is a misfile.
   const darkLast = CLEAN.map((ph, j) => (j === STEPS.length - 1 ? photo(j, [{ step: STEPS.length, weight: 1 }]) : ph));
-  assert.deepEqual(runFiling(darkLast, PROJECTORS - 1, (PROJECTORS - 1) * FRAMES_PER_RUN), { misfiles: 1, ambiguous: 0 });
+  const last = (PROJECTORS - 1) * FRAMES_PER_RUN;
+  assert.deepEqual(runFiling(darkLast, PROJECTORS - 1, last), {
+    misfiled: [{ photo: STEPS.length - 1, filedStep: STEPS.length - 1, contentStep: STEPS.length, share: 1 }],
+    ambiguous: 0,
+  });
+  // A photograph a hair past a tie is a majority all the same, so it is a
+  // misfile when filed under its minority step, and its entry says by how
+  // much. Every misfile of the quick run was of this kind: filed where the
+  // folder files it, its majority barely over half.
+  const nearTie = CLEAN.map((ph, j) =>
+    j === STEPS.length - 1 ? photo(j, [{ step: j - 1, weight: 0.50026 }, { step: j, weight: 0.49974 }]) : ph,
+  );
+  const tie = { photo: STEPS.length - 1, filedStep: STEPS.length - 1, contentStep: STEPS.length - 2, share: 0.50026 };
+  assert.deepEqual(runFiling(nearTie, PROJECTORS - 1, last), { misfiled: [tie], ambiguous: 0 });
+  // Its share is the photograph's, averaged over the rows of a rolling readout.
+  const rolled = CLEAN.map((ph, j) =>
+    j === STEPS.length - 1 ? photo(j, [{ step: j - 1, weight: 1 }], [{ step: j - 1, weight: 0.25 }, { step: j, weight: 0.75 }]) : ph,
+  );
+  assert.deepEqual(runFiling(rolled, PROJECTORS - 1, last).misfiled, [{ ...tie, share: 0.625 }]);
 
   // The record, from an IndexedCapture written by hand.
   const run = (projector: number, start: number) => ({ projector, ordinals: Array.from({ length: FRAMES_PER_RUN }, (_, f) => start + f) });
@@ -2525,6 +2551,7 @@ test('T41 a run the page places is judged by what its photographs show, and a re
     starts: [33, 68],
     offsets: [-1, 0],
     contentMisfiles: [0, FRAMES_PER_RUN],
+    misfiled: listed(68, 2, (j) => j + 1, 0.95),
     ambiguous: [0, 0],
     unseen: [3],
     barelySeen: [0],
@@ -2533,6 +2560,10 @@ test('T41 a run the page places is judged by what its photographs show, and a re
     notes: ['a note'],
     crash: null,
   });
+  // The position's list runs through every placed run, and each run's count
+  // is how many of it lie in that run: the near-tie is the last run's one.
+  const tied = pageRecord(() => indexed([run(2, 68), run(3, last)]), nearTie);
+  assert.deepEqual([tied.contentMisfiles, tied.misfiled], [[0, 1], [tie]]);
   // A run that is not 34 photographs in a row is a crash, not a record.
   const gapped = run(1, 34);
   gapped.ordinals[20] = 100;
@@ -2558,7 +2589,7 @@ test('T42 the page column reads the clean position as its page twin, and three f
   const b = rig();
   const twins = b.cameras.map((c) => computeTwin(b, c).twin);
   const rc = rigContextOf('main:0', b, twins);
-  const fields = ['ok', 'placed', 'starts', 'offsets', 'contentMisfiles', 'ambiguous', 'unseen', 'barelySeen', 'reshoots', 'problems', 'notes', 'crash'];
+  const fields = ['ok', 'placed', 'starts', 'offsets', 'contentMisfiles', 'misfiled', 'ambiguous', 'unseen', 'barelySeen', 'reshoots', 'problems', 'notes', 'crash'];
   for (const c of b.cameras) {
     const twin = twins[c].page;
     assert.ok(twin !== undefined, `camera ${c} has no page twin`);
@@ -2568,6 +2599,7 @@ test('T42 the page column reads the clean position as its page twin, and three f
     assert.ok(twin.placed.length > 0 && twin.crash === null && twin.ok, JSON.stringify(twin));
     assert.deepEqual(twin.starts, twin.placed.map((p) => p * FRAMES_PER_RUN));
     for (const none of [twin.offsets, twin.contentMisfiles, twin.ambiguous]) assert.deepEqual(none, twin.placed.map(() => 0));
+    assert.deepEqual(twin.misfiled, []);
     assert.deepEqual(twin.problems, []);
   }
 
@@ -2592,6 +2624,7 @@ test('T42 the page column reads the clean position as its page twin, and three f
     starts,
     offsets: placed.map((p, i) => starts[i] - p * FRAMES_PER_RUN),
     contentMisfiles: placed.map(() => 0),
+    misfiled: [],
     ambiguous: placed.map(() => 0),
     unseen,
     barelySeen: [],
@@ -2708,7 +2741,7 @@ test("T44 H8 holds the page's own reading of the fast path to its reading of the
   assert.deepEqual(pageVerdictOf(got.pageFast), { placed: [0], unseen: [3], barelySeen: [], problems: 2, crash: null });
   // Whole, so where each reading placed its run, and in what words it refused
   // the others, is on record and not only how many of each.
-  assert.deepEqual([got.pageFast.starts, got.pageFast.contentMisfiles], [[0], [0]]);
+  assert.deepEqual([got.pageFast.starts, got.pageFast.contentMisfiles, got.pageFast.misfiled], [[0], [0], []]);
   assert.match(got.pageFast.problems[0], /^Projector 2's frames 3 and 4 were played as a pattern and its complement/);
   assert.deepEqual(got.pageHook, got.pageFast);
   assert.equal(got.pageAgree, true);

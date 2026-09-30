@@ -175,6 +175,7 @@ import {
   runVerdicts,
   straddleForCamera,
   u0Crossing,
+  type Misfile,
   type Photo,
   type PositionCategory,
   type RunOutcome10,
@@ -202,8 +203,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 /**
  * The shape a checkpoint's units have. @2: a scored position's `page` is a
  * {@link PagePosition}, the page's whole reading of it, where @1 kept the
- * projectors placed and the problems alone. @3: H8's hook records keep both of
- * the page's readings whole, where @2 kept a verdict of each.
+ * projectors placed and the problems alone. @3: a page reading lists each
+ * photograph its placed runs misfile, with the step it shows and by what share,
+ * and H8's hook records keep both of the page's readings whole, where @2 kept a
+ * verdict of each.
  */
 export const CHECKPOINT_SCHEMA = 'sphere-sim/experiment-10-checkpoint@3';
 
@@ -3590,8 +3593,8 @@ export interface PositionScore {
  * under the wrong step, and compare where the page placed a run with where the
  * counterfactual did.
  *
- * Every array but `unseen`, `barelySeen`, `problems` and `notes` is one entry
- * per placed run, in the order of `placed`.
+ * Every array but `misfiled`, `unseen`, `barelySeen`, `problems` and `notes`
+ * is one entry per placed run, in the order of `placed`.
  */
 export interface PagePosition {
   /** Every run this camera could see was placed and nothing refused (`IndexedCapture.ok`). */
@@ -3612,6 +3615,13 @@ export interface PagePosition {
    * than half their exposure ({@link runFiling}).
    */
   contentMisfiles: number[];
+  /**
+   * Each of those photographs, over every placed run in the order of `placed`:
+   * where it is, the step it is filed under, the step it shows and that step's
+   * share of its exposure. `contentMisfiles[i]` is how many of them lie in run
+   * `i`: both are {@link runFiling}'s one list, the count its length.
+   */
+  misfiled: Misfile[];
   /** Photographs of the run with no majority step: counted apart, and never a misfile. */
   ambiguous: number[];
   /** Projectors noted out of this camera's view, and barely seen: notes, never refusals. */
@@ -3654,6 +3664,7 @@ export function pageRecord(read: () => IndexedCapture, photos: readonly Photo[])
       starts: [],
       offsets: [],
       contentMisfiles: [],
+      misfiled: [],
       ambiguous: [],
       unseen: [...indexed.unseen],
       barelySeen: [...indexed.barelySeen],
@@ -3674,7 +3685,8 @@ export function pageRecord(read: () => IndexedCapture, photos: readonly Photo[])
       record.placed.push(r.projector);
       record.starts.push(start);
       record.offsets.push(start - r.projector * FRAMES_PER_RUN);
-      record.contentMisfiles.push(filing.misfiles);
+      record.contentMisfiles.push(filing.misfiled.length);
+      record.misfiled.push(...filing.misfiled);
       record.ambiguous.push(filing.ambiguous);
     }
     return record;
@@ -3685,6 +3697,7 @@ export function pageRecord(read: () => IndexedCapture, photos: readonly Photo[])
       starts: [],
       offsets: [],
       contentMisfiles: [],
+      misfiled: [],
       ambiguous: [],
       unseen: [],
       barelySeen: [],

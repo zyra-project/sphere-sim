@@ -281,24 +281,31 @@ export function stepKind(step: number): FrameKind {
 }
 
 /**
- * The step a photograph shows: the one holding more than half its exposure, or
- * null when none does — an exact 0.5/0.5 tie, or a split three ways. Under a
- * rolling readout a part's share is its weight averaged over the rows, which is
- * its share of the photograph's integrated light-time. `STEPS.length` (136) is
- * the page's dark after the last step, which no run's frame is.
+ * The step a photograph shows, and that step's share of its exposure: the step
+ * holding more than half, or null when none does — an exact 0.5/0.5 tie, or a
+ * split three ways. Under a rolling readout a part's share is its weight
+ * averaged over the rows, which is its share of the photograph's integrated
+ * light-time. `STEPS.length` (136) is the page's dark after the last step,
+ * which no run's frame is.
  *
  * The one statement of what a photograph shows, for the content footing
- * ({@link oracleObservations}) and for the page's filing of a straddled
- * position ({@link runFiling}), so the two cannot disagree about it.
+ * ({@link oracleObservations}, through {@link contentStep}) and for the page's
+ * filing of a straddled position ({@link runFiling}), so the two cannot
+ * disagree about it.
  */
-export function contentStep(photo: Photo): number | null {
+export function contentMajority(photo: Photo): { step: number; share: number } | null {
   const share = new Map<number, number>();
   for (const row of photo.rows) {
     for (const part of row) share.set(part.step, (share.get(part.step) ?? 0) + part.weight / photo.rows.length);
   }
-  let step: number | null = null;
-  for (const [s, w] of share) if (w > 0.5) step = s;
-  return step;
+  let majority: { step: number; share: number } | null = null;
+  for (const [s, w] of share) if (w > 0.5) majority = { step: s, share: w };
+  return majority;
+}
+
+/** The step a photograph shows ({@link contentMajority}), or null when no step holds more than half. */
+export function contentStep(photo: Photo): number | null {
+  return contentMajority(photo)?.step ?? null;
 }
 
 /**
@@ -322,14 +329,29 @@ export function oracleObservations(photos: readonly Photo[], footing: 'content' 
   });
 }
 
+/** A photograph a placed run files under another step than the one it shows ({@link runFiling}). */
+export interface Misfile {
+  /** Its place in the folder, from 0, as a run's start counts it. */
+  photo: number;
+  /** The step the run files it under: `34·projector` plus its place in the run. */
+  filedStep: number;
+  /** The step it shows, which holds more than half its exposure ({@link contentMajority}). */
+  contentStep: number;
+  /** That step's share of its exposure: above 0.5, and how far above says how near a tie it was. */
+  share: number;
+}
+
 /**
  * How a run the page placed files what its photographs show.
  *
  * The run is projector `projector`'s, placed at folder photographs `start` to
  * `start + 33`, so photograph `start + f` is filed as step `34·projector + f`.
- * It is a content misfile when it shows another step ({@link contentStep}),
+ * It is a content misfile when it shows another step ({@link contentMajority}),
  * the dark after the last step included, and ambiguous, counted apart and
- * never a misfile, when it shows no step by a majority.
+ * never a misfile, when it shows no step by a majority. Each misfile is listed
+ * with the step it shows and that step's share of its exposure, in the run's
+ * order: a count cannot tell a photograph a hair past a tie from one wholly on
+ * another step, and the list's length is the count.
  *
  * Against what the photographs show, not against the folder's order. A late
  * emitter falls behind the camera, so photograph `j` can show step `j - 1`, and
@@ -343,18 +365,21 @@ export function runFiling(
   photos: readonly Photo[],
   projector: number,
   start: number,
-): { misfiles: number; ambiguous: number } {
+): { misfiled: Misfile[]; ambiguous: number } {
   if (!(Number.isInteger(start) && start >= 0 && start + FRAMES_PER_RUN <= photos.length)) {
     throw new Error(`runFiling: a run of ${FRAMES_PER_RUN} cannot start at photograph ${start} of ${photos.length}`);
   }
-  let misfiles = 0;
+  const misfiled: Misfile[] = [];
   let ambiguous = 0;
   for (let f = 0; f < FRAMES_PER_RUN; f++) {
-    const shows = contentStep(photos[start + f]);
+    const shows = contentMajority(photos[start + f]);
+    const filedStep = projector * FRAMES_PER_RUN + f;
     if (shows === null) ambiguous++;
-    else if (shows !== projector * FRAMES_PER_RUN + f) misfiles++;
+    else if (shows.step !== filedStep) {
+      misfiled.push({ photo: start + f, filedStep, contentStep: shows.step, share: shows.share });
+    }
   }
-  return { misfiles, ambiguous };
+  return { misfiled, ambiguous };
 }
 
 /**
