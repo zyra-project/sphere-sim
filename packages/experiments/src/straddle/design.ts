@@ -556,9 +556,10 @@ export interface RerunIdentity {
  * it has now places the clean positions the one it replaced refused, so a
  * re-run starts the rescoring's page column: every straddled camera position
  * handed whole to the page's own reader. These are the bets on what that
- * column shows, in the words `docs/EXPERIMENT-10.md` registers them in
- * ("Registered before the re-run with the page's reader", committed before any
- * of the code that measures them). They are held here, not in the assembly,
+ * column shows, in substance: the machine-readable form of the sentences
+ * `docs/EXPERIMENT-10.md` registers ("Registered before the re-run with the
+ * page's reader", committed before any of the code that measures them), with
+ * their thresholds and scopes. They are held here, not in the assembly,
  * because every value this module exports is hashed into each checkpoint's
  * fingerprint and repeated in the document's `generatedFrom`: a bet edited
  * after the run would turn every checkpoint stale, and the document would
@@ -642,13 +643,19 @@ export const RERUN_IDENTITIES: readonly RerunIdentity[] = [
     id: 'I-replaced',
     holds:
       'Q0\'s replaced-reader verdict equals the Q0 of experiments/experiment-10.json as committed ' +
-      'at 754147f, field by field: runsPlaced, problems text and reasons.',
+      'at 754147f, read with `git show 754147f:experiments/experiment-10.json` and never from the ' +
+      'working-tree file, which the run overwrites. Field for field at each of the 108 positions, ' +
+      'matched by which, rig and camera: placed, runsPlaced and the problems\' text; what follows ' +
+      'from them, reasons (reasonOf of each problem, on both sides) and the description ' +
+      '(754147f\'s describeIndexing, not today\'s, of the replaced verdict); total; and the ' +
+      'classify fields margin, wrongKinds and perRun, margins at the four decimals the committed ' +
+      'file holds.',
     restsOn:
       'The replaced reader is readback.ts\'s indexPhotographs at 754147f, reproduced line for ' +
       'line in stages.ts, and it reads the same summaries: the render, the encode, ' +
-      'summarisePhoto (linearise\'s code table included), litFractions and indexByFingerprint ' +
-      'compute what they computed then, and indexByFingerprint does not read the phases the ' +
-      'expected sequence has gained since.',
+      'summarisePhoto (linearise\'s code table included), litFractions, classify and ' +
+      'indexByFingerprint compute what they computed then, and indexByFingerprint does not read ' +
+      'the phases the expected sequence has gained since.',
   },
   {
     id: 'H8-page',
