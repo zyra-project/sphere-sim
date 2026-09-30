@@ -762,45 +762,14 @@ function setPace(ms: number): void {
 }
 
 /**
- * The sequence's place in the Room tab, under the chip that chose it: what it
- * is, in one line that is always visible; its pace; and — on a screen too narrow
- * for the lower third — its transport and caption, which `.seq-inline` hides
- * wherever the lower third is showing.
+ * The sequence's place in the Room tab, under the chip that chose it. First,
+ * on a screen too narrow for the lower third, its transport and caption
+ * (`.seq-inline`, hidden wherever the lower third is showing). They come first
+ * because a phone's settings sheet is a few hundred pixels tall: below a note
+ * and the pace chips they started out of sight, under the very chips they
+ * belong to. Then what it is, in one line that is always visible, and its pace.
  */
 function sequenceBlock(): HTMLElement[] {
-  const out: HTMLElement[] = [];
-  out.push(
-    el('p', {
-      className: 'note tiny',
-      textContent:
-        'The raw frames a calibration projects, lit through the rig as built: not a camera’s ' +
-        'photograph, not changed by recalibrating, and read by no metric.' +
-        (coarsePointer()
-          ? ''
-          : ' Space plays and pauses, ← and → step, Shift + → jumps to the next projector.'),
-    }),
-  );
-  out.push(
-    chipRow(
-      [
-        {
-          label: 'Emitter pace · 2 s',
-          title: 'Two seconds a frame, the emitter’s own default: about a minute a projector.',
-          on: player.dwellMs === SEQUENCE_DWELL_MS,
-          onPick: () => setPace(SEQUENCE_DWELL_MS),
-        },
-        {
-          label: 'Brisk · 0.7 s',
-          title: 'Fast enough that the binary search reads as motion rather than as stills.',
-          on: player.dwellMs === SEQUENCE_BRISK_MS,
-          onPick: () => setPace(SEQUENCE_BRISK_MS),
-        },
-      ],
-      'How long each frame stays up. Nothing goes faster than half a second a frame: each Gray ' +
-        'plane is followed by its inverse, which flips most of the lit ball at once, and on a ' +
-        'big screen that is a flash.',
-    ),
-  );
   const inline = el('div', { className: 'seq-inline' });
   const { row, play } = sequenceTransport();
   const label = el('p', { className: 'note num' });
@@ -826,8 +795,37 @@ function sequenceBlock(): HTMLElement[] {
     }
     fill();
   };
-  out.push(inline);
-  return out;
+  return [
+    inline,
+    el('p', {
+      className: 'note tiny',
+      textContent:
+        'The raw frames a calibration projects, lit through the rig as built: not a camera’s ' +
+        'photograph, not changed by recalibrating, and read by no metric.' +
+        (coarsePointer()
+          ? ''
+          : ' Space plays and pauses, ← and → step, Shift + → jumps to the next projector.'),
+    }),
+    chipRow(
+      [
+        {
+          label: 'Emitter pace · 2 s',
+          title: 'Two seconds a frame, the emitter’s own default: about a minute a projector.',
+          on: player.dwellMs === SEQUENCE_DWELL_MS,
+          onPick: () => setPace(SEQUENCE_DWELL_MS),
+        },
+        {
+          label: 'Brisk · 0.7 s',
+          title: 'Fast enough that the binary search reads as motion rather than as stills.',
+          on: player.dwellMs === SEQUENCE_BRISK_MS,
+          onPick: () => setPace(SEQUENCE_BRISK_MS),
+        },
+      ],
+      'How long each frame stays up. Nothing goes faster than half a second a frame: each Gray ' +
+        'plane is followed by its inverse, which flips most of the lit ball at once, and on a ' +
+        'big screen that is a flash.',
+    ),
+  ];
 }
 
 /** Whether the ball was showing the sequence the last time `syncSequence` looked. */

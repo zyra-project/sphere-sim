@@ -607,6 +607,10 @@ test('the page wires one player, draws the card\u2019s frame itself, and asks th
     body('installSequenceKeys'),
     /sequenceKeyAction\(\s*e,\s*sequenceFocus\(e\.target instanceof HTMLElement \? e\.target : null\),\s*\)/,
   );
+  // On a phone the transport is the first thing under the content chips: the
+  // settings sheet there is a few hundred pixels tall, and anything put above
+  // the transport pushes it out of sight.
+  assert.match(body('sequenceBlock'), /return \[\n\s+inline,/);
   // The lower third exists, starts hidden, and the hint makes way for it.
   assert.match(html, /<div id="sequence"[^>]*\shidden><\/div>/);
   assert.match(html, /body\.sequence-on #hint \{ display: none; \}/);
