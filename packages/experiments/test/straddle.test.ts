@@ -2509,6 +2509,9 @@ test('T41 a run the page places is judged by what its photographs show, and a re
   const ahead = designedPhotos('forward', () => 0.95, 1);
   assert.deepEqual(runFiling(ahead, p, p * FRAMES_PER_RUN - 1), { misfiled: [], ambiguous: 0 });
   assert.deepEqual(runFiling(ahead, p, p * FRAMES_PER_RUN), { misfiled: listed(p * FRAMES_PER_RUN, p, (j) => j + 1, 0.95), ambiguous: 0 });
+  // Placed one photograph late instead, each is filed two steps before the
+  // one it shows: an entry's filed step is the placed run's, not the folder's.
+  assert.deepEqual(runFiling(ahead, p, p * FRAMES_PER_RUN + 1).misfiled, listed(p * FRAMES_PER_RUN + 1, p, (j) => j + 1, 0.95));
   // Behind a late emitter every photograph can show the step before its own,
   // so the run starts one photograph late, and there it misfiles none.
   const behind = CLEAN.map((_, j) => photo(j, [{ step: j - 1, weight: 1 }]));
