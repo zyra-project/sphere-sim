@@ -32,7 +32,10 @@
  *   - margin, wrongKinds and perRun, margins at the four decimals the
  *     committed file holds.
  *
- * A position on one side only fails, and so does a comparison of none.
+ * A position on one side only fails, and so does one held twice on either side,
+ * whatever its copies say: the identity is held at each of 108 positions, so a
+ * comparison of any other number fails too. A field that differs is shown on
+ * both sides from where they first part.
  *
  * Run:  node tools/experiment10-replaced.ts [--new <file>] [--reference <file>]
  *
@@ -44,9 +47,10 @@
  *                the working tree, whose file is the fourth run's
  *
  * Exit 0 when every field of every position agrees, 1 when any does not, 2 on
- * misuse. It needs 754147f in the clone, which a shallow clone may lack, so it
- * is run by hand and not in CI; its comparison is tested without the commit
- * (`packages/usage/test/experiment10-replaced.test.ts`).
+ * misuse or when a file or the commit it reads is missing, with a message
+ * naming what. It needs 754147f in the clone, which a shallow clone may lack,
+ * so it is run by hand and not in CI; its comparison is tested without the
+ * commit (`packages/usage/test/experiment10-replaced.test.ts`).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -62,6 +66,13 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** The third full run's commit: its committed results file is the reference. */
 export const REFERENCE_COMMIT = '754147f';
+
+/**
+ * The clean positions I-replaced is held at, as its registered text says ("at
+ * each of the 108 positions", `RERUN_IDENTITIES` in design.ts): a comparison of
+ * any other number does not hold it.
+ */
+export const POSITIONS = 108;
 
 /** Where a document the tool reads keeps its results, relative to the repository. */
 const RESULTS = 'experiments/experiment-10.json';
@@ -200,32 +211,62 @@ export type Field = (typeof FIELDS)[number];
 export interface Comparison {
   /** Positions in both files. */
   compared: number;
+  /** The positions the identity is held at: `compared` must be this. */
+  expected: number;
+  /** Each file's positions as listed, a duplicate counted each time it is. */
   ours: number;
   theirs: number;
-  /** For each field, the positions where it differs, each with both sides abbreviated. */
+  /** For each field, the positions where it differs, each with both sides from where they part. */
   differ: Record<Field, string[]>;
   onlyNew: string[];
   onlyReference: string[];
+  /** Positions listed more than once in a file, with how many times. */
+  duplicatedNew: string[];
+  duplicatedReference: string[];
   holds: boolean;
+}
+
+/**
+ * Two values as JSON, each from a little before the first character where
+ * they part, so a long field that differs late shows where it does and not
+ * the same opening twice.
+ */
+export function firstDifference(a: unknown, b: unknown, width = 120): [string, string] {
+  const x = JSON.stringify(a) ?? 'undefined';
+  const y = JSON.stringify(b) ?? 'undefined';
+  let i = 0;
+  while (i < x.length && i < y.length && x[i] === y[i]) i++;
+  const from = Math.max(0, i - 20);
+  const cut = (s: string): string =>
+    `${from > 0 ? '…' : ''}${s.slice(from, from + width)}${from + width < s.length ? '…' : ''}`;
+  return [cut(x), cut(y)];
 }
 
 /**
  * The replaced reader's verdicts against the reference's, field for field.
  * `describe` writes a verdict's description as the reference's code wrote it,
  * and `reasons` classes a problem; both are handed in, so the comparison can be
- * tested without the reference's commit.
+ * tested without the reference's commit. `expected` is how many positions it
+ * must compare to hold.
  */
 export function compareReplaced(
   ours: readonly ReplacedPosition[],
   theirs: readonly ReferencePosition[],
   describe: (p: ReplacedPosition) => string,
   reasons: (problem: string) => string = reasonOf,
+  expected: number = POSITIONS,
 ): Comparison {
+  // A position listed twice is a failure however its copies agree, so each
+  // side is counted as listed before it is keyed.
+  const duplicated = (xs: readonly { which: string; rig: number; camera: number }[]): string[] => {
+    const n = new Map<string, number>();
+    for (const p of xs) n.set(keyOf(p), (n.get(keyOf(p)) ?? 0) + 1);
+    return [...n].filter(([, k]) => k > 1).map(([key, k]) => `${key} (${k} times)`);
+  };
   const reference = new Map(theirs.map((p) => [keyOf(p), p]));
   const mine = new Map(ours.map((p) => [keyOf(p), p]));
   const differ = Object.fromEntries(FIELDS.map((f) => [f, [] as string[]])) as Record<Field, string[]>;
   const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
-  const short = (x: unknown): string => JSON.stringify(x).slice(0, 120);
   let compared = 0;
   for (const [k, p] of mine) {
     const q = reference.get(k);
@@ -253,26 +294,41 @@ export function compareReplaced(
       wrongKinds: q.wrongKinds,
       perRun: q.perRun.map((r) => ({ margin: r.margin, wrongKinds: r.wrongKinds })),
     };
-    for (const f of FIELDS) if (!same(now[f], then[f])) differ[f].push(`${k}: ${short(now[f])} against ${short(then[f])}`);
+    for (const f of FIELDS) {
+      if (same(now[f], then[f])) continue;
+      const [a, b] = firstDifference(now[f], then[f]);
+      differ[f].push(`${k}: ${a} against ${b}`);
+    }
   }
   const onlyNew = [...mine.keys()].filter((k) => !reference.has(k));
   const onlyReference = [...reference.keys()].filter((k) => !mine.has(k));
-  const failures = FIELDS.reduce((a, f) => a + differ[f].length, 0) + onlyNew.length + onlyReference.length;
+  const duplicatedNew = duplicated(ours);
+  const duplicatedReference = duplicated(theirs);
+  const failures =
+    FIELDS.reduce((a, f) => a + differ[f].length, 0) +
+    onlyNew.length +
+    onlyReference.length +
+    duplicatedNew.length +
+    duplicatedReference.length;
   return {
     compared,
-    ours: mine.size,
-    theirs: reference.size,
+    expected,
+    ours: ours.length,
+    theirs: theirs.length,
     differ,
     onlyNew,
     onlyReference,
-    holds: failures === 0 && compared > 0,
+    duplicatedNew,
+    duplicatedReference,
+    holds: failures === 0 && compared === expected,
   };
 }
 
 /** What the comparison says, line by line: the fields, then the verdict. */
 export function report(c: Comparison, newName: string, referenceName: string): string[] {
   const lines = [
-    `I-replaced: ${c.compared} positions compared (${c.ours} in ${newName}, ${c.theirs} in ${referenceName})`,
+    `I-replaced: ${c.compared} positions compared of the ${c.expected} it is held at ` +
+      `(${c.ours} listed in ${newName}, ${c.theirs} in ${referenceName})`,
   ];
   for (const f of FIELDS) {
     lines.push(`  ${f.padEnd(11)} ${c.differ[f].length === 0 ? 'equal at every position' : `${c.differ[f].length} differ`}`);
@@ -282,8 +338,38 @@ export function report(c: Comparison, newName: string, referenceName: string): s
   if (c.onlyReference.length > 0) {
     lines.push(`  only in the reference: ${c.onlyReference.length} (${c.onlyReference.slice(0, 3).join('; ')})`);
   }
+  if (c.duplicatedNew.length > 0) {
+    lines.push(`  listed twice or more in the new file: ${c.duplicatedNew.length} (${c.duplicatedNew.slice(0, 3).join('; ')})`);
+  }
+  if (c.duplicatedReference.length > 0) {
+    lines.push(
+      `  listed twice or more in the reference: ${c.duplicatedReference.length} ` +
+        `(${c.duplicatedReference.slice(0, 3).join('; ')})`,
+    );
+  }
+  if (c.compared !== c.expected) lines.push(`  compared ${c.compared} positions, not the ${c.expected} it is held at`);
   lines.push(c.holds ? 'I-replaced HOLDS' : 'I-replaced DOES NOT HOLD');
   return lines;
+}
+
+/**
+ * A file as a commit holds it, or a throw naming the commit and the file and
+ * what git said: a clone without the commit is the likeliest cause.
+ */
+function gitShow(commit: string, file: string, repo: string): string {
+  try {
+    return execFileSync('git', ['-C', repo, 'show', `${commit}:${file}`], {
+      encoding: 'utf8',
+      maxBuffer: 1 << 26,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (e) {
+    const said = String((e as { stderr?: unknown }).stderr ?? '').trim().split('\n')[0] ?? '';
+    throw new Error(
+      `git show ${commit}:${file} failed${said === '' ? '' : ` (${said})`}; is ${commit} in this clone? ` +
+        'A shallow clone may lack it.',
+    );
+  }
 }
 
 /**
@@ -291,9 +377,7 @@ export function report(c: Comparison, newName: string, referenceName: string): s
  * commit's `packages/web/src/readback.ts`, as a verdict's description.
  */
 export function describeAt(commit: string, repo: string = ROOT): (p: ReplacedPosition) => string {
-  const source = execFileSync('git', ['-C', repo, 'show', `${commit}:packages/web/src/readback.ts`], {
-    encoding: 'utf8',
-  });
+  const source = gitShow(commit, 'packages/web/src/readback.ts', repo);
   const file = ts.createSourceFile('readback.ts', source, ts.ScriptTarget.Latest, true);
   const declaration = file.statements.find(
     (node): node is ts.FunctionDeclaration =>
@@ -334,7 +418,14 @@ export function parseArgs(argv: readonly string[]): Options {
   return out;
 }
 
-export function main(argv: readonly string[] = process.argv.slice(2)): number {
+/**
+ * The command line run: 0 when I-replaced holds, 1 when it does not, and 2,
+ * with a message, when the command line is wrong or a file or the commit it
+ * reads is missing or unreadable, which is no verdict on the identity.
+ * `commit` is the reference's, a parameter only so a test can name one the
+ * clone does not hold.
+ */
+export function main(argv: readonly string[] = process.argv.slice(2), commit: string = REFERENCE_COMMIT): number {
   let options: Options;
   try {
     options = parseArgs(argv);
@@ -345,21 +436,47 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
     );
     return 2;
   }
-  const referenceName =
-    options.reference === null ? `git show ${REFERENCE_COMMIT}:${RESULTS}` : path.relative(ROOT, options.reference);
-  const referenceText =
-    options.reference === null
-      ? execFileSync('git', ['-C', ROOT, 'show', `${REFERENCE_COMMIT}:${RESULTS}`], {
-          encoding: 'utf8',
-          maxBuffer: 1 << 26,
-        })
-      : fs.readFileSync(options.reference, 'utf8');
-  const newName = path.relative(ROOT, options.newFile);
-  const comparison = compareReplaced(
-    replacedOf(JSON.parse(fs.readFileSync(options.newFile, 'utf8')), newName),
-    referenceOf(JSON.parse(referenceText), referenceName),
-    describeAt(REFERENCE_COMMIT),
-  );
+  // A file inside the repository by its path there, any other by its own.
+  const nameOf = (file: string): string => {
+    const inside = path.relative(ROOT, file);
+    return inside.startsWith('..') || path.isAbsolute(inside) ? file : inside;
+  };
+  const referenceName = options.reference === null ? `git show ${commit}:${RESULTS}` : nameOf(options.reference);
+  const newName = nameOf(options.newFile);
+  // Each input read in turn, and a failure worded as the input it could not
+  // read, so a missing file or commit is never reported as a failed identity.
+  const reading = <T>(what: string, read: () => T): T => {
+    try {
+      return read();
+    } catch (e) {
+      throw new Error(`cannot read ${what}: ${(e as Error).message}`);
+    }
+  };
+  let inputs: {
+    ours: ReplacedPosition[];
+    theirs: ReferencePosition[];
+    describe: (p: ReplacedPosition) => string;
+  };
+  try {
+    inputs = {
+      ours: reading(`the new file ${newName}`, () =>
+        replacedOf(JSON.parse(fs.readFileSync(options.newFile, 'utf8')), newName),
+      ),
+      theirs: reading(`the reference ${referenceName}`, () =>
+        referenceOf(
+          JSON.parse(
+            options.reference === null ? gitShow(commit, RESULTS, ROOT) : fs.readFileSync(options.reference, 'utf8'),
+          ),
+          referenceName,
+        ),
+      ),
+      describe: reading(`${commit}'s describeIndexing`, () => describeAt(commit)),
+    };
+  } catch (e) {
+    process.stderr.write(`experiment10-replaced: ${(e as Error).message}\n`);
+    return 2;
+  }
+  const comparison = compareReplaced(inputs.ours, inputs.theirs, inputs.describe);
   process.stdout.write(`${report(comparison, newName, referenceName).join('\n')}\n`);
   return comparison.holds ? 0 : 1;
 }
