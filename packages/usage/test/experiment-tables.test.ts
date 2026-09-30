@@ -116,7 +116,7 @@ interface QuickPage {
   rigs: { column: number; of: number };
   read: { captures: number; crashes: number };
   classes: { P: { counts: Record<string, number> } };
-  quiet: { runs: number; captures: number };
+  quiet: { runs: number; captures: number; silentWithQuiet: number };
   misfiles: { photographs: number; share: { max: number | null } };
   runs: { both: Record<string, Record<string, number>> };
   words: { runs: number };
@@ -187,6 +187,20 @@ test('the page column table has a row per cell, each read back from the document
   // The quick plan touches nothing at R8 and L-aimed-2: nothing to read, which is not "did not run".
   for (const id of ['R8', 'L-aimed-2']) assert.match(rows.find((r) => r[0] === id)?.[1] ?? '', /nothing to read/);
   assert.doesNotMatch(rendered, /did not run/);
+});
+
+test('the page table shows a QUIET capture and a LOUD one with a quiet drop in columns of their own', { skip: noQuick }, async () => {
+  // The quick run has no QUIET position, so each column's figure is set in apart
+  // from the others, and must come back in its own column.
+  const { experiment10Page } = await import('../../../tools/experiment-tables.ts');
+  const doc = quickDoc();
+  const r1 = doc.rescore.cells.find((c) => c.id === 'R1')?.page as QuickPage;
+  Object.assign(r1.classes.P.counts, { QUIET: 7, 'LOUD+QUIET': 3, 'LOUD+SILENT': 5 });
+  r1.quiet.silentWithQuiet = 2;
+  const rows = rowsOf(experiment10Page(doc as never));
+  const at = (name: string): string => (rows.find((r) => r[0] === 'R1') as string[])[rows[0].indexOf(name)];
+  assert.deepEqual([at('QUIET'), at('LOUD+QUIET'), at('LOUD+SILENT')], ['7', '3', '5']);
+  assert.match(at('SILENT'), /; 2 with a QUIET position too$/);
 });
 
 test('a cell the page column did not run in says so, apart from one it found nothing to read in', { skip: noQuick }, async () => {
