@@ -98,20 +98,17 @@ test('a second copy of a properly registered marker is caught', () => {
 });
 
 // ---------------------------------------------------------------------------
-// EXPERIMENT-10's page column: the tables written for the re-run with the
-// page's reader. They are not registered in any document until that run's
-// results file is committed (the committed file is the first run's, which has
-// no page column to render), so they are held here to the quick run's
-// document, which a `--quick` run writes beside its checkpoints and which is
-// not committed. Where no quick run has been made in this checkout, those
-// tests say so and are skipped.
+// EXPERIMENT-10's page column: the tables the re-run with the page's reader
+// added, registered in docs/EXPERIMENT-10.md. `check:docs` holds each block to
+// what its renderer makes of the committed results file; these hold the
+// renderers to the file, cell by cell, so a table that read the wrong field
+// would not pass merely by agreeing with itself.
 // ---------------------------------------------------------------------------
 
-const QUICK = path.join(REPO, 'experiments', '.experiment-10-partial', 'quick', 'experiment-10.quick.json');
-const noQuick = fs.existsSync(QUICK) ? false : 'no --quick run of EXPERIMENT-10 in this checkout';
+const RESULTS = path.join(REPO, 'experiments', 'experiment-10.json');
 
 // A cell's page block, as far as these tests read it.
-interface QuickPage {
+interface PageBlock {
   status: string;
   rigs: { column: number; of: number };
   read: { captures: number; crashes: number };
@@ -121,18 +118,18 @@ interface QuickPage {
   runs: { both: Record<string, Record<string, number>> };
   words: { runs: number };
 }
-interface QuickCell {
+interface CellBlock {
   id: string;
   trials: number;
-  page: QuickPage | { status: 'not run' } | null;
+  page: PageBlock | { status: 'not run' } | null;
 }
-interface QuickDoc {
-  rescore: { cells: QuickCell[] };
-  lateness: { cells: QuickCell[] };
+interface ResultsDoc {
+  rescore: { cells: CellBlock[] };
+  lateness: { cells: CellBlock[] };
   precondition: { q0: { total: number; page: { placedPositions: number; unseen: number; barelySeen: number } } };
 }
 
-const quickDoc = (): QuickDoc => JSON.parse(fs.readFileSync(QUICK, 'utf8')) as QuickDoc;
+const resultsDoc = (): ResultsDoc => JSON.parse(fs.readFileSync(RESULTS, 'utf8')) as ResultsDoc;
 /** A markdown table's cells, row by row, the header first; blank lines and notes left out. */
 const rowsOf = (table: string): string[][] =>
   table
@@ -140,9 +137,9 @@ const rowsOf = (table: string): string[][] =>
     .filter((line) => line.startsWith('|') && !/^\|\s*---/.test(line))
     .map((line) => line.slice(1, -1).split('|').map((x) => x.trim()));
 
-test('the page column table has a row per cell, each read back from the document', { skip: noQuick }, async () => {
+test('the page column table has a row per cell, each read back from the document', async () => {
   const { experiment10Page } = await import('../../../tools/experiment-tables.ts');
-  const doc = quickDoc();
+  const doc = resultsDoc();
   const rendered = experiment10Page(doc as never);
   const rows = rowsOf(rendered);
   const header = rows[0];
@@ -169,7 +166,7 @@ test('the page column table has a row per cell, each read back from the document
     assert.equal(row.length, header.length, `${row[0]}: ${row.length} cells under ${header.length} columns`);
     const cell = cells.find((c) => c.id === row[0]);
     assert.ok(cell !== undefined && cell.page !== null, row[0]);
-    const page = cell.page as QuickPage;
+    const page = cell.page as PageBlock;
     if (page.status === 'nothing to read') assert.match(row[1], /\(nothing to read\)$/);
     const k = page.classes.P.counts;
     assert.equal(Number(row[col('LOUD (share, 95% CI)')].split(' ')[0]), k.LOUD, `${row[0]} LOUD`);
@@ -184,17 +181,18 @@ test('the page column table has a row per cell, each read back from the document
     if (page.misfiles.photographs > 0) assert.ok(misfiles.endsWith(`(${(page.misfiles.share.max as number).toFixed(3)})`), misfiles);
     assert.equal(Number(row[col('crashes')]), page.read.crashes);
   }
-  // The quick plan touches nothing at R8 and L-aimed-2: nothing to read, which is not "did not run".
+  // Nothing touches R8 or L-aimed-2, the aimed start at a perfect timer and 2 ms late: nothing to read,
+  // which is not "did not run".
   for (const id of ['R8', 'L-aimed-2']) assert.match(rows.find((r) => r[0] === id)?.[1] ?? '', /nothing to read/);
   assert.doesNotMatch(rendered, /did not run/);
 });
 
-test('the page table shows a QUIET capture and a LOUD one with a quiet drop in columns of their own', { skip: noQuick }, async () => {
-  // The quick run has no QUIET position, so each column's figure is set in apart
-  // from the others, and must come back in its own column.
+test('the page table shows a QUIET capture and a LOUD one with a quiet drop in columns of their own', async () => {
+  // R1 has no QUIET capture and none LOUD+QUIET, so each column's figure is set in
+  // apart from the others, and must come back in its own column.
   const { experiment10Page } = await import('../../../tools/experiment-tables.ts');
-  const doc = quickDoc();
-  const r1 = doc.rescore.cells.find((c) => c.id === 'R1')?.page as QuickPage;
+  const doc = resultsDoc();
+  const r1 = doc.rescore.cells.find((c) => c.id === 'R1')?.page as PageBlock;
   Object.assign(r1.classes.P.counts, { QUIET: 7, 'LOUD+QUIET': 3, 'LOUD+SILENT': 5 });
   r1.quiet.silentWithQuiet = 2;
   const rows = rowsOf(experiment10Page(doc as never));
@@ -203,10 +201,10 @@ test('the page table shows a QUIET capture and a LOUD one with a quiet drop in c
   assert.match(at('SILENT'), /; 2 with a QUIET position too$/);
 });
 
-test('a cell the page column did not run in says so, apart from one it found nothing to read in', { skip: noQuick }, async () => {
+test('a cell the page column did not run in says so, apart from one it found nothing to read in', async () => {
   const { experiment10Page, experiment10PageRuns } = await import('../../../tools/experiment-tables.ts');
-  const doc = quickDoc();
-  const r2 = doc.rescore.cells.find((c) => c.id === 'R2') as QuickCell;
+  const doc = resultsDoc();
+  const r2 = doc.rescore.cells.find((c) => c.id === 'R2') as CellBlock;
   r2.page = { status: 'not run', rigs: { column: 0, of: 4 } } as never;
   for (const render of [experiment10Page, experiment10PageRuns]) {
     const rows = rowsOf(render(doc as never));
@@ -214,23 +212,23 @@ test('a cell the page column did not run in says so, apart from one it found not
     assert.ok(rows.every((r) => r[0] !== 'R8' || r[1] !== 'the page column did not run'), 'R8 had nothing to read, and is said not to have run');
   }
   // A file written before the page column was summarised is refused, never rendered as blanks.
-  const old = quickDoc();
-  (old.rescore.cells.find((c) => c.id === 'R1') as QuickCell).page = null;
+  const old = resultsDoc();
+  (old.rescore.cells.find((c) => c.id === 'R1') as CellBlock).page = null;
   assert.throws(() => experiment10Page(old as never), /R1 has no page column summary/);
-  const missing = quickDoc();
+  const missing = resultsDoc();
   delete (missing.lateness.cells.find((c) => c.id === 'L-aimed-7.5') as { page?: unknown }).page;
   assert.throws(() => experiment10Page(missing as never), /results file has no L-aimed-7\.5\.page/);
 });
 
-test('the page against the counterfactual run by run: R1 in full adds up, every cell summarised, the words beside', { skip: noQuick }, async () => {
+test('the page against the counterfactual run by run: R1 in full adds up, every cell summarised, the words beside', async () => {
   const { experiment10PageRuns } = await import('../../../tools/experiment-tables.ts');
-  const doc = quickDoc();
+  const doc = resultsDoc();
   const rendered = experiment10PageRuns(doc as never);
   const tables = rendered.split('\n\n').filter((x) => x.startsWith('|')).map(rowsOf);
   assert.equal(tables.length, 4, 'R1 in full, every cell, the LOUD words, the page\'s words');
   const [full, summary, loud, words] = tables;
   // R1 in full: the all row sums the rows above, and is every run both twins place.
-  const r1 = doc.rescore.cells.find((c) => c.id === 'R1')?.page as QuickPage;
+  const r1 = doc.rescore.cells.find((c) => c.id === 'R1')?.page as PageBlock;
   const both = Object.values(r1.runs.both).reduce((a, row) => a + Object.values(row).reduce((b, n) => b + n, 0), 0);
   const all = full[full.length - 1];
   assert.equal(Number(all[all.length - 1].replace(/\*/g, '')), both);
@@ -244,12 +242,12 @@ test('the page against the counterfactual run by run: R1 in full adds up, every 
     for (const row of t) assert.equal(row.length, t[0].length, row.join(' | '));
   }
   assert.equal(Number(summary.find((r) => r[0] === 'R1')?.[1]), both);
-  for (const c of cells) assert.equal(Number(words.find((r) => r[0] === c.id)?.[1]), (c.page as QuickPage).words.runs, c.id);
+  for (const c of cells) assert.equal(Number(words.find((r) => r[0] === c.id)?.[1]), (c.page as PageBlock).words.runs, c.id);
 });
 
-test('the precondition with both readers: the page\'s reader\'s columns and the replaced reader\'s, labelled', { skip: noQuick }, async () => {
+test('the precondition with both readers: the page\'s reader\'s columns and the replaced reader\'s, labelled', async () => {
   const { experiment10PreconditionTwoReaders } = await import('../../../tools/experiment-tables.ts');
-  const doc = quickDoc();
+  const doc = resultsDoc();
   const rendered = experiment10PreconditionTwoReaders(doc as never);
   const tables = rendered.split('\n\n').filter((x) => x.startsWith('|')).map(rowsOf);
   assert.equal(tables.length, 4, 'Q0, the counterfactual twins, the page twins, Q0b');

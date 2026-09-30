@@ -920,14 +920,6 @@ interface Yardstick10 {
   gridFlips: { flips: number; of: number };
 }
 
-interface Q0Variant10 {
-  positions: number;
-  placedPositions: number;
-  margin: Spread10;
-  reasons: Record<string, number>;
-  perRunAlone: { runs: number; rescued: number };
-}
-
 /** One reader's figures on Q0's clean positions: the page's reader now. */
 interface Q0Reader10 {
   placedPositions: number;
@@ -965,8 +957,12 @@ interface PageTwins10 {
   againstCounterfactual: { both: number; counterfactualOnly: number; pageOnly: number; neither: number };
 }
 
-/** The precondition as a file that keeps both readers writes it. */
-interface PreconditionTwoReaders10 {
+/**
+ * The precondition, with both readers on the clean positions: Q0 read by the
+ * page's reader and by the one it replaced, the counterfactual reader and the
+ * page's own on each clean twin, and the folder shapes (Q0b).
+ */
+interface Precondition10 {
   q0: {
     main: Q0TwoReaders10;
     spill: Q0TwoReaders10;
@@ -976,12 +972,23 @@ interface PreconditionTwoReaders10 {
     replaced: {
       placedPositions: number;
       minClassifyMargin: number;
-      refusedAt: Experiment10['precondition']['q0']['refusedAt'];
+      refusedAt: {
+        classify: { positions: number; maxMargin: number | null };
+        count: { positions: number; margin: Spread10; runsFound: { min: number; max: number } | null };
+        other: number;
+      };
     };
     worth: { refusal: string | null } | null;
   };
-  q0b: Experiment10['precondition']['q0b'];
-  twins: Experiment10['precondition']['twins'];
+  q0b: {
+    shape: string;
+    positions: number;
+    runsPlaced: number;
+    runsPlacedClean: number;
+    wholeRefused: number;
+    reasons: Record<string, number>;
+  }[];
+  twins: { main: Twins10; spill: Twins10; fine: Twins10 };
   pageTwins: { main: PageTwins10; spill: PageTwins10; fine: PageTwins10 };
 }
 
@@ -1075,31 +1082,7 @@ interface Experiment10 {
       };
     };
   };
-  precondition: {
-    q0: {
-      main: Q0Variant10;
-      spill: Q0Variant10;
-      fine: Q0Variant10;
-      total: number;
-      placedPositions: number;
-      minClassifyMargin: number;
-      refusedAt: {
-        classify: { positions: number; maxMargin: number | null };
-        count: { positions: number; margin: Spread10; runsFound: { min: number; max: number } | null };
-        other: number;
-      };
-      worth: { refusal: string | null } | null;
-    };
-    q0b: {
-      shape: string;
-      positions: number;
-      runsPlaced: number;
-      runsPlacedClean: number;
-      wholeRefused: number;
-      reasons: Record<string, number>;
-    }[];
-    twins: { main: Twins10; spill: Twins10; fine: Twins10 };
-  };
+  precondition: Precondition10;
   gate: {
     crossings: {
       attributableRuns: number;
@@ -1397,138 +1380,19 @@ const Q0_VARIANTS10: readonly (readonly ['main' | 'spill' | 'fine', string])[] =
 ];
 
 /**
- * Today's page on clean positions (Q0), what the counterfactual reader makes of
- * the same positions (the twins), and the folder shapes an operator can
- * produce (Q0b).
- */
-export function experiment10Precondition(result: Experiment10): string {
-  const pre = has10(result.precondition, 'precondition');
-  const q0 = has10(pre.q0, 'precondition.q0');
-  const twins = has10(pre.twins, 'precondition.twins');
-  const minMargin = n10(q0.minClassifyMargin, 'precondition.q0.minClassifyMargin');
-  const raster = (t: Twins10, where: string): string => {
-    const r = has10(t.raster, `${where}.raster`);
-    return r === null ? DASH10 : `${n10(r.width, `${where}.raster.width`)}×${n10(r.height, `${where}.raster.height`)}`;
-  };
-  const out = [
-    '| clean positions | raster | positions | placed a run | refused at | ' +
-      `classify margin (needs ${minMargin}): median · max | runs a per-run classify would rescue |`,
-    '| --- | --- | ---: | ---: | --- | --- | ---: |',
-  ];
-  for (const [which, label] of Q0_VARIANTS10) {
-    const v = has10(q0[which], `precondition.q0.${which}`);
-    const t = has10(twins[which], `precondition.twins.${which}`);
-    const where = `precondition.q0.${which}`;
-    const margin = has10(v.margin, `${where}.margin`);
-    const perRun = has10(v.perRunAlone, `${where}.perRunAlone`);
-    out.push(
-      `| ${label} | ${raster(t, `precondition.twins.${which}`)} | ${n10(v.positions, `${where}.positions`)} | ` +
-        `${n10(v.placedPositions, `${where}.placedPositions`)} | ${reasons10(v.reasons, `${where}.reasons`)} | ` +
-        `${orDash10(nOrNull10(margin.median, `${where}.margin.median`), fixed10(3))} · ` +
-        `${orDash10(nOrNull10(margin.max, `${where}.margin.max`), fixed10(3))} | ` +
-        `${n10(perRun.rescued, `${where}.perRunAlone.rescued`)} of ${n10(perRun.runs, `${where}.perRunAlone.runs`)} |`,
-    );
-  }
-  const at = has10(q0.refusedAt, 'precondition.q0.refusedAt');
-  const classify = has10(at.classify, 'precondition.q0.refusedAt.classify');
-  const count = has10(at.count, 'precondition.q0.refusedAt.count');
-  const found = has10(count.runsFound, 'precondition.q0.refusedAt.count.runsFound');
-  const countMargin = has10(count.margin, 'precondition.q0.refusedAt.count.margin');
-  const nCount = n10(count.positions, 'precondition.q0.refusedAt.count.positions');
-  const countWords =
-    nCount === 0
-      ? '0 at the run count'
-      : `${nCount} at the run count, having cleared classify ` +
-        `(margin ${orDash10(nOrNull10(countMargin.min, 'refusedAt.count.margin.min'), fixed10(3))}–` +
-        `${orDash10(nOrNull10(countMargin.max, 'refusedAt.count.margin.max'), fixed10(3))}) and found ` +
-        (found === null
-          ? DASH10
-          : n10(found.min, 'refusedAt.count.runsFound.min') === n10(found.max, 'refusedAt.count.runsFound.max')
-            ? `${found.min}`
-            : `${found.min}–${found.max}`) +
-        ` of ${n10(result.generatedFrom?.design?.constants?.PROJECTORS, 'constants.PROJECTORS')} runs`;
-  out.push(
-    `| **all** | | **${n10(q0.total, 'precondition.q0.total')}** | ` +
-      `**${n10(q0.placedPositions, 'precondition.q0.placedPositions')}** | ` +
-      `**${n10(classify.positions, 'refusedAt.classify.positions')} at classify** ` +
-      `(margin at most ${orDash10(nOrNull10(classify.maxMargin, 'refusedAt.classify.maxMargin'), fixed10(3))}), ` +
-      `${countWords}, ${n10(at.other, 'refusedAt.other')} elsewhere | | |`,
-  );
-  const worth = has10(q0.worth, 'precondition.q0.worth');
-  const refusal = worth === null ? null : has10(worth.refusal, 'precondition.q0.worth.refusal');
-  out.push('');
-  out.push(
-    refusal === null
-      ? '_The page’s worth report printed nothing for a clean folder._'
-      : `_What the page’s worth report prints for a clean folder: “${refusal.split('. ')[0]}.”_`,
-  );
-
-  out.push('');
-  out.push(
-    '| the counterfactual reader, clean | runs | placed | refused anyway | of those, invisible | ' +
-      'minor | marginal | positions told “Re-shoot projector N” | clean noise floor: median · max |',
-  );
-  out.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |');
-  for (const [which, label] of Q0_VARIANTS10) {
-    const t = has10(twins[which], `precondition.twins.${which}`);
-    const where = `precondition.twins.${which}`;
-    const floor = has10(t.noiseFloor, `${where}.noiseFloor`);
-    out.push(
-      `| ${label} | ${n10(t.runs, `${where}.runs`)} | ${n10(t.attributable, `${where}.attributable`)} | ` +
-        `${n10(t.refusedClean, `${where}.refusedClean`)} | ${n10(t.invisibleRefused, `${where}.invisibleRefused`)} | ` +
-        `${n10(t.minor, `${where}.minor`)} | ${n10(t.marginal, `${where}.marginal`)} | ` +
-        `${n10(t.reshootNamed, `${where}.reshootNamed`)} of ${n10(t.cameras, `${where}.cameras`)} | ` +
-        `${orDash10(nOrNull10(floor.median, `${where}.noiseFloor.median`), fixed10(4))} · ` +
-        `${orDash10(nOrNull10(floor.max, `${where}.noiseFloor.max`), fixed10(4))} |`,
-    );
-  }
-
-  // Q0b: every shape the stage builds, in its order, so a shape missing from
-  // the file is a fault rather than a row that quietly is not there.
-  const shapes = has10(pre.q0b, 'precondition.q0b');
-  const projectors = n10(result.generatedFrom?.design?.constants?.PROJECTORS, 'constants.PROJECTORS');
-  const wanted = [
-    ...[0, 1, 3].flatMap((lead) => [0, 1, 2].map((trail) => `leading ${lead}, trailing ${trail}`)),
-    ...Array.from({ length: projectors }, (_, p) => [
-      `projector ${p + 1} re-shot and appended`,
-      `projector ${p + 1} re-shot alone`,
-    ]).flat(),
-  ];
-  out.push('');
-  out.push(
-    '| folder shapes an operator can produce | positions | runs placed (the plain folder’s) | ' +
-      'refused whole | the page’s reasons |',
-  );
-  out.push('| --- | ---: | --- | ---: | --- |');
-  for (const name of wanted) {
-    const x = shapes.find((s) => s.shape === name);
-    if (x === undefined) throw new Error(`experiment-10: precondition.q0b has no folder '${name}'`);
-    const where = `precondition.q0b['${name}']`;
-    out.push(
-      `| ${name} | ${n10(x.positions, `${where}.positions`)} | ${n10(x.runsPlaced, `${where}.runsPlaced`)} ` +
-        `(${n10(x.runsPlacedClean, `${where}.runsPlacedClean`)}) | ${n10(x.wholeRefused, `${where}.wholeRefused`)} | ` +
-        `${reasons10(x.reasons, `${where}.reasons`)} |`,
-    );
-  }
-  return out.join('\n');
-}
-
-/**
- * The precondition of a file that keeps both readers on the clean positions:
- * Q0 read by the page's reader and, beside it and labelled as such, by the
- * reader it replaced; the counterfactual reader and the page's own reader on
- * each clean twin; and the folder shapes, which the counterfactual reads.
+ * The precondition, both readers on the clean positions: Q0 read by the page's
+ * reader and, beside it and labelled as such, by the reader it replaced; the
+ * counterfactual reader and the page's own reader on each clean twin; and the
+ * folder shapes, which the counterfactual reads.
  *
- * Written for the re-run with the page's reader, and to take the place of
- * {@link experiment10Precondition} under `experiment-10-precondition` once
- * `experiments/experiment-10.json` is that run's. Until then the committed
- * file is the first run's, which has one reader, and the block renders it.
+ * It replaced the one-reader table the first run's file was rendered by, when
+ * the re-run with the page's reader wrote `experiments/experiment-10.json`: a
+ * file with one reader lacks the other reader's fields (`precondition.pageTwins`,
+ * `precondition.q0.replaced`), and is refused here rather than rendered with
+ * blanks.
  */
 export function experiment10PreconditionTwoReaders(result: Experiment10): string {
-  const pre = has10(
-    (result as unknown as { precondition?: PreconditionTwoReaders10 }).precondition,
-    'precondition',
-  );
+  const pre = has10(result.precondition, 'precondition');
   const q0 = has10(pre.q0, 'precondition.q0');
   const twins = has10(pre.twins, 'precondition.twins');
   const pageTwins = has10(pre.pageTwins, 'precondition.pageTwins');
@@ -2980,7 +2844,7 @@ const BLOCKS: Record<string, Block> = {
   'experiment-10-precondition': {
     doc: 'docs/EXPERIMENT-10.md',
     data: 'experiments/experiment-10.json',
-    render: experiment10Precondition as (r: never) => string,
+    render: experiment10PreconditionTwoReaders as (r: never) => string,
   },
   'experiment-10-crossings': {
     doc: 'docs/EXPERIMENT-10.md',
@@ -3002,10 +2866,25 @@ const BLOCKS: Record<string, Block> = {
     data: 'experiments/experiment-10.json',
     render: experiment10Rescore as (r: never) => string,
   },
+  // The same captures through the page's own reader, in the section after the
+  // counterfactual's: the rescore and lateness cells as the page reads them.
+  'experiment-10-page': {
+    doc: 'docs/EXPERIMENT-10.md',
+    data: 'experiments/experiment-10.json',
+    render: experiment10Page as (r: never) => string,
+  },
   'experiment-10-positions': {
     doc: 'docs/EXPERIMENT-10.md',
     data: 'experiments/experiment-10.json',
     render: experiment10Positions as (r: never) => string,
+  },
+  // Run by run, the page against the counterfactual, and what each reader's
+  // refusals say, directly under the counterfactual's words in the section on
+  // what the page tells the operator.
+  'experiment-10-page-runs': {
+    doc: 'docs/EXPERIMENT-10.md',
+    data: 'experiments/experiment-10.json',
+    render: experiment10PageRuns as (r: never) => string,
   },
   'experiment-10-lateness': {
     doc: 'docs/EXPERIMENT-10.md',

@@ -236,14 +236,16 @@ is what the page does with such folders.)
 > (`docs/CALIBRATE.md`).
 
 <!-- generated: experiment-10-precondition -->
-| clean positions | raster | positions | placed a run | refused at | classify margin (needs 0.15): median · max | runs a per-run classify would rescue |
-| --- | --- | ---: | ---: | --- | --- | ---: |
-| the sweep | 320×240 | 72 | 0 | classify 70 · run count 2 | 0.048 · 0.201 | 0 of 288 |
-| room spill on | 320×240 | 24 | 0 | classify 23 · run count 1 | 0.052 · 0.201 | 0 of 96 |
-| the finer preset | 640×480 | 12 | 0 | classify 12 | 0.047 · 0.147 | 0 of 48 |
-| **all** | | **108** | **0** | **105 at classify** (margin at most 0.148), 3 at the run count, having cleared classify (margin 0.172–0.201) and found 2 of 4 runs, 0 elsewhere | | |
+| clean positions | raster | positions | the page’s reader: positions placed | runs placed | noted out of view · barely seen | problems | the reader it replaced: positions placed | refused at | its classify margin (needs 0.15): median · max | runs a per-run classify would rescue |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: |
+| the sweep | 320×240 | 72 | 72 | 212 of 288 | 68 · 8 | 0 | 0 | classify 70 · run count 2 | 0.048 · 0.201 | 0 of 288 |
+| room spill on | 320×240 | 24 | 24 | 80 of 96 | 7 · 9 | 0 | 0 | classify 23 · run count 1 | 0.052 · 0.201 | 0 of 96 |
+| the finer preset | 640×480 | 12 | 12 | 35 of 48 | 12 · 1 | 0 | 0 | classify 12 | 0.047 · 0.147 | 0 of 48 |
+| **all** | | **108** | **108** | **327 of 432** | **87 · 18** | **0** | **0** | **105 at classify** (margin at most 0.148), 3 at the run count, having cleared classify (margin 0.172–0.201) and found 2 of 4 runs, 0 elsewhere | | |
 
-_What the page’s worth report prints for a clean folder: “Only 1 camera contributed.”_
+_Both readers read the same photographs: each clean position rendered with noise, encoded to 8-bit sRGB and summarised as the page reads them. The reader the page replaced classified the whole position into white, black and patterned before it counted runs; the page’s reader finds each run by its own white and black, and notes a projector this camera cannot see instead of refusing it._
+
+_What the page’s worth report printed for one clean folder read alone, as it did while it read a camera position at a time: “Only 1 camera contributed.”_
 
 | the counterfactual reader, clean | runs | placed | refused anyway | of those, invisible | minor | marginal | positions told “Re-shoot projector N” | clean noise floor: median · max |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
@@ -251,7 +253,13 @@ _What the page’s worth report prints for a clean folder: “Only 1 camera cont
 | room spill on | 96 | 89 | 7 | 6 | 20 | 0 | 7 of 24 | 0.0067 · 0.0879 |
 | the finer preset | 48 | 38 | 10 | 10 | 3 | 0 | 10 of 12 | 0.0031 · 0.0568 |
 
-| folder shapes an operator can produce | positions | runs placed (the plain folder’s) | refused whole | the page’s reasons |
+| the page’s reader, clean (the page twin) | runs | placed | noted out of view | barely seen | refused | problems | crashed | placed by both readers · the counterfactual alone · the page alone |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| the sweep | 288 | 212 | 68 | 8 | 0 | 0 | 0 of 72 | 212 · 10 · 0 |
+| room spill on | 96 | 80 | 7 | 9 | 0 | 0 | 0 of 24 | 80 · 9 · 0 |
+| the finer preset | 48 | 35 | 12 | 1 | 0 | 0 | 0 of 12 | 35 · 3 · 0 |
+
+| folder shapes an operator can produce, read by the counterfactual reader | positions | runs placed (the plain folder’s) | refused whole | its reasons |
 | --- | ---: | --- | ---: | --- |
 | leading 0, trailing 0 | 24 | 75 (75) | 0 | unanswered pair 21 |
 | leading 0, trailing 1 | 24 | 59 (75) | 0 | run length 24 · unanswered pair 13 |
@@ -270,6 +278,8 @@ _What the page’s worth report prints for a clean folder: “Only 1 camera cont
 | projector 3 re-shot alone | 24 | 0 (75) | 24 | run count 24 |
 | projector 4 re-shot and appended | 24 | 0 (75) | 24 | run count 24 |
 | projector 4 re-shot alone | 24 | 0 (75) | 24 | run count 24 |
+
+_Q0b is the counterfactual reader’s: the complement check handed each shape’s exact frame kinds. The page’s reader was held to the same shapes by the acceptance sweep (`experiments/reader-acceptance.json`), not here._
 <!-- /generated -->
 
 ## Given bookends that can place runs, what a straddle costs
@@ -323,6 +333,27 @@ _Policy P: a refused position is re-shot whole and the re-shoot assumed clean. A
 | past the seam gate: SILENT · LOUD+SILENT · all | 43 · 18 · **61** | 43 · 66 · **109** |
 | solved captures: rotation gate flipped · D_grid > 0.25 mm · > 0.5 mm | 129: 49 · 100 · 86 | 193: 77 · 160 · 142 |
 | within re-shoot noise, and of those gate-breaking anyway | 48, 0 | 59, 1 |
+<!-- /generated -->
+
+## The same captures through the page's own reader
+
+<!-- generated: experiment-10-page -->
+| cell | captures touched | LOUD (share, 95% CI) | LOUD+SILENT | LOUD+QUIET | SILENT | QUIET | INVISIBLE-ONLY | UNCHANGED | quiet drops: runs (captures) | misfiled photographs (the largest majority share) | crashes |
+| --- | --- | --- | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | ---: |
+| R1 | 728 of 2000 | 626 (86.0%, 83.4–88.4%) | 34 | 0 | 99: 28 harmless, 14 biased, 27 gate-breaking, 30 not solved | 0 | 3 | 0 | 0 (0) | 0 | 0 |
+| R2 | 675 of 2000 | 610 (90.4%, 88.0–92.6%) | 12 | 0 | 63 (not solved) | 0 | 2 | 0 | 0 (0) | 0 | 0 |
+| R3 | 163 of 2000 | 125 (76.7%, 69.6–83.3%) | 1 | 0 | 23 (not solved) | 0 | 15 | 0 | 2 (2) | 1 (0.520) | 0 |
+| R4 | 495 of 500 | 483 (97.6%, 96.1–98.8%) | 100 | 0 | 9 (not solved) | 0 | 3 | 0 | 0 (0) | 21 (1.000) | 0 |
+| R5 | 801 of 2000 | 644 (80.4%, 78.2–82.8%) | 50 | 0 | 148 (not solved) | 0 | 9 | 0 | 0 (0) | 0 | 0 |
+| R6 | 728 of 2000 | 631 (86.7%, 84.1–89.1%) | 30 | 3 | 93 (not solved) | 1 | 3 | 0 | 31 (31) | 0 | 0 |
+| R7 | 760 of 2000 | 622 (81.8%, 79.0–84.7%) | 40 | 0 | 123 (not solved) | 0 | 10 | 5 | 0 (0) | 0 | 0 |
+| R8 | 0 of 2000 (nothing to read) | 0 | 0 | 0 | 0 (not solved) | 0 | 0 | 0 | 0 (0) | 0 | 0 |
+| L-aimed-2 | 0 of 2000 (nothing to read) | 0 | 0 | 0 | 0 (not solved) | 0 | 0 | 0 | 0 (0) | 0 | 0 |
+| L-uniform-2 | 1249 of 2000 | 927 (74.2%, 72.0–76.4%) | 105 | 0 | 225 (not solved) | 0 | 70 | 27 | 13 (13) | 0 | 0 |
+| L-aimed-7.5 | 1786 of 2000 | 1352 (75.7%, 73.6–77.8%) | 356 | 0 | 330: 4 harmless, 1 biased, 13 gate-breaking, 312 not solved | 0 | 104 | 0 | 3 (3) | 109 (0.585) | 0 |
+| L-uniform-7.5 | 1893 of 2000 | 1704 (90.0%, 88.6–91.4%) | 312 | 0 | 105 (not solved) | 0 | 75 | 9 | 10 (10) | 107 (0.584) | 0 |
+
+_Policy P, through the page’s own reader, on the fast path’s noisy frames encoded as the page reads them. Each run counts against the straddle only where the page’s reading of the same clean frames places it. A quiet drop is a touched run that reading places and the straddled one only notes out of view or barely seen, with no problem naming it; a position holding one with nothing refused is QUIET, not PLACED. With nothing refused, a capture is SILENT when some position is PLACED, and QUIET when none is and some position is QUIET: its dropped run is noted, not decoded, and no harm is read for it. The counterfactual reader has no QUIET class, since it refuses every run it does not place. LOUD+QUIET is a LOUD capture with a QUIET position (LOUD with a quiet drop), counted apart from LOUD+SILENT, which needs a PLACED position; a quiet drop inside a refused position makes no position QUIET and is counted only among the quiet drops. A SILENT capture is judged only by a counterfactual solve of the page’s own plan, placement included; the rest are not solved. A misfiled photograph is one a placed run files under another step than the one holding more than half its exposure, and its share is that step’s. A crash is a folder the reader threw on, counted as refused._
 <!-- /generated -->
 
 ## The check refuses a position run by run, not all at once
@@ -646,6 +677,66 @@ _Content footing (primary): a photograph observes as the kind of the part holdin
 | L-uniform-2 | 912 | 275 | 637 | 637 | 556 |
 | L-aimed-7.5 | 1358 | 0 | 1358 | 1358 | 806 |
 | L-uniform-7.5 | 1693 | 56 | 1637 | 1637 | 880 |
+<!-- /generated -->
+
+<!-- generated: experiment-10-page-runs -->
+| R1, touched runs both clean twins place | counterfactual: placed | refused: complement | bookends count | bookends length | bookends kind | unanswered | classify | all |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| the page placed | 371 | 0 | 166 | 0 | 0 | 0 | 0 | 537 |
+| the page refused | 27 | 778 | 996 | 21 | 15 | 0 | 0 | 1837 |
+| the page only noted (a quiet drop) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **all** | **398** | **778** | **1162** | **21** | **15** | **0** | **0** | **2374** |
+
+_R1's other touched runs: the counterfactual’s twin alone places 112: the page refused 63 (the counterfactual placed 0), the page noted 49 (the counterfactual placed 6); the page twin alone places 0; neither twin places 727. The counterfactual’s column is its deciding evaluation, fully noisy in R1; the page reads the same noisy frames encoded as it reads them._
+
+| cell | touched runs both twins place | both place | both refuse | the page places, the counterfactual refuses | the page refuses, the counterfactual places | the page only notes | the counterfactual’s twin alone | the page twin alone | captures: the counterfactual’s LOUD the page passes SILENT · its SILENT the page refuses LOUD |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| R1 | 2374 | 371 | 1810 | 166 | 27 | 0 | 112 | 0 | 11 · 10 |
+| R2 | 2269 | 236 | 1828 | 177 | 28 | 0 | 100 | 0 | 17 · 5 |
+| R3 | 348 | 56 | 216 | 71 | 3 | 2 | 16 | 0 | 6 · 0 |
+| R4 | 2852 | 313 | 2473 | 18 | 48 | 0 | 130 | 0 | 0 · 2 |
+| R5 | 2637 | 505 | 1856 | 252 | 24 | 0 | 119 | 0 | 21 · 11 |
+| R6 | 2644 | 407 | 2007 | 176 | 23 | 31 | 323 | 0 | 7 · 6 |
+| R7 | 2431 | 466 | 1824 | 120 | 21 | 0 | 116 | 0 | 8 · 3 |
+| R8 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 · 0 |
+| L-aimed-2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 · 0 |
+| L-uniform-2 | 2840 | 840 | 1835 | 128 | 24 | 13 | 118 | 0 | 1 · 16 |
+| L-aimed-7.5 | 3524 | 1145 | 2308 | 52 | 16 | 3 | 130 | 0 | 6 · 0 |
+| L-uniform-7.5 | 6197 | 2043 | 3962 | 87 | 95 | 10 | 299 | 0 | 0 · 11 |
+
+_Touched runs of the changed positions the page read, on the counterfactual’s deciding evaluation. A crash counts with the page’s refusals. “Alone”: the one clean twin places the run and the other does not, so only the one reader can hold the straddle to account for it._
+
+| cell | LOUD: the counterfactual · the page | refused only as whole positions | refused run by run | of those, told “Re-shoot projector N” | told it looks like a dropped and a duplicated frame |
+| --- | --- | --- | --- | --- | --- |
+| R1 | 627 · 626 | 332 · 437 | 295 · 189 | 295 · 189 | 295 · 82 |
+| R2 | 622 · 610 | 307 · 436 | 315 · 174 | 315 · 174 | 315 · 95 |
+| R3 | 131 · 125 | 54 · 13 | 77 · 112 | 77 · 112 | 66 · 36 |
+| R4 | 482 · 483 | 131 · 84 | 351 · 399 | 351 · 399 | 351 · 380 |
+| R5 | 654 · 644 | 366 · 446 | 288 · 198 | 288 · 198 | 288 · 74 |
+| R6 | 633 · 631 | 333 · 429 | 300 · 202 | 300 · 202 | 300 · 82 |
+| R7 | 627 · 622 | 317 · 424 | 310 · 198 | 310 · 198 | 310 · 112 |
+| R8 | 0 · 0 | 0 · 0 | 0 · 0 | 0 · 0 | 0 · 0 |
+| L-aimed-2 | 0 · 0 | 0 · 0 | 0 · 0 | 0 · 0 | 0 · 0 |
+| L-uniform-2 | 912 · 927 | 275 · 102 | 637 · 825 | 637 · 825 | 556 · 124 |
+| L-aimed-7.5 | 1358 · 1352 | 0 · 0 | 1358 · 1352 | 1358 · 1352 | 806 · 100 |
+| L-uniform-7.5 | 1693 · 1704 | 56 · 14 | 1637 · 1690 | 1637 · 1690 | 880 · 128 |
+
+| the page’s refused runs | refused | broken pair | run not found | run not found, a room’s light | a photograph too many after the run | a run’s count between found neighbours | no run in the folder |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| R1 | 1837 | 98 | 228 | 0 | 0 | 0 | 1511 |
+| R2 | 1856 | 110 | 210 | 0 | 0 | 0 | 1536 |
+| R3 | 219 | 36 | 138 | 0 | 0 | 3 | 42 |
+| R4 | 2521 | 823 | 576 | 0 | 2 | 0 | 1120 |
+| R5 | 1880 | 88 | 255 | 0 | 0 | 0 | 1537 |
+| R6 | 2030 | 103 | 272 | 3 | 0 | 0 | 1652 |
+| R7 | 1845 | 138 | 226 | 0 | 0 | 0 | 1481 |
+| R8 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| L-aimed-2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| L-uniform-2 | 1859 | 126 | 1291 | 0 | 0 | 0 | 442 |
+| L-aimed-7.5 | 2324 | 102 | 2095 | 0 | 127 | 0 | 0 |
+| L-uniform-7.5 | 4057 | 130 | 3476 | 0 | 101 | 216 | 134 |
+
+_The page’s words on each touched run it refuses and its clean reading places: the problems naming the run, or where none does, those about the whole folder, each class counted once per run. A run can be told more than one thing, so a row can sum past its refusals._
 <!-- /generated -->
 
 ## What this does not measure
