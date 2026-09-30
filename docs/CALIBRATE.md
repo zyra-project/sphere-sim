@@ -33,8 +33,8 @@ installation to recover its geometry*.
 > longer true. All three are the drift Part 7 exists to prevent.
 >
 > **So a capture made today is worth reading back, and it is still evidence, not
-> a calibration.** Nothing here has read a real photograph, and nobody has yet
-> handed the page a straddled capture (Part 4).
+> a calibration.** Nothing here has read a real photograph. The bench's straddled
+> captures have been through the page, and what it made of them is in Part 4.
 >
 > **What still cannot happen is a pose.** The reader stops at *what the capture
 > was worth* — how many correspondences survived, from how many camera and
@@ -125,12 +125,11 @@ not a calibration.
       and with a perfect timer, **one capture in three has photographs taken
       mid-change** — usually a whole camera position of them; with the page
       7.5 ms late per step, as in a headless browser, most do, and the straddle
-      sweeps across a position instead of covering it whole (Part 4). Read by a
-      reader that places every run — EXPERIMENT-10's, since nobody has yet
-      handed the page's own a straddled capture — most of those are
-      refused at your desk, which is a return trip, and most of what passes is
-      not harmless: a small smear moves the seams several times as far as a
-      re-shoot does. With it, none of 2000 simulated captures did — but only
+      sweeps across a position instead of covering it whole (Part 4). Read by
+      the page, most of those are refused at your desk, which is a return trip,
+      and most of what passes and can be judged is not harmless: a small smear
+      moves the seams several times as far as a re-shoot does. With it, none of
+      2000 simulated captures did — but only
       while the page runs less than about 3.50 to 3.70 ms late per step, and
       the only figures for that lateness, from a headless browser, are 7.5 and
       about 9.3 ms. **So aim: it is necessary, not yet sufficient.**
@@ -508,8 +507,9 @@ own complement check and decoder, told what kind each photograph is — the
 table's *counterfactual reader* — because the page's reader then refused all 108
 clean positions rendered from this card's three marks before the check ran. The
 page's reader has since been replaced and places those positions (the top of
-this card), but nobody has yet handed it a straddled one, so this table is still
-the counterfactual's. EXPERIMENT-9's captures at the page's defaults come out
+this card), and the same captures have been through it: in every row below, its
+loud and silent counts are within 15 captures of the counterfactual's. The table
+is the counterfactual's. EXPERIMENT-9's captures at the page's defaults come out
 like this, with a perfect timer and with the emitter running late:
 
 <!-- generated: experiment-10-rescore-calibrate -->
@@ -530,13 +530,15 @@ with no message. Policy P re-shoots each refused position whole and assumes the
 re-shoot is clean, which is optimistic; policy A keeps what a partly refused
 position placed, as the page would decode it. What it means for you:
 
-- **Most straddled captures are refused, and a run refused on its own is
-  mostly blamed on the wrong thing.** With no aimed start and a perfect timer,
-  627 of the 728 touched are refused: 332 as whole positions, and 295 run by
-  run, each told that the photographs look like a dropped and a duplicated
-  frame, which is not what happened, and to "Re-shoot projector N" — the words
-  the page's own check still uses. The page now reads that one projector's
-  re-shoot, added to the folder. After a straddle it is still the wrong remedy:
+- **Most straddled captures are refused, and the refusal does not say a
+  straddle happened.** With no aimed start and a perfect timer, the page's own
+  reader refuses 626 of the 728 touched: 437 as whole positions, each told that
+  no projector run could be found in the folder, which the page says is what
+  another plan, a camera that moved or photographs out of order look like; and
+  189 run by run, each told to "Re-shoot projector N", 82 of them that the
+  photographs look like a dropped and a duplicated frame. None of that is what
+  happened. The page now reads that one projector's re-shoot, added to the
+  folder. After a straddle it is still the wrong remedy:
   a straddle smears the whole position, each run is refused at its own smear,
   and the runs that passed can carry the same smear with nothing said.
   **Re-shoot the whole position, aimed, into a fresh folder** — added to the old
@@ -545,7 +547,9 @@ position placed, as the page would decode it. What it means for you:
 - **Most of what passes is not harmless.** A straddle the check lets through
   still decodes, but shifted: smeared by 6% of the exposure, it moves the
   worst seam point 6.8 times as far as re-shooting the position would, and 43 of
-  the 98 captures that passed silently put the seams past the 1 mm gate.
+  the 98 captures that passed the counterfactual reader silently put the seams
+  past the 1 mm gate. Of the 99 that pass the page's own reader silently, the 69
+  a solve can judge include 27 that do.
 
 So, three rules, in the order they pay:
 
@@ -576,7 +580,10 @@ So, three rules, in the order they pay:
 3. **Do not press a remote by hand for each frame.** It is the worst arrangement
    measured — every capture touched at any dwell below 4 s — though it fails
    differently, in scattered frames rather than whole positions, and never loses
-   a position end to end.
+   a position end to end. And the page does not always catch it: handed such
+   captures on the bench, it placed runs holding a photograph of another step,
+   21 photographs in 20 positions, with nothing to say so about those runs
+   (`docs/EXPERIMENT-10.md`).
 
 **One caveat on the first rule, found by reading the page: it assumes the
 emitter keeps time, and the emitter runs late.** In `emit.ts`, `advance()`

@@ -8,18 +8,24 @@
  * Writes `experiments/experiment-10.json`. The spec budgeted three hours in one
  * process; the unit costs measured while this was built (a default rig 1.5 s to
  * bank, a noisy run 0.25 s, a crossing scan with its twelve pair scans 1.8 s, a
- * solve about 10 s) put it nearer four, most of it the gate stage's scans and
- * the solves. Once the first four stages are on disk, `--stage pose`,
- * `--stage rescore` and `--stage lateness` can run side by side, then
- * `--stage assemble`; the re-scoring, about an hour and a half, is then the
- * longest of the three.
+ * solve about 10 s) put it nearer four, and the page column, which hands every
+ * straddled position to the page's own reader, has since about doubled that: the
+ * fourth full run's stages add up to about eight hours. Once `q0` and `bank` are
+ * on disk the other five can run side by side — `pose`, `rescore` and `lateness`
+ * together, since they share the solve file — then `--stage assemble`. On four
+ * CPUs the re-scoring, about three and a half hours, is the longest lane
+ * (lateness about two and a half, pose about an hour, gate about forty minutes,
+ * decode about twenty after pose), and the fourth run took four hours and ten
+ * minutes from start to file, half an hour of it stopped by a container restart
+ * it then resumed from.
  *
  *   node .../cli.ts                   every stage in order, resuming, then assemble
  *   node .../cli.ts --stage gate      one stage, resuming from its checkpoint
  *   node .../cli.ts --stage assemble  write the file from finished checkpoints only
  *   node .../cli.ts --quick           the plumbing (or EXP10_QUICK=1): 4 rigs at the
  *                                     reduced preset, 300 trials, no solves; about
- *                                     ten minutes, not the spec's five
+ *                                     half an hour in one process, a quarter of an
+ *                                     hour as four lanes
  *   node .../cli.ts --smoke           the solve path on one rig, a handful of solves
  *
  * Neither `--quick` nor `--smoke` ever writes the committed file. They write

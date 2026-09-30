@@ -1,8 +1,24 @@
 # Experiment 10 — what a photograph taken across a pattern change costs a calibration
 
-**Status: measured on the bench, against a reader the page does not have yet — and
-this is the third full run, because the first said more than it had measured and
-the second photographed some clean positions with another camera's noise.**
+**Status: measured on the bench, with the page's own reader. This is the fourth full
+run, made because the page's reader was replaced after the third.** The third run's
+reader refused every clean camera position before its complement check ran, so
+every loud and silent count in it was a counterfactual reader's, and its column for
+the page's own reader never ran (P6). The reader that replaced it places those
+positions, so this run also hands every straddled camera position to the page's own
+reader — the page column, measured here for the first time, against bets registered
+before any of its output existed (the next section). **Everything the old reader did
+not touch reproduced byte for byte.** Every stage's checkpoint equals the third
+run's once the page's own fields and each file's provenance are set aside, all 613
+distinct solves are identical but for their schema and fingerprint, and against the
+third run's committed results file (754147f) this one differs in 103 places of 47
+kinds, each on a list of what the re-run adds or rewords, written before the
+comparison: every other field is as 754147f wrote it. So every counterfactual table
+below is the third run's. The reader the page replaced is kept beside the new one in
+Q0, and reproduces 754147f's Q0 field for field at all 108 clean positions
+(I-replaced).
+
+The runs before this one are how the counterfactual figures were earned.
 The first full run's results file (379bb2f) was committed **unverified**, so that
 the measurement would not be lost with the container that made it. Adversarial
 verification then upheld its measurements but not all of its sentences. Its H7
@@ -19,20 +35,9 @@ of that run found that Q0's fine-raster units, which photograph one camera at a
 time, had given the second and third cameras the first camera's sensor noise while
 their twins were noised as themselves. 070d7df keys each camera's noise by its
 index in the rig, and the run was repeated once more: only those positions
-changed, and no figure quoted below moved. **This document reports the last run**:
-its tables are generated from the results file, and its prose quotes the same cells.
-
-> **2026-09-29: the page's reader has since been replaced, and this run was not
-> repeated.** “Today's page” below is the reader the page had when it ran. The page
-> now reads a camera position with `indexPosition`, and on the bench's photographs
-> of the 108 clean positions Q0 rendered it refuses none and files no photograph
-> under the wrong projector or frame (`experiments/reader-acceptance.json`, and the
-> dated notes below). Q0 and its folder shapes stay the record of the reader it
-> replaced. The loud and silent
-> counts are unchanged as a measurement of the complement check, which the new
-> reader runs unchanged, refusing a broken pair in the same words. What that reader
-> does with a straddled capture is the rescoring's page column, which a re-run of
-> this experiment would now run; nothing here says what it will show.
+changed, and no counterfactual figure moved. **This document reports the last
+run**: its tables are generated from the results file, and its prose quotes the
+same cells.
 
 - **Data** — [`experiments/experiment-10.json`](../experiments/experiment-10.json)
   (`sphere-sim/experiment-10@1`). Every table below is generated from it and checked
@@ -40,12 +45,19 @@ its tables are generated from the results file, and its prose quotes the same ce
   cells, and where it quotes a figure the prose below quotes the same one.
 - **Reproduce** — `npm run experiment10` runs the stages in order (`q0`, `bank`,
   `gate`, `decode`, `pose`, `rescore`, `lateness`) and then writes the file, resuming
-  from the checkpoints in `experiments/.experiment-10-partial/`: about 6½ h in one
-  process. `--stage <name>` runs or resumes one stage, so once `q0` and `bank` are
-  on disk the other five can run side by side — `pose`, `rescore` and `lateness`
-  share a solve file, so start those three together — and `--stage assemble` writes
-  the file from finished checkpoints alone. Run as four lanes on 4 CPUs, the last run
-  took 2 h 26 min, `rescore` alone 2 h 17 min. `--quick` and `--smoke` check the
+  from the checkpoints in `experiments/.experiment-10-partial/`. With the page column
+  reading every straddled position, the stages add up to about 8 h in one process.
+  `--stage <name>` runs or resumes one stage, so once `q0` and `bank` are on disk the
+  other five can run side by side — `pose`, `rescore` and `lateness` share a solve
+  file, so start those three together — and `--stage assemble` writes the file from
+  finished checkpoints alone. This run went as four lanes on 4 CPUs: `q0` and `bank`
+  side by side, then `rescore`, `lateness`, `gate`, and `pose` followed by `decode`.
+  A container restart stopped every lane at about 04:00 UTC; relaunched at 04:28 with
+  the same command, every stage resumed from its checkpoints, the finished ones at
+  once, and redid at most the one unit it had in flight. From start to the written
+  file took 4 h 10 min, 28 min of it stopped. `rescore`, the longest lane, computed
+  for about 3 h 36 min, `lateness` 2 h 29 min, `pose` 65 min, `gate` 42 min, `decode`
+  17 min, and `q0` and `bank` 5 to 6 min each. `--quick` and `--smoke` check the
   plumbing and never write the committed file.
 - **Code** — [`packages/experiments/src/straddle/`](../packages/experiments/src/straddle/)
   (`stages.ts` measures and is fingerprinted; `assemble.ts` writes the document and
@@ -92,6 +104,47 @@ its tables are generated from the results file, and its prose quotes the same ce
 > - the page reads the fast path's straddled frames as it reads the renderer's
 >   (H8).
 
+## How the registered bets came out
+
+Each bet above as the results file evaluates it (`predictions`), with the figures
+it rests on. The harness checks come first, since the bets are read only if they
+hold, and they do:
+
+- the page's reading of the clean twin equals `experiments/reader-acceptance.json`
+  at all 108 positions (I-page-twin);
+- the replaced reader reproduces 754147f's Q0 at all 108 positions, in the runs it
+  placed, its problems and their reasons, its description, the total, and the
+  classify margin, wrong kinds and per-run figures (I-replaced). The document keeps
+  only that reader's figures, so this one is held against
+  `git show 754147f:experiments/experiment-10.json` rather than inside the file;
+- the page reads the fast path's straddled frames as it reads the renderer's in all
+  8 of the gate stage's hook readings, and there the placed runs' starts, their
+  content misfiles and the problem texts agree too, 8 of 8 (H8-page).
+
+Then the bets:
+
+- **P10 is falsified.** The page's placed runs file 238 photographs, in 162
+  positions, under a step other than the one holding more than half their exposure,
+  and none of them lacks a majority step. 216 are near-ties under the emitter running
+  7.5 ms late per step, 109 in L-aimed-7.5 and 107 in L-uniform-7.5: their majority
+  shares run from 0.500 to 0.585, and each is filed one step after its majority step,
+  on one of a run's last four frames. R3 has one more near-tie, at 0.520. R4's 21, in
+  20 positions, are not near-ties: with a hand-pressed remote the majority share
+  reaches 1.000, 13 of them hold 0.6 or more and 3 hold 0.9 or more, so the page
+  placed runs holding a photograph of another step. The page column's section has
+  them in full.
+- **P11 is falsified, by one.** In R1 the page is SILENT on 99 of the 728 touched
+  captures, against the counterfactual reader's 98. No R1 capture is QUIET, so the
+  looser reading, which would count a quiet capture as kept, gives 99 as well.
+- **P12 is falsified.** A straddle turns 59 runs the page's clean reading places into
+  notes, each in a capture of its own: 31 in R6, with the room spill on, 13 in
+  L-uniform-2, 10 in L-uniform-7.5, 3 in L-aimed-7.5 and 2 in R3.
+- **P13 holds.** Q0 and the page's reading of the clean twin agree at all 108 clean
+  positions: placed, out of view and barely seen alike, and neither with a problem.
+- **P6 is falsified by construction**, as its note says: the page's reader places a
+  run in 108 of the 108 clean positions. The reader it replaced placed none: 105
+  were refused at classify, with a margin of at most 0.148, and 3 at the run count.
+
 ---
 
 ## Why it exists
@@ -101,12 +154,14 @@ changes pattern — 728 of 2000 captures at the page's defaults, in the replay t
 document scores — and said in as many words that it could not say what one costs:
 *"Nothing in this experiment renders a frame or decodes one."* This experiment
 renders them, through the bench's own renderer, and hands them to the page's own
-code: first its reader as shipped, which stops every clean position short of the
-complement check (the first section after the terms), and then that check and the
-decoder, told what kind each photograph is. It asks three things of each
-straddle, and asks each rather than assuming the answer: does the photograph decode
-correctly anyway; is the run refused loudly, and at what smear; or does it pass and
-decode wrong, silently, and by how much.
+code: to its reader, first on clean positions (the first section after the terms)
+and then on every straddled one (the page column); and to its complement check and
+decoder, told what kind each photograph is (the counterfactual reader), which is
+how the first three runs measured the check and the decoder at all, since the reader
+the page had then stopped every clean position short of the check. It asks three
+things of each straddle, and asks each rather than assuming the answer: does the
+photograph decode correctly anyway; is the run refused loudly, and at what smear;
+or does it pass and decode wrong, silently, and by how much.
 
 ## Terms, and which way each one leans
 
@@ -124,12 +179,13 @@ reader can discount it.
   carries more than that on average, because the rows clamp at zero: 0.0736 at a
   middle-row smear of 0.06.
 - **Footing.** How the counterfactual reader is told what kind each photograph is,
-  since today's page cannot tell it. The *content* footing (primary) observes a
-  photograph as the kind of the part holding more than half its exposure; the
-  *filed* footing, as the kind of the step it is filed under. Both hand the reader
-  exact lit fractions. *They lean toward the reader in what it can recover, and in
-  no known direction in how often it fails:* exact classification is what today's
-  page lacks, so both are an ideal-classification baseline in EXPERIMENT-8's sense.
+  since the reader the page had when this was designed could not tell it. The
+  *content* footing (primary) observes a photograph as the kind of the part holding
+  more than half its exposure; the *filed* footing, as the kind of the step it is
+  filed under. Both hand the reader exact lit fractions. *They lean toward the
+  reader in what it can recover, and in
+  no known direction in how often it fails:* exact classification is what that
+  reader lacked, so both are an ideal-classification baseline in EXPERIMENT-8's sense.
   A working classify could place no more than they let the reader place, but a
   misread reference could add a refusal or hide one, so the loud and silent counts
   below are not bounds in either direction.
@@ -138,7 +194,9 @@ reader can discount it.
   toward calling a refusal the straddle's own.* The reader refuses runs on the
   clean capture too, mostly projectors the camera cannot see, and says “Re-shoot
   projector N” there as well; so *loud* means loud against a twin the operator never
-  sees.
+  sees. The page column attributes the same way, against the page's own reading of
+  the clean twin (the *page twin*), which notes a projector the camera cannot see
+  instead of refusing it.
 - **Loud and silent.** A capture is LOUD when the reader refuses a touched
   attributable run in any of its positions, which is then REFUSED-ALL (every such
   run refused) or MIXED (some refused, some placed). It is SILENT when nothing is
@@ -147,6 +205,20 @@ reader can discount it.
   ones were flagged by EXPERIMENT-9's count but changed no photograph. *LOUD leans
   toward reassurance:* a loud capture can still carry a position that passed
   silently (LOUD+SILENT), and it is counted once, as loud.
+- **Quiet drop, and QUIET (the page column only).** A touched run the page twin
+  places that the straddled position only notes, out of view or barely seen, with
+  no problem naming it, is a *quiet drop* (P12): neither refused nor placed. A
+  position holding one, with nothing refused, is QUIET, not PLACED; with nothing
+  refused, a capture with a PLACED position is SILENT, and one with only a QUIET
+  position is QUIET, its dropped run noted and not decoded. The counterfactual
+  reader has no such class, since it refuses every run it does not place. *It leans
+  toward reassurance:* a note asks the operator for nothing.
+- **Misfile (the page column only).** A photograph a run the page places files under
+  another step than the one holding more than half its exposure (P10); its *share* is
+  that step's. A photograph with no such step is counted apart, as ambiguous. *It
+  leans toward counting a near-tie as an error:* a share just over a half is a
+  photograph either filing leaves nearly half wrong, so the share is quoted with every
+  count.
 - **D_grid.** How far the straddle moved the seams: `computeGridDisplacement`
   between the twin's and the treated solve's aligned rigs, which share their noise
   and their solve seeds, so the difference is the straddle's alone. *It leans toward
@@ -161,8 +233,8 @@ reader can discount it.
   re-shooting one position does, and a 95th percentile is set by the few rigs that
   supply its largest values (the pose table names them).
 - **The one-position yardstick.** The same, re-shooting **only the straddled
-  position** under the same seeds and keeping every other camera — the remedy the
-  page can actually read back. *It leans less far toward harmless than τ_null*,
+  position** under the same seeds and keeping every other camera — the card's
+  remedy for a straddle. *It leans less far toward harmless than τ_null*,
   being the smaller null, but it still assumes the re-shoot is clean, and a fresh
   start can straddle again.
 
@@ -170,70 +242,65 @@ A straddle's median D_grid is set against each null's **median**, with the 95th
 percentile quoted beside it and never in its place. The first full run set a
 median against a 95th percentile.
 
-## Today's page never reaches the complement check
+## The page's reader places every clean position; the one it replaced placed none
 
-**On the bench, today's page refuses every clean camera position before its
-complement check runs, so nothing below is what today's page would do.** It
-placed none of the 108 clean positions rendered from the card's camera marks: 105
-were refused at classify, with a margin of at most 0.148 against the 0.15 classify
-needs, and 3 at the run count. The reason is structural (found when this experiment was
-designed): `litFractions` normalises across the whole capture, where one
-projector's white lights little of a photograph and another's lights most of it,
-and within a run the coarse Gray planes light all of the visible crescent or none of
-it rather than about half. So classify cannot tell the references from the
-patterns, and a position that clears its margin anyway still gets photographs the
-wrong kind, finds the wrong number of runs and is refused at the run count.
-Classifying each run alone does not rescue it: 0 of the 288 runs of the sweep would
-pass, and a run classified alone still gets a median 8 of its frames the wrong
-kind. The page's worth report cannot see any of this either: it
-prints “Only 1 camera contributed.” for a folder, whatever the folder holds, because
-the page reads one camera per folder.
+**On the bench's photographs of the 108 clean camera positions rendered from the
+card's camera marks, the page's reader places a run in every one and raises no
+problem; the reader it replaced placed none.** Both read the same photographs, in
+Q0: each clean position rendered with noise, encoded to 8-bit sRGB and summarised
+as the page reads them. The page's reader places 327 of the 432 runs and notes the
+other 105 instead of refusing them: 87 out of view and 18 barely seen.
 
-So every loud and silent figure below is the verdict of a **counterfactual
-reader**: the page's own complement check, `indexByFingerprint`, handed the lit
-fractions a perfect classify would give. It is not a fix anybody has specified. On
-the same clean positions it refuses 66 of the 288 runs of the sweep anyway, 64 of
-them runs whose projector the camera cannot see, and it would tell the operator
-“Re-shoot projector N” on 66 of the 72 positions.
+The reader it replaced refused 105 positions at classify, with a margin of at most
+0.148 against the 0.15 classify needs, and 3 at the run count. The reason is
+structural (found when this experiment was designed): `litFractions` normalises
+across the whole capture, where one projector's white lights little of a
+photograph and another's lights most of it, and within a run the coarse Gray planes
+light all of the visible crescent or none of it rather than about half. So classify
+cannot tell the references from the patterns, and a position that clears its
+margin anyway still gets photographs the wrong kind, finds the wrong number of runs
+and is refused at the run count. Classifying each run alone does not rescue it: 0
+of the 288 runs of the sweep would pass, and a run classified alone still gets a
+median 8 of its frames the wrong kind. The page's reader finds each run by its own
+white, black and phase frames instead, and never classifies the capture.
 
-> **2026-09-29: the page's reader now places these positions.** Handed the bench's
-> photographs of the same 108 clean positions through the page's own path, the
-> reader that replaced this one refuses none and files no photograph under the
-> wrong projector or frame. It
-> places 327 runs where the counterfactual places 349: the 22 between them are
-> grazing runs of 0 to 7 fingerprint blocks lighting 4 to 176 pixels, which it
-> notes as barely seen (18) or out of view (4) and does not decode, and which the
-> counterfactual passes. Every one of the 80 runs that light no pixel it notes as
-> out of view, where the counterfactual refuses each and asks for a re-shoot. Its
-> worth report now covers every camera position read since the plan file was
-> loaded, so “Only 1 camera contributed.” means that only one has been read. The
-> new reader's table is in [`docs/OPERATOR-PATH.md`](OPERATOR-PATH.md), Phase 2,
-> generated from `experiments/reader-acceptance.json`; the table below is the
-> reader it replaced. What the new reader makes of a straddled position is not
-> measured: that is the rescoring's page column, which a re-run of this experiment
-> would now run.
+The page column attributes against each camera's clean twin, read by the page from
+the fast path's photographs, and that reading is Q0's at all 108 positions (P13)
+and the acceptance sweep's (I-page-twin; `experiments/reader-acceptance.json`,
+whose table is in [`docs/OPERATOR-PATH.md`](OPERATOR-PATH.md), Phase 2). On the
+sweep's 72 twins it places 212 of the 288 runs and refuses none, noting 68 out of
+view and 8 barely seen.
 
-The card's own folder shapes cost something without any straddle. Photographs
-before the first white frame cost a problem line and nothing else; a dark
-photograph after the last step lengthens the last run until it is refused; and a
-re-shot run, appended to the position or handed in alone, gets the whole folder
-refused, 192 of 192 such folders. That last one matters below, because it is the
-remedy the page's own refusal asks for. (The card has since changed: it now says to
-delete the photographs taken after the screen goes black, and to re-shoot the whole
-position rather than one projector, `docs/CALIBRATE.md`. The measurement stands: it
-is what the page does with such folders.)
+The counterfactual reader is the one the first three runs measured: the page's own
+complement check, `indexByFingerprint`, handed the lit fractions a perfect classify
+would give. It is not a fix anybody has specified. On the same clean positions it
+refuses 66 of the 288 runs of the sweep anyway, 64 of them runs whose projector the
+camera cannot see, and it would tell the operator “Re-shoot projector N” on 66 of
+the 72 positions. Every run the page twin places, the counterfactual's twin places
+too, and the counterfactual places 22 more across the three kinds of position: runs
+the page notes out of view or barely seen and does not decode.
 
-> **2026-09-29: and it is no longer what the page does with them.** On the designed
-> rigs, with the room spill off and on, the page's reader reads each of these
-> shapes as its position: 432 of 432 with none, one or three photographs taken
-> before Play and none, one or two dark ones after the last step; and every
-> run a position places, re-shot and added after the position (150 of 150) or
-> played on to the end as the page's own remedy leaves it (150 of 150). A re-shot
-> run handed in alone is still refused, now with how to hand it in (150 of 150).
-> The card now says to keep every photograph and to re-shoot a spoiled projector
-> into the position's own folder before the tripod moves — and still to re-shoot
-> the whole position after a straddle, for the straddle's sake
-> (`docs/CALIBRATE.md`).
+The page's worth report printed “Only 1 camera contributed.” for a folder read
+alone, whatever the folder held, while the page read one camera position at a time.
+It now covers every camera position read since the plan file was loaded, so the
+line means that only one has been read.
+
+The card's own folder shapes cost the counterfactual reader something without any
+straddle (the last table). Photographs before the first white frame cost a problem
+line and nothing else; a dark photograph after the last step lengthens the last run
+until it is refused; and a re-shot run, appended to the position or handed in alone,
+gets the whole folder refused, 192 of 192 such folders. That last one matters below,
+because it is the remedy the counterfactual's refusal asks for. The page's reader
+reads these shapes as their position instead. On the designed rigs, with the room
+spill off and on, it reads 432 of 432 with none, one or three photographs taken
+before Play and none, one or two dark ones after the last step; and every run a
+position places, re-shot and added after the position (150 of 150) or played on to
+the end as the page's own remedy leaves it (150 of 150). A re-shot run handed in
+alone is still refused, now with how to hand it in (150 of 150;
+`experiments/reader-acceptance.json`). The card says to keep every photograph and to
+re-shoot a spoiled projector into the position's own folder before the tripod moves
+— and still to re-shoot the whole position after a straddle, for the straddle's sake
+(`docs/CALIBRATE.md`).
 
 <!-- generated: experiment-10-precondition -->
 | clean positions | raster | positions | the page’s reader: positions placed | runs placed | noted out of view · barely seen | problems | the reader it replaced: positions placed | refused at | its classify margin (needs 0.15): median · max | runs a per-run classify would rescue |
@@ -282,10 +349,13 @@ _What the page’s worth report printed for one clean folder read alone, as it d
 _Q0b is the counterfactual reader’s: the complement check handed each shape’s exact frame kinds. The page’s reader was held to the same shapes by the acceptance sweep (`experiments/reader-acceptance.json`), not here._
 <!-- /generated -->
 
-## Given bookends that can place runs, what a straddle costs
+## What a straddle costs, read by the counterfactual reader
 
-**Most touched captures are refused loudly, and most of what passes silently moves
-the seams further than re-shooting would.** This is R1, EXPERIMENT-9's headline cell
+**Given bookends that can place runs, most touched captures are refused loudly, and
+most of what passes silently moves the seams further than re-shooting would.** The
+reader here is the counterfactual, the complement check told every photograph's
+kind; the next section reads the same captures through the page's own reader. This
+is R1, EXPERIMENT-9's headline cell
 replayed shot for shot: the page's defaults (a 2 s dwell and a 1/4 s exposure), an
 un-aimed start, EXPERIMENT-9's perfect timer, and policy P, under which a refused
 position is re-shot whole and the re-shoot is assumed clean — optimistic, since a
@@ -337,6 +407,16 @@ _Policy P: a refused position is re-shot whole and the re-shoot assumed clean. A
 
 ## The same captures through the page's own reader
 
+**Through the page's own reader a straddle is about as loud as through the
+counterfactual, and silent about as often: of R1's 728 touched captures it refuses
+626 loudly and passes 99 silently, one more than the counterfactual's 98 (P11).**
+This is the page column. Every changed position of every rig was read whole by the
+page's reader, from the fast path's noisy frames encoded to 8-bit sRGB as the page
+reads them, and each run is attributed against the page's reading of the same clean
+frames. It read every rig of every cell and crashed on no position; R8 and
+L-aimed-2 touch no capture, so there it had nothing to read. In every cell its LOUD
+and SILENT counts are each within 15 captures of the counterfactual's.
+
 <!-- generated: experiment-10-page -->
 | cell | captures touched | LOUD (share, 95% CI) | LOUD+SILENT | LOUD+QUIET | SILENT | QUIET | INVISIBLE-ONLY | UNCHANGED | quiet drops: runs (captures) | misfiled photographs (the largest majority share) | crashes |
 | --- | --- | --- | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | ---: |
@@ -355,6 +435,73 @@ _Policy P: a refused position is re-shot whole and the re-shoot assumed clean. A
 
 _Policy P, through the page’s own reader, on the fast path’s noisy frames encoded as the page reads them. Each run counts against the straddle only where the page’s reading of the same clean frames places it. A quiet drop is a touched run that reading places and the straddled one only notes out of view or barely seen, with no problem naming it; a position holding one with nothing refused is QUIET, not PLACED. With nothing refused, a capture is SILENT when some position is PLACED, and QUIET when none is and some position is QUIET: its dropped run is noted, not decoded, and no harm is read for it. The counterfactual reader has no QUIET class, since it refuses every run it does not place. LOUD+QUIET is a LOUD capture with a QUIET position (LOUD with a quiet drop), counted apart from LOUD+SILENT, which needs a PLACED position; a quiet drop inside a refused position makes no position QUIET and is counted only among the quiet drops. A SILENT capture is judged only by a counterfactual solve of the page’s own plan, placement included; the rest are not solved. A misfiled photograph is one a placed run files under another step than the one holding more than half its exposure, and its share is that step’s. A crash is a folder the reader threw on, counted as refused._
 <!-- /generated -->
+
+**Run by run the two readers mostly agree, and where they part in R1 the page places
+runs the counterfactual's bookends refuse.** R1 has 2374 touched runs both clean
+twins place, so either reader can hold the straddle to account for them (the first
+of the page's run tables, in the section on what the page tells the operator).
+Both readers place 371 of them and both refuse 1810. The page places 166 that the
+counterfactual refuses, every one by its bookends' count, and files every
+photograph of them by what it shows, since R1 has no misfile; it refuses 27 that
+the counterfactual places. By capture, it passes 11 of the counterfactual's 627
+loud captures silently and refuses 10 of its 98 silent ones loudly. Another 112
+touched runs are placed by the counterfactual's twin alone, and the page refuses
+(63) or notes (49) them without either counting against the straddle; the page
+twin alone places none.
+
+**What the page lets through is judged only where a solve has its plan.** The page
+column decodes nothing, so a SILENT capture takes a counterfactual solve's harm
+only where the page's plan, placement included, is that solve's. In R1 that holds
+for 69 of the 99: 28 are harmless, 14 biased, and 27 break the 1 mm seam gate. The
+other 30 were never solved on the page's own plan, and are not judged. With the
+emitter 7.5 ms late per step, 18 of L-aimed-7.5's 330 are judged the same way: 4
+harmless, 1 biased and 13 past the gate. No other cell was solved.
+
+**What it tells the operator is in its own section below, beside the
+counterfactual's words.** In every cell, most of the runs it refuses are told that
+no run could be found, in the folder or for that projector; none is told that a
+straddle happened; and a quiet drop gets a note that there is nothing to gain by
+re-shooting it (P12, below).
+
+**P10: under a late emitter the page's misfiles are near-ties; under a hand-pressed
+remote they are not.** The page's placed runs file 238 photographs, in 162
+positions of four cells, under a step other than the one holding more than half
+their exposure. 216 of them are in the two cells where the emitter runs 7.5 ms late
+per step, 109 in L-aimed-7.5 and 107 in L-uniform-7.5, in runs the page placed as
+the folder orders them. Each is filed one step after its majority step, on one of a
+run's last four frames, and their majority shares run from 0.500 to 0.585, 98 and 95
+of them under 0.55. A late emitter moves each photograph a little further into the
+step before, and these are photographs where that step had just passed half the
+exposure: either filing leaves two fifths or more of such a photograph showing the
+other step.
+
+R4's 21, in 20 positions, are not near-ties. With a hand-pressed remote, the page
+files 11 photographs one step after their majority step and 10 one step before, on
+Gray frames 2, 3, 4, 7 and 8 and phase frames 26 to 32, again in runs placed as the
+folder orders them, and their majority shares run from 0.509 to 1.000: 13 hold 0.6
+or more of their exposure in a step the page did not file them under, and 3 hold
+0.9 or more. Numbering photographs from 0, those 3 are photograph 97 of trial 264's
+first position (0.998), photograph 36 of trial 408's first (0.901) and photograph 4
+of trial 493's third (1.000). So the page placed runs holding a photograph of
+another step, which its reader was built never to do. R3, at a 1/60 s exposure, has
+one more, a near-tie at 0.520 filed one step before its majority. None of these
+runs is decoded here, so what a misfiled photograph does to the coordinates is not
+measured.
+
+**P12: the page quietly drops 59 runs its clean reading places, 31 of them in R6,
+with the room spill on.** In each, the straddled position notes the run out of view
+(1) or barely seen (58), with no problem naming it, and its note says there is
+nothing to gain by re-shooting it from there; the clean reading of the same position
+places it. 55 of the 59 sit in positions the page refuses anyway. The other 4, all
+in R6, make their positions QUIET, in 4 captures: 1 QUIET, and 3 LOUD with a QUIET
+position. In each of those 4 the QUIET position places another touched run beside
+the dropped one, which reaches the calibration straddled with no class counting it.
+Joined with the acceptance sweep's measure of each clean run's light
+(`experiments/reader-acceptance.json`), every one of R6's 31 is a run lit only by
+the wall behind the sphere — 7 runs, lighting 35 to 226 pixels — which the page's
+clean reading places and can decode only off the sphere. The other 28 are 3 runs on
+the sphere lighting 58 to 83 pixels, crescents of 10 to 14 fingerprint blocks, which
+the straddle takes below the 8 blocks the page needs to check a run.
 
 ## The check refuses a position run by run, not all at once
 
@@ -542,8 +689,12 @@ ran about 9.3 ms late when the first run's verification re-ran it. **No stage of
 this experiment measures either**, and a display machine's lateness is unmeasured.
 At 7.5 ms, 1786 of 2000 aimed captures are touched: 1358 loud, 349 of them also carrying
 a silent position; 324 silent, 23 of them solved and 17 of those past the seam gate;
-and 104 touching only runs that are refused anyway. At 2 ms per step, a design-time
-estimate of the page's script alone with no paint, none of the 2000 is touched.
+and 104 touching only runs that are refused anyway. Those are the counterfactual's;
+through the page's own reader the same captures are 1352 loud and 330 silent, and
+its placed runs file 109 photographs under the step after the one each mostly
+shows, every one a near-tie (the page column's section). At 2 ms per step, a
+design-time estimate of the page's script alone with no paint, none of the 2000 is
+touched.
 
 Lateness also changes the shape of a straddle. At a perfect timer, 712 of the 849
 touched positions of an un-aimed start straddle from their first photograph to
@@ -590,36 +741,41 @@ _Derived from the design: the aim band’s lower edge, 0.5 s, spread over 135 st
 
 ## What the page tells the operator
 
-**When the reader refuses a run on its own, it mostly blames a dropped and a
-duplicated frame, which is not what happened, and asks for a remedy the page
-cannot read back.** Of R1's 627 loud captures, 332 are refused only as whole
+**Neither reader says that the photographs were taken while the pattern changed.
+When the counterfactual refuses a run on its own it mostly blames a dropped and a
+duplicated frame; the page's own reader mostly says it found no run in the folder at
+all.** Of R1's 627 loud captures, the counterfactual refuses 332 only as whole
 positions — “Found N projector runs” — and re-shooting that position is a remedy
-the page reads. The other 295 are refused run by run: 295 of them are told “Re-shoot
-projector N”, and 295 that the photographs look like a dropped frame and a
-duplicated one. That is not what happened, and the
-remedy is one the page cannot read back: a folder holding a re-shot run, appended or
-alone, is refused whole (192 of 192 in the first section's folder table), so the
-page's own advice, and the card's advice to keep both runs, produce a folder it
-cannot read. (The card has since changed: it now says to re-shoot the whole
-position, `docs/CALIBRATE.md`. The page's refusal still says “Re-shoot
-projector N”.)
+the page reads. The other 295 are refused run by run: 295 of them are told
+“Re-shoot projector N”, and 295 that the photographs look like a dropped frame and a
+duplicated one. That is not what happened, and the remedy was one that reader could
+not read back: a folder holding a re-shot run, appended or alone, is refused whole
+(192 of 192 in the first section's folder table).
 
-> **2026-09-29: the page reads that remedy now, and after a straddle it is still
-> the wrong one.** The page's reader reads a re-shot run added to the position's
-> folder, or played on to the end, in place of the original (the first section's
-> notes), and its refusal now says how to hand one in. But a straddle smears the
-> whole position and each run crosses the check at its own smear (the section on
-> crossings), so the runs that passed can carry the same smear silently, and
-> re-shooting only the projector named keeps them. The card says to re-shoot one
-> projector into the same folder for a frame spoiled on its own, before the tripod
-> moves, and the whole position, aimed, after a straddle. The refusal still blames
-> a dropped and a duplicated frame. Whether the new reader refuses a straddled run
-> where the counterfactual does is the rescoring's page column, not yet run.
+The page's own reader refuses 437 of its 626 loud captures only as whole positions,
+and 189 run by run, each of those told “Re-shoot projector N” and 82 of them also
+that the photographs look like a dropped and a duplicated frame, in the complement
+check's own words, which the page's reader keeps. Of the 1837 touched runs it
+refuses in R1, 1511 are refused by one problem about the whole folder: “No projector
+run could be found in the 136 photographs”, which it explains as what a folder from
+another plan, a camera that moved during the run, or photographs not in the order
+they were shot look like. It could not find another 228, and refuses 98 as a broken
+pair (the last table). It reads a re-shot run added to the position's folder, or
+played on to the end, in place of the original (the first section), so re-shooting
+the projector it names is a remedy it reads. After a straddle it is still the wrong
+one: a straddle smears the whole position and each run crosses the check at its own
+smear (the section on crossings), so the runs that passed can carry the same smear
+silently, and re-shooting only the projector named keeps them. The card says to
+re-shoot one projector into the same folder for a frame spoiled on its own, before
+the tripod moves, and the whole position, aimed, after a straddle
+(`docs/CALIBRATE.md`).
 
-A silent position gets no message at all. Under policy A, which keeps a MIXED
-position's placed runs because that is what the page decodes, 97 of R1's loud
-captures also carry a silent part — a PLACED position, or the placed runs of a MIXED
-one — against 31 under policy P, which counts only PLACED positions.
+A silent position gets no message at all, from either reader, and a quiet drop gets
+a note that asks for nothing (the page column's section). Under policy A, which
+keeps a MIXED position's placed runs because that is what the page decodes, 97 of
+R1's loud captures also carry a silent part for the counterfactual — a PLACED
+position, or the placed runs of a MIXED one — against 31 under policy P, which
+counts only PLACED positions.
 
 <!-- generated: experiment-10-positions -->
 | cell | footing, runs counted | touched positions | REFUSED-ALL | MIXED | PLACED | INVISIBLE-ONLY | UNCHANGED |
@@ -678,6 +834,10 @@ _Content footing (primary): a photograph observes as the kind of the part holdin
 | L-aimed-7.5 | 1358 | 0 | 1358 | 1358 | 806 |
 | L-uniform-7.5 | 1693 | 56 | 1637 | 1637 | 880 |
 <!-- /generated -->
+
+The page's own run tables follow: R1 run by run against the counterfactual, every
+cell summarised, each reader's LOUD captures by what they are told, and the page's
+words on the runs it refuses.
 
 <!-- generated: experiment-10-page-runs -->
 | R1, touched runs both clean twins place | counterfactual: placed | refused: complement | bookends count | bookends length | bookends kind | unanswered | classify | all |
@@ -745,26 +905,22 @@ _The page’s words on each touched run it refuses and its clean reading places:
   Gaussian shot noise, point-sampled patterns, a single grey channel, no defocus and
   no JPEG. The classify margins, the clean residual floors and the invisible-run
   refusals are bench numbers.
-- **A working page.** Every loud/silent split is a counterfactual reader's. Today's
-  page refuses every clean position before the check runs (P6), so no straddled
-  capture was put through it; once the page can place a clean position, the
-  rescoring's page column has to be run. A classify fix must stop classifying Gray
-  planes by lit fraction, and the run count must allow for a projector the camera
-  cannot see.
-
-  > **2026-09-29: the page can place a clean position now.** Its reader was
-  > replaced by one that finds runs without classifying the capture and notes a
-  > projector out of sight, the two things this item asks for, and on the bench's
-  > photographs it places every clean position Q0 rendered without a refusal
-  > (`experiments/reader-acceptance.json`). So the rescoring's page column is the
-  > next run; until it is made, every loud/silent split here is still the
-  > counterfactual's.
+- **The page's decode, and the harm only its own plan could show.** A working page
+  is measured now, on the bench: every straddled position went through the page's
+  own reader (the page column). But the column reads which runs the page places and
+  where, and decodes none of them, so what a straddle does to the coordinates of a
+  run only the page places is not measured: the runs it places where the
+  counterfactual's bookends refuse them, and R4's runs holding a photograph of
+  another step. And a page-SILENT capture whose plan no counterfactual solve has is
+  not judged: 30 of R1's 99, and every one outside R1 and L-aimed-7.5, where
+  nothing was solved.
 - **The display machine's timing.** The emitter's lateness was never measured here:
   the emitter-timing probe its design called for (`tools/emitter-timing.ts`) was never built, so 7.5 ms is a
   design-time headless figure and every lateness in this document is an input, not a
   result. No sentence about the aimed start stands without the lateness beside it.
 - **The camera side.** A folder is exactly its 136 photographs (the card's own extra
-  end photographs are measured apart, in the first section's folder table);
+  end photographs are measured apart: for the counterfactual reader in the first
+  section's folder table, and for the page's by the acceptance sweep);
   EXPERIMENT-9's drift band, per-shot jitter and start procedures, and the aimed
   start's aim band, are inherited and not validated; hand jitter is assumed
   symmetric; an intervalometer's own re-arm rule is not modelled.
@@ -791,51 +947,56 @@ _The page’s words on each touched run it refuses and its clean reading places:
 
 ## What it decides
 
-**First, the reader.** Today's page places no clean bench position, so nothing about
-straddles matters on it until it can. Two things stand in the way: a classify that
-relies on a patterned frame lighting about half the crescent, which a coarse Gray
-plane does not, and a run count that expects a run from every projector, which a
-camera cannot always see: of the counterfactual reader's 66 refusals on clean
-positions, 64 are runs of a projector out of sight.
+**First, the reader: the page's own reader now places every clean bench position,
+and what it does with a straddle is measured.** The reader the page had when this
+experiment was designed placed none of the 108, for two reasons: a classify that
+relied on a patterned frame lighting about half the crescent, which a coarse Gray
+plane does not, and a run count that expected a run from every projector, which a
+camera cannot always see — of the counterfactual reader's 66 refusals on clean
+positions, 64 are runs of a projector out of sight. The reader that replaced it
+finds each run by what the run's own frames show and notes a projector out of
+sight, and places a run in all 108 with no problem.
 
-**With a reader that can place runs, a straddle is mostly loud, and the message is
-wrong.** A run refused on its own is mostly blamed on a dropped and a duplicated
-frame, and the refusal asks for a remedy that produces a folder the page refuses
-whole. The only remedy the page reads back is re-shooting the whole position, and
-the refusal text and the card's “keep both runs” should say so. That is recorded
-here and not acted on. (The card now says to re-shoot the position:
-`docs/CALIBRATE.md`. The refusal text still says “Re-shoot projector N”.)
+**Through the page's reader a straddle is mostly loud, and the words do not say what
+happened.** It refuses 626 of R1's 728 touched captures and passes 99 silently, one
+more than the counterfactual's 98 (P11), and in every cell its loud and silent
+counts are each within 15 captures of the counterfactual's. Most of its refusals say
+no projector run could be found in the folder, and the rest name a projector to
+re-shoot, which after a straddle is the wrong remedy. The card's is to re-shoot the
+whole position, aimed; the refusal text still does not say so, which is recorded
+here and not acted on.
 
-> **2026-09-29: the first is done on the bench; the second is not.** The page's
-> reader has been replaced with one that finds each run by what it shows and notes
-> a projector out of sight. On the bench's photographs of every clean position Q0
-> rendered it refuses nothing and misfiles nothing, and it places 327 runs to the
-> counterfactual's 349,
-> the 22 between them grazing runs it notes and does not decode
-> (`experiments/reader-acceptance.json`). It also reads a re-shot run added to the
-> folder, so re-shooting the whole position is no longer the only remedy the page
-> reads back; after a straddle it is still the right one, for the straddle's sake,
-> and the card says so. The refusal still says “Re-shoot projector N”, now with how
-> to hand the re-shoot in. The loud and silent counts above stay the
-> counterfactual's; what the new reader does with a straddled capture is what a
-> re-run of this experiment, with the rescoring's page column, will measure, and
-> nothing here says what it will show.
+**Under a late emitter, its misfiles are near-ties.** The 216 photographs it files
+under the step after the one they mostly show, at 7.5 ms per step, hold between
+0.500 and 0.585 of their exposure in that step: filed either way, two fifths or more
+of each shows the other step.
+
+**Under a hand-pressed remote it places runs holding a photograph of another step,
+which the reader was built never to do.** 13 of R4's 21 misfiled photographs hold
+0.6 or more of their exposure in a step other than the one they are filed under, and
+one holds all of it. That is a reader defect to fix. It also strengthens the card's
+rule to shoot with an intervalometer and never press a remote by hand for each
+frame: EXPERIMENT-9 measured a hand-pressed remote as the worst arrangement, and
+here the page places some of its captures' runs with a photograph of the wrong step
+in them.
 
 **Most of what passes is not harmless, and the check is not the protection.** A
 straddle the check lets through keeps its Gray words and shifts its phase, and at
-s = 0.06 that moves the worst seam point 6.8 times as far as re-shooting
-the position would. What protects a capture is the start: the aimed start touches
-no capture at a perfect timer. It depends on the emitter running less than about
-3.50 to 3.70 ms late per step, and the only figures for that lateness are headless
-ones: 7.5 ms per step at design time, and about 9.3 ms armed with the tick on. So
-the next measurement is the emitter's lateness on a display machine (P0), and the
-mechanism to remove is `advance()` re-arming its timer after the paint instead of
-scheduling each step from Play.
+s = 0.06 that moves the worst seam point 6.8 times as far as re-shooting the
+position would. Of the page's 99 silent captures in R1, the 69 a solve of the page's
+own plan can judge are 28 harmless, 14 biased and 27 past the seam gate. What
+protects a capture is the start: the aimed start touches no capture at a perfect
+timer. It depends on the emitter running less than about 3.50 to 3.70 ms late per
+step, and the only figures for that lateness are headless ones: 7.5 ms per step at
+design time, and about 9.3 ms armed with the tick on. So the next measurement is
+still the emitter's lateness on a display machine (P0), and the mechanism to remove
+is `advance()` re-arming its timer after the paint instead of scheduling each step
+from Play.
 
-**EXPERIMENT-9's “more than one capture in three … and cannot tell” becomes: of 728
-touched, 627 told and 98 not** — by a reader the page does not have yet, and 295 of
-the 627 told the wrong thing.
+**EXPERIMENT-9's “more than one capture in three … and cannot tell” becomes, through
+the page's own reader: of 728 touched, 626 told and 99 not** — and none of the 626
+told that a straddle is what happened.
 
 Pre-registered predictions this run falsifies, each a finding rather than a fault:
-**P2c, P3, P5a, P9**. Not evaluated: **none**. Harness identities that fail: **none**;
-not established: **none**.
+**P2c, P3, P5a, P6, P9, P10, P11, P12**. Not evaluated: **none**. Harness identities
+that fail: **none**; not established: **none**.
