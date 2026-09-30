@@ -1136,11 +1136,14 @@ test('T24 deterministic: the reduced design run twice is one document, and it re
   // The page column ran, so its determinism above is about something: Q0
   // placed runs on the reduced rig and triggered it, the bank stage recorded
   // a page twin for every camera, and every changed position of R1 and
-  // L-aimed-7.5 carries the page's reading of it.
+  // L-aimed-7.5 carries the page's reading of it. None of those readings is a
+  // crash: `pageRecord` records what the reader throws rather than raising
+  // it, and a crash is otherwise a reading that placed nothing.
   assert.equal(doc.precondition.q0.contingency.triggered, true, 'the page column was not triggered');
   const checkpoint = (stage: string) => JSON.parse(store.read(`${stage}.json`) as string);
-  const bankTwins = Object.values(checkpoint('bank').units as Record<string, { twins: { camera: number; page?: unknown }[] }>).flatMap((u) => u.twins);
+  const bankTwins = Object.values(checkpoint('bank').units as Record<string, { twins: { camera: number; page?: { crash: string | null } }[] }>).flatMap((u) => u.twins);
   assert.ok(bankTwins.length > 0 && bankTwins.every((t) => t.page !== undefined && t.page !== null), 'a camera has no page twin');
+  assert.deepEqual(bankTwins.flatMap((t) => (t.page !== undefined && t.page.crash !== null ? [t.page.crash] : [])), [], 'the page threw on a clean twin');
   for (const [stage, id] of [['rescore', 'R1'], ['lateness', 'L-aimed-7.5']]) {
     type Scored = { changed: boolean; page: { placed: number[]; crash: string | null } | null };
     const changed = Object.entries(checkpoint(stage).units as Record<string, { score?: { cells: Record<string, { positions: Scored[] }[]> } }>)
@@ -1148,6 +1151,11 @@ test('T24 deterministic: the reduced design run twice is one document, and it re
       .flatMap(([, u]) => (u.score?.cells[id] ?? []).flatMap((cap) => cap.positions.filter((p) => p.changed)));
     assert.ok(changed.length > 0, `${id} changed no position`);
     assert.ok(changed.every((p) => p.page !== null && Array.isArray(p.page.placed)), `${id} has a changed position the page did not read`);
+    assert.deepEqual(
+      changed.flatMap((p) => (p.page !== null && p.page.crash !== null ? [p.page.crash] : [])),
+      [],
+      `${id}: the page's reader threw on a changed position`,
+    );
   }
 
   // No time, and no machine: no date-time, no epoch milliseconds, no key

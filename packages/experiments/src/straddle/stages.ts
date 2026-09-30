@@ -1980,13 +1980,21 @@ export function stageBank(ctx: RunContext): StageFile<BankUnit> {
   return runUnits<BankUnit>(ctx, 'bank', rigUnits(plan, ['main', 'spill', 'fine']), (unit) => {
     const bank = bankOf(ctx, unit);
     const twins = bank.cameras.map((c) => computeTwin(bank, c).twin);
+    const named = (ps: readonly number[], none: string) => ps.map((p) => p + 1).join(',') || none;
     for (const t of twins) {
-      const places = t.placedContent.map((p) => p + 1).join(',') || 'nothing';
+      const places = named(t.placedContent, 'nothing');
       const lit = t.runs.map((r) => (100 * r.litShare).toFixed(1)).join('/');
       const worst = t.runs.map((r) => (r.worstNoisy === null ? '-' : r.worstNoisy.toFixed(3)));
+      // The page twin, which the page column attributes against: a throw is
+      // recorded as its crash, not raised, and would void the camera's column.
+      const page =
+        t.page === undefined
+          ? 'no page twin'
+          : `page places ${named(t.page.placed, 'nothing')}, unseen ${named(t.page.unseen, 'none')}, ` +
+            (t.page.crash === null ? 'no crash' : `crashed: ${t.page.crash}`);
       ctx.log(
         `    ${unit} camera ${t.camera}: twin places ${places} ` +
-          `(lit ${lit}%, worst ${worst.join('/')})`,
+          `(lit ${lit}%, worst ${worst.join('/')}); ${page}`,
       );
     }
     return { width: bank.width, height: bank.height, seed: bank.seed, twins };
@@ -4067,11 +4075,20 @@ function scoreCells(
       captures.push({ t, rig: k, positions });
     }
     out.cells[cell.id] = captures;
-    const changed = captures.flatMap((c) => c.positions).filter((p) => p.changed).length;
+    const scored = captures.flatMap((c) => c.positions);
+    const changed = scored.filter((p) => p.changed).length;
+    // What the page column read, logged as the stage runs: pageRecord records
+    // a reader's throw rather than raising it, so a throw on every folder of
+    // some configuration would otherwise show only once the document is
+    // assembled.
+    const pages = scored.flatMap((p) => (p.page === null ? [] : [p.page]));
+    const placing = pages.filter((p) => p.placed.length > 0).length;
+    const crashed = pages.filter((p) => p.crash !== null).length;
     const seconds = ((Date.now() - t0) / 1000).toFixed(1);
     ctx.log(
       `    ${cell.id} rig ${k}: ${captures.length} touched captures, ` +
-        `${changed} changed positions, ${seconds} s`,
+        `${changed} changed positions, ${pages.length} page readings ` +
+        `(${placing} placing a run, ${crashed} crashed), ${seconds} s`,
     );
   }
   return out;
