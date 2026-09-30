@@ -146,7 +146,23 @@ test('the page column table has a row per cell, each read back from the document
   const rendered = experiment10Page(doc as never);
   const rows = rowsOf(rendered);
   const header = rows[0];
-  assert.deepEqual(header.slice(0, 3), ['cell', 'captures touched', 'LOUD (share, 95% CI)']);
+  // The counterfactual's classes, and beside them the page's own: QUIET, and a LOUD capture with a QUIET position.
+  assert.deepEqual(header, [
+    'cell',
+    'captures touched',
+    'LOUD (share, 95% CI)',
+    'LOUD+SILENT',
+    'LOUD+QUIET',
+    'SILENT',
+    'QUIET',
+    'INVISIBLE-ONLY',
+    'UNCHANGED',
+    'quiet drops: runs (captures)',
+    'misfiled photographs (the largest majority share)',
+    'crashes',
+  ]);
+  const col = (name: string): number => header.indexOf(name);
+  assert.match(rendered, /The counterfactual reader has no QUIET class/, 'the note does not say the counterfactual has no QUIET');
   const cells = [...doc.rescore.cells, ...doc.lateness.cells];
   assert.equal(rows.length - 1, cells.length, 'a cell has no row, or a row no cell');
   for (const row of rows.slice(1)) {
@@ -155,11 +171,18 @@ test('the page column table has a row per cell, each read back from the document
     assert.ok(cell !== undefined && cell.page !== null, row[0]);
     const page = cell.page as QuickPage;
     if (page.status === 'nothing to read') assert.match(row[1], /\(nothing to read\)$/);
-    assert.equal(Number(row[2].split(' ')[0]), page.classes.P.counts.LOUD, `${row[0]} LOUD`);
-    assert.equal(row[7], `${page.quiet.runs} (${page.quiet.captures})`, `${row[0]} quiet drops`);
-    assert.equal(Number(row[8].split(' ')[0]), page.misfiles.photographs, `${row[0]} misfiles`);
-    if (page.misfiles.photographs > 0) assert.ok(row[8].endsWith(`(${(page.misfiles.share.max as number).toFixed(3)})`), row[8]);
-    assert.equal(Number(row[9]), page.read.crashes);
+    const k = page.classes.P.counts;
+    assert.equal(Number(row[col('LOUD (share, 95% CI)')].split(' ')[0]), k.LOUD, `${row[0]} LOUD`);
+    assert.equal(Number(row[col('LOUD+SILENT')]), k['LOUD+SILENT'], `${row[0]} LOUD+SILENT`);
+    assert.equal(Number(row[col('LOUD+QUIET')]), k['LOUD+QUIET'], `${row[0]} LOUD+QUIET`);
+    assert.equal(Number(row[col('QUIET')]), k.QUIET, `${row[0]} QUIET`);
+    const silent = ['SILENT-HARMLESS', 'SILENT-BIASED', 'SILENT-GATE-BREAKING', 'SILENT-UNJUDGEABLE', 'SILENT-UNSOLVED'].reduce((a, x) => a + k[x], 0);
+    assert.equal(Number(row[col('SILENT')].split(/[ :]/)[0]), silent, `${row[0]} SILENT`);
+    assert.equal(row[col('quiet drops: runs (captures)')], `${page.quiet.runs} (${page.quiet.captures})`, `${row[0]} quiet drops`);
+    const misfiles = row[col('misfiled photographs (the largest majority share)')];
+    assert.equal(Number(misfiles.split(' ')[0]), page.misfiles.photographs, `${row[0]} misfiles`);
+    if (page.misfiles.photographs > 0) assert.ok(misfiles.endsWith(`(${(page.misfiles.share.max as number).toFixed(3)})`), misfiles);
+    assert.equal(Number(row[col('crashes')]), page.read.crashes);
   }
   // The quick plan touches nothing at R8 and L-aimed-2: nothing to read, which is not "did not run".
   for (const id of ['R8', 'L-aimed-2']) assert.match(rows.find((r) => r[0] === id)?.[1] ?? '', /nothing to read/);

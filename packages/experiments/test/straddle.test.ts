@@ -1165,14 +1165,17 @@ test('T24 deterministic: the reduced design run twice is one document, and it re
       classes: { P: { counts: Record<string, number> } };
       runs: { touched: number; attributable: number; placed: number; refused: number; noted: number; crashed: number; unaccounted: number; neither: number } & Record<'both' | 'counterfactualOnly' | 'pageOnly', Record<string, Record<string, number>>>;
       positions: { all: Record<string, number> };
-      quiet: { runs: number };
+      quiet: { runs: number; silentWithQuiet: number; quietPlacingTouched: number };
     };
     const cell = (stage === 'rescore' ? doc.rescore : doc.lateness).cells.find((c: { id: string }) => c.id === id);
     const page = cell.page as PageDoc;
     assert.equal(page.status, 'read', `${id}: the page column's summary says ${page.status}`);
     assert.deepEqual([page.read.positions, page.read.crashes, page.read.captures], [changed.length, 0, cell.capturesRecorded], `${id}: the summary read other positions than the stage wrote`);
-    const classed = ['LOUD', 'SILENT-HARMLESS', 'SILENT-BIASED', 'SILENT-GATE-BREAKING', 'SILENT-UNJUDGEABLE', 'SILENT-UNSOLVED', 'INVISIBLE-ONLY', 'UNCHANGED', 'UNTOUCHED'];
+    const classed = ['LOUD', 'SILENT-HARMLESS', 'SILENT-BIASED', 'SILENT-GATE-BREAKING', 'SILENT-UNJUDGEABLE', 'SILENT-UNSOLVED', 'QUIET', 'INVISIBLE-ONLY', 'UNCHANGED', 'UNTOUCHED'];
     assert.equal(classed.reduce((a, k) => a + page.classes.P.counts[k], 0), page.read.captures, `${id}: a capture read by the page has no class`);
+    // QUIET, LOUD+QUIET and SILENT with a quiet position are captures apart, each holding a QUIET position.
+    const k = page.classes.P.counts;
+    assert.ok(k['LOUD+QUIET'] <= k.LOUD && k.QUIET + k['LOUD+QUIET'] + page.quiet.silentWithQuiet <= page.positions.all.QUIET, `${id}: ${JSON.stringify([k, page.quiet, page.positions.all])}`);
     const crossed = (['both', 'counterfactualOnly', 'pageOnly'] as const).reduce((a, k) => a + Object.values(page.runs[k]).reduce((b, row) => b + Object.values(row).reduce((c, n) => c + n, 0), 0), 0);
     assert.ok(page.runs.attributable > 0 && page.runs.touched === crossed + page.runs.neither, `${id}: ${JSON.stringify(page.runs)}`);
     assert.equal(page.runs.placed + page.runs.refused + page.runs.noted + page.runs.crashed + page.runs.unaccounted, page.runs.attributable);
@@ -2326,13 +2329,14 @@ test("T37 the verdict and the caveats say what the first full run's verification
   // The same captures through the page's own reader: figures of the right
   // shape, set in so the clause has to read each one back from its cell.
   Object.assign(r1.page.read, { captures: 728 });
-  Object.assign(r1.page.classes.P.counts, { LOUD: 600, 'LOUD+SILENT': 20, 'SILENT-HARMLESS': 30, 'SILENT-BIASED': 10, 'SILENT-GATE-BREAKING': 20, 'SILENT-UNJUDGEABLE': 0, 'SILENT-UNSOLVED': 60, 'INVISIBLE-ONLY': 8, UNCHANGED: 0 });
+  Object.assign(r1.page.classes.P.counts, { LOUD: 600, 'LOUD+SILENT': 20, 'LOUD+QUIET': 3, 'SILENT-HARMLESS': 30, 'SILENT-BIASED': 10, 'SILENT-GATE-BREAKING': 20, 'SILENT-UNJUDGEABLE': 0, 'SILENT-UNSOLVED': 60, QUIET: 4, 'INVISIBLE-ONLY': 4, UNCHANGED: 0 });
   r1.page.loud = { captures: 600, runByRun: 400, wholePositionOnly: 200, crashOnly: 0, reshootNamed: 400, dropAndDuplicate: 50 };
-  r1.page.quiet = { runs: 5, positions: 5, captures: 5, silentOnlyThroughQuiet: 2 };
-  r1.page.classes.P.vsCounterfactual = { LOUD: { LOUD: 590, SILENT: 30, 'INVISIBLE-ONLY': 7, UNCHANGED: 0, UNTOUCHED: 0 }, SILENT: { LOUD: 10, SILENT: 87, 'INVISIBLE-ONLY': 1, UNCHANGED: 0, UNTOUCHED: 0 }, 'INVISIBLE-ONLY': { LOUD: 0, SILENT: 3, 'INVISIBLE-ONLY': 0, UNCHANGED: 0, UNTOUCHED: 0 }, UNCHANGED: { LOUD: 0, SILENT: 0, 'INVISIBLE-ONLY': 0, UNCHANGED: 0, UNTOUCHED: 0 }, UNTOUCHED: { LOUD: 0, SILENT: 0, 'INVISIBLE-ONLY': 0, UNCHANGED: 0, UNTOUCHED: 0 } };
+  r1.page.quiet = { runs: 5, positions: 5, captures: 5, silentWithQuiet: 2, quietPlacingTouched: 1 };
+  const none = { LOUD: 0, SILENT: 0, QUIET: 0, 'INVISIBLE-ONLY': 0, UNCHANGED: 0, UNTOUCHED: 0 };
+  r1.page.classes.P.vsCounterfactual = { LOUD: { ...none, LOUD: 590, SILENT: 30, QUIET: 3, 'INVISIBLE-ONLY': 4 }, SILENT: { ...none, LOUD: 10, SILENT: 87, QUIET: 1 }, 'INVISIBLE-ONLY': { ...none, SILENT: 3 }, UNCHANGED: none, UNTOUCHED: none };
   Object.assign(r1.page.misfiles, { photographs: 40, positions: 30, share: { min: 0.5002, max: 0.6 } });
   Object.assign(aimed.page.read, { captures: 1786 });
-  Object.assign(aimed.page.classes.P.counts, { LOUD: 1300, 'SILENT-HARMLESS': 0, 'SILENT-BIASED': 0, 'SILENT-GATE-BREAKING': 0, 'SILENT-UNJUDGEABLE': 0, 'SILENT-UNSOLVED': 380 });
+  Object.assign(aimed.page.classes.P.counts, { LOUD: 1300, 'SILENT-HARMLESS': 0, 'SILENT-BIASED': 0, 'SILENT-GATE-BREAKING': 0, 'SILENT-UNJUDGEABLE': 0, 'SILENT-UNSOLVED': 380, QUIET: 6 });
   aimed.page.quiet.runs = 7;
   // Across every cell the page read: the totals the clause must sum.
   const pageRead = [...doc.rescore.cells, ...doc.lateness.cells].filter((x: { page: { status: string } }) => x.page.status !== 'not run').map((x: { page: unknown }) => x.page as { quiet: { runs: number }; misfiles: { photographs: number; positions: number; share: { min: number | null; max: number | null } } });
@@ -2362,8 +2366,8 @@ test("T37 the verdict and the caveats say what the first full run's verification
     '31 of the loud captures also carry a silent position, and in 18 of those the seams still end past the 1 mm gate after the refused positions are re-shot clean.',
     "98 pass silently: 38 keep the gate and move the worst seam point no further than 95% of whole-capture re-shoots do (32-44 across τ's 95% CI, and 24 against the one-position re-shoot), 17 move it further without breaking the gate, and 43 break it. In all, 61 of the 728 end past the gate under policy P, and 60 of the 98 silent captures judged move the seams further than τ.",
     '3 touched only runs that the counterfactual reader also refuses on the clean capture; 0 changed no photograph. With the card\'s aimed start and a perfect timer, 0 of 2000 captures are touched (R8).',
-    "If the emitter runs 7.5 ms late per step, 1786 of 2000 captures started by the card's aimed rule are touched: 1358 loud, 349 of them also carrying a silent position; 324 silent, 23 of them solved and 17 of those past the seam gate; and 104 touching only runs that are refused anyway. Through the page's own reader the same 1786 captures are 1300 loud and 380 silent.",
-    "Through the page's own reader, each run attributed against its reading of the same clean frames, the 728 captures come out 600 loud (400 run by run, told 'Re-shoot projector N', and 200 only as a whole position; 20 of them also carrying a silent position) and 120 silent, 2 of them only through a quiet drop (30 harmless, 10 biased and 20 past the gate by a counterfactual solve of the same plan, and 60 not solved); 8 touch only runs its clean reading does not place, and 0 changed no photograph. Of the counterfactual reader's 627 loud captures the page passes 30 silently, and of its 98 silent ones the page refuses 10 loudly.",
+    "If the emitter runs 7.5 ms late per step, 1786 of 2000 captures started by the card's aimed rule are touched: 1358 loud, 349 of them also carrying a silent position; 324 silent, 23 of them solved and 17 of those past the seam gate; and 104 touching only runs that are refused anyway. Through the page's own reader the same 1786 captures are 1300 loud, 380 silent and 6 quiet.",
+    "Through the page's own reader, each run attributed against its reading of the same clean frames, the 728 captures come out 600 loud (400 run by run, told 'Re-shoot projector N', and 200 only as a whole position; 20 of them also carrying a silent position and 3 a quiet one), 120 silent (30 harmless, 10 biased and 20 past the gate by a counterfactual solve of the same plan, and 60 not solved; 2 of them with a quiet position too) and 4 quiet: a touched run its clean reading places only noted, and no position refused or placed; 4 touch only runs its clean reading does not place, and 0 changed no photograph. In 1 of the captures with no position placed, a quiet position still places another touched run, which reaches the calibration straddled and no class counts. Of the counterfactual reader's 627 loud captures the page passes 30 silently and 3 quietly, and of its 98 silent ones the page refuses 10 loudly.",
     `Across the ${pageRead.length} rescore and lateness cells it read, the page quietly drops ${allQuiet} runs its clean reading places, noting them out of view or barely seen with no problem naming them, and its placed runs file ${allMisfiled} photographs under a step other than the one holding more than half their exposure (in ${allMisfiledPositions} positions, that step's share ${Math.min(...allShares).toFixed(3)}-${Math.max(...allShares).toFixed(3)}).`,
     'armed with the tick on, the same setup ran about 9.3 ms late. This experiment did not re-measure it',
     'about 3.70 ms per step with matched clocks, and 3.50 ms for the half of captures whose camera clock runs 100 ppm fast.',
@@ -2383,7 +2387,12 @@ test("T37 the verdict and the caveats say what the first full run's verification
     ['the count refusals\' margins', (d) => { d.precondition.q0.replaced.refusedAt.count.margin.max = null; }],
     ['the runs the page\'s reader notes out of view', (d) => { delete d.precondition.q0.page.unseen; }],
     ['the reader the page replaced', (d) => { delete d.precondition.q0.replaced.placedPositions; }],
-    ['the captures silent only through a quiet drop', (d) => { delete cells(d.rescore.cells, 'R1').page.quiet.silentOnlyThroughQuiet; }],
+    ['the page\'s QUIET captures in R1', (d) => { delete cells(d.rescore.cells, 'R1').page.classes.P.counts.QUIET; }],
+    ['the LOUD captures with a quiet position', (d) => { delete cells(d.rescore.cells, 'R1').page.classes.P.counts['LOUD+QUIET']; }],
+    ['the SILENT captures with a quiet position', (d) => { delete cells(d.rescore.cells, 'R1').page.quiet.silentWithQuiet; }],
+    ['the placed runs of quiet positions no class counts', (d) => { delete cells(d.rescore.cells, 'R1').page.quiet.quietPlacingTouched; }],
+    ['the loud captures the page passes quietly', (d) => { delete cells(d.rescore.cells, 'R1').page.classes.P.vsCounterfactual.LOUD.QUIET; }],
+    ['the page\'s QUIET captures in L-aimed-7.5', (d) => { delete cells(d.lateness.cells, 'L-aimed-7.5').page.classes.P.counts.QUIET; }],
     ['where the two readers part', (d) => { delete cells(d.rescore.cells, 'R1').page.classes.P.vsCounterfactual.SILENT.LOUD; }],
     ['the page\'s misfiles in a cell', (d) => { delete cells(d.lateness.cells, 'L-aimed-7.5').page.misfiles.photographs; }],
     ['the rotation null rate', (d) => { delete d.pose.tauNull.rotationFlips.flips; }],
@@ -3012,11 +3021,32 @@ test('T46 the page column: each run\'s verdict, attributed against the page twin
   // Touching only runs the page twin does not place is INVISIBLE-ONLY.
   assert.equal(pageCategoryOf(at([2], handPage({ placed: [0, 1], barelySeen: [2], unseen: [3] })), twin, false), 'INVISIBLE-ONLY');
   assert.equal(pageCategoryOf(untouchedPosition(0), twin, false), 'UNTOUCHED');
-  // A QUIET position asks for nothing, so its capture is silent unless another is refused.
-  assert.equal(pageCaptureClass(['QUIET', 'UNTOUCHED', 'UNTOUCHED'], null, 'P').class, 'SILENT-UNSOLVED');
-  assert.equal(pageCaptureClass(['QUIET', 'REFUSED-ALL', 'UNTOUCHED'], null, 'P').class, 'LOUD');
-  assert.equal(pageCaptureClass(['QUIET', 'REFUSED-ALL', 'UNTOUCHED'], null, 'P').loudAndSilent, true);
-  assert.equal(pageCaptureClass(['INVISIBLE-ONLY', 'UNCHANGED', 'UNTOUCHED'], null, 'P').class, 'INVISIBLE-ONLY');
+  // A capture by the registered definitions (docs/EXPERIMENT-10.md, "Loud and
+  // silent"): LOUD on any refusal; else SILENT on a PLACED position, every such
+  // run placed; else QUIET on a QUIET position, which is not PLACED — its drop is
+  // noted, not decoded — and a class the counterfactual cannot have; else
+  // INVISIBLE-ONLY or UNCHANGED. A QUIET capture has no silent part, so a harm
+  // handed in judges nothing.
+  const harm = { dGridMm: 0.3, tauNullMm: 0.2, gTwinMm: 0.5, gTwinCensored: false, gTreatedMm: 0.8, gTreatedCensored: false, rotationTwinDeg: 0.01, rotationTreatedDeg: 0.01 };
+  const capture = (cats: string[], h: typeof harm | null = null) => {
+    const got = pageCaptureClass(cats as Parameters<typeof pageCaptureClass>[0], h, 'P');
+    return [got.class, got.loudAndSilent, got.loudWithQuiet, got.harm];
+  };
+  assert.deepEqual(capture(['QUIET', 'UNTOUCHED', 'UNTOUCHED']), ['QUIET', false, false, null]);
+  assert.deepEqual(capture(['QUIET', 'UNTOUCHED', 'UNTOUCHED'], harm), ['QUIET', false, false, null], 'a QUIET capture was given a harm');
+  assert.deepEqual(capture(['QUIET', 'INVISIBLE-ONLY', 'UNCHANGED']), ['QUIET', false, false, null], 'QUIET does not outrank INVISIBLE-ONLY and UNCHANGED');
+  // A PLACED position beside it makes the capture SILENT, judged on its harm.
+  assert.deepEqual(capture(['QUIET', 'PLACED', 'UNTOUCHED']), ['SILENT-UNSOLVED', false, false, null]);
+  assert.deepEqual(capture(['PLACED', 'QUIET', 'UNTOUCHED'], harm), ['SILENT-BIASED', false, false, 'BIASED']);
+  // Beside a refusal: LOUD with a quiet drop, never LOUD+SILENT on the QUIET position alone.
+  assert.deepEqual(capture(['QUIET', 'REFUSED-ALL', 'UNTOUCHED'], harm), ['LOUD', false, true, null]);
+  assert.deepEqual(capture(['QUIET', 'MIXED', 'UNTOUCHED']), ['LOUD', false, true, null]);
+  assert.deepEqual(capture(['QUIET', 'REFUSED-ALL', 'PLACED'], harm), ['LOUD', true, true, 'BIASED'], 'a PLACED position beside a refusal is LOUD+SILENT, and the QUIET one counted too');
+  assert.deepEqual(capture(['PLACED', 'REFUSED-ALL', 'UNTOUCHED']), ['LOUD', true, false, null]);
+  // Without a QUIET position the page's class is the counterfactual's rule.
+  assert.deepEqual(capture(['INVISIBLE-ONLY', 'UNCHANGED', 'UNTOUCHED']), ['INVISIBLE-ONLY', false, false, null]);
+  assert.deepEqual(capture(['UNCHANGED', 'UNTOUCHED', 'UNTOUCHED']), ['UNCHANGED', false, false, null]);
+  assert.deepEqual(capture(['PLACED', 'INVISIBLE-ONLY', 'UNTOUCHED'], harm), ['SILENT-BIASED', false, false, 'BIASED']);
 });
 
 test("T47 the page's words: reasonOf's classes refined, never a throw, and the parser acceptance.ts reads problems by", async () => {
@@ -3150,7 +3180,7 @@ test('T48 a capture the page lets through takes a solve\'s harm only where the p
   const solves = new Map<string, unknown>();
   solves.set(treatedId, { ...handSolve(treatedId, 0.45, { dGridMm: 0.3 }), spec: { kind: 'capture', rig: 0, variant: 'reduced', straddle: 'L-aimed-7.5/t7/[0]', exclude: ['0.3', '1.3', '2.3'], captureSeed: null } });
   solves.set('twin', handSolve('twin', 0.4));
-  const summary = (page: PageRead) => {
+  const summary = (page: PageRead, treated = treatedId, capture: ReturnType<typeof capWith> = capWith(page)) => {
     const ev = {
       plan: { ...TEST_PLAN, rigs: [0] },
       q0: { units: { 'main:0': { positions: [{ runsPlaced: [0] }] } } },
@@ -3159,8 +3189,8 @@ test('T48 a capture the page lets through takes a solve\'s harm only where the p
     } as unknown as Parameters<typeof summariseCell>[0];
     const file = {
       units: {
-        'A:main:0': { score: { cells: { [cell.id]: [capWith(page)] } } },
-        'S:main:0': { solves: [{ cell: cell.id, t: 7, rig: 0, a: pair(treatedId), p: pair(treatedId), pIsA: true }] },
+        'A:main:0': { score: { cells: { [cell.id]: [capture] } } },
+        'S:main:0': { solves: [{ cell: cell.id, t: 7, rig: 0, a: pair(treated), p: pair(treated), pIsA: true }] },
       },
     } as unknown as Parameters<typeof summariseCell>[2];
     return summariseCell(ev, cell, file, 0.5);
@@ -3170,21 +3200,54 @@ test('T48 a capture the page lets through takes a solve\'s harm only where the p
   assert.ok(same.page.status === 'read');
   assert.equal(same.page.classes.P.counts['SILENT-HARMLESS'], 1, 'a solve of the page\'s own plan did not judge the page\'s capture');
   assert.deepEqual(same.page.classes.P.harm, { silentPart: 1, samePlan: 1, notSolved: 0, why: { 'no solve': 0, positions: 0, exclusions: 0, placement: 0 } });
+  assert.deepEqual(same.page.quiet, { runs: 0, positions: 0, captures: 0, silentWithQuiet: 0, quietPlacingTouched: 0 }, 'a SILENT capture with no QUIET position is in the quiet tally');
   const moved = summary(reading([1, 34, 68]));
   assert.ok(moved.page.status === 'read');
   assert.equal(moved.classes.P.counts['SILENT-HARMLESS'], 1);
   assert.deepEqual([moved.page.classes.P.counts['SILENT-HARMLESS'], moved.page.classes.P.counts['SILENT-UNSOLVED']], [0, 1], 'a solve of another placement judged the page\'s capture');
   assert.deepEqual(moved.page.classes.P.harm.why, { 'no solve': 0, positions: 0, exclusions: 0, placement: 1 });
+
+  // A QUIET capture has no silent part: its quiet drop is noted, not decoded.
+  // No solve is looked up for it, not even one of its own plan, which here
+  // could not be judged (a censored D_grid) and would be counted as such.
+  const quietId = solveId({ kind: 'capture', rig: 0, variant: 'reduced', straddle: 'L-aimed-7.5/t7/[0]', exclude: ['0.0', '0.3', '1.3', '2.3'], captureSeed: null });
+  solves.set(quietId, { ...handSolve(quietId, 0.45, { dGridMm: 0.3, censored: true }), spec: { kind: 'capture', rig: 0, variant: 'reduced', straddle: 'L-aimed-7.5/t7/[0]', exclude: ['0.0', '0.3', '1.3', '2.3'], captureSeed: null } });
+  const dropped = handPage({ placed: [1, 2], barelySeen: [0], unseen: [3] });
+  const noHarm = { silentPart: 0, samePlan: 0, notSolved: 0, why: { 'no solve': 0, positions: 0, exclusions: 0, placement: 0 } };
+  const quietOnly = summary(dropped, quietId);
+  assert.ok(quietOnly.page.status === 'read');
+  const qp = quietOnly.page.classes.P;
+  assert.deepEqual([qp.counts.QUIET, qp.counts['SILENT-UNSOLVED'], qp.counts['SILENT-UNJUDGEABLE'], qp.counts.LOUD, qp.counts['LOUD+QUIET']], [1, 0, 0, 0, 0]);
+  assert.deepEqual([qp.harm, qp.unjudgeable, qp.solveErrors, qp.solved.unjudgeable], [noHarm, [], [], 0], 'a solve was looked up for a QUIET capture');
+  assert.deepEqual(quietOnly.page.quiet, { runs: 1, positions: 1, captures: 1, silentWithQuiet: 0, quietPlacingTouched: 0 });
+  assert.equal(quietOnly.page.classes.P.vsCounterfactual.SILENT.QUIET, 1, 'the counterfactual\'s SILENT capture is not the page\'s QUIET one');
+  // The same, with run 1 touched and placed beside the drop: still QUIET, and
+  // the placed straddled run no class counts is counted apart.
+  const beside = { ...capWith(dropped), positions: [{ ...handPosition(0, [0, 1], [placedRun(), placedRun(), placedRun(), invisibleRun()]), page: dropped, assignment: null }, untouchedPosition(1), untouchedPosition(2)] };
+  const placing = summary(dropped, quietId, beside);
+  assert.ok(placing.page.status === 'read');
+  assert.equal(placing.page.classes.P.counts.QUIET, 1);
+  assert.deepEqual(placing.page.quiet, { runs: 1, positions: 1, captures: 1, silentWithQuiet: 0, quietPlacingTouched: 1 });
+  // A PLACED position beside the QUIET one makes the capture SILENT, and the
+  // quiet tally counts it too; its plan straddles both, so no solve here is of
+  // it. The QUIET position's placed touched run is in that silent part, so it
+  // is not among the runs no class counts.
+  const both = { ...capWith(dropped), positions: [{ ...handPosition(0, [0, 1], [placedRun(), placedRun(), placedRun(), invisibleRun()]), page: dropped, assignment: null }, { ...handPosition(1, [0], [placedRun(), placedRun(), placedRun(), invisibleRun()]), page: reading([0, 34, 68]), assignment: null }, untouchedPosition(2)] };
+  const silentToo = summary(dropped, quietId, both);
+  assert.ok(silentToo.page.status === 'read');
+  assert.deepEqual([silentToo.page.classes.P.counts['SILENT-UNSOLVED'], silentToo.page.classes.P.counts.QUIET], [1, 0]);
+  assert.deepEqual(silentToo.page.quiet, { runs: 1, positions: 1, captures: 1, silentWithQuiet: 1, quietPlacingTouched: 0 });
+  assert.deepEqual(silentToo.page.classes.P.harm, { ...noHarm, silentPart: 1, notSolved: 1, why: { ...noHarm.why, positions: 1 } });
 });
 
 test('T49 the re-run\'s bets P10-P13 are read off the page blocks and Q0, each held and each falsified', async () => {
   const { evaluateRerunBets, q0AgainstPageTwin, pageTwinIdentity } = await import('../src/straddle/assemble.ts');
   const { RERUN_PREDICTIONS } = await import('../src/straddle/design.ts');
-  const block = (over: { misfiled?: number; quiet?: number; silent?: number } = {}) => ({
+  const block = (over: { misfiled?: number; quiet?: number; silent?: number; quietClass?: number } = {}) => ({
     status: 'read' as const,
     read: { captures: 728 },
-    classes: { P: { counts: { LOUD: 600, 'SILENT-HARMLESS': 0, 'SILENT-BIASED': 0, 'SILENT-GATE-BREAKING': 0, 'SILENT-UNJUDGEABLE': 0, 'SILENT-UNSOLVED': over.silent ?? 90 } } },
-    quiet: { runs: over.quiet ?? 0, positions: over.quiet ?? 0, captures: over.quiet ?? 0, silentOnlyThroughQuiet: 0 },
+    classes: { P: { counts: { LOUD: 600, 'SILENT-HARMLESS': 0, 'SILENT-BIASED': 0, 'SILENT-GATE-BREAKING': 0, 'SILENT-UNJUDGEABLE': 0, 'SILENT-UNSOLVED': over.silent ?? 90, QUIET: over.quietClass ?? 0 } } },
+    quiet: { runs: over.quiet ?? 0, positions: over.quiet ?? 0, captures: over.quiet ?? 0 },
     misfiles: { photographs: over.misfiled ?? 0, positions: over.misfiled ?? 0, ambiguous: 3, share: { min: over.misfiled ? 0.51 : null, max: over.misfiled ? 0.52 : null }, below055: over.misfiled ?? 0 },
   });
   const twinsAgree = { positions: 108, compared: 108, differ: 0, differences: [] };
@@ -3197,6 +3260,15 @@ test('T49 the re-run\'s bets P10-P13 are read off the page blocks and Q0, each h
   }
   assert.deepEqual((held[0].measured as { byCell: unknown }).byCell, { R1: 0, 'L-aimed-7.5': 0 }, 'a cell the column did not run in was counted');
   assert.equal((held[1].measured as { counterfactualSilent: number }).counterfactualSilent, 98);
+  // P11 is read on the registered SILENT, which needs a PLACED position: QUIET
+  // captures stay out of it, and the looser reading that counts them as kept
+  // sits beside it, labelled as not the registration's.
+  const quietKept = evaluateRerunBets([{ id: 'R1', page: block({ silent: 90, quietClass: 20 }) }], 98, twinsAgree)[1];
+  assert.equal(quietKept.falsified, false, 'P11 counted QUIET captures as SILENT');
+  const loose = quietKept.measured as { silent: number; quiet: number; quietCountedAsKept: { reading: string; silent: number } };
+  assert.deepEqual([loose.silent, loose.quiet, loose.quietCountedAsKept.silent], [90, 20, 110]);
+  assert.match(loose.quietCountedAsKept.reading, /^not the registration's/);
+  assert.throws(() => evaluateRerunBets([{ id: 'R1', page: { ...block(), classes: { P: { counts: { LOUD: 600 } } } } }], 98, twinsAgree), /no QUIET count/);
   // One misfile, in any cell; one SILENT capture past 98 in R1; one quiet drop; one position apart.
   const falsified = evaluateRerunBets(
     [{ id: 'R1', page: block({ silent: 99 }) }, { id: 'L-uniform-7.5', page: block({ misfiled: 1, quiet: 1 }) }],
@@ -3250,18 +3322,26 @@ test("T50 the page column's tables render from the reduced run's document, each 
   const page = rows(experiment10Page(doc));
   const cells = [...doc.rescore.cells, ...doc.lateness.cells] as { id: string; page: { status: string; classes: { P: { counts: Record<string, number> } }; quiet: { runs: number } } }[];
   assert.deepEqual(page.slice(1).map((r) => r[0]), cells.map((c) => c.id));
+  const col = (name: string): number => {
+    const i = page[0].indexOf(name);
+    assert.ok(i > 0, `the page table has no column ${name}`);
+    return i;
+  };
   let notRun = 0;
   for (const r of page.slice(1)) {
     const c = cells.find((x) => x.id === r[0]);
     assert.ok(c !== undefined, r[0]);
+    assert.equal(r.length, page[0].length, r[0]);
     // The reduced design has no spill rig, so R6's column has no rig to run on.
     if (c.page.status === 'not run') {
       assert.equal(r[1], 'the page column did not run', r[0]);
       notRun++;
       continue;
     }
-    assert.equal(Number(r[2].split(' ')[0]), c.page.classes.P.counts.LOUD, r[0]);
-    assert.equal(Number(r[7].split(' ')[0]), c.page.quiet.runs, r[0]);
+    assert.equal(Number(r[col('LOUD (share, 95% CI)')].split(' ')[0]), c.page.classes.P.counts.LOUD, r[0]);
+    assert.equal(Number(r[col('LOUD+QUIET')]), c.page.classes.P.counts['LOUD+QUIET'], r[0]);
+    assert.equal(Number(r[col('QUIET')]), c.page.classes.P.counts.QUIET, r[0]);
+    assert.equal(Number(r[col('quiet drops: runs (captures)')].split(' ')[0]), c.page.quiet.runs, r[0]);
   }
   assert.deepEqual([notRun, cells.find((c) => c.id === 'R6')?.page.status], [1, 'not run']);
   const runs = experiment10PageRuns(doc);

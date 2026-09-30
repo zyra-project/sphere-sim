@@ -328,8 +328,33 @@ const POSITION_ORDER: readonly PositionCategory[] = [
 /** The same through the page, which has a category the counterfactual cannot: see QUIET. */
 const PAGE_POSITION_ORDER: readonly PagePositionCategory[] = [...POSITION_ORDER, 'QUIET'];
 
+/**
+ * The page's capture classes, in the order its tallies name them
+ * ({@link pageCaptureClass}): the counterfactual's, and QUIET, which follows
+ * the SILENT classes as it does in the rule. LOUD+SILENT and LOUD+QUIET are
+ * LOUD captures counted a second time for what else they carry, a PLACED
+ * position or a QUIET one; a capture can be both.
+ */
+const PAGE_CLASS_ORDER: readonly string[] = [
+  'LOUD',
+  'LOUD+SILENT',
+  'LOUD+QUIET',
+  'SILENT-HARMLESS',
+  'SILENT-BIASED',
+  'SILENT-GATE-BREAKING',
+  'SILENT-UNJUDGEABLE',
+  'SILENT-UNSOLVED',
+  'QUIET',
+  'INVISIBLE-ONLY',
+  'UNCHANGED',
+  'UNTOUCHED',
+];
+
 /** Capture classes collapsed, for setting one reader's beside the other's. */
 const CAPTURE_GROUPS: readonly string[] = ['LOUD', 'SILENT', 'INVISIBLE-ONLY', 'UNCHANGED', 'UNTOUCHED'];
+
+/** The same through the page, which has a capture class the counterfactual cannot: see QUIET. */
+const PAGE_CAPTURE_GROUPS: readonly string[] = ['LOUD', 'SILENT', 'QUIET', 'INVISIBLE-ONLY', 'UNCHANGED', 'UNTOUCHED'];
 
 /** The SILENT classes: nothing refused, a PLACED position reached the calibration. */
 const SILENT_CLASSES: readonly ReportedClass[] = [
@@ -845,24 +870,49 @@ export function pageCategoryOf(
   });
 }
 
+/** A capture's class through the page: the counterfactual's classes, and QUIET. */
+export type PageCaptureClass = CaptureClass | 'QUIET';
+
+export interface PageCaptureCategory extends Omit<CaptureCategory, 'class'> {
+  class: PageCaptureClass;
+  /**
+   * LOUD, and some position QUIET: "LOUD with a quiet drop", counted as
+   * LOUD+QUIET and never as LOUD+SILENT, which needs a PLACED position.
+   */
+  loudWithQuiet: boolean;
+}
+
 /**
- * A capture's class through the page: `classifyCapture`, with a QUIET position
- * kept as a PLACED one is. Nothing in it asks for a re-shoot, so under either
- * policy it stays in the calibration, its placed runs straddled and its
- * dropped ones missing. The capture is LOUD only where another position is
- * refused, and SILENT otherwise; `quiet` in the page block counts the SILENT
- * captures that are silent only through a quiet drop.
+ * A capture's class through the page, by the registered definitions
+ * (docs/EXPERIMENT-10.md, "Loud and silent"), with one class the
+ * counterfactual cannot have.
+ *
+ * LOUD when a touched attributable run is refused in any position (REFUSED-ALL
+ * or MIXED); else SILENT when some position is PLACED, every such run placed;
+ * else QUIET when some position is QUIET; else INVISIBLE-ONLY, UNCHANGED or
+ * UNTOUCHED, as `classifyCapture` has them. A QUIET position is not PLACED by
+ * those words: its quiet drop is noted, not decoded. So QUIET makes no
+ * capture SILENT (P11 counts PLACED positions alone), and a QUIET capture has
+ * no silent part and is given no harm. LOUD+SILENT is a LOUD capture that also
+ * carries a PLACED position (under A a MIXED one too, as the counterfactual's
+ * is); a LOUD capture with a QUIET position is `loudWithQuiet`, counted apart
+ * from it. A SILENT capture with a QUIET position as well stays SILENT, and
+ * the page block's `quiet` counts it too.
  */
 export function pageCaptureClass(
   categories: readonly PagePositionCategory[],
   harm: Harm | null,
   policy: 'P' | 'A',
-): CaptureCategory {
-  return classifyCapture(
-    categories.map((c) => (c === 'QUIET' ? 'PLACED' : c)),
+): PageCaptureCategory {
+  const quiet = categories.includes('QUIET');
+  const got = classifyCapture(
+    categories.filter((c): c is PositionCategory => c !== 'QUIET'),
     harm,
     policy,
   );
+  if (got.class === 'LOUD') return { ...got, loudWithQuiet: quiet };
+  if (!quiet || got.class.startsWith('SILENT')) return { ...got, loudWithQuiet: false };
+  return { ...got, class: 'QUIET', loudWithQuiet: false };
 }
 
 /**
@@ -871,6 +921,9 @@ export function pageCaptureClass(
  * QUIET positions, and under A the MIXED ones too; withheld are every run the
  * page twin does not place, on every camera of the rig, and every run of a
  * straddled position the page did not place. Null where nothing is straddled.
+ * A QUIET position reaches the calibration with the runs it placed, so it is
+ * in the plan of a capture that has one; a harm is read off the plan only for
+ * a capture with a PLACED position ({@link pageCaptureClass}).
  */
 export function pagePlanOf(
   cap: Pick<CaptureScore, 'positions'>,
@@ -1140,7 +1193,7 @@ export interface PageBets {
         status: 'read' | 'nothing to read';
         read: { captures: number };
         classes: { P: { counts: Record<string, number> } };
-        quiet: { runs: number; positions: number; captures: number; silentOnlyThroughQuiet: number };
+        quiet: { runs: number; positions: number; captures: number };
         misfiles: {
           photographs: number;
           positions: number;
@@ -1180,6 +1233,8 @@ export function evaluateRerunBets(
   const r1 = read.find((x) => x.id === 'R1') ?? null;
   const silentR1 =
     r1 === null ? null : SILENT_CLASSES.reduce((a, name) => a + (r1.page.classes.P.counts[name] ?? 0), 0);
+  const quietR1 = r1 === null ? null : r1.page.classes.P.counts.QUIET;
+  if (quietR1 === undefined) throw new Error("experiment10: R1's page block has no QUIET count");
   const p13 = bet('P13');
   return [
     {
@@ -1210,7 +1265,17 @@ export function evaluateRerunBets(
               silent: silentR1,
               counterfactualSilent: counterfactualSilentR1,
               capturesTouched: r1.page.read.captures,
-              silentOnlyThroughQuiet: r1.page.quiet.silentOnlyThroughQuiet,
+              quiet: quietR1,
+              // Beside the registered count, never in its place: a QUIET
+              // capture read as a kept one, as a PLACED position is. It is
+              // not the registration's reading, whose SILENT needs a
+              // position PLACED, and P11 is not held or falsified on it.
+              quietCountedAsKept: {
+                reading:
+                  'not the registration\'s: a QUIET capture counted as SILENT, as if a quiet drop were ' +
+                  'a placed run; P11 is read on the registered SILENT alone',
+                silent: (silentR1 as number) + (quietR1 as number),
+              },
             },
       falsified: silentR1 === null ? null : silentR1 > p11.threshold,
     },
@@ -1301,22 +1366,27 @@ export function summariseCell(
   // policy given a harm, the solve that judges its silent part, and whether
   // that solve is the one policy A was given too.
   interface Reader {
-    classify: (cap: CaptureScore, harm: Harm | null, policy: 'P' | 'A') => CaptureCategory;
+    classify: (cap: CaptureScore, harm: Harm | null, policy: 'P' | 'A') => PageCaptureCategory;
     pair: (cap: CaptureScore, policy: 'P' | 'A') => { treated: string; twin: string } | null;
     sameSolveAsA: (cap: CaptureScore) => boolean;
+    /** The classes its tally names, in order. */
+    order: readonly string[];
   }
   const counterfactual: Reader = {
-    classify: (cap, harm, policy) =>
-      classifyCapture(
+    classify: (cap, harm, policy) => ({
+      ...classifyCapture(
         cap.positions.map((pos) => categoryOf(pos, 'content', twinOf(cap.rig, pos.pos), false)),
         harm,
         policy,
       ),
+      loudWithQuiet: false,
+    }),
     pair: (cap, policy) => {
       const solve = solveFor(cap);
       return solve === null ? null : policy === 'A' ? solve.a : solve.p;
     },
     sameSolveAsA: (cap) => solveFor(cap)?.pIsA === true,
+    order: CLASS_ORDER,
   };
   const classesFor = (
     policy: 'P' | 'A',
@@ -1344,25 +1414,33 @@ export function summariseCell(
       },
       silentHarms: [],
     };
-    for (const name of CLASS_ORDER) out.byClass[name] = 0;
+    for (const name of reader.order) out.byClass[name] = 0;
     for (const cap of captures) {
       if (!keep(cap)) continue;
       const { harm, error, unjudgeable } = harmOf(ev, reader.pair(cap, policy), tau);
       if (error !== null) out.solveErrors.push(`trial ${cap.t}: ${error}`);
       const got = reader.classify(cap, harm, policy);
-      let reported: ReportedClass = got.class;
+      let reported: ReportedClass | 'QUIET' = got.class;
       if (unjudgeable !== null) {
         out.unjudgeable.push(`trial ${cap.t}: ${unjudgeable}`);
         out.solved.unjudgeable++;
         // Solved, so not SILENT-UNSOLVED; and not judged. A LOUD capture stays LOUD.
         if (reported === 'SILENT-UNSOLVED') reported = 'SILENT-UNJUDGEABLE';
       }
+      // LOUD captures counted a second time, for a PLACED position or a QUIET one.
+      const also = [
+        ...(got.loudAndSilent ? ['LOUD+SILENT'] : []),
+        ...(got.loudWithQuiet ? ['LOUD+QUIET'] : []),
+      ];
+      for (const name of [reported, ...also]) {
+        if (!(name in out.byClass)) {
+          throw new Error(`experiment10: ${cell.id} has a class ${name} its reader's tally does not name`);
+        }
+      }
       out.captures++;
       out.byClass[reported]++;
-      if (got.loudAndSilent) {
-        out.loudAndSilent++;
-        out.byClass['LOUD+SILENT']++;
-      }
+      if (got.loudAndSilent) out.loudAndSilent++;
+      for (const name of also) out.byClass[name]++;
       if (harm !== null && got.harm !== null) {
         const s = out.solved;
         s.captures++;
@@ -1382,17 +1460,21 @@ export function summariseCell(
       out.byRig[rig] ??= {};
       out.byRig[rig][reported] = (out.byRig[rig][reported] ?? 0) + 1;
       out.byRig[rig].captures = (out.byRig[rig].captures ?? 0) + 1;
-      if (got.loudAndSilent)
-        out.byRig[rig]['LOUD+SILENT'] = (out.byRig[rig]['LOUD+SILENT'] ?? 0) + 1;
+      for (const name of also) out.byRig[rig][name] = (out.byRig[rig][name] ?? 0) + 1;
     }
     return out;
   };
   const cellRigs = cell.which === 'main' ? ev.plan.rigs : ev.plan.spillRigs;
   // Each class's share with its interval, resampling the rigs given, on a
   // stream named off the cell (and off the reader, for any but the first).
-  const withIntervals = (c: Classes, rigs: readonly number[] = cellRigs, stream = cell.id) => {
+  const withIntervals = (
+    c: Classes,
+    rigs: readonly number[] = cellRigs,
+    stream = cell.id,
+    order: readonly string[] = CLASS_ORDER,
+  ) => {
     const shares: Record<string, ReturnType<typeof clusteredShare>> = {};
-    for (const name of CLASS_ORDER) {
+    for (const name of order) {
       if (name === 'UNTOUCHED') continue;
       shares[name] = clusteredShare(
         rigs.map((k) => ({
@@ -1664,13 +1746,22 @@ export function summariseCell(
       }
       return matched.get(key) ?? null;
     };
+    // Harm is read only for a capture with a silent part, a PLACED position
+    // that reaches the calibration: SILENT, and LOUD+SILENT. A QUIET capture
+    // has none ({@link pageCaptureClass}), so no solve is looked up for it.
+    const silentPartOf = (got: PageCaptureCategory): boolean =>
+      got.class.startsWith('SILENT') || got.loudAndSilent;
     const pageReader: Reader = {
       classify: (cap, harm, policy) => pageCaptureClass(analyse(cap).cats, harm, policy),
-      pair: (cap, policy) => matchOf(cap, policy)?.pair ?? null,
+      pair: (cap, policy) =>
+        silentPartOf(pageCaptureClass(analyse(cap).cats, null, policy))
+          ? (matchOf(cap, policy)?.pair ?? null)
+          : null,
       sameSolveAsA: (cap) => {
         const pair = matchOf(cap, 'P')?.pair ?? null;
         return pair !== null && pair.treated === solveFor(cap)?.a?.treated;
       },
+      order: PAGE_CLASS_ORDER,
     };
     const PP = classesFor('P', keep, pageReader);
 
@@ -1683,17 +1774,23 @@ export function summariseCell(
       why: { 'no solve': 0, positions: 0, exclusions: 0, placement: 0 } as Record<string, number>,
     };
     // The capture classes of the two readers, crossed: each collapsed to LOUD,
-    // SILENT, INVISIBLE-ONLY or UNCHANGED under policy P.
-    const collapse = (c: CaptureCategory): string =>
+    // SILENT, INVISIBLE-ONLY or UNCHANGED under policy P, and the page's QUIET,
+    // a column only (the counterfactual has no such class).
+    const collapse = (c: PageCaptureCategory): string =>
       c.class === 'LOUD' ? 'LOUD' : c.class.startsWith('SILENT') ? 'SILENT' : c.class;
     const vsCounterfactual: Record<string, Record<string, number>> = {};
     for (const a of CAPTURE_GROUPS) {
       vsCounterfactual[a] = {};
-      for (const b of CAPTURE_GROUPS) vsCounterfactual[a][b] = 0;
+      for (const b of PAGE_CAPTURE_GROUPS) vsCounterfactual[a][b] = 0;
     }
     // Quiet drops (P12): touched runs the page twin places that the straddled
-    // reading only notes, with no problem naming them.
-    const quiet = { runs: 0, positions: 0, captures: 0, silentOnlyThroughQuiet: 0 };
+    // reading only notes, with no problem naming them, in whatever position;
+    // the SILENT captures that carry a QUIET position as well; and the
+    // captures with no PLACED position in which a QUIET position places
+    // another touched attributable run. That run reaches the calibration
+    // straddled, and no class counts it: a QUIET position is not PLACED, so
+    // such a capture is QUIET, or LOUD+QUIET and not LOUD+SILENT.
+    const quiet = { runs: 0, positions: 0, captures: 0, silentWithQuiet: 0, quietPlacingTouched: 0 };
     // What a LOUD capture's operator reads from the page, as `loud` counts the
     // counterfactual's: the problems refusing the touched attributable runs of
     // its REFUSED-ALL and MIXED positions.
@@ -1710,7 +1807,7 @@ export function summariseCell(
     for (const cap of read) {
       const { runs, cats } = analyse(cap);
       const got = pageCaptureClass(cats, null, 'P');
-      if (got.class.startsWith('SILENT') || got.loudAndSilent) {
+      if (silentPartOf(got)) {
         harm.silentPart++;
         const m = matchOf(cap, 'P');
         if (m !== null && m.pair !== null) harm.samePlan++;
@@ -1719,7 +1816,11 @@ export function summariseCell(
           harm.why[m === null ? 'no solve' : m.why]++;
         }
       }
-      vsCounterfactual[collapse(counterfactual.classify(cap, null, 'P'))][collapse(got)]++;
+      const row = vsCounterfactual[collapse(counterfactual.classify(cap, null, 'P'))];
+      if (row === undefined || row[collapse(got)] === undefined) {
+        throw new Error(`experiment10: ${cell.id} trial ${cap.t} crosses into no group`);
+      }
+      row[collapse(got)]++;
       let quietHere = false;
       runs.forEach((rs) => {
         const n = (rs ?? []).filter((r) => r.touched && r.attributable && r.verdict === 'noted').length;
@@ -1729,7 +1830,16 @@ export function summariseCell(
         quietHere = true;
       });
       if (quietHere) quiet.captures++;
-      if (got.class.startsWith('SILENT') && !cats.includes('PLACED')) quiet.silentOnlyThroughQuiet++;
+      if (cats.includes('QUIET') && got.class.startsWith('SILENT')) quiet.silentWithQuiet++;
+      if (
+        !cats.includes('PLACED') &&
+        cats.some(
+          (c, i) =>
+            c === 'QUIET' && (runs[i] ?? []).some((r) => r.touched && r.attributable && r.verdict === 'placed'),
+        )
+      ) {
+        quiet.quietPlacingTouched++;
+      }
       if (got.class !== 'LOUD') continue;
       let named = false;
       let folder = false;
@@ -1870,7 +1980,7 @@ export function summariseCell(
       classes: {
         P: {
           counts: PP.byClass,
-          shares: withIntervals(PP, columnRigs, `${cell.id}/page`),
+          shares: withIntervals(PP, columnRigs, `${cell.id}/page`, PAGE_CLASS_ORDER),
           solveErrors: PP.solveErrors,
           unjudgeable: PP.unjudgeable,
           solved: solvedOf(PP.solved),
@@ -4278,13 +4388,19 @@ export function caveats(doc: VerdictDoc): Record<string, string> {
       "Each cell's page block reads every changed position of a page-column rig whole, from the " +
       "fast path's noisy frames. A run counts against the straddle only where the page's " +
       'reading of the clean twin places it. A run that reading places and the straddled one ' +
-      'only notes out of view or barely seen is a quiet drop (P12): neither refused nor placed; ' +
-      'its position is QUIET when nothing in it is refused, and a capture with nothing refused ' +
-      "stays silent. A crash counts as a refusal and is counted apart. A capture the page lets " +
-      "through takes a counterfactual solve's harm only where the page's plan, placement " +
-      'included, is that solve\'s, and is otherwise not solved (page.classes.P.harm). A misfile ' +
-      'is a photograph a placed run files under another step than the one holding more than ' +
-      'half its exposure (P10).',
+      'only notes out of view or barely seen is a quiet drop (P12): neither refused nor placed. ' +
+      'A position holding one with nothing refused is QUIET, which is not PLACED, so it makes ' +
+      'no capture SILENT: with nothing refused, a capture is SILENT when a position is PLACED ' +
+      'and QUIET when none is and one is QUIET, a class the counterfactual reader cannot have, ' +
+      'since it refuses every run it does not place. A LOUD capture with a QUIET position is ' +
+      'counted as LOUD+QUIET, not LOUD+SILENT. A QUIET position can still place another touched ' +
+      'run, which reaches the calibration straddled; in a capture with no PLACED position no ' +
+      'class counts it (page.quiet.quietPlacingTouched). A crash counts as a refusal and is ' +
+      "counted apart. A SILENT capture, and a LOUD+SILENT one's PLACED part, takes a " +
+      "counterfactual solve's harm only where the page's plan, placement included, is that " +
+      "solve's, and is otherwise not solved (page.classes.P.harm); a QUIET capture is given no " +
+      'harm. A misfile is a photograph a placed run files under another step than the one ' +
+      'holding more than half its exposure (P10).',
     reshoot:
       'Policy P assumes the re-shoot after a refusal is clean, which is optimistic: a fresh ' +
       'start can straddle again (followUps).',
@@ -4868,8 +4984,11 @@ export function verdictStatement(doc: VerdictDoc): string {
       pReshoot: pg.loud.reshootNamed,
       pWhole: pg.loud.wholePositionOnly,
       pLoudSilent: k['LOUD+SILENT'],
+      pLoudQuiet: k['LOUD+QUIET'],
       pSilent: silentOf(k),
-      pQuietOnly: pg.quiet.silentOnlyThroughQuiet,
+      pSilentQuiet: pg.quiet.silentWithQuiet,
+      pQuiet: k.QUIET,
+      pQuietPlacing: pg.quiet.quietPlacingTouched,
       pHarmless: k['SILENT-HARMLESS'],
       pBiased: k['SILENT-BIASED'],
       pGate: k['SILENT-GATE-BREAKING'],
@@ -4878,6 +4997,7 @@ export function verdictStatement(doc: VerdictDoc): string {
       pInvisible: k['INVISIBLE-ONLY'],
       pUnchanged: k.UNCHANGED,
       loudToSilent: vs.LOUD?.SILENT ?? Number.NaN,
+      loudToQuiet: vs.LOUD?.QUIET ?? Number.NaN,
       silentToLoud: vs.SILENT?.LOUD ?? Number.NaN,
     });
     pageClause =
@@ -4886,18 +5006,28 @@ export function verdictStatement(doc: VerdictDoc): string {
       `run by run, ` +
       (num('pReshoot') === num('pRunByRun') ? '' : `${c('pReshoot')} of them `) +
       `told 'Re-shoot projector N', and ${c('pWhole')} only as a whole position; ` +
-      `${c('pLoudSilent')} of them also carrying a silent position) and ${c('pSilent')} silent` +
-      (num('pQuietOnly') > 0 ? `, ${c('pQuietOnly')} of them only through a quiet drop` : '') +
+      `${c('pLoudSilent')} of them also carrying a silent position` +
+      (num('pLoudQuiet') > 0 ? ` and ${c('pLoudQuiet')} a quiet one` : '') +
+      `), ${c('pSilent')} silent (` +
       (doc.pose.solved
-        ? ` (${c('pHarmless')} harmless, ${c('pBiased')} biased and ${c('pGate')} past the ` +
+        ? `${c('pHarmless')} harmless, ${c('pBiased')} biased and ${c('pGate')} past the ` +
           `gate by a counterfactual solve of the same plan` +
           (num('pUnjudgeable') > 0 ? `, ${c('pUnjudgeable')} unjudgeable` : '') +
-          `, and ${c('pUnsolved')} not solved)`
-        : ` (not solved in this run)`) +
-      `; ${c('pInvisible')} touch only runs its clean reading does not place, and ` +
-      `${c('pUnchanged')} changed no photograph. Of the counterfactual reader's ${c('loud')} ` +
-      `loud captures the page passes ${c('loudToSilent')} silently, and of its ${c('silent')} ` +
-      `silent ones the page refuses ${c('silentToLoud')} loudly.`;
+          `, and ${c('pUnsolved')} not solved`
+        : `not solved in this run`) +
+      (num('pSilentQuiet') > 0 ? `; ${c('pSilentQuiet')} of them with a quiet position too` : '') +
+      `) and ${c('pQuiet')} quiet: a touched run its clean reading places only noted, and no ` +
+      `position refused or placed; ${c('pInvisible')} touch only runs its clean reading does ` +
+      `not place, and ${c('pUnchanged')} changed no photograph.` +
+      (num('pQuietPlacing') > 0
+        ? ` In ${c('pQuietPlacing')} of the captures with no position placed, a quiet position ` +
+          `still places another touched run, which reaches the calibration straddled and no ` +
+          `class counts.`
+        : '') +
+      ` Of the counterfactual reader's ${c('loud')} loud captures the page passes ` +
+      `${c('loudToSilent')} silently` +
+      (num('loudToQuiet') > 0 ? ` and ${c('loudToQuiet')} quietly` : '') +
+      `, and of its ${c('silent')} silent ones the page refuses ${c('silentToLoud')} loudly.`;
   }
   const readCells = pageCells.flatMap((x) => (x.page.status === 'not run' ? [] : [x.page]));
   if (readCells.length > 0) {
@@ -4959,10 +5089,14 @@ export function verdictStatement(doc: VerdictDoc): string {
         aimedPageRead: aimed.page.read.captures,
         aimedPageLoud: pk.LOUD,
         aimedPageSilent: silentOf(pk),
+        aimedPageQuiet: pk.QUIET,
       });
       lateSentence +=
         ` Through the page's own reader the same ${c('aimedPageRead')} captures are ` +
-        `${c('aimedPageLoud')} loud and ${c('aimedPageSilent')} silent.`;
+        `${c('aimedPageLoud')} loud` +
+        (num('aimedPageQuiet') > 0
+          ? `, ${c('aimedPageSilent')} silent and ${c('aimedPageQuiet')} quiet.`
+          : ` and ${c('aimedPageSilent')} silent.`);
     }
     lateSentence +=
       ` ${c('late')} ms is the mean of a design-time probe in a ` +

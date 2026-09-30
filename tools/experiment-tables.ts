@@ -857,11 +857,18 @@ interface PageRead10 {
   classes: {
     P: Policy10 & {
       harm: { silentPart: number; samePlan: number; notSolved: number; why: Record<string, number> };
-      /** Capture classes crossed: the counterfactual's (rows) against the page's (columns), collapsed. */
+      /**
+       * Capture classes crossed: the counterfactual's (rows) against the page's (columns), collapsed.
+       * The page's columns include QUIET, a class the counterfactual cannot have.
+       */
       vsCounterfactual: Cross10;
     };
   };
-  quiet: { runs: number; positions: number; captures: number; silentOnlyThroughQuiet: number };
+  /**
+   * Quiet drops, in whatever position; the SILENT captures with a QUIET position as well; and the
+   * captures with no PLACED position where a QUIET position places another touched run.
+   */
+  quiet: { runs: number; positions: number; captures: number; silentWithQuiet: number; quietPlacingTouched: number };
   loud: {
     captures: number;
     runByRun: number;
@@ -2438,8 +2445,8 @@ function pageSilent10(cell: Cell10, page: PageRead10, where: string): string {
   const P = page.classes.P as Policy10;
   const silent = silent10(P, where);
   const unsolved = count10(P, 'SILENT-UNSOLVED', where);
-  const quiet = n10(page.quiet?.silentOnlyThroughQuiet, `${cell.id}.page.quiet.silentOnlyThroughQuiet`);
-  const quietWords = quiet > 0 ? `; ${quiet} only through a quiet drop` : '';
+  const quiet = n10(page.quiet?.silentWithQuiet, `${cell.id}.page.quiet.silentWithQuiet`);
+  const quietWords = quiet > 0 ? `; ${quiet} with a QUIET position too` : '';
   if (!has10(cell.solved, `${cell.id}.solved`) || unsolved === silent) {
     return `${silent} (not solved)${quietWords}`;
   }
@@ -2459,12 +2466,28 @@ function pageSilent10(cell: Cell10, page: PageRead10, where: string): string {
  * counterfactual's rescore and lateness tables, read by the page. Each run is
  * attributed against the page's reading of the same clean frames, and a run
  * that reading places and the straddled one only notes is a quiet drop, apart.
+ * A capture with nothing refused and no position PLACED but one QUIET is QUIET,
+ * a class the counterfactual cannot have; a LOUD one with a QUIET position is
+ * LOUD+QUIET.
  */
 export function experiment10Page(result: Experiment10): string {
+  const header = [
+    'cell',
+    'captures touched',
+    'LOUD (share, 95% CI)',
+    'LOUD+SILENT',
+    'LOUD+QUIET',
+    'SILENT',
+    'QUIET',
+    'INVISIBLE-ONLY',
+    'UNCHANGED',
+    'quiet drops: runs (captures)',
+    'misfiled photographs (the largest majority share)',
+    'crashes',
+  ];
   const out = [
-    '| cell | captures touched | LOUD (share, 95% CI) | LOUD+SILENT | SILENT | INVISIBLE-ONLY | UNCHANGED | ' +
-      'quiet drops: runs (captures) | misfiled photographs (the largest majority share) | crashes |',
-    '| --- | --- | --- | ---: | --- | ---: | ---: | --- | --- | ---: |',
+    `| ${header.join(' | ')} |`,
+    '| --- | --- | --- | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | ---: |',
   ];
   for (const { id, from } of allCellIds10(result)) {
     const cell = cell10(from === 'rescore' ? result.rescore?.cells : result.lateness?.cells, id, `${from}.cells`);
@@ -2472,7 +2495,7 @@ export function experiment10Page(result: Experiment10): string {
     const trials = n10(cell.trials, `${id}.trials`);
     const rigs = has10(page.rigs, `${id}.page.rigs`);
     if (page.status === 'not run') {
-      out.push(`| ${id} | ${NOT_RUN10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} |`);
+      out.push(`| ${id} | ${NOT_RUN10} | ${header.slice(2).map(() => DASH10).join(' | ')} |`);
       continue;
     }
     const P = has10(page.classes?.P, `${id}.page.classes.P`) as Policy10;
@@ -2490,7 +2513,8 @@ export function experiment10Page(result: Experiment10): string {
     const largest = nOrNull10(has10(misfiles.share, `${id}.page.misfiles.share`).max, `${id}.page.misfiles.share.max`);
     out.push(
       `| ${id} | ${touched} | ${classShare10(P, 'LOUD', where)} | ${count10(P, 'LOUD+SILENT', where)} | ` +
-        `${pageSilent10(cell, page, where)} | ${count10(P, 'INVISIBLE-ONLY', where)} | ${count10(P, 'UNCHANGED', where)} | ` +
+        `${count10(P, 'LOUD+QUIET', where)} | ${pageSilent10(cell, page, where)} | ${count10(P, 'QUIET', where)} | ` +
+        `${count10(P, 'INVISIBLE-ONLY', where)} | ${count10(P, 'UNCHANGED', where)} | ` +
         `${n10(quiet.runs, `${id}.page.quiet.runs`)} (${n10(quiet.captures, `${id}.page.quiet.captures`)}) | ` +
         (misfiled === 0 ? '0' : `${misfiled} (${orDash10(largest, fixed10(3))})`) +
         ` | ${n10(read.crashes, `${id}.page.read.crashes`)} |`,
@@ -2500,8 +2524,13 @@ export function experiment10Page(result: Experiment10): string {
   out.push(
     '_Policy P, through the page’s own reader, on the fast path’s noisy frames encoded as the page reads them. ' +
       'Each run counts against the straddle only where the page’s reading of the same clean frames places it. A ' +
-      'quiet drop is a touched run that reading places and the straddled one only notes out of view or barely seen; ' +
-      'a capture with nothing refused is SILENT, a quiet drop its only straddle or not. A SILENT capture is judged ' +
+      'quiet drop is a touched run that reading places and the straddled one only notes out of view or barely seen, ' +
+      'with no problem naming it; a position holding one with nothing refused is QUIET, not PLACED. With nothing ' +
+      'refused, a capture is SILENT when some position is PLACED, and QUIET when none is and some position is QUIET: ' +
+      'its dropped run is noted, not decoded, and no harm is read for it. The counterfactual reader has no QUIET ' +
+      'class, since it refuses every run it does not place. LOUD+QUIET is a LOUD capture with a QUIET position (LOUD ' +
+      'with a quiet drop), counted apart from LOUD+SILENT, which needs a PLACED position; a quiet drop inside a refused ' +
+      'position makes no position QUIET and is counted only among the quiet drops. A SILENT capture is judged ' +
       'only by a counterfactual solve of the page’s own plan, placement included; the rest are not solved. A misfiled ' +
       'photograph is one a placed run files under another step than the one holding more than half its exposure, ' +
       'and its share is that step’s. A crash is a folder the reader threw on, counted as refused._',
