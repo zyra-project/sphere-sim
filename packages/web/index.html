@@ -235,6 +235,10 @@ button { font-family: inherit; }
   color: var(--muted); transition: background .15s, border-color .15s, color .15s; }
 .chip:hover { color: var(--fg); }
 .chip.on { background: rgba(77,166,255,0.16); border-color: rgba(77,166,255,0.5); color: var(--accent); }
+/* A chip that does nothing in the current mode — the grid while the ball shows
+   the calibration sequence. Kept in place, so the setting it holds is visible. */
+.chip:disabled { opacity: 0.45; cursor: not-allowed; }
+.chip:disabled:hover { color: var(--muted); }
 /* A group heading that opens and shuts what follows it. Same type as the other
    headings — it is one of them, not a new kind of control — with a caret and a
    hit area big enough for a thumb. */
@@ -450,6 +454,25 @@ body.dropping #dropzone { display: flex; }
 @media (max-width: 1180px) { #hint { left: 344px; right: 312px; } }
 @media (max-width: 900px) { #hint { display: none; } }
 
+/* The calibration sequence's lower third: which frame is on the ball, where it
+   is in the run, and why it is there, in the hint's slot between the panels —
+   the hint makes way while it is up. Below 900px there is no room between the
+   panels, so the Room tab carries the same controls (`.seq-inline`) and this
+   stands down; above it, the Room tab's copy is the one that stands down. */
+#sequence { position: fixed; bottom: 14px; left: 412px; right: 360px; z-index: 4;
+  padding: 9px 12px 10px; display: flex; flex-direction: column; gap: 5px; }
+#sequence[hidden] { display: none; }
+body.sequence-on #hint { display: none; }
+.seqrow { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; }
+.seqbtns { display: flex; gap: 4px; flex: 0 0 auto; }
+.seqlabel { margin: 0; font-size: 13px; color: var(--fg); flex: 1 1 14ch; min-width: 0; }
+.seqpos { margin: 0; font-size: 11px; color: var(--muted); }
+.seqwhy { max-width: 88ch; }
+.seq-inline { display: flex; flex-direction: column; gap: 6px; }
+@media (max-width: 1180px) { #sequence { left: 344px; right: 324px; } }
+@media (max-width: 900px) { #sequence { display: none !important; } }
+@media (min-width: 901px) { .seq-inline { display: none; } }
+
 #fatal { position: fixed; inset: 18% 12% auto; padding: 16px 18px; border-radius: 8px;
   border: 1px solid var(--bad); background: rgba(40,10,10,0.95); color: var(--bad);
   white-space: pre-wrap; font-size: 12.5px; display: none; z-index: 30; max-height: 60vh;
@@ -505,6 +528,9 @@ body.dropping #dropzone { display: flex; }
 <!-- Nothing else on the page says the orbit passes under the ball, or that
      scrolling zooms. Both are the two gestures the whole view depends on. -->
 <p id="hint">Drag to rotate, even under the sphere &middot; scroll or pinch to zoom</p>
+
+<!-- Filled by main.ts while the ball shows the calibration sequence. -->
+<div id="sequence" class="card" role="region" aria-label="Calibration sequence" hidden></div>
 
 <div id="dropzone">
   <div class="card">

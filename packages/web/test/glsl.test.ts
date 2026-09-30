@@ -1462,7 +1462,7 @@ test('the parity check draws the calibration frame it asked the worker for, not 
   assert.ok(post.includes('pattern: patternRequest(),'), 'the request does not name the frame');
   const key = post.indexOf('parityRequestKey = viewKey();');
   const freeze = post.indexOf(
-    'parityAsked = req.pattern === null ? null : { request: req.pattern, step: sequenceAt };',
+    'parityAsked = req.pattern === null ? null : { request: req.pattern, step: player.step };',
   );
   assert.ok(key > 0 && freeze > key, 'the asked frame must be recorded with its view key');
 

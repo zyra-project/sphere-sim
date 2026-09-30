@@ -483,3 +483,292 @@ export function patternMask(slots: readonly number[], slot: number): number {
   const i = slots.indexOf(slot);
   return i < 0 || i >= 31 ? 0 : 1 << i;
 }
+
+// ---------------------------------------------------------------------------
+// Playing it
+// ---------------------------------------------------------------------------
+
+/**
+ * How long each frame stays up while the sequence plays, by default: the
+ * emitter page's own default dwell. What an audience watches is a capture at the
+ * speed one actually runs in a gallery — 34 frames, about a minute a projector.
+ */
+export const SEQUENCE_DWELL_MS = 2000;
+
+/**
+ * The quicker pace, and the one the inspect card's film played at before it
+ * shared the page's player: fast enough that the binary search reads as motion
+ * rather than as a series of stills.
+ */
+export const SEQUENCE_BRISK_MS = 700;
+
+/**
+ * No frame is ever held for less than this, whatever asks for it.
+ *
+ * Each Gray plane is followed by its complement, which turns most of the lit
+ * ball from bright to dark or back at once — on a lecture-hall screen, a
+ * large-area flash. WCAG 2.3.1 allows three flashes in any one second, a flash
+ * being a pair of opposite changes. At this floor the ball changes at most twice
+ * a second, which is one flash; at the emitter's own 0.2 s floor it would be two
+ * and a half, a hair under the line on a screen nobody has measured. The
+ * emitter's floor is right for an empty gallery with an operator at the laptop,
+ * and this one is right for an audience.
+ */
+export const SEQUENCE_MIN_DWELL_MS = 500;
+
+/** The dwell the clock uses when `asked` is asked for: never under the floor. */
+export function sequenceDwellMs(asked: number): number {
+  return Math.max(SEQUENCE_MIN_DWELL_MS, Number.isFinite(asked) ? asked : SEQUENCE_DWELL_MS);
+}
+
+/** What the player needs from the page, so that none of the page is in here. */
+export interface SequencePlayerHooks {
+  /** Where step `n` lands for the rig as it is now: {@link sequenceStep}. */
+  place(n: number): SequenceStep;
+  /** Is anything on the page showing the sequence? */
+  shown(): boolean;
+  /** Paint every view of the sequence at the player's step. */
+  show(): void;
+  /**
+   * A person has stopped on a frame. The page answers with the parity pass for
+   * it, debounced the way it debounces a slider that has settled.
+   */
+  settle(): void;
+  /** `window.setTimeout` and `window.clearTimeout`, or a test's clock. */
+  schedule(fn: () => void, ms: number): number;
+  cancel(handle: number): void;
+}
+
+/**
+ * The page's one clock for the sequence. The sphere, the lower third and the
+ * inspect card's film all read {@link SequencePlayer.step} from it, so no two of
+ * them can show different frames.
+ *
+ * Three rules, each the answer to a way this goes wrong:
+ *
+ *  - **A frame on the clock asks for nothing.** No metric reads a frame, so a
+ *    model pass per step would be most of a worker core spent re-deriving
+ *    numbers that cannot move. The parity check judges a frame when a person
+ *    stops on one: a step or a pause by hand calls `settle`, and a tick does not.
+ *  - **Nothing plays that nothing shows.** A timer repainting views that are no
+ *    longer on the page is the kind of leak that surfaces later as a mystery, so
+ *    the clock stops itself at the first tick with nothing showing it.
+ *  - **Nothing is faster than {@link SEQUENCE_MIN_DWELL_MS}.** Applied where the
+ *    clock reads the pace rather than where the pace is set, so there is no way
+ *    round it.
+ */
+export interface SequencePlayer {
+  /**
+   * Where the sequence is: a step in the emitter's order, every projector's run
+   * end to end. Page state, and deliberately NOT a `Setting` —
+   * `ModelRequest.pattern` says what a step in `settings` would do to the parity
+   * check.
+   */
+  readonly step: number;
+  readonly playing: boolean;
+  /** The dwell the clock is using, floor applied. */
+  readonly dwellMs: number;
+  /**
+   * The sequence came up paused because the reader's system asks for reduced
+   * motion, and nobody has touched the player since — so a caption can say why
+   * nothing is moving.
+   */
+  readonly heldStill: boolean;
+  /** From the first frame of the first run: playing, or paused there when `still`. */
+  start(still: boolean): void;
+  play(): void;
+  /** Stop. By hand (the default), the parity check is given the frame stopped on. */
+  pause(byHand?: boolean): void;
+  toggle(): void;
+  /** A step taken by hand. It stops the player under the hand, as scrubbing always did. */
+  stepTo(n: number): void;
+  /** To the first frame of the next projector's run, or of the previous one. */
+  stepRun(delta: 1 | -1): void;
+  /** Set the pace. A playing sequence restarts the frame on screen at the new one. */
+  setDwell(ms: number): void;
+}
+
+export function createSequencePlayer(hooks: SequencePlayerHooks): SequencePlayer {
+  let step = 0;
+  let playing = false;
+  let askedMs = SEQUENCE_DWELL_MS;
+  let heldStill = false;
+  let handle: number | null = null;
+
+  const stopClock = (): void => {
+    if (handle !== null) hooks.cancel(handle);
+    handle = null;
+  };
+  const tick = (): void => {
+    handle = null;
+    if (!playing) return;
+    if (!hooks.shown()) {
+      playing = false;
+      return;
+    }
+    step = hooks.place(step + 1).step;
+    hooks.show();
+    handle = hooks.schedule(tick, sequenceDwellMs(askedMs));
+  };
+  const halt = (): void => {
+    playing = false;
+    heldStill = false;
+    stopClock();
+  };
+
+  const player: SequencePlayer = {
+    get step() {
+      return step;
+    },
+    get playing() {
+      return playing;
+    },
+    get dwellMs() {
+      return sequenceDwellMs(askedMs);
+    },
+    get heldStill() {
+      return heldStill;
+    },
+    start(still) {
+      halt();
+      step = 0;
+      if (!still) {
+        player.play();
+        return;
+      }
+      heldStill = true;
+      hooks.show();
+    },
+    play() {
+      halt();
+      playing = true;
+      handle = hooks.schedule(tick, sequenceDwellMs(askedMs));
+      hooks.show();
+    },
+    pause(byHand = true) {
+      const held = heldStill;
+      halt();
+      if (byHand) hooks.settle();
+      else heldStill = held;
+      hooks.show();
+    },
+    toggle() {
+      if (playing) player.pause();
+      else player.play();
+    },
+    stepTo(n) {
+      halt();
+      step = hooks.place(n).step;
+      hooks.settle();
+      hooks.show();
+    },
+    stepRun(delta) {
+      const at = hooks.place(step);
+      player.stepTo((at.slot + delta) * at.framesPerRun);
+    },
+    setDwell(ms) {
+      askedMs = ms;
+      if (playing) player.play();
+      else hooks.show();
+    },
+  };
+  return player;
+}
+
+/** Where keyboard focus is, as far as the sequence's keys care. */
+export type SequenceFocus = 'field' | 'button' | 'page';
+
+/** The part of a key's target {@link sequenceFocus} reads: an `HTMLElement`, or a test's stand-in. */
+export interface SequenceTarget {
+  isContentEditable: boolean;
+  closest(selectors: string): unknown;
+}
+
+/**
+ * Where a key landed, in the three kinds {@link sequenceKeyAction} tells apart.
+ * `closest` rather than the target's own tag, because a key can land on a child
+ * of a control — the text inside a button, a node inside an editable block.
+ */
+export function sequenceFocus(target: SequenceTarget | null): SequenceFocus {
+  if (target === null) return 'page';
+  if (target.isContentEditable || target.closest('input, select, textarea') !== null) return 'field';
+  if (target.closest('button, a[href], summary, [role="button"]') !== null) return 'button';
+  return 'page';
+}
+
+/** The part of a `KeyboardEvent` the sequence's keys read. */
+export interface SequenceKey {
+  key: string;
+  shiftKey: boolean;
+  altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  repeat: boolean;
+}
+
+export type SequenceKeyAction = 'toggle' | 'next' | 'previous' | 'next-run' | 'previous-run';
+
+/**
+ * What a key does to the sequence, or `null` for "leave it to the browser".
+ *
+ * Space plays and pauses. ← and → step a frame, and so do Page Up and Page Down,
+ * which is what a presentation clicker sends; Shift with an arrow jumps to the
+ * next projector's run, or back to the previous one.
+ *
+ * Nothing while focus is in a form field: a slider or a number box owns its
+ * arrows, and a space typed into a field has to be a space. On a focused button
+ * Space stays the button's own — it is how a keyboard presses one — but the
+ * arrows still step, so a clicker keeps working after somebody has clicked a
+ * chip. Never with Ctrl, Alt or Meta, which are the browser's (Alt+← is Back),
+ * and never on auto-repeat: a held key would step as fast as the keyboard
+ * repeats, which is the flashing {@link SEQUENCE_MIN_DWELL_MS} is there to stop.
+ */
+export function sequenceKeyAction(e: SequenceKey, focus: SequenceFocus): SequenceKeyAction | null {
+  if (focus === 'field' || e.altKey || e.ctrlKey || e.metaKey || e.repeat) return null;
+  switch (e.key) {
+    case ' ':
+      return focus === 'button' ? null : 'toggle';
+    case 'ArrowRight':
+      return e.shiftKey ? 'next-run' : 'next';
+    case 'ArrowLeft':
+      return e.shiftKey ? 'previous-run' : 'previous';
+    case 'PageDown':
+      return 'next';
+    case 'PageUp':
+      return 'previous';
+    default:
+      return null;
+  }
+}
+
+/** What the page says about one step. */
+export interface StepCaption {
+  /** "P2 · Gray plane 3 of 6, across": the projector by its panel tab name. */
+  label: string;
+  /** "frame 5 of 34 · step 39 of 136". */
+  position: string;
+  /** Why the frame is in the sequence: {@link PatternFrameNote.why}. */
+  why: string;
+  /** Said only when the run's projector is switched off at the wall; otherwise empty. */
+  dark: string;
+}
+
+/**
+ * The caption for step `at`, naming projectors as the panel's tabs do — `P1` for
+ * slot 0 — because that is the name a reader can find anywhere else on the page.
+ */
+export function stepCaption(at: SequenceStep, plan: PatternPlan, switchedOff: boolean): StepCaption {
+  const note = describeSequence(plan)[at.frame];
+  const name = `P${at.slot + 1}`;
+  return {
+    label: `${name} · ${note.label}`,
+    position: `frame ${at.frame + 1} of ${at.framesPerRun} · step ${at.step + 1} of ${at.total}`,
+    why: note.why,
+    // A run on a projector switched off is played anyway: the emitter cannot
+    // know a lamp is off, and a camera would photograph exactly this.
+    dark: switchedOff
+      ? `${name} is switched off at the wall. The emitter cannot tell, so it plays ${name}’s ` +
+        'run anyway, and the ball stays dark for it — as a camera would find it.'
+      : '',
+  };
+}
