@@ -8,18 +8,21 @@
  * Writes `experiments/experiment-10.json`. The spec budgeted three hours in one
  * process, and the unit costs measured while this was built (a default rig 1.5 s
  * to bank, a noisy run 0.25 s, a crossing scan with its twelve pair scans 1.8 s,
- * a solve about 10 s) put it nearer four. Both were short: the third full run,
- * the counterfactual reader alone, took about six and a half hours in one
- * process, and the fourth, whose page column also hands every straddled position
- * to the page's own reader, adds up to about eight. Once `q0` and `bank` are on
- * disk the other five can run side by side — `pose`, `rescore` and `lateness`
- * together, since they share the solve file — then `--stage assemble`. On four
- * CPUs the re-scoring, about three and a half hours, is the longest lane
- * (lateness about two and a half, pose about an hour, gate about forty minutes,
- * decode about seventeen minutes after pose), and the fourth run took four hours
- * and ten minutes from start to file. 28 minutes of that were a container
- * restart, which stopped the two lanes still running, re-scoring and lateness;
- * relaunched, each resumed from its checkpoint.
+ * a solve about 10 s) put it nearer four. Both were short. Summed stage by
+ * stage, which is what one process would take, the third full run, the
+ * counterfactual reader alone, came to about six and a half hours, and the
+ * fourth, whose page column also hands every straddled position to the page's
+ * own reader, to about eight (29982 s). Run as four lanes, the third took 2 h
+ * 26 min from start to file, and the fourth 4 h 10 min, 28 min of that a
+ * container restart. None of these times is in a results file: they are from
+ * each run's own lane logs, which are not committed. Once `q0` and `bank` are
+ * on disk the other five can run side by side — `pose`, `rescore` and
+ * `lateness` together, since they share the solve file — then `--stage
+ * assemble`. On four CPUs the re-scoring, about three and a half hours, is the
+ * longest lane (lateness about two and a half, pose about an hour, gate about
+ * forty minutes, decode about seventeen minutes after pose). The restart
+ * stopped the two lanes still running, re-scoring and lateness; relaunched,
+ * each resumed from its checkpoint.
  *
  *   node .../cli.ts                   every stage in order, resuming, then assemble
  *   node .../cli.ts --stage gate      one stage, resuming from its checkpoint

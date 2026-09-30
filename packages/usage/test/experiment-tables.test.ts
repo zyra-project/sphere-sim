@@ -102,11 +102,16 @@ test('a second copy of a properly registered marker is caught', () => {
 // added, registered in docs/EXPERIMENT-10.md. `check:docs` holds each block to
 // what its renderer makes of the committed results file, which a table that
 // read the wrong field would pass by agreeing with itself. These hold part of
-// each renderer to the file's own cells: in the page table, every column but
-// captures touched, INVISIBLE-ONLY and UNCHANGED; in the run tables, R1's full
-// table (each column's total its rows' sum, the whole every run both twins
-// place), the summary's R1 total, and each cell's refused runs in the words
-// table; the rest of the run tables only their rows and widths; and in the
+// each renderer to the file's own cells. In the page table: the LOUD column's
+// count, not its share or its interval; LOUD+SILENT, LOUD+QUIET and QUIET;
+// the SILENT column's total and its note of a QUIET position, not its split
+// into harmless, biased, gate-breaking and not solved; the quiet drops' runs
+// and captures; the misfiled photographs and the largest share beside them;
+// and the crashes. Of captures touched, only that a cell with nothing to read
+// says so; INVISIBLE-ONLY and UNCHANGED not at all. In the run tables, R1's
+// full table (each column's total its rows' sum, the whole every run both
+// twins place), the summary's R1 total, and each cell's refused runs in the
+// words table; the rest of the run tables only their rows and widths. In the
 // precondition, its headers and totals. A cell they do not name is held by
 // nothing but `check:docs`.
 // ---------------------------------------------------------------------------

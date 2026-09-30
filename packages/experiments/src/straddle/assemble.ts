@@ -972,6 +972,16 @@ export type PageHarmWhy = 'same plan' | 'no solve' | 'positions' | 'exclusions' 
 const HARM_MISSES: readonly PageHarmWhy[] = ['no solve', 'positions', 'exclusions', 'placement'];
 
 /**
+ * The positions a capture solve straddles, read off its spec, where
+ * `solveCapture` writes them last and in brackets (`R1/t7/[0,2]`); null where
+ * the spec names none.
+ */
+function straddledBy(spec: Pick<SolveSpec, 'straddle'>): number[] | null {
+  const m = /\/\[([\d,]*)\]$/.exec(spec.straddle);
+  return m === null || m[1] === '' ? null : m[1].split(',').map(Number);
+}
+
+/**
  * A counterfactual solve of this capture whose plan is the page's, placement
  * included, or null and the nearest miss.
  *
@@ -1010,8 +1020,7 @@ export function pageSolveOf(
   for (const pair of candidates) {
     const spec = specOf(pair.treated);
     if (spec === null) continue;
-    const m = /\/\[([\d,]*)\]$/.exec(spec.straddle);
-    const positions = m === null || m[1] === '' ? null : m[1].split(',').map(Number);
+    const positions = straddledBy(spec);
     let miss: PageHarmWhy | null;
     if (positions === null || positions.join() !== plan.positions.join()) miss = 'positions';
     else if (spec.exclude.join() !== plan.exclude.join()) miss = 'exclusions';
@@ -1067,6 +1076,34 @@ export interface MisfiledDecode {
   gross: number | null;
   acceptedDelta: number;
   sets: string[];
+}
+
+/**
+ * A run holding a misfile (P10) that the counterfactual places, filing every
+ * photograph where the page does, and that one of its capture's solves
+ * decodes: the solve straddles its position and does not withhold it, and
+ * renders it with the counterfactual's assignment (`solveCapture`), so the run
+ * reaches that solve's calibration filed as the page files it. `drawn` says
+ * whether the cell's decodes drew it as well (it is then in `decodes` too).
+ * `pagePlan` says whether a solve that decodes it has the page's own plan,
+ * placement included ({@link pageSolveOf}); `capture` is the page's class of
+ * the capture under policy P (SILENT, LOUD+SILENT, LOUD+QUIET, LOUD, QUIET or
+ * INVISIBLE-ONLY), and `harm` and `dGridMm` are what the page takes from that
+ * solve, null where it takes none (no solve of its plan, no silent part, or a
+ * harm that cannot be read). A solve reports the calibration, not the run, so
+ * it no more separates what a misfile does than a decode does.
+ */
+export interface MisfiledSolve {
+  t: number;
+  pos: number;
+  projector: number;
+  photographs: number[];
+  shares: number[];
+  drawn: boolean;
+  pagePlan: boolean;
+  capture: string;
+  harm: HarmClass | null;
+  dGridMm: number | null;
 }
 
 /**
@@ -2095,7 +2132,12 @@ export function summariseCell(
     // through the page's own readRun on that assignment's frames. So a run it
     // places alike and a decode drew was decoded as the page files it, and its
     // figures are listed, with the extremes of the cell's decode block that it
-    // alone sets. A run only the page places is decoded nowhere.
+    // alone sets. A capture solve renders a straddled position with the same
+    // assignment and decodes every run it does not withhold, so a run placed
+    // alike inside one reaches that solve's calibration filed as the page files
+    // it: those are listed too, with the harm the page takes from the solve
+    // where it has the page's own plan. A run only the page places is decoded
+    // nowhere: no subsample draws it, and every solve withholds it.
     const shares: number[] = [];
     const list: { t: number; pos: number; photo: number; filedStep: number; contentStep: number; share: number }[] = [];
     let misfiledPositions = 0;
@@ -2107,6 +2149,48 @@ export function summariseCell(
       refused: { runs: 0, photographs: 0, why: {} as Record<string, number> },
     };
     const decodedMisfiles: MisfiledDecode[] = [];
+    const solvedMisfiles: MisfiledSolve[] = [];
+    // The capture's solves that decode one run: each straddles the run's
+    // position and does not withhold it. Where one of them has the page's own
+    // plan, the page's class of the capture and the harm it takes from that
+    // solve, as its class tally reads them (`classesFor` through the page's
+    // reader).
+    const misfileSolve = (
+      cap: CaptureScore,
+      camera: number,
+      projector: number,
+    ): Pick<MisfiledSolve, 'pagePlan' | 'capture' | 'harm' | 'dGridMm'> | null => {
+      const s = solveFor(cap);
+      const ids = new Set([s?.p?.treated, s?.a?.treated].filter((id): id is string => id !== undefined));
+      const decoding = [...ids].filter((id) => {
+        const spec = solveOf(ev, id)?.spec ?? null;
+        return (
+          spec !== null &&
+          (straddledBy(spec)?.includes(camera) ?? false) &&
+          !spec.exclude.includes(`${camera}.${projector}`)
+        );
+      });
+      if (decoding.length === 0) return null;
+      const own = matchOf(cap, 'P')?.pair ?? null;
+      const pagePlan = own !== null && decoding.includes(own.treated);
+      const harm = pagePlan ? harmOf(ev, own, tau).harm : null;
+      const got = pageCaptureClass(analyse(cap).cats, harm, 'P');
+      return {
+        pagePlan,
+        capture:
+          got.class === 'LOUD'
+            ? got.loudAndSilent
+              ? 'LOUD+SILENT'
+              : got.loudWithQuiet
+                ? 'LOUD+QUIET'
+                : 'LOUD'
+            : got.class.startsWith('SILENT')
+              ? 'SILENT'
+              : got.class,
+        harm: got.harm,
+        dGridMm: got.harm === null || harm === null ? null : round(harm.dGridMm, 5),
+      };
+    };
     // The cell's decode of one run, where its decodes drew it.
     const decodeOf = (cap: CaptureScore, pos: PositionScore, projector: number): RunDecode | null => {
       const hits =
@@ -2186,6 +2270,20 @@ export function summariseCell(
           into.runs++;
           into.photographs += held.length;
           const d = decodeOf(cap, pos, p);
+          const photographs = held.map((m) => m.photo);
+          const heldShares = held.map((m) => round(m.share, 5) as number);
+          const solved = alike ? misfileSolve(cap, pos.pos, p) : null;
+          if (solved !== null) {
+            solvedMisfiles.push({
+              t: cap.t,
+              pos: pos.pos,
+              projector: p,
+              photographs,
+              shares: heldShares,
+              drawn: d !== null,
+              ...solved,
+            });
+          }
           if (d === null) return;
           into.decoded.runs++;
           into.decoded.photographs += held.length;
@@ -2194,8 +2292,8 @@ export function summariseCell(
             t: cap.t,
             pos: pos.pos,
             projector: p,
-            photographs: held.map((m) => m.photo),
-            shares: held.map((m) => round(m.share, 5) as number),
+            photographs,
+            shares: heldShares,
             biasU: round(d.shift.meanU, 4),
             biasV: round(d.shift.meanV, 4),
             matched: d.shift.matched,
@@ -2260,6 +2358,10 @@ export function summariseCell(
         counterfactual: {
           ...byCounterfactual,
           decodes: decodedMisfiles.length <= MISFILE_LIST_LIMIT ? decodedMisfiles : null,
+          // Not cut at the limit, unlike `decodes`: a run is here only where a
+          // solve was made of its capture, which bounds the list, and the
+          // follow-up counts off it.
+          solves: solvedMisfiles,
         },
       },
     };
@@ -4435,6 +4537,7 @@ export function assemble(ctx: RunContext, sources: AssemblySources): Record<stri
       plan,
       precondition.q0.page.placedPositions,
       misfiledRunsTally([...rescoreDoc.cells, ...latenessDoc.cells]),
+      pagePlacedRefusals([...rescoreDoc.cells, ...latenessDoc.cells]),
     ),
     verdict: { statement: '' },
   };
@@ -4445,8 +4548,11 @@ export function assemble(ctx: RunContext, sources: AssemblySources): Record<stri
 
 /**
  * The runs holding P10's misfiles, over every cell the page read, as the
- * counterfactual reads them and as the decodes drew them: the sums of the
- * cells' `page.misfiles.counterfactual`.
+ * counterfactual reads them and as the decodes and solves drew them: the sums
+ * of the cells' `page.misfiles.counterfactual`. `solvedOnly` is the runs
+ * placed alike that no decode drew and a capture solve decodes (its `solves`
+ * with `drawn` false), and how many of those a solve of the page's own plan
+ * decodes.
  */
 export interface MisfiledRunsTally {
   runs: number;
@@ -4454,6 +4560,7 @@ export interface MisfiledRunsTally {
   placedAlike: { runs: number; photographs: number; decoded: { runs: number; photographs: number } };
   placedOtherwise: { runs: number; photographs: number; decoded: { runs: number; photographs: number } };
   refused: { runs: number; photographs: number };
+  solvedOnly: { runs: number; photographs: number; pagePlan: number };
 }
 
 export function misfiledRunsTally(
@@ -4465,6 +4572,7 @@ export function misfiledRunsTally(
     placedAlike: { ...pair(), decoded: pair() },
     placedOtherwise: { ...pair(), decoded: pair() },
     refused: pair(),
+    solvedOnly: { ...pair(), pagePlan: 0 },
   };
   const add = (a: { runs: number; photographs: number }, b: { runs: number; photographs: number }) => {
     a.runs += b.runs;
@@ -4479,6 +4587,11 @@ export function misfiledRunsTally(
     add(t.placedOtherwise, m.counterfactual.placedOtherwise);
     add(t.placedOtherwise.decoded, m.counterfactual.placedOtherwise.decoded);
     add(t.refused, m.counterfactual.refused);
+    for (const s of m.counterfactual.solves) {
+      if (s.drawn) continue;
+      add(t.solvedOnly, { runs: 1, photographs: s.photographs.length });
+      if (s.pagePlan) t.solvedOnly.pagePlan++;
+    }
     const parts = m.counterfactual.placedAlike.runs + m.counterfactual.placedOtherwise.runs + m.counterfactual.refused.runs;
     if (parts !== m.runs) {
       throw new Error(`experiment10: ${x.id}'s ${m.runs} misfiling runs are read ${parts} times by the counterfactual`);
@@ -4487,17 +4600,89 @@ export function misfiledRunsTally(
   return t;
 }
 
+/** The touched runs the page places and the counterfactual refuses, by the counterfactual's outcome. */
+export interface PagePlacedRefusal {
+  outcome: string;
+  /** The cells it refused them in, in the order the cells come, with how many in each. */
+  cells: { id: string; runs: number }[];
+}
+
+/**
+ * The touched runs the page places where the counterfactual refuses them, over
+ * every cell the page read: the `placed` row of each cell's run crosses
+ * (`page.runs`), whichever twins place the run, outcome by outcome. These are
+ * the runs only the page places, and so the ones no decode reads.
+ */
+export function pagePlacedRefusals(
+  cells: readonly { id: string; page: ReturnType<typeof summariseCell>['page'] }[],
+): PagePlacedRefusal[] {
+  const by = new Map<string, { id: string; runs: number }[]>();
+  for (const x of cells) {
+    if (x.page.status === 'not run') continue;
+    const r = x.page.runs;
+    for (const cross of [r.both, r.counterfactualOnly, r.pageOnly]) {
+      for (const [outcome, n] of Object.entries(cross.placed)) {
+        if (outcome === 'placed' || n === 0) continue;
+        const list = by.get(outcome) ?? [];
+        const here = list.find((y) => y.id === x.id);
+        if (here === undefined) list.push({ id: x.id, runs: n });
+        else here.runs += n;
+        by.set(outcome, list);
+      }
+    }
+  }
+  return [...by.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([outcome, at]) => ({ outcome, cells: at }));
+}
+
+/** Where the counterfactual refused a run, for an outcome that is not its bookends'. */
+const REFUSED_WHERE: Record<string, string> = {
+  'refused-complement': 'at its complement check',
+  'refused-unanswered': 'as a run it could not check',
+  'refused-classify': 'at classify',
+};
+
+/** A list in words: `a`, `a and b`, `a, b and c`. */
+function inWords(xs: readonly string[]): string {
+  return xs.length <= 1 ? (xs[0] ?? '') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
+}
+
+/**
+ * How the counterfactual refused the runs only the page places, from the
+ * cells: by its bookends, and any other check named with the cells and counts
+ * it refused them in. Without the cells, only that it refused them.
+ */
+function refusedPageOnly(refusals: readonly PagePlacedRefusal[] | null): string {
+  if (refusals === null || refusals.length === 0) return 'refused by the counterfactual';
+  const other = refusals.filter((x) => !x.outcome.startsWith('refused-bookends-'));
+  if (other.length === 0) return "refused by the counterfactual's bookends";
+  const counted = (at: readonly { id: string; runs: number }[]): string =>
+    at.every((x) => x.runs === 1)
+      ? `one run ${at.length === 1 ? 'in' : 'each in'} ${inWords(at.map((x) => x.id))}`
+      : inWords(at.map((x) => `${x.runs} ${x.runs === 1 ? 'run' : 'runs'} in ${x.id}`));
+  const named = other.map(
+    (x) => `${counted(x.cells)}, refused ${REFUSED_WHERE[x.outcome] ?? `with the outcome ${x.outcome}`}`,
+  );
+  const joined = named.length === 1 ? named[0] : `${named.slice(0, -1).join('; ')}; and ${named[named.length - 1]}`;
+  return other.length === refusals.length
+    ? `refused by the counterfactual: ${joined}`
+    : `refused by the counterfactual, all by its bookends but ${joined}`;
+}
+
 /**
  * What this experiment still has not measured, each a measurement somebody
  * could make next. Kept in the document so a reader of the results reads the
  * gaps beside them, and so a gap closed later has somewhere to be crossed out.
- * `misfiled` is what the cells say of the runs holding P10's misfiles; without
- * it the page's decode is described without figures.
+ * `misfiled` is what the cells say of the runs holding P10's misfiles, and
+ * `refusals` how the counterfactual refused the runs only the page places;
+ * without them the page's decode is described without figures.
  */
 export function followUps(
   plan: Exp10Plan,
   placedPositions: number,
   misfiled: MisfiledRunsTally | null = null,
+  refusals: readonly PagePlacedRefusal[] | null = null,
 ): string[] {
   const out = [
     "P0, the emitter's lateness: tools/emitter-timing.ts was never built, so δ has been " +
@@ -4555,21 +4740,28 @@ export function followUps(
         "decodes none. The decodes draw from the counterfactual's placed runs (every one in R1, " +
         "a subsample elsewhere) and read each through the page's own readRun on the " +
         "counterfactual's filing of it, so what a straddle does to the coordinates of a run only " +
-        'the page places is not measured: one re-filed by what its photographs show, or refused ' +
-        "by the counterfactual's bookends." +
+        'the page places is not measured: one re-filed by what its photographs show, or ' +
+        `${refusedPageOnly(refusals)}.` +
         misfiledDecodes(misfiled),
     );
   }
   return out;
 }
 
-/** The page's decode follow-up on the runs holding P10's misfiles, from the cells' tally. */
+/**
+ * The page's decode follow-up on the runs holding P10's misfiles, from the
+ * cells' tally. A clause whose count is 0 is left out. A decode reads a run
+ * whole, so what it measures is the run's straddle with the misfile in it; a
+ * solve reports the calibration, not the run. So neither separates what a
+ * misfiled photograph does, and the runs no decode drew are unmeasured, the
+ * ones a solve decodes among them.
+ */
 function misfiledDecodes(t: MisfiledRunsTally | null): string {
   if (t === null) {
     return (
       " A run holding a photograph filed under another step than the one it mostly shows (P10's " +
       'misfiles) is decoded as the page files it only where the counterfactual places it too, ' +
-      'filing every photograph where the page does, and a decode drew it ' +
+      'filing every photograph where the page does, and a decode or a solve drew it ' +
       '(page.misfiles.counterfactual).'
     );
   }
@@ -4578,19 +4770,59 @@ function misfiledDecodes(t: MisfiledRunsTally | null): string {
   }
   const alike = t.placedAlike;
   const otherwise = t.placedOtherwise;
+  const solvedOnly = t.solvedOnly;
   const photographs = (n: number): string => `${n} photograph${n === 1 ? '' : 's'}`;
   const runs = (n: number): string => `${n} run${n === 1 ? '' : 's'}`;
-  return (
-    ` Of the ${runs(t.runs)} holding P10's misfiles (${photographs(t.photographs)}), the ` +
-    `counterfactual refuses ${t.refused.runs} (${photographs(t.refused.photographs)}), which only ` +
-    `the page places, and places ${alike.runs} (${alike.photographs}), filing every photograph ` +
-    'where the page does' +
-    (otherwise.runs === 0 ? '' : `, and ${otherwise.runs} (${otherwise.photographs}) filing them otherwise`) +
-    `. The decodes drew ${alike.decoded.runs} of those ${alike.runs}, holding ` +
-    `${alike.decoded.photographs} misfiled ${alike.decoded.photographs === 1 ? 'photograph' : 'photographs'}, ` +
-    "each decoded as the page files it (each cell's page.misfiles.counterfactual.decodes). What a " +
-    `misfile does to the coordinates of the other ${runs(t.runs - alike.decoded.runs)} is not measured.`
-  );
+  // What the counterfactual does with them, each clause only where its count
+  // is not 0, and the first count with its unit.
+  const every: { runs: number; photographs: number; words: (count: string) => string }[] = [
+    { ...t.refused, words: (x) => `refuses ${x}, which only the page places` },
+    { ...alike, words: (x) => `places ${x}, filing every photograph where the page does` },
+    { ...otherwise, words: (x) => `${alike.runs === 0 ? 'places ' : ''}${x} filing them otherwise` },
+  ];
+  const clauses = every.filter((x) => x.runs > 0);
+  const lead =
+    ` Of the ${runs(t.runs)} holding P10's misfiles (${photographs(t.photographs)}), the counterfactual ` +
+    `${clauses.map((x, i) => x.words(`${x.runs} (${i === 0 ? photographs(x.photographs) : x.photographs})`)).join(', and ')}.`;
+  const drawn = alike.decoded;
+  const those = alike.runs === 1 ? 'it' : `${drawn.runs} of those ${alike.runs}`;
+  const decodes =
+    alike.runs === 0
+      ? ''
+      : drawn.runs === 0
+        ? alike.runs === 1
+          ? ' It was not drawn by a decode.'
+          : ` Of those ${alike.runs}, none was drawn by a decode.`
+        : ` The decodes drew ${those}, holding ${drawn.photographs} misfiled ` +
+          `${drawn.photographs === 1 ? 'photograph' : 'photographs'}, ` +
+          `${drawn.runs === 1 ? '' : 'each '}decoded whole as the page files it (each cell's ` +
+          'page.misfiles.counterfactual.decodes), so no decode separates what a misfiled photograph ' +
+          'does from what the rest of its straddle does.';
+  // What no decode drew: unmeasured, and the ones a capture solve decodes named.
+  const rest = t.runs - drawn.runs;
+  const n = solvedOnly.runs;
+  const where =
+    solvedOnly.pagePlan === n
+      ? n === 1
+        ? "the counterfactual solve that judges its capture on the page's own plan"
+        : "the counterfactual solves that judge their captures on the page's own plan"
+      : solvedOnly.pagePlan === 0
+        ? n === 1
+          ? "a counterfactual solve of another plan than the page's"
+          : "counterfactual solves of other plans than the page's"
+        : `counterfactual solves, ${solvedOnly.pagePlan} of them ` +
+          `${solvedOnly.pagePlan === 1 ? 'a solve that judges its capture' : 'solves that judge their captures'} ` +
+          "on the page's own plan";
+  const inSolves =
+    n === 0
+      ? ''
+      : `: ${n} of them (${photographs(solvedOnly.photographs)}), which no decode drew, ` +
+        `${n === 1 ? 'is' : 'are'} decoded only inside ${where} (each cell's ` +
+        'page.misfiles.counterfactual.solves), and a solve reports the calibration, not the run';
+  const whose =
+    drawn.runs > 0 ? `the coordinates of the other ${runs(rest)}` : t.runs === 1 ? 'its coordinates' : 'their coordinates';
+  const unmeasured = rest === 0 ? '' : ` What a straddle does to ${whose} is not measured${inSolves}.`;
+  return lead + decodes + unmeasured;
 }
 
 /** The design constants the document carries, read back like any cell. */
@@ -4744,8 +4976,10 @@ export function caveats(doc: VerdictDoc): Record<string, string> {
       'holding more than half its exposure (P10). Each quiet drop is listed with how the ' +
       "straddled reading noted it and the clean run's light as experiments/reader-acceptance.json " +
       'measured it (page.quiet.list). Each run holding a misfile is read by the counterfactual ' +
-      "too, and where its decodes drew one it places filed as the page files it, that decode's " +
-      'figures are listed (page.misfiles.counterfactual).',
+      "too: where its decodes drew one it places filed as the page files it, that decode's " +
+      'figures are listed (page.misfiles.counterfactual.decodes), and where a capture solve ' +
+      'decodes one, so is whether that solve has the page\'s plan and the harm and D_grid the ' +
+      'page takes from it (page.misfiles.counterfactual.solves).',
     reshoot:
       'Policy P assumes the re-shoot after a refusal is clean, which is optimistic: a fresh ' +
       'start can straddle again (followUps).',
@@ -5518,15 +5752,18 @@ export function verdictStatement(doc: VerdictDoc): string {
       const atLeast = num(key('atLeast'));
       const lo = n(key('lo'), 3);
       const hi = n(key('hi'), 3);
-      // A near-tie's share is under the cut, however its figure rounds.
+      // A near-tie's share is under the cut, however its figure rounds. The
+      // smallest share is a near-tie wherever any is, and the largest only
+      // where all are, both read off the histogram; a bound that is a near-tie
+      // and rounds to the cut or past it is written "just under" the cut.
+      const loUnderCut = atLeast < count && Number(lo) >= cut;
       const hiUnderCut = atLeast === 0 && Number(hi) >= cut;
+      const bound = (x: string, under: boolean): string => (under ? `just under ${cut}` : x);
       const range =
-        num(key('lo')) === num(key('hi'))
-          ? hiUnderCut
-            ? `just under ${cut}`
-            : lo
-          : hiUnderCut
-            ? `${lo} to just under ${cut}`
+        num(key('lo')) === num(key('hi')) || (loUnderCut && hiUnderCut)
+          ? bound(lo, loUnderCut || hiUnderCut)
+          : loUnderCut || hiUnderCut
+            ? `${bound(lo, loUnderCut)} to ${bound(hi, hiUnderCut)}`
             : `${lo}-${hi}`;
       const where = num(key('positions')) === count ? '' : ` in ${c(key('positions'))} positions`;
       // Which way each was filed from the step it mostly shows, where the cell lists them.

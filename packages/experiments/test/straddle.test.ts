@@ -2182,19 +2182,115 @@ test('T36 where the page stopped, the aimed rule measured on a fine grid and der
   // misfiles: which the counterfactual refuses (only the page places them),
   // which it files as the page does, and how many of those a decode drew. It
   // first said none of them was decoded, while the decode subsamples had drawn
-  // 25 of them.
+  // 25 of them. Then it said what a misfile does was unmeasured for "the other"
+  // runs, as if the decodes measured it for the ones drawn: a decode reads a
+  // run whole, so it measures the straddle with the misfile in it, and the
+  // follow-up says so. The runs a capture solve decodes, which no decode drew,
+  // are named apart, and a solve reports the calibration, not the run.
   const decodeOf = (xs: string[]): string => xs.find((x) => x.startsWith("The page's decode")) ?? '';
   const pair = (runs: number, photographs: number) => ({ runs, photographs });
-  const tally = { ...pair(5, 8), placedAlike: { ...pair(4, 7), decoded: pair(1, 2) }, placedOtherwise: { ...pair(0, 0), decoded: pair(0, 0) }, refused: pair(1, 1) };
+  const tally = { ...pair(5, 8), placedAlike: { ...pair(4, 7), decoded: pair(1, 2) }, placedOtherwise: { ...pair(0, 0), decoded: pair(0, 0) }, refused: pair(1, 1), solvedOnly: { ...pair(0, 0), pagePlan: 0 } };
+  const lead = "Of the 5 runs holding P10's misfiles (8 photographs), the counterfactual refuses 1 (1 photograph), which only the page places, and places 4 (7), filing every photograph where the page does.";
+  const whole = " The decodes drew 1 of those 4, holding 2 misfiled photographs, decoded whole as the page files it (each cell's page.misfiles.counterfactual.decodes), so no decode separates what a misfiled photograph does from what the rest of its straddle does.";
   assert.ok(
-    decodeOf(followUps(FULL_PLAN, 3, tally)).endsWith(
-      "Of the 5 runs holding P10's misfiles (8 photographs), the counterfactual refuses 1 (1 photograph), which only the page places, and places 4 (7), filing every photograph where the page does. The decodes drew 1 of those 4, holding 2 misfiled photographs, each decoded as the page files it (each cell's page.misfiles.counterfactual.decodes). What a misfile does to the coordinates of the other 4 runs is not measured.",
-    ),
+    decodeOf(followUps(FULL_PLAN, 3, tally)).endsWith(`${lead}${whole} What a straddle does to the coordinates of the other 4 runs is not measured.`),
     decodeOf(followUps(FULL_PLAN, 3, tally)),
   );
+  // Runs no decode drew that a capture solve decodes, on the page's own plan or not.
+  const solvedTally = (runs: number, photographs: number, pagePlan: number) => ({ ...tally, solvedOnly: { ...pair(runs, photographs), pagePlan } });
+  const inSolves = (x: string) => `${lead}${whole} What a straddle does to the coordinates of the other 4 runs is not measured: ${x} (each cell's page.misfiles.counterfactual.solves), and a solve reports the calibration, not the run.`;
+  for (const [t, want] of [
+    [solvedTally(2, 3, 2), "2 of them (3 photographs), which no decode drew, are decoded only inside the counterfactual solves that judge their captures on the page's own plan"],
+    [solvedTally(1, 1, 1), "1 of them (1 photograph), which no decode drew, is decoded only inside the counterfactual solve that judges its capture on the page's own plan"],
+    [solvedTally(3, 4, 1), "3 of them (4 photographs), which no decode drew, are decoded only inside counterfactual solves, 1 of them a solve that judges its capture on the page's own plan"],
+    [solvedTally(1, 2, 0), "1 of them (2 photographs), which no decode drew, is decoded only inside a counterfactual solve of another plan than the page's"],
+  ] as const) {
+    assert.ok(decodeOf(followUps(FULL_PLAN, 3, t)).endsWith(inSolves(want)), decodeOf(followUps(FULL_PLAN, 3, t)));
+  }
+  // A clause whose count is 0 is left out, and a subsample that drew none of
+  // the runs placed alike says so, rather than "refuses 0 (0 photographs)" or
+  // "drew 0 of those".
+  const zeroCounts: [typeof tally, string][] = [
+    [{ ...tally, ...pair(4, 7), refused: pair(0, 0) }, "Of the 4 runs holding P10's misfiles (7 photographs), the counterfactual places 4 (7 photographs), filing every photograph where the page does." + whole + ' What a straddle does to the coordinates of the other 3 runs is not measured.'],
+    [{ ...tally, placedAlike: { ...pair(4, 7), decoded: pair(0, 0) } }, `${lead} Of those 4, none was drawn by a decode. What a straddle does to their coordinates is not measured.`],
+    [{ ...tally, ...pair(1, 1), placedAlike: { ...pair(0, 0), decoded: pair(0, 0) } }, "Of the 1 run holding P10's misfiles (1 photograph), the counterfactual refuses 1 (1 photograph), which only the page places. What a straddle does to its coordinates is not measured."],
+    [{ ...tally, ...pair(6, 9), placedOtherwise: { ...pair(1, 1), decoded: pair(0, 0) } }, "Of the 6 runs holding P10's misfiles (9 photographs), the counterfactual refuses 1 (1 photograph), which only the page places, and places 4 (7), filing every photograph where the page does, and 1 (1) filing them otherwise." + whole + ' What a straddle does to the coordinates of the other 5 runs is not measured.'],
+  ];
+  for (const [t, want] of zeroCounts) {
+    const said = decodeOf(followUps(FULL_PLAN, 3, t));
+    assert.ok(said.endsWith(want), said);
+    assert.doesNotMatch(said, /refuses 0 |places 0 |drew 0 |\(0\)|\(0 photographs\)/);
+  }
   assert.match(decodeOf(followUps(FULL_PLAN, 3, { ...tally, runs: 0, photographs: 0 })), /No run the page placed holds a photograph filed under another step/);
-  assert.match(decodeOf(later), /is decoded as the page files it only where the counterfactual places it too/);
-  for (const xs of [later, followUps(FULL_PLAN, 3, tally)]) assert.doesNotMatch(decodeOf(xs), /decode subsamples draw|holding a photograph filed under another step than the one it mostly shows \(P10's misfiles\)\. The decode/);
+  assert.match(decodeOf(later), /is decoded as the page files it only where the counterfactual places it too, filing every photograph where the page does, and a decode or a solve drew it/);
+  for (const xs of [later, followUps(FULL_PLAN, 3, tally)]) assert.doesNotMatch(decodeOf(xs), /decode subsamples draw|holding a photograph filed under another step than the one it mostly shows \(P10's misfiles\)\. The decode|What a misfile does to the coordinates/);
+  // How the counterfactual refused the runs only the page places, read off
+  // the cells: by its bookends, and any other check named with where. The
+  // follow-up first said "by the counterfactual's bookends" beside two runs
+  // it refused at its complement check.
+  const refusedOf = (xs: string[]): string => /or (refused by the counterfactual[^.]*)\./.exec(decodeOf(xs))?.[1] ?? '';
+  const refusal = (outcome: string, ...cells: [string, number][]) => ({ outcome, cells: cells.map(([id, runs]) => ({ id, runs })) });
+  assert.equal(refusedOf(followUps(FULL_PLAN, 3, tally)), 'refused by the counterfactual');
+  assert.equal(refusedOf(followUps(FULL_PLAN, 3, tally, [refusal('refused-bookends-count', ['R1', 3]), refusal('refused-bookends-length', ['R3', 2])])), "refused by the counterfactual's bookends");
+  assert.equal(
+    refusedOf(followUps(FULL_PLAN, 3, tally, [refusal('refused-bookends-count', ['R1', 166]), refusal('refused-complement', ['R2', 1], ['L-uniform-2', 1])])),
+    'refused by the counterfactual, all by its bookends but one run each in R2 and L-uniform-2, refused at its complement check',
+  );
+  assert.equal(
+    refusedOf(followUps(FULL_PLAN, 3, tally, [refusal('refused-complement', ['R2', 2], ['R4', 1]), refusal('refused-unanswered', ['R7', 1])])),
+    'refused by the counterfactual: 2 runs in R2 and 1 run in R4, refused at its complement check; and one run in R7, refused as a run it could not check',
+  );
+  // ...read off the `placed` row of each cell's run crosses, whichever twins place the run.
+  const { pagePlacedRefusals, misfiledRunsTally } = await import('../src/straddle/assemble.ts');
+  const crosses = (id: string, both: Record<string, number>, pageOnly: Record<string, number> = {}, counterfactualOnly: Record<string, number> = {}) =>
+    ({ id, page: { status: 'read', runs: { both: { placed: both, refused: { placed: 7 } }, pageOnly: { placed: pageOnly }, counterfactualOnly: { placed: counterfactualOnly } } } }) as never;
+  assert.deepEqual(
+    pagePlacedRefusals([
+      crosses('R1', { placed: 371, 'refused-bookends-count': 166 }),
+      crosses('R2', { placed: 236, 'refused-complement': 1 }, { 'refused-complement': 2 }, { 'refused-bookends-kind': 1 }),
+      { id: 'R8', page: { status: 'not run' } } as never,
+      crosses('L-uniform-2', { 'refused-complement': 1, 'refused-bookends-count': 0 }),
+    ]),
+    [refusal('refused-bookends-count', ['R1', 166]), refusal('refused-bookends-kind', ['R2', 1]), refusal('refused-complement', ['R2', 3], ['L-uniform-2', 1])],
+  );
+
+  // The tally the follow-up reads is the cells' own sums: a cell the page
+  // column did not run in is skipped, and a cell whose runs the counterfactual
+  // reads more or fewer times than it counts them is refused.
+  const cfCell = (id: string, runs: number, photographs: number, alike: [number, number, number, number], refused: [number, number], solves: { drawn: boolean; pagePlan: boolean; photographs: number[] }[] = []) =>
+    ({
+      id,
+      page: {
+        status: 'read',
+        misfiles: {
+          runs,
+          photographs,
+          counterfactual: {
+            placedAlike: { ...pair(alike[0], alike[1]), decoded: pair(alike[2], alike[3]) },
+            placedOtherwise: { ...pair(0, 0), decoded: pair(0, 0) },
+            refused: { ...pair(refused[0], refused[1]), why: {} },
+            decodes: [],
+            solves,
+          },
+        },
+      },
+    }) as never;
+  const solved = (drawn: boolean, pagePlan: boolean, ...photographs: number[]) => ({ drawn, pagePlan, photographs });
+  assert.deepEqual(
+    misfiledRunsTally([
+      cfCell('R4', 20, 21, [15, 16, 8, 9], [5, 5]),
+      { id: 'R8', page: { status: 'not run' } } as never,
+      cfCell('L-aimed-7.5', 72, 109, [58, 90, 13, 17], [14, 19], [solved(false, true, 135), solved(false, true, 134, 135), solved(true, true, 99), solved(false, false, 40)]),
+    ]),
+    {
+      ...pair(92, 130),
+      placedAlike: { ...pair(73, 106), decoded: pair(21, 26) },
+      placedOtherwise: { ...pair(0, 0), decoded: pair(0, 0) },
+      refused: pair(19, 24),
+      solvedOnly: { ...pair(3, 4), pagePlan: 2 },
+    },
+  );
+  assert.throws(() => misfiledRunsTally([cfCell('R4', 21, 22, [15, 16, 8, 9], [5, 5])]), /R4's 21 misfiling runs are read 20 times by the counterfactual/);
   // P9's follow-up says the page column reads noisy frames without a linear reference beside them.
   assert.ok(later.some((x) => x.startsWith('P9 on noisy frames') && x.includes('sets no linear fingerprint beside them')));
   // Which lateness captures are solved, read off the plan: one cell's first
@@ -2524,6 +2620,27 @@ test("T37 the verdict and the caveats say what the first full run's verification
   rebet(edge);
   assert.ok(verdictStatement(edge).includes("in L-aimed-7.5, 2, each a near-tie (that step's share 0.500 to just under 0.6) filed one step after it."), verdictStatement(edge));
   assert.doesNotMatch(verdictStatement(edge), /0 of them at 0\.6 or more/);
+  // The smallest share is held to the same rule: two near-ties that both
+  // round to 0.600 are "just under" the cut, and beside a photograph past the
+  // cut a near-tie that rounds to 0.600 is not written as if it sat at it.
+  const bothEdge = structuredClone(doc);
+  cells(bothEdge.lateness.cells, 'L-aimed-7.5').page.misfiles = misfiled([
+    { t: 11, pos: 1, photo: 135, filedStep: 135, contentStep: 134, share: 0.5996 },
+    { t: 12, pos: 0, photo: 101, filedStep: 101, contentStep: 100, share: 0.59996 },
+  ]);
+  rebet(bothEdge);
+  assert.ok(verdictStatement(bothEdge).includes("in L-aimed-7.5, 2, each a near-tie (that step's share just under 0.6) filed one step after it."), verdictStatement(bothEdge));
+  const mixedEdge = structuredClone(doc);
+  cells(mixedEdge.lateness.cells, 'L-aimed-7.5').page.misfiles = misfiled([
+    { t: 11, pos: 1, photo: 135, filedStep: 135, contentStep: 134, share: 0.5996 },
+    { t: 12, pos: 0, photo: 101, filedStep: 101, contentStep: 100, share: 0.8 },
+  ]);
+  rebet(mixedEdge);
+  assert.ok(
+    verdictStatement(mixedEdge).includes("in L-aimed-7.5 (intervalometer-100ppm), 2, that step's share just under 0.6 to 0.800, 1 of them at 0.6 or more and the other a near-tie, filed one step after it: runs placed holding a photograph of another step"),
+    verdictStatement(mixedEdge),
+  );
+  for (const d of [bothEdge, mixedEdge]) assert.doesNotMatch(verdictStatement(d), /share 0\.600/);
   // The cut is the document's own: a document that carries another reads it back.
   const cutAt = structuredClone(doc);
   cutAt.predictions.find((x: { id: string }) => x.id === 'P10').measured.nearTie.share = 0.55;
@@ -3350,6 +3467,13 @@ test('T48 a capture the page lets through takes a solve\'s harm only where the p
   const drop = { t: 7, rig: 0, pos: 0, projector: 0, noted: 'barely seen', clean: null };
   assert.deepEqual(quietOnly.page.quiet, { runs: 1, positions: 1, captures: 1, silentWithQuiet: 0, quietPlacingTouched: 0, unseen: 0, barelySeen: 1, list: [drop] });
   assert.equal(quietOnly.page.classes.P.vsCounterfactual.SILENT.QUIET, 1, 'the counterfactual\'s SILENT capture is not the page\'s QUIET one');
+  // The same run noted out of view instead is a quiet drop too, counted and
+  // listed as out of view: the two notes are not one.
+  const unseenDrop = handPage({ placed: [1, 2], unseen: [0, 3] });
+  const outOfView = summary(unseenDrop, quietId);
+  assert.ok(outOfView.page.status === 'read');
+  assert.equal(outOfView.page.classes.P.counts.QUIET, 1);
+  assert.deepEqual(outOfView.page.quiet, { runs: 1, positions: 1, captures: 1, silentWithQuiet: 0, quietPlacingTouched: 0, unseen: 1, barelySeen: 0, list: [{ ...drop, noted: 'out of view' }] });
   // The same, with run 1 touched and placed beside the drop: still QUIET, and
   // the placed straddled run no class counts is counted apart.
   const beside = { ...capWith(dropped), positions: [{ ...handPosition(0, [0, 1], [placedRun(), placedRun(), placedRun(), invisibleRun()]), page: dropped, assignment: null }, untouchedPosition(1), untouchedPosition(2)] };
@@ -3535,7 +3659,7 @@ test('T51 the page column counts every misfiled photograph with its share, and l
   // majority share, how many sit under 0.55, the extremes and a histogram, and
   // the photographs themselves while there are few enough to list.
   const { summariseCell, MISFILE_LIST_LIMIT } = await import('../src/straddle/assemble.ts');
-  const { TEST_PLAN, latenessCells } = await import('../src/straddle/stages.ts');
+  const { TEST_PLAN, latenessCells, rescoreCells, solveId } = await import('../src/straddle/stages.ts');
   const cell = latenessCells(TEST_PLAN).find((c) => c.id === 'L-aimed-7.5');
   assert.ok(cell !== undefined);
   const twins = [0, 1, 2].map((c) => handPageTwin(c, [0, 1, 2]));
@@ -3543,17 +3667,29 @@ test('T51 the page column counts every misfiled photograph with its share, and l
   const reading = (misfiled: ReturnType<typeof misfile>[], perRun: number[]) =>
     handPage({ placed: [0, 1, 2], unseen: [3], misfiled, contentMisfiles: perRun, ambiguous: [1, 0, 0] });
   const at = (camera: number, page: PageRead) => ({ ...handPosition(camera, [0], [placedRun(), placedRun(), placedRun(), invisibleRun()]), page });
-  const summary = (caps: unknown[], samples: unknown[] = []) =>
+  // A cell's summary: its captures and decode samples, and where asked the
+  // solves on record, the capture solves naming them, a yardstick and another cell.
+  const summary = (
+    caps: unknown[],
+    samples: unknown[] = [],
+    extra: { solves?: Map<string, unknown>; captureSolves?: unknown[]; tau?: number; spec?: typeof cell } = {},
+  ) =>
     summariseCell(
       {
         plan: { ...TEST_PLAN, rigs: [0] },
         q0: { units: { 'main:0': { positions: [{ runsPlaced: [0] }] } } },
         bank: { units: { 'main:0': { width: 0, height: 0, seed: 0, twins } } },
-        solves: new Map(),
+        solves: extra.solves ?? new Map(),
       } as unknown as Parameters<typeof summariseCell>[0],
-      cell,
-      { units: { 'A:main:0': { score: { cells: { [cell.id]: caps } } }, 'B:main:0': { samples } } } as unknown as Parameters<typeof summariseCell>[2],
-      null,
+      extra.spec ?? cell,
+      {
+        units: {
+          'A:main:0': { score: { cells: { [(extra.spec ?? cell).id]: caps } } },
+          'B:main:0': { samples },
+          'S:main:0': { solves: extra.captureSolves ?? [] },
+        },
+      } as unknown as Parameters<typeof summariseCell>[2],
+      extra.tau ?? null,
     );
   const got = summary([
     { t: 3, rig: 0, positions: [at(0, reading([misfile(33, 0.50026), misfile(67, 0.55)], [1, 1, 0])), untouchedPosition(1), untouchedPosition(2)] },
@@ -3613,6 +3749,7 @@ test('T51 the page column counts every misfiled photograph with its share, and l
     decodes: [
       { t: 3, pos: 0, projector: 0, photographs: [33], shares: [0.50026], biasU: 1.2346, biasV: -0.5, matched: 100, moved: 90, gross: 2, acceptedDelta: -5, sets: ['biasU.max', 'biasV.min', 'acceptedDelta.min'] },
     ],
+    solves: [],
   });
   // The decode block rounds the same figure the same way.
   assert.equal(decoded.decode.biasU.max, 1.2346);
@@ -3639,4 +3776,131 @@ test('T51 the page column counts every misfiled photograph with its share, and l
   const undrawn = summary([{ t: 3, rig: 0, positions: [both(identity), untouchedPosition(1), untouchedPosition(2)] }], [sample(2, 0.1, 0.2, 0)]);
   assert.ok(undrawn.page.status === 'read');
   assert.deepEqual(undrawn.page.misfiles.counterfactual.placedAlike, { runs: 1, photographs: 1, decoded: { runs: 0, photographs: 0 } });
+
+  // A capture solve decodes a run placed alike too: it renders the run's
+  // position with the counterfactual's assignment and decodes every run it
+  // does not withhold. So such a run is listed, drawn by a decode or not, with
+  // whether the solve has the page's own plan and, where it does, the harm and
+  // D_grid the page takes from it. The document first said the misfiled runs
+  // outside the decode subsamples were not decoded at all, while L-aimed-7.5's
+  // solves of three of its trials decode three of them.
+  const capSpec = (straddle: string, exclude: string[]) => ({ kind: 'capture' as const, rig: 0, variant: 'reduced' as const, straddle, exclude, captureSeed: null });
+  const pagePlanSpec = capSpec(`${cell.id}/t3/[0]`, ['0.3', '1.3', '2.3']);
+  const solvesOf = (spec: ReturnType<typeof capSpec>) =>
+    new Map<string, unknown>([
+      ['twin', handSolve('twin', 0.4)],
+      [solveId(spec), { ...handSolve(solveId(spec), 0.45, { dGridMm: 0.3 }), spec }],
+    ]);
+  const alikeOnly = { ...at(0, reading([misfile(33, 0.50026)], [1, 0, 0])), assignment: identity };
+  const inSolve = (spec: ReturnType<typeof capSpec>, samples: unknown[] = [], tau?: number) =>
+    summary([{ t: 3, rig: 0, positions: [alikeOnly, untouchedPosition(1), untouchedPosition(2)] }], samples, {
+      solves: solvesOf(spec),
+      captureSolves: [{ cell: cell.id, t: 3, rig: 0, a: { treated: solveId(spec), twin: 'twin' }, p: { treated: solveId(spec), twin: 'twin' }, pIsA: true }],
+      tau,
+    });
+  const listed = { t: 3, pos: 0, projector: 0, photographs: [33], shares: [0.50026], drawn: false, pagePlan: true, capture: 'SILENT', harm: 'HARMLESS', dGridMm: 0.3 };
+  const own = inSolve(pagePlanSpec, [], 0.5);
+  assert.ok(own.page.status === 'read');
+  assert.deepEqual(own.page.misfiles.counterfactual.solves, [listed]);
+  assert.deepEqual([own.page.misfiles.counterfactual.decodes, own.page.misfiles.counterfactual.placedAlike], [[], { runs: 1, photographs: 1, decoded: { runs: 0, photographs: 0 } }]);
+  assert.equal(own.page.classes.P.counts['SILENT-HARMLESS'], 1, 'the page\'s class tally took another harm from the same solve');
+  // Drawn by a decode as well, it is in both lists.
+  const drawnToo = inSolve(pagePlanSpec, [sample(0, 1.234567, -0.5, -5)], 0.5);
+  assert.ok(drawnToo.page.status === 'read');
+  assert.deepEqual(drawnToo.page.misfiles.counterfactual.solves, [{ ...listed, drawn: true }]);
+  assert.equal(drawnToo.page.misfiles.counterfactual.decodes?.length, 1);
+  // A solve of another plan decodes it too, and the page takes no harm from it.
+  const other = inSolve(capSpec(`${cell.id}/t3/[0,1]`, ['0.3', '1.3', '2.3']), [], 0.5);
+  assert.ok(other.page.status === 'read');
+  assert.deepEqual(other.page.misfiles.counterfactual.solves, [{ ...listed, pagePlan: false, harm: null, dGridMm: null }]);
+  // Without a yardstick the page's own plan's solve is still named, and no harm is read off it.
+  const noTau = inSolve(pagePlanSpec);
+  assert.ok(noTau.page.status === 'read');
+  assert.deepEqual(noTau.page.misfiles.counterfactual.solves, [{ ...listed, harm: null, dGridMm: null }]);
+  // Where the page's own plan has a solve that does not decode the run (the
+  // page refuses another run of its position, so its plan re-shoots that
+  // position) and another solve does, the run is listed off the other, and
+  // takes none of the harm the page reads off its own plan's solve.
+  const planP = capSpec(`${cell.id}/t3/[0]`, ['0.3', '1.3', '2.3']);
+  const planA = capSpec(`${cell.id}/t3/[0,1]`, ['0.3', '1.3', '2.3']);
+  const mixedPage = handPage({ placed: [0, 2], unseen: [3], problems: [unfound(1)], misfiled: [misfile(33, 0.50026)], contentMisfiles: [1, 0], ambiguous: [0, 0] });
+  const elsewhere = summary(
+    [
+      {
+        t: 3,
+        rig: 0,
+        positions: [
+          { ...at(0, reading([], [0, 0, 0])), assignment: identity },
+          { ...handPosition(1, [0, 1], [placedRun(), placedRun(), placedRun(), invisibleRun()]), page: mixedPage, assignment: identity },
+          untouchedPosition(2),
+        ],
+      },
+    ],
+    [],
+    {
+      solves: new Map([...solvesOf(planP), ...solvesOf(planA)]),
+      captureSolves: [{ cell: cell.id, t: 3, rig: 0, a: { treated: solveId(planA), twin: 'twin' }, p: { treated: solveId(planP), twin: 'twin' }, pIsA: false }],
+      tau: 0.5,
+    },
+  );
+  assert.ok(elsewhere.page.status === 'read');
+  assert.equal(elsewhere.page.classes.P.counts['LOUD+SILENT'], 1);
+  assert.deepEqual(elsewhere.page.classes.P.harm, { silentPart: 1, samePlan: 1, notSolved: 0, why: { 'no solve': 0, positions: 0, exclusions: 0, placement: 0 } });
+  assert.deepEqual(elsewhere.page.misfiles.counterfactual.solves, [{ ...listed, pos: 1, pagePlan: false, capture: 'LOUD+SILENT', harm: null, dGridMm: null }]);
+  // Filed otherwise by the counterfactual, the run a solve decodes is not the
+  // page's filing of it, and is not listed.
+  const filedOtherwise = summary([{ t: 3, rig: 0, positions: [{ ...alikeOnly, assignment: late }, untouchedPosition(1), untouchedPosition(2)] }], [], {
+    solves: solvesOf(capSpec(`${cell.id}/t3/[0,1]`, ['0.3', '1.3', '2.3'])),
+    captureSolves: [{ cell: cell.id, t: 3, rig: 0, a: { treated: solveId(capSpec(`${cell.id}/t3/[0,1]`, ['0.3', '1.3', '2.3'])), twin: 'twin' }, p: null, pIsA: false }],
+    tau: 0.5,
+  });
+  assert.ok(filedOtherwise.page.status === 'read');
+  assert.deepEqual([filedOtherwise.page.misfiles.counterfactual.placedOtherwise.runs, filedOtherwise.page.misfiles.counterfactual.solves], [1, []]);
+  // A solve that withholds the run, or straddles another position, does not decode it.
+  for (const spec of [capSpec(`${cell.id}/t3/[0]`, ['0.0', '0.3', '1.3', '2.3']), capSpec(`${cell.id}/t3/[1]`, ['0.3', '1.3', '2.3'])]) {
+    const none = inSolve(spec, [], 0.5);
+    assert.ok(none.page.status === 'read');
+    assert.deepEqual(none.page.misfiles.counterfactual.solves, [], spec.straddle + spec.exclude.join());
+  }
+  // A run the counterfactual refuses is counted among the refused and never
+  // listed, even beside a solve that, unlike any it makes, does not withhold it.
+  const refusedRun = summary([{ t: 3, rig: 0, positions: [both(identity), untouchedPosition(1), untouchedPosition(2)] }], [], {
+    solves: solvesOf(pagePlanSpec),
+    captureSolves: [{ cell: cell.id, t: 3, rig: 0, a: { treated: solveId(pagePlanSpec), twin: 'twin' }, p: { treated: solveId(pagePlanSpec), twin: 'twin' }, pIsA: true }],
+    tau: 0.5,
+  });
+  assert.ok(refusedRun.page.status === 'read');
+  assert.deepEqual(refusedRun.page.misfiles.counterfactual.solves.map((s) => s.projector), [0]);
+
+  // In R1 every run the counterfactual places is decoded, and a run's decode
+  // is read off its own position (`decodes`), not a subsample's draw: the run
+  // placed alike is listed with its figures. Decoded twice there, the cell is
+  // refused rather than listed once.
+  const r1 = rescoreCells(TEST_PLAN).find((c) => c.id === 'R1');
+  assert.ok(r1 !== undefined && r1.decode === 'all' && r1.mode === 'noisy');
+  const noisy = (o: Score['o0']) => handRun(o, o, o === 'placed' ? 0.05 : null);
+  const runDecode = (projector: number, meanU: number) => ({ projector, phaseTouched: true, acceptedDelta: -5, shift: { matched: 100, moved: 90, meanU, meanV: -0.5, gross: 2 } });
+  const r1Capture = (decodes: unknown[]) => ({
+    t: 3,
+    rig: 0,
+    positions: [
+      { ...handPosition(0, [0], [noisy('placed'), noisy('placed'), noisy('placed'), noisy('refused-unanswered')]), page: reading([misfile(33, 0.50026)], [1, 0, 0]), assignment: identity, decodes },
+      untouchedPosition(1),
+      untouchedPosition(2),
+    ],
+  });
+  // A subsample's draw of the same run, were there one, is not what R1 reads.
+  const drawnInR1 = { ...sample(0, 9, 9, -9), cell: 'R1' };
+  const everyRun = summary([r1Capture([runDecode(0, 1.234567), runDecode(2, 0.1)])], [drawnInR1], { spec: r1 });
+  assert.ok(everyRun.page.status === 'read');
+  assert.deepEqual(everyRun.page.misfiles.counterfactual.placedAlike, { runs: 1, photographs: 1, decoded: { runs: 1, photographs: 1 } });
+  assert.deepEqual(everyRun.page.misfiles.counterfactual.decodes, [
+    { t: 3, pos: 0, projector: 0, photographs: [33], shares: [0.50026], biasU: 1.2346, biasV: -0.5, matched: 100, moved: 90, gross: 2, acceptedDelta: -5, sets: ['biasU.max'] },
+  ]);
+  const notDecoded = summary([r1Capture([runDecode(2, 0.1)])], [drawnInR1], { spec: r1 });
+  assert.ok(notDecoded.page.status === 'read');
+  assert.deepEqual(notDecoded.page.misfiles.counterfactual.placedAlike.decoded, { runs: 0, photographs: 0 });
+  assert.throws(() => summary([r1Capture([runDecode(0, 1.2), runDecode(0, 1.3)])], [], { spec: r1 }), /R1 decoded trial 3 camera 0 run 1 2 times/);
+  // ...and so is a subsample that drew one run twice.
+  assert.throws(() => summary([{ t: 3, rig: 0, positions: [both(identity), untouchedPosition(1), untouchedPosition(2)] }], [sample(0, 1, 1, 0), sample(0, 2, 2, 0)]), /L-aimed-7\.5 decoded trial 3 camera 0 run 1 2 times/);
 });
