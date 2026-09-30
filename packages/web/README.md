@@ -25,21 +25,24 @@ put a structured-light frame on any projector with nothing installed and nothing
 on the display machine changed. It is Phase 1 of `docs/OPERATOR-PATH.md`;
 `docs/CALIBRATE.md` is the field card that goes with it.
 
-They share this package because they share the pattern definition and the
-quadrant conventions, and for no other reason. The emitter imports no worker, no
-shader and no rig: its arithmetic is `src/emit.ts` — placement, capture order,
-and whether the window can carry the pattern — and its frames come from
-`src/patternfilm.ts` sampling `compileFrame` directly. It is also the one place
-in the project where the pattern is quantized to a pixel grid, because a real
-projector supplies the pixel footprint the bench deliberately does not model.
+They share this package because they share the pattern definition, the
+quadrant conventions and the capture order, and for no other reason. The
+emitter imports no worker, no shader and no rig: its arithmetic is `src/emit.ts`
+— placement, capture order, and whether the window can carry the pattern — and
+its frames come from `src/patternfilm.ts` sampling `compileFrame` directly. The
+simulator plays the same frames in the same order on its sphere (see below).
+Those two are the only places the pattern is quantized to a pixel grid, because
+a projector, real or simulated, supplies the pixel footprint the bench
+deliberately does not model.
 
 ## What is on the page
 
 - **The sphere**, full-bleed, drag to walk around. The graticule is a toggle over
-  a base field — black, mid grey, white, or an image you drop on the page. The
-  flat fields are the frames §8 items 6–9 and 13 prescribe for judging seams and
-  photographing spill; the grid is what the displacement gate measures. They are
-  separate controls because they answer different questions.
+  a base field — black, mid grey, white, Blue Marble, the calibration sequence, or
+  an image you drop on the page. The flat fields are the frames §8 items 6–9 and
+  13 prescribe for judging seams and photographing spill; the grid is what the
+  displacement gate measures. They are separate controls because they answer
+  different questions.
 - **Earth by default, or any equirectangular map you like.** Blue Marble ships
   with the page — see `assets/README.md` on where the file came from — because a
   misalignment that doubles a coastline is the one a person recognises. Drop any
@@ -216,6 +219,37 @@ projector supplies the pixel footprint the bench deliberately does not model.
   `renderTwoRigRoomView` are compared on ONE frame rather than on two moments a
   tenth of a second apart. Measured with a clip playing: 1.1e-5 of relative
   radiance, no lit pixel over tolerance.
+- **The calibration sequence, on the ball.** "Calibration patterns" is a base
+  field for presentations and tutorials. It shows the structured-light frames a
+  calibration projects on the sphere, where people are looking, in the emitter's
+  order (`emitOrder`): one projector's whole run, then the next, with the others
+  sent black. It is not content and does not go through the content path. A
+  calibration frame is a function of the projector's own raster coordinate, so
+  the shader reads `compileFrame`'s value at the PHYSICAL projector's pixel,
+  through a table of it (`patternAtlas`) so that the pattern is still defined
+  once, and lights the ball through the rig as built. No warp, blend or mask
+  touches it and recalibrating does not change it, which is exactly why a camera
+  can measure the lenses from it. Like every other base field it is display
+  only: no metric reads it, and what it shows is what lands on the ball, not the
+  camera's photograph of it.
+
+  One player drives the ball, a lower third between the panels (on a phone the
+  Room tab carries it), the card's structured-light film and the card's "Its
+  frame" tab, so no two of them can show different frames. It plays at the
+  emitter's 2 s a frame, or 0.7 s, and never faster than 0.5 s. Each Gray plane
+  is followed by its complement, which inverts most of the lit ball at once, and
+  on a big screen that is a flash (WCAG 2.3.1). It comes up paused under
+  `prefers-reduced-motion`. Space plays and pauses; ← → and Page Up/Down step,
+  which is what a presentation clicker sends; Shift + → jumps to the next
+  projector. A run played to a projector switched off at the wall plays dark,
+  as the emitter would play it.
+
+  It stays inside the parity check in the same way a video does. Each settled
+  request names the frame, the worker draws it through `packages/sim`'s
+  `RasterSource`, and the GPU half is drawn at the frame that was ASKED for, not
+  the one playback has moved on to. A frame on the clock asks for nothing,
+  because no number can move. Stepping or pausing by hand asks for one pass, and
+  the verdict names the frame it judged.
 - **A phone sizes its sheets from what the other one took.** The narrow layout
   is two sheets pinned to the top and bottom edges with the room visible between
   them, and the top sheet's height is what is left over — which means something
@@ -419,7 +453,12 @@ sphere and a miss costs the same either way.
 What it does **not** cover: `shadeFloor`. The CPU two-rig renderer draws no
 floor, so the parity pass turns the floor off on the GPU too. The floor shares
 `pixelOf` and the transfer curve with the sphere path, which are covered; its
-occlusion test and the room albedo are not.
+occlusion test and the room albedo are not. Nor, while the ball shows the
+calibration sequence, does it cover the frame's spill. The emitter paints the
+whole raster, so with the room on, `shadeSurface` lights the floor and the wall
+with the stripes too, and only the ball is compared. A dark frame (all black,
+or a run played to a projector switched off at the wall) has nothing to compare,
+and it reads BLIND and says why.
 
 ## Tests
 
@@ -429,7 +468,8 @@ node --test "packages/web/test/**/*.test.ts"
 
 - `settings.test.ts` — every setting has a control and opens in range; the
   Boulder and spec presets differ on exactly the three constants amendment A-36
-  names, and on those values
+  names, and on those values; the calibration sequence's chip says what it is,
+  what it is not, and which plan it plays
 - `rigs.test.ts` — a perfect rig scores essentially zero (and *how* essentially:
   the grid metric's own floor is about 0.01 mm, 1% of its gate); the A-36 `d_proj`
   ambiguity is 3.85 mm at Boulder and exactly zero at the spec's level rig; the
@@ -439,13 +479,18 @@ node --test "packages/web/test/**/*.test.ts"
   answer back through the forward projection rather than by reusing the solve
 - `glsl.test.ts` — the shader carries two complete rigs field for field; the
   optics functions take a rig explicitly rather than reading a global; every
-  uniform the shader declares is set by the binder and vice versa
+  uniform the shader declares is set by the binder and vice versa; a calibration
+  frame is read off the physical raster and asks the content rig nothing; the
+  parity check draws the frame it asked the worker for, not the one on screen
 - `readout.test.ts` — every metric `sim` produces has plain-language copy; an
   ungated metric can never read as a verdict; a projector's configuration is the
   same rows from either rig, disagrees when the mount is knocked, agrees exactly
   when it is not, and never disagrees about the raster size
 - `model.test.ts` — the supplied image reaches the worker, is cached by id, is
-  never reused for a different one, and never moves a §7 number
+  never reused for a different one, and never moves a §7 number; the worker
+  draws the calibration frame it was named, says which, and moves no metric; a
+  Gray plane and its complement add up to the white and black renders through
+  the whole forward model, which no blend, mask or content lookup would survive
 - `mesh.test.ts` — the warp mesh reaches the ball and misses at the corners,
   needs no correction on a perfect rig, wants pixels on a knocked one, and
   vanishes when the compositor is handed the truth — which is what proves it is
@@ -453,7 +498,17 @@ node --test "packages/web/test/**/*.test.ts"
 - `media.test.ts` — which loader a dropped file goes to, including the empty MIME
   type some drag sources send; and one 2:1 rule shared by both loaders, because a
   16:9 clip stretched onto a sphere still looks like a planet
-- `parity.test.ts` — the two calibration facts above, measured
+- `parity.test.ts` — the two calibration facts above, measured; a verdict drawn
+  one step late is a disagreement, which is why a calibration frame is frozen;
+  a dark calibration frame is too little to judge and is never passed
+- `patternfilm.test.ts` — the table the shader reads is `compileFrame` at every
+  pixel centre, for every raster the page offers and every plan the emitter can
+  play; the ball plays `emitOrder`'s order and wraps both ways; the player never
+  holds a frame under 0.5 s, asks the parity check for nothing on its own and
+  for one pass when a person stops on a frame, and stops itself when nothing
+  shows the sequence; reduced motion starts it paused; the keys stand down in a
+  field, on a focused button, with a modifier held and on auto-repeat; and the
+  page drives every view of the sequence from one player
 - `supersample.test.ts` — the sample grid tiles the pixel and one sample is its
   centre; a feature wider than 1/n of a pixel cannot fall between an n × n set,
   swept rather than argued; supersampling turns a dashed graticule line back into

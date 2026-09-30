@@ -29,29 +29,33 @@
  * works, and making somebody press Recalibrate and wait to find that out gets it
  * backwards.
  *
- * ## A picture of the sphere, too
+ * ## Two halves: the film, and the ball
  *
- * This section used to explain why it was not one. Putting the pattern ON the
- * ball meant teaching the display shader a new content source, inside the
- * GPU↔CPU parity chain, and that cost was judged to buy drama rather than
- * accuracy. For a presentation or a tutorial the drama is the point — the ball
- * is where people look, and a Gray plane crawling across it and flipping to its
- * complement IS the explanation — so the cost was paid, in a way that keeps the
- * reasons it looked expensive:
+ * This section used to explain why the sequence was not a picture of the
+ * sphere. Putting it ON the ball meant teaching the display shader a new source,
+ * inside the GPU↔CPU parity chain, and that cost was judged to buy drama rather
+ * than accuracy. For a presentation or a tutorial the drama is the point: the
+ * ball is where people look, and a Gray plane crawling across it and flipping
+ * to its complement IS the explanation. So the page shows both, each for what
+ * the other cannot do, and plays both from one clock
+ * ({@link createSequencePlayer}), so they never show different frames.
  *
- *  - **The pattern is still defined once.** The shader restates no Gray code:
- *    {@link patternAtlas} tabulates `compileFrame` at every pixel centre and the
- *    shader looks the value up, so what lands on the ball is what this module
- *    computes, and `test/patternfilm.test.ts` checks every pixel of every raster
- *    the page offers.
- *  - **It stays inside the parity chain.** `packages/sim`'s `RasterSource` lets
- *    the CPU renderer draw the same frame from the same numbers, so the check
- *    compares two renderers on one picture rather than exempting it.
- *  - **It is still not the camera's photograph.** The bench photographs these
- *    frames in luminance, through a sensor, with an idealised inverse transfer
- *    and an incidence cut-off. The ball on screen is lit through the display's
- *    own physics, like any content: it shows what lands on the sphere, not what
- *    a camera records of it.
+ *  - **The film is the exact, provable half.** The inspect card's frames are
+ *    `compileFrame` sampled and encoded with nothing in between — no optics, no
+ *    rig, no renderer — so what it shows is the definition itself, checkable
+ *    against it directly.
+ *  - **The ball is the striking half, and it stays inside the parity check.**
+ *    The pattern is still defined once: the shader restates no Gray code, and
+ *    {@link patternAtlas} tabulates `compileFrame` at every pixel centre for the
+ *    shader to look up, and `test/patternfilm.test.ts` checks every pixel of
+ *    every raster the page offers. `packages/sim`'s `RasterSource` lets the CPU
+ *    renderer draw the same frame from the same numbers, so the check compares
+ *    two renderers on one picture rather than exempting it.
+ *  - **Neither is the camera's photograph.** The bench photographs these frames
+ *    in luminance, through a sensor, with an idealised inverse transfer and an
+ *    incidence cut-off. The ball on screen is lit through the display's own
+ *    physics, like any content: it shows what lands on the sphere, not what a
+ *    camera records of it. No metric reads either.
  *
  * ## Linear in, encoded out, and why they are two functions
  *
