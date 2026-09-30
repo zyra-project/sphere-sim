@@ -48,7 +48,11 @@ import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DEFAULT_PATTERN_PLAN, planFrames } from '../packages/bench/src/patterns.ts';
-import { describeSequence, sequenceStep } from '../packages/web/src/patternfilm.ts';
+import {
+  describeSequence,
+  SEQUENCE_MIN_DWELL_MS,
+  sequenceStep,
+} from '../packages/web/src/patternfilm.ts';
 import { BUNDLE, createServer } from '../packages/web/serve.ts';
 import { killGroup, sweep } from './reap-browsers.ts';
 
@@ -348,6 +352,13 @@ const BROWSER_START_MS = 90_000;
  * for the step. The numbers are printed per frame kind, because a pass with no
  * margin is worth knowing about before it becomes a failure.
  *
+ * The keys come faster than a presenter's, and the frame may not: a step asked
+ * for within `SEQUENCE_MIN_DWELL_MS` of the last change waits for it. So each
+ * walk presses its keys at once and waits for the last one to land, which is
+ * the page adding quick presses up. Every change of frame from the pause on is
+ * timed in the page, and none may come sooner than the floor after the one
+ * before.
+ *
  * It puts the black field and the room view back on the way out: every check
  * after this one was written against a still picture.
  */
@@ -437,6 +448,36 @@ async function stepThroughSequence(cdp: Cdp, failures: string[]): Promise<void> 
   if (grid !== true) failures.push('the grid chip is not disabled while the ball shows the sequence');
   const count = on.total / framesPerRun;
 
+  // Every change of frame, timed where it happens. The step on screen now is
+  // where the log starts and is not itself a change: when it went up is not
+  // known, and a repaint that writes the same step again is no change at all.
+  await cdp.evaluate(`(() => {
+    const s = document.getElementById('sequence');
+    let last = s.dataset.step;
+    const log = (window.__sequenceChanges = []);
+    new MutationObserver(() => {
+      const step = s.dataset.step;
+      if (step === last) return;
+      last = step;
+      log.push({ step, at: performance.now() });
+    }).observe(s, { attributes: true, attributeFilter: ['data-step'] });
+  })()`);
+  /**
+   * The bar once the frame is `want`, or as it stands after ten seconds. Half a
+   * second is what the floor holds a step for; the rest is a software renderer
+   * holding the page's thread past the timer, which lands a step late and never
+   * early.
+   */
+  const landed = async (want: number): Promise<number> => {
+    const deadline = Date.now() + 10_000;
+    let at = (await bar())?.step ?? -1;
+    while (at !== want && Date.now() < deadline) {
+      await sleep(100);
+      at = (await bar())?.step ?? -1;
+    }
+    return at;
+  };
+
   // A key reaches the page from wherever focus is, and on a button Space is the
   // button's. Nothing here has focus by design, so say so first.
   await cdp.evaluate('document.activeElement instanceof HTMLElement && document.activeElement.blur()');
@@ -450,21 +491,22 @@ async function stepThroughSequence(cdp: Cdp, failures: string[]): Promise<void> 
   // What a presentation clicker sends.
   const from = paused.step;
   await key('PageDown', 'PageDown', 34);
-  const down = (await bar())?.step;
+  const down = await landed((from + 1) % on.total);
   await key('PageUp', 'PageUp', 33);
-  const up = (await bar())?.step;
+  const up = await landed(from);
   if (down !== (from + 1) % on.total || up !== from) {
     failures.push(`Page Down / Page Up moved the sequence ${from} → ${down} → ${up}`);
   }
 
+  // Every press at once, then the frame they add up to.
   const goTo = async (target: number): Promise<number> => {
-    let at = (await bar())?.step ?? -1;
-    for (let guard = 0; at !== target && guard < 2 * on.total; guard++) {
+    const at = (await bar())?.step ?? -1;
+    if (at < 0) return at;
+    for (let i = 0; i < Math.abs(target - at); i++) {
       if (at < target) await key('ArrowRight', 'ArrowRight', 39);
       else await key('ArrowLeft', 'ArrowLeft', 37);
-      at = (await bar())?.step ?? -1;
     }
-    return at;
+    return landed(target);
   };
   type Verdict = { state: string; judged: string; worst: number; over: number; lit: number };
   const verdictOn = async (target: number): Promise<Verdict | null> => {
@@ -539,10 +581,33 @@ async function stepThroughSequence(cdp: Cdp, failures: string[]): Promise<void> 
   }
   // The next projector's run, from anywhere in this one.
   await key('ArrowRight', 'ArrowRight', 39, true);
+  await landed(framesPerRun);
   const jumped = await bar();
   const next = sequenceStep(framesPerRun, count, DEFAULT_PATTERN_PLAN);
   if (jumped?.step !== framesPerRun || jumped.label !== `P${next.slot + 1} · ${notes[0].label}`) {
     failures.push(`Shift + → landed on step ${jumped?.step} ('${jumped?.label}'), not on P2's first frame`);
+  }
+
+  // No two changes of frame closer than the floor. Each change is stamped once
+  // the task that made it has repainted every view of the sequence, which takes
+  // a few milliseconds and, under a software renderer, tens; so the stamps can
+  // sit a little under the half second that separates the changes themselves.
+  // 50 ms of slack is well clear of that, and well clear of what a page without
+  // the floor does, which is to change frame as fast as keys arrive.
+  const slackMs = 50;
+  const changes = await cdp.evaluate<{ step: string; at: number }[]>('window.__sequenceChanges ?? []');
+  let closest = Number.POSITIVE_INFINITY;
+  for (let i = 1; i < changes.length; i++) closest = Math.min(closest, changes[i].at - changes[i - 1].at);
+  if (changes.length < 2) {
+    failures.push(`the frame changed ${changes.length} times while the smoke stepped through the sequence`);
+  } else if (closest < SEQUENCE_MIN_DWELL_MS - slackMs) {
+    failures.push(
+      `the frame changed twice ${closest.toFixed(0)} ms apart, under the ${SEQUENCE_MIN_DWELL_MS} ms floor`,
+    );
+  } else {
+    process.stdout.write(
+      `  sequence floor: ${changes.length} changes of frame, the closest two ${closest.toFixed(0)} ms apart\n`,
+    );
   }
 }
 

@@ -89,11 +89,12 @@ import {
   SEQUENCE_DWELL_MS,
   sequenceFocus,
   sequenceKeyAction,
+  sequenceRig,
   sequenceStep,
   stepCaption,
   strideInfo,
 } from '../src/patternfilm.ts';
-import type { PatternAtlas, StepCaption } from '../src/patternfilm.ts';
+import type { PatternAtlas, SequenceRig, StepCaption } from '../src/patternfilm.ts';
 import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
   BOULDER_PRESET,
@@ -506,6 +507,7 @@ const player = createSequencePlayer({
   settle: settleOnFrame,
   schedule: (fn, ms) => window.setTimeout(fn, ms),
   cancel: (handle) => window.clearTimeout(handle),
+  now: () => performance.now(),
 });
 
 /** Is the calibration sequence what the sphere is showing? */
@@ -533,9 +535,20 @@ function sequenceAtlas(): PatternAtlas {
   return atlasBuilt;
 }
 
-/** A step, placed in the emitter's order for however many projectors the room has. */
+/**
+ * The rig the sequence plays to (`sequenceRig`): the placements when the live
+ * view is drawn with them, else the install ring. The live view's
+ * `displayModel` draws placements only on a model that is on screen, which is
+ * what `displayMeshId` answers, and only when there are some.
+ */
+function sequenceRigNow(): SequenceRig {
+  const drawn = displayMeshId() !== '' && customPlacements !== null ? customPlacements.length : 0;
+  return sequenceRig(state.settings.projectorCount, drawn);
+}
+
+/** A step, placed in the emitter's order for the projectors the ball is drawn with. */
 function sequenceNow(step = player.step): ReturnType<typeof sequenceStep> {
-  return sequenceStep(step, Math.round(state.settings.projectorCount), SEQUENCE_PLAN);
+  return sequenceStep(step, sequenceRigNow().projectors, SEQUENCE_PLAN);
 }
 
 /**
@@ -629,8 +642,10 @@ function showSequence(): void {
 
 /** The caption for a step, with the lamp that run goes to as the panel has it. */
 function sequenceCaption(step = player.step): StepCaption {
-  const at = sequenceNow(step);
-  return stepCaption(at, SEQUENCE_PLAN, state.settings.nudge[at.slot]?.on === false);
+  const rig = sequenceRigNow();
+  const at = sequenceStep(step, rig.projectors, SEQUENCE_PLAN);
+  // A placement has no panel slot, so no wall switch on the panel turns it off.
+  return stepCaption(at, SEQUENCE_PLAN, !rig.placed && state.settings.nudge[at.slot]?.on === false);
 }
 
 /** "2 s a frame". */
@@ -664,9 +679,9 @@ function sequenceTransport(): { row: HTMLElement; play: HTMLButtonElement } {
   };
   const play = button('', '', () => player.toggle());
   row.append(
-    button('‹', 'Previous frame (← or Page Up)', () => player.stepTo(player.step - 1)),
+    button('‹', 'Previous frame (← or Page Up)', () => player.stepBy(-1)),
     play,
-    button('›', 'Next frame (→ or Page Down)', () => player.stepTo(player.step + 1)),
+    button('›', 'Next frame (→ or Page Down)', () => player.stepBy(1)),
     button('»', 'Next projector’s run (Shift + →)', () => player.stepRun(1)),
   );
   labelPlay(play);
@@ -957,8 +972,8 @@ function installSequenceKeys(): void {
     if (action === null) return;
     e.preventDefault();
     if (action === 'toggle') player.toggle();
-    else if (action === 'next') player.stepTo(player.step + 1);
-    else if (action === 'previous') player.stepTo(player.step - 1);
+    else if (action === 'next') player.stepBy(1);
+    else if (action === 'previous') player.stepBy(-1);
     else player.stepRun(action === 'next-run' ? 1 : -1);
   });
 }
@@ -1258,6 +1273,34 @@ function closeLightbox(): void {
   lightboxEl.classList.remove('on');
   lightbox = null;
 }
+
+/**
+ * A frame on the card that opens the lightbox, for a keyboard as well as a
+ * pointer: a tab stop, a button's role, and Enter or Space pressing it. As a
+ * canvas with only a click handler, and `role="img"` on the calibration frame, a
+ * keyboard could not reach it and a screen reader announced a picture with
+ * nothing to press. Name it with {@link fullSizeName}.
+ *
+ * The role also makes it a control to the sequence's keys (`sequenceFocus`), so
+ * Space presses it rather than pausing the ball, and the arrows still step.
+ */
+function opensLightbox(c: HTMLCanvasElement, open: () => void): void {
+  c.tabIndex = 0;
+  c.setAttribute('role', 'button');
+  c.addEventListener('click', open);
+  c.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    // Space would scroll the card as well.
+    e.preventDefault();
+    open();
+  });
+}
+
+/** What a frame that opens the lightbox is announced as: its caption, and what pressing it does. */
+function fullSizeName(caption: string): string {
+  return `${caption} — open it full size`;
+}
+
 lightboxEl.addEventListener('click', (e) => {
   // The mode buttons live inside the overlay, and the overlay closes on click.
   if ((e.target as HTMLElement)?.closest('.modes')) return;
@@ -6254,8 +6297,7 @@ function renderInspect(): void {
     const paint = (): void => {
       const { image, itsTurn } = patternFrameImage(slot, previewWidth);
       paintFrame(c, image);
-      c.setAttribute('role', 'img');
-      c.setAttribute('aria-label', image.caption);
+      c.setAttribute('aria-label', fullSizeName(image.caption));
       const at = sequenceNow();
       const note = describeSequence(SEQUENCE_PLAN)[at.frame];
       turn.textContent = itsTurn
@@ -6264,7 +6306,7 @@ function renderInspect(): void {
           'sequence at a time and the rest black, so each photograph holds one projector’s ' +
           'light alone.';
     };
-    c.addEventListener('click', () => openSequenceLightbox(slot));
+    opensLightbox(c, () => openSequenceLightbox(slot));
     paint();
     sequenceCardFrame = () => {
       if (!c.isConnected) {
@@ -6307,7 +6349,8 @@ function renderInspect(): void {
       else paintFrame(c, frame);
       // The caption already opens with the projector id, so prefixing it printed
       // "P1 — P1 — 3840 × 2160".
-      c.addEventListener('click', () => openLightbox(frame, frame.caption, slot));
+      opensLightbox(c, () => openLightbox(frame, frame.caption, slot));
+      c.setAttribute('aria-label', fullSizeName(frame.caption));
       inspectEl.append(c);
       inspectEl.append(
         el('p', {
@@ -6875,10 +6918,19 @@ function renderInspect(): void {
       canvas.setAttribute('role', 'img');
       canvas.setAttribute('aria-label', `${note.label}. ${note.why}`);
       why.textContent = note.why;
-      scrub.value = String(at.frame);
+      // The scrubber is the hand's own control, so it shows where the hand has
+      // put the sequence — a step the half-second floor is still holding back
+      // included — while every picture shows the frame on screen. Set to the
+      // frame on screen, a thumb dragged faster than the floor would be pulled
+      // back to it at every repaint.
+      const want = sequenceNow(player.target);
+      scrub.value = String(want.frame);
       // `aria-valuetext` rather than leaving the raw index to be read out: "17"
       // says nothing, and the frame's name is the whole content of the control.
-      scrub.setAttribute('aria-valuetext', `${at.frame + 1} of ${notes.length}, ${note.label}`);
+      scrub.setAttribute(
+        'aria-valuetext',
+        `${want.frame + 1} of ${notes.length}, ${notes[want.frame].label}`,
+      );
       play.textContent = player.playing ? 'pause' : 'play the sequence';
       pace.textContent =
         player.dwellMs < SEQUENCE_DWELL_MS ? 'play at the emitter’s 2 s' : 'play brisk, 0.7 s';

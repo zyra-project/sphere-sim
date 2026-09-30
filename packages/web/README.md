@@ -236,13 +236,16 @@ deliberately does not model.
   One player drives the ball, a lower third between the panels (on a phone the
   Room tab carries it), the card's structured-light film and the card's "Its
   frame" tab, so no two of them can show different frames. It plays at the
-  emitter's 2 s a frame, or 0.7 s, and never faster than 0.5 s. Each Gray plane
-  is followed by its complement, which inverts most of the lit ball at once, and
-  on a big screen that is a flash (WCAG 2.3.1). It comes up paused under
+  emitter's 2 s a frame, or 0.7 s, and the frame never changes faster than once
+  in 0.5 s, by the clock or by hand: a step that comes sooner waits for the half
+  second, and the last one asked for is the one that lands. Each Gray plane is
+  followed by its complement, which inverts most of the lit ball at once, and on
+  a big screen that is a flash (WCAG 2.3.1). It comes up paused under
   `prefers-reduced-motion`. Space plays and pauses; ← → and Page Up/Down step,
   which is what a presentation clicker sends; Shift + → jumps to the next
-  projector. A run played to a projector switched off at the wall plays dark,
-  as the emitter would play it.
+  projector. Every projector of the rig on screen gets a run: the install's,
+  where a run played to a projector switched off at the wall plays dark, as the
+  emitter would play it, or a hand-placed rig's placements, one run each.
 
   It stays inside the parity check in the same way a video does. Each settled
   request names the frame, the worker draws it through `packages/sim`'s

@@ -475,6 +475,36 @@ export function sequenceStep(n: number, projectors: number, plan: PatternPlan): 
   return { step, total, framesPerRun, slot, frame: step % framesPerRun };
 }
 
+/** The rig the sequence plays to, as {@link sequenceRig} works it out. */
+export interface SequenceRig {
+  /** Runs in the sequence: one for each projector the emitter drives. */
+  projectors: number;
+  /**
+   * The ball is drawn with a hand-placed rig: its projectors are the placements
+   * in the card's order, and none of them has a panel slot for the wall switch
+   * to turn off.
+   */
+  placed: boolean;
+}
+
+/**
+ * The rig the sequence plays to, which is the rig the ball is drawn with.
+ *
+ * The emitter plays a run to every projector it drives, lamp on or off. On the
+ * install ring that is the panel's count, a slot switched off at the wall
+ * included. A hand-placed rig is exactly its placements: sized from the install
+ * instead, a sixth placement never got a run, and a rig of two played dark runs
+ * for projectors it does not have.
+ *
+ * `drawnPlacements` is how many placements the live view is drawn with, and 0
+ * when it draws the install ring.
+ */
+export function sequenceRig(install: number, drawnPlacements: number): SequenceRig {
+  return drawnPlacements > 0
+    ? { projectors: drawnPlacements, placed: true }
+    : { projectors: Math.round(install), placed: false };
+}
+
 /**
  * The shader's and the worker's mask for a run on panel slot `slot`, given which
  * slot each rig projector came from.
@@ -541,6 +571,11 @@ export interface SequencePlayerHooks {
   /** `window.setTimeout` and `window.clearTimeout`, or a test's clock. */
   schedule(fn: () => void, ms: number): number;
   cancel(handle: number): void;
+  /**
+   * `performance.now()`, or the same test clock: the floor is counted from when
+   * the frame on screen last changed, whoever changed it.
+   */
+  now(): number;
 }
 
 /**
@@ -557,9 +592,15 @@ export interface SequencePlayerHooks {
  *  - **Nothing plays that nothing shows.** A timer repainting views that are no
  *    longer on the page is the kind of leak that surfaces later as a mystery, so
  *    the clock stops itself at the first tick with nothing showing it.
- *  - **Nothing is faster than {@link SEQUENCE_MIN_DWELL_MS}.** Applied where the
- *    clock reads the pace rather than where the pace is set, so there is no way
- *    round it.
+ *  - **Nothing is faster than {@link SEQUENCE_MIN_DWELL_MS}, by hand either.**
+ *    The clock applies it where it reads the pace rather than where the pace is
+ *    set, so there is no way round it there. A hand is faster than any pace: a
+ *    scrubber dragged across the film, or a clicker pressed as fast as a thumb
+ *    can, would put a Gray plane and its complement a few milliseconds apart.
+ *    So a step by hand that comes sooner than the floor after the frame last
+ *    changed is held back until the floor has passed, and a later step by hand
+ *    replaces it: the frame asked for last is the one that lands, and nothing
+ *    asked for is dropped.
  */
 export interface SequencePlayer {
   /**
@@ -569,6 +610,12 @@ export interface SequencePlayer {
    * check.
    */
   readonly step: number;
+  /**
+   * Where a hand has put the sequence: the step the floor is holding back, or
+   * {@link step} when nothing is waiting. What a scrubber shows, since it is the
+   * hand's own control; every picture shows {@link step}.
+   */
+  readonly target: number;
   readonly playing: boolean;
   /** The dwell the clock is using, floor applied. */
   readonly dwellMs: number;
@@ -584,9 +631,20 @@ export interface SequencePlayer {
   /** Stop. By hand (the default), the parity check is given the frame stopped on. */
   pause(byHand?: boolean): void;
   toggle(): void;
-  /** A step taken by hand. It stops the player under the hand, as scrubbing always did. */
+  /**
+   * A step taken by hand. It stops the player under the hand, as scrubbing
+   * always did, and lands at once — or, sooner than the floor after the frame
+   * last changed, when the floor has passed, unless another step by hand
+   * replaces it first.
+   */
   stepTo(n: number): void;
-  /** To the first frame of the next projector's run, or of the previous one. */
+  /**
+   * `delta` frames on from {@link target}, not from the frame on screen, so that
+   * three quick presses of a clicker are three frames: the first lands at once
+   * and the other two together, half a second later.
+   */
+  stepBy(delta: number): void;
+  /** To the first frame of the next projector's run after {@link target}'s, or of the previous one. */
   stepRun(delta: 1 | -1): void;
   /** Set the pace. A playing sequence restarts the frame on screen at the new one. */
   setDwell(ms: number): void;
@@ -598,10 +656,27 @@ export function createSequencePlayer(hooks: SequencePlayerHooks): SequencePlayer
   let askedMs = SEQUENCE_DWELL_MS;
   let heldStill = false;
   let handle: number | null = null;
+  // A step by hand the floor is holding back, and its timer. At most one: a
+  // later step by hand replaces it, so the last frame asked for is the one shown.
+  let waiting: number | null = null;
+  let waitHandle: number | null = null;
+  // When the frame on screen last changed, by the clock or by hand.
+  let changedAt = Number.NEGATIVE_INFINITY;
 
   const stopClock = (): void => {
     if (handle !== null) hooks.cancel(handle);
     handle = null;
+  };
+  const stopWaiting = (): void => {
+    if (waitHandle !== null) hooks.cancel(waitHandle);
+    waitHandle = null;
+    waiting = null;
+  };
+  /** Step `n` on screen, and the time noted if that changes the frame. */
+  const put = (n: number): void => {
+    const next = hooks.place(n).step;
+    if (next !== step) changedAt = hooks.now();
+    step = next;
   };
   const tick = (): void => {
     handle = null;
@@ -610,9 +685,21 @@ export function createSequencePlayer(hooks: SequencePlayerHooks): SequencePlayer
       playing = false;
       return;
     }
-    step = hooks.place(step + 1).step;
+    put(step + 1);
     hooks.show();
     handle = hooks.schedule(tick, sequenceDwellMs(askedMs));
+  };
+  /** The step the floor held back, on screen once the floor has passed. */
+  const land = (): void => {
+    waitHandle = null;
+    if (waiting === null) return;
+    put(waiting);
+    waiting = null;
+    // Played meanwhile, the clock counts its first dwell from this frame.
+    // Paused, a person has stopped on it, so the parity check is given it.
+    if (playing) handle = hooks.schedule(tick, sequenceDwellMs(askedMs));
+    else hooks.settle();
+    hooks.show();
   };
   const halt = (): void => {
     playing = false;
@@ -623,6 +710,9 @@ export function createSequencePlayer(hooks: SequencePlayerHooks): SequencePlayer
   const player: SequencePlayer = {
     get step() {
       return step;
+    },
+    get target() {
+      return waiting ?? step;
     },
     get playing() {
       return playing;
@@ -635,7 +725,8 @@ export function createSequencePlayer(hooks: SequencePlayerHooks): SequencePlayer
     },
     start(still) {
       halt();
-      step = 0;
+      stopWaiting();
+      put(0);
       if (!still) {
         player.play();
         return;
@@ -646,14 +737,18 @@ export function createSequencePlayer(hooks: SequencePlayerHooks): SequencePlayer
     play() {
       halt();
       playing = true;
-      handle = hooks.schedule(tick, sequenceDwellMs(askedMs));
+      // A step still held back lands first, and `land` starts the clock there.
+      if (waiting === null) handle = hooks.schedule(tick, sequenceDwellMs(askedMs));
       hooks.show();
     },
     pause(byHand = true) {
       const held = heldStill;
       halt();
-      if (byHand) hooks.settle();
-      else heldStill = held;
+      // By hand, the frame stopped on goes to the parity check: this one, or the
+      // one a held-back step lands on, which `land` hands over when it lands.
+      if (byHand) {
+        if (waiting === null) hooks.settle();
+      } else heldStill = held;
       hooks.show();
     },
     toggle() {
@@ -662,12 +757,27 @@ export function createSequencePlayer(hooks: SequencePlayerHooks): SequencePlayer
     },
     stepTo(n) {
       halt();
-      step = hooks.place(n).step;
+      const early = changedAt + SEQUENCE_MIN_DWELL_MS - hooks.now();
+      if (early > 0) {
+        // The floor is counted from the last change, which a held-back step
+        // does not move, so a timer already set for it is already right.
+        waiting = n;
+        if (waitHandle === null) waitHandle = hooks.schedule(land, early);
+        hooks.show();
+        return;
+      }
+      // A timer late off the mark can still be pending past the floor; this
+      // step replaces whatever it was holding.
+      stopWaiting();
+      put(n);
       hooks.settle();
       hooks.show();
     },
+    stepBy(delta) {
+      player.stepTo(player.target + delta);
+    },
     stepRun(delta) {
-      const at = hooks.place(step);
+      const at = hooks.place(player.target);
       player.stepTo((at.slot + delta) * at.framesPerRun);
     },
     setDwell(ms) {
@@ -724,8 +834,9 @@ export type SequenceKeyAction = 'toggle' | 'next' | 'previous' | 'next-run' | 'p
  * Space stays the button's own — it is how a keyboard presses one — but the
  * arrows still step, so a clicker keeps working after somebody has clicked a
  * chip. Never with Ctrl, Alt or Meta, which are the browser's (Alt+← is Back),
- * and never on auto-repeat: a held key would step as fast as the keyboard
- * repeats, which is the flashing {@link SEQUENCE_MIN_DWELL_MS} is there to stop.
+ * and never on auto-repeat: a held key would ask for a step as fast as the
+ * keyboard repeats, and although {@link SEQUENCE_MIN_DWELL_MS} holds the ball to
+ * two changes a second, each change would then jump a dozen frames.
  */
 export function sequenceKeyAction(e: SequenceKey, focus: SequenceFocus): SequenceKeyAction | null {
   if (focus === 'field' || e.altKey || e.ctrlKey || e.metaKey || e.repeat) return null;

@@ -37,6 +37,7 @@ import {
   sequenceDwellMs,
   sequenceFocus,
   sequenceKeyAction,
+  sequenceRig,
   sequenceStep,
   stepCaption,
   strideInfo,
@@ -342,37 +343,61 @@ test('a run lights the rig projector its slot became, and no lamp at all when th
   assert.equal(patternMask([0, 2, 3], 1), 0, 'P2’s own run goes to a dark lamp, everyone else black');
 });
 
-/** A clock the test turns by hand, and a record of what the player asked of the page. */
+/**
+ * A clock the test turns by hand, and a record of what the player asked of the
+ * page: every frame shown, with the time it was shown at.
+ */
 function harness(projectors = 4, shown: () => boolean = () => true) {
-  const timers = new Map<number, () => void>();
-  const log = { show: 0, settle: 0, scheduled: [] as number[] };
+  let time = 0;
+  const timers = new Map<number, { fn: () => void; at: number }>();
+  const log = { show: 0, settle: 0, scheduled: [] as number[], shown: [] as { at: number; step: number }[] };
   let handles = 0;
   const player = createSequencePlayer({
     place: (n) => sequenceStep(n, projectors, PLAN),
     shown,
     show: () => {
       log.show++;
+      log.shown.push({ at: time, step: player.step });
     },
     settle: () => {
       log.settle++;
     },
     schedule: (fn, ms) => {
-      timers.set(++handles, fn);
+      timers.set(++handles, { fn, at: time + ms });
       log.scheduled.push(ms);
       return handles;
     },
     cancel: (handle) => {
       timers.delete(handle);
     },
+    now: () => time,
   });
-  /** The one pending frame timer running out. */
+  /** The one pending timer running out, the clock moving to when it was due. */
   const tick = (): void => {
-    assert.equal(timers.size, 1, 'exactly one frame timer is pending');
-    const [handle, fn] = [...timers][0];
+    assert.equal(timers.size, 1, 'exactly one timer is pending');
+    const [handle, t] = [...timers][0];
     timers.delete(handle);
-    fn();
+    time = Math.max(time, t.at);
+    t.fn();
   };
-  return { player, log, timers, tick };
+  /** `ms` passing, with every timer due by then run in the order it falls due. */
+  const wait = (ms: number): void => {
+    const until = time + ms;
+    for (;;) {
+      const due = [...timers]
+        .filter(([, t]) => t.at <= until)
+        .sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
+      if (due === undefined) break;
+      timers.delete(due[0]);
+      time = due[1].at;
+      due[1].fn();
+    }
+    time = until;
+  };
+  /** Each time the frame on screen changed, and to what: the player starts at step 0. */
+  const changes = (): { at: number; step: number }[] =>
+    log.shown.filter((s, i) => s.step !== (i === 0 ? 0 : log.shown[i - 1].step));
+  return { player, log, timers, tick, wait, changes, now: () => time };
 }
 
 test('no frame is held for less than half a second, whatever the player is asked', () => {
@@ -397,7 +422,7 @@ test('no frame is held for less than half a second, whatever the player is asked
 });
 
 test('a frame on the clock asks the parity check for nothing; a frame stopped on by hand asks once', () => {
-  const { player, log, tick } = harness();
+  const { player, log, tick, wait } = harness();
   player.play();
   for (let i = 0; i < 40; i++) tick();
   assert.equal(player.step, 40);
@@ -407,6 +432,7 @@ test('a frame on the clock asks the parity check for nothing; a frame stopped on
   player.pause();
   assert.equal(log.settle, 1, 'a pause by hand stops on a frame');
   player.play();
+  wait(SEQUENCE_MIN_DWELL_MS); // past the floor since the clock's last frame
   player.stepTo(7);
   assert.equal(player.playing, false, 'a step by hand stops the player under the hand');
   assert.equal(player.step, 7);
@@ -444,18 +470,27 @@ test('the player loops every projector\u2019s run, and stops itself when nothing
 });
 
 test('stepping a run lands on its first frame, both ways round', () => {
-  const { player } = harness(4);
+  const { player, wait } = harness(4);
+  // Each step half a second after the last, so the floor holds none of them back.
+  const later = (): void => wait(SEQUENCE_MIN_DWELL_MS);
   player.stepTo(40); // P2, frame 7
+  later();
   player.stepRun(1);
   assert.equal(player.step, 68);
+  later();
   player.stepRun(-1);
   assert.equal(player.step, 34);
+  later();
   player.stepTo(0);
+  later();
   player.stepRun(-1);
   assert.equal(player.step, 102, 'back from the first run is the last');
+  later();
   player.stepTo(135);
+  later();
   player.stepRun(1);
   assert.equal(player.step, 0);
+  later();
   player.stepTo(-1);
   assert.equal(player.step, 135, 'a step back from the first frame is the last');
 });
@@ -471,13 +506,177 @@ test('reduced motion starts the sequence paused on its first frame, and says so 
   player.pause(false);
   assert.equal(player.heldStill, true, 'the page stopping it again is not somebody asking');
   player.stepTo(1);
-  assert.equal(player.heldStill, false);
+  assert.equal(player.heldStill, false, 'touched, even while the floor holds the step back');
+  assert.equal(player.target, 1);
 
   player.start(false);
   assert.equal(player.step, 0, 'from the top');
+  assert.equal(player.target, 0, 'a step still held back is dropped by starting again');
   assert.equal(player.playing, true);
   assert.equal(player.heldStill, false);
-  assert.equal(timers.size, 1);
+  assert.equal(timers.size, 1, 'the clock, and no timer left for the dropped step');
+});
+
+test('a step by hand within half a second of the last change waits for it, and the last one asked for lands', () => {
+  const { player, log, timers, wait, changes, now } = harness();
+  player.stepTo(10); // nothing has changed yet, so at once
+  assert.equal(player.step, 10);
+  assert.equal(log.settle, 1);
+  wait(100);
+  // A scrubber dragged across the film: four frames asked for, 90 ms apart.
+  for (const n of [11, 14, 20, 25]) {
+    player.stepTo(n);
+    assert.equal(player.step, 10, 'held back: a change this soon after the last is a flash');
+    assert.equal(player.target, n, 'the hand’s own control shows where it is going');
+    wait(90);
+  }
+  assert.equal(timers.size, 1, 'one timer for the held-back step, however many were asked for');
+  assert.equal(log.settle, 1, 'no parity pass for a frame that is not on screen');
+  wait(40); // half a second after the change
+  assert.equal(player.step, 25, 'the last frame asked for, and only that one');
+  assert.equal(player.target, 25);
+  assert.equal(log.settle, 2, 'the frame it landed on is judged, once');
+  assert.deepEqual(
+    changes().map((c) => [c.at, c.step]),
+    [
+      [0, 10],
+      [500, 25],
+    ],
+  );
+  wait(SEQUENCE_MIN_DWELL_MS);
+  player.stepTo(3);
+  assert.equal(player.step, 3, 'past the floor, a step lands at once again');
+  assert.equal(now(), 1000);
+});
+
+test('quick presses add up: three presses of a clicker are three frames, two of them landing together', () => {
+  const { player, wait, changes } = harness();
+  player.stepTo(5);
+  wait(SEQUENCE_MIN_DWELL_MS);
+  player.stepBy(1); // 500 ms on: at once
+  wait(50);
+  player.stepBy(1);
+  wait(50);
+  player.stepBy(1);
+  assert.equal(player.step, 6);
+  assert.equal(player.target, 8, 'counted from where the hand is going, not from the frame on screen');
+  wait(SEQUENCE_MIN_DWELL_MS);
+  assert.equal(player.step, 8);
+  assert.deepEqual(
+    changes().map((c) => [c.at, c.step]),
+    [
+      [0, 5],
+      [500, 6],
+      [1000, 8],
+    ],
+  );
+  // Back a frame and on a run, both from where the hand is going.
+  player.stepBy(-1);
+  player.stepRun(1);
+  assert.equal(player.target, 34, 'the run after the one frame 7 is in');
+  wait(SEQUENCE_MIN_DWELL_MS);
+  assert.equal(player.step, 34);
+  // From P1's last frame, a press the floor holds back is already in P2's run,
+  // so the next run from there is P3's, not P2's again.
+  wait(SEQUENCE_MIN_DWELL_MS);
+  player.stepTo(33);
+  player.stepBy(1);
+  player.stepRun(1);
+  assert.equal(player.target, 68, 'the run after P2’s, where the held press already is');
+  wait(SEQUENCE_MIN_DWELL_MS);
+  assert.equal(player.step, 68);
+});
+
+test('a tick is a change too, and play or pause keeps a step the floor is holding back', () => {
+  const { player, log, timers, tick, wait, changes } = harness();
+  player.setDwell(SEQUENCE_BRISK_MS);
+  player.play();
+  tick(); // 700 ms: step 1
+  wait(100);
+  player.stepBy(1); // 100 ms after the tick: held back, and the clock stopped
+  assert.equal(player.playing, false);
+  assert.equal(player.step, 1);
+  player.play();
+  assert.equal(player.playing, true);
+  assert.equal(timers.size, 1, 'the held step’s timer only: the clock starts when it lands');
+  wait(400);
+  assert.equal(player.step, 2, 'landed first');
+  assert.equal(log.settle, 0, 'landed while playing: nobody stopped on it');
+  wait(SEQUENCE_BRISK_MS);
+  assert.equal(player.step, 3, 'and the clock’s first dwell counted from it');
+  wait(100);
+  player.stepBy(1);
+  player.play();
+  player.pause(); // by hand, with a step still held back
+  assert.equal(log.settle, 0, 'the frame stopped on has not landed, so nothing is judged yet');
+  wait(400);
+  assert.equal(player.step, 4);
+  assert.equal(player.playing, false);
+  assert.equal(log.settle, 1, 'judged when it lands');
+  assert.equal(timers.size, 0);
+  const at = changes().map((c) => c.at);
+  assert.deepEqual(at, [700, 1200, 1900, 2400]);
+});
+
+test('whatever a hand does, the frame never changes twice within half a second', () => {
+  // Everything a person can do to the player, at random moments, from a seeded
+  // generator: the floor is a property of the player, not of the tests above.
+  let seed = 0x2545f491;
+  const random = (): number => {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return (seed >>> 0) / 2 ** 32;
+  };
+  let changed = 0;
+  for (let run = 0; run < 20; run++) {
+    const { player, wait, changes } = harness(4);
+    const actions = [
+      () => player.stepBy(1),
+      () => player.stepBy(-1),
+      () => player.stepTo(Math.floor(random() * 136)),
+      () => player.stepRun(random() < 0.5 ? 1 : -1),
+      () => player.toggle(),
+      () => player.play(),
+      () => player.pause(),
+      () => player.setDwell(random() < 0.5 ? SEQUENCE_BRISK_MS : 100),
+    ];
+    for (let i = 0; i < 300; i++) {
+      actions[Math.floor(random() * actions.length)]();
+      wait(Math.floor(random() * 400));
+    }
+    player.pause();
+    wait(SEQUENCE_MIN_DWELL_MS);
+    assert.equal(player.target, player.step, 'every step asked for has landed');
+    const at = changes().map((c) => c.at);
+    for (let i = 1; i < at.length; i++) {
+      assert.ok(at[i] - at[i - 1] >= SEQUENCE_MIN_DWELL_MS, `run ${run}: changes at ${at[i - 1]} and ${at[i]} ms`);
+    }
+    changed += at.length;
+  }
+  assert.ok(changed > 1000, `the runs changed the frame ${changed} times`);
+});
+
+test('the sequence plays a run to every projector of the rig on screen: the install’s, or the placements', () => {
+  assert.deepEqual(sequenceRig(4, 0), { projectors: 4, placed: false });
+  assert.deepEqual(sequenceRig(3.6, 0), { projectors: 4, placed: false }, 'the slider, rounded as the panel rounds it');
+  assert.deepEqual(sequenceRig(4, 6), { projectors: 6, placed: true });
+  assert.deepEqual(sequenceRig(4, 2), { projectors: 2, placed: true });
+  // Six placements beside a ring of four: the fifth and the sixth get runs too,
+  // each lit by its own lamp. A placed rig's slots are its placements in order.
+  const six = sequenceRig(4, 6).projectors;
+  const lamps = new Set<number>();
+  for (let n = 0; n < 34 * six; n++) lamps.add(patternMask([0, 1, 2, 3, 4, 5], sequenceStep(n, six, PLAN).slot));
+  assert.deepEqual(
+    [...lamps].sort((a, b) => a - b),
+    [1, 2, 4, 8, 16, 32],
+  );
+  // Two placements: no run for a projector the rig does not have.
+  const two = sequenceRig(4, 2).projectors;
+  assert.equal(sequenceStep(0, two, PLAN).total, 68);
+  for (let n = 0; n < 34 * two; n++) {
+    assert.notEqual(patternMask([0, 1], sequenceStep(n, two, PLAN).slot), 0, `step ${n} is a dark run`);
+  }
 });
 
 test('the keys pause, step and jump, and leave fields, browser shortcuts and held keys alone', () => {
@@ -577,6 +776,28 @@ test('the page wires one player, draws the card\u2019s frame itself, and asks th
   const wiring = main.slice(main.indexOf('createSequencePlayer({'));
   assert.match(wiring.slice(0, wiring.indexOf('});')), /settle: settleOnFrame,/);
   assert.match(wiring.slice(0, wiring.indexOf('});')), /show: showSequence,/);
+  // The floor is counted on the page's own clock.
+  assert.match(wiring.slice(0, wiring.indexOf('});')), /now: \(\) => performance\.now\(\),/);
+  // A key or a button steps from where the hand is going (`stepBy`), so quick
+  // presses add up instead of asking for the same frame again.
+  assert.doesNotMatch(main, /stepTo\(player\.step\s*[+-]/);
+  assert.equal(main.match(/player\.stepBy\(1\)/g)?.length, 2, 'the next button and →');
+  assert.equal(main.match(/player\.stepBy\(-1\)/g)?.length, 2, 'the previous button and ←');
+  // The sequence is sized from the rig the ball is drawn with, and a placement
+  // has no wall switch.
+  assert.match(body('sequenceNow'), /sequenceStep\(step, sequenceRigNow\(\)\.projectors, SEQUENCE_PLAN\)/);
+  assert.match(
+    body('sequenceRigNow'),
+    /displayMeshId\(\) !== '' && customPlacements !== null \? customPlacements\.length : 0/,
+  );
+  assert.match(body('sequenceCaption'), /!rig\.placed && state\.settings\.nudge\[at\.slot\]\?\.on === false/);
+  // Both frames that open the lightbox open it from the keyboard as well.
+  const opener = body('opensLightbox');
+  assert.match(opener, /c\.tabIndex = 0;/);
+  assert.match(opener, /c\.setAttribute\('role', 'button'\)/);
+  assert.match(opener, /if \(e\.key !== 'Enter' && e\.key !== ' '\) return;/);
+  assert.equal(main.match(/opensLightbox\(c, /g)?.length, 2, 'the calibration frame and the content frame');
+  assert.doesNotMatch(main, /'role', 'img'\);\n\s+c\.setAttribute\('aria-label', image\.caption\)/);
   const repaint = body('repaintSequenceViews');
   for (const hook of ['sequenceInline', 'sequenceFilm', 'sequenceCardFrame', 'sequenceLightbox']) {
     assert.ok(repaint.includes(`${hook}?.()`), `a new frame is not painted into ${hook}`);
@@ -589,6 +810,9 @@ test('the page wires one player, draws the card\u2019s frame itself, and asks th
   assert.match(filmBlock, /const at = sequenceNow\(\);\n\s+const note = notes\[at\.frame\];/);
   assert.match(filmBlock, /sampleFrame\(specs\[at\.frame\]/);
   assert.match(filmBlock, /sequenceFilm = \(\) =>/);
+  // Its scrubber shows where the hand has put the sequence: set to the frame on
+  // screen, a drag faster than the floor would be pulled back at every repaint.
+  assert.match(filmBlock, /const want = sequenceNow\(player\.target\);\n\s+scrub\.value = String\(want\.frame\);/);
 
   // The card's frame is drawn on the page and opened at slot -1, under its own
   // tag: a worker frame for a real slot, or a late reply tagged for another
