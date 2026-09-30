@@ -3,7 +3,7 @@
 
 /**
  * `npm run experiment10` — what a photograph taken across a pattern change
- * costs a calibration, with today's page.
+ * costs a calibration: read by a counterfactual reader, and by the page's own.
  *
  * Writes `experiments/experiment-10.json`. The spec budgeted three hours in one
  * process; the unit costs measured while this was built (a default rig 1.5 s to
@@ -28,10 +28,12 @@
  *
  * ## The stages, and what each is for
  *
- *   q0        Today's page, as shipped: clean positions, rendered with noise,
- *             encoded to 8-bit sRGB and handed to `summarisePhoto` and
- *             `indexPhotographs`. Then Q0b: the folder shapes the card itself
- *             produces (extra photographs at either end, a re-shot run).
+ *   q0        The page's reader, as shipped: clean positions, rendered with
+ *             noise, encoded to 8-bit sRGB and handed to `summarisePhoto` and
+ *             `indexPhotographs`, and beside it the reader it replaced, on the
+ *             same summaries. Then Q0b: the folder shapes the card itself
+ *             produces (extra photographs at either end, a re-shot run), read
+ *             by the counterfactual reader.
  *   bank      Every rig's clean frames once, and each camera's TWIN — the clean
  *             position through the renderer's own sensor and noise stream — whose
  *             verdicts decide what a later refusal can be blamed on.
@@ -70,12 +72,14 @@
  * ## What this does NOT establish
  *
  * Everything is bench photometry — flat albedo, constant ambient, Gaussian shot
- * noise, one grey channel — and every loud/silent split is the verdict of a
- * COUNTERFACTUAL reader: the page's own complement check handed exact lit
- * fractions, because today's page refuses clean bench positions before the
- * check runs (the q0 stage measures that). The emitter is EXPERIMENT-9's
- * perfect timer except where the lateness stage says otherwise, and the
- * lateness it sweeps was measured headless, not on a display machine.
+ * noise, one grey channel. Each cell's loud/silent split is reported twice: by
+ * a COUNTERFACTUAL reader, the complement check the page's former reader ended
+ * in, handed exact lit fractions (that reader refused every clean bench
+ * position before its check ran, which the q0 stage keeps on record); and by
+ * the page's own reader on the same photographs, the page column, where Q0
+ * finds it places clean positions. The emitter is EXPERIMENT-9's perfect timer
+ * except where the lateness stage says otherwise, and the lateness it sweeps
+ * was measured headless, not on a display machine.
  */
 
 import * as fs from 'node:fs';
@@ -99,6 +103,13 @@ import {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const WORK = path.join(ROOT, 'experiments', '.experiment-10-partial');
 const OUT = path.join(ROOT, 'experiments', 'experiment-10.json');
+/**
+ * The acceptance sweep's committed record of the page's reader on every clean
+ * position (`tools/reader-acceptance.ts`), which the identity I-page-twin holds
+ * the page twins to. Handed to the assembly by path, like every other file it
+ * reads that is not a checkpoint.
+ */
+const READER_ACCEPTANCE = path.join(ROOT, 'experiments', 'reader-acceptance.json');
 
 /**
  * Every stage in order, each resuming from its checkpoint, then the document.
@@ -111,7 +122,7 @@ export function runExperiment10(
 ): Record<string, unknown> | null {
   runStages(ctx, only);
   if (only !== null && only !== 'assemble') return null;
-  return assemble(ctx);
+  return assemble(ctx, { readerAcceptance: READER_ACCEPTANCE });
 }
 
 /**
