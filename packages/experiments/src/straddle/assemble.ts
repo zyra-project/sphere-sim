@@ -977,7 +977,9 @@ function shareHistogram(shares: readonly number[]): { from: number; to: number; 
     to: round(0.55 + 0.05 * i, 2) as number,
     n: 0,
   }));
-  for (const s of shares) bins[Math.min(9, Math.max(0, Math.floor((s - 0.5) / 0.05)))].n++;
+  // Each share in the bin whose edges hold it, read off the edges as written:
+  // (0.6 - 0.5) / 0.05 floors to 1 in binary, and 0.6 belongs to [0.6, 0.65).
+  for (const s of shares) bins[bins.findIndex((b, i) => s < b.to || i === bins.length - 1)].n++;
   return bins;
 }
 

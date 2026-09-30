@@ -1165,6 +1165,7 @@ test('T24 deterministic: the reduced design run twice is one document, and it re
       classes: { P: { counts: Record<string, number> } };
       runs: { touched: number; attributable: number; placed: number; refused: number; noted: number; crashed: number; unaccounted: number; neither: number } & Record<'both' | 'counterfactualOnly' | 'pageOnly', Record<string, Record<string, number>>>;
       positions: { all: Record<string, number> };
+      quiet: { runs: number };
     };
     const cell = (stage === 'rescore' ? doc.rescore : doc.lateness).cells.find((c: { id: string }) => c.id === id);
     const page = cell.page as PageDoc;
@@ -1176,6 +1177,8 @@ test('T24 deterministic: the reduced design run twice is one document, and it re
     assert.ok(page.runs.attributable > 0 && page.runs.touched === crossed + page.runs.neither, `${id}: ${JSON.stringify(page.runs)}`);
     assert.equal(page.runs.placed + page.runs.refused + page.runs.noted + page.runs.crashed + page.runs.unaccounted, page.runs.attributable);
     assert.equal(page.runs.unaccounted, 0, `${id}: a run the page gave no verdict`);
+    // A quiet drop is an attributable touched run only noted: the same runs the run tally counts noted.
+    assert.equal(page.quiet.runs, page.runs.noted, `${id}: quiet drops and noted runs disagree`);
     assert.ok(page.positions.all.PLACED + page.positions.all.MIXED + page.positions.all['REFUSED-ALL'] > 0, `${id}: no position the page counted`);
   }
   // The page twins, and the identities and bets they carry. The reduced rig
@@ -3247,4 +3250,55 @@ test("T50 the page column's tables render from the reduced run's document, each 
   assert.equal(runs.split('\n\n').filter((x) => x.startsWith('|')).length, 4);
   const pre = rows(experiment10PreconditionTwoReaders(doc));
   assert.ok(pre.some((r) => r[0] === '**all**' && r[3] === `**${doc.precondition.q0.page.placedPositions}**`));
+});
+
+test('T51 the page column counts every misfiled photograph with its share, and lists them up to a limit', async () => {
+  // P10 is falsified by any content misfile, and every one the quick run found
+  // was a photograph a hair past a tie. So the document keeps each one's
+  // majority share, how many sit under 0.55, the extremes and a histogram, and
+  // the photographs themselves while there are few enough to list.
+  const { summariseCell, MISFILE_LIST_LIMIT } = await import('../src/straddle/assemble.ts');
+  const { TEST_PLAN, latenessCells } = await import('../src/straddle/stages.ts');
+  const cell = latenessCells(TEST_PLAN).find((c) => c.id === 'L-aimed-7.5');
+  assert.ok(cell !== undefined);
+  const twins = [0, 1, 2].map((c) => handPageTwin(c, [0, 1, 2]));
+  const misfile = (photo: number, share: number) => ({ photo, filedStep: photo, contentStep: photo + 1, share });
+  const reading = (misfiled: ReturnType<typeof misfile>[], perRun: number[]) =>
+    handPage({ placed: [0, 1, 2], unseen: [3], misfiled, contentMisfiles: perRun, ambiguous: [1, 0, 0] });
+  const at = (camera: number, page: PageRead) => ({ ...handPosition(camera, [0], [placedRun(), placedRun(), placedRun(), invisibleRun()]), page });
+  const summary = (caps: unknown[]) =>
+    summariseCell(
+      {
+        plan: { ...TEST_PLAN, rigs: [0] },
+        q0: { units: { 'main:0': { positions: [{ runsPlaced: [0] }] } } },
+        bank: { units: { 'main:0': { width: 0, height: 0, seed: 0, twins } } },
+        solves: new Map(),
+      } as unknown as Parameters<typeof summariseCell>[0],
+      cell,
+      { units: { 'A:main:0': { score: { cells: { [cell.id]: caps } } } } } as unknown as Parameters<typeof summariseCell>[2],
+      null,
+    );
+  const got = summary([
+    { t: 3, rig: 0, positions: [at(0, reading([misfile(33, 0.50026), misfile(67, 0.55)], [1, 1, 0])), untouchedPosition(1), untouchedPosition(2)] },
+    { t: 5, rig: 0, positions: [untouchedPosition(0), at(1, reading([misfile(40, 0.9)], [0, 1, 0])), untouchedPosition(2)] },
+  ]);
+  assert.ok(got.page.status === 'read');
+  const m = got.page.misfiles;
+  assert.deepEqual(
+    { photographs: m.photographs, positions: m.positions, runs: m.runs, ambiguous: m.ambiguous, share: m.share, below055: m.below055 },
+    { photographs: 3, positions: 2, runs: 3, ambiguous: 2, share: { min: 0.50026, max: 0.9 }, below055: 1 },
+  );
+  // A share of exactly 0.55 is not under it; the histogram's bins are twentieths from a tie.
+  assert.deepEqual(m.histogram.map((b) => b.n), [1, 1, 0, 0, 0, 0, 0, 0, 1, 0]);
+  assert.deepEqual([m.histogram[0].from, m.histogram[9].to], [0.5, 1]);
+  assert.deepEqual(m.list, [
+    { t: 3, pos: 0, photo: 33, filedStep: 33, contentStep: 34, share: 0.50026 },
+    { t: 3, pos: 0, photo: 67, filedStep: 67, contentStep: 68, share: 0.55 },
+    { t: 5, pos: 1, photo: 40, filedStep: 40, contentStep: 41, share: 0.9 },
+  ]);
+  // Past the limit the counts and the histogram stay, and the list goes.
+  const many = Array.from({ length: MISFILE_LIST_LIMIT + 1 }, (_, i) => misfile(i % 100, 0.6));
+  const over = summary([{ t: 3, rig: 0, positions: [at(0, reading(many, [MISFILE_LIST_LIMIT + 1, 0, 0])), untouchedPosition(1), untouchedPosition(2)] }]);
+  assert.ok(over.page.status === 'read');
+  assert.deepEqual([over.page.misfiles.photographs, over.page.misfiles.list, over.page.misfiles.histogram[2].n], [MISFILE_LIST_LIMIT + 1, null, MISFILE_LIST_LIMIT + 1]);
 });
