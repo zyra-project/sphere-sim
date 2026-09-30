@@ -202,9 +202,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 /**
  * The shape a checkpoint's units have. @2: a scored position's `page` is a
  * {@link PagePosition}, the page's whole reading of it, where @1 kept the
- * projectors placed and the problems alone.
+ * projectors placed and the problems alone. @3: H8's hook records keep both of
+ * the page's readings whole, where @2 kept a verdict of each.
  */
-export const CHECKPOINT_SCHEMA = 'sphere-sim/experiment-10-checkpoint@2';
+export const CHECKPOINT_SCHEMA = 'sphere-sim/experiment-10-checkpoint@3';
 
 export const STAGES = [
   'q0',
@@ -2117,11 +2118,18 @@ export interface HookRecord {
   biasV: number;
   /**
    * H8-page: the page's own reader on the camera's whole straddled position, from the hook's
-   * frames and from the fast path's, which are what the page column reads.
+   * frames and from the fast path's, which are what the page column reads. Each is kept whole,
+   * as the page column keeps a position's ({@link pageRecord}): where each placed run starts,
+   * what it misfiles, and the problems in words. The page column counts misfiles from where the
+   * fast path's frames led the page to place a run, so whether the renderer's frames place it
+   * at the same photographs is on record beside the verdict H8-page compares.
    */
-  pageHook: PageVerdict;
-  pageFast: PageVerdict;
-  /** {@link samePageVerdict} of the two. */
+  pageHook: PagePosition;
+  pageFast: PagePosition;
+  /**
+   * {@link samePageVerdict} of the two readings' {@link pageVerdictOf}: what H8-page registered,
+   * and nothing more.
+   */
   pageAgree: boolean;
 }
 
@@ -2474,8 +2482,8 @@ export function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord
     });
     const hook = isolatedCheck(hookPrints, photos, 'content');
     const fast = isolatedCheck(fastPrints, photos, 'content');
-    const pageHook = pageVerdictOf(pageRecord(() => indexPhotographs(hookSummaries, MANIFEST), photos));
-    const pageFast = pageVerdictOf(pageRecord(() => indexPhotographs(fastSummaries, MANIFEST), photos));
+    const pageHook = pageRecord(() => indexPhotographs(hookSummaries, MANIFEST), photos);
+    const pageFast = pageRecord(() => indexPhotographs(fastSummaries, MANIFEST), photos);
     out.push({
       camera: c,
       s,
@@ -2491,7 +2499,7 @@ export function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord
       biasV,
       pageHook,
       pageFast,
-      pageAgree: samePageVerdict(pageHook, pageFast),
+      pageAgree: samePageVerdict(pageVerdictOf(pageHook), pageVerdictOf(pageFast)),
     });
   }
   return out;

@@ -2676,7 +2676,7 @@ test("T44 H8 holds the page's own reading of the fast path to its reading of the
   // verdicts and the page's decode to the renderer's hook. The page's reader
   // finds runs by absolute block levels, so its agreement is its own claim.
   // Two readings agree when every field the page column counts by agrees.
-  const { TEST_PLAN, gateHook, rigContextOf, samePageVerdict } = await import('../src/straddle/stages.ts');
+  const { TEST_PLAN, gateHook, pageVerdictOf, rigContextOf, samePageVerdict } = await import('../src/straddle/stages.ts');
   type Verdict = import('../src/straddle/stages.ts').PageVerdict;
   const verdict: Verdict = { placed: [0, 2], unseen: [3], barelySeen: [1], problems: 1, crash: null };
   assert.equal(samePageVerdict(verdict, structuredClone(verdict)), true);
@@ -2694,13 +2694,21 @@ test("T44 H8 holds the page's own reading of the fast path to its reading of the
   }
 
   // The gate stage's own record, at the quick plan's level on the reduced
-  // rig: both readings, and their agreement. The reading itself is as
-  // observed when this test was written, not predicted.
+  // rig: both readings, kept whole, and their agreement. The reading itself is
+  // as observed when this test was written, not predicted.
   const b = rig();
   const [got] = gateHook(rigContextOf('main:0', b, []), { ...TEST_PLAN, hookLevels: [0.12] }, 0);
-  assert.deepEqual(got.pageFast, { placed: [0], unseen: [3], barelySeen: [], problems: 2, crash: null });
+  assert.deepEqual(pageVerdictOf(got.pageFast), { placed: [0], unseen: [3], barelySeen: [], problems: 2, crash: null });
+  // Whole, so where each reading placed its run, and in what words it refused
+  // the others, is on record and not only how many of each.
+  assert.deepEqual([got.pageFast.starts, got.pageFast.contentMisfiles], [[0], [0]]);
+  assert.match(got.pageFast.problems[0], /^Projector 2's frames 3 and 4 were played as a pattern and its complement/);
   assert.deepEqual(got.pageHook, got.pageFast);
   assert.equal(got.pageAgree, true);
+  // Keeping them whole widens nothing H8-page registered: two readings that
+  // place the same runs at different photographs still agree by it.
+  const moved = { ...got.pageFast, starts: [1], offsets: [1] };
+  assert.equal(samePageVerdict(pageVerdictOf(moved), pageVerdictOf(got.pageFast)), true);
   assert.ok(got.identical < got.pixels, 'the hook and the fast path are the same frames, so this compares nothing');
 });
 
