@@ -136,10 +136,11 @@ Then the bets:
   their majority shares run from 0.500 to 0.585, and each is filed one step after its
   majority step, on one of a run's last four frames. R3 has one more, at 0.520. R4's
   21, in 20 positions, are not all near-ties: with a hand-pressed remote, 13 of them
-  hold 0.6 or more of another step's exposure, 3 of them 0.9 or more and one all of
-  it, so the page placed runs holding a photograph of another step; the other 8 are
-  near-ties, at 0.509 to 0.575, like the late emitter's. The page column's section
-  says where they fall, and each cell's `page.misfiles.list` lists them one by one.
+  hold 0.6 or more of their exposure in a step other than the one they are filed
+  under, 3 of them 0.9 or more and one all of it, so the page placed runs holding a
+  photograph of another step; the other 8 are near-ties, at 0.509 to 0.575, like the
+  late emitter's. The page column's section says where they fall, and each cell's
+  `page.misfiles.list` lists them one by one.
 - **P11 is falsified, by one.** In R1 the page is SILENT on 99 of the 728 touched
   captures, against the counterfactual reader's 98. No R1 capture is QUIET, so the
   looser reading, which would count a quiet capture as kept, gives 99 as well.
@@ -480,7 +481,8 @@ only where the page's plan, placement included, is that solve's. In R1 that hold
 for 69 of the 99: 28 are harmless, 14 biased, and 27 break the 1 mm seam gate. The
 other 30 were never solved on the page's own plan, and are not judged. With the
 emitter 7.5 ms late per step, 18 of L-aimed-7.5's 330 are judged the same way: 4
-harmless, 1 biased and 13 past the gate. No other cell was solved.
+harmless, 1 biased and 13 past the gate, 2 of those 13 with a run holding one of
+P10's misfiled photographs in their solve (below). No other cell was solved.
 
 **What it tells the operator is in its own section below, beside the
 counterfactual's words.** In every cell, most of the runs it refuses are told that
@@ -514,28 +516,38 @@ to do. R3, at a 1/60 s exposure, has one more, a near-tie at 0.520 filed one ste
 before its majority.
 
 **The page column decodes none of these runs, but the counterfactual's decodes read
-25 of them as the page files them.** The counterfactual places R3's run and 15 of
-R4's 20, 58 of L-aimed-7.5's 72 and 36 of L-uniform-7.5's 69, each filed exactly as
-the page files it, misfiled photographs included (`page.misfiles.counterfactual`).
-Its decode subsample, which reads each run it draws through the page's own `readRun`
-on 8-bit sRGB, drew 25 of those 110 runs, holding 31 misfiled photographs: R3's, 8
-of R4's holding 9, 13 of L-aimed-7.5's holding 17 and 3 of L-uniform-7.5's holding
-4. Their decodes are listed there, each with the extremes of its cell's decode
-subsample that it alone sets. In R4, the run of trial 264's first position holding
-photographs 95 and 97 (0.759 and 0.998) has the cell's largest mean shift along *u*,
-6.9361 px, with 16 of its 113 matched pixels grossly wrong; the run of trial 493's
-third holding photograph 4 (1.000) has the cell's largest loss, 2293 correspondences
-fewer than its twin's, and none of its 13801 matched pixels moved. The other 6 of
-R4's move their means by at most 1.6472 px. R3's run has that cell's most negative
-mean shift along *v*, −1.3545 px. Under the late emitter, the 16 runs drawn shift
-their means 3.6 to 4.6 px along *u* and 3.1 to 3.8 px along *v*, each past its
-cell's 90th percentile on both axes, and in each cell one of them has the
-subsample's largest shift along both axes and its largest loss. A run is decoded
-whole, so none of this separates what a misfiled photograph does from what the rest
-of its straddle does. The other 137 runs holding a misfile are not decoded at all:
-the 52 only the page places, which the counterfactual's bookends refuse (R4's other
-5, by count or by kind, and 14 of L-aimed-7.5's and 33 of L-uniform-7.5's, by
-length), and 85 its subsample did not draw.
+25 of them as the page files them, and its solves 3 more.** The counterfactual
+places R3's run and 15 of R4's 20, 58 of L-aimed-7.5's 72 and 36 of L-uniform-7.5's
+69, each filed exactly as the page files it, misfiled photographs included
+(`page.misfiles.counterfactual`). Its decode subsample, which reads each run it
+draws through the page's own `readRun` on 8-bit sRGB, drew 25 of those 110 runs,
+holding 31 misfiled photographs: R3's, 8 of R4's holding 9, 13 of L-aimed-7.5's
+holding 17 and 3 of L-uniform-7.5's holding 4. Their decodes are listed there, each
+with the extremes of its cell's decode subsample that it alone sets. In R4, the run
+of trial 264's first position holding photographs 95 and 97 (0.759 and 0.998) has
+the cell's largest mean shift along *u*, 6.9361 px, with 16 of its 113 matched
+pixels grossly wrong; the run of trial 493's third holding photograph 4 (1.000) has
+the cell's largest loss, 2293 correspondences fewer than its twin's, and none of its
+13801 matched pixels moved. The other 6 of R4's move their means by at most 1.6472
+px. R3's run has that cell's most negative mean shift along *v*, −1.3545 px. Under
+the late emitter, the 16 runs drawn shift their means 3.6 to 4.6 px along *u* and
+3.1 to 3.8 px along *v*, each past its cell's 90th percentile on both axes, and in
+each cell one of them has the subsample's largest shift along both axes and its
+largest loss. A run is decoded whole, so none of this separates what a misfiled
+photograph does from what the rest of its straddle does. The other 137 runs holding
+a misfile are in no decode subsample: the 52 only the page places, which the
+counterfactual's bookends refuse (R4's other 5, by count or by kind, and 14 of
+L-aimed-7.5's and 33 of L-uniform-7.5's, by length), and 85 its subsample did not
+draw. Three of those 85, holding 4 photographs at 0.506 to 0.532, are decoded all
+the same, filed as the page files them, inside the counterfactual solves that judge
+their captures on the page's own plan (`page.misfiles.counterfactual.solves`): in
+L-aimed-7.5's trials 57, 58 and 68, the third position's last run, holding
+photograph 135, and in trial 68 photograph 134 too. Trials 58 and 68 are page-SILENT
+captures past the seam gate, at D_grid 11.91 and 26.83 mm, the second the largest of
+the cell's 27 solves of the page's own plan; trial 57 is LOUD+SILENT, and its silent
+part is past the gate too, at 7.01 mm. A solve reports the calibration, not the run,
+so these no more separate what a misfile does than a decode does. No other solve
+decodes a run holding a misfile, and the other 134 are not decoded at all.
 
 **P12: the page quietly drops 59 runs its clean reading places, 31 of them in R6,
 with the room spill on.** In each, the straddled position notes the run out of view
@@ -974,11 +986,13 @@ _The page’s words on each touched run it refuses and its clean reading places:
   L-uniform-2 refused at its complement check. Among those are 52 of the 162 runs
   holding P10's misfiles, 5 of them R4's. The counterfactual places the other 110,
   filed as the page files them, and its decode subsamples drew 25 of those, 8 of
-  them R4's (the page column's section); the other 85 are not decoded either. And a
-  page-SILENT capture whose plan no counterfactual solve has is not judged: 30 of
-  R1's 99, 312 of L-aimed-7.5's 330, and every one in the other cells, where nothing
-  was solved. Nor is a LOUD+SILENT capture's placed part without such a solve: 13 of
-  R1's 34, 347 of L-aimed-7.5's 356, and every one in the other cells.
+  them R4's; the other 85 are in no decode subsample, and only 3 of them,
+  L-aimed-7.5's, are decoded at all, inside the solves that judge their captures on
+  the page's own plan (the page column's section). And a page-SILENT capture whose
+  plan no counterfactual solve has is not judged: 30 of R1's 99, 312 of
+  L-aimed-7.5's 330, and every one in the other cells, where nothing was solved. Nor
+  is a LOUD+SILENT capture's placed part without such a solve: 13 of R1's 34, 347 of
+  L-aimed-7.5's 356, and every one in the other cells.
 - **The display machine's timing.** The emitter's lateness was never measured here:
   the emitter-timing probe its design called for (`tools/emitter-timing.ts`) was never built, so 7.5 ms is a
   design-time headless figure and every lateness in this document is an input, not a
@@ -1025,16 +1039,17 @@ sight, and places a run in all 108 with no problem.
 **Through the page's reader a straddle is mostly loud, and the words do not say what
 happened.** It refuses 626 of R1's 728 touched captures and passes 99 silently, one
 more than the counterfactual's 98, which falsifies P11, and in every cell its loud
-and silent counts are each within 15 captures of the counterfactual's. In R1 most of
-its refusals say no projector run could be found in the folder (1511 of the 1837
-runs it refuses that its clean reading places), and the rest name a projector to
-re-shoot. In the other five cells it read (R3, R4, L-uniform-2, L-aimed-7.5 and
-L-uniform-7.5) most name one, and with the emitter 7.5 ms late at the card's aimed
-start every one does (2324 of 2324). After a straddle, re-shooting one projector is
-the wrong remedy. The card's is to re-shoot the whole position, aimed; the refusal
-text still does not say so, which is recorded here and not acted on. It also quietly
-drops 59 runs its clean reading places, 31 of them in R6, with the room spill on,
-noting each with nothing to re-shoot, which falsifies P12.
+and silent counts are each within 15 captures of the counterfactual's. In R1, as in
+R2, R5, R6 and R7, most of its refusals say no projector run could be found in the
+folder (in R1, 1511 of the 1837 runs it refuses that its clean reading places), and
+the rest name a projector to re-shoot. In the other five cells it read (R3, R4,
+L-uniform-2, L-aimed-7.5 and L-uniform-7.5) most name one, and with the emitter 7.5
+ms late at the card's aimed start every one does (2324 of 2324). After a straddle,
+re-shooting one projector is the wrong remedy. The card's is to re-shoot the whole
+position, aimed; the refusal text still does not say so, which is recorded here and
+not acted on. It also quietly drops 59 runs its clean reading places, 31 of them in
+R6, with the room spill on, noting each with nothing to re-shoot, which falsifies
+P12.
 
 **Under a late emitter, its misfiles are near-ties.** The 216 photographs it files
 under the step after the one they mostly show, at 7.5 ms per step, hold between
