@@ -2455,10 +2455,12 @@ test('T40 Q0 photographs a camera alone with the noise its twin is built from', 
 // ---------------------------------------------------------------------------
 
 test('T41 a run the page places is judged by what its photographs show, and a reader that throws is recorded, not raised', async () => {
-  // The page finds a run by what its frames show, so under a late emitter it
-  // can place a run one photograph early and be right about every photograph
-  // in it. Counted against the folder's order that is 34 misfiles; counted
-  // against what each photograph shows, none. The page column counts the
+  // The page finds a run by what its frames show. Under a late emitter
+  // photograph j can show step j - 1, so the page can place a run one
+  // photograph late (offset +1) and be right about every photograph in it;
+  // past half a forward straddle, one photograph early (offset -1). Counted
+  // against the folder's order either is 34 misfiles; counted against what
+  // each photograph shows, none. The page column counts the
   // second, by `contentStep`, the same rule the counterfactual's content
   // footing reads kinds by, so the two cannot disagree about what a photograph
   // is. A photograph that shows no step by a majority is neither right nor
@@ -2488,9 +2490,14 @@ test('T41 a run the page places is judged by what its photographs show, and a re
   assert.deepEqual(runFiling(CLEAN, p, p * FRAMES_PER_RUN), { misfiles: 0, ambiguous: 0 });
   // Forward at 0.95 every photograph shows the step after its own, so the run
   // the page can find starts one photograph early, and there it misfiles none.
-  const late = designedPhotos('forward', () => 0.95, 1);
-  assert.deepEqual(runFiling(late, p, p * FRAMES_PER_RUN - 1), { misfiles: 0, ambiguous: 0 });
-  assert.deepEqual(runFiling(late, p, p * FRAMES_PER_RUN), { misfiles: FRAMES_PER_RUN, ambiguous: 0 });
+  const ahead = designedPhotos('forward', () => 0.95, 1);
+  assert.deepEqual(runFiling(ahead, p, p * FRAMES_PER_RUN - 1), { misfiles: 0, ambiguous: 0 });
+  assert.deepEqual(runFiling(ahead, p, p * FRAMES_PER_RUN), { misfiles: FRAMES_PER_RUN, ambiguous: 0 });
+  // Behind a late emitter every photograph can show the step before its own,
+  // so the run starts one photograph late, and there it misfiles none.
+  const behind = CLEAN.map((_, j) => photo(j, [{ step: j - 1, weight: 1 }]));
+  assert.deepEqual(runFiling(behind, p, p * FRAMES_PER_RUN + 1), { misfiles: 0, ambiguous: 0 });
+  assert.deepEqual(runFiling(behind, p, p * FRAMES_PER_RUN), { misfiles: FRAMES_PER_RUN, ambiguous: 0 });
   // At 0.5 no photograph shows a step: all ambiguous, none misfiled.
   assert.deepEqual(runFiling(designedPhotos('forward', () => 0.5, 1), p, p * FRAMES_PER_RUN), { misfiles: 0, ambiguous: FRAMES_PER_RUN });
   // A photograph of the dark filed in a run is a misfile.
@@ -2511,7 +2518,7 @@ test('T41 a run the page places is judged by what its photographs show, and a re
     total: STEPS.length,
     placed: FRAMES_PER_RUN * runs.length,
   });
-  const got = pageRecord(() => indexed([run(1, 33), run(2, 68)]), late);
+  const got = pageRecord(() => indexed([run(1, 33), run(2, 68)]), ahead);
   assert.deepEqual(got, {
     ok: true,
     placed: [1, 2],

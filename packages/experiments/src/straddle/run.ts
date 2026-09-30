@@ -331,10 +331,13 @@ export function oracleObservations(photos: readonly Photo[], footing: 'content' 
  * the dark after the last step included, and ambiguous, counted apart and
  * never a misfile, when it shows no step by a majority.
  *
- * Against what the photographs show, not against the folder's order: a late
- * emitter can leave every photograph of a run wholly on the step before the one
- * it is filed as, and a reader that finds the run one photograph early is then
- * right about every one of them.
+ * Against what the photographs show, not against the folder's order. A late
+ * emitter falls behind the camera, so photograph `j` can show step `j - 1`, and
+ * it can leave every photograph of a run wholly on the step before the one the
+ * folder files it as: a reader that follows what they show then finds the run
+ * one photograph late (offset +1), and is right about every one of them. A
+ * forward straddle past half moves it the other way, one photograph early
+ * (offset -1), each photograph showing mostly the step after its own.
  */
 export function runFiling(
   photos: readonly Photo[],
