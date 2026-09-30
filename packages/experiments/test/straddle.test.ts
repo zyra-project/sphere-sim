@@ -2334,17 +2334,56 @@ test("T37 the verdict and the caveats say what the first full run's verification
   r1.page.quiet = { runs: 5, positions: 5, captures: 5, silentWithQuiet: 2, quietPlacingTouched: 1 };
   const none = { LOUD: 0, SILENT: 0, QUIET: 0, 'INVISIBLE-ONLY': 0, UNCHANGED: 0, UNTOUCHED: 0 };
   r1.page.classes.P.vsCounterfactual = { LOUD: { ...none, LOUD: 590, SILENT: 30, QUIET: 3, 'INVISIBLE-ONLY': 4 }, SILENT: { ...none, LOUD: 10, SILENT: 87, QUIET: 1 }, 'INVISIBLE-ONLY': { ...none, SILENT: 3 }, UNCHANGED: none, UNTOUCHED: none };
-  Object.assign(r1.page.misfiles, { photographs: 40, positions: 30, share: { min: 0.5002, max: 0.6 } });
+  // What a cell's placed runs misfile, set in whole: each photograph with its
+  // share, and the histogram the verdict counts the near-tie share off, binned
+  // by the edges the assembly writes.
+  type Misfile = { t: number; pos: number; photo: number; filedStep: number; contentStep: number; share: number };
+  const misfiled = (list: Misfile[]) => {
+    const bins = Array.from({ length: 10 }, (_, i) => ({ from: Math.round(100 * (0.5 + 0.05 * i)) / 100, to: Math.round(100 * (0.55 + 0.05 * i)) / 100, n: 0 }));
+    for (const x of list) bins[bins.findIndex((b, i) => x.share < b.to || i === bins.length - 1)].n++;
+    return {
+      photographs: list.length,
+      positions: new Set(list.map((x) => `${x.t}.${x.pos}`)).size,
+      runs: new Set(list.map((x) => `${x.t}.${x.pos}.${Math.floor(x.filedStep / 34)}`)).size,
+      ambiguous: 0,
+      share: list.length === 0 ? { min: null, max: null } : { min: Math.min(...list.map((x) => x.share)), max: Math.max(...list.map((x) => x.share)) },
+      below055: list.filter((x) => x.share < 0.55).length,
+      histogram: bins,
+      list,
+    };
+  };
+  // R1's are not near-ties: one photograph wholly of the step before, filed one step either side.
+  r1.page.misfiles = misfiled([
+    { t: 3, pos: 0, photo: 4, filedStep: 4, contentStep: 3, share: 1 },
+    { t: 3, pos: 0, photo: 30, filedStep: 30, contentStep: 31, share: 0.8 },
+    { t: 9, pos: 2, photo: 97, filedStep: 97, contentStep: 96, share: 0.52 },
+  ]);
   Object.assign(aimed.page.read, { captures: 1786 });
   Object.assign(aimed.page.classes.P.counts, { LOUD: 1300, 'SILENT-HARMLESS': 0, 'SILENT-BIASED': 0, 'SILENT-GATE-BREAKING': 0, 'SILENT-UNJUDGEABLE': 0, 'SILENT-UNSOLVED': 380, QUIET: 6 });
   aimed.page.quiet.runs = 7;
-  // Across every cell the page read: the totals the clause must sum.
-  const pageRead = [...doc.rescore.cells, ...doc.lateness.cells].filter((x: { page: { status: string } }) => x.page.status !== 'not run').map((x: { page: unknown }) => x.page as { quiet: { runs: number }; misfiles: { photographs: number; positions: number; share: { min: number | null; max: number | null } } });
-  const allQuiet = pageRead.reduce((a, x) => a + x.quiet.runs, 0);
-  const allMisfiled = pageRead.reduce((a, x) => a + x.misfiles.photographs, 0);
-  const allMisfiledPositions = pageRead.reduce((a, x) => a + x.misfiles.positions, 0);
-  const allShares = pageRead.flatMap((x) => [x.misfiles.share.min, x.misfiles.share.max].filter((v): v is number => v !== null));
-  assert.ok(allQuiet >= 12 && allMisfiled >= 40, 'the injected page figures did not reach the totals');
+  // L-aimed-7.5's are near-ties, each filed one step late.
+  aimed.page.misfiles = misfiled([
+    { t: 11, pos: 1, photo: 135, filedStep: 135, contentStep: 134, share: 0.5003 },
+    { t: 12, pos: 0, photo: 101, filedStep: 101, contentStep: 100, share: 0.57 },
+  ]);
+  // No other cell the page read has a quiet drop or a misfile, so the clauses' lists are exactly these.
+  const everyCell = [...doc.rescore.cells, ...doc.lateness.cells] as Record<string, any>[];
+  for (const x of everyCell) {
+    if (x.id === 'R1' || x.id === 'L-aimed-7.5' || x.page.status === 'not run') continue;
+    assert.equal(x.page.quiet.runs, 0, `${x.id} has a quiet drop of its own`);
+    assert.equal(x.page.misfiles.photographs, 0, `${x.id} has a misfile of its own`);
+  }
+  const withCaptures = everyCell.filter((x) => x.page.status === 'read').length;
+  // The bets, evaluated again on the cells as set in, as the assembly
+  // evaluates them: the verdict says each one's outcome, and holds what each
+  // measured to the cells it quotes beside it.
+  const { evaluateRerunBets } = await import('../src/straddle/assemble.ts');
+  const rebet = (d: any) => {
+    const all = [...d.rescore.cells, ...d.lateness.cells];
+    const p13 = { positions: 108, compared: 108, differ: 0, differences: [] };
+    d.predictions = [...d.predictions.filter((x: { id: string }) => !['P10', 'P11', 'P12', 'P13'].includes(x.id)), ...evaluateRerunBets(all, 38 + 17 + 43, p13 as never)];
+  };
+  rebet(doc);
   doc.lateness.aimed.vsyncOff = { firstTouchedMs: 3.5, onePercentMs: 3.6, bracketMs: [3.55, 3.6], grid: [] };
   doc.lateness.aimed.vsyncOn = { firstTouchedMs: 3.45, onePercentMs: 3.5, bracketMs: [3.45, 3.5], grid: [] };
 
@@ -2368,7 +2407,10 @@ test("T37 the verdict and the caveats say what the first full run's verification
     '3 touched only runs that the counterfactual reader also refuses on the clean capture; 0 changed no photograph. With the card\'s aimed start and a perfect timer, 0 of 2000 captures are touched (R8).',
     "If the emitter runs 7.5 ms late per step, 1786 of 2000 captures started by the card's aimed rule are touched: 1358 loud, 349 of them also carrying a silent position; 324 silent, 23 of them solved and 17 of those past the seam gate; and 104 touching only runs that are refused anyway. Through the page's own reader the same 1786 captures are 1300 loud, 380 silent and 6 quiet.",
     "Through the page's own reader, each run attributed against its reading of the same clean frames, the 728 captures come out 600 loud (400 run by run, told 'Re-shoot projector N', and 200 only as a whole position; 20 of them also carrying a silent position and 3 a quiet one), 120 silent (30 harmless, 10 biased and 20 past the gate by a counterfactual solve of the same plan, and 60 not solved; 2 of them with a quiet position too) and 4 quiet: a touched run its clean reading places only noted, and no position refused or placed; 4 touch only runs its clean reading does not place, and 0 changed no photograph. In 1 of the captures with no position placed, a quiet position still places another touched run, which reaches the calibration straddled and no class counts. Of the counterfactual reader's 627 loud captures the page passes 30 silently and 3 quietly, and of its 98 silent ones the page refuses 10 loudly.",
-    `Across the ${pageRead.length} rescore and lateness cells it read, the page quietly drops ${allQuiet} runs its clean reading places, noting them out of view or barely seen with no problem naming them, and its placed runs file ${allMisfiled} photographs under a step other than the one holding more than half their exposure (in ${allMisfiledPositions} positions, that step's share ${Math.min(...allShares).toFixed(3)}-${Math.max(...allShares).toFixed(3)}).`,
+    "The rescoring put every straddled position of those rigs through the page's reader as well. Each camera's clean twin, which the rescoring attributes against, reads as Q0 does at all 108 positions, so P13 holds.",
+    "and of its 98 silent ones the page refuses 10 loudly. The page's 120 silent captures are 22 more than the counterfactual reader's 98, which falsifies P11; counting its 4 quiet captures as kept, a reading beside the registration's and not in its place, gives 124.",
+    `Across the ${withCaptures} rescore and lateness cells with a touched capture to read, the page quietly drops 12 runs its clean reading places, noting them out of view or barely seen with no problem naming them (7 in L-aimed-7.5 and 5 in R1), which falsifies P12.`,
+    "Its placed runs file 5 photographs, in 4 positions, under a step other than the one holding more than half their exposure, which falsifies P10: in R1 (intervalometer-100ppm), 3 in 2 positions, that step's share 0.520-1.000 and 2 of them at 0.6 or more, filed one step before or after it: runs placed holding a photograph of another step; and in L-aimed-7.5, 2, each a near-tie (that step's share 0.500-0.570) filed one step after it.",
     'armed with the tick on, the same setup ran about 9.3 ms late. This experiment did not re-measure it',
     'about 3.70 ms per step with matched clocks, and 3.50 ms for the half of captures whose camera clock runs 100 ppm fast.',
     'On the swept grid the first aimed capture is touched at 3.5 ms, and 1% are touched from 3.6 ms, a crossing the sweep finds in (3.55, 3.6] ms; with a 60 Hz refresh wait, 3.45 and 3.5 ms.',
@@ -2402,12 +2444,39 @@ test("T37 the verdict and the caveats say what the first full run's verification
     ['the aimed threshold', (d) => { d.lateness.aimed.threshold.fastCameraMs = null; }],
     ['the sign split', (d) => { d.decode.verdictLevel.signs.seam.vPosShare = null; }],
     ['the headless figure', (d) => { delete d.generatedFrom.design.constants.HEADLESS_LATENESS_MS.armedTickOn; }],
+    ['the bet P11 is read on', (d) => { d.predictions = d.predictions.filter((x: { id: string }) => x.id !== 'P11'); }],
+    ['the positions P13 compared', (d) => { delete d.predictions.find((x: { id: string }) => x.id === 'P13').measured.compared; }],
+    ['a misfiled cell\'s largest share', (d) => { cells(d.rescore.cells, 'R1').page.misfiles.share.max = null; }],
+    ['the misfiles at the near-tie share or more', (d) => { delete cells(d.rescore.cells, 'R1').page.misfiles.histogram[2].n; }],
   ];
   for (const [what, cut] of cuts) {
     const holed = structuredClone(doc);
     cut(holed);
     assert.throws(() => verdictStatement(holed), /the verdict needs cell/, `a document without ${what} still got a verdict`);
   }
+  // A document at odds with itself stops the sentence: what each bet measured
+  // is the cells the verdict quotes beside its outcome.
+  for (const [id, field, value, message] of [
+    ['P10', 'photographs', 6, /P10's misfiles are not the cells' own/],
+    ['P11', 'silent', 121, /P11's measured silent counts are not R1's/],
+    ['P12', 'runs', 13, /P12's quiet drops are not the cells' own/],
+  ] as const) {
+    const odd = structuredClone(doc);
+    odd.predictions.find((x: { id: string }) => x.id === id).measured[field] = value;
+    assert.throws(() => verdictStatement(odd), message, `${id} measured apart from its cells still got a verdict`);
+  }
+  // A bet that holds is said to hold, in the place a falsified one is said to fall.
+  const calm = structuredClone(doc);
+  for (const x of [...calm.rescore.cells, ...calm.lateness.cells]) {
+    if (x.page.status === 'not run') continue;
+    x.page.quiet.runs = 0;
+    x.page.misfiles = misfiled([]);
+  }
+  rebet(calm);
+  const calmly = verdictStatement(calm);
+  assert.ok(calmly.includes('the page quietly drops none of the runs its clean reading places, so P12 holds.'), calmly);
+  assert.ok(calmly.includes('Its placed runs file every photograph under the step holding more than half its exposure, so P10 holds.'), calmly);
+  assert.doesNotMatch(calmly, /falsifies P1[02]/);
 
   // The refresh rate is the design's, not a word in the sentence.
   const at50 = structuredClone(doc);

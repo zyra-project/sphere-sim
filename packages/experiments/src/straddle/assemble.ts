@@ -1022,6 +1022,16 @@ export function pageSolveOf(
  */
 export const MISFILE_LIST_LIMIT = 200;
 
+/**
+ * A misfiled photograph whose majority step holds less than this share of its
+ * exposure is a near-tie: filed under either step, two fifths or more of it
+ * shows the other. The verdict calls a cell's misfiles near-ties only when every
+ * one of them is, and otherwise counts those at this share or more, off the
+ * histogram's written edges, of which it is one. A word for the report and not
+ * a bet: P10 is falsified by any misfile, near-tie or not.
+ */
+export const NEAR_TIE_SHARE = 0.6;
+
 /** Where a misfiled photograph's majority share falls: tenths of the half above a tie. */
 function shareHistogram(shares: readonly number[]): { from: number; to: number; n: number }[] {
   const bins = Array.from({ length: 10 }, (_, i) => ({
@@ -4243,10 +4253,11 @@ export function followUps(plan: Exp10Plan, placedPositions: number): string[] {
         'other one is not solved, and past-gate counts through the page cover the reused ' +
         'solves alone.',
       "The page's decode: the page column reads which runs the page places and where, and " +
-        'decodes none. What a straddle does to the coordinates of a run only the page places — ' +
-        'one it re-files by what its photographs show, or one the counterfactual refuses by its ' +
-        'bookends — is not measured: the decode subsamples draw from the counterfactual\'s ' +
-        'placed runs.',
+        'decodes none. What a straddle does to the coordinates of a run as the page files it is ' +
+        'not measured: one only the page places, re-filed by what its photographs show or ' +
+        "refused by the counterfactual's bookends, and one holding a photograph filed under " +
+        "another step than the one it mostly shows (P10's misfiles). The decode subsamples " +
+        "draw from the counterfactual's placed runs.",
     );
   }
   return out;
@@ -4511,6 +4522,12 @@ export type VerdictDoc = {
     pageTwins: { main: { runs: number; unseen: number; barelySeen: number } };
   };
   harness: { id: string; pass: boolean | null; measured: unknown }[];
+  /**
+   * The bets as the document evaluates them. The verdict reads the re-run's
+   * (P10–P13) for held or falsified, and holds what each measured to the cells
+   * it quotes beside it.
+   */
+  predictions: { id: string; falsified: boolean | null; measured: unknown }[];
   gate: {
     crossings: {
       forward: Spread;
@@ -4720,6 +4737,26 @@ export function verdictStatement(doc: VerdictDoc): string {
   first += pageRan
     ? ` The rescoring put every straddled position of those rigs through the page's reader as well.`
     : ` So no straddled capture was put through the page's reader.`;
+
+  // ----- the re-run's bets, as the document evaluates them: held, falsified or not evaluated
+  const bets = byId(doc.predictions);
+  const outcome = (id: string, falsifies: string, holds: string): string => {
+    const falsified = at(bets, id).falsified;
+    return falsified === true ? falsifies : falsified === false ? holds : `${id} is not evaluated`;
+  };
+  {
+    const p13 = at(bets, 'P13').measured as { compared?: number; differ?: number } | null;
+    cells.p13Compared = p13?.compared ?? Number.NaN;
+    cells.p13Differ = p13?.differ ?? Number.NaN;
+    if (num('p13Compared') > 0) {
+      first +=
+        ` Each camera's clean twin, which the rescoring attributes against, reads as Q0 does` +
+        (num('p13Differ') === 0
+          ? ` at all ${c('p13Compared')} positions, ${outcome('P13', 'which falsifies P13', 'so P13 holds')}.`
+          : ` at all but ${c('p13Differ')} of the ${c('p13Compared')} positions, ` +
+            `${outcome('P13', 'which falsifies P13', 'so P13 holds')}.`);
+    }
+  }
 
   // ----- where the complement check refuses a straddle
   const never = num('neverRefused');
@@ -5028,30 +5065,135 @@ export function verdictStatement(doc: VerdictDoc): string {
       `${c('loudToSilent')} silently` +
       (num('loudToQuiet') > 0 ? ` and ${c('loudToQuiet')} quietly` : '') +
       `, and of its ${c('silent')} silent ones the page refuses ${c('silentToLoud')} loudly.`;
+    // P11, on the registered SILENT, with the looser reading beside it and
+    // never in its place. What it counts is the clause's own cells, held to
+    // what the document evaluated the bet on.
+    const p11 = at(bets, 'P11').measured as {
+      silent?: number;
+      counterfactualSilent?: number;
+      quietCountedAsKept?: { silent?: number };
+    } | null;
+    cells.p11Silent = p11?.silent ?? Number.NaN;
+    cells.p11Counterfactual = p11?.counterfactualSilent ?? Number.NaN;
+    cells.p11Looser = p11?.quietCountedAsKept?.silent ?? Number.NaN;
+    if (num('p11Silent') !== num('pSilent') || num('p11Counterfactual') !== num('silent')) {
+      throw new Error("experiment10: P11's measured silent counts are not R1's, which the verdict quotes");
+    }
+    const more = num('pSilent') - num('silent');
+    pageClause +=
+      ` The page's ${c('pSilent')} silent captures are ` +
+      (more === 1
+        ? 'one more than'
+        : more > 1
+          ? `${more} more than`
+          : more === 0
+            ? 'as many as'
+            : `${-more} fewer than`) +
+      ` the counterfactual reader's ${c('silent')}, ` +
+      outcome('P11', 'which falsifies P11', 'so P11 holds') +
+      (num('pQuiet') === 0
+        ? `; none is quiet, so counting a quiet capture as kept gives ${c('p11Looser')} too.`
+        : `; counting its ${c('pQuiet')} quiet captures as kept, a reading beside the ` +
+          `registration's and not in its place, gives ${c('p11Looser')}.`);
   }
-  const readCells = pageCells.flatMap((x) => (x.page.status === 'not run' ? [] : [x.page]));
-  if (readCells.length > 0) {
-    const shares = readCells.flatMap((x) =>
-      [x.misfiles.share.min, x.misfiles.share.max].filter((v): v is number => v !== null),
-    );
+  // ----- across every cell the page read: its quiet drops (P12) and its misfiles (P10)
+  const withCaptures = pageCells.filter((x) => x.page.status === 'read');
+  if (pageCells.some((x) => x.page.status !== 'not run')) {
+    const pageOf = (x: (typeof pageCells)[number]) => {
+      if (x.page.status !== 'read') throw new Error(`experiment10: ${x.id} has no page reading`);
+      return x.page;
+    };
     Object.assign(cells, {
-      cellsRead: readCells.length,
-      allQuiet: readCells.reduce((a, x) => a + x.quiet.runs, 0),
-      allMisfiled: readCells.reduce((a, x) => a + x.misfiles.photographs, 0),
-      allMisfiledPositions: readCells.reduce((a, x) => a + x.misfiles.positions, 0),
-      shareLo: shares.length === 0 ? Number.NaN : Math.min(...shares),
-      shareHi: shares.length === 0 ? Number.NaN : Math.max(...shares),
+      cellsRead: withCaptures.length,
+      allQuiet: withCaptures.reduce((a, x) => a + pageOf(x).quiet.runs, 0),
+      allMisfiled: withCaptures.reduce((a, x) => a + pageOf(x).misfiles.photographs, 0),
+      allMisfiledPositions: withCaptures.reduce((a, x) => a + pageOf(x).misfiles.positions, 0),
+    });
+    const p12 = at(bets, 'P12').measured as { runs?: number } | null;
+    const p10 = at(bets, 'P10').measured as { photographs?: number; positions?: number } | null;
+    cells.p12Runs = p12?.runs ?? Number.NaN;
+    cells.p10Photographs = p10?.photographs ?? Number.NaN;
+    cells.p10Positions = p10?.positions ?? Number.NaN;
+    if (num('p12Runs') !== num('allQuiet')) {
+      throw new Error("experiment10: P12's quiet drops are not the cells' own, which the verdict quotes");
+    }
+    if (num('p10Photographs') !== num('allMisfiled') || num('p10Positions') !== num('allMisfiledPositions')) {
+      throw new Error("experiment10: P10's misfiles are not the cells' own, which the verdict quotes");
+    }
+    // Each cell with a quiet drop, the most first.
+    const quietCells = withCaptures
+      .filter((x) => pageOf(x).quiet.runs > 0)
+      .sort((a, b) => pageOf(b).quiet.runs - pageOf(a).quiet.runs);
+    for (const x of quietCells) cells[`quiet:${x.id}`] = pageOf(x).quiet.runs;
+    const listed = quietCells.map((x) => `${c(`quiet:${x.id}`)} in ${x.id}`);
+    pageClause +=
+      ` Across the ${c('cellsRead')} rescore and lateness cells with a touched capture to read, ` +
+      (num('allQuiet') === 0
+        ? `the page quietly drops none of the runs its clean reading places, `
+        : `the page quietly drops ${c('allQuiet')} runs its clean reading places, noting them ` +
+          `out of view or barely seen with no problem naming them ` +
+          `(${listed.length === 1 ? listed[0] : `${listed.slice(0, -1).join(', ')} and ${listed[listed.length - 1]}`}), `) +
+      `${outcome('P12', 'which falsifies P12', 'so P12 holds')}.`;
+    // Each cell with a misfile, the most first: a near-tie cell says so, and
+    // any other counts its misfiles at the near-tie share or more, so a
+    // photograph of another step placed in a run never reads as a tie.
+    const misCells = withCaptures
+      .filter((x) => pageOf(x).misfiles.photographs > 0)
+      .sort((a, b) => pageOf(b).misfiles.photographs - pageOf(a).misfiles.photographs);
+    const phrases = misCells.map((x) => {
+      const m = pageOf(x).misfiles;
+      const key = (k: string) => `misfiles:${x.id}:${k}`;
+      Object.assign(cells, {
+        [key('n')]: m.photographs,
+        [key('positions')]: m.positions,
+        [key('lo')]: orNaN(m.share.min),
+        [key('hi')]: orNaN(m.share.max),
+        [key('atLeast')]: m.histogram
+          .filter((b) => b.from >= NEAR_TIE_SHARE)
+          .reduce((a, b) => a + b.n, 0),
+      });
+      const count = num(key('n'));
+      const range =
+        num(key('lo')) === num(key('hi'))
+          ? n(key('lo'), 3)
+          : `${n(key('lo'), 3)}-${n(key('hi'), 3)}`;
+      const where = num(key('positions')) === count ? '' : ` in ${c(key('positions'))} positions`;
+      // Which way each was filed from the step it mostly shows, where the cell lists them.
+      const off =
+        m.list === null || m.list.length === 0
+          ? []
+          : [...new Set(m.list.map((y) => y.filedStep - y.contentStep))].sort((a, b) => a - b);
+      const filed =
+        off.length === 0
+          ? ''
+          : off.join() === '1'
+            ? ' filed one step after it'
+            : off.join() === '-1'
+              ? ' filed one step before it'
+              : off.join() === '-1,1'
+                ? ' filed one step before or after it'
+                : ` filed up to ${Math.max(...off.map(Math.abs))} steps from it`;
+      if (num(key('hi')) < NEAR_TIE_SHARE) {
+        return count === 1
+          ? `in ${x.id}, 1, a near-tie (${range})${filed}`
+          : `in ${x.id}, ${count}${where}, each a near-tie (that step's share ${range})${filed}`;
+      }
+      return (
+        `in ${x.id} (${x.spec.arm}), ${count}${where}, that step's share ${range} and ` +
+        `${c(key('atLeast'))} of them at ${NEAR_TIE_SHARE} or more,${filed}: runs placed holding a ` +
+        `photograph of another step`
+      );
     });
     pageClause +=
-      ` Across the ${c('cellsRead')} rescore and lateness cells it read, the page quietly drops ` +
-      `${c('allQuiet')} runs its clean reading places, noting them out of view or barely seen ` +
-      `with no problem naming them, and its placed runs file ${c('allMisfiled')} photographs ` +
-      `under a step other than the one holding more than half their exposure` +
-      (num('allMisfiled') > 0
-        ? ` (in ${c('allMisfiledPositions')} positions, that step's share ` +
-          `${n('shareLo', 3)}-${n('shareHi', 3)})`
-        : '') +
-      '.';
+      ` Its placed runs file ` +
+      (num('allMisfiled') === 0
+        ? `every photograph under the step holding more than half its exposure, `
+        : `${c('allMisfiled')} photographs, in ${c('allMisfiledPositions')} positions, under a step ` +
+          `other than the one holding more than half their exposure, `) +
+      outcome('P10', 'which falsifies P10', 'so P10 holds') +
+      (phrases.length === 0
+        ? '.'
+        : `: ${phrases.length === 1 ? phrases[0] : `${phrases.slice(0, -1).join('; ')}; and ${phrases[phrases.length - 1]}`}.`);
   }
 
   // ----- a late emitter against the aimed rule
