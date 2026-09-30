@@ -3250,12 +3250,20 @@ test("T50 the page column's tables render from the reduced run's document, each 
   const page = rows(experiment10Page(doc));
   const cells = [...doc.rescore.cells, ...doc.lateness.cells] as { id: string; page: { status: string; classes: { P: { counts: Record<string, number> } }; quiet: { runs: number } } }[];
   assert.deepEqual(page.slice(1).map((r) => r[0]), cells.map((c) => c.id));
+  let notRun = 0;
   for (const r of page.slice(1)) {
     const c = cells.find((x) => x.id === r[0]);
-    assert.ok(c !== undefined && c.page.status !== 'not run', r[0]);
+    assert.ok(c !== undefined, r[0]);
+    // The reduced design has no spill rig, so R6's column has no rig to run on.
+    if (c.page.status === 'not run') {
+      assert.equal(r[1], 'the page column did not run', r[0]);
+      notRun++;
+      continue;
+    }
     assert.equal(Number(r[2].split(' ')[0]), c.page.classes.P.counts.LOUD, r[0]);
     assert.equal(Number(r[7].split(' ')[0]), c.page.quiet.runs, r[0]);
   }
+  assert.deepEqual([notRun, cells.find((c) => c.id === 'R6')?.page.status], [1, 'not run']);
   const runs = experiment10PageRuns(doc);
   assert.equal(runs.split('\n\n').filter((x) => x.startsWith('|')).length, 4);
   const pre = rows(experiment10PreconditionTwoReaders(doc));
