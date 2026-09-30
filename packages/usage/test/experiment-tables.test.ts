@@ -100,9 +100,15 @@ test('a second copy of a properly registered marker is caught', () => {
 // ---------------------------------------------------------------------------
 // EXPERIMENT-10's page column: the tables the re-run with the page's reader
 // added, registered in docs/EXPERIMENT-10.md. `check:docs` holds each block to
-// what its renderer makes of the committed results file; these hold the
-// renderers to the file, cell by cell, so a table that read the wrong field
-// would not pass merely by agreeing with itself.
+// what its renderer makes of the committed results file, which a table that
+// read the wrong field would pass by agreeing with itself. These hold part of
+// each renderer to the file's own cells: in the page table, every column but
+// captures touched, INVISIBLE-ONLY and UNCHANGED; in the run tables, R1's full
+// table (each column's total its rows' sum, the whole every run both twins
+// place), the summary's R1 total, and each cell's refused runs in the words
+// table; the rest of the run tables only their rows and widths; and in the
+// precondition, its headers and totals. A cell they do not name is held by
+// nothing but `check:docs`.
 // ---------------------------------------------------------------------------
 
 const RESULTS = path.join(REPO, 'experiments', 'experiment-10.json');

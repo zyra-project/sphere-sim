@@ -120,6 +120,7 @@ import {
   type Q0Unit,
   type RescoreUnit,
   type RunContext,
+  type RunDecode,
   type RunScore,
   type SignTally,
   type SolveRecord,
@@ -399,6 +400,12 @@ export interface Evidence {
   rescore: StageFile<RescoreUnit>;
   lateness: StageFile<RescoreUnit>;
   solves: Map<string, SolveRecord>;
+  /**
+   * `experiments/reader-acceptance.json`, as parsed: the page twins are held to
+   * it (I-page-twin), and each quiet drop is joined with its clean run's light
+   * there ({@link acceptanceRunOf}). Absent from hand-built evidence.
+   */
+  acceptance?: unknown;
 }
 
 function twinFor(ev: Evidence, which: Which, rig: number, camera: number): TwinCamera {
@@ -1022,13 +1029,56 @@ export function pageSolveOf(
  */
 export const MISFILE_LIST_LIMIT = 200;
 
+/** A cell's quiet drops (P12) are listed one by one up to this many; past it the cell keeps the counts. */
+export const QUIET_LIST_LIMIT = 200;
+
+/**
+ * One quiet drop (P12): a touched run the page's clean reading places and the
+ * straddled reading only notes, how it noted it, and the clean run's light as
+ * the acceptance sweep measured it ({@link acceptanceRunOf}; null where the
+ * sweep never photographed the variant).
+ */
+export interface QuietDrop {
+  t: number;
+  rig: number;
+  pos: number;
+  projector: number;
+  noted: 'out of view' | 'barely seen';
+  clean: { litPixels: number; litOnSphere: number; crescentBlocks: number } | null;
+}
+
+/**
+ * A run holding a misfile (P10) that the counterfactual places, filing every
+ * photograph where the page does, and that the cell's decodes drew: the
+ * misfiled photographs and their shares, the decode's figures as the cell's
+ * decode block rounds them, and the extremes of that block it alone sets.
+ */
+export interface MisfiledDecode {
+  t: number;
+  pos: number;
+  projector: number;
+  photographs: number[];
+  shares: number[];
+  biasU: number | null;
+  biasV: number | null;
+  /** Matched pixels (both decodes accept them), how many of those moved at all, and how many grossly. */
+  matched: number | null;
+  moved: number | null;
+  gross: number | null;
+  acceptedDelta: number;
+  sets: string[];
+}
+
 /**
  * A misfiled photograph whose majority step holds less than this share of its
  * exposure is a near-tie: filed under either step, two fifths or more of it
- * shows the other. The verdict calls a cell's misfiles near-ties only when every
- * one of them is, and otherwise counts those at this share or more, off the
- * histogram's written edges, of which it is one. A word for the report and not
- * a bet: P10 is falsified by any misfile, near-tie or not.
+ * shows the other. A word for the report and not a bet, chosen after the full
+ * run's misfiles were read: P10 is falsified by any misfile, near-tie or not.
+ * The document carries it (`predictions[P10].measured.nearTie.share`) and the
+ * verdict reads it from there, so no number the prose quotes is a constant of
+ * this file alone. It must be one of the share histogram's edges: the verdict
+ * counts a cell's misfiles at this share or more off the bins, and calls the
+ * cell's misfiles near-ties only when that count is 0.
  */
 export const NEAR_TIE_SHARE = 0.6;
 
@@ -1091,6 +1141,45 @@ interface AcceptancePosition {
   unseen: number[];
   barelySeen: number[];
   problems: string[];
+  /** Each run's light on the clean position, as the sweep measured it: what a quiet drop is joined with. */
+  runs?: { projector: number; litPixels: number; litOnSphere: number; crescentBlocks: number }[];
+}
+
+/** The acceptance sweep's positions, or a throw where the file holds none. */
+function acceptancePositions(acceptance: unknown): AcceptancePosition[] {
+  const file = acceptance as { positions?: unknown } | null;
+  if (file === null || typeof file !== 'object' || !Array.isArray(file.positions)) {
+    throw new Error('experiment10: the acceptance sweep\'s file holds no positions[]');
+  }
+  return file.positions as AcceptancePosition[];
+}
+
+/**
+ * A clean run's light as the acceptance sweep measured it on the same clean
+ * position, found by variant, rig, camera and projector: its lit pixels, how
+ * many of them fall on the sphere, and its crescent in fingerprint blocks. Null
+ * where the sweep never photographed the variant (the quick plan's reduced main
+ * rigs), or where no file was handed in (hand-built evidence); a swept variant
+ * the file does not cover throws, as I-page-twin does.
+ */
+export function acceptanceRunOf(
+  acceptance: unknown,
+  variant: string,
+  rig: number,
+  camera: number,
+  projector: number,
+): { litPixels: number; litOnSphere: number; crescentBlocks: number } | null {
+  if (acceptance === undefined || acceptance === null) return null;
+  const positions = acceptancePositions(acceptance);
+  if (!positions.some((p) => p.variant === variant)) return null;
+  const where = `rig ${rig} camera ${camera}, run ${projector + 1} (${variant})`;
+  const run = positions
+    .find((p) => p.variant === variant && p.rig === rig && p.camera === camera)
+    ?.runs?.find((r) => r.projector === projector);
+  if (run === undefined) {
+    throw new Error(`experiment10: experiments/reader-acceptance.json does not cover ${where}, a variant it swept`);
+  }
+  return { litPixels: run.litPixels, litOnSphere: run.litOnSphere, crescentBlocks: run.crescentBlocks };
 }
 
 /**
@@ -1107,11 +1196,8 @@ export function pageTwinIdentity(
   twins: readonly { which: Which; variant: string; rig: number; twin: Pick<TwinCamera, 'camera' | 'page'> }[],
   acceptance: unknown,
 ) {
-  const file = acceptance as { schema?: unknown; commit?: unknown; positions?: unknown };
-  if (file === null || typeof file !== 'object' || !Array.isArray(file.positions)) {
-    throw new Error('experiment10: the acceptance sweep\'s file holds no positions[]');
-  }
-  const positions = file.positions as AcceptancePosition[];
+  const positions = acceptancePositions(acceptance);
+  const file = acceptance as { schema?: unknown; commit?: unknown };
   const swept = new Set(positions.map((p) => p.variant));
   const byKey = new Map(positions.map((p) => [`${p.variant}/${p.rig}/${p.camera}`, p]));
   const same = (x: readonly number[], y: readonly number[]): boolean =>
@@ -1210,8 +1296,21 @@ export interface PageBets {
           ambiguous: number;
           share: { min: number | null; max: number | null };
           below055: number;
+          histogram: { from: number; to: number; n: number }[];
         };
       };
+}
+
+/**
+ * How many of a cell's misfiles hold `cut` or more of their exposure in their
+ * majority step, off the share histogram's bins. The cut must be one of the
+ * bins' edges, or the count off them would not be the count at the cut.
+ */
+export function misfilesAtLeast(histogram: readonly { from: number; n: number }[], cut: number): number {
+  if (histogram.length > 0 && !histogram.some((b) => b.from === cut)) {
+    throw new Error(`experiment10: the near-tie share ${cut} is not an edge of the misfile histogram`);
+  }
+  return histogram.filter((b) => b.from >= cut).reduce((a, b) => a + b.n, 0);
 }
 
 /**
@@ -1237,6 +1336,7 @@ export function evaluateRerunBets(
   );
   const p10 = bet('P10');
   const photographs = sum((x) => x.page.misfiles.photographs);
+  const atLeastNearTie = sum((x) => misfilesAtLeast(x.page.misfiles.histogram, NEAR_TIE_SHARE));
   const p12 = bet('P12');
   const quietRuns = sum((x) => x.page.quiet.runs);
   const p11 = bet('P11');
@@ -1263,6 +1363,19 @@ export function evaluateRerunBets(
               },
               below055: sum((x) => x.page.misfiles.below055),
               byCell: Object.fromEntries(read.map((x) => [x.id, x.page.misfiles.photographs])),
+              // Beside the registered count, never in its place: the report's
+              // word for a misfile whose majority step holds less than `share`
+              // of its exposure, and how many are and are not near-ties. Every
+              // one of them falsifies P10 alike.
+              nearTie: {
+                reading:
+                  'a reporting cut chosen after the run was read, not part of the bet: a misfile ' +
+                  'whose majority step holds less than this share of its exposure is a near-tie. ' +
+                  'P10 is falsified by any misfile, near-tie or not',
+                share: NEAR_TIE_SHARE,
+                photographs: photographs - atLeastNearTie,
+                atOrAbove: atLeastNearTie,
+              },
             },
       falsified: read.length === 0 ? null : photographs > p10.threshold,
     },
@@ -1800,7 +1913,22 @@ export function summariseCell(
     // another touched attributable run. That run reaches the calibration
     // straddled, and no class counts it: a QUIET position is not PLACED, so
     // such a capture is QUIET, or LOUD+QUIET and not LOUD+SILENT.
-    const quiet = { runs: 0, positions: 0, captures: 0, silentWithQuiet: 0, quietPlacingTouched: 0 };
+    //
+    // Each drop is also listed: how the straddled reading noted it (out of
+    // view or barely seen), and the clean run's light as the acceptance sweep
+    // measured it on the same clean position ({@link acceptanceRunOf}), so
+    // that what was dropped is a cell of the document and not a join made
+    // outside it.
+    const quiet = {
+      runs: 0,
+      positions: 0,
+      captures: 0,
+      silentWithQuiet: 0,
+      quietPlacingTouched: 0,
+      unseen: 0,
+      barelySeen: 0,
+    };
+    const drops: QuietDrop[] = [];
     // What a LOUD capture's operator reads from the page, as `loud` counts the
     // counterfactual's: the problems refusing the touched attributable runs of
     // its REFUSED-ALL and MIXED positions.
@@ -1832,10 +1960,26 @@ export function summariseCell(
       }
       row[collapse(got)]++;
       let quietHere = false;
-      runs.forEach((rs) => {
-        const n = (rs ?? []).filter((r) => r.touched && r.attributable && r.verdict === 'noted').length;
-        if (n === 0) return;
-        quiet.runs += n;
+      runs.forEach((rs, i) => {
+        const dropped = (rs ?? []).filter((r) => r.touched && r.attributable && r.verdict === 'noted');
+        if (dropped.length === 0) return;
+        const pos = cap.positions[i];
+        const reading = pos.page as PagePosition;
+        for (const r of dropped) {
+          // A noted run is one the reading notes out of view or barely seen ({@link pageRunVerdicts}).
+          const noted = reading.unseen.includes(r.projector) ? ('out of view' as const) : ('barely seen' as const);
+          if (noted === 'out of view') quiet.unseen++;
+          else quiet.barelySeen++;
+          drops.push({
+            t: cap.t,
+            rig: cap.rig,
+            pos: pos.pos,
+            projector: r.projector,
+            noted,
+            clean: acceptanceRunOf(ev.acceptance, variantOf(ev.plan, which), cap.rig, pos.pos, r.projector),
+          });
+        }
+        quiet.runs += dropped.length;
         quiet.positions++;
         quietHere = true;
       });
@@ -1942,18 +2086,70 @@ export function summariseCell(
 
     // Misfiles (P10): every photograph a placed run files under another step
     // than the one holding more than half its exposure, with that share.
+    //
+    // And each run holding one, as the counterfactual reads it: its deciding
+    // verdict on the content footing and, where it places the run, whether its
+    // assignment files every photograph of the run where the page does, the
+    // misfiled ones included. The cell's decodes draw from the runs the
+    // counterfactual places (a subsample, or in R1 every one) and read each
+    // through the page's own readRun on that assignment's frames. So a run it
+    // places alike and a decode drew was decoded as the page files it, and its
+    // figures are listed, with the extremes of the cell's decode block that it
+    // alone sets. A run only the page places is decoded nowhere.
     const shares: number[] = [];
     const list: { t: number; pos: number; photo: number; filedStep: number; contentStep: number; share: number }[] = [];
     let misfiledPositions = 0;
     let misfilingRuns = 0;
     let ambiguous = 0;
+    const byCounterfactual = {
+      placedAlike: { runs: 0, photographs: 0, decoded: { runs: 0, photographs: 0 } },
+      placedOtherwise: { runs: 0, photographs: 0, decoded: { runs: 0, photographs: 0 } },
+      refused: { runs: 0, photographs: 0, why: {} as Record<string, number> },
+    };
+    const decodedMisfiles: MisfiledDecode[] = [];
+    // The cell's decode of one run, where its decodes drew it.
+    const decodeOf = (cap: CaptureScore, pos: PositionScore, projector: number): RunDecode | null => {
+      const hits =
+        cell.decode === 'all'
+          ? pos.decodes.filter((d) => d.projector === projector)
+          : samples
+              .filter((s) => s.t === cap.t && s.pos === pos.pos && s.decode.projector === projector)
+              .map((s) => s.decode);
+      if (hits.length > 1) {
+        throw new Error(
+          `experiment10: ${cell.id} decoded trial ${cap.t} camera ${pos.pos} run ${projector + 1} ` +
+            `${hits.length} times`,
+        );
+      }
+      return hits[0] ?? null;
+    };
+    // The extremes of the cell's decode block (below) that one decode alone holds.
+    const extremes: [string, (d: RunDecode) => number | null, 'min' | 'max'][] = [
+      ['biasU.min', (d) => d.shift.meanU, 'min'],
+      ['biasU.max', (d) => d.shift.meanU, 'max'],
+      ['biasV.min', (d) => d.shift.meanV, 'min'],
+      ['biasV.max', (d) => d.shift.meanV, 'max'],
+      ['acceptedDelta.min', (d) => d.acceptedDelta, 'min'],
+      ['acceptedDelta.max', (d) => d.acceptedDelta, 'max'],
+    ];
+    const setsOf = (d: RunDecode): string[] =>
+      extremes
+        .filter(([, get, dir]) => {
+          const v = get(d);
+          const xs = decodes.map(get).filter((x): x is number => x !== null);
+          if (v === null || xs.length === 0) return false;
+          const end = dir === 'min' ? Math.min(...xs) : Math.max(...xs);
+          return v === end && xs.filter((x) => x === end).length === 1;
+        })
+        .map(([name]) => name);
     for (const cap of read) {
       for (const pos of cap.positions) {
-        if (pos.page === null || pos.page.crash !== null) continue;
-        ambiguous += pos.page.ambiguous.reduce((a, n) => a + n, 0);
-        misfilingRuns += pos.page.contentMisfiles.filter((n) => n > 0).length;
-        if (pos.page.misfiled.length > 0) misfiledPositions++;
-        for (const m of pos.page.misfiled) {
+        const reading = pos.page;
+        if (reading === null || reading.crash !== null) continue;
+        ambiguous += reading.ambiguous.reduce((a, n) => a + n, 0);
+        misfilingRuns += reading.contentMisfiles.filter((n) => n > 0).length;
+        if (reading.misfiled.length > 0) misfiledPositions++;
+        for (const m of reading.misfiled) {
           shares.push(m.share);
           list.push({
             t: cap.t,
@@ -1964,6 +2160,51 @@ export function summariseCell(
             share: round(m.share, 5) as number,
           });
         }
+        reading.placed.forEach((p, k) => {
+          // Run p files photograph start + f as step 34·p + f (runFiling).
+          const held = reading.misfiled.filter((m) => Math.floor(m.filedStep / FRAMES_PER_RUN) === p);
+          if (held.length !== reading.contentMisfiles[k]) {
+            throw new Error(
+              `experiment10: ${cell.id} trial ${cap.t} camera ${pos.pos} run ${p + 1} counts ` +
+                `${reading.contentMisfiles[k]} misfiles and lists ${held.length}`,
+            );
+          }
+          if (held.length === 0) return;
+          const outcome = deciding(pos.content[p]).outcome;
+          if (outcome !== 'placed') {
+            byCounterfactual.refused.runs++;
+            byCounterfactual.refused.photographs += held.length;
+            byCounterfactual.refused.why[outcome] = (byCounterfactual.refused.why[outcome] ?? 0) + 1;
+            return;
+          }
+          const start = reading.starts[k];
+          let alike = pos.assignment !== null;
+          for (let f = 0; alike && f < FRAMES_PER_RUN; f++) {
+            alike = pos.assignment?.[start + f] === p * FRAMES_PER_RUN + f;
+          }
+          const into = alike ? byCounterfactual.placedAlike : byCounterfactual.placedOtherwise;
+          into.runs++;
+          into.photographs += held.length;
+          const d = decodeOf(cap, pos, p);
+          if (d === null) return;
+          into.decoded.runs++;
+          into.decoded.photographs += held.length;
+          if (!alike) return;
+          decodedMisfiles.push({
+            t: cap.t,
+            pos: pos.pos,
+            projector: p,
+            photographs: held.map((m) => m.photo),
+            shares: held.map((m) => round(m.share, 5) as number),
+            biasU: round(d.shift.meanU, 4),
+            biasV: round(d.shift.meanV, 4),
+            matched: d.shift.matched,
+            moved: d.shift.moved,
+            gross: d.shift.gross,
+            acceptedDelta: d.acceptedDelta,
+            sets: setsOf(d),
+          });
+        });
       }
     }
     return {
@@ -2000,7 +2241,7 @@ export function summariseCell(
           vsCounterfactual,
         },
       },
-      quiet,
+      quiet: { ...quiet, list: drops.length <= QUIET_LIST_LIMIT ? drops : null },
       loud,
       words,
       runs: tally,
@@ -2016,6 +2257,10 @@ export function summariseCell(
         below055: shares.filter((s) => s < 0.55).length,
         histogram: shareHistogram(shares),
         list: shares.length <= MISFILE_LIST_LIMIT ? list : null,
+        counterfactual: {
+          ...byCounterfactual,
+          decodes: decodedMisfiles.length <= MISFILE_LIST_LIMIT ? decodedMisfiles : null,
+        },
       },
     };
   })();
@@ -2694,6 +2939,13 @@ export function assemble(ctx: RunContext, sources: AssemblySources): Record<stri
     return null;
   }
   loadSolves(ctx);
+  if (!fs.existsSync(sources.readerAcceptance)) {
+    throw new Error(
+      `experiment10: the page twins (I-page-twin) and the quiet drops are held to ` +
+        `${sources.readerAcceptance}, which is not there`,
+    );
+  }
+  const acceptance = JSON.parse(fs.readFileSync(sources.readerAcceptance, 'utf8')) as unknown;
   const ev: Evidence = {
     plan,
     q0,
@@ -2704,6 +2956,7 @@ export function assemble(ctx: RunContext, sources: AssemblySources): Record<stri
     rescore,
     lateness,
     solves: ctx.solves,
+    acceptance,
   };
 
   // ----- precondition: Q0, Q0b, the twins
@@ -3768,15 +4021,7 @@ export function assemble(ctx: RunContext, sources: AssemblySources): Record<stri
           const { which, k } = parseUnit(key);
           return u.twins.map((twin) => ({ which, variant: variantOf(plan, which), rig: k, twin }));
         }),
-        (() => {
-          if (!fs.existsSync(sources.readerAcceptance)) {
-            throw new Error(
-              `experiment10: I-page-twin holds the page twins to ${sources.readerAcceptance}, ` +
-                'which is not there',
-            );
-          }
-          return JSON.parse(fs.readFileSync(sources.readerAcceptance, 'utf8')) as unknown;
-        })(),
+        acceptance,
       ),
     },
   ];
@@ -4186,7 +4431,11 @@ export function assemble(ctx: RunContext, sources: AssemblySources): Record<stri
     lateness: latenessDoc,
     harness,
     predictions: [...predictions, ...bets],
-    followUps: followUps(plan, precondition.q0.page.placedPositions),
+    followUps: followUps(
+      plan,
+      precondition.q0.page.placedPositions,
+      misfiledRunsTally([...rescoreDoc.cells, ...latenessDoc.cells]),
+    ),
     verdict: { statement: '' },
   };
   doc.generatedFrom.caveats = caveats(doc as unknown as VerdictDoc);
@@ -4195,11 +4444,61 @@ export function assemble(ctx: RunContext, sources: AssemblySources): Record<stri
 }
 
 /**
+ * The runs holding P10's misfiles, over every cell the page read, as the
+ * counterfactual reads them and as the decodes drew them: the sums of the
+ * cells' `page.misfiles.counterfactual`.
+ */
+export interface MisfiledRunsTally {
+  runs: number;
+  photographs: number;
+  placedAlike: { runs: number; photographs: number; decoded: { runs: number; photographs: number } };
+  placedOtherwise: { runs: number; photographs: number; decoded: { runs: number; photographs: number } };
+  refused: { runs: number; photographs: number };
+}
+
+export function misfiledRunsTally(
+  cells: readonly { id: string; page: ReturnType<typeof summariseCell>['page'] }[],
+): MisfiledRunsTally {
+  const pair = () => ({ runs: 0, photographs: 0 });
+  const t: MisfiledRunsTally = {
+    ...pair(),
+    placedAlike: { ...pair(), decoded: pair() },
+    placedOtherwise: { ...pair(), decoded: pair() },
+    refused: pair(),
+  };
+  const add = (a: { runs: number; photographs: number }, b: { runs: number; photographs: number }) => {
+    a.runs += b.runs;
+    a.photographs += b.photographs;
+  };
+  for (const x of cells) {
+    if (x.page.status === 'not run') continue;
+    const m = x.page.misfiles;
+    add(t, { runs: m.runs, photographs: m.photographs });
+    add(t.placedAlike, m.counterfactual.placedAlike);
+    add(t.placedAlike.decoded, m.counterfactual.placedAlike.decoded);
+    add(t.placedOtherwise, m.counterfactual.placedOtherwise);
+    add(t.placedOtherwise.decoded, m.counterfactual.placedOtherwise.decoded);
+    add(t.refused, m.counterfactual.refused);
+    const parts = m.counterfactual.placedAlike.runs + m.counterfactual.placedOtherwise.runs + m.counterfactual.refused.runs;
+    if (parts !== m.runs) {
+      throw new Error(`experiment10: ${x.id}'s ${m.runs} misfiling runs are read ${parts} times by the counterfactual`);
+    }
+  }
+  return t;
+}
+
+/**
  * What this experiment still has not measured, each a measurement somebody
  * could make next. Kept in the document so a reader of the results reads the
  * gaps beside them, and so a gap closed later has somewhere to be crossed out.
+ * `misfiled` is what the cells say of the runs holding P10's misfiles; without
+ * it the page's decode is described without figures.
  */
-export function followUps(plan: Exp10Plan, placedPositions: number): string[] {
+export function followUps(
+  plan: Exp10Plan,
+  placedPositions: number,
+  misfiled: MisfiledRunsTally | null = null,
+): string[] {
   const out = [
     "P0, the emitter's lateness: tools/emitter-timing.ts was never built, so δ has been " +
       'measured only by a design-time probe in a headless, software-rendered browser, and never ' +
@@ -4253,14 +4552,45 @@ export function followUps(plan: Exp10Plan, placedPositions: number): string[] {
         'other one is not solved, and past-gate counts through the page cover the reused ' +
         'solves alone.',
       "The page's decode: the page column reads which runs the page places and where, and " +
-        'decodes none. What a straddle does to the coordinates of a run as the page files it is ' +
-        'not measured: one only the page places, re-filed by what its photographs show or ' +
-        "refused by the counterfactual's bookends, and one holding a photograph filed under " +
-        "another step than the one it mostly shows (P10's misfiles). The decode subsamples " +
-        "draw from the counterfactual's placed runs.",
+        "decodes none. The decodes draw from the counterfactual's placed runs (every one in R1, " +
+        "a subsample elsewhere) and read each through the page's own readRun on the " +
+        "counterfactual's filing of it, so what a straddle does to the coordinates of a run only " +
+        'the page places is not measured: one re-filed by what its photographs show, or refused ' +
+        "by the counterfactual's bookends." +
+        misfiledDecodes(misfiled),
     );
   }
   return out;
+}
+
+/** The page's decode follow-up on the runs holding P10's misfiles, from the cells' tally. */
+function misfiledDecodes(t: MisfiledRunsTally | null): string {
+  if (t === null) {
+    return (
+      " A run holding a photograph filed under another step than the one it mostly shows (P10's " +
+      'misfiles) is decoded as the page files it only where the counterfactual places it too, ' +
+      'filing every photograph where the page does, and a decode drew it ' +
+      '(page.misfiles.counterfactual).'
+    );
+  }
+  if (t.runs === 0) {
+    return ' No run the page placed holds a photograph filed under another step than the one it mostly shows (P10).';
+  }
+  const alike = t.placedAlike;
+  const otherwise = t.placedOtherwise;
+  const photographs = (n: number): string => `${n} photograph${n === 1 ? '' : 's'}`;
+  const runs = (n: number): string => `${n} run${n === 1 ? '' : 's'}`;
+  return (
+    ` Of the ${runs(t.runs)} holding P10's misfiles (${photographs(t.photographs)}), the ` +
+    `counterfactual refuses ${t.refused.runs} (${photographs(t.refused.photographs)}), which only ` +
+    `the page places, and places ${alike.runs} (${alike.photographs}), filing every photograph ` +
+    'where the page does' +
+    (otherwise.runs === 0 ? '' : `, and ${otherwise.runs} (${otherwise.photographs}) filing them otherwise`) +
+    `. The decodes drew ${alike.decoded.runs} of those ${alike.runs}, holding ` +
+    `${alike.decoded.photographs} misfiled ${alike.decoded.photographs === 1 ? 'photograph' : 'photographs'}, ` +
+    "each decoded as the page files it (each cell's page.misfiles.counterfactual.decodes). What a " +
+    `misfile does to the coordinates of the other ${runs(t.runs - alike.decoded.runs)} is not measured.`
+  );
 }
 
 /** The design constants the document carries, read back like any cell. */
@@ -4411,7 +4741,11 @@ export function caveats(doc: VerdictDoc): Record<string, string> {
       "counterfactual solve's harm only where the page's plan, placement included, is that " +
       "solve's, and is otherwise not solved (page.classes.P.harm); a QUIET capture is given no " +
       'harm. A misfile is a photograph a placed run files under another step than the one ' +
-      'holding more than half its exposure (P10).',
+      'holding more than half its exposure (P10). Each quiet drop is listed with how the ' +
+      "straddled reading noted it and the clean run's light as experiments/reader-acceptance.json " +
+      'measured it (page.quiet.list). Each run holding a misfile is read by the counterfactual ' +
+      "too, and where its decodes drew one it places filed as the page files it, that decode's " +
+      'figures are listed (page.misfiles.counterfactual).',
     reshoot:
       'Policy P assumes the re-shoot after a refusal is clean, which is optimistic: a fresh ' +
       'start can straddle again (followUps).',
@@ -4519,7 +4853,11 @@ export type VerdictDoc = {
       };
       fine: { raster: { width: number; height: number } | null };
     };
-    pageTwins: { main: { runs: number; unseen: number; barelySeen: number } };
+    pageTwins: {
+      main: { cameras: number; runs: number; unseen: number; barelySeen: number };
+      spill: { cameras: number };
+      fine: { cameras: number };
+    };
   };
   harness: { id: string; pass: boolean | null; measured: unknown }[];
   /**
@@ -4749,8 +5087,16 @@ export function verdictStatement(doc: VerdictDoc): string {
     cells.p13Compared = p13?.compared ?? Number.NaN;
     cells.p13Differ = p13?.differ ?? Number.NaN;
     if (num('p13Compared') > 0) {
+      // The rescoring and the lateness attribute against the main and spill
+      // twins; the finer preset's are read only here, beside Q0.
+      const twins = doc.precondition.pageTwins;
+      cells.twinsAttributed = twins.main.cameras + twins.spill.cameras;
+      cells.twinsFine = twins.fine.cameras;
       first +=
-        ` Each camera's clean twin, which the rescoring attributes against, reads as Q0 does` +
+        (num('twinsFine') === 0
+          ? ` Each camera's clean twin, which the rescoring attributes against, reads as Q0 does`
+          : ` The page's reading of each camera's clean twin, the ${c('twinsAttributed')} the ` +
+            `rescoring attributes against and the finer preset's ${c('twinsFine')}, reads as Q0 does`) +
         (num('p13Differ') === 0
           ? ` at all ${c('p13Compared')} positions, ${outcome('P13', 'which falsifies P13', 'so P13 holds')}.`
           : ` at all but ${c('p13Differ')} of the ${c('p13Compared')} positions, ` +
@@ -5108,16 +5454,30 @@ export function verdictStatement(doc: VerdictDoc): string {
       allQuiet: withCaptures.reduce((a, x) => a + pageOf(x).quiet.runs, 0),
       allMisfiled: withCaptures.reduce((a, x) => a + pageOf(x).misfiles.photographs, 0),
       allMisfiledPositions: withCaptures.reduce((a, x) => a + pageOf(x).misfiles.positions, 0),
+      allAmbiguous: withCaptures.reduce((a, x) => a + pageOf(x).misfiles.ambiguous, 0),
     });
     const p12 = at(bets, 'P12').measured as { runs?: number } | null;
-    const p10 = at(bets, 'P10').measured as { photographs?: number; positions?: number } | null;
+    const p10 = at(bets, 'P10').measured as {
+      photographs?: number;
+      positions?: number;
+      ambiguous?: number;
+      nearTie?: { share?: number };
+    } | null;
     cells.p12Runs = p12?.runs ?? Number.NaN;
     cells.p10Photographs = p10?.photographs ?? Number.NaN;
     cells.p10Positions = p10?.positions ?? Number.NaN;
+    cells.p10Ambiguous = p10?.ambiguous ?? Number.NaN;
+    // The report's near-tie share, as the document carries it: read only where
+    // a cell has a misfile to say it of.
+    cells.nearTieShare = p10?.nearTie?.share ?? Number.NaN;
     if (num('p12Runs') !== num('allQuiet')) {
       throw new Error("experiment10: P12's quiet drops are not the cells' own, which the verdict quotes");
     }
-    if (num('p10Photographs') !== num('allMisfiled') || num('p10Positions') !== num('allMisfiledPositions')) {
+    if (
+      num('p10Photographs') !== num('allMisfiled') ||
+      num('p10Positions') !== num('allMisfiledPositions') ||
+      num('p10Ambiguous') !== num('allAmbiguous')
+    ) {
       throw new Error("experiment10: P10's misfiles are not the cells' own, which the verdict quotes");
     }
     // Each cell with a quiet drop, the most first.
@@ -5135,28 +5495,39 @@ export function verdictStatement(doc: VerdictDoc): string {
           `(${listed.length === 1 ? listed[0] : `${listed.slice(0, -1).join(', ')} and ${listed[listed.length - 1]}`}), `) +
       `${outcome('P12', 'which falsifies P12', 'so P12 holds')}.`;
     // Each cell with a misfile, the most first: a near-tie cell says so, and
-    // any other counts its misfiles at the near-tie share or more, so a
-    // photograph of another step placed in a run never reads as a tie.
+    // any other counts its misfiles at the near-tie share or more and the
+    // near-ties beside them, so a photograph of another step placed in a run
+    // never reads as a tie, nor a tie as one. Whether a cell is all near-ties
+    // is read off the histogram, which bins the unrounded shares, and never off
+    // the largest share, which is rounded: 0.599996 is written 0.6.
     const misCells = withCaptures
       .filter((x) => pageOf(x).misfiles.photographs > 0)
       .sort((a, b) => pageOf(b).misfiles.photographs - pageOf(a).misfiles.photographs);
     const phrases = misCells.map((x) => {
       const m = pageOf(x).misfiles;
       const key = (k: string) => `misfiles:${x.id}:${k}`;
+      const cut = num('nearTieShare');
       Object.assign(cells, {
         [key('n')]: m.photographs,
         [key('positions')]: m.positions,
         [key('lo')]: orNaN(m.share.min),
         [key('hi')]: orNaN(m.share.max),
-        [key('atLeast')]: m.histogram
-          .filter((b) => b.from >= NEAR_TIE_SHARE)
-          .reduce((a, b) => a + b.n, 0),
+        [key('atLeast')]: misfilesAtLeast(m.histogram, cut),
       });
       const count = num(key('n'));
+      const atLeast = num(key('atLeast'));
+      const lo = n(key('lo'), 3);
+      const hi = n(key('hi'), 3);
+      // A near-tie's share is under the cut, however its figure rounds.
+      const hiUnderCut = atLeast === 0 && Number(hi) >= cut;
       const range =
         num(key('lo')) === num(key('hi'))
-          ? n(key('lo'), 3)
-          : `${n(key('lo'), 3)}-${n(key('hi'), 3)}`;
+          ? hiUnderCut
+            ? `just under ${cut}`
+            : lo
+          : hiUnderCut
+            ? `${lo} to just under ${cut}`
+            : `${lo}-${hi}`;
       const where = num(key('positions')) === count ? '' : ` in ${c(key('positions'))} positions`;
       // Which way each was filed from the step it mostly shows, where the cell lists them.
       const off =
@@ -5173,23 +5544,41 @@ export function verdictStatement(doc: VerdictDoc): string {
               : off.join() === '-1,1'
                 ? ' filed one step before or after it'
                 : ` filed up to ${Math.max(...off.map(Math.abs))} steps from it`;
-      if (num(key('hi')) < NEAR_TIE_SHARE) {
+      if (atLeast === 0) {
         return count === 1
           ? `in ${x.id}, 1, a near-tie (${range})${filed}`
           : `in ${x.id}, ${count}${where}, each a near-tie (that step's share ${range})${filed}`;
       }
+      const nearTies = count - atLeast;
+      const split =
+        count === 1
+          ? `at ${cut} or more`
+          : nearTies === 0
+            ? `every one at ${cut} or more`
+            : `${c(key('atLeast'))} of them at ${cut} or more and the other ` +
+              (nearTies === 1 ? 'a near-tie' : `${nearTies} near-ties`);
       return (
-        `in ${x.id} (${x.spec.arm}), ${count}${where}, that step's share ${range} and ` +
-        `${c(key('atLeast'))} of them at ${NEAR_TIE_SHARE} or more,${filed}: runs placed holding a ` +
-        `photograph of another step`
+        `in ${x.id} (${x.spec.arm}), ${count}${where}, that step's share ${range}, ${split},${filed}: ` +
+        `runs placed holding a photograph of another step`
       );
     });
+    // A photograph with no majority step is counted apart and cannot falsify
+    // P10: where there are any, the sentence says so rather than calling every
+    // photograph filed under its majority step.
+    const apart =
+      num('allAmbiguous') === 0
+        ? ''
+        : num('allAmbiguous') === 1
+          ? ` (${c('allAmbiguous')} photograph with no majority step is counted apart)`
+          : ` (${c('allAmbiguous')} photographs with no majority step are counted apart)`;
     pageClause +=
       ` Its placed runs file ` +
       (num('allMisfiled') === 0
-        ? `every photograph under the step holding more than half its exposure, `
+        ? num('allAmbiguous') === 0
+          ? `every photograph under the step holding more than half its exposure, `
+          : `every photograph with a step holding more than half its exposure under that step${apart}, `
         : `${c('allMisfiled')} photographs, in ${c('allMisfiledPositions')} positions, under a step ` +
-          `other than the one holding more than half their exposure, `) +
+          `other than the one holding more than half their exposure${apart}, `) +
       outcome('P10', 'which falsifies P10', 'so P10 holds') +
       (phrases.length === 0
         ? '.'

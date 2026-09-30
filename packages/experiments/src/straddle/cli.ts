@@ -6,18 +6,20 @@
  * costs a calibration: read by a counterfactual reader, and by the page's own.
  *
  * Writes `experiments/experiment-10.json`. The spec budgeted three hours in one
- * process; the unit costs measured while this was built (a default rig 1.5 s to
- * bank, a noisy run 0.25 s, a crossing scan with its twelve pair scans 1.8 s, a
- * solve about 10 s) put it nearer four, and the page column, which hands every
- * straddled position to the page's own reader, has since about doubled that: the
- * fourth full run's stages add up to about eight hours. Once `q0` and `bank` are
- * on disk the other five can run side by side — `pose`, `rescore` and `lateness`
+ * process, and the unit costs measured while this was built (a default rig 1.5 s
+ * to bank, a noisy run 0.25 s, a crossing scan with its twelve pair scans 1.8 s,
+ * a solve about 10 s) put it nearer four. Both were short: the third full run,
+ * the counterfactual reader alone, took about six and a half hours in one
+ * process, and the fourth, whose page column also hands every straddled position
+ * to the page's own reader, adds up to about eight. Once `q0` and `bank` are on
+ * disk the other five can run side by side — `pose`, `rescore` and `lateness`
  * together, since they share the solve file — then `--stage assemble`. On four
  * CPUs the re-scoring, about three and a half hours, is the longest lane
  * (lateness about two and a half, pose about an hour, gate about forty minutes,
- * decode about twenty after pose), and the fourth run took four hours and ten
- * minutes from start to file, half an hour of it stopped by a container restart
- * it then resumed from.
+ * decode about seventeen minutes after pose), and the fourth run took four hours
+ * and ten minutes from start to file. 28 minutes of that were a container
+ * restart, which stopped the two lanes still running, re-scoring and lateness;
+ * relaunched, each resumed from its checkpoint.
  *
  *   node .../cli.ts                   every stage in order, resuming, then assemble
  *   node .../cli.ts --stage gate      one stage, resuming from its checkpoint

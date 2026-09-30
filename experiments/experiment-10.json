@@ -4,7 +4,7 @@
   "notice": null,
   "generatedFrom": {
     "codeFingerprint": "3ec8aa0f84ec92e0",
-    "assemblyFingerprint": "8f63b40c74616ec8",
+    "assemblyFingerprint": "d0bc329dcb366ebf",
     "staleCheckpointsAccepted": [],
     "design": {
       "constants": {
@@ -1348,7 +1348,7 @@
       "resolution": "The main sweep renders at 320x240, where a fingerprint cell holds about 19 pixels. The check at 640x480, where a fingerprint cell holds about 75 pixels (gate.resolution) bounds only the gate side of that.",
       "folder": "F136: a position is exactly 136 photographs, the first the first release after Play. The card's own extra end photographs and re-shot runs are measured for the counterfactual reader alone (precondition.q0b); the page column reads the 136 and nothing else.",
       "fastPath": "Noisy frames come from the fast path — a bank blend through the renderer's own sensor and noise stream — validated against hook renders in gate.hook: the pixels, the counterfactual's verdicts and the decode bias by H8, and the page's reading of the whole straddled position by H8-page (8 of 8 readings agree).",
-      "pageColumn": "Each cell's page block reads every changed position of a page-column rig whole, from the fast path's noisy frames. A run counts against the straddle only where the page's reading of the clean twin places it. A run that reading places and the straddled one only notes out of view or barely seen is a quiet drop (P12): neither refused nor placed. A position holding one with nothing refused is QUIET, which is not PLACED, so it makes no capture SILENT: with nothing refused, a capture is SILENT when a position is PLACED and QUIET when none is and one is QUIET, a class the counterfactual reader cannot have, since it refuses every run it does not place. A LOUD capture with a QUIET position is counted as LOUD+QUIET, not LOUD+SILENT. A QUIET position can still place another touched run, which reaches the calibration straddled; in a capture with no PLACED position no class counts it (page.quiet.quietPlacingTouched). A crash counts as a refusal and is counted apart. A SILENT capture, and a LOUD+SILENT one's PLACED part, takes a counterfactual solve's harm only where the page's plan, placement included, is that solve's, and is otherwise not solved (page.classes.P.harm); a QUIET capture is given no harm. A misfile is a photograph a placed run files under another step than the one holding more than half its exposure (P10).",
+      "pageColumn": "Each cell's page block reads every changed position of a page-column rig whole, from the fast path's noisy frames. A run counts against the straddle only where the page's reading of the clean twin places it. A run that reading places and the straddled one only notes out of view or barely seen is a quiet drop (P12): neither refused nor placed. A position holding one with nothing refused is QUIET, which is not PLACED, so it makes no capture SILENT: with nothing refused, a capture is SILENT when a position is PLACED and QUIET when none is and one is QUIET, a class the counterfactual reader cannot have, since it refuses every run it does not place. A LOUD capture with a QUIET position is counted as LOUD+QUIET, not LOUD+SILENT. A QUIET position can still place another touched run, which reaches the calibration straddled; in a capture with no PLACED position no class counts it (page.quiet.quietPlacingTouched). A crash counts as a refusal and is counted apart. A SILENT capture, and a LOUD+SILENT one's PLACED part, takes a counterfactual solve's harm only where the page's plan, placement included, is that solve's, and is otherwise not solved (page.classes.P.harm); a QUIET capture is given no harm. A misfile is a photograph a placed run files under another step than the one holding more than half its exposure (P10). Each quiet drop is listed with how the straddled reading noted it and the clean run's light as experiments/reader-acceptance.json measured it (page.quiet.list). Each run holding a misfile is read by the counterfactual too, and where its decodes drew one it places filed as the page files it, that decode's figures are listed (page.misfiles.counterfactual).",
       "reshoot": "Policy P assumes the re-shoot after a refusal is clean, which is optimistic: a fresh start can straddle again (followUps).",
       "yardsticks": "Two nulls of D_grid, each 10 re-shoots of each of 8 designed rigs against the plain twin: the whole capture re-shot (pose.tauNull), and only the straddled position re-shot under the same seeds (pose.tauPosition). HARMLESS and BIASED are drawn at τ, the whole-capture 95th percentile, set by the few rigs that supply its largest values (pose.tauNull.largest). A straddle's median is set against each null's median; a 95th percentile is quoted beside it, never instead of it.",
       "unjudgeable": "A solve whose D_grid is censored (a lower bound) or whose twin misses the seam gate on its own is reported as unjudgeable, never HARMLESS or BIASED: SILENT-UNJUDGEABLE when the capture is silent, and in solved.unjudgeable when it is loud.",
@@ -29236,7 +29236,10 @@
             "positions": 0,
             "captures": 0,
             "silentWithQuiet": 0,
-            "quietPlacingTouched": 0
+            "quietPlacingTouched": 0,
+            "unseen": 0,
+            "barelySeen": 0,
+            "list": []
           },
           "loud": {
             "captures": 626,
@@ -29367,7 +29370,31 @@
                 "n": 0
               }
             ],
-            "list": []
+            "list": [],
+            "counterfactual": {
+              "placedAlike": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "placedOtherwise": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "refused": {
+                "runs": 0,
+                "photographs": 0,
+                "why": {}
+              },
+              "decodes": []
+            }
           }
         }
       },
@@ -30115,7 +30142,10 @@
             "positions": 0,
             "captures": 0,
             "silentWithQuiet": 0,
-            "quietPlacingTouched": 0
+            "quietPlacingTouched": 0,
+            "unseen": 0,
+            "barelySeen": 0,
+            "list": []
           },
           "loud": {
             "captures": 610,
@@ -30245,7 +30275,31 @@
                 "n": 0
               }
             ],
-            "list": []
+            "list": [],
+            "counterfactual": {
+              "placedAlike": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "placedOtherwise": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "refused": {
+                "runs": 0,
+                "photographs": 0,
+                "why": {}
+              },
+              "decodes": []
+            }
           }
         }
       },
@@ -31000,7 +31054,35 @@
             "positions": 2,
             "captures": 2,
             "silentWithQuiet": 0,
-            "quietPlacingTouched": 0
+            "quietPlacingTouched": 0,
+            "unseen": 1,
+            "barelySeen": 1,
+            "list": [
+              {
+                "t": 449,
+                "rig": 17,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 81,
+                  "litOnSphere": 81,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 1933,
+                "rig": 13,
+                "pos": 2,
+                "projector": 2,
+                "noted": "out of view",
+                "clean": {
+                  "litPixels": 58,
+                  "litOnSphere": 58,
+                  "crescentBlocks": 10
+                }
+              }
+            ]
           },
           "loud": {
             "captures": 125,
@@ -31140,7 +31222,52 @@
                 "contentStep": 33,
                 "share": 0.51991
               }
-            ]
+            ],
+            "counterfactual": {
+              "placedAlike": {
+                "runs": 1,
+                "photographs": 1,
+                "decoded": {
+                  "runs": 1,
+                  "photographs": 1
+                }
+              },
+              "placedOtherwise": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "refused": {
+                "runs": 0,
+                "photographs": 0,
+                "why": {}
+              },
+              "decodes": [
+                {
+                  "t": 476,
+                  "pos": 2,
+                  "projector": 0,
+                  "photographs": [
+                    32
+                  ],
+                  "shares": [
+                    0.51991
+                  ],
+                  "biasU": -0.659,
+                  "biasV": -1.3545,
+                  "matched": 19039,
+                  "moved": 19039,
+                  "gross": 0,
+                  "acceptedDelta": 0,
+                  "sets": [
+                    "biasV.min"
+                  ]
+                }
+              ]
+            }
           }
         }
       },
@@ -31898,7 +32025,10 @@
             "positions": 0,
             "captures": 0,
             "silentWithQuiet": 0,
-            "quietPlacingTouched": 0
+            "quietPlacingTouched": 0,
+            "unseen": 0,
+            "barelySeen": 0,
+            "list": []
           },
           "loud": {
             "captures": 483,
@@ -32201,7 +32331,185 @@
                 "contentStep": 75,
                 "share": 0.83317
               }
-            ]
+            ],
+            "counterfactual": {
+              "placedAlike": {
+                "runs": 15,
+                "photographs": 16,
+                "decoded": {
+                  "runs": 8,
+                  "photographs": 9
+                }
+              },
+              "placedOtherwise": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "refused": {
+                "runs": 5,
+                "photographs": 5,
+                "why": {
+                  "refused-bookends-count": 3,
+                  "refused-bookends-kind": 2
+                }
+              },
+              "decodes": [
+                {
+                  "t": 44,
+                  "pos": 2,
+                  "projector": 0,
+                  "photographs": [
+                    3
+                  ],
+                  "shares": [
+                    0.53396
+                  ],
+                  "biasU": 0,
+                  "biasV": 0,
+                  "matched": 19039,
+                  "moved": 0,
+                  "gross": 0,
+                  "acceptedDelta": 0,
+                  "sets": []
+                },
+                {
+                  "t": 70,
+                  "pos": 0,
+                  "projector": 0,
+                  "photographs": [
+                    30
+                  ],
+                  "shares": [
+                    0.54056
+                  ],
+                  "biasU": 0,
+                  "biasV": -0.0022,
+                  "matched": 9892,
+                  "moved": 9548,
+                  "gross": 0,
+                  "acceptedDelta": 0,
+                  "sets": []
+                },
+                {
+                  "t": 101,
+                  "pos": 2,
+                  "projector": 2,
+                  "photographs": [
+                    97
+                  ],
+                  "shares": [
+                    0.62442
+                  ],
+                  "biasU": 0.135,
+                  "biasV": 0,
+                  "matched": 553,
+                  "moved": 534,
+                  "gross": 0,
+                  "acceptedDelta": 0,
+                  "sets": []
+                },
+                {
+                  "t": 264,
+                  "pos": 0,
+                  "projector": 2,
+                  "photographs": [
+                    95,
+                    97
+                  ],
+                  "shares": [
+                    0.75938,
+                    0.99841
+                  ],
+                  "biasU": 6.9361,
+                  "biasV": 0,
+                  "matched": 113,
+                  "moved": 112,
+                  "gross": 16,
+                  "acceptedDelta": -13,
+                  "sets": [
+                    "biasU.max"
+                  ]
+                },
+                {
+                  "t": 313,
+                  "pos": 0,
+                  "projector": 2,
+                  "photographs": [
+                    99
+                  ],
+                  "shares": [
+                    0.57535
+                  ],
+                  "biasU": 0,
+                  "biasV": -0.9033,
+                  "matched": 386,
+                  "moved": 375,
+                  "gross": 0,
+                  "acceptedDelta": 0,
+                  "sets": []
+                },
+                {
+                  "t": 325,
+                  "pos": 0,
+                  "projector": 2,
+                  "photographs": [
+                    75
+                  ],
+                  "shares": [
+                    0.52622
+                  ],
+                  "biasU": 0,
+                  "biasV": 0,
+                  "matched": 2172,
+                  "moved": 0,
+                  "gross": 0,
+                  "acceptedDelta": 0,
+                  "sets": []
+                },
+                {
+                  "t": 343,
+                  "pos": 1,
+                  "projector": 3,
+                  "photographs": [
+                    128
+                  ],
+                  "shares": [
+                    0.60673
+                  ],
+                  "biasU": -1.6472,
+                  "biasV": 0,
+                  "matched": 5783,
+                  "moved": 5705,
+                  "gross": 0,
+                  "acceptedDelta": 0,
+                  "sets": []
+                },
+                {
+                  "t": 493,
+                  "pos": 2,
+                  "projector": 0,
+                  "photographs": [
+                    4
+                  ],
+                  "shares": [
+                    1
+                  ],
+                  "biasU": 0,
+                  "biasV": 0,
+                  "matched": 13801,
+                  "moved": 0,
+                  "gross": 0,
+                  "acceptedDelta": -2293,
+                  "sets": [
+                    "acceptedDelta.min"
+                  ]
+                }
+              ]
+            }
           }
         }
       },
@@ -32949,7 +33257,10 @@
             "positions": 0,
             "captures": 0,
             "silentWithQuiet": 0,
-            "quietPlacingTouched": 0
+            "quietPlacingTouched": 0,
+            "unseen": 0,
+            "barelySeen": 0,
+            "list": []
           },
           "loud": {
             "captures": 644,
@@ -33079,7 +33390,31 @@
                 "n": 0
               }
             ],
-            "list": []
+            "list": [],
+            "counterfactual": {
+              "placedAlike": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "placedOtherwise": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "refused": {
+                "runs": 0,
+                "photographs": 0,
+                "why": {}
+              },
+              "decodes": []
+            }
           }
         }
       },
@@ -33831,7 +34166,383 @@
             "positions": 31,
             "captures": 31,
             "silentWithQuiet": 0,
-            "quietPlacingTouched": 4
+            "quietPlacingTouched": 4,
+            "unseen": 0,
+            "barelySeen": 31,
+            "list": [
+              {
+                "t": 144,
+                "rig": 0,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 35,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 170,
+                "rig": 6,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 46,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 12
+                }
+              },
+              {
+                "t": 208,
+                "rig": 0,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 35,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 226,
+                "rig": 6,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 46,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 12
+                }
+              },
+              {
+                "t": 305,
+                "rig": 3,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 226,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 27
+                }
+              },
+              {
+                "t": 312,
+                "rig": 0,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 35,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 453,
+                "rig": 15,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 66,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 12
+                }
+              },
+              {
+                "t": 471,
+                "rig": 21,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 55,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 13
+                }
+              },
+              {
+                "t": 546,
+                "rig": 6,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 46,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 12
+                }
+              },
+              {
+                "t": 656,
+                "rig": 0,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 35,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 674,
+                "rig": 6,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 113,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 13
+                }
+              },
+              {
+                "t": 693,
+                "rig": 15,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 66,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 12
+                }
+              },
+              {
+                "t": 757,
+                "rig": 15,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 66,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 12
+                }
+              },
+              {
+                "t": 760,
+                "rig": 0,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 35,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 858,
+                "rig": 6,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 46,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 12
+                }
+              },
+              {
+                "t": 871,
+                "rig": 21,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 55,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 13
+                }
+              },
+              {
+                "t": 933,
+                "rig": 15,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 66,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 12
+                }
+              },
+              {
+                "t": 1168,
+                "rig": 0,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 35,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 1296,
+                "rig": 0,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 35,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 1312,
+                "rig": 0,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 35,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 1413,
+                "rig": 15,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 66,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 12
+                }
+              },
+              {
+                "t": 1425,
+                "rig": 3,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 226,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 27
+                }
+              },
+              {
+                "t": 1533,
+                "rig": 15,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 66,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 12
+                }
+              },
+              {
+                "t": 1568,
+                "rig": 0,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 35,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 1597,
+                "rig": 15,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 66,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 12
+                }
+              },
+              {
+                "t": 1614,
+                "rig": 18,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 141,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 24
+                }
+              },
+              {
+                "t": 1648,
+                "rig": 0,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 35,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 1661,
+                "rig": 15,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 66,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 12
+                }
+              },
+              {
+                "t": 1782,
+                "rig": 18,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 141,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 24
+                }
+              },
+              {
+                "t": 1839,
+                "rig": 21,
+                "pos": 1,
+                "projector": 0,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 55,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 13
+                }
+              },
+              {
+                "t": 1986,
+                "rig": 6,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 46,
+                  "litOnSphere": 0,
+                  "crescentBlocks": 12
+                }
+              }
+            ]
           },
           "loud": {
             "captures": 631,
@@ -33967,7 +34678,31 @@
                 "n": 0
               }
             ],
-            "list": []
+            "list": [],
+            "counterfactual": {
+              "placedAlike": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "placedOtherwise": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "refused": {
+                "runs": 0,
+                "photographs": 0,
+                "why": {}
+              },
+              "decodes": []
+            }
           }
         }
       },
@@ -34718,7 +35453,10 @@
             "positions": 0,
             "captures": 0,
             "silentWithQuiet": 0,
-            "quietPlacingTouched": 0
+            "quietPlacingTouched": 0,
+            "unseen": 0,
+            "barelySeen": 0,
+            "list": []
           },
           "loud": {
             "captures": 622,
@@ -34848,7 +35586,31 @@
                 "n": 0
               }
             ],
-            "list": []
+            "list": [],
+            "counterfactual": {
+              "placedAlike": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "placedOtherwise": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "refused": {
+                "runs": 0,
+                "photographs": 0,
+                "why": {}
+              },
+              "decodes": []
+            }
           }
         }
       },
@@ -35578,7 +36340,10 @@
             "positions": 0,
             "captures": 0,
             "silentWithQuiet": 0,
-            "quietPlacingTouched": 0
+            "quietPlacingTouched": 0,
+            "unseen": 0,
+            "barelySeen": 0,
+            "list": []
           },
           "loud": {
             "captures": 0,
@@ -35687,7 +36452,31 @@
                 "n": 0
               }
             ],
-            "list": []
+            "list": [],
+            "counterfactual": {
+              "placedAlike": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "placedOtherwise": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "refused": {
+                "runs": 0,
+                "photographs": 0,
+                "why": {}
+              },
+              "decodes": []
+            }
           }
         }
       }
@@ -38787,7 +39576,10 @@
             "positions": 0,
             "captures": 0,
             "silentWithQuiet": 0,
-            "quietPlacingTouched": 0
+            "quietPlacingTouched": 0,
+            "unseen": 0,
+            "barelySeen": 0,
+            "list": []
           },
           "loud": {
             "captures": 0,
@@ -38896,7 +39688,31 @@
                 "n": 0
               }
             ],
-            "list": []
+            "list": [],
+            "counterfactual": {
+              "placedAlike": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "placedOtherwise": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "refused": {
+                "runs": 0,
+                "photographs": 0,
+                "why": {}
+              },
+              "decodes": []
+            }
           }
         }
       },
@@ -39650,7 +40466,167 @@
             "positions": 13,
             "captures": 13,
             "silentWithQuiet": 0,
-            "quietPlacingTouched": 0
+            "quietPlacingTouched": 0,
+            "unseen": 0,
+            "barelySeen": 13,
+            "list": [
+              {
+                "t": 306,
+                "rig": 18,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 83,
+                  "litOnSphere": 83,
+                  "crescentBlocks": 14
+                }
+              },
+              {
+                "t": 473,
+                "rig": 17,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 81,
+                  "litOnSphere": 81,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 497,
+                "rig": 17,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 81,
+                  "litOnSphere": 81,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 546,
+                "rig": 18,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 83,
+                  "litOnSphere": 83,
+                  "crescentBlocks": 14
+                }
+              },
+              {
+                "t": 858,
+                "rig": 18,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 83,
+                  "litOnSphere": 83,
+                  "crescentBlocks": 14
+                }
+              },
+              {
+                "t": 905,
+                "rig": 17,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 81,
+                  "litOnSphere": 81,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 1141,
+                "rig": 13,
+                "pos": 2,
+                "projector": 2,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 58,
+                  "litOnSphere": 58,
+                  "crescentBlocks": 10
+                }
+              },
+              {
+                "t": 1146,
+                "rig": 18,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 83,
+                  "litOnSphere": 83,
+                  "crescentBlocks": 14
+                }
+              },
+              {
+                "t": 1549,
+                "rig": 13,
+                "pos": 2,
+                "projector": 2,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 58,
+                  "litOnSphere": 58,
+                  "crescentBlocks": 10
+                }
+              },
+              {
+                "t": 1621,
+                "rig": 13,
+                "pos": 2,
+                "projector": 2,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 58,
+                  "litOnSphere": 58,
+                  "crescentBlocks": 10
+                }
+              },
+              {
+                "t": 1649,
+                "rig": 17,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 81,
+                  "litOnSphere": 81,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 1721,
+                "rig": 17,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 81,
+                  "litOnSphere": 81,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 1986,
+                "rig": 18,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 83,
+                  "litOnSphere": 83,
+                  "crescentBlocks": 14
+                }
+              }
+            ]
           },
           "loud": {
             "captures": 927,
@@ -39784,7 +40760,31 @@
                 "n": 0
               }
             ],
-            "list": []
+            "list": [],
+            "counterfactual": {
+              "placedAlike": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "placedOtherwise": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "refused": {
+                "runs": 0,
+                "photographs": 0,
+                "why": {}
+              },
+              "decodes": []
+            }
           }
         }
       },
@@ -40541,7 +41541,47 @@
             "positions": 3,
             "captures": 3,
             "silentWithQuiet": 0,
-            "quietPlacingTouched": 0
+            "quietPlacingTouched": 0,
+            "unseen": 0,
+            "barelySeen": 3,
+            "list": [
+              {
+                "t": 397,
+                "rig": 13,
+                "pos": 2,
+                "projector": 2,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 58,
+                  "litOnSphere": 58,
+                  "crescentBlocks": 10
+                }
+              },
+              {
+                "t": 589,
+                "rig": 13,
+                "pos": 2,
+                "projector": 2,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 58,
+                  "litOnSphere": 58,
+                  "crescentBlocks": 10
+                }
+              },
+              {
+                "t": 1309,
+                "rig": 13,
+                "pos": 2,
+                "projector": 2,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 58,
+                  "litOnSphere": 58,
+                  "crescentBlocks": 10
+                }
+              }
+            ]
           },
           "loud": {
             "captures": 1352,
@@ -41541,7 +42581,280 @@
                 "contentStep": 134,
                 "share": 0.54663
               }
-            ]
+            ],
+            "counterfactual": {
+              "placedAlike": {
+                "runs": 58,
+                "photographs": 90,
+                "decoded": {
+                  "runs": 13,
+                  "photographs": 17
+                }
+              },
+              "placedOtherwise": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "refused": {
+                "runs": 14,
+                "photographs": 19,
+                "why": {
+                  "refused-bookends-length": 14
+                }
+              },
+              "decodes": [
+                {
+                  "t": 127,
+                  "pos": 2,
+                  "projector": 3,
+                  "photographs": [
+                    135
+                  ],
+                  "shares": [
+                    0.53628
+                  ],
+                  "biasU": 4.2332,
+                  "biasV": 3.3831,
+                  "matched": 21085,
+                  "moved": 21085,
+                  "gross": 0,
+                  "acceptedDelta": -141,
+                  "sets": []
+                },
+                {
+                  "t": 351,
+                  "pos": 1,
+                  "projector": 3,
+                  "photographs": [
+                    135
+                  ],
+                  "shares": [
+                    0.51986
+                  ],
+                  "biasU": 3.8946,
+                  "biasV": 3.2974,
+                  "matched": 11167,
+                  "moved": 11167,
+                  "gross": 0,
+                  "acceptedDelta": -70,
+                  "sets": []
+                },
+                {
+                  "t": 472,
+                  "pos": 2,
+                  "projector": 3,
+                  "photographs": [
+                    135
+                  ],
+                  "shares": [
+                    0.51784
+                  ],
+                  "biasU": 4.031,
+                  "biasV": 3.3081,
+                  "matched": 26741,
+                  "moved": 26741,
+                  "gross": 0,
+                  "acceptedDelta": -151,
+                  "sets": []
+                },
+                {
+                  "t": 548,
+                  "pos": 1,
+                  "projector": 3,
+                  "photographs": [
+                    133,
+                    134,
+                    135
+                  ],
+                  "shares": [
+                    0.51152,
+                    0.55815,
+                    0.57854
+                  ],
+                  "biasU": 4.5654,
+                  "biasV": 3.8375,
+                  "matched": 11106,
+                  "moved": 11106,
+                  "gross": 0,
+                  "acceptedDelta": -521,
+                  "sets": [
+                    "biasU.max",
+                    "biasV.max",
+                    "acceptedDelta.min"
+                  ]
+                },
+                {
+                  "t": 607,
+                  "pos": 1,
+                  "projector": 3,
+                  "photographs": [
+                    135
+                  ],
+                  "shares": [
+                    0.52016
+                  ],
+                  "biasU": 4.0909,
+                  "biasV": 3.2902,
+                  "matched": 5739,
+                  "moved": 5739,
+                  "gross": 0,
+                  "acceptedDelta": -44,
+                  "sets": []
+                },
+                {
+                  "t": 996,
+                  "pos": 2,
+                  "projector": 3,
+                  "photographs": [
+                    135
+                  ],
+                  "shares": [
+                    0.50806
+                  ],
+                  "biasU": 3.8227,
+                  "biasV": 3.1676,
+                  "matched": 24427,
+                  "moved": 24427,
+                  "gross": 0,
+                  "acceptedDelta": -44,
+                  "sets": []
+                },
+                {
+                  "t": 1017,
+                  "pos": 1,
+                  "projector": 3,
+                  "photographs": [
+                    135
+                  ],
+                  "shares": [
+                    0.51515
+                  ],
+                  "biasU": 3.9213,
+                  "biasV": 3.2813,
+                  "matched": 10264,
+                  "moved": 10264,
+                  "gross": 0,
+                  "acceptedDelta": -48,
+                  "sets": []
+                },
+                {
+                  "t": 1098,
+                  "pos": 2,
+                  "projector": 3,
+                  "photographs": [
+                    134,
+                    135
+                  ],
+                  "shares": [
+                    0.51941,
+                    0.54052
+                  ],
+                  "biasU": 4.2102,
+                  "biasV": 3.4953,
+                  "matched": 16475,
+                  "moved": 16475,
+                  "gross": 0,
+                  "acceptedDelta": -298,
+                  "sets": []
+                },
+                {
+                  "t": 1115,
+                  "pos": 2,
+                  "projector": 3,
+                  "photographs": [
+                    134,
+                    135
+                  ],
+                  "shares": [
+                    0.51205,
+                    0.54533
+                  ],
+                  "biasU": 4.0533,
+                  "biasV": 3.4947,
+                  "matched": 18892,
+                  "moved": 18892,
+                  "gross": 0,
+                  "acceptedDelta": -183,
+                  "sets": []
+                },
+                {
+                  "t": 1336,
+                  "pos": 2,
+                  "projector": 3,
+                  "photographs": [
+                    135
+                  ],
+                  "shares": [
+                    0.51518
+                  ],
+                  "biasU": 4.116,
+                  "biasV": 3.2561,
+                  "matched": 26771,
+                  "moved": 26771,
+                  "gross": 0,
+                  "acceptedDelta": -121,
+                  "sets": []
+                },
+                {
+                  "t": 1600,
+                  "pos": 1,
+                  "projector": 3,
+                  "photographs": [
+                    135
+                  ],
+                  "shares": [
+                    0.50764
+                  ],
+                  "biasU": 3.6962,
+                  "biasV": 3.1999,
+                  "matched": 13823,
+                  "moved": 13823,
+                  "gross": 0,
+                  "acceptedDelta": -55,
+                  "sets": []
+                },
+                {
+                  "t": 1795,
+                  "pos": 2,
+                  "projector": 3,
+                  "photographs": [
+                    135
+                  ],
+                  "shares": [
+                    0.5084
+                  ],
+                  "biasU": 3.6262,
+                  "biasV": 3.1088,
+                  "matched": 17589,
+                  "moved": 17589,
+                  "gross": 0,
+                  "acceptedDelta": -19,
+                  "sets": []
+                },
+                {
+                  "t": 1799,
+                  "pos": 1,
+                  "projector": 3,
+                  "photographs": [
+                    135
+                  ],
+                  "shares": [
+                    0.53841
+                  ],
+                  "biasU": 4.085,
+                  "biasV": 3.4045,
+                  "matched": 18250,
+                  "moved": 18250,
+                  "gross": 0,
+                  "acceptedDelta": -175,
+                  "sets": []
+                }
+              ]
+            }
           }
         }
       },
@@ -42297,7 +43610,131 @@
             "positions": 10,
             "captures": 10,
             "silentWithQuiet": 0,
-            "quietPlacingTouched": 0
+            "quietPlacingTouched": 0,
+            "unseen": 0,
+            "barelySeen": 10,
+            "list": [
+              {
+                "t": 354,
+                "rig": 18,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 83,
+                  "litOnSphere": 83,
+                  "crescentBlocks": 14
+                }
+              },
+              {
+                "t": 401,
+                "rig": 17,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 81,
+                  "litOnSphere": 81,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 738,
+                "rig": 18,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 83,
+                  "litOnSphere": 83,
+                  "crescentBlocks": 14
+                }
+              },
+              {
+                "t": 1193,
+                "rig": 17,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 81,
+                  "litOnSphere": 81,
+                  "crescentBlocks": 11
+                }
+              },
+              {
+                "t": 1285,
+                "rig": 13,
+                "pos": 2,
+                "projector": 2,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 58,
+                  "litOnSphere": 58,
+                  "crescentBlocks": 10
+                }
+              },
+              {
+                "t": 1362,
+                "rig": 18,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 83,
+                  "litOnSphere": 83,
+                  "crescentBlocks": 14
+                }
+              },
+              {
+                "t": 1429,
+                "rig": 13,
+                "pos": 2,
+                "projector": 2,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 58,
+                  "litOnSphere": 58,
+                  "crescentBlocks": 10
+                }
+              },
+              {
+                "t": 1506,
+                "rig": 18,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 83,
+                  "litOnSphere": 83,
+                  "crescentBlocks": 14
+                }
+              },
+              {
+                "t": 1741,
+                "rig": 13,
+                "pos": 2,
+                "projector": 2,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 58,
+                  "litOnSphere": 58,
+                  "crescentBlocks": 10
+                }
+              },
+              {
+                "t": 1841,
+                "rig": 17,
+                "pos": 2,
+                "projector": 1,
+                "noted": "barely seen",
+                "clean": {
+                  "litPixels": 81,
+                  "litOnSphere": 81,
+                  "crescentBlocks": 11
+                }
+              }
+            ]
           },
           "loud": {
             "captures": 1704,
@@ -43287,7 +44724,94 @@
                 "contentStep": 32,
                 "share": 0.52492
               }
-            ]
+            ],
+            "counterfactual": {
+              "placedAlike": {
+                "runs": 36,
+                "photographs": 51,
+                "decoded": {
+                  "runs": 3,
+                  "photographs": 4
+                }
+              },
+              "placedOtherwise": {
+                "runs": 0,
+                "photographs": 0,
+                "decoded": {
+                  "runs": 0,
+                  "photographs": 0
+                }
+              },
+              "refused": {
+                "runs": 33,
+                "photographs": 56,
+                "why": {
+                  "refused-bookends-length": 33
+                }
+              },
+              "decodes": [
+                {
+                  "t": 265,
+                  "pos": 1,
+                  "projector": 3,
+                  "photographs": [
+                    134,
+                    135
+                  ],
+                  "shares": [
+                    0.51737,
+                    0.55584
+                  ],
+                  "biasU": 4.449,
+                  "biasV": 3.6193,
+                  "matched": 4424,
+                  "moved": 4424,
+                  "gross": 0,
+                  "acceptedDelta": -89,
+                  "sets": [
+                    "biasU.max",
+                    "biasV.max",
+                    "acceptedDelta.min"
+                  ]
+                },
+                {
+                  "t": 730,
+                  "pos": 2,
+                  "projector": 3,
+                  "photographs": [
+                    135
+                  ],
+                  "shares": [
+                    0.53408
+                  ],
+                  "biasU": 3.7073,
+                  "biasV": 3.2771,
+                  "matched": 26267,
+                  "moved": 26267,
+                  "gross": 0,
+                  "acceptedDelta": -68,
+                  "sets": []
+                },
+                {
+                  "t": 1970,
+                  "pos": 1,
+                  "projector": 3,
+                  "photographs": [
+                    135
+                  ],
+                  "shares": [
+                    0.50313
+                  ],
+                  "biasU": 3.827,
+                  "biasV": 3.1613,
+                  "matched": 6932,
+                  "moved": 6932,
+                  "gross": 0,
+                  "acceptedDelta": -21,
+                  "sets": []
+                }
+              ]
+            }
           }
         }
       }
@@ -44533,6 +46057,12 @@
           "L-uniform-2": 0,
           "L-aimed-7.5": 109,
           "L-uniform-7.5": 107
+        },
+        "nearTie": {
+          "reading": "a reporting cut chosen after the run was read, not part of the bet: a misfile whose majority step holds less than this share of its exposure is a near-tie. P10 is falsified by any misfile, near-tie or not",
+          "share": 0.6,
+          "photographs": 225,
+          "atOrAbove": 13
         }
       },
       "falsified": true
@@ -44602,9 +46132,9 @@
     "The Gray flip onset at 5/9: no smear above 0.5 was decoded, so what is measured is the absence of flips below 5/9, not the onset.",
     "Lateness solves: only L-aimed-7.5 solves captures, the first 60 in trial order with a PLACED or MIXED position, under policy A. Policy P borrows A's solve where its plan is A's, which it is wherever the capture has no MIXED position, so a LOUD+SILENT capture whose loud positions are all REFUSED-ALL is solved under P; a capture with a MIXED position is not, and at every other lateness nothing is: the lateness cells' past-gate counts cover the solved captures alone.",
     "The page's own harm: a capture the page lets through takes a counterfactual solve's harm only where the page's plan, placement included, is that solve's (page.classes.P.harm). No capture was solved on a plan of the page's own, so every other one is not solved, and past-gate counts through the page cover the reused solves alone.",
-    "The page's decode: the page column reads which runs the page places and where, and decodes none. What a straddle does to the coordinates of a run as the page files it is not measured: one only the page places, re-filed by what its photographs show or refused by the counterfactual's bookends, and one holding a photograph filed under another step than the one it mostly shows (P10's misfiles). The decode subsamples draw from the counterfactual's placed runs."
+    "The page's decode: the page column reads which runs the page places and where, and decodes none. The decodes draw from the counterfactual's placed runs (every one in R1, a subsample elsewhere) and read each through the page's own readRun on the counterfactual's filing of it, so what a straddle does to the coordinates of a run only the page places is not measured: one re-filed by what its photographs show, or refused by the counterfactual's bookends. Of the 162 runs holding P10's misfiles (238 photographs), the counterfactual refuses 52 (80 photographs), which only the page places, and places 110 (158), filing every photograph where the page does. The decodes drew 25 of those 110, holding 31 misfiled photographs, each decoded as the page files it (each cell's page.misfiles.counterfactual.decodes). What a misfile does to the coordinates of the other 137 runs is not measured."
   ],
   "verdict": {
-    "statement": "The page's reader placed a run in 108 of the 108 clean camera positions rendered from the card's three marks, noting 87 runs out of view and 18 barely seen and refusing nothing. The reader it replaced placed none of them: 105 were refused at classify (margin at most 0.148, against 0.15). The other 3 cleared classify (margins 0.172-0.201) but were refused at the run count, having found 2 of 4 projector runs. The rescoring put every straddled position of those rigs through the page's reader as well. Each camera's clean twin, which the rescoring attributes against, reads as Q0 does at all 108 positions, so P13 holds. Handed every frame's kind (the counterfactual reader), the complement check first refuses a forward whole-position straddle at between 7.2% and 16.2% of the exposure, depending on the run. These are the 10th and 90th percentiles over all 222 attributable runs, from the noiseless linear predictor: median 11.6%, full range 7.0-16.5%. A backward straddle is first refused at between 5.1% and 15.9% (median 11.0%); 22 runs, each lighting at most 1.5% of the photograph, are refused below 5.0% backward, the lowest at 0.45%. What it lets through keeps its Gray words: at every smear decoded, up to s = 0.5, no pixel both decodes accept changed its Gray address. It carries a phase bias whose mean is one-signed: about 0.75 of atan2(s, 1−s)·P/2π, toward lower projector coordinates for a forward straddle, and every run's mean Δu and mean Δv is negative at every forward smear decoded. At s = 0.06 that is 0.46 px along u and 0.26 px along v at the 1920×1080 raster, the medians over 67 runs of each run's mean. Per pixel, no pixel moves positive along u; along v, 15.1% of the 225994 pixels where the next projector also lights move positive, against 0.008% of the 879834 others, and |Δv| reaches 2.03 px against the 0.26 px mean (the largest run's 95th percentile is 1.44 px). On the sphere, a median 1.17 mm counting both axes: the median of 67 per-run medians, which span 0.95-2.72 mm. Solved through the bench, a forward straddle at s = 0.06 moves the worst seam point by a median 1.36 mm over 8 designed rigs (range 0.80-1.94 mm). The 1 mm seam gate flips in 6 of 8 and the 0.05° rotation gate in 7; clean whole-capture re-shoots flip them in 0 of 80 and 16 of 80. That is 4.0 times the median 0.34 mm by which re-shooting the whole capture moves it (95th percentile 0.69 mm, 95% CI 0.44-0.75), and 6.8 times the median 0.20 mm by which re-shooting only the straddled position moves it (95th percentile 0.33 mm, 95% CI 0.26-0.36). Of EXPERIMENT-9's 728 touched captures at the page's defaults (2 s dwell, 1/4 s exposure), with an un-aimed (uniform) start, under its perfect-timer model and policy P (a refused position is re-shot whole, and the re-shoot is assumed clean), the counterfactual reader refuses 627 loudly: 295 run by run, with 'Re-shoot projector N' (295 blaming a dropped and a duplicated frame), a remedy that produces a folder the counterfactual reader refuses whole (192 of 192 such folders in Q0b, the re-shot run kept beside the others or alone); and 332 only as a whole position ('Found N projector runs …'), whose remedy, re-shooting the position, it can read. 31 of the loud captures also carry a silent position, and in 18 of those the seams still end past the 1 mm gate after the refused positions are re-shot clean. 98 pass silently: 38 keep the gate and move the worst seam point no further than 95% of whole-capture re-shoots do (32-44 across τ's 95% CI, and 24 against the one-position re-shoot), 17 move it further without breaking the gate, and 43 break it. In all, 61 of the 728 end past the gate under policy P, and 60 of the 98 silent captures judged move the seams further than τ. 3 touched only runs that the counterfactual reader also refuses on the clean capture; 0 changed no photograph. With the card's aimed start and a perfect timer, 0 of 2000 captures are touched (R8). Through the page's own reader, each run attributed against its reading of the same clean frames, the 728 captures come out 626 loud (189 run by run, told 'Re-shoot projector N', and 437 only as a whole position; 34 of them also carrying a silent position), 99 silent (28 harmless, 14 biased and 27 past the gate by a counterfactual solve of the same plan, and 30 not solved) and 0 quiet: a touched run its clean reading places only noted, and no position refused or placed; 3 touch only runs its clean reading does not place, and 0 changed no photograph. Of the counterfactual reader's 627 loud captures the page passes 11 silently, and of its 98 silent ones the page refuses 10 loudly. The page's 99 silent captures are one more than the counterfactual reader's 98, which falsifies P11; none is quiet, so counting a quiet capture as kept gives 99 too. Across the 10 rescore and lateness cells with a touched capture to read, the page quietly drops 59 runs its clean reading places, noting them out of view or barely seen with no problem naming them (31 in R6, 13 in L-uniform-2, 10 in L-uniform-7.5, 3 in L-aimed-7.5 and 2 in R3), which falsifies P12. Its placed runs file 238 photographs, in 162 positions, under a step other than the one holding more than half their exposure, which falsifies P10: in L-aimed-7.5, 109 in 72 positions, each a near-tie (that step's share 0.500-0.585) filed one step after it; in L-uniform-7.5, 107 in 69 positions, each a near-tie (that step's share 0.500-0.584) filed one step after it; in R4 (handheld-remote), 21 in 20 positions, that step's share 0.509-1.000 and 13 of them at 0.6 or more, filed one step before or after it: runs placed holding a photograph of another step; and in R3, 1, a near-tie (0.520) filed one step before it. If the emitter runs 7.5 ms late per step, 1786 of 2000 captures started by the card's aimed rule are touched: 1358 loud, 349 of them also carrying a silent position; 324 silent, 23 of them solved and 17 of those past the seam gate; and 104 touching only runs that are refused anyway. Through the page's own reader the same 1786 captures are 1352 loud and 330 silent. 7.5 ms is the mean of a design-time probe in a headless, software-rendered (SwiftShader) browser in HUD mode with the tick off; armed with the tick on, the same setup ran about 9.3 ms late. This experiment did not re-measure it, and the display machine's lateness is unmeasured. The aimed rule's margin is the lower edge of its modelled aim band, 0.5 s spread over 135 steps: about 3.70 ms per step with matched clocks, and 3.50 ms for the half of captures whose camera clock runs 100 ppm fast. On the swept grid the first aimed capture is touched at 3.5 ms, and 1% are touched from 3.6 ms, a crossing the sweep finds in (3.55, 3.6] ms; with a 60 Hz refresh wait, 3.4 and 3.5 ms."
+    "statement": "The page's reader placed a run in 108 of the 108 clean camera positions rendered from the card's three marks, noting 87 runs out of view and 18 barely seen and refusing nothing. The reader it replaced placed none of them: 105 were refused at classify (margin at most 0.148, against 0.15). The other 3 cleared classify (margins 0.172-0.201) but were refused at the run count, having found 2 of 4 projector runs. The rescoring put every straddled position of those rigs through the page's reader as well. The page's reading of each camera's clean twin, the 96 the rescoring attributes against and the finer preset's 12, reads as Q0 does at all 108 positions, so P13 holds. Handed every frame's kind (the counterfactual reader), the complement check first refuses a forward whole-position straddle at between 7.2% and 16.2% of the exposure, depending on the run. These are the 10th and 90th percentiles over all 222 attributable runs, from the noiseless linear predictor: median 11.6%, full range 7.0-16.5%. A backward straddle is first refused at between 5.1% and 15.9% (median 11.0%); 22 runs, each lighting at most 1.5% of the photograph, are refused below 5.0% backward, the lowest at 0.45%. What it lets through keeps its Gray words: at every smear decoded, up to s = 0.5, no pixel both decodes accept changed its Gray address. It carries a phase bias whose mean is one-signed: about 0.75 of atan2(s, 1−s)·P/2π, toward lower projector coordinates for a forward straddle, and every run's mean Δu and mean Δv is negative at every forward smear decoded. At s = 0.06 that is 0.46 px along u and 0.26 px along v at the 1920×1080 raster, the medians over 67 runs of each run's mean. Per pixel, no pixel moves positive along u; along v, 15.1% of the 225994 pixels where the next projector also lights move positive, against 0.008% of the 879834 others, and |Δv| reaches 2.03 px against the 0.26 px mean (the largest run's 95th percentile is 1.44 px). On the sphere, a median 1.17 mm counting both axes: the median of 67 per-run medians, which span 0.95-2.72 mm. Solved through the bench, a forward straddle at s = 0.06 moves the worst seam point by a median 1.36 mm over 8 designed rigs (range 0.80-1.94 mm). The 1 mm seam gate flips in 6 of 8 and the 0.05° rotation gate in 7; clean whole-capture re-shoots flip them in 0 of 80 and 16 of 80. That is 4.0 times the median 0.34 mm by which re-shooting the whole capture moves it (95th percentile 0.69 mm, 95% CI 0.44-0.75), and 6.8 times the median 0.20 mm by which re-shooting only the straddled position moves it (95th percentile 0.33 mm, 95% CI 0.26-0.36). Of EXPERIMENT-9's 728 touched captures at the page's defaults (2 s dwell, 1/4 s exposure), with an un-aimed (uniform) start, under its perfect-timer model and policy P (a refused position is re-shot whole, and the re-shoot is assumed clean), the counterfactual reader refuses 627 loudly: 295 run by run, with 'Re-shoot projector N' (295 blaming a dropped and a duplicated frame), a remedy that produces a folder the counterfactual reader refuses whole (192 of 192 such folders in Q0b, the re-shot run kept beside the others or alone); and 332 only as a whole position ('Found N projector runs …'), whose remedy, re-shooting the position, it can read. 31 of the loud captures also carry a silent position, and in 18 of those the seams still end past the 1 mm gate after the refused positions are re-shot clean. 98 pass silently: 38 keep the gate and move the worst seam point no further than 95% of whole-capture re-shoots do (32-44 across τ's 95% CI, and 24 against the one-position re-shoot), 17 move it further without breaking the gate, and 43 break it. In all, 61 of the 728 end past the gate under policy P, and 60 of the 98 silent captures judged move the seams further than τ. 3 touched only runs that the counterfactual reader also refuses on the clean capture; 0 changed no photograph. With the card's aimed start and a perfect timer, 0 of 2000 captures are touched (R8). Through the page's own reader, each run attributed against its reading of the same clean frames, the 728 captures come out 626 loud (189 run by run, told 'Re-shoot projector N', and 437 only as a whole position; 34 of them also carrying a silent position), 99 silent (28 harmless, 14 biased and 27 past the gate by a counterfactual solve of the same plan, and 30 not solved) and 0 quiet: a touched run its clean reading places only noted, and no position refused or placed; 3 touch only runs its clean reading does not place, and 0 changed no photograph. Of the counterfactual reader's 627 loud captures the page passes 11 silently, and of its 98 silent ones the page refuses 10 loudly. The page's 99 silent captures are one more than the counterfactual reader's 98, which falsifies P11; none is quiet, so counting a quiet capture as kept gives 99 too. Across the 10 rescore and lateness cells with a touched capture to read, the page quietly drops 59 runs its clean reading places, noting them out of view or barely seen with no problem naming them (31 in R6, 13 in L-uniform-2, 10 in L-uniform-7.5, 3 in L-aimed-7.5 and 2 in R3), which falsifies P12. Its placed runs file 238 photographs, in 162 positions, under a step other than the one holding more than half their exposure, which falsifies P10: in L-aimed-7.5, 109 in 72 positions, each a near-tie (that step's share 0.500-0.585) filed one step after it; in L-uniform-7.5, 107 in 69 positions, each a near-tie (that step's share 0.500-0.584) filed one step after it; in R4 (handheld-remote), 21 in 20 positions, that step's share 0.509-1.000, 13 of them at 0.6 or more and the other 8 near-ties, filed one step before or after it: runs placed holding a photograph of another step; and in R3, 1, a near-tie (0.520) filed one step before it. If the emitter runs 7.5 ms late per step, 1786 of 2000 captures started by the card's aimed rule are touched: 1358 loud, 349 of them also carrying a silent position; 324 silent, 23 of them solved and 17 of those past the seam gate; and 104 touching only runs that are refused anyway. Through the page's own reader the same 1786 captures are 1352 loud and 330 silent. 7.5 ms is the mean of a design-time probe in a headless, software-rendered (SwiftShader) browser in HUD mode with the tick off; armed with the tick on, the same setup ran about 9.3 ms late. This experiment did not re-measure it, and the display machine's lateness is unmeasured. The aimed rule's margin is the lower edge of its modelled aim band, 0.5 s spread over 135 steps: about 3.70 ms per step with matched clocks, and 3.50 ms for the half of captures whose camera clock runs 100 ppm fast. On the swept grid the first aimed capture is touched at 3.5 ms, and 1% are touched from 3.6 ms, a crossing the sweep finds in (3.55, 3.6] ms; with a 60 Hz refresh wait, 3.4 and 3.5 ms."
   }
 }

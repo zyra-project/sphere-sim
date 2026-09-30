@@ -2178,6 +2178,23 @@ test('T36 where the page stopped, the aimed rule measured on a fine grid and der
   assert.ok(has(later, 'P0,') && !has(later, 'The Gray flip onset at 5/9') && !has(later, "The page's reader on a straddled position"));
   assert.ok(has(later, "The page's own harm") && has(later, "The page's decode"));
   for (const xs of [now, later]) assert.ok(!xs.some((x) => x.includes("Today's page")), xs.join(' | '));
+  // The page's decode says what the cells say of the runs holding P10's
+  // misfiles: which the counterfactual refuses (only the page places them),
+  // which it files as the page does, and how many of those a decode drew. It
+  // first said none of them was decoded, while the decode subsamples had drawn
+  // 25 of them.
+  const decodeOf = (xs: string[]): string => xs.find((x) => x.startsWith("The page's decode")) ?? '';
+  const pair = (runs: number, photographs: number) => ({ runs, photographs });
+  const tally = { ...pair(5, 8), placedAlike: { ...pair(4, 7), decoded: pair(1, 2) }, placedOtherwise: { ...pair(0, 0), decoded: pair(0, 0) }, refused: pair(1, 1) };
+  assert.ok(
+    decodeOf(followUps(FULL_PLAN, 3, tally)).endsWith(
+      "Of the 5 runs holding P10's misfiles (8 photographs), the counterfactual refuses 1 (1 photograph), which only the page places, and places 4 (7), filing every photograph where the page does. The decodes drew 1 of those 4, holding 2 misfiled photographs, each decoded as the page files it (each cell's page.misfiles.counterfactual.decodes). What a misfile does to the coordinates of the other 4 runs is not measured.",
+    ),
+    decodeOf(followUps(FULL_PLAN, 3, tally)),
+  );
+  assert.match(decodeOf(followUps(FULL_PLAN, 3, { ...tally, runs: 0, photographs: 0 })), /No run the page placed holds a photograph filed under another step/);
+  assert.match(decodeOf(later), /is decoded as the page files it only where the counterfactual places it too/);
+  for (const xs of [later, followUps(FULL_PLAN, 3, tally)]) assert.doesNotMatch(decodeOf(xs), /decode subsamples draw|holding a photograph filed under another step than the one it mostly shows \(P10's misfiles\)\. The decode/);
   // P9's follow-up says the page column reads noisy frames without a linear reference beside them.
   assert.ok(later.some((x) => x.startsWith('P9 on noisy frames') && x.includes('sets no linear fingerprint beside them')));
   // Which lateness captures are solved, read off the plan: one cell's first
@@ -2352,7 +2369,7 @@ test("T37 the verdict and the caveats say what the first full run's verification
       list,
     };
   };
-  // R1's are not near-ties: one photograph wholly of the step before, filed one step either side.
+  // R1's are not all near-ties: one photograph wholly of the step before, one at 0.8 and a near-tie at 0.52, filed one step either side.
   r1.page.misfiles = misfiled([
     { t: 3, pos: 0, photo: 4, filedStep: 4, contentStep: 3, share: 1 },
     { t: 3, pos: 0, photo: 30, filedStep: 30, contentStep: 31, share: 0.8 },
@@ -2410,7 +2427,7 @@ test("T37 the verdict and the caveats say what the first full run's verification
     "The rescoring put every straddled position of those rigs through the page's reader as well. Each camera's clean twin, which the rescoring attributes against, reads as Q0 does at all 108 positions, so P13 holds.",
     "and of its 98 silent ones the page refuses 10 loudly. The page's 120 silent captures are 22 more than the counterfactual reader's 98, which falsifies P11; counting its 4 quiet captures as kept, a reading beside the registration's and not in its place, gives 124.",
     `Across the ${withCaptures} rescore and lateness cells with a touched capture to read, the page quietly drops 12 runs its clean reading places, noting them out of view or barely seen with no problem naming them (7 in L-aimed-7.5 and 5 in R1), which falsifies P12.`,
-    "Its placed runs file 5 photographs, in 4 positions, under a step other than the one holding more than half their exposure, which falsifies P10: in R1 (intervalometer-100ppm), 3 in 2 positions, that step's share 0.520-1.000 and 2 of them at 0.6 or more, filed one step before or after it: runs placed holding a photograph of another step; and in L-aimed-7.5, 2, each a near-tie (that step's share 0.500-0.570) filed one step after it.",
+    "Its placed runs file 5 photographs, in 4 positions, under a step other than the one holding more than half their exposure, which falsifies P10: in R1 (intervalometer-100ppm), 3 in 2 positions, that step's share 0.520-1.000, 2 of them at 0.6 or more and the other a near-tie, filed one step before or after it: runs placed holding a photograph of another step; and in L-aimed-7.5, 2, each a near-tie (that step's share 0.500-0.570) filed one step after it.",
     'armed with the tick on, the same setup ran about 9.3 ms late. This experiment did not re-measure it',
     'about 3.70 ms per step with matched clocks, and 3.50 ms for the half of captures whose camera clock runs 100 ppm fast.',
     'On the swept grid the first aimed capture is touched at 3.5 ms, and 1% are touched from 3.6 ms, a crossing the sweep finds in (3.55, 3.6] ms; with a 60 Hz refresh wait, 3.45 and 3.5 ms.',
@@ -2448,6 +2465,8 @@ test("T37 the verdict and the caveats say what the first full run's verification
     ['the positions P13 compared', (d) => { delete d.predictions.find((x: { id: string }) => x.id === 'P13').measured.compared; }],
     ['a misfiled cell\'s largest share', (d) => { cells(d.rescore.cells, 'R1').page.misfiles.share.max = null; }],
     ['the misfiles at the near-tie share or more', (d) => { delete cells(d.rescore.cells, 'R1').page.misfiles.histogram[2].n; }],
+    ['the near-tie share the document carries', (d) => { delete d.predictions.find((x: { id: string }) => x.id === 'P10').measured.nearTie.share; }],
+    ['the photographs P10 counts apart', (d) => { delete d.predictions.find((x: { id: string }) => x.id === 'P10').measured.ambiguous; }],
   ];
   for (const [what, cut] of cuts) {
     const holed = structuredClone(doc);
@@ -2460,6 +2479,7 @@ test("T37 the verdict and the caveats say what the first full run's verification
     ['P10', 'photographs', 6, /P10's misfiles are not the cells' own/],
     ['P11', 'silent', 121, /P11's measured silent counts are not R1's/],
     ['P12', 'runs', 13, /P12's quiet drops are not the cells' own/],
+    ['P10', 'ambiguous', 7, /P10's misfiles are not the cells' own/],
   ] as const) {
     const odd = structuredClone(doc);
     odd.predictions.find((x: { id: string }) => x.id === id).measured[field] = value;
@@ -2477,6 +2497,42 @@ test("T37 the verdict and the caveats say what the first full run's verification
   assert.ok(calmly.includes('the page quietly drops none of the runs its clean reading places, so P12 holds.'), calmly);
   assert.ok(calmly.includes('Its placed runs file every photograph under the step holding more than half its exposure, so P10 holds.'), calmly);
   assert.doesNotMatch(calmly, /falsifies P1[02]/);
+  // Photographs with no majority step are counted apart, and P10 is not said
+  // to have filed every photograph under its majority step when some have none.
+  const calmApart = structuredClone(calm);
+  cells(calmApart.lateness.cells, 'L-aimed-7.5').page.misfiles.ambiguous = 3;
+  rebet(calmApart);
+  assert.ok(
+    verdictStatement(calmApart).includes('Its placed runs file every photograph with a step holding more than half its exposure under that step (3 photographs with no majority step are counted apart), so P10 holds.'),
+    verdictStatement(calmApart),
+  );
+  const apart = structuredClone(doc);
+  cells(apart.lateness.cells, 'L-aimed-7.5').page.misfiles.ambiguous = 1;
+  rebet(apart);
+  assert.ok(verdictStatement(apart).includes('than the one holding more than half their exposure (1 photograph with no majority step is counted apart), which falsifies P10:'), verdictStatement(apart));
+  // Whether a cell is all near-ties is read off the histogram, which bins the
+  // unrounded shares, and never off the largest share, which the document
+  // rounds: a photograph at 0.599996 is written 0.6 and is still a near-tie,
+  // said to be under the cut and not counted at it.
+  const edge = structuredClone(doc);
+  const edgeCell = cells(edge.lateness.cells, 'L-aimed-7.5');
+  edgeCell.page.misfiles = misfiled([
+    { t: 11, pos: 1, photo: 135, filedStep: 135, contentStep: 134, share: 0.5003 },
+    { t: 12, pos: 0, photo: 101, filedStep: 101, contentStep: 100, share: 0.599996 },
+  ]);
+  edgeCell.page.misfiles.share.max = 0.6;
+  rebet(edge);
+  assert.ok(verdictStatement(edge).includes("in L-aimed-7.5, 2, each a near-tie (that step's share 0.500 to just under 0.6) filed one step after it."), verdictStatement(edge));
+  assert.doesNotMatch(verdictStatement(edge), /0 of them at 0\.6 or more/);
+  // The cut is the document's own: a document that carries another reads it back.
+  const cutAt = structuredClone(doc);
+  cutAt.predictions.find((x: { id: string }) => x.id === 'P10').measured.nearTie.share = 0.55;
+  assert.ok(verdictStatement(cutAt).includes("in L-aimed-7.5 (intervalometer-100ppm), 2, that step's share 0.500-0.570, 1 of them at 0.55 or more and the other a near-tie, filed one step after it: runs placed holding a photograph of another step"), verdictStatement(cutAt));
+  // Where the finer preset's twins were read beside Q0, P13 names them apart
+  // from the ones the rescoring attributes against.
+  const fine = structuredClone(doc);
+  Object.assign(fine.precondition.pageTwins, { main: { ...fine.precondition.pageTwins.main, cameras: 72 }, spill: { ...fine.precondition.pageTwins.spill, cameras: 24 }, fine: { ...fine.precondition.pageTwins.fine, cameras: 12 } });
+  assert.ok(verdictStatement(fine).includes("The page's reading of each camera's clean twin, the 96 the rescoring attributes against and the finer preset's 12, reads as Q0 does at all 108 positions, so P13 holds."), verdictStatement(fine));
 
   // The refresh rate is the design's, not a word in the sentence.
   const at50 = structuredClone(doc);
@@ -3198,7 +3254,7 @@ test('T48 a capture the page lets through takes a solve\'s harm only where the p
   // the same exclusions, and every kept run at the same photographs; anything
   // else is not solved.
   const { pagePlanOf, pageSolveOf, pageRunVerdicts, summariseCell } = await import('../src/straddle/assemble.ts');
-  const { TEST_PLAN, latenessCells, solveId } = await import('../src/straddle/stages.ts');
+  const { TEST_PLAN, latenessCells, solveId, variantOf } = await import('../src/straddle/stages.ts');
   const twins = [0, 1, 2].map((c) => handPageTwin(c, [0, 1, 2]));
   const reading = (starts: number[]) => handPage({ placed: [0, 1, 2], starts, unseen: [3] });
   const capWith = (page: PageRead, assignment: (number | null)[] | null = null) => ({
@@ -3249,12 +3305,13 @@ test('T48 a capture the page lets through takes a solve\'s harm only where the p
   const solves = new Map<string, unknown>();
   solves.set(treatedId, { ...handSolve(treatedId, 0.45, { dGridMm: 0.3 }), spec: { kind: 'capture', rig: 0, variant: 'reduced', straddle: 'L-aimed-7.5/t7/[0]', exclude: ['0.3', '1.3', '2.3'], captureSeed: null } });
   solves.set('twin', handSolve('twin', 0.4));
-  const summary = (page: PageRead, treated = treatedId, capture: ReturnType<typeof capWith> = capWith(page)) => {
+  const summary = (page: PageRead, treated = treatedId, capture: ReturnType<typeof capWith> = capWith(page), acceptance?: unknown) => {
     const ev = {
       plan: { ...TEST_PLAN, rigs: [0] },
       q0: { units: { 'main:0': { positions: [{ runsPlaced: [0] }] } } },
       bank: { units: { 'main:0': { width: 0, height: 0, seed: 0, twins } } },
       solves,
+      acceptance,
     } as unknown as Parameters<typeof summariseCell>[0];
     const file = {
       units: {
@@ -3269,7 +3326,7 @@ test('T48 a capture the page lets through takes a solve\'s harm only where the p
   assert.ok(same.page.status === 'read');
   assert.equal(same.page.classes.P.counts['SILENT-HARMLESS'], 1, 'a solve of the page\'s own plan did not judge the page\'s capture');
   assert.deepEqual(same.page.classes.P.harm, { silentPart: 1, samePlan: 1, notSolved: 0, why: { 'no solve': 0, positions: 0, exclusions: 0, placement: 0 } });
-  assert.deepEqual(same.page.quiet, { runs: 0, positions: 0, captures: 0, silentWithQuiet: 0, quietPlacingTouched: 0 }, 'a SILENT capture with no QUIET position is in the quiet tally');
+  assert.deepEqual(same.page.quiet, { runs: 0, positions: 0, captures: 0, silentWithQuiet: 0, quietPlacingTouched: 0, unseen: 0, barelySeen: 0, list: [] }, 'a SILENT capture with no QUIET position is in the quiet tally');
   const moved = summary(reading([1, 34, 68]));
   assert.ok(moved.page.status === 'read');
   assert.equal(moved.classes.P.counts['SILENT-HARMLESS'], 1);
@@ -3288,7 +3345,10 @@ test('T48 a capture the page lets through takes a solve\'s harm only where the p
   const qp = quietOnly.page.classes.P;
   assert.deepEqual([qp.counts.QUIET, qp.counts['SILENT-UNSOLVED'], qp.counts['SILENT-UNJUDGEABLE'], qp.counts.LOUD, qp.counts['LOUD+QUIET']], [1, 0, 0, 0, 0]);
   assert.deepEqual([qp.harm, qp.unjudgeable, qp.solveErrors, qp.solved.unjudgeable], [noHarm, [], [], 0], 'a solve was looked up for a QUIET capture');
-  assert.deepEqual(quietOnly.page.quiet, { runs: 1, positions: 1, captures: 1, silentWithQuiet: 0, quietPlacingTouched: 0 });
+  // Each drop is listed with how the straddled reading noted it; with no
+  // acceptance sweep beside the evidence, its clean run's light is unknown.
+  const drop = { t: 7, rig: 0, pos: 0, projector: 0, noted: 'barely seen', clean: null };
+  assert.deepEqual(quietOnly.page.quiet, { runs: 1, positions: 1, captures: 1, silentWithQuiet: 0, quietPlacingTouched: 0, unseen: 0, barelySeen: 1, list: [drop] });
   assert.equal(quietOnly.page.classes.P.vsCounterfactual.SILENT.QUIET, 1, 'the counterfactual\'s SILENT capture is not the page\'s QUIET one');
   // The same, with run 1 touched and placed beside the drop: still QUIET, and
   // the placed straddled run no class counts is counted apart.
@@ -3296,7 +3356,7 @@ test('T48 a capture the page lets through takes a solve\'s harm only where the p
   const placing = summary(dropped, quietId, beside);
   assert.ok(placing.page.status === 'read');
   assert.equal(placing.page.classes.P.counts.QUIET, 1);
-  assert.deepEqual(placing.page.quiet, { runs: 1, positions: 1, captures: 1, silentWithQuiet: 0, quietPlacingTouched: 1 });
+  assert.deepEqual(placing.page.quiet, { runs: 1, positions: 1, captures: 1, silentWithQuiet: 0, quietPlacingTouched: 1, unseen: 0, barelySeen: 1, list: [drop] });
   // A PLACED position beside the QUIET one makes the capture SILENT, and the
   // quiet tally counts it too; its plan straddles both, so no solve here is of
   // it. The QUIET position's placed touched run is in that silent part, so it
@@ -3305,20 +3365,53 @@ test('T48 a capture the page lets through takes a solve\'s harm only where the p
   const silentToo = summary(dropped, quietId, both);
   assert.ok(silentToo.page.status === 'read');
   assert.deepEqual([silentToo.page.classes.P.counts['SILENT-UNSOLVED'], silentToo.page.classes.P.counts.QUIET], [1, 0]);
-  assert.deepEqual(silentToo.page.quiet, { runs: 1, positions: 1, captures: 1, silentWithQuiet: 1, quietPlacingTouched: 0 });
+  assert.deepEqual(silentToo.page.quiet, { runs: 1, positions: 1, captures: 1, silentWithQuiet: 1, quietPlacingTouched: 0, unseen: 0, barelySeen: 1, list: [drop] });
   assert.deepEqual(silentToo.page.classes.P.harm, { ...noHarm, silentPart: 1, notSolved: 1, why: { ...noHarm.why, positions: 1 } });
+
+  // Beside the acceptance sweep's record of the same clean position, a drop
+  // carries its clean run's light: what joined the two files outside them
+  // before is a cell of the document now. A variant the sweep never
+  // photographed joins nothing; a swept one without the run is a file that
+  // does not cover the run, and throws, as I-page-twin does.
+  const variant = variantOf({ ...TEST_PLAN, rigs: [0] }, 'main');
+  const position = { which: 'main', variant, rig: 0, camera: 0, placed: [0, 1, 2], unseen: [3], barelySeen: [], problems: [] };
+  const light = { projector: 0, litPixels: 58, litOnSphere: 58, crescentBlocks: 10 };
+  const joined = summary(dropped, quietId, capWith(dropped), { positions: [{ ...position, runs: [light] }] });
+  assert.ok(joined.page.status === 'read');
+  assert.deepEqual(joined.page.quiet.list, [{ ...drop, clean: { litPixels: 58, litOnSphere: 58, crescentBlocks: 10 } }]);
+  const elsewhere = summary(dropped, quietId, capWith(dropped), { positions: [{ ...position, variant: `not ${variant}`, runs: [light] }] });
+  assert.ok(elsewhere.page.status === 'read');
+  assert.deepEqual(elsewhere.page.quiet.list, [drop]);
+  assert.throws(
+    () => summary(dropped, quietId, capWith(dropped), { positions: [{ ...position, runs: [] }] }),
+    new RegExp(`does not cover rig 0 camera 0, run 1 \\(${variant}\\)`),
+  );
 });
 
 test('T49 the re-run\'s bets P10-P13 are read off the page blocks and Q0, each held and each falsified', async () => {
-  const { evaluateRerunBets, q0AgainstPageTwin, pageTwinIdentity } = await import('../src/straddle/assemble.ts');
+  const { evaluateRerunBets, q0AgainstPageTwin, pageTwinIdentity, NEAR_TIE_SHARE } = await import('../src/straddle/assemble.ts');
   const { RERUN_PREDICTIONS } = await import('../src/straddle/design.ts');
-  const block = (over: { misfiled?: number; quiet?: number; silent?: number; quietClass?: number } = {}) => ({
-    status: 'read' as const,
-    read: { captures: 728 },
-    classes: { P: { counts: { LOUD: 600, 'SILENT-HARMLESS': 0, 'SILENT-BIASED': 0, 'SILENT-GATE-BREAKING': 0, 'SILENT-UNJUDGEABLE': 0, 'SILENT-UNSOLVED': over.silent ?? 90, QUIET: over.quietClass ?? 0 } } },
-    quiet: { runs: over.quiet ?? 0, positions: over.quiet ?? 0, captures: over.quiet ?? 0 },
-    misfiles: { photographs: over.misfiled ?? 0, positions: over.misfiled ?? 0, ambiguous: 3, share: { min: over.misfiled ? 0.51 : null, max: over.misfiled ? 0.52 : null }, below055: over.misfiled ?? 0 },
-  });
+  // A cell's misfiles: `misfiled` near-ties at 0.51-0.52, and `whole` photographs wholly of another step.
+  const bins = (nearTies: number, whole: number) =>
+    Array.from({ length: 10 }, (_, i) => ({ from: Math.round(100 * (0.5 + 0.05 * i)) / 100, to: Math.round(100 * (0.55 + 0.05 * i)) / 100, n: i === 0 ? nearTies : i === 9 ? whole : 0 }));
+  const block = (over: { misfiled?: number; whole?: number; quiet?: number; silent?: number; quietClass?: number } = {}) => {
+    const nearTies = over.misfiled ?? 0;
+    const whole = over.whole ?? 0;
+    return {
+      status: 'read' as const,
+      read: { captures: 728 },
+      classes: { P: { counts: { LOUD: 600, 'SILENT-HARMLESS': 0, 'SILENT-BIASED': 0, 'SILENT-GATE-BREAKING': 0, 'SILENT-UNJUDGEABLE': 0, 'SILENT-UNSOLVED': over.silent ?? 90, QUIET: over.quietClass ?? 0 } } },
+      quiet: { runs: over.quiet ?? 0, positions: over.quiet ?? 0, captures: over.quiet ?? 0 },
+      misfiles: {
+        photographs: nearTies + whole,
+        positions: nearTies + whole,
+        ambiguous: 3,
+        share: { min: nearTies > 0 ? 0.51 : whole > 0 ? 1 : null, max: whole > 0 ? 1 : nearTies > 0 ? 0.52 : null },
+        below055: nearTies,
+        histogram: bins(nearTies, whole),
+      },
+    };
+  };
   const twinsAgree = { positions: 108, compared: 108, differ: 0, differences: [] };
   const held = evaluateRerunBets([{ id: 'R1', page: block({ silent: 98 }) }, { id: 'L-aimed-7.5', page: block() }, { id: 'R8', page: { status: 'not run' } }], 98, twinsAgree);
   assert.deepEqual(held.map((b) => [b.id, b.falsified]), [['P10', false], ['P11', false], ['P12', false], ['P13', false]]);
@@ -3346,6 +3439,22 @@ test('T49 the re-run\'s bets P10-P13 are read off the page blocks and Q0, each h
   );
   assert.deepEqual(falsified.map((b) => [b.id, b.falsified]), [['P10', true], ['P11', true], ['P12', true], ['P13', true]]);
   assert.deepEqual((falsified[0].measured as { share: unknown }).share, { min: 0.51, max: 0.52 });
+  // The near-tie is the report's word, carried beside the registered count and
+  // never in its place: a near-tie falsifies P10 as a photograph wholly of
+  // another step does, and the cut is the document's, labelled as chosen after
+  // the run.
+  type NearTie = { reading: string; share: number; photographs: number; atOrAbove: number };
+  const nearTieOf = (b: (typeof held)[number]) => (b.measured as { nearTie: NearTie }).nearTie;
+  assert.deepEqual({ ...nearTieOf(falsified[0]), reading: '' }, { reading: '', share: NEAR_TIE_SHARE, photographs: 1, atOrAbove: 0 });
+  assert.match(nearTieOf(falsified[0]).reading, /^a reporting cut chosen after the run was read, not part of the bet: .* P10 is falsified by any misfile, near-tie or not$/);
+  assert.deepEqual({ ...nearTieOf(held[0]), reading: '' }, { reading: '', share: NEAR_TIE_SHARE, photographs: 0, atOrAbove: 0 });
+  const mixed = evaluateRerunBets([{ id: 'R1', page: block() }, { id: 'R4', page: block({ misfiled: 2, whole: 1 }) }], 98, twinsAgree)[0];
+  assert.equal(mixed.falsified, true);
+  assert.deepEqual([nearTieOf(mixed).photographs, nearTieOf(mixed).atOrAbove], [2, 1]);
+  // Counted off the histogram's bins, the cut must be one of their edges.
+  const offEdge = block({ misfiled: 1 });
+  offEdge.misfiles.histogram = offEdge.misfiles.histogram.map((b) => ({ ...b, from: b.from + 0.01 }));
+  assert.throws(() => evaluateRerunBets([{ id: 'R4', page: offEdge }], 98, twinsAgree), /near-tie share 0\.6 is not an edge of the misfile histogram/);
   // A misfile or a quiet drop outside R1 alone still falsifies; a SILENT count in another cell does not touch P11.
   const elsewhere = evaluateRerunBets([{ id: 'R1', page: block() }, { id: 'R4', page: block({ misfiled: 1, silent: 500 }) }], 98, twinsAgree);
   assert.deepEqual(elsewhere.map((b) => [b.id, b.falsified]), [['P10', true], ['P11', false], ['P12', false], ['P13', false]]);
@@ -3374,10 +3483,11 @@ test('T49 the re-run\'s bets P10-P13 are read off the page blocks and Q0, each h
 });
 
 test("T50 the page column's tables render from the reduced run's document, each number its cell's", async () => {
-  // The tables written for the re-run are registered in no document until its
-  // results file is committed; `packages/usage/test/experiment-tables.test.ts`
-  // holds them to a quick run's document where one has been made. This holds
-  // them to the reduced design's, which every run of this file writes.
+  // The tables written for the re-run are registered in docs/EXPERIMENT-10.md,
+  // and `packages/usage/test/experiment-tables.test.ts` holds them to the
+  // committed results file, whose cells the page column read in every cell.
+  // This holds them to the reduced design's, which every run of this file
+  // writes, where a cell the page column did not run in (R6) must say so.
   let text = testPlanText;
   if (text === null) {
     const { runExperiment10 } = await import('../src/straddle/cli.ts');
@@ -3433,7 +3543,7 @@ test('T51 the page column counts every misfiled photograph with its share, and l
   const reading = (misfiled: ReturnType<typeof misfile>[], perRun: number[]) =>
     handPage({ placed: [0, 1, 2], unseen: [3], misfiled, contentMisfiles: perRun, ambiguous: [1, 0, 0] });
   const at = (camera: number, page: PageRead) => ({ ...handPosition(camera, [0], [placedRun(), placedRun(), placedRun(), invisibleRun()]), page });
-  const summary = (caps: unknown[]) =>
+  const summary = (caps: unknown[], samples: unknown[] = []) =>
     summariseCell(
       {
         plan: { ...TEST_PLAN, rigs: [0] },
@@ -3442,7 +3552,7 @@ test('T51 the page column counts every misfiled photograph with its share, and l
         solves: new Map(),
       } as unknown as Parameters<typeof summariseCell>[0],
       cell,
-      { units: { 'A:main:0': { score: { cells: { [cell.id]: caps } } } } } as unknown as Parameters<typeof summariseCell>[2],
+      { units: { 'A:main:0': { score: { cells: { [cell.id]: caps } } }, 'B:main:0': { samples } } } as unknown as Parameters<typeof summariseCell>[2],
       null,
     );
   const got = summary([
@@ -3464,8 +3574,69 @@ test('T51 the page column counts every misfiled photograph with its share, and l
     { t: 5, pos: 1, photo: 40, filedStep: 40, contentStep: 41, share: 0.9 },
   ]);
   // Past the limit the counts and the histogram stay, and the list goes.
-  const many = Array.from({ length: MISFILE_LIST_LIMIT + 1 }, (_, i) => misfile(i % 100, 0.6));
+  const many = Array.from({ length: MISFILE_LIST_LIMIT + 1 }, (_, i) => misfile(i % FRAMES_PER_RUN, 0.6));
   const over = summary([{ t: 3, rig: 0, positions: [at(0, reading(many, [MISFILE_LIST_LIMIT + 1, 0, 0])), untouchedPosition(1), untouchedPosition(2)] }]);
   assert.ok(over.page.status === 'read');
   assert.deepEqual([over.page.misfiles.photographs, over.page.misfiles.list, over.page.misfiles.histogram[2].n], [MISFILE_LIST_LIMIT + 1, null, MISFILE_LIST_LIMIT + 1]);
+  // A reading whose count of a run's misfiles is not its list's is refused, not summarised.
+  assert.throws(
+    () => summary([{ t: 3, rig: 0, positions: [at(0, reading([misfile(33, 0.6)], [0, 1, 0])), untouchedPosition(1), untouchedPosition(2)] }]),
+    /trial 3 camera 0 run 1 counts 0 misfiles and lists 1/,
+  );
+
+  // Each run holding a misfile, as the counterfactual reads it. Run 1 it
+  // refuses by its bookends. Run 0 it places, and its assignment files every
+  // photograph of the run where the page does, so the cell's decode subsample,
+  // which drew run 0, decoded it as the page files it: its figures are listed,
+  // with the extremes of the cell's decode block that it alone sets.
+  const identity = STEPS.map((_, j) => j);
+  const both = (assignment: (number | null)[]) => ({
+    ...handPosition(0, [0, 1], [placedRun(), handRun('refused-bookends-count', null, 'x'), placedRun(), invisibleRun()]),
+    page: reading([misfile(33, 0.50026), misfile(67, 0.55)], [1, 1, 0]),
+    assignment,
+  });
+  const sample = (projector: number, meanU: number, meanV: number, acceptedDelta: number) => ({
+    cell: cell.id,
+    t: 3,
+    pos: 0,
+    decode: { projector, phaseTouched: true, acceptedDelta, shift: { matched: 100, moved: 90, meanU, meanV, gross: 2 } },
+  });
+  const decoded = summary(
+    [{ t: 3, rig: 0, positions: [both(identity), untouchedPosition(1), untouchedPosition(2)] }],
+    [sample(0, 1.234567, -0.5, -5), sample(2, 0.1, 0.2, 0)],
+  );
+  assert.ok(decoded.page.status === 'read');
+  assert.deepEqual(decoded.page.misfiles.counterfactual, {
+    placedAlike: { runs: 1, photographs: 1, decoded: { runs: 1, photographs: 1 } },
+    placedOtherwise: { runs: 0, photographs: 0, decoded: { runs: 0, photographs: 0 } },
+    refused: { runs: 1, photographs: 1, why: { 'refused-bookends-count': 1 } },
+    decodes: [
+      { t: 3, pos: 0, projector: 0, photographs: [33], shares: [0.50026], biasU: 1.2346, biasV: -0.5, matched: 100, moved: 90, gross: 2, acceptedDelta: -5, sets: ['biasU.max', 'biasV.min', 'acceptedDelta.min'] },
+    ],
+  });
+  // The decode block rounds the same figure the same way.
+  assert.equal(decoded.decode.biasU.max, 1.2346);
+  // An extreme another run of the subsample shares is not one this run sets.
+  const tied = summary(
+    [{ t: 3, rig: 0, positions: [both(identity), untouchedPosition(1), untouchedPosition(2)] }],
+    [sample(0, 1.234567, -0.5, -5), sample(2, 1.234567, 0.2, 0)],
+  );
+  assert.ok(tied.page.status === 'read');
+  assert.deepEqual(tied.page.misfiles.counterfactual.decodes?.[0].sets, ['biasV.min', 'acceptedDelta.min']);
+  // Filed a photograph late by the counterfactual, run 0 is placed otherwise:
+  // its decode is not the page's filing of it, and is counted and not listed.
+  const late = identity.map((j) => (j < FRAMES_PER_RUN ? j + 1 : j === FRAMES_PER_RUN ? 0 : j));
+  const apart = summary(
+    [{ t: 3, rig: 0, positions: [both(late), untouchedPosition(1), untouchedPosition(2)] }],
+    [sample(0, 1.234567, -0.5, -5), sample(2, 0.1, 0.2, 0)],
+  );
+  assert.ok(apart.page.status === 'read');
+  assert.deepEqual(
+    [apart.page.misfiles.counterfactual.placedAlike, apart.page.misfiles.counterfactual.placedOtherwise, apart.page.misfiles.counterfactual.decodes],
+    [{ runs: 0, photographs: 0, decoded: { runs: 0, photographs: 0 } }, { runs: 1, photographs: 1, decoded: { runs: 1, photographs: 1 } }, []],
+  );
+  // Undrawn, it is placed alike and not decoded.
+  const undrawn = summary([{ t: 3, rig: 0, positions: [both(identity), untouchedPosition(1), untouchedPosition(2)] }], [sample(2, 0.1, 0.2, 0)]);
+  assert.ok(undrawn.page.status === 'read');
+  assert.deepEqual(undrawn.page.misfiles.counterfactual.placedAlike, { runs: 1, photographs: 1, decoded: { runs: 0, photographs: 0 } });
 });
