@@ -395,7 +395,8 @@ than open-ended. What remains is the room: every number above is an
 ideal-classification, ideal-fingerprint baseline from an experiment that renders
 nothing, and neither threshold this phase leans on has been priced on a real
 photograph. **On the bench's rendered photographs of clean positions it now is
-(2026-09-29, the note that closes this phase); on a real photograph, not yet.**
+(the note dated 2026-09-29 near the end of this phase); on a real photograph, not
+yet.**
 
 **It is wired into the page now**, which it was not when the mechanisms landed.
 The emitter page takes a whole camera position — every projector's run back to
@@ -480,17 +481,19 @@ cameras from 0; the correction below is about that reader.)
 > runs, and from one turned five degrees in 67 of 140, so the tripod staying put,
 > not the check, keeps a moved camera out of a position; and the cancelling
 > faults the complement check cannot see.
->
-> What it does with a straddled capture is measured now, on the bench:
-> EXPERIMENT-10's page column hands it every straddled position of EXPERIMENT-9's
-> replay (`docs/EXPERIMENT-10.md`). At the page's defaults with an un-aimed start
-> it refuses 626 of the 728 touched captures and passes 99 silently, about as the
-> counterfactual reader does, and its refusals never say a straddle happened: most
-> say no projector run could be found in the folder. Under a late emitter the
-> photographs it files under the wrong step are near-ties, each showing between
-> 0.500 and 0.585 of the step it is not filed under; under a hand-pressed remote it
-> placed runs holding a photograph of another step, 21 photographs in 20
-> positions, which the reader was built never to do and is a defect to fix.
+
+> **2026-09-30: what it does with a straddled capture is measured, on the bench.**
+> EXPERIMENT-10's fourth run handed it every straddled position of EXPERIMENT-9's
+> replay through its page column (`docs/EXPERIMENT-10.md`). At the page's defaults
+> with an un-aimed start it refuses 626 of the 728 touched captures and passes 99
+> silently, about as the counterfactual reader does, and its refusals never say a
+> straddle happened: there, most say no projector run could be found in the folder.
+> Under a late emitter the photographs it files under the wrong step are near-ties,
+> each showing between 0.500 and 0.585 of the step it is not filed under. Under a
+> hand-pressed remote it misfiled 21 photographs in 20 positions: 8 are near-ties
+> too, but 13, in 12 positions, hold 0.6 or more of the step they are not filed
+> under, and one all of it. So it placed runs holding a photograph of another step,
+> which the reader was built never to do and is a defect to fix.
 
 ## Phase 3 — Let the solver see a real photograph. **REACHABLE; STILL NO REAL PHOTOGRAPH**
 
@@ -757,8 +760,10 @@ reached without anybody deleting a file.
 > [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
 
 > **2026-09-29: the page's reader has since been replaced**, and places every
-> clean bench position (Phase 2). What it makes of a straddled one, EXPERIMENT-10
-> has since measured (below).
+> clean bench position (Phase 2).
+
+> **2026-09-30:** what it makes of a straddled one, EXPERIMENT-10's fourth run has
+> since measured (below).
 
 **The first version of that experiment got the answer wrong, and the correction
 is the finding.** It swept clock drift, found almost nothing, and concluded that

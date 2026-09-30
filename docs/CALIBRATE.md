@@ -581,8 +581,9 @@ So, three rules, in the order they pay:
    measured — every capture touched at any dwell below 4 s — though it fails
    differently, in scattered frames rather than whole positions, and never loses
    a position end to end. And the page does not always catch it: handed such
-   captures on the bench, it placed runs holding a photograph of another step,
-   21 photographs in 20 positions, with nothing to say so about those runs
+   captures on the bench, it placed runs holding a photograph of another step —
+   13 photographs, in 12 positions, holding 0.6 or more of a step they are not
+   filed under, of 21 it misfiled in 20 — with nothing to say so about those runs
    (`docs/EXPERIMENT-10.md`).
 
 **One caveat on the first rule, found by reading the page: it assumes the

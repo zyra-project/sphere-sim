@@ -16,7 +16,7 @@ kinds, each on a list of what the re-run adds or rewords, written before the
 comparison: every other field is as 754147f wrote it. So every counterfactual table
 below is the third run's. The reader the page replaced is kept beside the new one in
 Q0, and reproduces 754147f's Q0 field for field at all 108 clean positions
-(I-replaced).
+(I-replaced, held outside the file by `node tools/experiment10-replaced.ts`).
 
 The runs before this one are how the counterfactual figures were earned.
 The first full run's results file (379bb2f) was committed **unverified**, so that
@@ -44,21 +44,23 @@ same cells.
   by `npm run check:docs`. The sentence in `verdict.statement` is assembled from its
   cells, and where it quotes a figure the prose below quotes the same one.
 - **Reproduce** — `npm run experiment10` runs the stages in order (`q0`, `bank`,
-  `gate`, `decode`, `pose`, `rescore`, `lateness`) and then writes the file, resuming
-  from the checkpoints in `experiments/.experiment-10-partial/`. With the page column
-  reading every straddled position, the stages add up to about 8 h in one process.
-  `--stage <name>` runs or resumes one stage, so once `q0` and `bank` are on disk the
-  other five can run side by side — `pose`, `rescore` and `lateness` share a solve
-  file, so start those three together — and `--stage assemble` writes the file from
-  finished checkpoints alone. This run went as four lanes on 4 CPUs: `q0` and `bank`
-  side by side, then `rescore`, `lateness`, `gate`, and `pose` followed by `decode`.
-  A container restart stopped every lane at about 04:00 UTC; relaunched at 04:28 with
-  the same command, every stage resumed from its checkpoints, the finished ones at
-  once, and redid at most the one unit it had in flight. From start to the written
-  file took 4 h 10 min, 28 min of it stopped. `rescore`, the longest lane, computed
-  for about 3 h 36 min, `lateness` 2 h 29 min, `pose` 65 min, `gate` 42 min, `decode`
-  17 min, and `q0` and `bank` 5 to 6 min each. `--quick` and `--smoke` check the
-  plumbing and never write the committed file.
+  `gate`, `decode`, `pose`, `rescore`, `lateness`) and then writes the file,
+  resuming from the checkpoints in `experiments/.experiment-10-partial/`. With the
+  page column reading every straddled position, the stages add up to about 8 h in
+  one process. `--stage <name>` runs or resumes one stage, so once `q0` and `bank`
+  are on disk the other five can run side by side — `pose`, `rescore` and `lateness`
+  share a solve file, so start those three together — and `--stage assemble` writes
+  the file from finished checkpoints alone. This run went as four lanes on 4 CPUs:
+  `q0` and `bank` side by side, then `rescore`, `lateness`, `gate`, and `pose`
+  followed by `decode`. At about 04:00 UTC a container restart stopped the two lanes
+  still running, `rescore` and `lateness`; the other two had finished. Relaunched at
+  04:28 with the same command, every stage resumed from its checkpoints, the
+  finished ones at once, and each stopped lane redid at most the one unit it had in
+  flight. From start to the written file took 4 h 10 min, 28 min of it stopped; the
+  times here are from the run's own lane logs, which are not committed. `rescore`,
+  the longest lane, computed for about 3 h 36 min, `lateness` 2 h 29 min, `pose` 65
+  min, `gate` 42 min, `decode` 17 min, and `q0` and `bank` 5 to 6 min each.
+  `--quick` and `--smoke` check the plumbing and never write the committed file.
 - **Code** — [`packages/experiments/src/straddle/`](../packages/experiments/src/straddle/)
   (`stages.ts` measures and is fingerprinted; `assemble.ts` writes the document and
   its verdict, and is not), the renderer's straddle hook in
@@ -115,8 +117,10 @@ hold, and they do:
 - the replaced reader reproduces 754147f's Q0 at all 108 positions, in the runs it
   placed, its problems and their reasons, its description, the total, and the
   classify margin, wrong kinds and per-run figures (I-replaced). The document keeps
-  only that reader's figures, so this one is held against
-  `git show 754147f:experiments/experiment-10.json` rather than inside the file;
+  only that reader's figures, so this one is held outside the file, against
+  `git show 754147f:experiments/experiment-10.json`, by
+  `node tools/experiment10-replaced.ts`, which finds every one of those fields
+  equal at all 108 positions and prints “I-replaced HOLDS”;
 - the page reads the fast path's straddled frames as it reads the renderer's in all
   8 of the gate stage's hook readings, and there the placed runs' starts, their
   content misfiles and the problem texts agree too, 8 of 8 (H8-page).
@@ -125,14 +129,17 @@ Then the bets:
 
 - **P10 is falsified.** The page's placed runs file 238 photographs, in 162
   positions, under a step other than the one holding more than half their exposure,
-  and none of them lacks a majority step. 216 are near-ties under the emitter running
-  7.5 ms late per step, 109 in L-aimed-7.5 and 107 in L-uniform-7.5: their majority
-  shares run from 0.500 to 0.585, and each is filed one step after its majority step,
-  on one of a run's last four frames. R3 has one more near-tie, at 0.520. R4's 21, in
-  20 positions, are not near-ties: with a hand-pressed remote the majority share
-  reaches 1.000, 13 of them hold 0.6 or more and 3 hold 0.9 or more, so the page
-  placed runs holding a photograph of another step. The page column's section has
-  them in full.
+  and hold 0 photographs without a majority step. Every one of the 238 falsifies
+  P10, whatever its share. 225 of them are near-ties, a word this report uses for a
+  share under 0.6 and not part of the bet (the terms). 216 of those come with the
+  emitter running 7.5 ms late per step, 109 in L-aimed-7.5 and 107 in L-uniform-7.5:
+  their majority shares run from 0.500 to 0.585, and each is filed one step after its
+  majority step, on one of a run's last four frames. R3 has one more, at 0.520. R4's
+  21, in 20 positions, are not all near-ties: with a hand-pressed remote, 13 of them
+  hold 0.6 or more of another step's exposure, 3 of them 0.9 or more and one all of
+  it, so the page placed runs holding a photograph of another step; the other 8 are
+  near-ties, at 0.509 to 0.575, like the late emitter's. The page column's section
+  says where they fall, and each cell's `page.misfiles.list` lists them one by one.
 - **P11 is falsified, by one.** In R1 the page is SILENT on 99 of the 728 touched
   captures, against the counterfactual reader's 98. No R1 capture is QUIET, so the
   looser reading, which would count a quiet capture as kept, gives 99 as well.
@@ -212,13 +219,28 @@ reader can discount it.
   refused, a capture with a PLACED position is SILENT, and one with only a QUIET
   position is QUIET, its dropped run noted and not decoded. The counterfactual
   reader has no such class, since it refuses every run it does not place. *It leans
-  toward reassurance:* a note asks the operator for nothing.
+  toward reassurance:* a note asks the operator for nothing. The quiet drop is P12's,
+  as registered. The QUIET position and capture, and LOUD+QUIET, a LOUD capture with
+  a QUIET position, are not: they were defined after the bets were registered, once
+  both quick runs had been read and while this run was measuring. They are
+  reporting classes beside the registered SILENT, which needs a PLACED position, and
+  they change no bet: R1 has no QUIET capture, and P11 is read on the registered
+  SILENT.
 - **Misfile (the page column only).** A photograph a run the page places files under
   another step than the one holding more than half its exposure (P10); its *share* is
   that step's. A photograph with no such step is counted apart, as ambiguous. *It
   leans toward counting a near-tie as an error:* a share just over a half is a
   photograph either filing leaves nearly half wrong, so the share is quoted with every
-  count.
+  count. The lean is the measure's and not the bet's: P10 counts every misfile, and
+  each one falsifies it whatever its share.
+- **Near-tie, and the other shares misfiles are counted at (the page column only).**
+  A misfile whose share is under 0.6 is a *near-tie*: filed under either step, two
+  fifths or more of it shows the other. 0.6 is a reporting cut, and so are the 0.55
+  and 0.9 the counts below are also split at: each was chosen after misfiles had been
+  read, 0.55 after the quick runs and 0.6 and 0.9 after this run, and none is a bet
+  or part of one. The results file carries the near-tie cut beside P10's count
+  (`predictions[P10].measured.nearTie`), and each cell's shares in bins a twentieth
+  wide (`page.misfiles.histogram`).
 - **D_grid.** How far the straddle moved the seams: `computeGridDisplacement`
   between the twin's and the treated solve's aligned rigs, which share their noise
   and their solve seeds, so the difference is the straddle's alone. *It leans toward
@@ -265,11 +287,13 @@ median 8 of its frames the wrong kind. The page's reader finds each run by its o
 white, black and phase frames instead, and never classifies the capture.
 
 The page column attributes against each camera's clean twin, read by the page from
-the fast path's photographs, and that reading is Q0's at all 108 positions (P13)
-and the acceptance sweep's (I-page-twin; `experiments/reader-acceptance.json`,
-whose table is in [`docs/OPERATOR-PATH.md`](OPERATOR-PATH.md), Phase 2). On the
-sweep's 72 twins it places 212 of the 288 runs and refuses none, noting 68 out of
-view and 8 barely seen.
+the fast path's photographs: the 96 twins of the sweep and of the room spill. The
+page's reading of every twin, the finer preset's 12 included, is Q0's at all 108
+positions (P13) and the acceptance sweep's (I-page-twin;
+`experiments/reader-acceptance.json`, whose table is in
+[`docs/OPERATOR-PATH.md`](OPERATOR-PATH.md), Phase 2). On the sweep's 72 twins it
+places 212 of the 288 runs and refuses none, noting 68 out of view and 8 barely
+seen.
 
 The counterfactual reader is the one the first three runs measured: the page's own
 complement check, `indexByFingerprint`, handed the lit fractions a perfect classify
@@ -409,7 +433,8 @@ _Policy P: a refused position is re-shot whole and the re-shoot assumed clean. A
 
 **Through the page's own reader a straddle is about as loud as through the
 counterfactual, and silent about as often: of R1's 728 touched captures it refuses
-626 loudly and passes 99 silently, one more than the counterfactual's 98 (P11).**
+626 loudly and passes 99 silently, one more than the counterfactual's 98, which
+falsifies P11.**
 This is the page column. Every changed position of every rig was read whole by the
 page's reader, from the fast path's noisy frames encoded to 8-bit sRGB as the page
 reads them, and each run is attributed against the page's reading of the same clean
@@ -463,30 +488,54 @@ no run could be found, in the folder or for that projector; none is told that a
 straddle happened; and a quiet drop gets a note that there is nothing to gain by
 re-shooting it (P12, below).
 
-**P10: under a late emitter the page's misfiles are near-ties; under a hand-pressed
-remote they are not.** The page's placed runs file 238 photographs, in 162
-positions of four cells, under a step other than the one holding more than half
-their exposure. 216 of them are in the two cells where the emitter runs 7.5 ms late
-per step, 109 in L-aimed-7.5 and 107 in L-uniform-7.5, in runs the page placed as
-the folder orders them. Each is filed one step after its majority step, on one of a
-run's last four frames, and their majority shares run from 0.500 to 0.585, 98 and 95
-of them under 0.55. A late emitter moves each photograph a little further into the
-step before, and these are photographs where that step had just passed half the
-exposure: either filing leaves two fifths or more of such a photograph showing the
-other step.
+**P10: every misfile falsifies it. Under a late emitter the page's misfiles are all
+near-ties; under a hand-pressed remote 13 of its 21 are not.** The page's placed
+runs file 238 photographs, in 162 positions of four cells, under a step other than
+the one holding more than half their exposure. 216 of them are in the two cells
+where the emitter runs 7.5 ms late per step, 109 in L-aimed-7.5 and 107 in
+L-uniform-7.5, in runs the page placed as the folder orders them. Each is filed one
+step after its majority step, on one of a run's last four frames, and their majority
+shares run from 0.500 to 0.585, 98 and 95 of them under 0.55. A late emitter moves
+each photograph a little further into the step before, and these are photographs
+where that step had just passed half the exposure: either filing leaves two fifths
+or more of such a photograph showing the other step.
 
-R4's 21, in 20 positions, are not near-ties. With a hand-pressed remote, the page
-files 11 photographs one step after their majority step and 10 one step before, on
-Gray frames 2, 3, 4, 7 and 8 and phase frames 26 to 32, again in runs placed as the
-folder orders them, and their majority shares run from 0.509 to 1.000: 13 hold 0.6
-or more of their exposure in a step the page did not file them under, and 3 hold
-0.9 or more. Numbering photographs from 0, those 3 are photograph 97 of trial 264's
-first position (0.998), photograph 36 of trial 408's first (0.901) and photograph 4
-of trial 493's third (1.000). So the page placed runs holding a photograph of
-another step, which its reader was built never to do. R3, at a 1/60 s exposure, has
-one more, a near-tie at 0.520 filed one step before its majority. None of these
-runs is decoded here, so what a misfiled photograph does to the coordinates is not
-measured.
+R4's 21, in 20 positions, are not all near-ties. With a hand-pressed remote, the
+page files 11 photographs one step after their majority step and 10 one step
+before, on Gray frames 2, 3, 4, 7 and 8 and phase frames 26 to 32, again in runs
+placed as the folder orders them, and their majority shares run from 0.509 to
+1.000: 13 hold 0.6 or more of their exposure in a step the page did not file them
+under, 3 of them 0.9 or more and one all of it; the other 8 are near-ties, at 0.509
+to 0.575, like the late emitter's. Numbering trials and photographs from 0, those 3
+are photograph 97 of trial 264's first position (0.998), photograph 36 of trial
+408's first (0.901) and photograph 4 of trial 493's third (1.000). So the page
+placed runs holding a photograph of another step, which its reader was built never
+to do. R3, at a 1/60 s exposure, has one more, a near-tie at 0.520 filed one step
+before its majority.
+
+**The page column decodes none of these runs, but the counterfactual's decodes read
+25 of them as the page files them.** The counterfactual places R3's run and 15 of
+R4's 20, 58 of L-aimed-7.5's 72 and 36 of L-uniform-7.5's 69, each filed exactly as
+the page files it, misfiled photographs included (`page.misfiles.counterfactual`).
+Its decode subsample, which reads each run it draws through the page's own `readRun`
+on 8-bit sRGB, drew 25 of those 110 runs, holding 31 misfiled photographs: R3's, 8
+of R4's holding 9, 13 of L-aimed-7.5's holding 17 and 3 of L-uniform-7.5's holding
+4. Their decodes are listed there, each with the extremes of its cell's decode
+subsample that it alone sets. In R4, the run of trial 264's first position holding
+photographs 95 and 97 (0.759 and 0.998) has the cell's largest mean shift along *u*,
+6.9361 px, with 16 of its 113 matched pixels grossly wrong; the run of trial 493's
+third holding photograph 4 (1.000) has the cell's largest loss, 2293 correspondences
+fewer than its twin's, and none of its 13801 matched pixels moved. The other 6 of
+R4's move their means by at most 1.6472 px. R3's run has that cell's most negative
+mean shift along *v*, −1.3545 px. Under the late emitter, the 16 runs drawn shift
+their means 3.6 to 4.6 px along *u* and 3.1 to 3.8 px along *v*, each past its
+cell's 90th percentile on both axes, and in each cell one of them has the
+subsample's largest shift along both axes and its largest loss. A run is decoded
+whole, so none of this separates what a misfiled photograph does from what the rest
+of its straddle does. The other 137 runs holding a misfile are not decoded at all:
+the 52 only the page places, which the counterfactual's bookends refuse (R4's other
+5, by count or by kind, and 14 of L-aimed-7.5's and 33 of L-uniform-7.5's, by
+length), and 85 its subsample did not draw.
 
 **P12: the page quietly drops 59 runs its clean reading places, 31 of them in R6,
 with the room spill on.** In each, the straddled position notes the run out of view
@@ -496,12 +545,14 @@ places it. 55 of the 59 sit in positions the page refuses anyway. The other 4, a
 in R6, make their positions QUIET, in 4 captures: 1 QUIET, and 3 LOUD with a QUIET
 position. In each of those 4 the QUIET position places another touched run beside
 the dropped one, which reaches the calibration straddled with no class counting it.
-Joined with the acceptance sweep's measure of each clean run's light
-(`experiments/reader-acceptance.json`), every one of R6's 31 is a run lit only by
-the wall behind the sphere — 7 runs, lighting 35 to 226 pixels — which the page's
-clean reading places and can decode only off the sphere. The other 28 are 3 runs on
-the sphere lighting 58 to 83 pixels, crescents of 10 to 14 fingerprint blocks, which
-the straddle takes below the 8 blocks the page needs to check a run.
+The results file lists every drop with how it was noted and with its clean run's
+light as the acceptance sweep measured it, joined in the assembly with
+`experiments/reader-acceptance.json` (`page.quiet.list`). Every one of R6's 31 is a
+run lit only by the wall behind the sphere — 7 runs, lighting 35 to 226 pixels —
+which the page's clean reading places and can decode only off the sphere. The other
+28 are 3 runs on the sphere lighting 58 to 83 pixels, crescents of 10 to 14
+fingerprint blocks, which the straddle takes below the 8 blocks the page needs to
+check a run.
 
 ## The check refuses a position run by run, not all at once
 
@@ -743,32 +794,41 @@ _Derived from the design: the aim band’s lower edge, 0.5 s, spread over 135 st
 
 **Neither reader says that the photographs were taken while the pattern changed.
 When the counterfactual refuses a run on its own it mostly blames a dropped and a
-duplicated frame; the page's own reader mostly says it found no run in the folder at
-all.** Of R1's 627 loud captures, the counterfactual refuses 332 only as whole
-positions — “Found N projector runs” — and re-shooting that position is a remedy
-the page reads. The other 295 are refused run by run: 295 of them are told
-“Re-shoot projector N”, and 295 that the photographs look like a dropped frame and a
-duplicated one. That is not what happened, and the remedy was one that reader could
-not read back: a folder holding a re-shot run, appended or alone, is refused whole
-(192 of 192 in the first section's folder table).
+duplicated frame. The page's own reader mostly says it found no run in the folder at
+all in R1, R2, R5, R6 and R7, and in the other five cells it read mostly names the
+projector whose run it could not use.** Of R1's 627 loud captures, the
+counterfactual refuses 332 only as whole positions — “Found N projector runs” — and
+re-shooting that position is a remedy the page reads. The other 295 are refused run
+by run: 295 of them are told “Re-shoot projector N”, and 295 that the photographs
+look like a dropped frame and a duplicated one. That is not what happened, and the
+remedy was one that reader could not read back: a folder holding a re-shot run,
+appended or alone, is refused whole (192 of 192 in the first section's folder
+table).
 
 The page's own reader refuses 437 of its 626 loud captures only as whole positions,
 and 189 run by run, each of those told “Re-shoot projector N” and 82 of them also
 that the photographs look like a dropped and a duplicated frame, in the complement
 check's own words, which the page's reader keeps. Of the 1837 touched runs it
-refuses in R1, 1511 are refused by one problem about the whole folder: “No projector
-run could be found in the 136 photographs”, which it explains as what a folder from
-another plan, a camera that moved during the run, or photographs not in the order
-they were shot look like. It could not find another 228, and refuses 98 as a broken
-pair (the last table). It reads a re-shot run added to the position's folder, or
-played on to the end, in place of the original (the first section), so re-shooting
-the projector it names is a remedy it reads. After a straddle it is still the wrong
-one: a straddle smears the whole position and each run crosses the check at its own
-smear (the section on crossings), so the runs that passed can carry the same smear
-silently, and re-shooting only the projector named keeps them. The card says to
-re-shoot one projector into the same folder for a frame spoiled on its own, before
-the tripod moves, and the whole position, aimed, after a straddle
-(`docs/CALIBRATE.md`).
+refuses in R1 that its clean reading places, 1511 are refused by one problem about
+the whole folder: “No projector run could be found in the 136 photographs”, which it
+explains as what a folder from another plan, a camera that moved during the run, or
+photographs not in the order they were shot look like. It could not find another
+228, and refuses 98 as a broken pair (the last table). So it is in R2, R5, R6 and
+R7, where 80 to 83% of such runs are told there is no run in the folder. In the
+other five cells it read, most such runs are told instead which projector's run it
+could not use, and to re-shoot that projector. Only these are told there is no run
+in the folder: 42 of R3's 219, at a 1/60 s exposure; 1120 of R4's 2521, with a
+hand-pressed remote; 442 of 1859 with the emitter 2 ms late per step (L-uniform-2);
+and with it 7.5 ms late, 134 of 4057 (L-uniform-7.5) and none of 2324 at the card's
+aimed start (L-aimed-7.5). It
+reads a re-shot run added to the position's folder, or played on to the end, in
+place of the original (the first section), so re-shooting the projector it names is
+a remedy it reads. After a straddle it is still the wrong one: a straddle smears the
+whole position and each run crosses the check at its own smear (the section on
+crossings), so the runs that passed can carry the same smear silently, and
+re-shooting only the projector named keeps them. The card says to re-shoot one
+projector into the same folder for a frame spoiled on its own, before the tripod
+moves, and the whole position, aimed, after a straddle (`docs/CALIBRATE.md`).
 
 A silent position gets no message at all, from either reader, and a quiet drop gets
 a note that asks for nothing (the page column's section). Under policy A, which
@@ -910,10 +970,15 @@ _The page’s words on each touched run it refuses and its clean reading places:
   own reader (the page column). But the column reads which runs the page places and
   where, and decodes none of them, so what a straddle does to the coordinates of a
   run only the page places is not measured: the runs it places where the
-  counterfactual's bookends refuse them, and R4's runs holding a photograph of
-  another step. And a page-SILENT capture whose plan no counterfactual solve has is
-  not judged: 30 of R1's 99, and every one outside R1 and L-aimed-7.5, where
-  nothing was solved.
+  counterfactual refuses them, all by its bookends but one each in R2 and
+  L-uniform-2 refused at its complement check. Among those are 52 of the 162 runs
+  holding P10's misfiles, 5 of them R4's. The counterfactual places the other 110,
+  filed as the page files them, and its decode subsamples drew 25 of those, 8 of
+  them R4's (the page column's section); the other 85 are not decoded either. And a
+  page-SILENT capture whose plan no counterfactual solve has is not judged: 30 of
+  R1's 99, 312 of L-aimed-7.5's 330, and every one in the other cells, where nothing
+  was solved. Nor is a LOUD+SILENT capture's placed part without such a solve: 13 of
+  R1's 34, 347 of L-aimed-7.5's 356, and every one in the other cells.
 - **The display machine's timing.** The emitter's lateness was never measured here:
   the emitter-timing probe its design called for (`tools/emitter-timing.ts`) was never built, so 7.5 ms is a
   design-time headless figure and every lateness in this document is an input, not a
@@ -959,26 +1024,32 @@ sight, and places a run in all 108 with no problem.
 
 **Through the page's reader a straddle is mostly loud, and the words do not say what
 happened.** It refuses 626 of R1's 728 touched captures and passes 99 silently, one
-more than the counterfactual's 98 (P11), and in every cell its loud and silent
-counts are each within 15 captures of the counterfactual's. Most of its refusals say
-no projector run could be found in the folder, and the rest name a projector to
-re-shoot, which after a straddle is the wrong remedy. The card's is to re-shoot the
-whole position, aimed; the refusal text still does not say so, which is recorded
-here and not acted on.
+more than the counterfactual's 98, which falsifies P11, and in every cell its loud
+and silent counts are each within 15 captures of the counterfactual's. In R1 most of
+its refusals say no projector run could be found in the folder (1511 of the 1837
+runs it refuses that its clean reading places), and the rest name a projector to
+re-shoot. In the other five cells it read (R3, R4, L-uniform-2, L-aimed-7.5 and
+L-uniform-7.5) most name one, and with the emitter 7.5 ms late at the card's aimed
+start every one does (2324 of 2324). After a straddle, re-shooting one projector is
+the wrong remedy. The card's is to re-shoot the whole position, aimed; the refusal
+text still does not say so, which is recorded here and not acted on. It also quietly
+drops 59 runs its clean reading places, 31 of them in R6, with the room spill on,
+noting each with nothing to re-shoot, which falsifies P12.
 
 **Under a late emitter, its misfiles are near-ties.** The 216 photographs it files
 under the step after the one they mostly show, at 7.5 ms per step, hold between
 0.500 and 0.585 of their exposure in that step: filed either way, two fifths or more
-of each shows the other step.
+of each shows the other step. Each is still a misfile, and falsifies P10 as any
+other does.
 
 **Under a hand-pressed remote it places runs holding a photograph of another step,
 which the reader was built never to do.** 13 of R4's 21 misfiled photographs hold
-0.6 or more of their exposure in a step other than the one they are filed under, and
-one holds all of it. That is a reader defect to fix. It also strengthens the card's
-rule to shoot with an intervalometer and never press a remote by hand for each
-frame: EXPERIMENT-9 measured a hand-pressed remote as the worst arrangement, and
-here the page places some of its captures' runs with a photograph of the wrong step
-in them.
+0.6 or more of their exposure in a step other than the one they are filed under, 3
+of them 0.9 or more and one all of it; the other 8 are near-ties, like the late
+emitter's. That is a reader defect to fix. It also strengthens the card's rule to
+shoot with an intervalometer and never press a remote by hand for each frame:
+EXPERIMENT-9 measured a hand-pressed remote as the worst arrangement, and here the
+page places some of its captures' runs with a photograph of the wrong step in them.
 
 **Most of what passes is not harmless, and the check is not the protection.** A
 straddle the check lets through keeps its Gray words and shifts its phase, and at
@@ -999,4 +1070,5 @@ told that a straddle is what happened.
 
 Pre-registered predictions this run falsifies, each a finding rather than a fault:
 **P2c, P3, P5a, P6, P9, P10, P11, P12**. Not evaluated: **none**. Harness identities
-that fail: **none**; not established: **none**.
+that fail: **none**; not established: **none**. I-replaced, held outside the file by
+`node tools/experiment10-replaced.ts`, holds.

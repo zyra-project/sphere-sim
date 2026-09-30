@@ -45,10 +45,12 @@ A straddle is worse than a drop for one specific reason:
 > **2026-09-29: “today's page”, in every note on this page, is the page's reader
 > when EXPERIMENT-10 first ran.** It has since been replaced, and on the bench's
 > rendered photographs the new reader places every clean camera position the old
-> one refused. EXPERIMENT-10's fourth run then put this page's straddled captures
-> through it: at the page's defaults with an un-aimed start it refuses 626
-> of the 728 touched loudly and passes 99 silently, and none of its refusals says a
-> straddle happened. See [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
+> one refused.
+
+> **2026-09-30: EXPERIMENT-10's fourth run put this page's straddled captures
+> through the new reader.** At the page's defaults with an un-aimed start it
+> refuses 626 of the 728 touched loudly and passes 99 silently, and none of its
+> refusals says a straddle happened. See [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
 
 `docs/EXPERIMENT-8.md` measured Phase 2's blind spot to be a cancelling
 drop-and-duplicate inside one run. This is a second way into the same blind spot,
@@ -340,8 +342,8 @@ five of those lose a whole camera position, every frame of it.
 > today's page refuses every clean bench position before that check runs, so on
 > today's page a straddled capture would be refused like any other, with nothing to
 > say why. Through the reader that has since replaced it, the same captures come
-> out 626 loud and 99 silent (the dated note near the top of this page). See
-> [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
+> out 626 loud and 99 silent (the note dated 2026-09-30 near the top of this
+> page). See [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
 
 Both corrections came from review, and both were the same mistake: a number
 sitting in the model as a constant, describing a procedure nobody had checked it
