@@ -460,6 +460,18 @@ with the stripes too, and only the ball is compared. A dark frame (all black,
 or a run played to a projector switched off at the wall) has nothing to compare,
 and it reads BLIND and says why.
 
+The calibration frames get no allowance of their own, and they do not need
+one. Measured on SwiftShader, every frame of one projector's run from across
+the room and again standing at the ball, 68 verdicts: no lit pixel was over
+tolerance on any of them, and the worst single pixel was 7.6e-4 of relative
+radiance, on the finest Gray plane, against the 2e-3 tolerance. A Gray plane's
+edges are where two renderers could disagree about which side of a stripe a
+point falls. Here both read the frame's value at the same pixel centres, so
+what differs across an edge is only the interpolation weight, and that is what
+the worst pixel measures. From across the room two Gray complements light fewer
+than the 60 pixels the check needs (52 and 18) and read BLIND. Standing at the
+ball every lit frame had between 97 and 1 060.
+
 ## Tests
 
 ```bash
@@ -534,7 +546,7 @@ whether a live calibration runs end to end in a browser and actually improves th
 number. It fails if the alignment does not get better, which at the default
 settings means 127 mm to 0.14 mm.
 
-Two of its checks exist because nothing in Node can make them:
+Three of its checks exist because nothing in Node can make them:
 
 - **The click and the shader agree about where a lens is.** There are two
   ray-casts against the marker spheres — `markerHit` in GLSL, which draws them,
@@ -546,6 +558,13 @@ Two of its checks exist because nothing in Node can make them:
   flex item shrinks before its container scrolls — which silently squashed the
   warp mesh to twenty pixels while its caption went on describing a picture that
   was not there.
+- **The calibration frame on the ball is the one both renderers drew.** The
+  tool turns the sequence on, pauses it with Space, and uses the arrow keys to
+  step to the white frame, the coarsest Gray plane, its complement and a phase
+  step, from across the room and again standing at the ball. Each time it waits
+  for a verdict judged on THAT frame. It fails on a 'bad' verdict, on a BLIND
+  one standing at the ball (where all four have pixels to judge), on a black
+  canvas, and on a caption that is not `describeSequence`'s label for the step.
 
 ```bash
 npm run app                                    # in one terminal
