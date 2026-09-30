@@ -151,6 +151,14 @@ test('clipping is counted rather than judged, and a dead reference pair is refus
   assert.equal(referenceRange(dark.report, blown.report).usable, false);
 });
 
+/** Every transfer `linearise` can be told, for the tests that hold its table to the per-sample path. */
+const TRANSFERS = [
+  { kind: 'srgb' },
+  { kind: 'linear' },
+  { kind: 'gamma', exponent: 2.2 },
+  { kind: 'gamma', exponent: 1.8 },
+] as const;
+
 test('a file of integers is undone through a table of its codes, to the same bits as one sample at a time', () => {
   // `linearise` looks up every code of an integer file in a table built from
   // `decodeTransfer` itself, where it once called it once a sample. A table
@@ -160,12 +168,6 @@ test('a file of integers is undone through a table of its codes, to the same bit
   // 16 bits, grey and colour, and the two must agree bit for bit: the pixels,
   // the clipping counts and the rest of the report. The per-sample path is
   // what the same samples take when they are not typed as integers.
-  const transfers = [
-    { kind: 'srgb' },
-    { kind: 'linear' },
-    { kind: 'gamma', exponent: 2.2 },
-    { kind: 'gamma', exponent: 1.8 },
-  ] as const;
   for (const max of [255, 65535]) {
     for (const channels of [1, 3, 4]) {
       // Every code, in every channel, twice: in order and then reversed, so a
@@ -179,7 +181,7 @@ test('a file of integers is undone through a table of its codes, to the same bit
         }
       }
       const image = (data: Uint8Array | Uint16Array): EncodedImage => ({ width: codes, height: 2, channels, data, maxValue: max });
-      for (const transfer of transfers) {
+      for (const transfer of TRANSFERS) {
         const byTable = linearise(image(typed), transfer);
         const bySample = linearise(image(Array.from(typed) as unknown as Uint16Array), transfer);
         const where = `${max} max, ${channels} channels, ${JSON.stringify(transfer)}`;
@@ -193,6 +195,70 @@ test('a file of integers is undone through a table of its codes, to the same bit
         assert.ok(byTable.report.clippedHigh > 0 && byTable.report.clippedLow > 0, where);
         assert.equal(byTable.report.hi, decodeTransfer(1, transfer), where);
       }
+    }
+  }
+});
+
+test('a sample above the stated maximum is undone on its own, never looked up past the end of the table', () => {
+  // A 12-bit camera can write a 16-bit file that says its maximum is 4095 and
+  // still hold a sample above it. The table covers the codes up to the
+  // maximum and no further, so such a sample takes the per-sample path, as
+  // every sample did before the table: looked up in the table it would come
+  // back undefined, and the pixel, the mean and the brightest value with it
+  // NaN. Every 16-bit code is in the image once, so the image holds far more
+  // samples than the table has entries and the table is built, and nearly
+  // every sample is above the maximum.
+  const max = 4095;
+  const codes = 65536;
+  for (const channels of [1, 3]) {
+    const typed = new Uint16Array(codes * channels);
+    for (let i = 0; i < codes; i++) {
+      for (let c = 0; c < channels; c++) typed[i * channels + c] = (i + 4099 * c) % codes;
+    }
+    const image = (data: Uint16Array): EncodedImage => ({ width: codes / 2, height: 2, channels, data, maxValue: max });
+    for (const transfer of TRANSFERS) {
+      const byTable = linearise(image(typed), transfer);
+      const bySample = linearise(image(Array.from(typed) as unknown as Uint16Array), transfer);
+      const where = `${channels} channels, ${JSON.stringify(transfer)}`;
+      assert.ok(
+        Buffer.from(byTable.image.data.buffer).equals(Buffer.from(bySample.image.data.buffer)),
+        `${where}: the table's pixels are not the per-sample pixels`,
+      );
+      assert.deepStrictEqual(byTable.report, bySample.report, `${where}: the report differs`);
+      assert.ok(byTable.image.data.every((v) => Number.isFinite(v)), `${where}: a pixel is not finite`);
+      assert.ok(Object.values(byTable.report).every((v) => Number.isFinite(v)), `${where}: ${JSON.stringify(byTable.report)}`);
+      // Not vacuous: the brightest sample, far above the maximum, was undone.
+      assert.equal(byTable.report.hi, decodeTransfer(65535 / max, transfer), where);
+    }
+  }
+});
+
+test('a stated maximum that is not a whole number is undone one sample at a time, to the same bits', () => {
+  // The table is indexed by code, from 0 to the maximum, so it is built only
+  // for a whole maximum. A file that states another, a scale carried through
+  // some conversion, is undone sample by sample whatever its samples' type,
+  // each sample as that code over the stated maximum through the transfer
+  // named, the samples above the maximum included. Both images hold more
+  // samples than a whole maximum's table would have entries.
+  const cases: [number, Uint8Array | Uint16Array][] = [
+    [1023.5, Uint16Array.from({ length: 2048 }, (_, i) => i)],
+    [254.5, Uint8Array.from({ length: 512 }, (_, i) => i % 256)],
+  ];
+  for (const [max, typed] of cases) {
+    const image = (data: Uint8Array | Uint16Array): EncodedImage => ({ width: typed.length / 2, height: 2, channels: 1, data, maxValue: max });
+    for (const transfer of TRANSFERS) {
+      const typedRead = linearise(image(typed), transfer);
+      const bySample = linearise(image(Array.from(typed) as unknown as Uint16Array), transfer);
+      const where = `max ${max}, ${JSON.stringify(transfer)}`;
+      assert.ok(
+        Buffer.from(typedRead.image.data.buffer).equals(Buffer.from(bySample.image.data.buffer)),
+        `${where}: typed samples read differently from untyped ones`,
+      );
+      assert.deepStrictEqual(typedRead.report, bySample.report, `${where}: the report differs`);
+      typed.forEach((code, j) => {
+        assert.equal(typedRead.image.data[j], Math.fround(decodeTransfer(code / max, transfer)), `${where}: code ${code}`);
+      });
+      assert.equal(typedRead.report.clippedHigh, typed.filter((code) => code >= max).length / typed.length, where);
     }
   }
 });
