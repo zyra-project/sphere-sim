@@ -675,7 +675,9 @@ function sequenceTransport(): { row: HTMLElement; play: HTMLButtonElement } {
 
 function labelPlay(play: HTMLButtonElement): void {
   const label = player.playing ? 'Pause (Space)' : 'Play (Space)';
-  play.textContent = player.playing ? '❚❚' : '▶';
+  // U+FE0E asks for the triangle as text. Without it an Apple device may draw
+  // U+25B6 as a blue emoji tile, beside three buttons in the page's own type.
+  play.textContent = player.playing ? '❚❚' : '▶\uFE0E';
   play.title = label;
   play.setAttribute('aria-label', label);
 }
