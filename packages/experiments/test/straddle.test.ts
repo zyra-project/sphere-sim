@@ -3218,3 +3218,33 @@ test('T49 the re-run\'s bets P10-P13 are read off the page blocks and Q0, each h
   assert.throws(() => pageTwinIdentity([at('default', 13, twin.page)], acceptance), /does not cover main rig 13 camera 2/);
   assert.throws(() => pageTwinIdentity([at('default', 12, twin.page)], { positions: 'none' }), /holds no positions/);
 });
+
+test("T50 the page column's tables render from the reduced run's document, each number its cell's", async () => {
+  // The tables written for the re-run are registered in no document until its
+  // results file is committed; `packages/usage/test/experiment-tables.test.ts`
+  // holds them to a quick run's document where one has been made. This holds
+  // them to the reduced design's, which every run of this file writes.
+  let text = testPlanText;
+  if (text === null) {
+    const { runExperiment10 } = await import('../src/straddle/cli.ts');
+    const { TEST_PLAN, memoryStore, runContext } = await import('../src/straddle/stages.ts');
+    text = JSON.stringify(runExperiment10(runContext(TEST_PLAN, memoryStore(), () => {})), null, 2);
+  }
+  const doc = JSON.parse(text);
+  const { experiment10Page, experiment10PageRuns, experiment10PreconditionTwoReaders } = await import('../../../tools/experiment-tables.ts');
+  const rows = (table: string): string[][] =>
+    table.split('\n').filter((l) => l.startsWith('|') && !/^\|\s*---/.test(l)).map((l) => l.slice(1, -1).split('|').map((x) => x.trim()));
+  const page = rows(experiment10Page(doc));
+  const cells = [...doc.rescore.cells, ...doc.lateness.cells] as { id: string; page: { status: string; classes: { P: { counts: Record<string, number> } }; quiet: { runs: number } } }[];
+  assert.deepEqual(page.slice(1).map((r) => r[0]), cells.map((c) => c.id));
+  for (const r of page.slice(1)) {
+    const c = cells.find((x) => x.id === r[0]);
+    assert.ok(c !== undefined && c.page.status !== 'not run', r[0]);
+    assert.equal(Number(r[2].split(' ')[0]), c.page.classes.P.counts.LOUD, r[0]);
+    assert.equal(Number(r[7].split(' ')[0]), c.page.quiet.runs, r[0]);
+  }
+  const runs = experiment10PageRuns(doc);
+  assert.equal(runs.split('\n\n').filter((x) => x.startsWith('|')).length, 4);
+  const pre = rows(experiment10PreconditionTwoReaders(doc));
+  assert.ok(pre.some((r) => r[0] === '**all**' && r[3] === `**${doc.precondition.q0.page.placedPositions}**`));
+});

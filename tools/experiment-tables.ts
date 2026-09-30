@@ -838,7 +838,68 @@ interface Cell10 {
     dropAndDuplicate: number;
   };
   solved: boolean;
+  /**
+   * The page's own reader on the same captures (the page column). Null in a
+   * file written before the column was summarised, as the first full run's was.
+   */
+  page: Page10 | null;
 }
+
+/** A cross of the page's run verdicts (rows) with the counterfactual's deciding outcomes (columns). */
+type Cross10 = Record<string, Record<string, number>>;
+
+/** A cell the page column read, or found nothing to read in. */
+interface PageRead10 {
+  status: 'read' | 'nothing to read';
+  rigs: { column: number; of: number };
+  read: { captures: number; positions: number; crashes: number; placedAny: number };
+  positions: { all: Record<string, number>; excludingMinorMarginal: Record<string, number> };
+  classes: {
+    P: Policy10 & {
+      harm: { silentPart: number; samePlan: number; notSolved: number; why: Record<string, number> };
+      /** Capture classes crossed: the counterfactual's (rows) against the page's (columns), collapsed. */
+      vsCounterfactual: Cross10;
+    };
+  };
+  quiet: { runs: number; positions: number; captures: number; silentOnlyThroughQuiet: number };
+  loud: {
+    captures: number;
+    runByRun: number;
+    wholePositionOnly: number;
+    crashOnly: number;
+    reshootNamed: number;
+    dropAndDuplicate: number;
+  };
+  words: { runs: number; byClass: Record<string, number> };
+  runs: {
+    touched: number;
+    attributable: number;
+    placed: number;
+    refused: number;
+    noted: number;
+    crashed: number;
+    unaccounted: number;
+    collateral: number;
+    placedNotAttributable: number;
+    both: Cross10;
+    counterfactualOnly: Cross10;
+    pageOnly: Cross10;
+    neither: number;
+  };
+  misfiles: {
+    photographs: number;
+    positions: number;
+    runs: number;
+    ambiguous: number;
+    share: { min: number | null; max: number | null };
+    below055: number;
+    histogram: { from: number; to: number; n: number }[];
+    list: { t: number; pos: number; photo: number; filedStep: number; contentStep: number; share: number }[] | null;
+  };
+}
+
+/** The page column in one cell: read, nothing to read, or not run at all (no page-column rig). */
+type Page10 = { status: 'not run'; rigs: { column: number; of: number } } | PageRead10;
 
 /** A null distribution of D_grid: re-shoots of a designed rig against its plain twin. */
 interface Yardstick10 {
@@ -858,6 +919,63 @@ interface Q0Variant10 {
   margin: Spread10;
   reasons: Record<string, number>;
   perRunAlone: { runs: number; rescued: number };
+}
+
+/** One reader's figures on Q0's clean positions: the page's reader now. */
+interface Q0Reader10 {
+  placedPositions: number;
+  runs: number;
+  runsPlaced: number;
+  unseen: number;
+  barelySeen: number;
+  problems: number;
+  positionsWithProblems: number;
+}
+
+/** Q0 per variant in a file that keeps both readers: the page's, and the one it replaced. */
+interface Q0TwoReaders10 {
+  positions: number;
+  page: Q0Reader10;
+  replaced: {
+    placedPositions: number;
+    reasons: Record<string, number>;
+    margin: Spread10;
+    perRunAlone: { runs: number; rescued: number };
+  };
+}
+
+/** The page's own reader on each camera's clean twin: what the page column attributes against. */
+interface PageTwins10 {
+  cameras: number;
+  read: number;
+  runs: number;
+  placed: number;
+  unseen: number;
+  barelySeen: number;
+  refused: number;
+  problems: number;
+  crashes: number;
+  againstCounterfactual: { both: number; counterfactualOnly: number; pageOnly: number; neither: number };
+}
+
+/** The precondition as a file that keeps both readers writes it. */
+interface PreconditionTwoReaders10 {
+  q0: {
+    main: Q0TwoReaders10;
+    spill: Q0TwoReaders10;
+    fine: Q0TwoReaders10;
+    total: number;
+    page: Q0Reader10;
+    replaced: {
+      placedPositions: number;
+      minClassifyMargin: number;
+      refusedAt: Experiment10['precondition']['q0']['refusedAt'];
+    };
+    worth: { refusal: string | null } | null;
+  };
+  q0b: Experiment10['precondition']['q0b'];
+  twins: Experiment10['precondition']['twins'];
+  pageTwins: { main: PageTwins10; spill: PageTwins10; fine: PageTwins10 };
 }
 
 /** The counterfactual reader on the clean capture: each camera's twin. */
@@ -1228,7 +1346,12 @@ function pastGate10(cell: Cell10): string {
   );
 }
 
-/** Where today's page stops a clean position, in its own terms. */
+/**
+ * What a reader's refusal says, in each class of its words (`reasonOf`'s, and
+ * the finer classes the assembly's `pageWordsOf` splits three of them into):
+ * the first eight are where the reader the page replaced stopped a clean
+ * position, the rest the page's reader now.
+ */
 const REASON_WORDS10: Record<string, string> = {
   margin: 'classify',
   count: 'run count',
@@ -1238,6 +1361,18 @@ const REASON_WORDS10: Record<string, string> = {
   unanswered: 'unanswered pair',
   leading: 'photographs before the first white',
   clipping: 'clipping',
+  unfound: 'run not found',
+  'unfound-room': 'run not found, a room’s light',
+  'length-extra': 'a photograph too many after the run',
+  'length-slot': 'a run’s count between found neighbours',
+  short: 'folder too short',
+  dark: 'folder dark or one picture',
+  norun: 'no run in the folder',
+  numbering: 'runs not numbered',
+  'numbering-gap': 'a stretch that is not whole runs',
+  reshoot: 're-shoot not matched',
+  plan: 'the plan',
+  other: 'words not recognised',
 };
 
 function reasons10(reasons: Record<string, number> | undefined, where: string): string {
@@ -1368,6 +1503,179 @@ export function experiment10Precondition(result: Experiment10): string {
         `${reasons10(x.reasons, `${where}.reasons`)} |`,
     );
   }
+  return out.join('\n');
+}
+
+/**
+ * The precondition of a file that keeps both readers on the clean positions:
+ * Q0 read by the page's reader and, beside it and labelled as such, by the
+ * reader it replaced; the counterfactual reader and the page's own reader on
+ * each clean twin; and the folder shapes, which the counterfactual reads.
+ *
+ * Written for the re-run with the page's reader, and to take the place of
+ * {@link experiment10Precondition} under `experiment-10-precondition` once
+ * `experiments/experiment-10.json` is that run's. Until then the committed
+ * file is the first run's, which has one reader, and the block renders it.
+ */
+export function experiment10PreconditionTwoReaders(result: Experiment10): string {
+  const pre = has10(
+    (result as unknown as { precondition?: PreconditionTwoReaders10 }).precondition,
+    'precondition',
+  );
+  const q0 = has10(pre.q0, 'precondition.q0');
+  const twins = has10(pre.twins, 'precondition.twins');
+  const pageTwins = has10(pre.pageTwins, 'precondition.pageTwins');
+  const replaced = has10(q0.replaced, 'precondition.q0.replaced');
+  const minMargin = n10(replaced.minClassifyMargin, 'precondition.q0.replaced.minClassifyMargin');
+  const projectors = n10(result.generatedFrom?.design?.constants?.PROJECTORS, 'constants.PROJECTORS');
+  const raster = (t: Twins10, where: string): string => {
+    const r = has10(t.raster, `${where}.raster`);
+    return r === null ? DASH10 : `${n10(r.width, `${where}.raster.width`)}×${n10(r.height, `${where}.raster.height`)}`;
+  };
+  const readerCells = (r: Q0Reader10, where: string): string =>
+    `${n10(r.placedPositions, `${where}.placedPositions`)} | ` +
+    `${n10(r.runsPlaced, `${where}.runsPlaced`)} of ${n10(r.runs, `${where}.runs`)} | ` +
+    `${n10(r.unseen, `${where}.unseen`)} · ${n10(r.barelySeen, `${where}.barelySeen`)} | ` +
+    `${n10(r.problems, `${where}.problems`)}`;
+  const out = [
+    '| clean positions | raster | positions | the page’s reader: positions placed | runs placed | ' +
+      'noted out of view · barely seen | problems | the reader it replaced: positions placed | ' +
+      `refused at | its classify margin (needs ${minMargin}): median · max | runs a per-run classify would rescue |`,
+    '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: |',
+  ];
+  for (const [which, label] of Q0_VARIANTS10) {
+    const v = has10(q0[which], `precondition.q0.${which}`);
+    const t = has10(twins[which], `precondition.twins.${which}`);
+    const where = `precondition.q0.${which}`;
+    const old = has10(v.replaced, `${where}.replaced`);
+    const margin = has10(old.margin, `${where}.replaced.margin`);
+    const perRun = has10(old.perRunAlone, `${where}.replaced.perRunAlone`);
+    out.push(
+      `| ${label} | ${raster(t, `precondition.twins.${which}`)} | ${n10(v.positions, `${where}.positions`)} | ` +
+        `${readerCells(has10(v.page, `${where}.page`), `${where}.page`)} | ` +
+        `${n10(old.placedPositions, `${where}.replaced.placedPositions`)} | ` +
+        `${reasons10(old.reasons, `${where}.replaced.reasons`)} | ` +
+        `${orDash10(nOrNull10(margin.median, `${where}.replaced.margin.median`), fixed10(3))} · ` +
+        `${orDash10(nOrNull10(margin.max, `${where}.replaced.margin.max`), fixed10(3))} | ` +
+        `${n10(perRun.rescued, `${where}.replaced.perRunAlone.rescued`)} of ` +
+        `${n10(perRun.runs, `${where}.replaced.perRunAlone.runs`)} |`,
+    );
+  }
+  const at = has10(replaced.refusedAt, 'precondition.q0.replaced.refusedAt');
+  const classify = has10(at.classify, 'replaced.refusedAt.classify');
+  const count = has10(at.count, 'replaced.refusedAt.count');
+  const found = has10(count.runsFound, 'replaced.refusedAt.count.runsFound');
+  const countMargin = has10(count.margin, 'replaced.refusedAt.count.margin');
+  const nCount = n10(count.positions, 'replaced.refusedAt.count.positions');
+  const countWords =
+    nCount === 0
+      ? '0 at the run count'
+      : `${nCount} at the run count, having cleared classify ` +
+        `(margin ${orDash10(nOrNull10(countMargin.min, 'replaced.refusedAt.count.margin.min'), fixed10(3))}–` +
+        `${orDash10(nOrNull10(countMargin.max, 'replaced.refusedAt.count.margin.max'), fixed10(3))}) and found ` +
+        (found === null
+          ? DASH10
+          : n10(found.min, 'replaced.refusedAt.count.runsFound.min') ===
+              n10(found.max, 'replaced.refusedAt.count.runsFound.max')
+            ? `${found.min}`
+            : `${found.min}–${found.max}`) +
+        ` of ${projectors} runs`;
+  out.push(
+    `| **all** | | **${n10(q0.total, 'precondition.q0.total')}** | ` +
+      `**${readerCells(has10(q0.page, 'precondition.q0.page'), 'precondition.q0.page').split(' | ').join('** | **')}** | ` +
+      `**${n10(replaced.placedPositions, 'precondition.q0.replaced.placedPositions')}** | ` +
+      `**${n10(classify.positions, 'replaced.refusedAt.classify.positions')} at classify** ` +
+      `(margin at most ${orDash10(nOrNull10(classify.maxMargin, 'replaced.refusedAt.classify.maxMargin'), fixed10(3))}), ` +
+      `${countWords}, ${n10(at.other, 'replaced.refusedAt.other')} elsewhere | | |`,
+  );
+  out.push('');
+  out.push(
+    '_Both readers read the same photographs: each clean position rendered with noise, encoded to 8-bit sRGB ' +
+      'and summarised as the page reads them. The reader the page replaced classified the whole position into ' +
+      'white, black and patterned before it counted runs; the page’s reader finds each run by its own white and ' +
+      'black, and notes a projector this camera cannot see instead of refusing it._',
+  );
+  const worth = has10(q0.worth, 'precondition.q0.worth');
+  const refusal = worth === null ? null : has10(worth.refusal, 'precondition.q0.worth.refusal');
+  out.push('');
+  out.push(
+    refusal === null
+      ? '_The page’s worth report printed nothing for one clean folder read alone._'
+      : `_What the page’s worth report printed for one clean folder read alone, as it did while it read a ` +
+          `camera position at a time: “${refusal.split('. ')[0]}.”_`,
+  );
+
+  out.push('');
+  out.push(
+    '| the counterfactual reader, clean | runs | placed | refused anyway | of those, invisible | ' +
+      'minor | marginal | positions told “Re-shoot projector N” | clean noise floor: median · max |',
+  );
+  out.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |');
+  for (const [which, label] of Q0_VARIANTS10) {
+    const t = has10(twins[which], `precondition.twins.${which}`);
+    const where = `precondition.twins.${which}`;
+    const floor = has10(t.noiseFloor, `${where}.noiseFloor`);
+    out.push(
+      `| ${label} | ${n10(t.runs, `${where}.runs`)} | ${n10(t.attributable, `${where}.attributable`)} | ` +
+        `${n10(t.refusedClean, `${where}.refusedClean`)} | ${n10(t.invisibleRefused, `${where}.invisibleRefused`)} | ` +
+        `${n10(t.minor, `${where}.minor`)} | ${n10(t.marginal, `${where}.marginal`)} | ` +
+        `${n10(t.reshootNamed, `${where}.reshootNamed`)} of ${n10(t.cameras, `${where}.cameras`)} | ` +
+        `${orDash10(nOrNull10(floor.median, `${where}.noiseFloor.median`), fixed10(4))} · ` +
+        `${orDash10(nOrNull10(floor.max, `${where}.noiseFloor.max`), fixed10(4))} |`,
+    );
+  }
+
+  out.push('');
+  out.push(
+    '| the page’s reader, clean (the page twin) | runs | placed | noted out of view | barely seen | refused | ' +
+      'problems | crashed | placed by both readers · the counterfactual alone · the page alone |',
+  );
+  out.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |');
+  for (const [which, label] of Q0_VARIANTS10) {
+    const t = has10(pageTwins[which], `precondition.pageTwins.${which}`);
+    const where = `precondition.pageTwins.${which}`;
+    const vs = has10(t.againstCounterfactual, `${where}.againstCounterfactual`);
+    out.push(
+      `| ${label} | ${n10(t.runs, `${where}.runs`)} | ${n10(t.placed, `${where}.placed`)} | ` +
+        `${n10(t.unseen, `${where}.unseen`)} | ${n10(t.barelySeen, `${where}.barelySeen`)} | ` +
+        `${n10(t.refused, `${where}.refused`)} | ${n10(t.problems, `${where}.problems`)} | ` +
+        `${n10(t.crashes, `${where}.crashes`)} of ${n10(t.read, `${where}.read`)} | ` +
+        `${n10(vs.both, `${where}.againstCounterfactual.both`)} · ` +
+        `${n10(vs.counterfactualOnly, `${where}.againstCounterfactual.counterfactualOnly`)} · ` +
+        `${n10(vs.pageOnly, `${where}.againstCounterfactual.pageOnly`)} |`,
+    );
+  }
+
+  // Q0b: every shape the stage builds, in its order, as the first run's table has them.
+  const shapes = has10(pre.q0b, 'precondition.q0b');
+  const wanted = [
+    ...[0, 1, 3].flatMap((lead) => [0, 1, 2].map((trail) => `leading ${lead}, trailing ${trail}`)),
+    ...Array.from({ length: projectors }, (_, p) => [
+      `projector ${p + 1} re-shot and appended`,
+      `projector ${p + 1} re-shot alone`,
+    ]).flat(),
+  ];
+  out.push('');
+  out.push(
+    '| folder shapes an operator can produce, read by the counterfactual reader | positions | ' +
+      'runs placed (the plain folder’s) | refused whole | its reasons |',
+  );
+  out.push('| --- | ---: | --- | ---: | --- |');
+  for (const name of wanted) {
+    const x = shapes.find((s) => s.shape === name);
+    if (x === undefined) throw new Error(`experiment-10: precondition.q0b has no folder '${name}'`);
+    const where = `precondition.q0b['${name}']`;
+    out.push(
+      `| ${name} | ${n10(x.positions, `${where}.positions`)} | ${n10(x.runsPlaced, `${where}.runsPlaced`)} ` +
+        `(${n10(x.runsPlacedClean, `${where}.runsPlacedClean`)}) | ${n10(x.wholeRefused, `${where}.wholeRefused`)} | ` +
+        `${reasons10(x.reasons, `${where}.reasons`)} |`,
+    );
+  }
+  out.push('');
+  out.push(
+    '_Q0b is the counterfactual reader’s: the complement check handed each shape’s exact frame kinds. The page’s ' +
+      'reader was held to the same shapes by the acceptance sweep (`experiments/reader-acceptance.json`), not here._',
+  );
   return out.join('\n');
 }
 
@@ -2100,6 +2408,293 @@ export function experiment10Operator(result: Experiment10): string {
         result.generatedFrom?.design?.constants?.HEADLESS_LATENESS_MS?.armedTickOn,
         'constants.HEADLESS_LATENESS_MS.armedTickOn',
       )} ms armed with the tick on._`,
+  );
+  return out.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// The page column: EXPERIMENT-10's captures through the page's own reader
+// ---------------------------------------------------------------------------
+
+/**
+ * A cell's page column. Absent, or null as the first full run's file holds it,
+ * is a file written before the column was summarised, and a fault here.
+ */
+function page10(cell: Cell10): Page10 {
+  const page = has10(cell.page, `${cell.id}.page`);
+  if (page === null) {
+    throw new Error(
+      `experiment-10: ${cell.id} has no page column summary; this file predates the page's reader`,
+    );
+  }
+  return page;
+}
+
+/** What a cell whose page column did not run shows in a column that would count it. */
+const NOT_RUN10 = 'the page column did not run';
+
+/** The page's SILENT captures in one line, as `silentSummary10` puts the counterfactual's. */
+function pageSilent10(cell: Cell10, page: PageRead10, where: string): string {
+  const P = page.classes.P as Policy10;
+  const silent = silent10(P, where);
+  const unsolved = count10(P, 'SILENT-UNSOLVED', where);
+  const quiet = n10(page.quiet?.silentOnlyThroughQuiet, `${cell.id}.page.quiet.silentOnlyThroughQuiet`);
+  const quietWords = quiet > 0 ? `; ${quiet} only through a quiet drop` : '';
+  if (!has10(cell.solved, `${cell.id}.solved`) || unsolved === silent) {
+    return `${silent} (not solved)${quietWords}`;
+  }
+  const parts = [
+    `${count10(P, 'SILENT-HARMLESS', where)} harmless`,
+    `${count10(P, 'SILENT-BIASED', where)} biased`,
+    `${count10(P, 'SILENT-GATE-BREAKING', where)} gate-breaking`,
+  ];
+  const unjudgeable = count10(P, 'SILENT-UNJUDGEABLE', where);
+  if (unjudgeable > 0) parts.push(`${unjudgeable} unjudgeable`);
+  if (unsolved > 0) parts.push(`${unsolved} not solved`);
+  return `${silent}: ${parts.join(', ')}${quietWords}`;
+}
+
+/**
+ * EXPERIMENT-9's captures through the page's own reader, cell by cell: the
+ * counterfactual's rescore and lateness tables, read by the page. Each run is
+ * attributed against the page's reading of the same clean frames, and a run
+ * that reading places and the straddled one only notes is a quiet drop, apart.
+ */
+export function experiment10Page(result: Experiment10): string {
+  const out = [
+    '| cell | captures touched | LOUD (share, 95% CI) | LOUD+SILENT | SILENT | INVISIBLE-ONLY | UNCHANGED | ' +
+      'quiet drops: runs (captures) | misfiled photographs (the largest majority share) | crashes |',
+    '| --- | --- | --- | ---: | --- | ---: | ---: | --- | --- | ---: |',
+  ];
+  for (const { id, from } of allCellIds10(result)) {
+    const cell = cell10(from === 'rescore' ? result.rescore?.cells : result.lateness?.cells, id, `${from}.cells`);
+    const page = page10(cell);
+    const trials = n10(cell.trials, `${id}.trials`);
+    const rigs = has10(page.rigs, `${id}.page.rigs`);
+    if (page.status === 'not run') {
+      out.push(`| ${id} | ${NOT_RUN10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} |`);
+      continue;
+    }
+    const P = has10(page.classes?.P, `${id}.page.classes.P`) as Policy10;
+    const where = `${id}.page.classes.P`;
+    const read = has10(page.read, `${id}.page.read`);
+    const column = n10(rigs.column, `${id}.page.rigs.column`);
+    const of = n10(rigs.of, `${id}.page.rigs.of`);
+    const touched =
+      `${n10(read.captures, `${id}.page.read.captures`)} of ${trials}` +
+      (column < of ? ` (${column} of ${of} rigs read)` : '') +
+      (page.status === 'nothing to read' ? ' (nothing to read)' : '');
+    const quiet = has10(page.quiet, `${id}.page.quiet`);
+    const misfiles = has10(page.misfiles, `${id}.page.misfiles`);
+    const misfiled = n10(misfiles.photographs, `${id}.page.misfiles.photographs`);
+    const largest = nOrNull10(has10(misfiles.share, `${id}.page.misfiles.share`).max, `${id}.page.misfiles.share.max`);
+    out.push(
+      `| ${id} | ${touched} | ${classShare10(P, 'LOUD', where)} | ${count10(P, 'LOUD+SILENT', where)} | ` +
+        `${pageSilent10(cell, page, where)} | ${count10(P, 'INVISIBLE-ONLY', where)} | ${count10(P, 'UNCHANGED', where)} | ` +
+        `${n10(quiet.runs, `${id}.page.quiet.runs`)} (${n10(quiet.captures, `${id}.page.quiet.captures`)}) | ` +
+        (misfiled === 0 ? '0' : `${misfiled} (${orDash10(largest, fixed10(3))})`) +
+        ` | ${n10(read.crashes, `${id}.page.read.crashes`)} |`,
+    );
+  }
+  out.push('');
+  out.push(
+    '_Policy P, through the page’s own reader, on the fast path’s noisy frames encoded as the page reads them. ' +
+      'Each run counts against the straddle only where the page’s reading of the same clean frames places it. A ' +
+      'quiet drop is a touched run that reading places and the straddled one only notes out of view or barely seen; ' +
+      'a capture with nothing refused is SILENT, a quiet drop its only straddle or not. A SILENT capture is judged ' +
+      'only by a counterfactual solve of the page’s own plan, placement included; the rest are not solved. A misfiled ' +
+      'photograph is one a placed run files under another step than the one holding more than half its exposure, ' +
+      'and its share is that step’s. A crash is a folder the reader threw on, counted as refused._',
+  );
+  return out.join('\n');
+}
+
+/** The counterfactual's deciding outcomes, as the run tables name them. */
+const OUTCOMES10: readonly (readonly [string, string])[] = [
+  ['placed', 'placed'],
+  ['refused-complement', 'refused: complement'],
+  ['refused-bookends-count', 'bookends count'],
+  ['refused-bookends-length', 'bookends length'],
+  ['refused-bookends-kind', 'bookends kind'],
+  ['refused-unanswered', 'unanswered'],
+  ['refused-classify', 'classify'],
+];
+
+/** The page's verdicts on a run, as the run tables name them. */
+const VERDICTS10: readonly (readonly [string, string])[] = [
+  ['placed', 'the page placed'],
+  ['refused', 'the page refused'],
+  ['noted', 'the page only noted (a quiet drop)'],
+  ['crashed', 'the page crashed'],
+  ['unaccounted', 'the page said nothing of it'],
+];
+
+/** The page's word classes, in the order the run tables list them. */
+const PAGE_WORDS10: readonly string[] = [
+  'broken',
+  'unanswered',
+  'unfound',
+  'unfound-room',
+  'length-extra',
+  'length-slot',
+  'length',
+  'norun',
+  'dark',
+  'short',
+  'numbering',
+  'numbering-gap',
+  'reshoot',
+  'plan',
+  'margin',
+  'count',
+  'kind',
+  'leading',
+  'clipping',
+  'other',
+];
+
+/**
+ * Run by run, the page against the counterfactual reader: R1 in full, each
+ * touched run the two clean twins both place crossed by the page's verdict and
+ * the counterfactual's deciding outcome; every cell summarised; what each
+ * reader's LOUD captures are told; and the page's words on the runs it refuses.
+ */
+export function experiment10PageRuns(result: Experiment10): string {
+  const out: string[] = [];
+  const r1 = cell10(result.rescore?.cells, 'R1', 'rescore.cells');
+  const r1Page = page10(r1);
+  const cross = (x: Cross10 | undefined, verdict: string, outcome: string, where: string): number => {
+    const row = has10(has10(x, where)[verdict], `${where}.${verdict}`);
+    const v = row[outcome];
+    return v === undefined ? 0 : n10(v, `${where}.${verdict}.${outcome}`);
+  };
+  const refusedOf = (x: Cross10 | undefined, verdict: string, where: string): number =>
+    OUTCOMES10.filter(([k]) => k !== 'placed').reduce((a, [k]) => a + cross(x, verdict, k, where), 0);
+  if (r1Page.status === 'not run') {
+    out.push(`_R1: ${NOT_RUN10}._`);
+  } else {
+    const runs = has10(r1Page.runs, 'R1.page.runs');
+    const where = 'R1.page.runs.both';
+    out.push(
+      `| R1, touched runs both clean twins place | counterfactual: ${OUTCOMES10.map(([, label]) => label).join(' | ')} | all |`,
+    );
+    out.push(`| --- | ${OUTCOMES10.map(() => '---:').join(' | ')} | ---: |`);
+    for (const [verdict, label] of VERDICTS10) {
+      const values = OUTCOMES10.map(([k]) => cross(runs.both, verdict, k, where));
+      const total = values.reduce((a, v) => a + v, 0);
+      // The two verdicts the page's reader should never give are shown only where it gave them.
+      if (total === 0 && (verdict === 'crashed' || verdict === 'unaccounted')) continue;
+      out.push(`| ${label} | ${values.join(' | ')} | ${total} |`);
+    }
+    const colTotals = OUTCOMES10.map(([k]) => VERDICTS10.reduce((a, [v]) => a + cross(runs.both, v, k, where), 0));
+    out.push(`| **all** | ${colTotals.map((v) => `**${v}**`).join(' | ')} | **${colTotals.reduce((a, v) => a + v, 0)}** |`);
+    const oneTwin = (x: Cross10 | undefined, name: string, w: string): string => {
+      const counts = VERDICTS10.map(([v]) => ({
+        v,
+        placed: cross(x, v, 'placed', w),
+        refused: refusedOf(x, v, w),
+      })).filter((c) => c.placed + c.refused > 0);
+      const total = counts.reduce((a, c) => a + c.placed + c.refused, 0);
+      if (total === 0) return `${name} alone places 0`;
+      return (
+        `${name} alone places ${total}: ` +
+        counts.map((c) => `the page ${c.v} ${c.placed + c.refused} (the counterfactual placed ${c.placed})`).join(', ')
+      );
+    };
+    out.push('');
+    out.push(
+      `_R1's other touched runs: ${oneTwin(runs.counterfactualOnly, 'the counterfactual’s twin', 'R1.page.runs.counterfactualOnly')}; ` +
+        `${oneTwin(runs.pageOnly, 'the page twin', 'R1.page.runs.pageOnly')}; neither twin places ` +
+        `${n10(runs.neither, 'R1.page.runs.neither')}. The counterfactual’s column is its deciding evaluation, fully ` +
+        'noisy in R1; the page reads the same noisy frames encoded as it reads them._',
+    );
+    out.push('');
+  }
+
+  out.push(
+    '| cell | touched runs both twins place | both place | both refuse | the page places, the counterfactual refuses | ' +
+      'the page refuses, the counterfactual places | the page only notes | the counterfactual’s twin alone | the page twin alone | ' +
+      'captures: the counterfactual’s LOUD the page passes SILENT · its SILENT the page refuses LOUD |',
+  );
+  out.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |');
+  const loudRows: string[] = [];
+  const wordRows: { id: string; runs: number; byClass: Record<string, number> }[] = [];
+  for (const { id, from } of allCellIds10(result)) {
+    const cell = cell10(from === 'rescore' ? result.rescore?.cells : result.lateness?.cells, id, `${from}.cells`);
+    const page = page10(cell);
+    const loud = has10(cell.loud, `${id}.loud`);
+    if (page.status === 'not run') {
+      out.push(`| ${id} | ${NOT_RUN10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} | ${DASH10} |`);
+      loudRows.push(
+        `| ${id} | ${n10(loud.captures, `${id}.loud.captures`)} · ${DASH10} | ` +
+          `${n10(loud.wholePositionOnly, `${id}.loud.wholePositionOnly`)} · ${DASH10} | ` +
+          `${n10(loud.runByRun, `${id}.loud.runByRun`)} · ${DASH10} | ${n10(loud.reshootNamed, `${id}.loud.reshootNamed`)} · ${DASH10} | ` +
+          `${n10(loud.dropAndDuplicate, `${id}.loud.dropAndDuplicate`)} · ${DASH10} |`,
+      );
+      continue;
+    }
+    const runs = has10(page.runs, `${id}.page.runs`);
+    const w = `${id}.page.runs.both`;
+    const sum = (verdict: string, outcomes: 'placed' | 'refused'): number =>
+      outcomes === 'placed' ? cross(runs.both, verdict, 'placed', w) : refusedOf(runs.both, verdict, w);
+    const both = VERDICTS10.reduce((a, [v]) => a + sum(v, 'placed') + sum(v, 'refused'), 0);
+    const total = (x: Cross10 | undefined, where: string): number =>
+      VERDICTS10.reduce((a, [v]) => a + cross(x, v, 'placed', where) + refusedOf(x, v, where), 0);
+    const vs = has10(page.classes?.P?.vsCounterfactual, `${id}.page.classes.P.vsCounterfactual`);
+    const loudToSilent = n10(has10(vs.LOUD, `${id} vsCounterfactual.LOUD`).SILENT, `${id} vsCounterfactual.LOUD.SILENT`);
+    const silentToLoud = n10(has10(vs.SILENT, `${id} vsCounterfactual.SILENT`).LOUD, `${id} vsCounterfactual.SILENT.LOUD`);
+    out.push(
+      `| ${id} | ${both} | ${sum('placed', 'placed')} | ${sum('refused', 'refused') + sum('crashed', 'refused')} | ` +
+        `${sum('placed', 'refused')} | ${sum('refused', 'placed') + sum('crashed', 'placed')} | ` +
+        `${sum('noted', 'placed') + sum('noted', 'refused')} | ` +
+        `${total(runs.counterfactualOnly, `${id}.page.runs.counterfactualOnly`)} | ` +
+        `${total(runs.pageOnly, `${id}.page.runs.pageOnly`)} | ${loudToSilent} · ${silentToLoud} |`,
+    );
+    const pl = has10(page.loud, `${id}.page.loud`);
+    loudRows.push(
+      `| ${id} | ${n10(loud.captures, `${id}.loud.captures`)} · ${n10(pl.captures, `${id}.page.loud.captures`)} | ` +
+        `${n10(loud.wholePositionOnly, `${id}.loud.wholePositionOnly`)} · ${n10(pl.wholePositionOnly, `${id}.page.loud.wholePositionOnly`)} | ` +
+        `${n10(loud.runByRun, `${id}.loud.runByRun`)} · ${n10(pl.runByRun, `${id}.page.loud.runByRun`)} | ` +
+        `${n10(loud.reshootNamed, `${id}.loud.reshootNamed`)} · ${n10(pl.reshootNamed, `${id}.page.loud.reshootNamed`)} | ` +
+        `${n10(loud.dropAndDuplicate, `${id}.loud.dropAndDuplicate`)} · ${n10(pl.dropAndDuplicate, `${id}.page.loud.dropAndDuplicate`)} |`,
+    );
+    const words = has10(page.words, `${id}.page.words`);
+    wordRows.push({ id, runs: n10(words.runs, `${id}.page.words.runs`), byClass: has10(words.byClass, `${id}.page.words.byClass`) });
+  }
+  out.push('');
+  out.push(
+    '_Touched runs of the changed positions the page read, on the counterfactual’s deciding evaluation. A crash counts ' +
+      'with the page’s refusals. “Alone”: the one clean twin places the run and the other does not, so only the one reader ' +
+      'can hold the straddle to account for it._',
+  );
+  out.push('');
+  out.push(
+    '| cell | LOUD: the counterfactual · the page | refused only as whole positions | refused run by run | ' +
+      'of those, told “Re-shoot projector N” | told it looks like a dropped and a duplicated frame |',
+  );
+  out.push('| --- | --- | --- | --- | --- | --- |');
+  out.push(...loudRows);
+  const classes = PAGE_WORDS10.filter((k) => wordRows.some((r) => (r.byClass[k] ?? 0) > 0));
+  for (const r of wordRows) {
+    for (const k of Object.keys(r.byClass)) {
+      if (!PAGE_WORDS10.includes(k)) throw new Error(`experiment-10: ${r.id}.page.words has a class '${k}' no table names`);
+    }
+  }
+  out.push('');
+  out.push(
+    `| the page’s refused runs | refused | ${classes.map((k) => REASON_WORDS10[k] ?? k).join(' | ')} |`,
+  );
+  out.push(`| --- | ---: | ${classes.map(() => '---:').join(' | ')} |`);
+  for (const r of wordRows) {
+    out.push(
+      `| ${r.id} | ${r.runs} | ${classes.map((k) => n10(r.byClass[k] ?? 0, `${r.id}.page.words.byClass.${k}`)).join(' | ')} |`,
+    );
+  }
+  out.push('');
+  out.push(
+    '_The page’s words on each touched run it refuses and its clean reading places: the problems naming the run, or ' +
+      'where none does, those about the whole folder, each class counted once per run. A run can be told more than ' +
+      'one thing, so a row can sum past its refusals._',
   );
   return out.join('\n');
 }
