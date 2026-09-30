@@ -3064,15 +3064,25 @@ test("T47 the page's words: reasonOf's classes refined, never a throw, and the p
     for (const stage of ['q0', 'bank', 'rescore', 'lateness'] as const) S.runStages(ctx, stage);
   }
   const problems = new Set<string>([other, '', unfound(0), unfound(3), NO_RUN, GAP]);
-  for (const stage of ['rescore', 'lateness']) {
-    const units = JSON.parse(store.read(`${stage}.json`) as string).units as Record<string, { score?: { cells: Record<string, { positions: { page: PageRead | null }[] }[]> } }>;
+  type Units = Record<string, { score?: { cells: Record<string, { positions: { page: PageRead | null }[] }[]> } }>;
+  const collect = (units: Units): void => {
     for (const u of Object.values(units)) {
       for (const caps of Object.values(u.score?.cells ?? {})) {
         for (const cap of caps) for (const pos of cap.positions) for (const x of pos.page?.problems ?? []) problems.add(x);
       }
     }
+  };
+  for (const stage of ['rescore', 'lateness']) collect(JSON.parse(store.read(`${stage}.json`) as string).units as Units);
+  const reduced = problems.size;
+  assert.ok(reduced > 10, `only ${reduced} problems to hold the parser to`);
+  // And a quick run's, where one has been made in this checkout: its page
+  // column reads four rigs and every lateness, and says more than the
+  // reduced design's does. Its checkpoints are not committed.
+  const quick = new URL('../../../experiments/.experiment-10-partial/quick/', import.meta.url);
+  for (const stage of ['rescore', 'lateness']) {
+    const file = new URL(`${stage}.json`, quick);
+    if (fs.existsSync(file)) collect(JSON.parse(fs.readFileSync(file, 'utf8')).units as Units);
   }
-  assert.ok(problems.size > 10, `only ${problems.size} problems to hold the parser to`);
   let named = 0;
   for (const x of problems) {
     assert.equal(problemProjectorOf(x), theirs(x), x);
