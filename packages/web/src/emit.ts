@@ -23,8 +23,11 @@
  * This is emphatically NOT the sphere-content path. Content is indexed by
  * position on the sphere; a structured-light frame is a function of the
  * projector's own raster coordinate, so it has to address the raster directly.
- * That distinction is the same one that stopped the patterns being a content
- * chip on the simulator page.
+ * The simulator page keeps the same distinction now that its sphere can show the
+ * sequence. "Calibration patterns" sits among its base fields, but the frame
+ * never goes through the content lookup: the shader and `packages/sim` read it
+ * at the physical projector's own pixel, in {@link emitOrder}'s order, and the
+ * chip is display only. No metric reads it.
  *
  * ## Why it refuses rather than guessing
  *
@@ -41,7 +44,7 @@
  * rather than obviously broken — which is the failure mode this project treats
  * as worse than stopping.
  *
- * ## The one place the pattern is allowed to be quantized
+ * ## Where the pattern is quantized, and where it is not
  *
  * `targetRadiance`'s docblock is explicit that the bench evaluates a pattern at
  * the continuous coordinate a camera pixel sees, and deliberately does not
@@ -54,6 +57,13 @@
  * grid and it supplies its own footprint, so here the pattern must be sampled
  * once per emitted pixel — and it has to be sampled on the projector's grid
  * rather than on some scaled copy of it, which is what {@link rasterFit} is for.
+ *
+ * The simulator's sphere is the one other place, for the same reason: it shows
+ * what a projector emits. `patternfilm.ts`'s `patternAtlas` holds `compileFrame`
+ * at every pixel centre, which are the values this page paints when its quadrant
+ * is the raster. The display reconstructs them over the physical projector's
+ * pixel grid, which is the footprint it gives content too. The bench is
+ * untouched by either.
  */
 
 import { NOMINAL_SLOTS_BY_COUNT } from '../../calibration/src/conventions.ts';

@@ -21,6 +21,8 @@ import {
   BOULDER_PRESET,
   CONTENTS,
   CONTENT_CUSTOM,
+  CONTENT_MARBLE,
+  CONTENT_PATTERN,
   IN_TO_M,
   NUDGE_CONTROLS,
   PERFECT_PRESET,
@@ -417,11 +419,16 @@ test('every base field renders, and each is a different brightness', () => {
     for (let k = 0; k < img.data.length; k++) sum += img.data[k];
     return sum / img.data.length;
   });
-  // Black, mid grey and white must be ordered and distinct. The fourth entry is
-  // the drop-in, which falls back to the grey field when no image has been
-  // supplied — an empty sphere reads as a broken page.
+  // Black, mid grey and white must be ordered and distinct. Blue Marble and the
+  // drop-in are images, and fall back to the grey field when none has arrived —
+  // an empty sphere reads as a broken page. The calibration sequence is not
+  // content at all: the shader draws its frames off each projector's raster and
+  // never samples this field, so it is black rather than a grey that could be
+  // mistaken for something shown.
   assert.ok(means[0] < means[1] && means[1] < means[2], `not ordered: ${means.join(', ')}`);
-  assert.ok(Math.abs(means[3] - means[1]) < 1e-6, 'the drop-in should fall back to the grey field');
+  assert.ok(Math.abs(means[CONTENT_MARBLE] - means[1]) < 1e-6, 'Blue Marble should fall back to grey');
+  assert.ok(Math.abs(means[CONTENT_CUSTOM] - means[1]) < 1e-6, 'the drop-in should fall back to grey');
+  assert.equal(means[CONTENT_PATTERN], 0);
 });
 
 test('a supplied image is used as-is, and the grid composites over it', () => {

@@ -211,10 +211,14 @@ one WebGL2 context as five viewports, four of them the projector rasters as
 quadrants of the single framebuffer SOS drives (`SOS_QUADRANT_VIEWPORTS`). Phase 1
 is that, full-screen, with `compileFrame`'s output instead of a room render.
 
-**This cannot go through the sphere-content path**, and the reason is the same
-one that stopped the patterns being a content chip on the page: content is
-indexed by position on the sphere, while a structured-light frame is a function of
-the *projector's raster coordinate*. It has to address the raster directly.
+**This cannot go through the sphere-content path**: content is indexed by
+position on the sphere, while a structured-light frame is a function of the
+*projector's raster coordinate*. It has to address the raster directly. The
+simulator page keeps the same rule now that its sphere can show the sequence.
+"Calibration patterns" sits among its base fields for presentations and
+tutorials, and the frame is read at each physical projector's own pixel rather
+than through the content lookup. It is display only: no metric reads it, and
+recalibrating does not change it.
 
 **Not hard-coded to four.** The quadrant layout is an SOS fact, not a general one.
 The page takes the projector count and the output mapping from the rig it is

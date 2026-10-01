@@ -9,7 +9,9 @@ import { meshSurface } from '../../sim/src/mesh/surface.ts';
 import { prepareRig } from '../../sim/src/optics.ts';
 import type { Surface } from '../../sim/src/surface.ts';
 import { renderTwoRigRoomView } from '../../sim/src/misregistration.ts';
-import { BOULDER_PRESET, IN_TO_M, PERFECT_PRESET } from '../src/settings.ts';
+import { BOULDER_PRESET, CONTENT_PATTERN, IN_TO_M, PERFECT_PRESET } from '../src/settings.ts';
+import { patternRasterSource } from '../src/patternfilm.ts';
+import { DEFAULT_PATTERN_PLAN, planFrames } from '../../bench/src/patterns.ts';
 import { buildViewer, buildWorld } from '../src/rigs.ts';
 import {
   ALLOWANCE_LABEL,
@@ -523,4 +525,60 @@ test('the parity raster is small enough to render inside a frame budget', () => 
   // The bound exists so a later change that made the patch a megapixel fails
   // here rather than as a page that stops responding.
   assert.ok(ms < 4000, `the parity render took ${ms} ms, which is too slow to run on a settle`);
+});
+
+// ---------------------------------------------------------------------------
+// A frame of the calibration sequence
+// ---------------------------------------------------------------------------
+
+/** The CPU parity render of one calibration frame, lit by `mask`'s projectors. */
+function frameRender(frame: number, mask: number, framing: (typeof FRAMINGS)[number]) {
+  const settings = { ...PERFECT_PRESET, ...framing, content: CONTENT_PATTERN, gridOn: 0 };
+  const world = buildWorld(settings);
+  return renderTwoRigRoomView(
+    prepareRig(world.truthRig),
+    prepareRig(world.compositorRig),
+    { ...world.scene, graticule: null },
+    buildViewer(settings, PARITY_WIDTH, PARITY_HEIGHT),
+    {
+      samplesPerPixel: 1,
+      sampleLattice: 'grid',
+      raster: patternRasterSource(DEFAULT_PATTERN_PLAN, frame, mask, world.truthRig),
+    },
+  );
+}
+
+const frameIndex = (kind: string, axis: 'u' | 'v' | null = null, index = 0): number =>
+  planFrames(DEFAULT_PATTERN_PLAN).findIndex(
+    (s) => s.kind === kind && s.axis === axis && s.index === index,
+  );
+
+test('a verdict drawn one step late is a disagreement, which is why the frame is frozen', () => {
+  // The page draws its half of the comparison at the frame it ASKED the worker
+  // for, not at the frame on screen when the reply lands. This is what the other
+  // choice would print during playback: a Gray plane judged against the
+  // complement that followed it, a full disagreement about two correct pictures.
+  const plane = frameIndex('gray', 'u', 2);
+  const standing = FRAMINGS[1];
+  const asked = frameRender(plane, 0b1111, standing);
+  const nextStep = frameRender(plane + 1, 0b1111, standing);
+  const verdict = judgeParity(nextStep, asked, { ambientFloor: SCENE_FLOOR });
+  assert.equal(verdict.blind, false, 'the frame is lit enough to judge from here');
+  assert.equal(verdict.pass, false, 'a picture one step late passed as the same picture');
+  // And the same frame against itself is, trivially, agreement: the red above is
+  // the late step, not the frame.
+  assert.equal(judgeParity(asked, asked, { ambientFloor: SCENE_FLOOR }).pass, true);
+});
+
+test('a dark calibration frame is too little to judge, and is never passed', () => {
+  // All black, or a run played to a projector switched off at the wall: the ball
+  // carries only ambient and the black floor, which is below the lit threshold.
+  // `judgeParity` must say blind rather than grant a tick for matching darkness.
+  for (const framing of FRAMINGS) {
+    const dark = frameRender(frameIndex('black'), 0b1111, framing);
+    const verdict = judgeParity(dark, dark, { ambientFloor: SCENE_FLOOR });
+    assert.equal(verdict.delta.litPixelCount, 0, `${framing.name}: a black frame lit something`);
+    assert.equal(verdict.blind, true, framing.name);
+    assert.equal(verdict.pass, false, framing.name);
+  }
 });

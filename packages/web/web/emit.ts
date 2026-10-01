@@ -32,7 +32,7 @@
  * the plan it is playing and counts the steps out loud; turning that into an
  * index a decoder can trust is the next phase's job and is named as such.
  *
- * ## Why the pattern is quantized here and nowhere else
+ * ## Why the pattern is quantized here
  *
  * `targetRadiance` evaluates the pattern at the continuous coordinate a camera
  * pixel sees and deliberately does not snap it to projector pixel centres,
@@ -42,7 +42,10 @@
  * a pixel grid and it brings its own footprint. So here the pattern is sampled
  * once per emitted pixel — at pixel centres, which is decode.ts's own
  * convention — and `rasterFit` exists to say whether those pixels are the
- * projector's own or a resampled copy of them.
+ * projector's own or a resampled copy of them. The simulator's "Calibration
+ * patterns" base field samples at the same centres, because it shows the ball
+ * lit by exactly these frames. It is the only other place that does, and
+ * `src/emit.ts` says why.
  *
  * ## Where the numbers come from
  *

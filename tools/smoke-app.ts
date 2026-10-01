@@ -47,6 +47,12 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { DEFAULT_PATTERN_PLAN, planFrames } from '../packages/bench/src/patterns.ts';
+import {
+  describeSequence,
+  SEQUENCE_MIN_DWELL_MS,
+  sequenceStep,
+} from '../packages/web/src/patternfilm.ts';
 import { BUNDLE, createServer } from '../packages/web/serve.ts';
 import { killGroup, sweep } from './reap-browsers.ts';
 
@@ -325,6 +331,285 @@ function report(failures: readonly string[]): void {
  * of being generous is the time a real hang takes to report.
  */
 const BROWSER_START_MS = 90_000;
+
+/**
+ * The calibration sequence on the ball: the one base field that is not content.
+ *
+ * Each frame is read at the physical projector's own pixel, by a branch of the
+ * shader nothing else takes, and the parity check is the only thing holding that
+ * branch to `packages/sim`'s. Node checks the table the shader reads and the
+ * player that picks the frame; only a browser can check that the frame on the
+ * ball is the one both renderers were asked to draw.
+ *
+ * So this turns it on, stops the clock with the key a presenter would press, and
+ * steps with the arrows to one frame of each kind — the flat white, the coarsest
+ * Gray plane, its complement, a phase step — at the page's default view and
+ * standing at the ball, waiting each time for a verdict judged on THAT frame. No
+ * verdict may be 'bad'. From across the room 'blind' is allowed, because one
+ * projector lights a few hundred pixels of the patch and a pattern leaves part
+ * of them dark; standing at the ball there is enough, and each must pass. The
+ * canvas must not be black, and the caption must be `describeSequence`'s label
+ * for the step. The numbers are printed per frame kind, because a pass with no
+ * margin is worth knowing about before it becomes a failure.
+ *
+ * The keys come faster than a presenter's, and the frame may not: a step asked
+ * for within `SEQUENCE_MIN_DWELL_MS` of the last change waits for it. So each
+ * walk presses its keys at once and waits for the last one to land, which is
+ * the page adding quick presses up. Every change of frame from the pause on is
+ * timed in the page, and none may come sooner than the floor after the one
+ * before.
+ *
+ * It puts the black field and the room view back on the way out: every check
+ * after this one was written against a still picture.
+ */
+async function checkCalibrationSequence(cdp: Cdp, failures: string[]): Promise<void> {
+  try {
+    await stepThroughSequence(cdp, failures);
+  } finally {
+    // Whatever happened above, including a return halfway: a sequence left
+    // playing would change the picture under every check that follows.
+    await cdp.evaluate(`(() => {
+      for (const label of ['Black', 'Whole room']) {
+        [...document.querySelectorAll('#controls button')]
+          .find((x) => (x.textContent ?? '').trim() === label)?.click();
+      }
+    })()`);
+    await sleep(600);
+  }
+  const off = await cdp.evaluate<{ hidden: boolean; hint: string }>(`({
+    hidden: document.getElementById('sequence')?.hidden ?? false,
+    hint: getComputedStyle(document.getElementById('hint')).display,
+  })`);
+  if (!off.hidden || off.hint === 'none') {
+    failures.push('leaving the calibration sequence left its lower third up, or the hint down');
+  }
+}
+
+/** The steps {@link checkCalibrationSequence} describes. It puts the page back afterwards. */
+async function stepThroughSequence(cdp: Cdp, failures: string[]): Promise<void> {
+  const notes = describeSequence(DEFAULT_PATTERN_PLAN);
+  const specs = planFrames(DEFAULT_PATTERN_PLAN);
+  const framesPerRun = specs.length;
+  const key = async (k: string, code: string, vk: number, shift = false): Promise<void> => {
+    for (const type of ['keyDown', 'keyUp']) {
+      await cdp.send('Input.dispatchKeyEvent', {
+        type,
+        key: k,
+        code,
+        windowsVirtualKeyCode: vk,
+        modifiers: shift ? 8 : 0,
+        ...(type === 'keyDown' && k === ' ' ? { text: ' ' } : {}),
+      });
+    }
+  };
+  const click = (label: string): Promise<boolean> =>
+    cdp.evaluate<boolean>(`(() => {
+      const b = [...document.querySelectorAll('#controls button')]
+        .find((x) => (x.textContent ?? '').trim() === ${JSON.stringify(label)});
+      if (!(b instanceof HTMLElement)) return false;
+      b.click();
+      return true;
+    })()`);
+  type Bar = { hidden: boolean; step: number; playing: string; label: string; total: number };
+  const bar = (): Promise<Bar | null> =>
+    cdp.evaluate<Bar | null>(`(() => {
+      const s = document.getElementById('sequence');
+      if (!s) return null;
+      const position = s.querySelector('.seqpos')?.textContent ?? '';
+      return { hidden: s.hidden, step: Number(s.dataset.step ?? -1), playing: s.dataset.playing ?? '',
+        label: s.querySelector('.seqlabel')?.textContent ?? '',
+        total: Number(/step \\d+ of (\\d+)/.exec(position)?.[1] ?? 0) };
+    })()`);
+
+  await cdp.evaluate(`(() => {
+    const tab = [...document.querySelectorAll('#controls .seg button')]
+      .find((b) => /Room/.test(b.textContent ?? ''));
+    if (tab) tab.click();
+  })()`);
+  if (!(await click('Calibration patterns'))) {
+    failures.push('there is no "Calibration patterns" chip among the base fields on the Room tab');
+    return;
+  }
+  await sleep(600);
+  const on = await bar();
+  const hint = await cdp.evaluate<string>(
+    "getComputedStyle(document.getElementById('hint')).display",
+  );
+  const grid = await cdp.evaluate<boolean | null>(`(() => {
+    const b = [...document.querySelectorAll('#controls button.chip')]
+      .find((x) => /Grid lines/.test(x.textContent ?? ''));
+    return b ? b.disabled : null;
+  })()`);
+  if (!on || on.hidden || on.total <= 0) {
+    failures.push('the calibration sequence is on, and its lower third is not showing');
+    return;
+  }
+  if (hint !== 'none') failures.push('the gesture hint is still up under the sequence’s lower third');
+  if (grid !== true) failures.push('the grid chip is not disabled while the ball shows the sequence');
+  const count = on.total / framesPerRun;
+
+  // Every change of frame, timed where it happens. The step on screen now is
+  // where the log starts and is not itself a change: when it went up is not
+  // known, and a repaint that writes the same step again is no change at all.
+  await cdp.evaluate(`(() => {
+    const s = document.getElementById('sequence');
+    let last = s.dataset.step;
+    const log = (window.__sequenceChanges = []);
+    new MutationObserver(() => {
+      const step = s.dataset.step;
+      if (step === last) return;
+      last = step;
+      log.push({ step, at: performance.now() });
+    }).observe(s, { attributes: true, attributeFilter: ['data-step'] });
+  })()`);
+  /**
+   * The bar once the frame is `want`, or as it stands after ten seconds. Half a
+   * second is what the floor holds a step for; the rest is a software renderer
+   * holding the page's thread past the timer, which lands a step late and never
+   * early.
+   */
+  const landed = async (want: number): Promise<number> => {
+    const deadline = Date.now() + 10_000;
+    let at = (await bar())?.step ?? -1;
+    while (at !== want && Date.now() < deadline) {
+      await sleep(100);
+      at = (await bar())?.step ?? -1;
+    }
+    return at;
+  };
+
+  // A key reaches the page from wherever focus is, and on a button Space is the
+  // button's. Nothing here has focus by design, so say so first.
+  await cdp.evaluate('document.activeElement instanceof HTMLElement && document.activeElement.blur()');
+  await key(' ', 'Space', 32);
+  await sleep(300);
+  const paused = await bar();
+  if (paused?.playing !== '0') {
+    failures.push('Space did not pause the calibration sequence');
+    return;
+  }
+  // What a presentation clicker sends.
+  const from = paused.step;
+  await key('PageDown', 'PageDown', 34);
+  const down = await landed((from + 1) % on.total);
+  await key('PageUp', 'PageUp', 33);
+  const up = await landed(from);
+  if (down !== (from + 1) % on.total || up !== from) {
+    failures.push(`Page Down / Page Up moved the sequence ${from} → ${down} → ${up}`);
+  }
+
+  // Every press at once, then the frame they add up to.
+  const goTo = async (target: number): Promise<number> => {
+    const at = (await bar())?.step ?? -1;
+    if (at < 0) return at;
+    for (let i = 0; i < Math.abs(target - at); i++) {
+      if (at < target) await key('ArrowRight', 'ArrowRight', 39);
+      else await key('ArrowLeft', 'ArrowLeft', 37);
+    }
+    return landed(target);
+  };
+  type Verdict = { state: string; judged: string; worst: number; over: number; lit: number };
+  const verdictOn = async (target: number): Promise<Verdict | null> => {
+    const deadline = Date.now() + 90_000;
+    while (Date.now() < deadline) {
+      const v = await cdp
+        .evaluate<Verdict | null>(`(() => {
+          const p = document.querySelector('[data-smoke="parity"]');
+          if (!p) return null;
+          return { state: p.dataset.state ?? '', judged: p.dataset.judgedStep ?? '',
+            worst: Number(p.dataset.worst), over: Number(p.dataset.over), lit: Number(p.dataset.lit) };
+        })()`)
+        .catch(() => null);
+      if (v && v.judged === String(target) && v.state !== 'pending') return v;
+      await sleep(400);
+    }
+    return null;
+  };
+  const lit = (): Promise<number> =>
+    cdp.evaluate<number>(`(() => {
+      const c = document.getElementById('view');
+      const off = document.createElement('canvas');
+      off.width = 64; off.height = 48;
+      const ctx = off.getContext('2d');
+      ctx.drawImage(c, 0, 0, off.width, off.height);
+      const d = ctx.getImageData(0, 0, off.width, off.height).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 12) n++;
+      return n;
+    })()`);
+
+  // White, the coarsest Gray plane across, its complement, and a phase step:
+  // the first of each kind in P1's run.
+  const kinds = (['white', 'gray', 'grayInverse', 'phase'] as const).map((kind) =>
+    specs.findIndex((s) => s.kind === kind),
+  );
+  for (const view of ['Whole room', 'Standing at it']) {
+    if (!(await click(view))) {
+      failures.push(`there is no "${view}" viewpoint on the Room tab`);
+      continue;
+    }
+    await sleep(600);
+    for (const target of kinds) {
+      const at = await goTo(target);
+      const place = sequenceStep(target, count, DEFAULT_PATTERN_PLAN);
+      const expected = `P${place.slot + 1} · ${notes[place.frame].label}`;
+      const caption = (await bar())?.label ?? '';
+      if (at !== target) {
+        failures.push(`the arrow keys could not reach step ${target} of the sequence (stuck at ${at})`);
+        continue;
+      }
+      if (caption !== expected) {
+        failures.push(`step ${target} is captioned '${caption}', and describeSequence says '${expected}'`);
+      }
+      const v = await verdictOn(target);
+      const ink = await lit();
+      if (ink === 0) failures.push(`the canvas is black on '${expected}' at "${view}"`);
+      if (v === null) {
+        failures.push(`no parity verdict was judged on '${expected}' at "${view}" within 90 s`);
+        continue;
+      }
+      process.stdout.write(
+        `  sequence parity, ${view}, ${expected}: ${v.state} · worst ${v.worst.toExponential(1)} · ` +
+          `${(v.over * 100).toFixed(2)}% of ${v.lit} lit over tolerance\n`,
+      );
+      if (v.state === 'bad') {
+        failures.push(`the shader disagrees with packages/sim on '${expected}' at "${view}"`);
+      } else if (view === 'Standing at it' && v.state !== 'ok') {
+        failures.push(`'${expected}' read ${v.state} standing at the ball, where it has pixels to judge`);
+      }
+    }
+  }
+  // The next projector's run, from anywhere in this one.
+  await key('ArrowRight', 'ArrowRight', 39, true);
+  await landed(framesPerRun);
+  const jumped = await bar();
+  const next = sequenceStep(framesPerRun, count, DEFAULT_PATTERN_PLAN);
+  if (jumped?.step !== framesPerRun || jumped.label !== `P${next.slot + 1} · ${notes[0].label}`) {
+    failures.push(`Shift + → landed on step ${jumped?.step} ('${jumped?.label}'), not on P2's first frame`);
+  }
+
+  // No two changes of frame closer than the floor. Each change is stamped once
+  // the task that made it has repainted every view of the sequence, which takes
+  // a few milliseconds and, under a software renderer, tens; so the stamps can
+  // sit a little under the half second that separates the changes themselves.
+  // 50 ms of slack is well clear of that, and well clear of what a page without
+  // the floor does, which is to change frame as fast as keys arrive.
+  const slackMs = 50;
+  const changes = await cdp.evaluate<{ step: string; at: number }[]>('window.__sequenceChanges ?? []');
+  let closest = Number.POSITIVE_INFINITY;
+  for (let i = 1; i < changes.length; i++) closest = Math.min(closest, changes[i].at - changes[i - 1].at);
+  if (changes.length < 2) {
+    failures.push(`the frame changed ${changes.length} times while the smoke stepped through the sequence`);
+  } else if (closest < SEQUENCE_MIN_DWELL_MS - slackMs) {
+    failures.push(
+      `the frame changed twice ${closest.toFixed(0)} ms apart, under the ${SEQUENCE_MIN_DWELL_MS} ms floor`,
+    );
+  } else {
+    process.stdout.write(
+      `  sequence floor: ${changes.length} changes of frame, the closest two ${closest.toFixed(0)} ms apart\n`,
+    );
+  }
+}
 
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
@@ -734,6 +1019,8 @@ async function main(): Promise<void> {
     if (parity === '(none)') {
       failures.push('the parity section never rendered — the readout did not reach a settled state');
     }
+
+    await checkCalibrationSequence(cdp, failures);
 
     // The live calibration, end to end, in a browser: the one claim on this page
     // that a CPU test in Node cannot make, because it depends on both workers

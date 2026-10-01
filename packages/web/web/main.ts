@@ -79,17 +79,29 @@ import type { SosConfig, SosConfigUpdate } from '../../sim/src/sosconfig.ts';
 import { wrapDeg180 } from '../../sim/src/vec.ts';
 import { DEFAULT_PATTERN_PLAN, planFrames } from '../../bench/src/patterns.ts';
 import {
+  createSequencePlayer,
   describeSequence,
   encodeToRgba,
+  patternAtlas,
+  patternMask,
   sampleFrame,
+  SEQUENCE_BRISK_MS,
+  SEQUENCE_DWELL_MS,
+  sequenceFocus,
+  sequenceKeyAction,
+  sequenceRig,
+  sequenceStep,
+  stepCaption,
   strideInfo,
 } from '../src/patternfilm.ts';
+import type { PatternAtlas, SequenceRig, StepCaption } from '../src/patternfilm.ts';
 import type { NudgeSpec, Settings, SettingKey } from '../src/settings.ts';
 import {
   BOULDER_PRESET,
   CONTENTS,
   CONTENT_CUSTOM,
   CONTENT_MARBLE,
+  CONTENT_PATTERN,
   CONTROLS,
   GROUPS,
   cameraDistanceM,
@@ -121,10 +133,11 @@ import type { WebWorld } from '../src/rigs.ts';
 import type { Reading, RigFact } from '../src/readout.ts';
 import { buildDisplayUniforms, packMesh, pickMarkerNear, slotOfRigIndex } from '../src/uniforms.ts';
 import { MAX_PROJECTORS } from '../src/glsl.ts';
-import type { DisplayMesh, DisplayUniforms, OverlayMode } from '../src/uniforms.ts';
+import type { DisplayMesh, DisplayUniforms, OverlayMode, PatternDisplay } from '../src/uniforms.ts';
 import type { ParityVerdict } from '../src/parity.ts';
 import {
   ALLOWANCE_LABEL,
+  MIN_LIT_PIXELS,
   percentLabel,
   PARITY_HEIGHT,
   PARITY_WIDTH,
@@ -136,6 +149,7 @@ import type {
   ModelMessage,
   ModelRequest,
   ModelResponse,
+  PatternRequest,
   FramesMessage,
   FramesRequest,
   RecoveredAxis,
@@ -467,6 +481,503 @@ function suppliedName(): string {
   return '';
 }
 
+// ---------------------------------------------------------------------------
+// The calibration sequence, on the sphere
+// ---------------------------------------------------------------------------
+
+/**
+ * The plan the sphere plays: the emitter page's default, which is also the plan
+ * the inspect card's film shows. A calibration on this page picks its own Gray
+ * count from the camera (`pipeline.ts`), and the chip says so rather than
+ * following it — the sequence on the ball is the emitter's, not a replay of one
+ * capture.
+ */
+const SEQUENCE_PLAN = DEFAULT_PATTERN_PLAN;
+
+/**
+ * Where the sequence is, and its clock: `createSequencePlayer`. One for the
+ * page, so the ball, the lower third and the inspect card's film never show
+ * different frames. The hooks are the page's — its views, its settle timer, and
+ * the rig as it is now.
+ */
+const player = createSequencePlayer({
+  place: (n) => sequenceNow(n),
+  shown: sequenceShown,
+  show: showSequence,
+  settle: settleOnFrame,
+  schedule: (fn, ms) => window.setTimeout(fn, ms),
+  cancel: (handle) => window.clearTimeout(handle),
+  now: () => performance.now(),
+});
+
+/** Is the calibration sequence what the sphere is showing? */
+function patternActive(): boolean {
+  return Math.round(state.settings.content) === CONTENT_PATTERN;
+}
+
+/** The raster every projector on the page has, read off the control that sets it. */
+function sequenceRaster(): { resX: number; resY: number } {
+  return RESOLUTIONS[Math.round(state.settings.resolution)] ?? RESOLUTIONS[1];
+}
+
+/**
+ * The sequence as a table for the shader, built once per raster. It holds every
+ * frame, so a step — or the parity check drawing an older one — is two integers
+ * and no upload; `gl.ts` re-sends it only when this object changes.
+ */
+let atlasBuilt: PatternAtlas | null = null;
+
+function sequenceAtlas(): PatternAtlas {
+  const { resX, resY } = sequenceRaster();
+  if (atlasBuilt === null || atlasBuilt.resX !== resX || atlasBuilt.resY !== resY) {
+    atlasBuilt = patternAtlas(SEQUENCE_PLAN, resX, resY);
+  }
+  return atlasBuilt;
+}
+
+/**
+ * The rig the sequence plays to (`sequenceRig`): the placements when the live
+ * view is drawn with them, else the install ring. The live view's
+ * `displayModel` draws placements only on a model that is on screen, which is
+ * what `displayMeshId` answers, and only when there are some.
+ */
+function sequenceRigNow(): SequenceRig {
+  const drawn = displayMeshId() !== '' && customPlacements !== null ? customPlacements.length : 0;
+  return sequenceRig(state.settings.projectorCount, drawn);
+}
+
+/** A step, placed in the emitter's order for the projectors the ball is drawn with. */
+function sequenceNow(step = player.step): ReturnType<typeof sequenceStep> {
+  return sequenceStep(step, sequenceRigNow().projectors, SEQUENCE_PLAN);
+}
+
+/**
+ * The frame to draw, for a rig whose projectors came from panel slots `slots`,
+ * or `null` when the sphere is showing content.
+ *
+ * `slots` is the DRAWN rig's for the picture and the install rig's for the parity
+ * request; the mask is a rig index, and the two rigs index differently whenever a
+ * placement card is drawing.
+ */
+function patternDisplay(slots: readonly number[], step = player.step): PatternDisplay | null {
+  if (!patternActive()) return null;
+  const at = sequenceNow(step);
+  return { atlas: sequenceAtlas(), frame: at.frame, mask: patternMask(slots, at.slot) };
+}
+
+/** The same frame named for the worker, against the rig it builds: the install rig. */
+function patternRequest(step = player.step): PatternRequest | null {
+  if (!patternActive()) return null;
+  const at = sequenceNow(step);
+  const slots = buildWorld(state.settings).slots;
+  return { plan: SEQUENCE_PLAN, frame: at.frame, mask: patternMask(slots, at.slot) };
+}
+
+/**
+ * The calibration frame the last parity request asked the worker to draw, and
+ * the step it was — `null` when that request was for content.
+ *
+ * The CPU half lands half a second after it was asked for, and playback may be
+ * frames further on by then. So `checkParity` draws the GPU half at THIS frame
+ * rather than the live one, as `withFrozenContent` does for a video: the verdict
+ * is about one frame drawn twice, and `parityLine` names which.
+ */
+let parityAsked: { request: PatternRequest; step: number } | null = null;
+
+/** The frame the verdict on screen was judged on, or `null` for content. */
+let parityJudged: { request: PatternRequest; step: number } | null = null;
+
+/** "P2 · Gray plane 3 of 6, down · step 51 of 136", for a verdict or a caption. */
+function frameName(step: number): string {
+  const at = sequenceNow(step);
+  const note = describeSequence(SEQUENCE_PLAN)[at.frame];
+  return `P${at.slot + 1} · ${note.label} · step ${at.step + 1} of ${at.total}`;
+}
+
+/**
+ * Is anything on the page showing the sequence: the ball, or the inspect card's
+ * film? The player stops its clock at the first tick with neither.
+ */
+function sequenceShown(): boolean {
+  return (
+    patternActive() ||
+    (state.inspectOpen && inspectView === 'patterns' && inspectEl.classList.contains('on'))
+  );
+}
+
+/**
+ * The parity pass for a frame a person stopped on, debounced exactly as a
+ * settled slider is — a presenter stepping through frames is a control being
+ * moved.
+ *
+ * Only while the ball shows the sequence: the card's film is not what the check
+ * reads. Its own timer rather than `settleTimer`, so a step taken just after a
+ * slider cannot cancel that slider's pass. And without the surface pass
+ * `requestModel(true)` brings along: a dropped model's CPU preview does not show
+ * the sequence, and asking for it rebuilds the control panel as well.
+ */
+let frameSettleTimer = 0;
+
+function settleOnFrame(): void {
+  if (!patternActive()) return;
+  window.clearTimeout(frameSettleTimer);
+  frameSettleTimer = window.setTimeout(() => requestModel(true, false), 260);
+}
+
+/** From the top, playing — or paused there, when the reader has asked for less motion. */
+function startSequence(): void {
+  const still =
+    typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  player.start(still);
+}
+
+/** Everything that shows the sequence, brought up to the player's frame. */
+function showSequence(): void {
+  // The ball only when it is one of them: the card's film plays over content
+  // too, and redrawing an unchanged sphere every frame of it is waste.
+  if (patternActive()) markDirty();
+  renderSequenceBar();
+  repaintSequenceViews();
+}
+
+/** The caption for a step, with the lamp that run goes to as the panel has it. */
+function sequenceCaption(step = player.step): StepCaption {
+  const rig = sequenceRigNow();
+  const at = sequenceStep(step, rig.projectors, SEQUENCE_PLAN);
+  // A placement has no panel slot, so no wall switch on the panel turns it off.
+  return stepCaption(at, SEQUENCE_PLAN, !rig.placed && state.settings.nudge[at.slot]?.on === false);
+}
+
+/** "2 s a frame". */
+function paceWords(): string {
+  return `${(player.dwellMs / 1000).toFixed(1).replace(/\.0$/, '')} s a frame`;
+}
+
+/** Why nothing is moving, when the reason is the reader's own setting; otherwise empty. */
+function stillWords(): string {
+  return player.heldStill && !player.playing
+    ? 'Paused, because this device asks for reduced motion. Step through it, or press play.'
+    : '';
+}
+
+/**
+ * The buttons, as the lower third and the Room tab both carry them. The play
+ * button is returned apart so a caller can keep its label current.
+ */
+function sequenceTransport(): { row: HTMLElement; play: HTMLButtonElement } {
+  const row = el('div', { className: 'seqbtns' });
+  const button = (text: string, label: string, onClick: () => void): HTMLButtonElement => {
+    const b = el('button', { className: 'btn icon', textContent: text, title: label });
+    b.setAttribute('aria-label', label);
+    // A click leaves focus where it was. A focused button keeps Space for itself
+    // (`sequenceKeyAction`), so a presenter who had clicked "next" once would
+    // find Space stepping instead of pausing. Tab still reaches these, and Space
+    // and Enter still press them.
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', onClick);
+    return b;
+  };
+  const play = button('', '', () => player.toggle());
+  row.append(
+    button('‹', 'Previous frame (← or Page Up)', () => player.stepBy(-1)),
+    play,
+    button('›', 'Next frame (→ or Page Down)', () => player.stepBy(1)),
+    button('»', 'Next projector’s run (Shift + →)', () => player.stepRun(1)),
+  );
+  labelPlay(play);
+  return { row, play };
+}
+
+function labelPlay(play: HTMLButtonElement): void {
+  const label = player.playing ? 'Pause (Space)' : 'Play (Space)';
+  // U+FE0E asks for the triangle as text. Without it an Apple device may draw
+  // U+25B6 as a blue emoji tile, beside three buttons in the page's own type.
+  play.textContent = player.playing ? '❚❚' : '▶\uFE0E';
+  play.title = label;
+  play.setAttribute('aria-label', label);
+}
+
+/**
+ * The lower third: the frame's name, where it is in the sequence, and why it is
+ * there, in the slot the gesture hint uses between the two panels. Built once
+ * and then only relabelled, so nothing is rebuilt under a pointer as the frame
+ * changes.
+ */
+let sequenceBar: {
+  play: HTMLButtonElement;
+  label: HTMLElement;
+  position: HTMLElement;
+  dark: HTMLElement;
+  still: HTMLElement;
+  why: HTMLElement;
+  whyToggle: HTMLButtonElement;
+} | null = null;
+
+function renderSequenceBar(): void {
+  const on = patternActive();
+  document.body.classList.toggle('sequence-on', on);
+  sequenceEl.hidden = !on;
+  if (!on) return;
+  if (sequenceBar === null) {
+    const { row, play } = sequenceTransport();
+    const label = el('p', { className: 'seqlabel' });
+    const position = el('p', { className: 'seqpos num' });
+    const whyToggle = el('button', { className: 'linkish' });
+    whyToggle.addEventListener('mousedown', (e) => e.preventDefault());
+    whyToggle.addEventListener('click', () => {
+      sequenceWhyOpen = !sequenceWhyOpen;
+      renderSequenceBar();
+    });
+    const top = el('div', { className: 'seqrow' });
+    top.append(row, label, position, whyToggle);
+    const dark = el('p', { className: 'note warn' });
+    const still = el('p', { className: 'note tiny' });
+    const why = el('p', { className: 'note seqwhy' });
+    sequenceEl.replaceChildren(top, dark, still, why);
+    sequenceBar = { play, label, position, dark, still, why, whyToggle };
+  }
+  const c = sequenceCaption();
+  const b = sequenceBar;
+  // For `tools/smoke-app.ts`, which steps to named frames and has to know where
+  // it is starting from.
+  sequenceEl.dataset.step = String(player.step);
+  sequenceEl.dataset.playing = player.playing ? '1' : '0';
+  labelPlay(b.play);
+  b.label.textContent = c.label;
+  // Announced when a person moves it, and not while it plays: a sentence every
+  // two seconds is noise to somebody listening to the page.
+  b.label.setAttribute('aria-live', player.playing ? 'off' : 'polite');
+  b.position.textContent = `${c.position} · ${paceWords()}`;
+  b.dark.textContent = c.dark;
+  b.dark.hidden = c.dark === '';
+  b.still.textContent = stillWords();
+  b.still.hidden = b.still.textContent === '';
+  b.why.textContent = c.why;
+  b.why.hidden = !sequenceWhyOpen;
+  b.whyToggle.textContent = sequenceWhyOpen ? 'hide why' : 'why?';
+  b.whyToggle.setAttribute('aria-expanded', String(sequenceWhyOpen));
+}
+
+/**
+ * Whether the "why" paragraph under the lower third is showing. Shut to begin
+ * with: in front of an audience the frame's name is the caption, and the
+ * paragraph — four lines at this width, a dozen between the panels of a small
+ * laptop — would stand over the bottom of the ball. Not persisted.
+ */
+let sequenceWhyOpen = false;
+
+/**
+ * Set the pace, from either control that offers it — the Room tab's chips or
+ * the film's link — and repaint the chips, which are the only view of the pace
+ * that a new frame does not repaint.
+ */
+function setPace(ms: number): void {
+  player.setDwell(ms);
+  renderControls();
+}
+
+/**
+ * The sequence's place in the Room tab, under the chip that chose it. First,
+ * on a screen too narrow for the lower third, its transport and caption
+ * (`.seq-inline`, hidden wherever the lower third is showing). They come first
+ * because a phone's settings sheet is a few hundred pixels tall: below a note
+ * and the pace chips they started out of sight, under the very chips they
+ * belong to. Then what it is, in one line that is always visible, and its pace.
+ */
+function sequenceBlock(): HTMLElement[] {
+  const inline = el('div', { className: 'seq-inline' });
+  const { row, play } = sequenceTransport();
+  const label = el('p', { className: 'note num' });
+  const dark = el('p', { className: 'note warn' });
+  const still = el('p', { className: 'note tiny' });
+  const why = el('p', { className: 'note tiny' });
+  inline.append(row, label, dark, still, why);
+  const fill = (): void => {
+    const c = sequenceCaption();
+    labelPlay(play);
+    label.textContent = `${c.label} · ${c.position}`;
+    dark.textContent = c.dark;
+    dark.hidden = c.dark === '';
+    still.textContent = stillWords();
+    still.hidden = still.textContent === '';
+    why.textContent = c.why;
+  };
+  fill();
+  sequenceInline = () => {
+    if (!inline.isConnected) {
+      sequenceInline = null;
+      return;
+    }
+    fill();
+  };
+  return [
+    inline,
+    el('p', {
+      className: 'note tiny',
+      textContent:
+        'The raw frames a calibration projects, lit through the rig as built: not a camera’s ' +
+        'photograph, not changed by recalibrating, and read by no metric.' +
+        (coarsePointer()
+          ? ''
+          : ' Space plays and pauses, ← and → step, Shift + → jumps to the next projector.'),
+    }),
+    chipRow(
+      [
+        {
+          label: 'Emitter pace · 2 s',
+          title: 'Two seconds a frame, the emitter’s own default: about a minute a projector.',
+          on: player.dwellMs === SEQUENCE_DWELL_MS,
+          onPick: () => setPace(SEQUENCE_DWELL_MS),
+        },
+        {
+          label: 'Brisk · 0.7 s',
+          title: 'Fast enough that the binary search reads as motion rather than as stills.',
+          on: player.dwellMs === SEQUENCE_BRISK_MS,
+          onPick: () => setPace(SEQUENCE_BRISK_MS),
+        },
+      ],
+      'How long each frame stays up. Nothing goes faster than half a second a frame: each Gray ' +
+        'plane is followed by its inverse, which flips most of the lit ball at once, and on a ' +
+        'big screen that is a flash.',
+    ),
+  ];
+}
+
+/** Whether the ball was showing the sequence the last time `syncSequence` looked. */
+let sequenceWasOn = false;
+
+/**
+ * Start the sequence when the ball starts showing it, stop it when the ball
+ * stops — whatever changed the base field: the chip, a dropped file, Reset —
+ * and otherwise bring the lower third up to date with the rig, whose projector
+ * count and switches its caption reads. Called from `renderControls`, which
+ * every one of those paths ends in.
+ */
+function syncSequence(): void {
+  const on = patternActive();
+  if (on !== sequenceWasOn) {
+    sequenceWasOn = on;
+    // Both end in `showSequence`, which shows or hides the lower third.
+    if (on) startSequence();
+    else player.pause(false);
+    return;
+  }
+  if (on) renderSequenceBar();
+}
+
+/**
+ * Repaint hooks for the views of the sequence that other renders build — the
+ * Room tab's own transport, the inspect card's two pictures, and the lightbox
+ * one of them opens — so a new frame is painted into them without rebuilding a
+ * panel under somebody's pointer. Each drops itself the first time it finds its
+ * view gone.
+ */
+let sequenceInline: (() => void) | null = null;
+let sequenceFilm: (() => void) | null = null;
+let sequenceCardFrame: (() => void) | null = null;
+let sequenceLightbox: (() => void) | null = null;
+
+function repaintSequenceViews(): void {
+  sequenceInline?.();
+  sequenceFilm?.();
+  sequenceCardFrame?.();
+  sequenceLightbox?.();
+}
+
+/**
+ * What a lightbox showing a calibration frame is tagged with (`lightbox.wants`).
+ * Its own tag, because the lightbox matches worker replies on slot and tag, and
+ * a capture preview's late reply for slot −1 is tagged `after`: with that tag, it
+ * would land in place of the frame going down the cable.
+ */
+const SEQUENCE_LIGHTBOX = 'sequence';
+
+/**
+ * Show projector `slot`'s calibration frame full size, and keep it on the
+ * player's frame until the lightbox closes — the ball behind it moves on, and a
+ * zoom that stayed on the frame it was opened at would be the one view on the
+ * page disagreeing with the others. Drawn again at the screen's own size rather
+ * than blown up, and on this thread: slot −1, so no worker frame is asked for and
+ * no before/after pair is offered — a calibration frame is not rewritten by a
+ * solve, so there is no "before" to compare.
+ */
+function openSequenceLightbox(slot: number): void {
+  const { image } = patternFrameImage(slot, zoomWidth());
+  openLightbox(image, image.caption, -1, SEQUENCE_LIGHTBOX);
+  sequenceLightbox = () => {
+    if (lightbox === null || lightbox.wants !== SEQUENCE_LIGHTBOX || !patternActive()) {
+      sequenceLightbox = null;
+      return;
+    }
+    const next = patternFrameImage(slot, zoomWidth()).image;
+    lightbox.after = next;
+    lightbox.caption = next.caption;
+    renderLightbox();
+  };
+}
+
+/**
+ * One projector's frame at the player's step, as the picture going down its
+ * cable: the frame when it is that projector's run, black when it is anybody
+ * else's — which is what the emitter paints into its quadrant either way.
+ * Whether the lamp at the other end is on is the caller's to say.
+ */
+function patternFrameImage(slot: number, width: number): { image: FrameImage; itsTurn: boolean } {
+  const at = sequenceNow();
+  const { resX, resY } = sequenceRaster();
+  const w = Math.max(16, Math.round(width));
+  const h = Math.max(1, Math.round((w * resY) / resX));
+  const itsTurn = at.slot === slot;
+  const data = new Float32Array(w * h * 3);
+  if (itsTurn) {
+    const linear = sampleFrame(planFrames(SEQUENCE_PLAN)[at.frame], SEQUENCE_PLAN, resX, resY, w, h);
+    for (let i = 0; i < linear.length; i++) {
+      data[3 * i] = linear[i];
+      data[3 * i + 1] = linear[i];
+      data[3 * i + 2] = linear[i];
+    }
+  }
+  const note = describeSequence(SEQUENCE_PLAN)[at.frame];
+  return {
+    image: {
+      width: w,
+      height: h,
+      data,
+      caption: `P${slot + 1} — ${itsTurn ? note.label : 'black'} — ${resX} × ${resY}`,
+      // Target LINEAR radiance, the numbers the film shows; `paintFrame` encodes
+      // them once, with the same 2.2 the emitter sends them down the cable with.
+      space: 'linear',
+    },
+    itsTurn,
+  };
+}
+
+/**
+ * The sequence's keys, while the ball is showing it: `sequenceKeyAction` says
+ * which, and `sequenceFocus` when they are left alone. Not while the help sheet
+ * is up — it is what a reader is looking at, and the arrows scroll it — nor over
+ * a lightbox showing anything but a calibration frame. One showing a calibration
+ * frame follows the player (`sequenceLightbox`), so a presenter who has opened
+ * it can keep clicking through. Escape keeps its own listener and its own
+ * meaning.
+ */
+function installSequenceKeys(): void {
+  window.addEventListener('keydown', (e) => {
+    if (e.defaultPrevented || !patternActive() || helpEl.classList.contains('on')) return;
+    if (lightboxEl.classList.contains('on') && lightbox?.wants !== SEQUENCE_LIGHTBOX) return;
+    const action = sequenceKeyAction(
+      e,
+      sequenceFocus(e.target instanceof HTMLElement ? e.target : null),
+    );
+    if (action === null) return;
+    e.preventDefault();
+    if (action === 'toggle') player.toggle();
+    else if (action === 'next') player.stepBy(1);
+    else if (action === 'previous') player.stepBy(-1);
+    else player.stepRun(action === 'next-run' ? 1 : -1);
+  });
+}
+
 /**
  * Fetch the shipped map and put it through exactly the path a dropped file takes
  * — same 2:1 check, same sRGB decode, same downscale. A second loader would be a
@@ -573,6 +1084,7 @@ const bootEl = document.getElementById('boot') as HTMLDivElement;
 const fatalEl = document.getElementById('fatal') as HTMLDivElement;
 const lightboxEl = document.getElementById('lightbox') as HTMLDivElement;
 const lightboxCanvas = document.getElementById('lightbox-canvas') as HTMLCanvasElement;
+const sequenceEl = document.getElementById('sequence') as HTMLDivElement;
 
 function fatal(message: string): void {
   fatalEl.textContent = message;
@@ -761,6 +1273,34 @@ function closeLightbox(): void {
   lightboxEl.classList.remove('on');
   lightbox = null;
 }
+
+/**
+ * A frame on the card that opens the lightbox, for a keyboard as well as a
+ * pointer: a tab stop, a button's role, and Enter or Space pressing it. As a
+ * canvas with only a click handler, and `role="img"` on the calibration frame, a
+ * keyboard could not reach it and a screen reader announced a picture with
+ * nothing to press. Name it with {@link fullSizeName}.
+ *
+ * The role also makes it a control to the sequence's keys (`sequenceFocus`), so
+ * Space presses it rather than pausing the ball, and the arrows still step.
+ */
+function opensLightbox(c: HTMLCanvasElement, open: () => void): void {
+  c.tabIndex = 0;
+  c.setAttribute('role', 'button');
+  c.addEventListener('click', open);
+  c.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    // Space would scroll the card as well.
+    e.preventDefault();
+    open();
+  });
+}
+
+/** What a frame that opens the lightbox is announced as: its caption, and what pressing it does. */
+function fullSizeName(caption: string): string {
+  return `${caption} — open it full size`;
+}
+
 lightboxEl.addEventListener('click', (e) => {
   // The mode buttons live inside the overlay, and the overlay closes on click.
   if ((e.target as HTMLElement)?.closest('.modes')) return;
@@ -1080,7 +1620,13 @@ function slider(o: SliderOptions): HTMLElement {
  * text in `settings.ts` therefore rendered nowhere at all.
  */
 function chipRow(
-  items: readonly { label: string; on: boolean; onPick: () => void; title?: string }[],
+  items: readonly {
+    label: string;
+    on: boolean;
+    onPick: () => void;
+    title?: string;
+    disabled?: boolean;
+  }[],
   help = '',
 ): HTMLElement {
   const row = el('div', { className: 'chips' });
@@ -1089,6 +1635,7 @@ function chipRow(
       className: `chip${it.on ? ' on' : ''}`,
       textContent: it.label,
       title: it.title ?? '',
+      disabled: it.disabled === true,
     });
     b.addEventListener('click', it.onPick);
     row.append(b);
@@ -2130,14 +2677,15 @@ function paritySamples(): number {
  * settle timer's full-density pass must not be swallowed by a coarse one
  * arriving a millisecond later.
  */
-function requestModel(fine: boolean): void {
+function requestModel(fine: boolean, surface = fine): void {
   // A dropped model's preview and its three coverage figures come from the same
   // rig the sphere metrics do, so every slider that moves the rig makes them
   // stale — and stale is the one thing this panel must not be, because the
   // numbers beside the picture are the whole reason the picture is there. They
   // refresh on the SETTLED pass only: the trace is a BVH walk, far too
-  // expensive for the every-frame pass a drag produces.
-  if (fine) requestSurface();
+  // expensive for the every-frame pass a drag produces. `surface` is false for
+  // the one settled pass that moves no rig: a calibration frame stopped on.
+  if (surface) requestSurface();
   if (modelPending) {
     queuedModel = { fine: fine || (queuedModel?.fine ?? false) };
     return;
@@ -2193,7 +2741,10 @@ function postModel(fine: boolean): void {
     parity: null,
     // Only on the settled pass: a projector frame is a CPU trace and four of
     // them on every drag would starve the metrics they sit beside.
-    projectorPreviewWidth: fine ? previewWidth : 0,
+    // Nor while the ball shows the calibration sequence: the card then draws the
+    // frame going down each cable on this thread, and a compositor frame would
+    // be a picture of content nobody is sending.
+    projectorPreviewWidth: fine && !patternActive() ? previewWidth : 0,
     // Sent once per image, not once per request: the worker caches it by id, and
     // a megabyte of float on every slider drag would cost more than the metrics.
     // A copy rather than a transfer, because the main thread still needs it for
@@ -2207,6 +2758,7 @@ function postModel(fine: boolean): void {
           }
         : null,
     customImageId: suppliedName(),
+    pattern: patternRequest(),
   };
   sentImageId = suppliedName();
   // Not until a real frame has been through the GPU. Until then the model holds
@@ -2227,6 +2779,8 @@ function postModel(fine: boolean): void {
       imageShift: camera.imageShift ?? 0,
     };
     parityRequestKey = viewKey();
+    // The frame this request names, held for the reply: see `parityAsked`.
+    parityAsked = req.pattern === null ? null : { request: req.pattern, step: player.step };
   }
   modelWorker.postMessage(req);
   renderReadout();
@@ -2325,7 +2879,7 @@ modelWorker.onmessage = (event: MessageEvent<ModelMessage | FramesMessage | Surf
   const kept = model?.projectorFrames ?? [];
   const projectorFrames = msg.projectorFrames.map((f, i) => f ?? kept[i] ?? null);
   model = { ...msg, projectorFrames };
-  if (msg.parityImage) checkParity(msg.parityImage, msg.parityMs, msg.parityMeshId);
+  if (msg.parityImage) checkParity(msg.parityImage, msg.parityMs, msg.parityMeshId, msg.parityPattern);
   renderReadout();
   renderInspect();
   // LAST, and this is not tidiness.
@@ -2858,6 +3412,8 @@ function draw(): void {
       wallRadiusM: state.settings.wallRadiusM,
       rail: state.railOn,
       aimGuides: state.aimGuides,
+      // The calibration frame on screen, against the DRAWN rig's slots.
+      pattern: patternDisplay(model.slots),
     },
   );
 
@@ -3208,9 +3764,18 @@ function checkParity(
   cpu: { width: number; height: number; data: Float32Array },
   cpuMs: number,
   cpuMeshId: string,
+  cpuPattern: PatternRequest | null,
 ): void {
   if (!gl) return;
   if (viewKey() !== parityRequestKey) {
+    parity = null;
+    return;
+  }
+  // And the same FRAME, when a calibration frame is what was drawn: the one this
+  // page asked for, which the worker echoes. Playback moving on since is not a
+  // mismatch — the GPU half below is drawn at the asked frame, not the live one.
+  const asked = parityAsked;
+  if (JSON.stringify(cpuPattern) !== JSON.stringify(asked?.request ?? null)) {
     parity = null;
     return;
   }
@@ -3291,6 +3856,13 @@ function checkParity(
         displayGamma: 0,
         samplesPerPixel: paritySamples(),
         slots: model.slots,
+        // The frame the worker was asked to draw, NOT the live step the picture
+        // on screen uses: during playback that has usually moved on. The mask
+        // was taken against the install rig's slots, which is the rig here too.
+        pattern:
+          asked === null
+            ? null
+            : { atlas: sequenceAtlas(), frame: asked.request.frame, mask: asked.request.mask },
       },
     );
     // The frame the worker was given, not the one on screen. With a video
@@ -3314,6 +3886,7 @@ function checkParity(
       floatReadback: gpu.float,
       cpuMs,
     });
+    parityJudged = asked;
   } catch (err) {
     parity = null;
     lastError = err instanceof Error ? err.message : String(err);
@@ -4032,6 +4605,7 @@ function roomSection(): HTMLElement[] {
   );
   const chosen = CONTENTS[Math.round(state.settings.content)] ?? CONTENTS[1];
   out.push(el('p', { className: 'grouphelp', textContent: chosen.help }));
+  if (patternActive()) out.push(...sequenceBlock());
 
   // Only once there is one. The chip above already opens the picker when the
   // slot is empty — see its `onPick` — so a second button saying the same thing
@@ -4108,19 +4682,38 @@ function roomSection(): HTMLElement[] {
   // independent on/off; a lit chip in a radio group reads as a multi-select and
   // made the four fields look combinable. Its own row, immediately under, says
   // both things: separate control, same subject.
+  //
+  // Not while the ball shows the calibration sequence, which is drawn without
+  // it: a calibration frame goes out alone, and a graticule over it would be a
+  // picture of something no projector sends. The chip stays, unlit and
+  // disabled, so the setting it holds comes back with the content.
+  const patterned = patternActive();
   out.push(
     chipRow([
       {
         label: 'Grid lines',
-        title:
-          'The alignment graticule, over whatever the base field is. This is the pattern the ' +
-          'grid-displacement gate measures and the one a misalignment shows up in.',
-        on: Math.round(state.settings.gridOn) === 1,
+        title: patterned
+          ? 'Not drawn over the calibration sequence: a calibration frame goes out alone.'
+          : 'The alignment graticule, over whatever the base field is. This is the pattern the ' +
+            'grid-displacement gate measures and the one a misalignment shows up in.',
+        on: !patterned && Math.round(state.settings.gridOn) === 1,
+        disabled: patterned,
         onPick: () => setSetting('gridOn', Math.round(state.settings.gridOn) === 1 ? 0 : 1),
       },
     ]),
   );
-  if (Math.round(state.settings.gridOn) === 1) out.push(...controlsByKey(['gridDeg']));
+  if (patterned) {
+    out.push(
+      el('p', {
+        className: 'note tiny',
+        textContent:
+          'No grid over the calibration sequence — a calibration frame goes out alone. It comes ' +
+          'back with any other base field.',
+      }),
+    );
+  } else if (Math.round(state.settings.gridOn) === 1) {
+    out.push(...controlsByKey(['gridDeg']));
+  }
 
   // Everything a reader touches on every look, and not one of them can move a
   // number. That is not a convenience claim — every control in this block is
@@ -4352,6 +4945,7 @@ function roomSection(): HTMLElement[] {
 }
 
 function renderControls(): void {
+  syncSequence();
   controlsEl.replaceChildren();
   controlsEl.classList.toggle('explain', state.explain);
   controlsEl.append(sectionTabs());
@@ -5548,36 +6142,12 @@ const INSPECT_VIEWS = [
 
 let inspectView: (typeof INSPECT_VIEWS)[number]['id'] = 'frame';
 
-/**
- * Playback state for the structured-light view.
- *
- * Module-level rather than inside `renderInspect`, because the view outlives any
- * one render: every setting change re-renders the card, and a sequence that
- * restarted from frame 0 each time somebody nudged a slider would be unwatchable.
- *
- * The timer is cleared at the top of every render and restarted only by the
- * view that owns it. That is deliberately blunt — the alternative is tracking
- * which of a dozen re-render paths should keep it alive, and a stray interval
- * repainting a canvas that is no longer on the page is the kind of leak that
- * shows up as a mystery later.
- */
-let patternIndex = 0;
-let patternPlaying = false;
-let patternTimer: ReturnType<typeof setInterval> | null = null;
-
-/** Milliseconds per frame. Slow enough to read the caption that goes with it. */
-const PATTERN_FRAME_MS = 700;
-
-function stopPatternPlayback(): void {
-  if (patternTimer !== null) {
-    clearInterval(patternTimer);
-    patternTimer = null;
-  }
-}
-
 function renderInspect(): void {
-  // Before anything is torn out from under it. See `patternTimer`.
-  stopPatternPlayback();
+  // Before anything is torn out from under them. The structured-light film
+  // used to keep its own clock and stop it here; it now plays from the page's
+  // `player`, which outlives every render, and only its repaint hooks go.
+  sequenceFilm = null;
+  sequenceCardFrame = null;
   inspectEl.replaceChildren();
   const frame = model?.projectorFrames[state.selected] ?? null;
   // Shown whenever a projector is the subject — either because the Projectors
@@ -5616,9 +6186,19 @@ function renderInspect(): void {
   // looking at the unlit back of it, which is the truth and reads as a fault.
   // The azimuth comes off the drawn uniforms rather than being recomputed, so
   // the link goes exactly where the marker is.
+  const raster = sequenceRaster();
   let caption: HTMLElement = el('span', {
     className: 'note tiny',
-    textContent: frame ? frame.caption : 'switched off',
+    // In pattern mode the worker renders no content frame for this card (see
+    // `projectorPreviewWidth`), so the one it kept would be naming a picture
+    // that is not the one below.
+    textContent: patternActive()
+      ? on
+        ? `P${state.selected + 1} — ${raster.resX} × ${raster.resY}`
+        : 'switched off'
+      : frame
+        ? frame.caption
+        : 'switched off',
   });
   // Offered whenever the selected projector lights the side of the ball you are
   // not looking at. It used to be gated on that projector being ISOLATED, which
@@ -5706,7 +6286,59 @@ function renderInspect(): void {
   }
   inspectEl.append(seg);
 
-  if (inspectView === 'frame') {
+  if (inspectView === 'frame' && patternActive()) {
+    // The calibration frame going down this cable, drawn on this thread from
+    // the pattern definition: the worker's frame is the compositor's output,
+    // and a calibration frame is not that. Greyed when the lamp is off, as the
+    // content frame is — the signal is there, the lamp is not.
+    const slot = state.selected;
+    const c = el('canvas', { className: on ? 'framepic' : 'framepic dark' });
+    const turn = el('p', { className: 'note' });
+    const paint = (): void => {
+      const { image, itsTurn } = patternFrameImage(slot, previewWidth);
+      paintFrame(c, image);
+      c.setAttribute('aria-label', fullSizeName(image.caption));
+      const at = sequenceNow();
+      const note = describeSequence(SEQUENCE_PLAN)[at.frame];
+      turn.textContent = itsTurn
+        ? `Its run: ${note.label}, frame ${at.frame + 1} of ${at.framesPerRun}.`
+        : `Black while P${at.slot + 1} has its run. The emitter sends one projector the ` +
+          'sequence at a time and the rest black, so each photograph holds one projector’s ' +
+          'light alone.';
+    };
+    opensLightbox(c, () => openSequenceLightbox(slot));
+    paint();
+    sequenceCardFrame = () => {
+      if (!c.isConnected) {
+        sequenceCardFrame = null;
+        return;
+      }
+      paint();
+    };
+    inspectEl.append(
+      c,
+      turn,
+      el('p', {
+        className: 'note',
+        textContent:
+          'A calibration frame goes out raw, in the projector’s own pixels: the compositor’s ' +
+          'warp and blend are computed FROM a calibration, so the frames that make one carry ' +
+          'neither. Moving the projector does not change this picture and neither does ' +
+          'recalibrating — what changes is where its light lands on the ball.',
+      }),
+      el('p', {
+        className: 'note tiny',
+        textContent: coarsePointer()
+          ? 'Tap the frame to see it full size.'
+          : 'Click the frame to see it full size.',
+      }),
+    );
+    if (!on) {
+      const off = el('p', { className: 'note', textContent: 'Currently switched off at the wall.' });
+      off.style.color = 'var(--warn)';
+      inspectEl.append(off);
+    }
+  } else if (inspectView === 'frame') {
     if (frame) {
       // Kept, greyed, when the projector is switched off: this is still exactly
       // the frame the compositor is generating for it — the signal is there, the
@@ -5717,7 +6349,8 @@ function renderInspect(): void {
       else paintFrame(c, frame);
       // The caption already opens with the projector id, so prefixing it printed
       // "P1 — P1 — 3840 × 2160".
-      c.addEventListener('click', () => openLightbox(frame, frame.caption, slot));
+      opensLightbox(c, () => openLightbox(frame, frame.caption, slot));
+      c.setAttribute('aria-label', fullSizeName(frame.caption));
       inspectEl.append(c);
       inspectEl.append(
         el('p', {
@@ -6221,23 +6854,26 @@ function renderInspect(): void {
   }
 
   if (inspectView === 'patterns') {
-    // The plan this view depicts. DEFAULT_PATTERN_PLAN rather than the plan a
-    // capture would compute for itself: `grayBitsForCamera` lowers the bit count
-    // when a strip would land inside a camera pixel, and it needs the capture
-    // geometry to do it. The SCHEME is exactly this either way, and the caption
-    // below names what moves the number rather than letting the view imply it
-    // is fixed.
-    const plan = DEFAULT_PATTERN_PLAN;
+    // The plan this view depicts, which is also the one the ball plays:
+    // DEFAULT_PATTERN_PLAN rather than the plan a capture would compute for
+    // itself. `grayBitsForCamera` lowers the bit count when a strip would land
+    // inside a camera pixel, and it needs the capture geometry to do it. The
+    // SCHEME is exactly this either way, and the caption below names what moves
+    // the number rather than letting the view imply it is fixed.
+    const plan = SEQUENCE_PLAN;
     const notes = describeSequence(plan);
     const specs = planFrames(plan);
-    if (patternIndex >= notes.length || patternIndex < 0) patternIndex = 0;
 
-    // The aspect is the projector's own when there is a frame to take it from.
-    // The RESOLUTION is not needed and is not guessed: `compileFrame` divides
-    // the coordinate by a stride that is itself the resolution over 2^bits, so
-    // the resolution cancels and the picture is the same at any raster. Passing
-    // the preview's own size says that out loud instead of inventing a 1920.
-    const aspect = frame && frame.height > 0 ? frame.width / frame.height : 16 / 10;
+    // The aspect is the projectors' own, off the control that sets their
+    // raster. The RESOLUTION is not needed and is not guessed: `compileFrame`
+    // divides the coordinate by a stride that is itself the resolution over
+    // 2^bits, so the resolution cancels and the picture is the same at any
+    // raster. Passing the preview's own size says that out loud instead of
+    // inventing a 1920. (It took the aspect off the worker's frame of this
+    // projector until the ball could show the sequence; that frame is not
+    // rendered while it does.)
+    const raster = sequenceRaster();
+    const aspect = raster.resY > 0 ? raster.resX / raster.resY : 16 / 10;
     const w = 288;
     const h = Math.max(1, Math.round(w / aspect));
     const canvas = el('canvas', { className: on ? 'framepic' : 'framepic dark' });
@@ -6253,13 +6889,28 @@ function renderInspect(): void {
     // beside it is prose, not a label, and nothing associates the two.
     scrub.setAttribute('aria-label', 'Frame of the structured-light sequence');
     const play = el('button', { className: 'linkish' });
+    const pace = el('button', {
+      className: 'linkish',
+      title:
+        'How long each frame stays up. Two seconds is the emitter’s own default, so a run is ' +
+        'about a minute; 0.7 s turns the binary search into motion. Nothing goes faster than ' +
+        'half a second a frame, because each Gray plane is followed by its inverse.',
+    });
+    const controls = el('div', { className: 'rowline' });
+    controls.append(play, pace);
 
+    // The page's one player, so this film and the ball can never disagree: the
+    // film shows the frame of whichever run is playing, and taking hold of it
+    // moves the ball to THIS projector's run at that frame.
     const paint = (): void => {
-      const note = notes[patternIndex];
-      const linear = sampleFrame(specs[patternIndex], plan, w, h, w, h);
+      const at = sequenceNow();
+      const note = notes[at.frame];
+      const linear = sampleFrame(specs[at.frame], plan, w, h, w, h);
       const ctx = canvas.getContext('2d');
       if (ctx !== null) ctx.putImageData(new ImageData(encodeToRgba(linear), w, h), 0, 0);
-      caption.textContent = `${patternIndex + 1} of ${notes.length} — ${note.label}`;
+      caption.textContent =
+        `${at.frame + 1} of ${notes.length} — ${note.label}` +
+        (patternActive() ? ` · on the ball in P${at.slot + 1}’s run` : '');
       // The picture is the content here, so it is labelled like the warp-mesh
       // diagram is rather than left as an unnamed canvas. Updated with the frame,
       // because a label fixed at "structured light" would go stale the moment
@@ -6267,46 +6918,51 @@ function renderInspect(): void {
       canvas.setAttribute('role', 'img');
       canvas.setAttribute('aria-label', `${note.label}. ${note.why}`);
       why.textContent = note.why;
-      scrub.value = String(patternIndex);
+      // The scrubber is the hand's own control, so it shows where the hand has
+      // put the sequence — a step the half-second floor is still holding back
+      // included — while every picture shows the frame on screen. Set to the
+      // frame on screen, a thumb dragged faster than the floor would be pulled
+      // back to it at every repaint.
+      const want = sequenceNow(player.target);
+      scrub.value = String(want.frame);
       // `aria-valuetext` rather than leaving the raw index to be read out: "17"
       // says nothing, and the frame's name is the whole content of the control.
-      scrub.setAttribute('aria-valuetext', `${patternIndex + 1} of ${notes.length}, ${note.label}`);
-      play.textContent = patternPlaying ? 'pause' : 'play the sequence';
+      scrub.setAttribute(
+        'aria-valuetext',
+        `${want.frame + 1} of ${notes.length}, ${notes[want.frame].label}`,
+      );
+      play.textContent = player.playing ? 'pause' : 'play the sequence';
+      pace.textContent =
+        player.dwellMs < SEQUENCE_DWELL_MS ? 'play at the emitter’s 2 s' : 'play brisk, 0.7 s';
     };
 
-    const start = (): void => {
-      stopPatternPlayback();
-      patternTimer = setInterval(() => {
-        patternIndex = (patternIndex + 1) % notes.length;
-        paint();
-      }, PATTERN_FRAME_MS);
+    play.addEventListener('click', () => player.toggle());
+    pace.addEventListener('click', () =>
+      setPace(player.dwellMs < SEQUENCE_DWELL_MS ? SEQUENCE_DWELL_MS : SEQUENCE_BRISK_MS),
+    );
+    // Scrubbing is taking hold of it, so it stops advancing under the hand.
+    scrub.addEventListener('input', () =>
+      player.stepTo(state.selected * notes.length + Number(scrub.value)),
+    );
+    sequenceFilm = () => {
+      if (!canvas.isConnected) {
+        sequenceFilm = null;
+        return;
+      }
+      paint();
     };
-
-    play.addEventListener('click', () => {
-      patternPlaying = !patternPlaying;
-      if (patternPlaying) start();
-      else stopPatternPlayback();
-      paint();
-    });
-    scrub.addEventListener('input', () => {
-      // Scrubbing is taking hold of it, so it stops advancing under the hand.
-      patternPlaying = false;
-      stopPatternPlayback();
-      patternIndex = Number(scrub.value);
-      paint();
-    });
 
     // Picture, then what it is, then the controls, and only then the paragraph
     // explaining it. The first arrangement put the play button after the prose,
     // which on a panel this narrow is below the fold: the one control the view
     // exists for was the one thing a reader had to scroll to find.
     //
-    // Appended bare, as the warp view's save buttons are. The first version
-    // wrapped it in a `div.seg` — the class the TAB GROUP uses — which made
+    // In a `.rowline` beside the pace, and NOT in a `div.seg`: the first version
+    // wrapped the play button in one — the class the TAB GROUP uses — which made
     // `#inspect .seg button` select the tabs and this button together. Nothing
     // reads that selector by index today, and the point is that nothing should
     // have to know not to.
-    inspectEl.append(canvas, caption, play, scrub, why);
+    inspectEl.append(canvas, caption, controls, scrub, why);
 
     const info = strideInfo(plan, mesh?.resX ?? 0, mesh?.resY ?? 0);
     inspectEl.append(
@@ -6345,9 +7001,7 @@ function renderInspect(): void {
     );
 
     paint();
-    if (patternPlaying) start();
   }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -7168,7 +7822,25 @@ function parityLine(): HTMLElement {
     );
     return wrap;
   }
-  const line = el('p', { className: 'note', textContent: parity.summary });
+  // A verdict on a calibration frame says which one. Playback moves on without
+  // anybody touching a control, so without the name a reader would take a
+  // verdict on frame 5 for one about whatever is on the ball now.
+  const judged = parityJudged;
+  // The verdict as numbers, and which frame it is about, for
+  // `tools/smoke-app.ts` — which judges calibration frames one at a time and
+  // must not mistake a verdict on the last one for a verdict on this one.
+  wrap.dataset.judgedStep = judged === null ? '' : String(judged.step);
+  wrap.dataset.worst = String(parity.delta.maxAbs);
+  wrap.dataset.over = String(parity.delta.fractionOfLitOverTolerance);
+  wrap.dataset.lit = String(parity.delta.litPixelCount);
+  if (judged !== null) {
+    wrap.append(
+      el('p', { className: 'note tiny num', textContent: `Judged on ${frameName(judged.step)}.` }),
+    );
+  }
+  const summary =
+    judged !== null && parity.blind ? blindFrameSentence(judged.request, parity) : parity.summary;
+  const line = el('p', { className: 'note', textContent: summary });
   line.style.color = parity.blind ? 'var(--warn)' : parity.pass ? 'var(--good)' : 'var(--bad)';
   wrap.append(line);
   wrap.append(
@@ -7191,10 +7863,45 @@ function parityLine(): HTMLElement {
       textContent:
         'The floor and the graticule are off on both sides for this comparison — the model’s ' +
         'two-calibration renderer draws no floor, and the graticule measures the driver’s ' +
-        'trigonometry rather than this model. Both are what this number does not cover.',
+        'trigonometry rather than this model. Both are what this number does not cover.' +
+        (patternActive()
+          ? ' Nor is a calibration frame\u2019s spill onto the floor and the room: the emitter ' +
+            'paints the whole raster, so the stripes land there too, and only the ball is compared.'
+          : ''),
     }),
   );
   return wrap;
+}
+
+/**
+ * Why a verdict on a calibration frame has nothing to judge, in the frame's terms.
+ *
+ * `judgeParity`'s own sentence says "move closer", which is right for content and
+ * wrong for a frame that is dark by design: stepping in does nothing for an all
+ * black frame, and a run played to a projector switched off at the wall lights
+ * nothing anywhere.
+ */
+function blindFrameSentence(request: PatternRequest, verdict: ParityVerdict): string {
+  const kind = planFrames(request.plan)[request.frame]?.kind;
+  if (kind === 'black') {
+    return (
+      'A dark frame has nothing to compare: every projector is sent black, and the black floor ' +
+      'they leak is below what counts as lit. The check has something to judge again on the ' +
+      'next lit frame.'
+    );
+  }
+  if (request.mask === 0) {
+    return (
+      'This run is going to a projector switched off at the wall, so the ball is dark and there ' +
+      'is nothing to compare. The check has something to judge again on the next lit run.'
+    );
+  }
+  return (
+    `Too little of the ball is lit to compare — ${verdict.delta.litPixelCount} lit pixels, ` +
+    `under the ${MIN_LIT_PIXELS} this needs. One projector lights about a quarter of the ball, ` +
+    'and a Gray plane or a phase step leaves part of that dark; from closer in ("Standing at ' +
+    'it") there is enough.'
+  );
 }
 
 const MULT_COLORS = ['#2a2f38', '#2a61a0', '#33ad6b', '#e62419'];
@@ -8303,6 +9010,7 @@ function boot(): void {
   watchViewport();
   watchSheets();
   installPointer();
+  installSequenceKeys();
   installDropTarget();
   void loadMarble();
   helpEl.addEventListener('click', (e) => {

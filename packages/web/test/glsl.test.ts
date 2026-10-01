@@ -46,6 +46,9 @@ import { coverageAndWeights } from '../../sim/src/coverage.ts';
 import { BOULDER_PRESET } from '../src/settings.ts';
 import { CONTENT_DECODE_GAMMA } from '../src/rigs.ts';
 import { buildViewer, buildWorld } from '../src/rigs.ts';
+import { patternAtlas } from '../src/patternfilm.ts';
+import type { PatternDisplay } from '../src/uniforms.ts';
+import { DEFAULT_PATTERN_PLAN } from '../../bench/src/patterns.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const GL_SOURCE = fs.readFileSync(path.join(HERE, '..', 'web', 'gl.ts'), 'utf8');
@@ -1301,4 +1304,188 @@ test('the mesh textures are given storage before anything is drawn', () => {
       `unit ${unit} must carry the ${name} texture`,
     );
   }
+});
+
+// ---------------------------------------------------------------------------
+// A frame of the calibration sequence in place of content
+// ---------------------------------------------------------------------------
+
+/**
+ * Names the content trace consults and a calibration frame must not.
+ *
+ * `uC` is every compositor-rig uniform at once. The emitter writes the frame
+ * straight into the raster, so any of these in the pattern path would be the
+ * warp, the blend, the mask or the map leaking into a picture that has none.
+ */
+const CONTENT_ONLY = [
+  'uC',
+  'rayFrom',
+  'contentWeight',
+  'polarMask',
+  'contentAt',
+  'sampleEquirect',
+  'uEquirect',
+  'uGrid',
+];
+
+test('a calibration frame is read off the physical raster and asks the content rig nothing', () => {
+  const chunk = FRAGMENT_CHUNKS.find((c) => c.name === 'pattern');
+  assert.ok(chunk, 'the shader has no pattern chunk');
+  for (const name of CONTENT_ONLY) {
+    assert.ok(!chunk.source.includes(name), `the pattern chunk reads ${name}`);
+  }
+  // Every value comes out of the table, which is compileFrame; the shader
+  // restates no Gray code and computes no fringe.
+  const target = chunk.source.slice(
+    chunk.source.indexOf('float patternTarget('),
+    chunk.source.indexOf('vec3 patternSignal('),
+  );
+  const returns = [...target.matchAll(/return ([^;]+);/g)].map((m) => m[1]);
+  assert.equal(returns.length, 2);
+  for (const r of returns) {
+    assert.ok(r.startsWith('packedTexel(uPatternAtlas, uPatternRow'), `patternTarget returns ${r}`);
+  }
+  // At the PHYSICAL projector's raster, clamped into it, weight one, and only
+  // for the projectors the mask names.
+  assert.ok(chunk.source.includes('patternTarget(int(i0.x) + du, int(i0.y) + dv, uRaster[i])'));
+  assert.ok(chunk.source.includes('clamp(across ? col : row, 0, res - 1)'));
+  assert.ok(chunk.source.includes('s += w * blendedSignal(vec3(t), 1.0);'));
+  assert.ok(chunk.source.includes('if (((uPatternMask >> i) & 1) == 0) return vec3(0.0);'));
+
+  // In the trace, the branch that takes it reads nothing of the content rig
+  // either, and it comes BEFORE the content reconstruction rather than after.
+  const trace = FRAGMENT_CHUNKS.find((c) => c.name === 'trace');
+  assert.ok(trace);
+  const open = trace.source.indexOf('if (uPatternOn == 1) {');
+  const orElse = trace.source.indexOf('} else {', open);
+  assert.ok(open > 0 && orElse > open, 'shadeTwoRig has no calibration-frame branch');
+  const branch = trace.source.slice(open, orElse);
+  assert.ok(branch.includes('signal = patternSignal(i, px);'));
+  for (const name of CONTENT_ONLY) {
+    assert.ok(!branch.includes(name), `the calibration branch of shadeTwoRig reads ${name}`);
+  }
+  assert.ok(
+    orElse < trace.source.indexOf('rayFrom(uCRot[i], uCIntr[i], uCRaster[i].zw'),
+    'the content reconstruction must be the ELSE of the calibration branch',
+  );
+  // The floor and the room get the frame too: the emitter paints the whole
+  // raster, not the silhouette.
+  assert.ok(trace.source.includes('emittedRadianceRgb(patternSignal(i, px), i)'));
+});
+
+test('the sequence texture is bound where it is used, with a placeholder, and rebuilt with the context', () => {
+  // Same source-level reasoning as the mesh test above: gl.ts needs DOM types.
+  assert.ok(/export const PATTERN_UNIT = 4;/.test(GL_SOURCE), 'the table lives on unit 4');
+  // The four samplers before it keep their units; a fifth must not share one.
+  const units = [['uEquirect', 0], ['uBvhNodes', 1], ['uBvhTris', 2], ['uCBvhField', 3]] as const;
+  for (const [name, unit] of units) {
+    assert.ok(
+      GL_SOURCE.includes(`gl.uniform1i(loc('${name}'), ${unit});`),
+      `${name} is not on unit ${unit}`,
+    );
+  }
+  const setUniforms = GL_SOURCE.slice(
+    GL_SOURCE.indexOf('export function setUniforms('),
+    GL_SOURCE.indexOf('function bindContent('),
+  );
+  assert.ok(
+    setUniforms.includes('uploadPatternAtlas(h, u.patternAtlas);'),
+    'setUniforms never binds the table',
+  );
+  assert.ok(setUniforms.includes("gl.uniform1i(loc('uPatternAtlas'), PATTERN_UNIT);"));
+  const upload = GL_SOURCE.slice(
+    GL_SOURCE.indexOf('export function uploadPatternAtlas('),
+    GL_SOURCE.indexOf('function bindPattern('),
+  );
+  const bind = upload.indexOf('bindPattern(h);');
+  const guard = upload.indexOf('if (h.patternUploaded === atlas) return;');
+  assert.ok(bind >= 0 && guard > bind, 'the binding must not be skipped with the upload');
+  assert.ok(
+    /gl\.R32F, 1, 1, 0, gl\.RED, gl\.FLOAT, new Float32Array\(1\)/.test(upload),
+    'no 1×1 placeholder',
+  );
+  assert.ok(
+    upload.includes('gl.NEAREST') && !upload.includes('gl.LINEAR'),
+    'a filtered fetch would mix two pixels of a Gray plane',
+  );
+  // A context lost and rebuilt starts the record at undefined, which is what
+  // sends the table up again; main.ts rebuilds it rather than reusing the dead one.
+  const create = GL_SOURCE.slice(
+    GL_SOURCE.indexOf('export function createDisplayGl('),
+    GL_SOURCE.indexOf('export function ensureVideoTarget('),
+  );
+  assert.ok(create.includes('patternUploaded: undefined'), 'patternUploaded must start as undefined');
+  const restored = MAIN_SOURCE.slice(MAIN_SOURCE.indexOf("addEventListener('webglcontextrestored'"));
+  assert.ok(/gl = createDisplayGl\(canvas\)/.test(restored.slice(0, 300)));
+});
+
+test('the display uniforms carry a calibration frame, refuse one tabulated for another raster, and default to content', () => {
+  const world = buildWorld(BOULDER_PRESET);
+  const physical = prepareRig(world.truthRig);
+  const content = prepareRig(world.compositorRig);
+  const camera = buildViewer(BOULDER_PRESET, 64, 48);
+  const plain = buildDisplayUniforms(physical, content, world.scene, camera);
+  assert.equal(plain.patternOn, 0);
+  assert.equal(plain.patternAtlas, null, 'content leaves the placeholder bound');
+  assert.equal(plain.patternMask, 0);
+
+  const it = world.truthRig.projectors[0].intrinsics;
+  const atlas = patternAtlas(DEFAULT_PATTERN_PLAN, it.resX, it.resY);
+  const u = buildDisplayUniforms(physical, content, world.scene, camera, {
+    pattern: { atlas, frame: 7, mask: 0b0100 },
+  });
+  assert.equal(u.patternOn, 1);
+  assert.equal(u.patternAtlas, atlas);
+  assert.equal(u.patternRow, atlas.rows[7].offset);
+  assert.equal(u.patternAxis, atlas.rows[7].axis);
+  assert.equal(u.patternMask, 0b0100);
+
+  const other = patternAtlas(DEFAULT_PATTERN_PLAN, 1920, 1080);
+  const drawing = (pattern: PatternDisplay) => () =>
+    buildDisplayUniforms(physical, content, world.scene, camera, { pattern });
+  assert.throws(drawing({ atlas: other, frame: 0, mask: 1 }), /tabulated for a 1920 × 1080 raster/);
+  assert.throws(drawing({ atlas, frame: 34, mask: 1 }), /not one of the 34/);
+  assert.throws(drawing({ atlas, frame: 0, mask: 1 << MAX_PROJECTORS }), /no room for/);
+});
+
+test('the parity check draws the calibration frame it asked the worker for, not the one on screen now', () => {
+  // The sequence moves with nobody touching a control, so a reply lands frames
+  // after it was asked for. Drawn at the live step, the GPU half would be a
+  // different picture and the verdict a disagreement belonging to neither
+  // renderer — `parity.test.ts` measures exactly that. So the request records
+  // the frame beside the view key, the worker echoes it, and the GPU half is
+  // drawn from the record.
+  const post = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function postModel('),
+    MAIN_SOURCE.indexOf('modelWorker.onmessage'),
+  );
+  assert.ok(post.includes('pattern: patternRequest(),'), 'the request does not name the frame');
+  const key = post.indexOf('parityRequestKey = viewKey();');
+  const freeze = post.indexOf(
+    'parityAsked = req.pattern === null ? null : { request: req.pattern, step: player.step };',
+  );
+  assert.ok(key > 0 && freeze > key, 'the asked frame must be recorded with its view key');
+
+  const check = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function checkParity('),
+    MAIN_SOURCE.indexOf('function frame('),
+  );
+  assert.ok(
+    check.includes('JSON.stringify(cpuPattern) !== JSON.stringify(asked?.request ?? null)'),
+    'a reply drawn with another frame must be refused, not judged',
+  );
+  assert.ok(check.includes('frame: asked.request.frame, mask: asked.request.mask'));
+  assert.ok(!check.includes('patternDisplay('), 'the GPU half must not read the live frame');
+  assert.ok(check.indexOf('parityJudged = asked;') > check.indexOf('judgeParity('));
+  assert.ok(
+    MAIN_SOURCE.includes(
+      'checkParity(msg.parityImage, msg.parityMs, msg.parityMeshId, msg.parityPattern)',
+    ),
+  );
+  // And the live frame is what the picture on screen draws.
+  const draw = MAIN_SOURCE.slice(
+    MAIN_SOURCE.indexOf('function draw('),
+    MAIN_SOURCE.indexOf('function renderCameraShot('),
+  );
+  assert.ok(draw.includes('pattern: patternDisplay(model.slots),'));
 });
