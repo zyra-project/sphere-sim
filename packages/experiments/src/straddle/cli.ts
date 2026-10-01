@@ -3,23 +3,34 @@
 
 /**
  * `npm run experiment10` — what a photograph taken across a pattern change
- * costs a calibration, with today's page.
+ * costs a calibration: read by a counterfactual reader, and by the page's own.
  *
  * Writes `experiments/experiment-10.json`. The spec budgeted three hours in one
- * process; the unit costs measured while this was built (a default rig 1.5 s to
- * bank, a noisy run 0.25 s, a crossing scan with its twelve pair scans 1.8 s, a
- * solve about 10 s) put it nearer four, most of it the gate stage's scans and
- * the solves. Once the first four stages are on disk, `--stage pose`,
- * `--stage rescore` and `--stage lateness` can run side by side, then
- * `--stage assemble`; the re-scoring, about an hour and a half, is then the
- * longest of the three.
+ * process, and the unit costs measured while this was built (a default rig 1.5 s
+ * to bank, a noisy run 0.25 s, a crossing scan with its twelve pair scans 1.8 s,
+ * a solve about 10 s) put it nearer four. Both were short. Summed stage by
+ * stage, which is what one process would take, the third full run, the
+ * counterfactual reader alone, came to about six and a half hours, and the
+ * fourth, whose page column also hands every straddled position to the page's
+ * own reader, to about eight (29982 s). Run as four lanes, the third took 2 h
+ * 26 min from start to file, and the fourth 4 h 10 min, 28 min of that a
+ * container restart. None of these times is in a results file: they are from
+ * each run's own lane logs, which are not committed. Once `q0` and `bank` are
+ * on disk the other five can run side by side — `pose`, `rescore` and
+ * `lateness` together, since they share the solve file — then `--stage
+ * assemble`. On four CPUs the re-scoring, about three and a half hours, is the
+ * longest lane (lateness about two and a half, pose about an hour, gate about
+ * forty minutes, decode about seventeen minutes after pose). The restart
+ * stopped the two lanes still running, re-scoring and lateness; relaunched,
+ * each resumed from its checkpoint.
  *
  *   node .../cli.ts                   every stage in order, resuming, then assemble
  *   node .../cli.ts --stage gate      one stage, resuming from its checkpoint
  *   node .../cli.ts --stage assemble  write the file from finished checkpoints only
  *   node .../cli.ts --quick           the plumbing (or EXP10_QUICK=1): 4 rigs at the
  *                                     reduced preset, 300 trials, no solves; about
- *                                     ten minutes, not the spec's five
+ *                                     half an hour in one process, a quarter of an
+ *                                     hour as four lanes
  *   node .../cli.ts --smoke           the solve path on one rig, a handful of solves
  *
  * Neither `--quick` nor `--smoke` ever writes the committed file. They write
@@ -28,10 +39,12 @@
  *
  * ## The stages, and what each is for
  *
- *   q0        Today's page, as shipped: clean positions, rendered with noise,
- *             encoded to 8-bit sRGB and handed to `summarisePhoto` and
- *             `indexPhotographs`. Then Q0b: the folder shapes the card itself
- *             produces (extra photographs at either end, a re-shot run).
+ *   q0        The page's reader, as shipped: clean positions, rendered with
+ *             noise, encoded to 8-bit sRGB and handed to `summarisePhoto` and
+ *             `indexPhotographs`, and beside it the reader it replaced, on the
+ *             same summaries. Then Q0b: the folder shapes the card itself
+ *             produces (extra photographs at either end, a re-shot run), read
+ *             by the counterfactual reader.
  *   bank      Every rig's clean frames once, and each camera's TWIN — the clean
  *             position through the renderer's own sensor and noise stream — whose
  *             verdicts decide what a later refusal can be blamed on.
@@ -70,12 +83,14 @@
  * ## What this does NOT establish
  *
  * Everything is bench photometry — flat albedo, constant ambient, Gaussian shot
- * noise, one grey channel — and every loud/silent split is the verdict of a
- * COUNTERFACTUAL reader: the page's own complement check handed exact lit
- * fractions, because today's page refuses clean bench positions before the
- * check runs (the q0 stage measures that). The emitter is EXPERIMENT-9's
- * perfect timer except where the lateness stage says otherwise, and the
- * lateness it sweeps was measured headless, not on a display machine.
+ * noise, one grey channel. Each cell's loud/silent split is reported twice: by
+ * a COUNTERFACTUAL reader, the complement check the page's former reader ended
+ * in, handed exact lit fractions (that reader refused every clean bench
+ * position before its check ran, which the q0 stage keeps on record); and by
+ * the page's own reader on the same photographs, the page column, where Q0
+ * finds it places clean positions. The emitter is EXPERIMENT-9's perfect timer
+ * except where the lateness stage says otherwise, and the lateness it sweeps
+ * was measured headless, not on a display machine.
  */
 
 import * as fs from 'node:fs';
@@ -99,6 +114,13 @@ import {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const WORK = path.join(ROOT, 'experiments', '.experiment-10-partial');
 const OUT = path.join(ROOT, 'experiments', 'experiment-10.json');
+/**
+ * The acceptance sweep's committed record of the page's reader on every clean
+ * position (`tools/reader-acceptance.ts`), which the identity I-page-twin holds
+ * the page twins to. Handed to the assembly by path, like every other file it
+ * reads that is not a checkpoint.
+ */
+const READER_ACCEPTANCE = path.join(ROOT, 'experiments', 'reader-acceptance.json');
 
 /**
  * Every stage in order, each resuming from its checkpoint, then the document.
@@ -111,7 +133,7 @@ export function runExperiment10(
 ): Record<string, unknown> | null {
   runStages(ctx, only);
   if (only !== null && only !== 'assemble') return null;
-  return assemble(ctx);
+  return assemble(ctx, { readerAcceptance: READER_ACCEPTANCE });
 }
 
 /**

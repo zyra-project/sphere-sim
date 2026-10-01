@@ -43,10 +43,14 @@ A straddle is worse than a drop for one specific reason:
 > [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
 
 > **2026-09-29: “today's page”, in every note on this page, is the page's reader
-> when EXPERIMENT-10 ran.** It has since been replaced, and on the bench's rendered
-> photographs the new reader places every clean camera position the old one
-> refused. What it makes of a straddled capture is not measured yet; see the dated
-> notes in [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
+> when EXPERIMENT-10 first ran.** It has since been replaced, and on the bench's
+> rendered photographs the new reader places every clean camera position the old
+> one refused.
+
+> **2026-09-30: EXPERIMENT-10's fourth run put this page's straddled captures
+> through the new reader.** At the page's defaults with an un-aimed start it
+> refuses 626 of the 728 touched loudly and passes 99 silently, and none of its
+> refusals says a straddle happened. See [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
 
 `docs/EXPERIMENT-8.md` measured Phase 2's blind spot to be a cancelling
 drop-and-duplicate inside one run. This is a second way into the same blind spot,
@@ -329,14 +333,17 @@ operator who starts the camera at no particular phase ruins **more than one
 capture in three** at the page's default settings — and cannot tell. Four in
 five of those lose a whole camera position, every frame of it.
 
-> **Corrected by EXPERIMENT-10: most of them could tell, given a reader the page
-> does not have yet.** Replaying these captures shot for shot, a reader whose
+> **Corrected by EXPERIMENT-10: most of them could tell, given a reader that
+> places runs, which the page did not have when EXPERIMENT-10 first ran.**
+> Replaying these captures shot for shot, a reader whose
 > bookends can place runs refuses 627 of the 728 touched loudly and passes 98
 > silently, 43 of which break the 1 mm seam gate. But where it refuses a
 > run on its own, the message mostly blames a dropped and a duplicated frame; and
 > today's page refuses every clean bench position before that check runs, so on
 > today's page a straddled capture would be refused like any other, with nothing to
-> say why. See [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
+> say why. Through the reader that has since replaced it, the same captures come
+> out 626 loud and 99 silent (the note dated 2026-09-30 near the top of this
+> page). See [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
 
 Both corrections came from review, and both were the same mistake: a number
 sitting in the model as a constant, describing a procedure nobody had checked it

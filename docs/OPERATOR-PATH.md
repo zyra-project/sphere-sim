@@ -399,7 +399,8 @@ than open-ended. What remains is the room: every number above is an
 ideal-classification, ideal-fingerprint baseline from an experiment that renders
 nothing, and neither threshold this phase leans on has been priced on a real
 photograph. **On the bench's rendered photographs of clean positions it now is
-(2026-09-29, the note that closes this phase); on a real photograph, not yet.**
+(the note dated 2026-09-29 near the end of this phase); on a real photograph, not
+yet.**
 
 **It is wired into the page now**, which it was not when the mechanisms landed.
 The emitter page takes a whole camera position — every projector's run back to
@@ -483,10 +484,20 @@ cameras from 0; the correction below is about that reader.)
 > re-shoot from a camera turned half a degree was still matched in 139 of 140
 > runs, and from one turned five degrees in 67 of 140, so the tripod staying put,
 > not the check, keeps a moved camera out of a position; and the cancelling
-> faults the complement check cannot see. What it does with a straddled capture
-> is not measured: EXPERIMENT-10's loud and silent counts are still the
-> counterfactual's, and putting those captures through this reader is the
-> rescoring's page column, which a re-run of EXPERIMENT-10 would now run.
+> faults the complement check cannot see.
+
+> **2026-09-30: what it does with a straddled capture is measured, on the bench.**
+> EXPERIMENT-10's fourth run handed it every straddled position of EXPERIMENT-9's
+> replay through its page column (`docs/EXPERIMENT-10.md`). At the page's defaults
+> with an un-aimed start it refuses 626 of the 728 touched captures and passes 99
+> silently, about as the counterfactual reader does, and its refusals never say a
+> straddle happened: there, most say no projector run could be found in the folder.
+> Under a late emitter the photographs it files under the wrong step are near-ties,
+> each showing between 0.500 and 0.585 of the step it is not filed under. Under a
+> hand-pressed remote it misfiled 21 photographs in 20 positions: 8 are near-ties
+> too, but 13, in 12 positions, hold 0.6 or more of the step they are not filed
+> under, and one all of it. So it placed runs holding a photograph of another step,
+> which the reader was built never to do and is a defect to fix.
 
 ## Phase 3 — Let the solver see a real photograph. **REACHABLE; STILL NO REAL PHOTOGRAPH**
 
@@ -753,8 +764,10 @@ reached without anybody deleting a file.
 > [`docs/EXPERIMENT-10.md`](EXPERIMENT-10.md).
 
 > **2026-09-29: the page's reader has since been replaced**, and places every
-> clean bench position (Phase 2). What it makes of a straddled one is not
-> measured yet.
+> clean bench position (Phase 2).
+
+> **2026-09-30:** what it makes of a straddled one, EXPERIMENT-10's fourth run has
+> since measured (below).
 
 **The first version of that experiment got the answer wrong, and the correction
 is the finding.** It swept clock drift, found almost nothing, and concluded that
@@ -800,14 +813,15 @@ step, so a shutter tripped on it opens a reaction time later, in the roomiest
 part of the dwell. That was never documented as load-bearing and the field card
 does not mention it.
 
-**What a straddle costs is now measured, against a reader the page does not have
-yet.** EXPERIMENT-10 (`docs/EXPERIMENT-10.md`) renders EXPERIMENT-9's photographs
-through the bench and hands them to the page's own complement check and decoder.
-Today's page refuses every clean bench position before its complement check runs,
-so what follows is that check's verdict given bookends that can place runs. With a
+**What a straddle costs is now measured, by a counterfactual reader and by the
+page's own.** EXPERIMENT-10 (`docs/EXPERIMENT-10.md`) renders EXPERIMENT-9's
+photographs through the bench and hands them to the page's own complement check and
+decoder. The reader the page had when EXPERIMENT-10 was designed refused every
+clean bench position before its complement check ran, so what follows is that
+check's verdict given bookends that can place runs: the counterfactual reader. With a
 perfect timer and an un-aimed start, 728 of 2000 captures are touched and 627 of them
 refused loudly: 295 run by run, most of them told that a frame was dropped and
-another duplicated and asked to re-shoot one projector — a folder the page then
+another duplicated and asked to re-shoot one projector — a folder that reader then
 refuses whole — and 332 as whole positions, whose re-shoot it can read. 98 pass
 silently, and 61 of the touched captures end past the seam gate. The
 aimed start touches none at a perfect timer, but it protects only while the emitter
@@ -828,15 +842,16 @@ lateness come from a headless browser — 7.5 ms per step at design time, and ab
 _Policy P, the counterfactual reader. The aimed start protects while the emitter runs less than about 3.50–3.70 ms late per step (derived); 1% of aimed captures are touched from 3.6 ms (swept). The emitter’s lateness has been measured only headless: a design-time 7.5 ms per step, and about 9.3 ms armed with the tick on._
 <!-- /generated -->
 
-> **2026-09-29: still the counterfactual's table, and the page's reader has
-> changed.** The page now places the clean bench positions and reads a re-shot
-> run added to a position's folder (Phase 2), so a re-shoot of one projector is no
-> longer a folder it refuses whole. After a straddle it is still the wrong remedy:
-> a straddle smears the whole position, each run crosses the check at its own
-> smear, and the runs that passed can carry the same smear with nothing said — so
-> the field card says to re-shoot the whole position, aimed. What the page's own
-> reader makes of these captures is the rescoring's page column, which a re-run of
-> EXPERIMENT-10 would now run; nothing here says what it will show.
+The table is the counterfactual's. The page's own reader, through which
+EXPERIMENT-10's fourth run put the same captures, refuses and passes them about as
+often: at a perfect timer with an un-aimed start, 626 of the 728 touched loudly and
+99 silently, and in every row its loud and silent counts are within 15 captures of
+the counterfactual's. It reads a re-shot run added to a position's folder (Phase 2),
+so a re-shoot of one projector is no longer a folder it refuses whole. After a
+straddle it is still the wrong remedy: a straddle smears the whole position, each
+run crosses the check at its own smear, and the runs that passed can carry the same
+smear with nothing said — so the field card says to re-shoot the whole position,
+aimed.
 
 ### What that does to this phase
 

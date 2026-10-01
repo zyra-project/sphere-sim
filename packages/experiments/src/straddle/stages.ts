@@ -15,7 +15,7 @@
  * A checkpoint is a measurement taken by one build against one design, so it
  * carries a fingerprint of the design constants and of every source file that
  * decides what it holds, and a mismatch refuses to resume (see
- * {@link codeFingerprint}). The full run is about four hours of measurement.
+ * {@link codeFingerprint}). The full run is hours of measurement.
  * While the assembly lived in the same file as the stages, the fingerprint
  * covered it too. So an edit to a document field, to what a table needs or to
  * the verdict's wording, made after that run had started, turned every
@@ -84,13 +84,16 @@ import {
   type FrameFingerprint,
   type IndexingResult,
 } from '../../../solver/src/indexing.ts';
-import { manifestFrameRoles } from '../../../web/src/manifest.ts';
+import { manifestExpectedSequence, manifestFrameRoles, type CaptureManifest } from '../../../web/src/manifest.ts';
 import {
+  CLIPPING_WORTH_SAYING,
   describeIndexing,
   finishCapture,
   indexPhotographs,
   readRun,
   summarisePhoto,
+  type IndexedCapture,
+  type IndexedRun,
   type PhotoSummary,
 } from '../../../web/src/readback.ts';
 import {
@@ -167,10 +170,12 @@ import {
   quarterMasses,
   reconcileShots,
   runCrossing,
+  runFiling,
   runPlaced,
   runVerdicts,
   straddleForCamera,
   u0Crossing,
+  type Misfile,
   type Photo,
   type PositionCategory,
   type RunOutcome10,
@@ -195,7 +200,15 @@ import {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 
-export const CHECKPOINT_SCHEMA = 'sphere-sim/experiment-10-checkpoint@1';
+/**
+ * The shape a checkpoint's units have. @2: a scored position's `page` is a
+ * {@link PagePosition}, the page's whole reading of it, where @1 kept the
+ * projectors placed and the problems alone. @3: a page reading lists each
+ * photograph its placed runs misfile, with the step it shows and by what share,
+ * and H8's hook records keep both of the page's readings whole, where @2 kept a
+ * verdict of each.
+ */
+export const CHECKPOINT_SCHEMA = 'sphere-sim/experiment-10-checkpoint@3';
 
 export const STAGES = [
   'q0',
@@ -374,8 +387,8 @@ export const QUICK_PLAN: Exp10Plan = {
 /**
  * `--smoke`: the solve path, which `--quick` never touches, on one designed
  * rig with one level of each pose arm, one re-shoot, and the first few solved
- * captures of the headline and lateness cells. For finding out that a
- * three-hour run would crash at its first solve before it has spent two hours
+ * captures of the headline and lateness cells. For finding out that a run of
+ * several hours would crash at its first solve before it has spent hours
  * getting there.
  */
 export const SMOKE_PLAN: Exp10Plan = {
@@ -870,6 +883,24 @@ function runPrints(images: readonly LinearImage[], projector: number): FrameFing
 }
 
 /**
+ * One run's frames as the page reads a folder of them: each encoded to 8-bit
+ * sRGB as a camera file would carry it and summarised as the folder's
+ * photograph `34·projector + f`, under the name the page would show.
+ */
+function runSummaries(images: readonly LinearImage[], projector: number): PhotoSummary[] {
+  return images.map((img, f) => {
+    const j = projector * FRAMES_PER_RUN + f;
+    return summarisePhoto(
+      encodeSrgb8(img, ENCODE_FULL_SCALE),
+      j,
+      photoName(j),
+      TRANSFER,
+      FINGERPRINT_BLOCKS,
+    );
+  });
+}
+
+/**
  * One run through the page's own read path: each frame encoded to 8-bit sRGB
  * as a camera file would carry it, then `readRun` — the page's ingest, its
  * assembler with the manifest's roles, and `decodeCapture` with its defaults.
@@ -952,6 +983,14 @@ export interface TwinCamera {
    */
   worthUsable: boolean;
   worthRefusal: string | null;
+  /**
+   * The page twin: the page's own reader on the same clean frames, whole, as
+   * the page column reads a straddled position ({@link pagePath}). A run the
+   * page column counts against a straddle is one this places, as the
+   * counterfactual's are the ones `placedContent` holds. Optional only so a
+   * twin written out by hand, as the tests write them, still stands for one.
+   */
+  page?: PagePosition;
 }
 
 export function twinStatus(t: TwinCamera): TwinStatus[] {
@@ -965,7 +1004,8 @@ export function twinStatus(t: TwinCamera): TwinStatus[] {
 
 /**
  * One camera's twin: the clean position through the fast path, fingerprinted,
- * checked on both footings, and read by the page run by run.
+ * checked on both footings, read by the page run by run, and read by the page
+ * whole, as a folder (the page twin, {@link TwinCamera.page}).
  *
  * The noisy fingerprints are handed back too, because the re-scoring needs them
  * for every run a straddle did not touch: those frames are the twin's, draw for
@@ -976,10 +1016,12 @@ export function computeTwin(
   c: number,
 ): { twin: TwinCamera; prints: FrameFingerprint[] } {
   const prints: FrameFingerprint[] = [];
+  const summaries: PhotoSummary[] = [];
   const reads: ReturnType<typeof readRun>[] = [];
   for (let p = 0; p < PROJECTORS; p++) {
     const images = fastRun(bank, c, p, CLEAN);
     prints.push(...runPrints(images, p));
+    summaries.push(...runSummaries(images, p));
     reads.push(pageRead(c, p, images));
   }
   const clean = positionFingerprints(bank, c, CLEAN);
@@ -1034,32 +1076,54 @@ export function computeTwin(
       runs,
       worthUsable: worth.ok ? worth.worth.usable : false,
       worthRefusal: worth.ok ? worth.worth.refusal : worth.refusal,
+      page: pageTwinOf(summaries),
     },
     prints,
   };
 }
 
+/** The page's reading of a clean position's 136 summaries: what a page twin records. */
+function pageTwinOf(summaries: readonly PhotoSummary[]): PagePosition {
+  return pageRecord(() => indexPhotographs(summaries, MANIFEST), CLEAN);
+}
+
 /**
  * Everything one rig contributes to a stage, built once while the rig is held:
  * the bank, its twins from the BANK checkpoint, and the twins' noisy
- * fingerprints and page decodes as the stage asks for them.
+ * fingerprints, page summaries and page decodes as the stage asks for them.
+ *
+ * Every cache is here and nowhere at module level, so a stage computes the
+ * same numbers in a process that has run others before it as in a fresh one
+ * (T24 runs the reduced design in both and compares the documents).
  */
 export interface RigContext {
   unit: string;
   bank: RigBank;
   twins: Map<number, TwinCamera>;
   prints: Map<number, FrameFingerprint[]>;
+  summaries: Map<number, PhotoSummary[]>;
   decodes: Map<string, Correspondence[]>;
   prepared: PreparedRig | null;
+}
+
+/** A held rig with its twins, and nothing computed from it yet. */
+export function rigContextOf(unit: string, bank: RigBank, twins: readonly TwinCamera[]): RigContext {
+  return {
+    unit,
+    bank,
+    twins: new Map(twins.map((t) => [t.camera, t])),
+    prints: new Map(),
+    summaries: new Map(),
+    decodes: new Map(),
+    prepared: null,
+  };
 }
 
 function rigContext(ctx: RunContext, unit: string, bankFile: StageFile<BankUnit>): RigContext {
   const bank = bankOf(ctx, unit);
   const stored = bankFile.units[unit];
   if (stored === undefined) throw new Error(`experiment10: the bank stage has no ${unit}`);
-  const twins = new Map<number, TwinCamera>();
-  for (const t of stored.twins) twins.set(t.camera, t);
-  return { unit, bank, twins, prints: new Map(), decodes: new Map(), prepared: null };
+  return rigContextOf(unit, bank, stored.twins);
 }
 
 function twinOf(rc: RigContext, c: number): TwinCamera {
@@ -1086,6 +1150,39 @@ function twinPrints(rc: RigContext, c: number): FrameFingerprint[] {
       throw new Error(`experiment10: ${rc.unit} camera ${c}'s twin no longer places ${stored}`);
     }
     rc.prints.set(c, got);
+  }
+  return got;
+}
+
+/**
+ * The twin's 136 photographs as the page summarises them, folder order,
+ * recomputed on the rig's own stream and checked against the page twin the
+ * bank stage recorded.
+ *
+ * A run a straddle did not touch is the clean twin's own photographs, draw for
+ * draw — the same `fastRun(bank, c, q, CLEAN)` — so the page column reads
+ * these for it rather than walking, encoding and summarising the run again on
+ * every position.
+ */
+function twinSummaries(rc: RigContext, c: number): PhotoSummary[] {
+  let got = rc.summaries.get(c);
+  if (got === undefined) {
+    got = [];
+    for (let p = 0; p < PROJECTORS; p++) got.push(...runSummaries(fastRun(rc.bank, c, p, CLEAN), p));
+    // As in `twinPrints`: the BANK stage read these same draws, and a page
+    // that no longer reads them so is reading another twin than the one on
+    // record, and every attribution against it would be wrong.
+    const stored = twinOf(rc, c).page;
+    if (stored === undefined) {
+      throw new Error(`experiment10: ${rc.unit} camera ${c}'s twin has no page reading on record`);
+    }
+    if (JSON.stringify(pageTwinOf(got)) !== JSON.stringify(stored)) {
+      throw new Error(
+        `experiment10: ${rc.unit} camera ${c}'s page twin no longer reads as the bank stage ` +
+          `recorded it (placed ${stored.placed.map((p) => p + 1).join(',') || 'nothing'})`,
+      );
+    }
+    rc.summaries.set(c, got);
   }
   return got;
 }
@@ -1430,16 +1527,18 @@ function roundShift(s: Shift): Record<string, number | null> {
 }
 
 // ---------------------------------------------------------------------------
-// q0 — today's page, as shipped; Q0b — the card's own folder shapes
+// q0 — the page's reader on clean positions, and the reader it replaced;
+// Q0b — the card's own folder shapes, read by the counterfactual
 // ---------------------------------------------------------------------------
 
 /**
  * What made the page refuse, by the words `indexing.ts` and `readback.ts` write.
  *
  * The first eight are the bookends' and the complement check's, which the page
- * used when this experiment measured it and Q0b still calls. The rest are the
- * reader the page uses now, `indexPosition`: a projector's photographs lit with
- * no run found in them, a folder too short to be a position or the same
+ * used when this experiment first measured it, and which Q0's record of that
+ * reader ({@link replacedIndexPhotographs}) and Q0b still call. The rest are
+ * the reader the page uses now, `indexPosition`: a projector's photographs lit
+ * with no run found in them, a folder too short to be a position or the same
  * picture throughout, one with no run anywhere, runs whose projector numbers
  * cannot be told, a re-shoot that matches no projector or a second camera
  * position in the folder, and a plan the reader cannot read by. Its notes —
@@ -1518,7 +1617,17 @@ export interface Q0Position {
   ok: boolean;
   problems: string[];
   reasons: ReasonClass[];
-  /** `classify(litFractions(stats)).margin` over the whole position, as the page computes it. */
+  /** Projectors the page's reader noted out of this camera's view, and barely seen. */
+  unseen: number[];
+  barelySeen: number[];
+  /** What the page's reader noticed and stopped nothing, verbatim. */
+  notes: string[];
+  /**
+   * `classify(litFractions(stats)).margin` over the whole position: EXPERIMENT-8's
+   * capture-wide classification, on the page's own summaries. The reader the
+   * page had when this experiment first ran stopped at it (see `replaced`);
+   * the page's reader now never classifies a capture.
+   */
   margin: number;
   /** Frames the capture-wide classification calls the wrong kind. */
   wrongKinds: number;
@@ -1526,6 +1635,17 @@ export interface Q0Position {
   perRun: { projector: number; margin: number; wrongKinds: number }[];
   description: string;
   clippedWorst: number;
+  /**
+   * The reader the page had when this experiment first ran, on the same
+   * summaries: {@link replacedIndexPhotographs}.
+   */
+  replaced: {
+    ok: boolean;
+    placed: number;
+    runsPlaced: number[];
+    problems: string[];
+    reasons: ReasonClass[];
+  };
 }
 
 export interface Q0bShape {
@@ -1540,13 +1660,125 @@ export interface Q0bShape {
 export interface Q0Unit {
   positions: Q0Position[];
   shapes: Q0bShape[];
-  /** F9, on the first rig's camera 0 only: the worth report the page would print. */
+  /**
+   * F9, on the first rig's camera 0 only: the worth report the page's
+   * `finishCapture` makes of one folder read alone, every run cut where the
+   * truth puts it — the report the page printed while it read a camera
+   * position at a time. The page now reports over every position it holds,
+   * which this does not.
+   */
   worth: {
     usable: boolean;
     contributingCameras: number[];
     refusal: string | null;
     summary: string | null;
   } | null;
+}
+
+/**
+ * What `replacedIndexPhotographs` returns: `readback.ts`'s `IndexedCapture` as
+ * it was at 754147f.
+ */
+interface ReplacedIndexedCapture {
+  ok: boolean;
+  runs: IndexedRun[];
+  problems: string[];
+  mechanism: IndexingResult['mechanism'];
+  total: number;
+  placed: number;
+}
+
+/**
+ * The reader the page had when this experiment first ran: `readback.ts`'s
+ * `indexPhotographs` at 754147f, reproduced line for line. It classifies the
+ * whole capture into white, black and patterned (`litFractions`), finds each
+ * run between its bookends and puts it to the complement check
+ * (`indexByFingerprint`), turns the assignment back into runs, and, where it
+ * placed nothing, names a clipped photograph as a possible cause.
+ *
+ * Kept because Q0's record of this reader on the bench's clean positions is
+ * the finding the experiment's precondition, P6 and the documents that cite
+ * them were written from, and a re-run with the page's current reader would
+ * otherwise leave that record in no results file, only in git. Q0 hands it the
+ * summaries it hands the page's reader, so each position carries both
+ * verdicts, and the identity `RERUN_IDENTITIES` names I-replaced holds this one
+ * to the Q0 committed at 754147f. The page no longer calls it; nothing but Q0
+ * does.
+ *
+ * What it calls computes what it computed then, and `indexByFingerprint` does
+ * not read the phase steps the manifest's expected sequence has carried since.
+ */
+export function replacedIndexPhotographs(
+  summaries: readonly PhotoSummary[],
+  manifest: CaptureManifest,
+): ReplacedIndexedCapture {
+  const expected = manifestExpectedSequence(manifest);
+  const runLength = expected.kinds.length;
+  const total = summaries.length;
+
+  if (total === 0) {
+    return {
+      ok: false,
+      runs: [],
+      problems: [
+        'No photographs were handed in, so there is nothing to index. A camera position is ' +
+          `every projector's run shot back to back — ${expected.projectors} of them, ` +
+          `${runLength} frames each.`,
+      ],
+      mechanism: 'fingerprint',
+      total,
+      placed: 0,
+    };
+  }
+
+  const observations = litFractions(summaries.map((s) => s.stats));
+  const fingerprints = summaries.map((s) => s.fingerprint);
+  const result = indexByFingerprint(observations, fingerprints, expected);
+
+  // The assignment is a global frame number per photograph, turned back into
+  // runs as the inverse of `p * runLength + f`; a run the mechanism will not
+  // vouch for has every entry nulled already.
+  const byProjector = new Map<number, { ordinal: number; position: number }[]>();
+  let placed = 0;
+  for (let i = 0; i < result.assignment.length; i++) {
+    const frame = result.assignment[i];
+    if (frame === null) continue;
+    placed++;
+    const projector = Math.floor(frame / runLength);
+    const list = byProjector.get(projector) ?? [];
+    list.push({ ordinal: i, position: frame % runLength });
+    byProjector.set(projector, list);
+  }
+
+  const runs: IndexedRun[] = [...byProjector.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([projector, entries]) => ({
+      projector,
+      ordinals: entries.sort((a, b) => a.position - b.position).map((e) => e.ordinal),
+    }));
+
+  const problems = [...result.problems];
+  // Clipping is named only when nothing decoded, as a plausible cause of the
+  // refusal: `classify` loses its margin when the white frames clip.
+  if (runs.length === 0) {
+    let worst = 0;
+    let worstName = '';
+    for (const s of summaries) {
+      if (s.clippedHigh > worst) {
+        worst = s.clippedHigh;
+        worstName = s.name;
+      }
+    }
+    if (worst > CLIPPING_WORTH_SAYING) {
+      problems.push(
+        `While nothing here decoded: ${(100 * worst).toFixed(1)}% of ${worstName} is at the ` +
+          `sensor's ceiling. A clipped white frame is one the references cannot be told apart ` +
+          `by, so an overexposed capture and an unreadable one look the same from here.`,
+      );
+    }
+  }
+
+  return { ok: result.ok, runs, problems, mechanism: result.mechanism, total, placed };
 }
 
 function q0Position(
@@ -1556,6 +1788,7 @@ function q0Position(
   summaries: readonly PhotoSummary[],
 ): Q0Position {
   const indexed = indexPhotographs(summaries, MANIFEST);
+  const replaced = replacedIndexPhotographs(summaries, MANIFEST);
   const stats = summaries.map((s) => s.stats);
   const whole = classify(litFractions(stats));
   const perRun = [];
@@ -1577,11 +1810,21 @@ function q0Position(
     ok: indexed.ok,
     problems: indexed.problems,
     reasons: indexed.problems.map(reasonOf),
+    unseen: indexed.unseen,
+    barelySeen: indexed.barelySeen,
+    notes: indexed.notes,
     margin: whole.margin,
     wrongKinds: whole.kinds.filter((kind, j) => kind !== EXPECTED.kinds[j % FRAMES_PER_RUN]).length,
     perRun,
     description: describeIndexing(indexed, PROJECTORS),
     clippedWorst: Math.max(...summaries.map((s) => s.clippedHigh)),
+    replaced: {
+      ok: replaced.ok,
+      placed: replaced.placed,
+      runsPlaced: replaced.runs.map((r) => r.projector),
+      problems: replaced.problems,
+      reasons: replaced.problems.map(reasonOf),
+    },
   };
 }
 
@@ -1679,15 +1922,8 @@ export function stageQ0(ctx: RunContext): StageFile<Q0Unit> {
       q0CaptureOptions(bank, cameras, (i, p, capture) => {
         const c = cameras[i];
         const frames = planOrder(capture);
-        frames.forEach((img, f) => {
-          const j = p * FRAMES_PER_RUN + f;
-          (summaries.get(c) as PhotoSummary[])[j] = summarisePhoto(
-            encodeSrgb8(img, ENCODE_FULL_SCALE),
-            j,
-            photoName(j),
-            TRANSFER,
-            FINGERPRINT_BLOCKS,
-          );
+        runSummaries(frames, p).forEach((summary, f) => {
+          (summaries.get(c) as PhotoSummary[])[p * FRAMES_PER_RUN + f] = summary;
         });
         if (c === keepFor) kept[p] = frames;
       }),
@@ -1718,9 +1954,10 @@ export function stageQ0(ctx: RunContext): StageFile<Q0Unit> {
         : [];
     for (const p of positions) {
       const reasons = [...new Set(p.reasons)].join(', ') || 'no problem';
+      const replaced = [...new Set(p.replaced.reasons)].join(', ') || 'no problem';
       ctx.log(
-        `    ${p.which} rig ${p.rig} camera ${p.camera}: placed ${p.placed}/${p.total}, ` +
-          `margin ${p.margin.toFixed(3)} (${reasons})`,
+        `    ${p.which} rig ${p.rig} camera ${p.camera}: placed ${p.placed}/${p.total} (${reasons}); ` +
+          `the replaced reader ${p.replaced.placed}/${p.total}, margin ${p.margin.toFixed(3)} (${replaced})`,
       );
     }
     return { positions, shapes, worth };
@@ -1743,13 +1980,21 @@ export function stageBank(ctx: RunContext): StageFile<BankUnit> {
   return runUnits<BankUnit>(ctx, 'bank', rigUnits(plan, ['main', 'spill', 'fine']), (unit) => {
     const bank = bankOf(ctx, unit);
     const twins = bank.cameras.map((c) => computeTwin(bank, c).twin);
+    const named = (ps: readonly number[], none: string) => ps.map((p) => p + 1).join(',') || none;
     for (const t of twins) {
-      const places = t.placedContent.map((p) => p + 1).join(',') || 'nothing';
+      const places = named(t.placedContent, 'nothing');
       const lit = t.runs.map((r) => (100 * r.litShare).toFixed(1)).join('/');
       const worst = t.runs.map((r) => (r.worstNoisy === null ? '-' : r.worstNoisy.toFixed(3)));
+      // The page twin, which the page column attributes against: a throw is
+      // recorded as its crash, not raised, and would void the camera's column.
+      const page =
+        t.page === undefined
+          ? 'no page twin'
+          : `page places ${named(t.page.placed, 'nothing')}, unseen ${named(t.page.unseen, 'none')}, ` +
+            (t.page.crash === null ? 'no crash' : `crashed: ${t.page.crash}`);
       ctx.log(
         `    ${unit} camera ${t.camera}: twin places ${places} ` +
-          `(lit ${lit}%, worst ${worst.join('/')})`,
+          `(lit ${lit}%, worst ${worst.join('/')}); ${page}`,
       );
     }
     return { width: bank.width, height: bank.height, seed: bank.seed, twins };
@@ -1875,12 +2120,64 @@ export interface HookRecord {
   pixels: number;
   identical: number;
   worstSteps: number;
+  /** The counterfactual's verdicts on the hook's frames and on the fast path's agree. */
   verdictsAgree: boolean;
   placedHook: number[];
   placedFast: number[];
   /** Worst per-run mean shift between `readRun` on the hook's frames and on the fast path's, px. */
   biasU: number;
   biasV: number;
+  /**
+   * H8-page: the page's own reader on the camera's whole straddled position, from the hook's
+   * frames and from the fast path's, which are what the page column reads. Each is kept whole,
+   * as the page column keeps a position's ({@link pageRecord}): where each placed run starts,
+   * what it misfiles, and the problems in words. The page column counts misfiles from where the
+   * fast path's frames led the page to place a run, so whether the renderer's frames place it
+   * at the same photographs is on record beside the verdict H8-page compares.
+   */
+  pageHook: PagePosition;
+  pageFast: PagePosition;
+  /**
+   * {@link samePageVerdict} of the two readings' {@link pageVerdictOf}: what H8-page registered,
+   * and nothing more.
+   */
+  pageAgree: boolean;
+}
+
+/** What H8-page holds the hook's reading and the fast path's to: a {@link PagePosition}, less its words. */
+export interface PageVerdict {
+  placed: number[];
+  unseen: number[];
+  barelySeen: number[];
+  /** How many problems the page wrote. */
+  problems: number;
+  crash: string | null;
+}
+
+export function pageVerdictOf(read: PagePosition): PageVerdict {
+  return {
+    placed: read.placed,
+    unseen: read.unseen,
+    barelySeen: read.barelySeen,
+    problems: read.problems.length,
+    crash: read.crash,
+  };
+}
+
+/**
+ * Two readings of one position agree: the same runs placed, the same projectors noted out of
+ * view and barely seen, as many problems, and the same crash or none.
+ */
+export function samePageVerdict(a: PageVerdict, b: PageVerdict): boolean {
+  const same = (x: readonly number[], y: readonly number[]) =>
+    x.length === y.length && x.every((v, i) => v === y[i]);
+  return (
+    same(a.placed, b.placed) &&
+    same(a.unseen, b.unseen) &&
+    same(a.barelySeen, b.barelySeen) &&
+    a.problems === b.problems &&
+    a.crash === b.crash
+  );
 }
 
 export interface RollingRecord {
@@ -2129,8 +2426,18 @@ function gateNoisy(rc: RigContext, plan: Exp10Plan, c: number): NoisyRecord[] {
  * H8: the fast path against the renderer's own hook. The whole rig is
  * rendered, so the renderer's camera index is the rig's and the noise stream
  * is the one `noisyRun` walks; a straddle for camera `c` alone.
+ *
+ * Both readers are held to it. The counterfactual's verdicts and the page's
+ * decode, as before; and, since the page column hands the page's own reader
+ * the fast path's frames of a straddled position where the page would have
+ * the camera's, the page's reading of the camera's whole position from each
+ * (H8-page). That reader finds runs by absolute block levels, not by the
+ * complement check alone, so the counterfactual's agreement does not stand
+ * for it.
+ *
+ * Exported for `straddle.test.ts`.
  */
-function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord[] {
+export function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord[] {
   const { bank } = rc;
   const bits = DEFAULT_SENSOR.quantizationBits;
   if (bits === null) throw new Error('experiment10: DEFAULT_SENSOR no longer quantises');
@@ -2146,6 +2453,8 @@ function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord[] {
     let biasV = 0;
     const hookPrints: FrameFingerprint[] = [];
     const fastPrints: FrameFingerprint[] = [];
+    const hookSummaries: PhotoSummary[] = [];
+    const fastSummaries: PhotoSummary[] = [];
     captureAndDecode(bank.world.truthRig, bank.world.cameras, {
       ...base,
       conditions: { ...base.conditions, straddle: straddleForCamera(c, photos, null) },
@@ -2168,6 +2477,12 @@ function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord[] {
         }
         hookPrints.push(...runPrints(hook, p));
         fastPrints.push(...runPrints(fast, p));
+        runSummaries(hook, p).forEach((x, f) => {
+          hookSummaries[p * FRAMES_PER_RUN + f] = x;
+        });
+        runSummaries(fast, p).forEach((x, f) => {
+          fastSummaries[p * FRAMES_PER_RUN + f] = x;
+        });
         const shift = shiftBetween(
           pageRead(c, p, fast).correspondences,
           pageRead(c, p, hook).correspondences,
@@ -2178,6 +2493,8 @@ function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord[] {
     });
     const hook = isolatedCheck(hookPrints, photos, 'content');
     const fast = isolatedCheck(fastPrints, photos, 'content');
+    const pageHook = pageRecord(() => indexPhotographs(hookSummaries, MANIFEST), photos);
+    const pageFast = pageRecord(() => indexPhotographs(fastSummaries, MANIFEST), photos);
     out.push({
       camera: c,
       s,
@@ -2191,6 +2508,9 @@ function gateHook(rc: RigContext, plan: Exp10Plan, c: number): HookRecord[] {
       placedFast: fast.usableProjectors,
       biasU,
       biasV,
+      pageHook,
+      pageFast,
+      pageAgree: samePageVerdict(pageVerdictOf(pageHook), pageVerdictOf(pageFast)),
     });
   }
   return out;
@@ -3189,7 +3509,11 @@ function vsyncJitters(label: string, t: number): ((m: number) => number)[] {
   });
 }
 
-function cellShots(cell: CellSpec, t: number): ShotTiming[] {
+/**
+ * Trial `t`'s shots in a cell: EXPERIMENT-9's own draws. With {@link cellPhotos}, exported for
+ * `straddle.test.ts`, which re-reads a scored position from them.
+ */
+export function cellShots(cell: CellSpec, t: number): ShotTiming[] {
   const arm = armOf(cell.arm);
   return shotTimings(
     arm,
@@ -3199,7 +3523,8 @@ function cellShots(cell: CellSpec, t: number): ShotTiming[] {
   );
 }
 
-function cellPhotos(
+/** What position `pos` of trial `t` photographed in a cell, photograph `j` filed as step `j`. */
+export function cellPhotos(
   cell: CellSpec,
   shots: readonly ShotTiming[],
   t: number,
@@ -3265,8 +3590,131 @@ export interface PositionScore {
    */
   assignment: (number | null)[] | null;
   /** The page's own reader on the whole position, where Q0 said it could place anything. */
-  page: { placed: number[]; problems: string[] } | null;
+  page: PagePosition | null;
   decodes: RunDecode[];
+}
+
+/**
+ * The page's own reader on one camera position: what `indexPhotographs` made
+ * of its 136 photographs, kept whole enough that the document can tell a
+ * placed run from a refused one and from a note, count what a placed run files
+ * under the wrong step, and compare where the page placed a run with where the
+ * counterfactual did.
+ *
+ * Every array but `misfiled`, `unseen`, `barelySeen`, `problems` and `notes`
+ * is one entry per placed run, in the order of `placed`.
+ */
+export interface PagePosition {
+  /** Every run this camera could see was placed and nothing refused (`IndexedCapture.ok`). */
+  ok: boolean;
+  /** Projectors whose runs the page placed, ascending. */
+  placed: number[];
+  /** Each placed run's first photograph in the folder: the run is the 34 from there. */
+  starts: number[];
+  /**
+   * `starts[i] - 34·placed[i]`: 0 where the page placed the run where the folder
+   * files it, and otherwise how many photographs from there. A departure from
+   * the folder's order, which is not a misfile when the photographs show the
+   * steps they were placed as: see `contentMisfiles`.
+   */
+  offsets: number[];
+  /**
+   * Photographs of the run filed under another step than the one holding more
+   * than half their exposure ({@link runFiling}).
+   */
+  contentMisfiles: number[];
+  /**
+   * Each of those photographs, over every placed run in the order of `placed`:
+   * where it is, the step it is filed under, the step it shows and that step's
+   * share of its exposure. `contentMisfiles[i]` is how many of them lie in run
+   * `i`: both are {@link runFiling}'s one list, the count its length.
+   */
+  misfiled: Misfile[];
+  /** Photographs of the run with no majority step: counted apart, and never a misfile. */
+  ambiguous: number[];
+  /** Projectors noted out of this camera's view, and barely seen: notes, never refusals. */
+  unseen: number[];
+  barelySeen: number[];
+  /** Runs read from a re-shoot added to the folder. */
+  reshoots: number;
+  /**
+   * What the operator is told, verbatim, and what was noticed and stopped
+   * nothing. Kept in the checkpoint only: the document classifies the words
+   * and copies none per position.
+   */
+  problems: string[];
+  notes: string[];
+  /** What the reader threw on this folder, or null where it read it. See {@link pageRecord}. */
+  crash: string | null;
+}
+
+/**
+ * The page's reading of one position, as a {@link PagePosition}. `read` hands
+ * the page's own calls their photographs — `summarisePhoto` on each, then
+ * `indexPhotographs` — and whatever they throw is recorded as the position's
+ * `crash` rather than raised: a straddled folder is input the reader was never
+ * built against, and a throw on one position must not stop a stage hours in,
+ * with every rig after it unmeasured. So is a placed run that is not 34
+ * photographs in a row, which is how `indexPosition` places every run and the
+ * only shape `starts` and `offsets` can describe.
+ *
+ * `photos` are what the folder's photographs integrated, photograph `j` filed
+ * as step `j`, for {@link runFiling}. Nothing here classifies the page's words:
+ * `reasonOf` throws on a sentence it does not know, so the document classifies
+ * them after the run, where a new sentence costs a re-assembly and not a stage.
+ */
+export function pageRecord(read: () => IndexedCapture, photos: readonly Photo[]): PagePosition {
+  try {
+    const indexed = read();
+    const record: PagePosition = {
+      ok: indexed.ok,
+      placed: [],
+      starts: [],
+      offsets: [],
+      contentMisfiles: [],
+      misfiled: [],
+      ambiguous: [],
+      unseen: [...indexed.unseen],
+      barelySeen: [...indexed.barelySeen],
+      reshoots: indexed.reshoots.length,
+      problems: [...indexed.problems],
+      notes: [...indexed.notes],
+      crash: null,
+    };
+    for (const r of indexed.runs) {
+      const start = r.ordinals[0];
+      if (r.ordinals.length !== FRAMES_PER_RUN || r.ordinals.some((j, f) => j !== start + f)) {
+        throw new Error(
+          `the page placed projector ${r.projector + 1}'s run at photographs ` +
+            `${r.ordinals.map((j) => j + 1).join(', ')}, not ${FRAMES_PER_RUN} in a row`,
+        );
+      }
+      const filing = runFiling(photos, r.projector, start);
+      record.placed.push(r.projector);
+      record.starts.push(start);
+      record.offsets.push(start - r.projector * FRAMES_PER_RUN);
+      record.contentMisfiles.push(filing.misfiled.length);
+      record.misfiled.push(...filing.misfiled);
+      record.ambiguous.push(filing.ambiguous);
+    }
+    return record;
+  } catch (e) {
+    return {
+      ok: false,
+      placed: [],
+      starts: [],
+      offsets: [],
+      contentMisfiles: [],
+      misfiled: [],
+      ambiguous: [],
+      unseen: [],
+      barelySeen: [],
+      reshoots: 0,
+      problems: [],
+      notes: [],
+      crash: e instanceof Error ? e.message : String(e),
+    };
+  }
 }
 
 export interface CaptureScore {
@@ -3302,31 +3750,31 @@ function decodeOne(
 /**
  * The page's own reader on a whole treated position: the fast path's noisy frames, encoded and
  * summarised in folder order.
+ *
+ * A run the straddle did not touch is the clean twin's photographs, so its summaries are the
+ * twin's, computed once per camera and held to the bank stage's page twin
+ * ({@link twinSummaries}). Only the touched runs are summarised here, from the frames `framesOf`
+ * hands over: the fast path's walk of the run's noise, which the rescoring has already taken for
+ * any run it re-evaluated with noise, and so for every touched run of a noisy cell (R1). A drift
+ * of the twin or a failed render is raised; what the page's own calls throw is the position's
+ * crash ({@link pageRecord}).
  */
-function pagePath(
+export function pagePath(
   rc: RigContext,
   c: number,
   photos: readonly Photo[],
   touched: readonly number[],
-): { placed: number[]; problems: string[] } {
-  const summaries: PhotoSummary[] = [];
-  for (let q = 0; q < PROJECTORS; q++) {
-    const frames = fastRun(rc.bank, c, q, touched.includes(q) ? photos : CLEAN);
-    frames.forEach((img, f) => {
-      const j = q * FRAMES_PER_RUN + f;
-      summaries.push(
-        summarisePhoto(
-          encodeSrgb8(img, ENCODE_FULL_SCALE),
-          j,
-          photoName(j),
-          TRANSFER,
-          FINGERPRINT_BLOCKS,
-        ),
-      );
+  framesOf: (q: number) => readonly LinearImage[] = (q) => fastRun(rc.bank, c, q, photos),
+): PagePosition {
+  const clean = twinSummaries(rc, c);
+  const frames = touched.map((q) => framesOf(q));
+  return pageRecord(() => {
+    const summaries = clean.slice();
+    touched.forEach((q, i) => {
+      summaries.splice(q * FRAMES_PER_RUN, FRAMES_PER_RUN, ...runSummaries(frames[i], q));
     });
-  }
-  const indexed = indexPhotographs(summaries, MANIFEST);
-  return { placed: indexed.runs.map((r) => r.projector), problems: indexed.problems };
+    return indexPhotographs(summaries, MANIFEST);
+  }, photos);
 }
 
 /**
@@ -3371,12 +3819,23 @@ function scorePosition(
   if (touched.length === 0) return empty;
   const twin = twinOf(rc, c);
   const fps0 = positionFingerprints(rc.bank, c, photos);
+  // A touched run's frames through the fast path, walked once: its noisy
+  // fingerprints and the page column read the same frames.
+  const frames = new Map<number, LinearImage[]>();
+  const framesOf = (q: number): LinearImage[] => {
+    let got = frames.get(q);
+    if (got === undefined) {
+      got = fastRun(rc.bank, c, q, photos);
+      frames.set(q, got);
+    }
+    return got;
+  };
   const noisyRuns = new Map<number, FrameFingerprint[]>();
   const noisyOf = (q: number): FrameFingerprint[] => {
     let got = noisyRuns.get(q);
     if (got === undefined) {
       got = touched.includes(q)
-        ? runPrints(fastRun(rc.bank, c, q, photos), q)
+        ? runPrints(framesOf(q), q)
         : twinPrints(rc, c).slice(q * FRAMES_PER_RUN, (q + 1) * FRAMES_PER_RUN);
       noisyRuns.set(q, got);
     }
@@ -3468,7 +3927,7 @@ function scorePosition(
     content: content.runs,
     filed: filed.runs,
     assignment: placedTouched.length > 0 ? content.best.assignment : null,
-    page: pageColumn ? pagePath(rc, c, photos, touched) : null,
+    page: pageColumn ? pagePath(rc, c, photos, touched, framesOf) : null,
     decodes,
   };
 }
@@ -3616,11 +4075,20 @@ function scoreCells(
       captures.push({ t, rig: k, positions });
     }
     out.cells[cell.id] = captures;
-    const changed = captures.flatMap((c) => c.positions).filter((p) => p.changed).length;
+    const scored = captures.flatMap((c) => c.positions);
+    const changed = scored.filter((p) => p.changed).length;
+    // What the page column read, logged as the stage runs: pageRecord records
+    // a reader's throw rather than raising it, so a throw on every folder of
+    // some configuration would otherwise show only once the document is
+    // assembled.
+    const pages = scored.flatMap((p) => (p.page === null ? [] : [p.page]));
+    const placing = pages.filter((p) => p.placed.length > 0).length;
+    const crashed = pages.filter((p) => p.crash !== null).length;
     const seconds = ((Date.now() - t0) / 1000).toFixed(1);
     ctx.log(
       `    ${cell.id} rig ${k}: ${captures.length} touched captures, ` +
-        `${changed} changed positions, ${seconds} s`,
+        `${changed} changed positions, ${pages.length} page readings ` +
+        `(${placing} placing a run, ${crashed} crashed), ${seconds} s`,
     );
   }
   return out;
@@ -3746,8 +4214,10 @@ export function loadSolves(ctx: RunContext): void {
 }
 
 /**
- * The pairs the page would not decode on the clean capture: every run the twin refuses, on every
- * camera.
+ * The pairs the counterfactual reader refuses on the clean capture: every run the twin refuses, on
+ * every camera. Every solve withholds them. The page's own reader may refuse others there, or
+ * place some of these ({@link TwinCamera.page}); the solves do not follow it, and the re-run
+ * measures where the two differ.
  */
 function cleanRefused(rc: RigContext): string[] {
   const out: string[] = [];
@@ -4265,14 +4735,15 @@ export interface CapturePlan {
  * treated solve and its twin alike, are two kinds of pair. First, every pair the
  * clean capture refuses (`refusedClean`, the twin's refusals on every camera).
  * Second, every run of a straddled position whose deciding outcome is not
- * `placed`, because the page would not decode it.
+ * `placed`, because the counterfactual reader, whose verdicts these are, would
+ * not decode it.
  *
  * The second kind means every such run, where §6 R1 of the spec withheld only a
  * MIXED position's refused runs. A collateral refusal is an untouched,
- * attributable run that the page refuses because a neighbour's slip moved the
- * bookends, and it can sit inside a PLACED position. Under the spec's rule the
- * treated solve was still handed that run, rendered clean. The page decodes
- * nothing of a refused run, so this is the amendment the document's caveats
+ * attributable run that the counterfactual refuses because a neighbour's slip
+ * moved the bookends, and it can sit inside a PLACED position. Under the spec's
+ * rule the treated solve was still handed that run, rendered clean. Nothing of
+ * a refused run is decoded, so this is the amendment the document's caveats
  * record. The twin withholds the run too, so the pair still differs by the
  * straddle and nothing else.
  *
@@ -4348,9 +4819,9 @@ export function policyAnswers<T>(
 /**
  * Solve one scored capture under the policies asked for. Every position is
  * rendered from the same timing the score came from, straddled with the
- * content footing's assignment — the photographs the page would decode — and
- * the pairs the page would not decode are withheld from the solve
- * ({@link capturePlan}).
+ * content footing's assignment — the photographs the counterfactual reader
+ * would decode — and the pairs it would not decode are withheld from the solve
+ * ({@link capturePlan}). The page column's own verdicts choose nothing here.
  *
  * Exported for `straddle.test.ts`, which answers every solve it asks for from
  * a filled `ctx.solves`, so the policies' wiring is held without a solve.

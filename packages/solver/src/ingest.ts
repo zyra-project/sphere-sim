@@ -99,6 +99,34 @@ export interface IngestResult {
 }
 
 /**
+ * `decodeTransfer` of every code a file of integers can hold up to its
+ * `maxValue`, `0..max`, or null when the table is not the cheaper route.
+ *
+ * A camera file is integers, so an 8-bit photograph has 256 values to undo and
+ * a 320x240 one has 76,800 samples, each of which went through `Math.pow`
+ * before this table existed. The entries are the very expression the
+ * per-sample path evaluates, `decodeTransfer(code / max, transfer)`, kept as
+ * doubles: {@link linearise} stores each into its Float32 output exactly as it
+ * stored the value it computed, and sums and bounds the double, so the image
+ * and the report are the same bits either way. `realphotos.test.ts` holds the
+ * two paths to that, code by code, at 8 and 16 bits and under every transfer.
+ *
+ * Only for data that are integers by type (`Uint8Array`, `Uint16Array`) with an
+ * integer `maxValue`, and only when the image holds at least as many samples
+ * as the table has entries: a table larger than the image would cost more than
+ * it saves. Anything else takes the per-sample path, as does any sample above
+ * `maxValue`, which the table does not cover.
+ */
+function codeTable(encoded: EncodedImage, transfer: Transfer, samples: number): Float64Array | null {
+  const max = encoded.maxValue;
+  const integers = encoded.data instanceof Uint8Array || encoded.data instanceof Uint16Array;
+  if (!integers || !Number.isInteger(max) || max + 1 > samples) return null;
+  const table = new Float64Array(max + 1);
+  for (let code = 0; code <= max; code++) table[code] = decodeTransfer(code / max, transfer);
+  return table;
+}
+
+/**
  * One photograph into linear light.
  *
  * `transfer` has no default and the type makes omitting it a compile error,
@@ -132,6 +160,7 @@ export function linearise(encoded: EncodedImage, transfer: Transfer): IngestResu
    */
   const keep = stride >= 3 ? 3 : 1;
   const out = new Float32Array(n * keep);
+  const table = codeTable(encoded, transfer, n * keep);
   let clippedHigh = 0;
   let clippedLow = 0;
   let sum = 0;
@@ -149,7 +178,7 @@ export function linearise(encoded: EncodedImage, transfer: Transfer): IngestResu
       const raw = encoded.data[src + c];
       if (raw >= max) high = true;
       if (raw <= 0) low = true;
-      const v = decodeTransfer(raw / max, transfer);
+      const v = table !== null && raw <= max ? table[raw] : decodeTransfer(raw / max, transfer);
       out[dst + c] = v;
       sum += v;
       if (v < lo) lo = v;

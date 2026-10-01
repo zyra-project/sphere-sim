@@ -3,7 +3,8 @@
 
 /**
  * Experiment 10 — what a photograph taken across a pattern change costs a
- * calibration, with today's page.
+ * calibration, read by a counterfactual reader and, in the rescoring's page
+ * column, by the page's own.
  *
  * EXPERIMENT-9 counted how often the shutter is open while the emitter changes
  * pattern — 728 of 2,000 simulated captures at the page's defaults — and said in
@@ -524,6 +525,145 @@ export const SOLVE_SUBSAMPLE = 60;
  * smallest gap between crossings, and of the bias at s = 0.02.
  */
 export const ENCODE_BOUNDS = { residual: 0.005, biasPx: 0.02 } as const;
+
+// ---------------------------------------------------------------------------
+// Registered before the re-run with the page's reader
+// ---------------------------------------------------------------------------
+
+/** A bet the assembly will hold the re-run to. */
+export interface RerunPrediction {
+  id: string;
+  falsifiedIf: string;
+  /** Falsified when what `falsifiedIf` counts exceeds this. */
+  threshold: number;
+  note?: string;
+}
+
+/** A check on the re-run's own harness, which must hold before any bet is read. */
+export interface RerunIdentity {
+  id: string;
+  holds: string;
+  /** What makes it exact rather than likely. */
+  restsOn?: string;
+}
+
+/**
+ * The bets on the re-run with the page's reader. These were registered before
+ * the re-run's first page-column output existed, in the commit that introduced
+ * them, and they are not to change after it.
+ *
+ * The page's reader was replaced after this experiment first ran. The reader
+ * it has now places the clean positions the one it replaced refused, so a
+ * re-run starts the rescoring's page column: every straddled camera position
+ * handed whole to the page's own reader. These are the bets on what that
+ * column shows, in substance: the machine-readable form of the sentences
+ * `docs/EXPERIMENT-10.md` registers ("Registered before the re-run with the
+ * page's reader", committed before any of the code that measures them), with
+ * their thresholds and scopes. They are held here, not in the assembly,
+ * because every value this module exports is hashed into each checkpoint's
+ * fingerprint and repeated in the document's `generatedFrom`: a bet edited
+ * after the run would turn every checkpoint stale, and the document would
+ * carry the edit. The assembly evaluates them once the run is over.
+ *
+ * Each is falsified when what its text counts exceeds its `threshold`. The
+ * thresholds come from this document's own cells and from the new reader's
+ * design, not from a look at the column. P6 is the first run's, word for word
+ * as the assembly states it.
+ */
+export const RERUN_PREDICTIONS: readonly RerunPrediction[] = [
+  {
+    id: 'P10',
+    falsifiedIf:
+      'In every rescore and lateness cell, a run the page places files every photograph under ' +
+      'the step that holds more than half that photograph\'s exposure. Falsified by any content ' +
+      'misfile in a placed run, in any cell. Photographs with no majority step are counted apart ' +
+      'and cannot falsify it.',
+    threshold: 0,
+  },
+  {
+    id: 'P11',
+    falsifiedIf:
+      'In R1 the page is SILENT on no more of the touched captures than the counterfactual reader ' +
+      '(98 of 728). Falsified if the page\'s SILENT count in R1, attributed against the page twin, ' +
+      'exceeds 98.',
+    threshold: 98,
+  },
+  {
+    id: 'P12',
+    falsifiedIf:
+      'A straddle never turns a run the page twin places into a note. Falsified by any touched ' +
+      'run, in any cell, that the page twin places and the straddled position only notes as out ' +
+      'of view or barely seen, with no problem naming it.',
+    threshold: 0,
+  },
+  {
+    id: 'P13',
+    falsifiedIf:
+      'Q0 (the renderer\'s photographs) and the page twin (the fast path\'s) read the same at ' +
+      'every one of the 108 clean positions: placed, unseen and barely seen equal, and neither ' +
+      'with a problem. Falsified by any position where they differ.',
+    threshold: 0,
+  },
+  {
+    id: 'P6',
+    falsifiedIf:
+      'Any of the default, spill or fine clean positions places at least one run (which ' +
+      'triggers the page-column contingency).',
+    threshold: 0,
+    note:
+      'Registered before the first run, against the reader the page had then, and kept word for ' +
+      'word. The new reader falsifies it by construction, since it places clean positions, and ' +
+      'that is what triggers the page column.',
+  },
+];
+
+/**
+ * The re-run's checks on its own harness, registered with
+ * {@link RERUN_PREDICTIONS} and in the same commit. They are not bets: each
+ * says the harness measured what it meant to, and each must hold before any
+ * bet is read.
+ */
+export const RERUN_IDENTITIES: readonly RerunIdentity[] = [
+  {
+    id: 'I-page-twin',
+    holds:
+      'The page twin, the page\'s reading of each clean position through the fast path, equals ' +
+      'experiments/reader-acceptance.json\'s positions[] at all 108 positions: placed, unseen and ' +
+      'barelySeen equal, and no problems.',
+    restsOn:
+      'Its inputs are bit for bit the acceptance sweep\'s clean photographs: the same rig build ' +
+      '(buildRig, as the bank stage calls it), the same noise (noisyRun under the rig\'s own seed, ' +
+      'each pair its own stream), the same encode (encodeSrgb8 at ENCODE_FULL_SCALE), and the ' +
+      'same summaries, ordinals and names (summarisePhoto), read by the same reader: indexing.ts ' +
+      'unchanged since 32afdc4, the commit the sweep records, readback.ts\'s indexPhotographs and ' +
+      'summarisePhoto unchanged since then, and linearise\'s code table held to the per-sample ' +
+      'path it replaced, bit for bit.',
+  },
+  {
+    id: 'I-replaced',
+    holds:
+      'Q0\'s replaced-reader verdict equals the Q0 of experiments/experiment-10.json as committed ' +
+      'at 754147f, read with `git show 754147f:experiments/experiment-10.json` and never from the ' +
+      'working-tree file, which the run overwrites. Field for field at each of the 108 positions, ' +
+      'matched by which, rig and camera: placed, runsPlaced and the problems\' text; what follows ' +
+      'from them, reasons (reasonOf of each problem, on both sides) and the description ' +
+      '(754147f\'s describeIndexing, not today\'s, of the replaced verdict); total; and the ' +
+      'classify fields margin, wrongKinds and perRun, margins at the four decimals the committed ' +
+      'file holds.',
+    restsOn:
+      'The replaced reader is readback.ts\'s indexPhotographs at 754147f, reproduced line for ' +
+      'line in stages.ts, and it reads the same summaries: the render, the encode, ' +
+      'summarisePhoto (linearise\'s code table included), litFractions, classify and ' +
+      'indexByFingerprint compute what they computed then, and indexByFingerprint does not read ' +
+      'the phases the expected sequence has gained since.',
+  },
+  {
+    id: 'H8-page',
+    holds:
+      'At every hook rig, camera and level, the page reads the hook\'s straddled frames and the ' +
+      'fast path\'s the same: placed, unseen and barely seen equal, and as many problems.',
+  },
+];
 
 // ---------------------------------------------------------------------------
 // Checked at load
