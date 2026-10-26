@@ -32,6 +32,9 @@ export const CACHE_MULTIPLIER = { uncached: 1.0, write1h: 2.0, write5m: 1.25, re
 export const BATCH_MULTIPLIER = 0.5;
 
 export const RATE_CARD = {
+  // `read` overrides CACHE_MULTIPLIER.read for one model: Claude Opus 5.5 bills cache reads
+  // at 0.05x input ($0.20/MTok), not the usual 0.1x.
+  'claude-opus-5-5': { input: 4, output: 20, read: 0.05, fast: { input: 8, output: 40 } },
   'claude-opus-5': { input: 5, output: 25, fast: { input: 10, output: 50 } },
   'claude-opus-4-8': { input: 5, output: 25, fast: { input: 10, output: 50 } },
   'claude-opus-4-7': { input: 5, output: 25 },
@@ -58,12 +61,12 @@ export const RATE_CARD = {
 export function ratesFor(cls, asOf = null) {
   const card = RATE_CARD[cls.model];
   if (card === undefined) return null;
-  let base = { input: card.input, output: card.output };
+  let base = { input: card.input, output: card.output, read: card.read ?? CACHE_MULTIPLIER.read };
   if (card.intro && asOf && asOf.slice(0, 10) <= card.intro.until) {
-    base = { input: card.intro.input, output: card.intro.output };
+    base = { input: card.intro.input, output: card.intro.output, read: base.read };
   }
-  if (cls.speed === 'fast' && card.fast) base = { ...card.fast };
-  if (cls.tier === 'batch') base = { input: base.input * BATCH_MULTIPLIER, output: base.output * BATCH_MULTIPLIER };
+  if (cls.speed === 'fast' && card.fast) base = { ...card.fast, read: base.read };
+  if (cls.tier === 'batch') base = { input: base.input * BATCH_MULTIPLIER, output: base.output * BATCH_MULTIPLIER, read: base.read };
   return base;
 }
 
@@ -73,7 +76,7 @@ export function costOf(tokens, rates) {
     (tokens.uncached / 1e6) * rates.input * m.uncached +
     (tokens.write1h / 1e6) * rates.input * m.write1h +
     (tokens.write5m / 1e6) * rates.input * m.write5m +
-    (tokens.read / 1e6) * rates.input * m.read +
+    (tokens.read / 1e6) * rates.input * (rates.read ?? m.read) +
     (tokens.output / 1e6) * rates.output
   );
 }
@@ -114,6 +117,9 @@ export function priceLedger(ledger) {
     input: inputTokens > 0
       ? priced.reduce((s, p) => s + p.rates.input * (p.tokens.uncached + p.tokens.write1h + p.tokens.write5m + p.tokens.read), 0) / inputTokens
       : 0,
+    readRate: billable.read > 0
+      ? priced.reduce((s, p) => s + p.rates.input * p.rates.read * p.tokens.read, 0) / billable.read
+      : 0,
     output: billable.output > 0
       ? priced.reduce((s, p) => s + p.rates.output * p.tokens.output, 0) / billable.output
       : 0,
@@ -123,10 +129,11 @@ export function priceLedger(ledger) {
     ['Input — uncached', billable.uncached, blended.input * CACHE_MULTIPLIER.uncached],
     ['Input — cache writes, 1-hour TTL', billable.write1h, blended.input * CACHE_MULTIPLIER.write1h],
     ['Input — cache writes, 5-minute TTL', billable.write5m, blended.input * CACHE_MULTIPLIER.write5m],
-    ['Input — cache reads', billable.read, blended.input * CACHE_MULTIPLIER.read],
+    ['Input — cache reads', billable.read, blended.readRate],
     ['Output', billable.output, blended.output],
   ].map(([label, tokens, rate]) => ({ label, tokens, rate, amount: (tokens / 1e6) * rate }));
 
+  blended.read = blended.input > 0 ? blended.readRate / blended.input : CACHE_MULTIPLIER.read;
   const byBucket = {};
   for (const [bucket, tokens] of Object.entries(ledger.byBucket)) {
     byBucket[bucket] = costOf(tokens, blended);
